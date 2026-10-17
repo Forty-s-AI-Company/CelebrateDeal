@@ -1,0 +1,9 @@
+{
+  "files": {
+    "src/lib/live-metric-report-scheduler.ts": "55294a3ac29b3757f11a599312e59038dfaf934df29d20495a3d53f85aa94dcd",
+    "src/lib/live-metric-report-scheduler.test.ts": "10e33d645065e824f292871e4b18a0eb7fb084fab230825beaf82f5699a93143",
+    "scripts/wp20-report-scheduler-disposable.mjs": "8785ce7a30c8c8fe61da6883cd9f35d562d8c4fa0ed1b1089357040b9e02b918"
+  },
+  "reviewScope": "Full scheduler and unchanged claim; changed unit and harness sections only, earlier unchanged sections rely on initial review.",
+  "promptCharacters": 17829
+}

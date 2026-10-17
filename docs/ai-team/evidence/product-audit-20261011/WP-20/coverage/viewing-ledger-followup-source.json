@@ -1,0 +1,11 @@
+{
+  "files": {
+    "prisma/migrations/20261016060000_live_metric_viewing_source/migration.sql": "d598b42b96fd716b85821aa59e39f417b4a05899a2ace0629ee703a850dd7f64",
+    "prisma/schema.prisma": "99103c85b477bdaee9172333cdf6a4ea5e39fdafcc00cb30e2995124102d0353",
+    "src/lib/live-metric-viewing-source-audit.ts": "9f5eca75e942d583ff2e1d2ec581fbc49d32f123e1a6d81760d861ae89e65978",
+    "src/lib/live-metric-viewing-source-audit.test.ts": "2d9ab969e73b6329451edb1d204f0c999b4aef3fdc6d812567617460b43a2570",
+    "scripts/wp20-viewing-source-ledger-disposable.mjs": "4cb1b2cd33f2086fb0b393b58612ad6401f7971f2c1cb91e70bd8cb7e9a79c8d"
+  },
+  "promptCharacters": 16619,
+  "scope": "Full118 SQL; audit context/all digest; existing identity guard. Tests/runner receipt only."
+}

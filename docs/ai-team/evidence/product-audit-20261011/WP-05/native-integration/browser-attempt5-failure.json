@@ -1,0 +1,13 @@
+{
+  "checks": [],
+  "status": "FAIL",
+  "cleanup": true,
+  "currentStep": "error-return",
+  "returnPathPresent": true,
+  "originMatches": true,
+  "lastSubmissionStatus": 303,
+  "failedStage": "chromium:no-js",
+  "errorType": "TimeoutError",
+  "lastPath": "/form/wp05-native-1791766258156",
+  "retryState": "400"
+}

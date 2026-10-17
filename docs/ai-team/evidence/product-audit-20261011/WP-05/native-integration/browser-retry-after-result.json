@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "status": 403,
+      "native303": true,
+      "visibleAlert": true,
+      "refill": true,
+      "noSubmission": true,
+      "draftSaved": true,
+      "retryAfterPreserved": "NOT_APPLICABLE"
+    },
+    {
+      "status": 404,
+      "native303": true,
+      "visibleAlert": true,
+      "refill": true,
+      "noSubmission": true,
+      "draftSaved": true,
+      "retryAfterPreserved": "NOT_APPLICABLE"
+    },
+    {
+      "status": 429,
+      "native303": true,
+      "visibleAlert": true,
+      "refill": true,
+      "noSubmission": true,
+      "draftSaved": true,
+      "retryAfterPreserved": true
+    }
+  ],
+  "cleanup": true
+}

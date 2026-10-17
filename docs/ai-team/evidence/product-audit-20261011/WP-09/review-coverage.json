@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "scope": "Current product blocks match supplied qualified review context, scoped review composition; not browser/test claims",
+  "blocks": {
+    "unchangedNodeFormHelpers": {
+      "literalContainedInQualifiedReviewContext": true,
+      "sha256": "a1dd23d51f44107a4f6c44595b7385179eb95efb05293495a72e30bb499d966f"
+    },
+    "leadBuilders": {
+      "literalContainedInQualifiedReviewContext": true,
+      "sha256": "e020db6d794271180503dcb061c3cb72351dbde8991be80706b2d6258a0fbeef"
+    },
+    "sixMetadata": {
+      "literalContainedInQualifiedReviewContext": true,
+      "sha256": "597d36f147ebbb0d6df5e30c2b3b7dae61ad5aaf449e3d5611e0f4e0c0c51ccd"
+    },
+    "stepFiltering": {
+      "literalContainedInQualifiedReviewContext": true,
+      "sha256": "71ac804a2fe62315a755b66884f25bd90c66a70df8a8bfbac0c5c1f85367eef2"
+    },
+    "newWebinarBuilder": {
+      "literalContainedInQualifiedReviewContext": true,
+      "sha256": "0dded1ab77009097899dfab186648ef489b9c56edb00aaffbe259e9a2f367c43"
+    },
+    "nativeForm": {
+      "literalContainedInQualifiedReviewContext": true,
+      "sha256": "d20ba9ffff1ff92996a7a5fd60dc8c7686d9b3d0f1a837662ec00dfca3628f9b"
+    }
+  }
+}

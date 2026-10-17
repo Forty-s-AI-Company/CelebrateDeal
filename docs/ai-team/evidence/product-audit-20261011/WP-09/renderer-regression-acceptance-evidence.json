@@ -1,0 +1,136 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-regression-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "renderer-regression-unit.json",
+      "detail": "37current targeted gallery/renderer tests",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-unit.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "legacy",
+      "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "legacy-compat.json",
+      "detail": "All12original layouts retained; galleryexactSHAunchanged",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-legacy.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "renderer-regression-exec-checks.json",
+      "detail": "Current full-projecttsc exit0",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "renderer-regression-exec-checks.json",
+      "detail": "Current4product/testsource+existingtaskcaller",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "renderer-regression-browser.json",
+      "detail": "Currentrenderer six ownerapply/publish/unverifiedregistrations/12axe",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-browser.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "content-approval",
+      "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "renderer-regression-content-authorization.json",
+      "detail": "Already-authorized current-session nonProduction template scope; no new legal/provider facts assumed",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-content-approval.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "WP17-prerequisite",
+      "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+      "status": "WAITING_AUTHORIZATION",
+      "exit_code": null,
+      "source_receipt": "../WP-17/reset-repair-validation.json",
+      "detail": "Original completeWP17 prerequisite still missing WP02/WP04 real reminder receipt and external facts; local-only success not full prerequisite.",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-WP17-prerequisite.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+    "status": "PASS",
+    "independent": true,
+    "role": "senior_review",
+    "model": "claude-sonnet-5-5",
+    "observed_model": "claude-sonnet-5-5",
+    "raw_receipts": [
+      "final-review.json",
+      "../WP-14/calendar-review.json"
+    ],
+    "scope_coverage": "Immutable galleryoriginalfinalSonnet + currentrenderer calendarSonnet; exact source hashes verified, not treating old renderer snapshot as current.",
+    "wholeWpReady": false,
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-regression-review-qualification.json"
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "detail": "Actual whole six-template browser test asserts one native target and successful fragment jump/public submission; PASS. Expired/unconfigured composition remains governed by existing Webinar readiness, no change to guards.",
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "browser",
+          "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+          "status": "PASS",
+          "exit_code": 0,
+          "source_receipt": "renderer-regression-browser.json",
+          "detail": "Currentrenderer six ownerapply/publish/unverifiedregistrations/12axe",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\renderer-gate-browser.json"
+        }
+      ],
+      "current_resolution_note": "Same unchanged six-template test rerun at current revision validates native fragment target/public submissions; original provider finding untouched."
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "unresolved",
+      "detail": "Existing preview/published label and required-marker differences"
+    }
+  ]
+}

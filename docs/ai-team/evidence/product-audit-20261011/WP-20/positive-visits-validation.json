@@ -1,0 +1,139 @@
+{
+  "at": "2026-10-15T15:19:05.161420+00:00",
+  "sourceHashes": {
+    "src/lib/live-metric-ingress-gateway.ts": "e0e82cea866b5e3cc25c4e880581f71bc3f184ce11ec4d779f16f9f7965867da",
+    "src/lib/live-metric-ingress-gateway.test.ts": "09f52bcae9515d91a73ae407017f9432603fa57a75c25449f12e147ef58b9f9c",
+    "src/lib/live-metric-coverage-reader.ts": "3e0a672cd1cdb3a89c34e91895668fc87db119ee73c878d50dae62dd7de83a0e",
+    "src/lib/live-metric-coverage-reader.test.ts": "95e5d02513efbdf78bd1d7817898509976ce55e1b21691caf0ab3b41a2cdfa54",
+    "src/lib/live-metric-visit-coverage.ts": "b799e1cc16641d70436c2a737048afcb4abeb660833e24da26fafafd5d964a64",
+    "src/lib/live-metric-visit-coverage.test.ts": "c3759049532c36d7f58b2e34351839c531b47db05fca80c268929996c9c9acf6",
+    "prisma/schema.prisma": "d7bc1a2c4f0341e4f2958de157f906e88fe9ade663addab341cfb7dd41022dfe",
+    "prisma/migrations/20261016180000_live_metric_visit_coverage/migration.sql": "a9e89a6a582e4f4f6be451c4a44cd0e6a9a941b4780aeb8907bb6f6f7501971a"
+  },
+  "checks": {
+    "targetedTests": {
+      "status": "PASS",
+      "tests": 74,
+      "files": 4
+    },
+    "scopedLint": "PASS",
+    "typecheck": "PASS",
+    "disposableDb": {
+      "status": "PASS",
+      "stage": "negative-and-permission",
+      "checks": {
+        "actualHttpAndGuardedSourceWrites": "PASS",
+        "openFrameCannotBeDeleted": "PASS",
+        "admissionAfterClosureRejected": "PASS",
+        "actualPrivateProducerPublished": "PASS",
+        "actualLeaseReaderAcceptsMatchingVisitsProof": "PASS",
+        "sealedFactsAndIntentsFrozenButRetryReadable": "PASS",
+        "legacyViewingAndFailedReceiptCannotCertify": "PASS",
+        "nonOwnerCannotForgeProofOrMarker": "PASS",
+        "parentCascadeCleansProof": "PASS"
+      },
+      "browser": "NOT_RUN",
+      "fullFiveMetrics": "NOT_RUN",
+      "sourceCounts": {
+        "pages": 10,
+        "intents": 10,
+        "visits": 10
+      },
+      "migrationStatus": "PASS",
+      "migrationCount": 130,
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    },
+    "browser": "NOT_RUN",
+    "fullFiveMetrics": "NOT_RUN",
+    "remoteCI": "NOT_RUN"
+  },
+  "reviews": {
+    "positive-visits-plan-review": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 3,
+        "MINOR": 3,
+        "NIT": 0
+      }
+    },
+    "positive-visits-plan-followup-review": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 1,
+        "MINOR": 3,
+        "NIT": 0
+      }
+    },
+    "positive-visits-migration-review": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 4,
+        "NIT": 1
+      }
+    },
+    "positive-visits-ts-review": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 2,
+        "NIT": 1
+      }
+    },
+    "positive-visits-final-review": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 0,
+        "NIT": 0
+      }
+    }
+  },
+  "fullWP20": "NOT_READY",
+  "scope": "fixed isolated owned synthetic successful-page ingress only; no production claim",
+  "remaining": [
+    "viewing positive source proof and all five nonzero metrics through existing report pipeline",
+    "source reconciliation rowCount still omits newly retained ingress frame/intake rows; include in existing snapshot budget before whole-WP acceptance",
+    "fixed visits proof requires exact report window; no union of differently scoped digests",
+    "production/general collection activation, minimum runtime deployment role and browser E2E not verified"
+  ],
+  "schemaReviewNote": "SQL FK independently reviewed; final Prisma relation map now explicitly matches migration constraint name and validated in final130migration runner; not a new SQL change",
+  "failureEvents": [
+    "first source-budget rowCount change broke two old assertions; reverted unrelated budget-semantic change, assertions retained",
+    "test bigint literals incompatible with tsconfig fixed to BigInt(...)",
+    "first migration review AGY RATE_LIMITED plus ClaudeCLI TRUNCATED_REVIEW; preserved failure, retried with larger existing output cap; no router/validator edits"
+  ]
+}

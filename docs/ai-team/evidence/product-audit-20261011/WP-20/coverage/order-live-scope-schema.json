@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "exit_code": 0,
+  "scope": "Copied schema in isolated directory; synthetic loopback URLs; no project config or dotenv loaded",
+  "revision": "sha256:86507468813235424846f5c988d64f2b7497458ea6309d3e91fdac622a354efe"
+}

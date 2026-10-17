@@ -1,0 +1,26 @@
+[
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "base": "efb8b7e9a737ea30ea691870318d85bf74830331",
+    "before_sha256": "43666b9502b352efe4f39597ebb291358f35f17d70982f6df4b0bb1834e69905",
+    "after_sha256": "21091c5e59573cc308d8ba085eaf53f9069df1ba0e34decc077660ed9c1e94bf",
+    "only_changes": {
+      "Elements · 基本內容": "元件 · 基本內容",
+      "Elements · 版面配置": "元件 · 版面配置",
+      "Blocks · Webinar 轉換": "區塊 · 線上講座轉換",
+      "倒數計時＋報名 CTA": "倒數計時＋報名按鈕"
+    },
+    "status": "PASS"
+  },
+  {
+    "file": "src/lib/funnel-block-library.ts",
+    "base": "efb8b7e9a737ea30ea691870318d85bf74830331",
+    "before_sha256": "cbe0c8581e7540a609ce28744615edd8d10fe9057676efd3879bc0d1fbce8b3b",
+    "after_sha256": "a112cbff075568bae7b46fb1522c65b5734cdbd1b75c8ef0d4d8f668476e37d8",
+    "only_changes": {
+      "Hero 歡迎訊息與行動按鈕": "主視覺歡迎訊息與行動按鈕",
+      "歡迎 Hero": "歡迎主視覺"
+    },
+    "status": "PASS"
+  }
+]

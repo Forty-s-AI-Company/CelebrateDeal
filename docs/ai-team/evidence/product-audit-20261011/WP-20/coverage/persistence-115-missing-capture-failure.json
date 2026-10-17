@@ -1,0 +1,99 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "name": "reconciliation pages past pending failures and terminal gaps then repairs later passes",
+      "status": "PASS"
+    },
+    {
+      "name": "real verification records DB epoch despite app clock skew and nonUTC session",
+      "status": "PASS"
+    },
+    {
+      "name": "verification commits despite projection failure and replay repairs it",
+      "status": "PASS"
+    },
+    {
+      "name": "session and projection preserve first capture in either order and concurrently",
+      "status": "PASS"
+    },
+    {
+      "name": "projection and Live source update use compatible lock ordering",
+      "status": "PASS"
+    },
+    {
+      "name": "capture SQL failure preserves outer submission and transaction settings",
+      "status": "PASS"
+    },
+    {
+      "name": "capture lock timeout preserves a valid first submission",
+      "status": "PASS"
+    },
+    {
+      "name": "verified nonviewer registration materializes once from immutable capture",
+      "status": "PASS"
+    },
+    {
+      "name": "initial capture is scoped immutable and rolls back with submission",
+      "status": "PASS"
+    },
+    {
+      "name": "registration attribution is scoped and rejects a changed verification epoch",
+      "status": "PASS"
+    },
+    {
+      "name": "real worker report job persists aggregates and rejects stale completion",
+      "status": "PASS"
+    },
+    {
+      "name": "nonzero five metrics use durable completion through real workers",
+      "status": "FAIL",
+      "code": "ASSERTION_OR_RUNNER_ERROR",
+      "stage": null,
+      "statuses": [
+        null,
+        null,
+        null,
+        "recorded"
+      ],
+      "errorType": "AssertionError",
+      "differingReceiptFields": [],
+      "guard": null,
+      "assertion": null
+    }
+  ],
+  "loadMetrics": null,
+  "indexMetrics": null,
+  "visitDeletionMetrics": null,
+  "orderContentionMetrics": null,
+  "registrationClockDiagnostics": [
+    {
+      "known": true,
+      "zone": "UTC",
+      "verifiedAfterCaptureMs": 69,
+      "captureAgeMs": 85.361
+    },
+    {
+      "known": false,
+      "zone": "UTC",
+      "verifiedAfterCaptureMs": 72,
+      "captureAgeMs": 87.408
+    }
+  ],
+  "serializationDiagnostics": [],
+  "passed": 11,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 115,
+    "failure": {
+      "category": "wp20-persistence-check-failed",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

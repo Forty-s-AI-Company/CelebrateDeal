@@ -1,0 +1,184 @@
+{
+  "reviewed": true,
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the supplied sources and the POST wrapper. I found no BLOCKER or MAJOR security defects. On the retry draft side: the capability is 256 bits from a CSPRNG and only its SHA-256 hash is stored. The encrypted payload is bound to idHash, formId, sourcePath and expiresAt under a purpose string, and the stored row is checked against all four on read. Writes require an exact Origin match, and the cookie is HttpOnly, SameSite=Strict and __Host- in secure mode. The 128-row cap is enforced inside a PostgreSQL advisory lock with ReadCommitted isolation. Field keys are allowlisted from the active, published form schema, and file values and duplicate keys are rejected. On the receipt side: it is bound to formId and path, has a TTL ceiling, and is only issued when the request's Origin matches and the 303 Location points to an allowed public same-origin path. The page only shows success when the submitted flag and a valid receipt are both present, so the URL flag alone isn't trusted. As stated in scope, I treated receipt reuse within 60s and saturation of the global 128-draft cap as accepted risks. Three lower-severity findings remain: one UX issue on 429 and two hardening gaps in the native wrapper. These findings come from reading the text only; they don't confirm any test or release result, and I did not check the 13-check / browser-case claims.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry-response.ts",
+        "area": "registrationRetryResponse / POST wrapper failure branch (status >= 400)",
+        "issue": "On the native path, the original error response from processSubmission is thrown away and replaced by a new 303 redirect. Its headers, including Retry-After on 429, are lost, and the redirect target only gets registrationRetry=429.",
+        "evidence": "POST: `if (response.status >= 400) return registrationRetryResponse(request, formData, response.status);`. registrationRetryResponse builds a fresh `NextResponse.redirect(target, { status: 303, headers: { \"Cache-Control\": \"no-store\" } })` and never reads the original response.",
+        "impact": "A user who hits the main submission rate limit sees a retry page but isn't told how long to wait. They may resubmit right away, use up the separate 10/min draft budget, and land on 'unavailable'. This is UX/abuse friction, not a confidentiality issue.",
+        "recommended_fix": "Pass the original response (or its Retry-After value) into registrationRetryResponse and copy Retry-After onto the redirect response, or add a bounded integer wait hint to the retry page.",
+        "required_test": "Native POST that triggers a 429 from processSubmission: check that the 303 response keeps the Retry-After value (or the wait hint) and that the draft is still saved.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "POST wrapper (registration submission route)",
+        "area": "`const formData = await readFormDataBody(request, 1_000_000);`",
+        "issue": "The bounded body read sits outside the try/catch that wraps processSubmission. If readFormDataBody throws on an oversized, truncated or malformed multipart/urlencoded body (rather than returning null), the native browser gets an unhandled 500. It does not get the /registration-error or registrationRetry=unavailable redirect.",
+        "evidence": "Only `processSubmission(request, formData)` is inside `try { ... } catch { response = ... 503 }`. The readFormDataBody call comes before that try, and registrationRetryResponse accepts `FormData | null`, which suggests a null path exists but doesn't show that throwing is impossible.",
+        "impact": "A native form user sees a raw framework error page instead of the retry UX for over-limit or broken bodies. Depending on the framework's error handling, internal error details could also show up in logs. Whether this happens depends on readFormDataBody's contract, which wasn't supplied.",
+        "recommended_fix": "Wrap readFormDataBody in the same try. On failure, set formData = null and response = 413/400/503, then go through registrationRetryResponse, which already handles null data by redirecting with registrationRetry=unavailable.",
+        "required_test": "Native multipart POST over 1,000,000 bytes, plus a malformed multipart boundary: both should return 303 to the source path with registrationRetry=unavailable (or to /registration-error), never 500, and should create no draft row.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-submission-receipt.ts",
+        "area": "attachRegistrationResult, order of the Location rewrite and Cache-Control",
+        "issue": "`Cache-Control: no-store` is only set after the receipt is encrypted and its length checked. If encryption fails (for example, missing key config) or the value is over 3800 characters, the success 303 goes out without no-store, unless processSubmission set it. The Location header has already been rewritten at that point.",
+        "evidence": "`response.headers.set(\"Location\", ...)` runs before `encryptSensitiveValue(...)`. `if (value.length > 3800) return;` and the catch block both skip `response.headers.set(\"Cache-Control\", \"no-store\")`.",
+        "impact": "Low. The success redirect could in principle be cached by an intermediary, which is inconsistent with the failure path where no-store is always set. The user would just see the 'not verified' state instead of the receipt.",
+        "recommended_fix": "Set Cache-Control: no-store on the success 303 before any operation that can fail, for example right after the origin and target checks pass, or unconditionally in the POST wrapper for native responses.",
+        "required_test": "Simulate encryptSensitiveValue throwing during a successful native submission: the 303 should still carry Cache-Control: no-store and the rewritten public-origin Location, and should have no receipt cookie.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "completed": false
+}

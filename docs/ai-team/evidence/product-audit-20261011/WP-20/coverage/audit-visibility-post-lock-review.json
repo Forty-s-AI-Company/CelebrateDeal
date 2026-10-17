@@ -1,0 +1,174 @@
+{
+  "attempts": [
+    {
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "finalModel": "claude-opus-5-5",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false,
+  "review": {
+    "summary": "I reviewed only the supplied code: the read-visibility guard, the wrapper prefix in the coverage reader, and the reconciliation entry wrapper. I did not re-review the readSources/classifier body. I found no BLOCKER, MAJOR or MINOR defects. The code does what the fix description claims:\n- The WeakSet check for the same client object runs before any await. A nested call on the same transaction is rejected before the client is added, so the outer call keeps its claim.\n- The backend PID plus transaction-start key is checked and added in one synchronous step after the first metadata read. A rejected alias never removes the key held by the first guard. Both sets are always cleaned up in `finally`.\n- The `Symbol.for` registry lets separate server bundle copies in one process share the same coordination sets.\n- After taking exclusivity, the guard re-reads the settings and requires the same backend PID, transaction start, isolation and primary status. Those re-read values are used as the true originals, which fixes the delayed-alias case.\n- If the client is in autocommit or a pool, separate statements run in separate transactions or on different backends. The identity checks before and after set_config then fail, even when the default isolation is repeatable read.\n- The transaction-start value is a Unix epoch, so it does not depend on timezone.\n- The tighter timeout is kept (`min(timeout, 5000)`, and 0 becomes 5000). Both settings are restored as transaction-local values.\n- When restoring fails with 25P02 (transaction already aborted), the original error is kept. Any other restore failure after a read error raises an AggregateError that holds both errors and sets the original as `cause`. A restore failure after a successful read is thrown, not hidden.\n- With row_security off, a role subject to RLS gets an error instead of a filtered (false) zero. That error comes from PostgreSQL itself, not from this code.\n\nOne NIT remains: settings are not re-checked after the read finishes. It only matters if some other code changes them on the same transaction during the read.\n\nNot certified: callers outside this scope, the schema, RLS policies, the wp20_* functions, the Prisma driver-adapter error shape, the tests and fixtures, deployment roles, readSources, and the open public quota/lock, form-failure, least-privilege, E2E/load and positive-producer items. No test results are claimed or implied.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-read-visibility.ts",
+        "area": "readWithSettings: live check followed by `return await read()`",
+        "issue": "The guard checks row_security=off and the timeout once, before `read()`, and does not check again afterwards. Other code using the same transaction concurrently (a Prisma interactive transaction runs queued statements one after another) could set row_security back on or change statement_timeout between that check and the read's statements, or between the pages that readSources reads. Coordination between guards does not prevent this.",
+        "evidence": "The LiveSettings query runs once, before `return await read()`. Neither the audit SQL nor the source reads check `current_setting('row_security')`, and nothing re-checks between the read and the restore.",
+        "impact": "This depends on an omitted caller running a concurrent statement on the same transaction that changes row_security. If that happens, an RLS-filtered read could again report coverage as complete while hiding a gap, which is the original bug. Under the stated contract (one explicit transaction used by a single flow) the chance is low.",
+        "recommended_fix": "Optional hardening: after `read()` resolves and before the restore, re-run the LiveSettings check (row_security off, expected timeoutMs, same PID and transaction start) and throw if anything changed. Alternatively, have each guarded SQL statement return current_setting('row_security') and fail if it is not 'off'.",
+        "required_test": "Using a real disposable fixture: during `read()` (for example, between source pages), issue an unguarded `set_config('row_security','on',true)` on the same transaction from a deferred shim. Assert that the guard rejects the result instead of returning the filtered rows, and that the original settings are restored.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "execution_provider": "claude_cli",
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "concurrency",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "agy_discovery_process_status": "SUCCESS",
+  "agy_discovery_status": "DISCOVERY_VERIFIED"
+}

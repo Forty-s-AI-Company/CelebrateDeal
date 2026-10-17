@@ -32,7 +32,7 @@ export default async function BlacklistsPage({
 
   return (
     <>
-      <PageHeader title="黑名單管理" description="管理互動風險與無效名單來源，可搜尋、記錄原因並解除封鎖。" />
+      <PageHeader title="封鎖名單" description="管理互動風險與無效名單來源，可搜尋、記錄原因並解除封鎖。" />
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
         <Card>
           <h2 className="mb-4 text-lg font-semibold text-slate-950">新增封鎖項目</h2>

@@ -1,0 +1,10 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed_model": "unknown",
+  "observed_effort": "unknown"
+}

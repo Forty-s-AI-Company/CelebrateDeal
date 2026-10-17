@@ -1,0 +1,10 @@
+{
+  "files": {
+    "prisma/migrations/20261016030000_live_metric_order_payment_serialization/migration.sql": "2ab70d10756f1a44f41699f9a48be7ce475979a0648b668cf1bce75e309bbf40",
+    "prisma/migrations/20261016010000_live_metric_order_window_source/migration.sql": "3dcbaf2cad4aa61a4fddc41f6b5b185ad61763ee49e8e2114f4c1cd77d7e5326",
+    "scripts/wp20-order-window-link-race.mjs": "ca161e78eb68828317667477fe4c57df5ef7708d47077959881d28c77c11c80e"
+  },
+  "execution_provider": "claude_cli",
+  "reason": "Existing authorized CLI fallback transport; AGY historical failure retained; no new AGY failure asserted",
+  "scope": "Focused migration115 review"
+}

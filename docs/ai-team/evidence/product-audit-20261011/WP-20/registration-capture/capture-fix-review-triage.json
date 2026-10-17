@@ -1,0 +1,13 @@
+{
+  "source_revision": "sha256:f4b5cae38766e1eca99648c6b2a4fca154d2eadb3a015a4df5ba1811981b4e6b",
+  "prior_major_lock_order": "RESOLVED_BY_INDEPENDENT_REVIEW",
+  "prior_major_api_privileges": "RESOLVED_BY_INDEPENDENT_REVIEW",
+  "remaining_findings": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 0,
+    "NIT": 2
+  },
+  "nits": "Optional test diagnostics and extraction robustness; retained, not blocking, no source changes this turn.",
+  "scope_limit": "Only capture lock-order and privilege fixes; not whole capture subsystem or WP acceptance."
+}

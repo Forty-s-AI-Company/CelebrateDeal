@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 20,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "linkedFormOwnership": "REJECTED_BY_FOREIGN_KEY",
+  "roleSafeRevision": "PASS",
+  "revisionSnapshotConcurrency": "PASS",
+  "counts": {
+    "payments": 20,
+    "orders": 20,
+    "entitlements": 20
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "terminal_field_names": [
+    "conversation_id",
+    "status",
+    "response",
+    "duration_seconds",
+    "num_turns",
+    "usage"
+  ],
+  "terminal_model_metadata_present": false,
+  "observed_effort": "unknown",
+  "requested_model": "gemini-3.8-flash-high",
+  "observed_model": "unknown",
+  "review_output": "{\n  \"summary\": \"Reviewed Scope A (WP-19 notification channels capability copy and documentation updates) and Scope B (WP-14 A/B readout E2E test fixture, browser fetch verification, error sanitization, and task runner scripts). In Scope A, template list, creation, and edit routes in src/app/(app)/messages/templates along with related client form components accurately present Email and LINE as selectable channels under verified conditions while SMS remains disabled and marked as unconnected. Tenant isolation, input sanitization, and database query filters remain intact without altering schemas, delivery queues, or validation rules. In Scope B, the E2E specification in tests/e2e/wp14-ab-readout.spec.ts correctly employs synthetic loopback ingress headers, browser-evaluated session fetches, and static stage/kind diagnostic reporting that prevents credential or URL leakage. Supporting build and migration execution scripts in .ai-team/reports properly enforce dotenv exclusion, process environment hygiene, and port binding safety. No substantive defects or regressions were identified within the immutable scope.\",\n  \"findings\": []\n}\n",
+  "status": "SUCCESS",
+  "resolved_effort": "high",
+  "exit_code": 0,
+  "reason": "Same immutable source; English-only output for readable evidence, no transport changes."
+}

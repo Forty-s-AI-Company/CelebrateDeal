@@ -1,0 +1,427 @@
+Independent Critical Migration/Permission review part 2 of 2: registration coverage audit/publisher/reader. No tools or modifications. Return canonical findings JSON, max 8 concise findings. Check truthful completeness, enumeration windows/budgets, identity, tenant scope, stale revisions, write races, SQL guard permissions. Dependency contract separately under review: private append-only registration event ledger revision is COUNT and changes on verified-source INSERT/UPDATE/DELETE; report create/claim/finish and readers bind same registration revision plus metric sourceRevision. Latest report reader requires current lease and same revision; coverage reader uses same read-only RR tx. Do not assume missing older DB guards are absent: state missing dependency precisely if needed. Known broader gaps excluded from local verdict: other producers/scheduler incomplete, original Serializable payment gate FAIL. Evidence: empty and matched real-source proof, repeated proof, source change between audit and write, revoked proof rejected, 107 migrations and 14 tests/schema/tsc PASS. 50k source +50k projection bidirectional missing-capture audit PASS in 4993ms with triggers enabled; this fixture is intentionally NOT complete. Prior review timed out, no previous approval. Do not mistake known incompleteness for an unreported local code defect.
+
+FILE src/lib/live-metric-registration-audit.ts
+1: import { Prisma } from "@prisma/client";
+2: import { z } from "zod";
+3: const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+4: const Request = z.object({ vendorId: id, liveId: id, versionId: id, startAt: z.date(), endAt: z.date(),
+5:   afterSubmissionId: id.nullable(), take: z.number().int().min(1).max(500) }).strict()
+6:   .refine(value => value.startAt < value.endAt, "Invalid audit window");
+7: export type RegistrationAuditRequest = z.infer<typeof Request>;
+8: type Database = Pick<Prisma.TransactionClient, "$queryRaw">;
+9: type Row = { submissionId: string; captureVersionId: string | null; registrationId: string | null; formMatches: boolean; matches: boolean };
+10: 
+11: /** Internal evidence discovery, not a coverage certificate. Caller owns one
+12:  * bounded read-only RR transaction across all pages. Start from source submissions
+13:  * so an absent capture cannot disappear from the audit. No customer PII is read.
+14:  */
+15: export async function readRegistrationAuditPage(tx: Database, value: RegistrationAuditRequest) {
+16:   const input = Request.parse(value);
+17:   const context = await readAuditContext(tx, input);
+18:   if (!context) return { status: "unavailable" as const, reason: "scope_or_window_unavailable" as const };
+19:   const cursor = input.afterSubmissionId === null ? Prisma.empty : Prisma.sql`AND s.id>${input.afterSubmissionId}`;
+20:   const rows = await tx.$queryRaw<Row[]>(Prisma.sql`
+21:     SELECT coalesce(l."formId"=s."formId" AND f."vendorId"=${input.vendorId},false) AS "formMatches",
+22:       s.id AS "submissionId",c."versionId" AS "captureVersionId",g.id AS "registrationId",
+23:       coalesce(g."verifiedAt"=(s."verifiedAt" AT TIME ZONE 'UTC') AND g."visitorId" IS NOT DISTINCT FROM c."visitorId",false) AS matches
+24:     FROM "FormSubmission" s
+25:     JOIN "Live" l ON l.id=s."liveId" AND l."vendorId"=${input.vendorId}
+26:     LEFT JOIN "RegistrationForm" f ON f.id=s."formId"
+27:     LEFT JOIN "LiveMetricRegistrationCapture" c ON c."submissionId"=s.id AND c."vendorId"=${input.vendorId} AND c."liveId"=${input.liveId}
+28:     LEFT JOIN "LiveMetricRegistration" g ON g."submissionId"=s.id AND g."vendorId"=${input.vendorId}
+29:       AND g."liveId"=${input.liveId} AND g."versionId"=${input.versionId}
+30:     WHERE s."liveId"=${input.liveId} AND s."verificationStatus"='VERIFIED'
+31:       AND s."verifiedAt">=(${input.startAt}::timestamptz AT TIME ZONE 'UTC')
+32:       AND s."verifiedAt"<(${input.endAt}::timestamptz AT TIME ZONE 'UTC') ${cursor}
+33:     ORDER BY s.id ASC LIMIT ${input.take + 1}`);
+34:   const page = rows.slice(0, input.take);
+35:   return { status: "available" as const, sourceRevision: context.sourceRevision, registrationRevision: context.registrationRevision, coverage: "unknown" as const,
+36:     rows: page.map(row => ({ submissionId: row.submissionId,
+37:       outcome: !row.formMatches ? "form_mismatch" as const
+38:         : row.captureVersionId === null ? "missing_capture" as const
+39:         : row.captureVersionId !== input.versionId ? "other_version" as const
+40:         : row.registrationId === null ? "missing_registration" as const
+41:         : !row.matches ? "identity_mismatch" as const : "matched" as const })),
+42:     hasMore: rows.length > input.take, nextSubmissionId: page.at(-1)?.submissionId ?? input.afterSubmissionId };
+43: }
+44: 
+45: async function readAuditContext(tx: Database, input: RegistrationAuditRequest) {
+46:   const [settings] = await tx.$queryRaw<{ isolation: string; readOnly: string }[]>(Prisma.sql`
+47:     SELECT current_setting('transaction_isolation') AS isolation,current_setting('transaction_read_only') AS "readOnly"`);
+48:   if (settings?.isolation !== "repeatable read" || settings.readOnly !== "on") throw new Error("Registration audit requires read-only repeatable-read");
+49:   const [context] = await tx.$queryRaw<{ sourceRevision: bigint; registrationRevision: bigint }[]>(Prisma.sql`
+50:     SELECT v."sourceRevision",public.wp20_metric_registration_revision(v."vendorId",v."liveId") AS "registrationRevision" FROM "LiveMetricVersion" v
+51:     JOIN "Live" l ON l.id=v."liveId" AND l."vendorId"=v."vendorId"
+52:     WHERE v.id=${input.versionId} AND v."vendorId"=${input.vendorId} AND v."liveId"=${input.liveId}
+53:       AND v."collectionStartedAt"<=${input.startAt} AND v."expiresAt">=${input.endAt}
+54:       AND ${input.endAt}<=clock_timestamp()`);
+55:   return context;
+56: }
+57: 
+58: /** Reverse enumeration catches persisted cohort rows no longer represented by
+59:  * an eligible verified source. It must share the forward audit's RR snapshot.
+60:  */
+61: export async function readRegistrationProjectionAuditPage(tx: Database, value: RegistrationAuditRequest) {
+62:   const input = Request.parse(value);
+63:   const context = await readAuditContext(tx, input);
+64:   if (!context) return { status: "unavailable" as const, reason: "scope_or_window_unavailable" as const };
+65:   const cursor = input.afterSubmissionId === null ? Prisma.empty : Prisma.sql`AND g.id>${input.afterSubmissionId}`;
+66:   const rows = await tx.$queryRaw<{ registrationId: string; sourceMatches: boolean; captureExists: boolean; captureMatches: boolean }[]>(Prisma.sql`
+67:     SELECT g.id AS "registrationId",
+68:       coalesce(s."verificationStatus"='VERIFIED' AND s."liveId"=g."liveId" AND s."formId"=l."formId"
+69:         AND f."vendorId"=g."vendorId" AND g."verifiedAt"=(s."verifiedAt" AT TIME ZONE 'UTC'),false) AS "sourceMatches",
+70:       c."submissionId" IS NOT NULL AS "captureExists",
+71:       coalesce(c."versionId"=g."versionId" AND c."visitorId" IS NOT DISTINCT FROM g."visitorId",false) AS "captureMatches"
+72:     FROM "LiveMetricRegistration" g
+73:     JOIN "Live" l ON l.id=g."liveId" AND l."vendorId"=g."vendorId"
+74:     LEFT JOIN "FormSubmission" s ON s.id=g."submissionId"
+75:     LEFT JOIN "RegistrationForm" f ON f.id=s."formId"
+76:     LEFT JOIN "LiveMetricRegistrationCapture" c ON c."submissionId"=g."submissionId"
+77:       AND c."vendorId"=g."vendorId" AND c."liveId"=g."liveId"
+78:     WHERE g."vendorId"=${input.vendorId} AND g."liveId"=${input.liveId} AND g."versionId"=${input.versionId}
+79:       AND g."verifiedAt">=${input.startAt} AND g."verifiedAt"<${input.endAt} ${cursor}
+80:     ORDER BY g.id ASC LIMIT ${input.take + 1}`);
+81:   const page = rows.slice(0, input.take);
+82:   return { status: "available" as const, ...context, coverage: "unknown" as const,
+83:     rows: page.map(row => ({ registrationId: row.registrationId,
+84:       outcome: !row.sourceMatches ? "invalid_source" as const : !row.captureExists ? "registration_without_capture" as const
+85:         : !row.captureMatches ? "capture_mismatch" as const : "matched" as const })),
+86:     hasMore: rows.length > input.take, nextRegistrationId: page.at(-1)?.registrationId ?? input.afterSubmissionId };
+87: }
+
+FILE src/lib/live-metric-registration-source-audit.ts
+1: import { createHash, type Hash } from "node:crypto";
+2: import { performance } from "node:perf_hooks";
+3: import { Prisma, type PrismaClient } from "@prisma/client";
+4: import { readRegistrationAuditPage, readRegistrationProjectionAuditPage, type RegistrationAuditRequest } from "./live-metric-registration-audit";
+5: 
+6: type Scope = Omit<RegistrationAuditRequest, "take" | "afterSubmissionId">;
+7: /** A bounded source enumeration, not permission to issue covered certificates.
+8:  * The digest identifies this observation; source-insert revision fencing and
+9:  * durable proof publication are separate requirements still enforced by callers.
+10:  */
+11: export async function auditMetricRegistrationSources(db: Pick<PrismaClient, "$transaction">, scope: Scope,
+12:   limits = { rows: 1_000_000, pages: 2000 }) {
+13:   if (!Number.isSafeInteger(limits.rows) || limits.rows < 1 || limits.rows > 1_000_000
+14:     || !Number.isSafeInteger(limits.pages) || limits.pages < 1 || limits.pages > 2000) throw new Error("Invalid audit limits");
+15:   return db.$transaction(async tx => {
+16:     await tx.$executeRaw(Prisma.sql`SET TRANSACTION READ ONLY`);
+17:     await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+18:     const started = performance.now();
+19:     const digest = createHash("sha256").update(JSON.stringify({ format: "registration-source-audit-v2", vendorId: scope.vendorId, liveId: scope.liveId,
+20:       versionId: scope.versionId, startAt: scope.startAt.toISOString(), endAt: scope.endAt.toISOString() }));
+21:     const outcomes = { form_mismatch: 0, matched: 0, missing_capture: 0, missing_registration: 0, identity_mismatch: 0, other_version: 0 };
+22:     let cursor: string | null = null, count = 0;
+23:     let sourceRevision: bigint | undefined;
+24:     let registrationRevision: bigint | undefined;
+25:     for (let pageNumber = 0; pageNumber < limits.pages; pageNumber++) {
+26:       if (performance.now() - started >= 23000) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+27:       const page = await readRegistrationAuditPage(tx, { ...scope, take: 500, afterSubmissionId: cursor });
+28:       if (page.status !== "available") return page;
+29:       if (sourceRevision !== undefined && sourceRevision !== page.sourceRevision) throw new Error("Audit snapshot revision changed");
+30:       if (registrationRevision !== undefined && registrationRevision !== page.registrationRevision) throw new Error("Audit registration revision changed");
+31:       sourceRevision = page.sourceRevision;
+32:       registrationRevision = page.registrationRevision;
+33:       count += page.rows.length;
+34:       if (count > limits.rows) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+35:       for (const row of page.rows) {
+36:         outcomes[row.outcome]++;
+37:         digest.update(JSON.stringify([row.submissionId, row.outcome]) + "\n");
+38:       }
+39:       if (!page.hasMore) {
+40:         const reverse = await scanProjections(tx, scope, { rows: limits.rows - count, pages: limits.pages - pageNumber - 1 },
+41:           { sourceRevision, registrationRevision, started }, digest);
+42:         if (reverse.status !== "available") return reverse;
+43:         return { status: "enumerated" as const, coverage: "unknown" as const, sourceRevision, registrationRevision,
+44:           count, outcomes, projectionCount: reverse.count, projectionOutcomes: reverse.outcomes,
+45:           digest: digest.update(JSON.stringify([sourceRevision.toString(), registrationRevision.toString()])).digest("hex") };
+46:       }
+47:       if (page.rows.length === 0 || page.nextSubmissionId === null || page.nextSubmissionId === cursor) throw new Error("Audit cursor did not advance");
+48:       cursor = page.nextSubmissionId;
+49:     }
+50:     return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+51:   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000, maxWait: 5000 });
+52: }
+53: 
+54: async function scanProjections(tx: Pick<Prisma.TransactionClient, "$queryRaw">, scope: Scope,
+55:   budget: { rows: number; pages: number }, expected: { sourceRevision: bigint; registrationRevision: bigint; started: number }, digest: Hash) {
+56:   const outcomes = { matched: 0, invalid_source: 0, registration_without_capture: 0, capture_mismatch: 0 };
+57:   let cursor: string | null = null, count = 0;
+58:   // Distinguish directions so equal identifiers cannot produce ambiguous digests.
+59:   digest.update("reverse-projections\n");
+60:   for (let pageNumber = 0; pageNumber < budget.pages; pageNumber++) {
+61:     if (performance.now() - expected.started >= 23000) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+62:     const page = await readRegistrationProjectionAuditPage(tx, { ...scope, take: 500, afterSubmissionId: cursor });
+63:     if (page.status !== "available") return page;
+64:     if (page.sourceRevision !== expected.sourceRevision || page.registrationRevision !== expected.registrationRevision)
+65:       throw new Error("Audit reverse snapshot revision changed");
+66:     count += page.rows.length;
+67:     if (count > budget.rows) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+68:     for (const row of page.rows) {
+69:       outcomes[row.outcome]++;
+70:       digest.update(JSON.stringify([row.registrationId, row.outcome]) + "\n");
+71:     }
+72:     if (!page.hasMore) return { status: "available" as const, count, outcomes };
+73:     if (page.rows.length === 0 || page.nextRegistrationId === null || page.nextRegistrationId === cursor) throw new Error("Audit reverse cursor did not advance");
+74:     cursor = page.nextRegistrationId;
+75:   }
+76:   return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+77: }
+
+FILE src/lib/live-metric-registration-coverage.ts
+1: import { createHash } from "node:crypto";
+2: import { Prisma, type PrismaClient } from "@prisma/client";
+3: import { auditMetricRegistrationSources } from "./live-metric-registration-source-audit";
+4: type Scope = Parameters<typeof auditMetricRegistrationSources>[1];
+5: /** Private backend producer. Never accepts caller-supplied counts, proof or
+6:  * completeness. Only an internally completed, bidirectionally matched audit
+7:  * can publish; current revisions are checked again in the write transaction.
+8:  */
+9: export async function publishRegistrationCoverage(db: Pick<PrismaClient, "$transaction">, value: Scope) {
+10:   const scope = { vendorId: value.vendorId, liveId: value.liveId, versionId: value.versionId,
+11:     startAt: new Date(value.startAt), endAt: new Date(value.endAt) };
+12:   const audit = await auditMetricRegistrationSources(db, scope);
+13:   if (audit.status !== "enumerated") return { status: "unavailable" as const };
+14:   if (audit.count !== audit.projectionCount || audit.outcomes.matched !== audit.count
+15:     || audit.projectionOutcomes.matched !== audit.projectionCount) return { status: "incomplete" as const };
+16:   const proofId = createHash("sha256").update("registration-coverage-v1:" + audit.digest).digest("hex");
+17:   return db.$transaction(async tx => {
+18:     await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true),set_config('lock_timeout','2000',true)`);
+19:     const [version] = await tx.$queryRaw<{ sourceRevision: bigint }[]>(Prisma.sql`
+20:       SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=${scope.versionId}
+21:         AND "vendorId"=${scope.vendorId} AND "liveId"=${scope.liveId} FOR SHARE`);
+22:     if (!version || version.sourceRevision !== audit.sourceRevision) return { status: "source_changed" as const };
+23:     const [source] = await tx.$queryRaw<{ revision: bigint }[]>(Prisma.sql`
+24:       SELECT public.wp20_metric_registration_revision(${scope.vendorId},${scope.liveId}) AS revision`);
+25:     if (source.revision !== audit.registrationRevision) return { status: "source_changed" as const };
+26:     await tx.$queryRaw(Prisma.sql`
+27:       INSERT INTO "LiveMetricCoverageAudit" (id,"vendorId","liveId","versionId",kind,status,"startAt","endAt",
+28:         "sourceRevision","registrationRevision","registrationCount","auditDigest")
+29:       VALUES (${proofId},${scope.vendorId},${scope.liveId},${scope.versionId},'registrations','covered',${scope.startAt},${scope.endAt},
+30:         ${audit.sourceRevision},${audit.registrationRevision},${audit.count},${audit.digest}) ON CONFLICT (id) DO NOTHING`);
+31:     return { status: "recorded" as const, proofId };
+32:   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+33: }
+
+FILE src/lib/live-metric-coverage-reader.ts
+1: import { Prisma } from "@prisma/client";
+2: import { z } from "zod";
+3: import { assessMetricCoverage } from "./live-metric-coverage";
+4: import { readMetricReportContext } from "./live-metric-report-reader";
+5: import type { MetricReportLease } from "./live-metric-report-lease";
+6: 
+7: const Kind = z.enum(["visits", "registrations", "viewing", "orders"]);
+8: type AuditRow = { status: "covered" | "gap"; startAt: Date; endAt: Date };
+9: 
+10: /** Caller supplies the same RepeatableRead transaction used for report facts.
+11:  * Old positive certificates expire on structural revision changes; known gaps
+12:  * remain evidence of loss. No audit rows means unknown, never an audited zero.
+13:  */
+14: export async function readMetricCoverage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+15:   lease: MetricReportLease, value: z.infer<typeof Kind>) {
+16:   const kind = Kind.parse(value);
+17:   const context = await readMetricReportContext(tx, lease);
+18:   if (context.status !== "available") return context;
+19:   const rows = await tx.$queryRaw<AuditRow[]>(Prisma.sql`
+20:     SELECT a.status,a."startAt",a."endAt" FROM "LiveMetricCoverageAudit" a
+21:     JOIN "LiveMetricVersion" v ON v.id=a."versionId" AND v."vendorId"=a."vendorId" AND v."liveId"=a."liveId"
+22:     WHERE a."vendorId"=${lease.vendorId} AND a."liveId"=${lease.liveId} AND a."versionId"=${lease.versionId}
+23:       AND a.kind=${kind} AND (a.status='gap' OR (a."sourceRevision"=v."sourceRevision"
+24:         AND (a.kind<>'registrations' OR (a."registrationCount" IS NOT NULL
+25:           AND a."registrationRevision"=public.wp20_metric_registration_revision(a."vendorId",a."liveId")))))
+26:       AND a."startAt"<${context.context.windowEndAt} AND a."endAt">${context.context.windowStartAt}
+27:     ORDER BY a."startAt",a."endAt",a.id LIMIT 10001`);
+28:   if (rows.length > 10000) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+29:   const scope = { vendorId: lease.vendorId, liveId: lease.liveId, contentVersionId: lease.versionId, mode: context.context.mode };
+30:   const ranges = (status: AuditRow["status"]) => rows.filter(row => row.status === status)
+31:     .map(row => ({ scope, kind, startMs: row.startAt.getTime(), endMs: row.endAt.getTime() }));
+32:   return { status: "available" as const, rowCount: rows.length,
+33:     coverage: assessMetricCoverage({ scope, kind, startMs: context.context.windowStartAt.getTime(),
+34:       endMs: context.context.windowEndAt.getTime(), covered: rows.length ? ranges("covered") : null,
+35:       gaps: rows.length ? ranges("gap") : null }) };
+36: }
+
+FILE prisma/migrations/20261015120000_live_metric_coverage_audit/migration.sql
+1: -- Storage for independent collector audits. No backfill and no automatic
+2: -- certification from collectionEnabled, row counts or successful requests.
+3: CREATE TABLE public."LiveMetricCoverageAudit" (
+4:  id TEXT PRIMARY KEY,
+5:  "vendorId" TEXT NOT NULL, "liveId" TEXT NOT NULL, "versionId" TEXT NOT NULL,
+6:  kind TEXT NOT NULL CHECK (kind IN ('visits','registrations','viewing','orders')),
+7:  status TEXT NOT NULL CHECK (status IN ('covered','gap')),
+8:  "startAt" TIMESTAMPTZ(3) NOT NULL, "endAt" TIMESTAMPTZ(3) NOT NULL,
+9:  "sourceRevision" BIGINT NOT NULL CHECK ("sourceRevision">=0),
+10:  "auditDigest" CHAR(64) NOT NULL CHECK ("auditDigest" ~ '^[0-9a-f]{64}$'),
+11:  "recordedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+12:  CONSTRAINT "LiveMetricCoverageAudit_range_check" CHECK ("startAt"<"endAt"),
+13:  CONSTRAINT "LiveMetricCoverageAudit_version_fkey" FOREIGN KEY ("vendorId","liveId","versionId")
+14:  REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION
+15: );
+16: CREATE INDEX "LiveMetricCoverageAudit_scope_range_idx" ON public."LiveMetricCoverageAudit"("vendorId","liveId","versionId",kind,"startAt","endAt");
+17: CREATE FUNCTION public.wp20_metric_coverage_guard() RETURNS trigger
+18: LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+19: DECLARE v public."LiveMetricVersion"%ROWTYPE;
+20: BEGIN
+21:  IF TG_OP='DELETE' THEN
+22:   IF NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=OLD."versionId") THEN RETURN OLD; END IF;
+23:   RAISE EXCEPTION 'metric coverage audit requires parent deletion' USING ERRCODE='23514';
+24:  ELSIF TG_OP='UPDATE' THEN
+25:   RAISE EXCEPTION 'metric coverage audit is immutable' USING ERRCODE='23514';
+26:  END IF;
+27:  IF current_setting('transaction_isolation')<>'read committed' THEN
+28:   RAISE EXCEPTION 'metric coverage writes require read committed isolation' USING ERRCODE='23514';
+29:  END IF;
+30:  SELECT * INTO v FROM public."LiveMetricVersion" WHERE id=NEW."versionId"
+31:   AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+32:  IF NOT FOUND THEN RAISE EXCEPTION 'metric coverage scope unavailable' USING ERRCODE='23514'; END IF;
+33:  NEW."recordedAt":=date_trunc('milliseconds',clock_timestamp());
+34:  IF NEW."sourceRevision"<>v."sourceRevision" OR NEW."endAt">NEW."recordedAt"
+35:   OR NEW."endAt">v."expiresAt" THEN
+36:   RAISE EXCEPTION 'metric coverage revision or range unavailable' USING ERRCODE='23514';
+37:  END IF;
+38:  -- This is a necessary boundary, not proof of uninterrupted collection.
+39:  IF NEW.status='covered' AND (v."collectionStartedAt" IS NULL OR NEW."startAt"<v."collectionStartedAt") THEN
+40:   RAISE EXCEPTION 'metric coverage cannot certify pre-collection history' USING ERRCODE='23514';
+41:  END IF;
+42:  RETURN NEW;
+43: END $$;
+44: CREATE FUNCTION public.wp20_metric_coverage_changed() RETURNS trigger
+45: LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+46: BEGIN
+47:  UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+48:  WHERE "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" AND "versionId"=NEW."versionId"
+49:   AND "windowStartAt"<NEW."endAt" AND "windowEndAt">NEW."startAt" AND status<>'stale';
+50:  RETURN NULL;
+51: END $$;
+52: CREATE TRIGGER "LiveMetricCoverageAudit_guard" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricCoverageAudit"
+53:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_coverage_guard();
+54: CREATE TRIGGER "LiveMetricCoverageAudit_changed" AFTER INSERT ON public."LiveMetricCoverageAudit"
+55:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_coverage_changed();
+56: CREATE TRIGGER "LiveMetricCoverageAudit_no_truncate" BEFORE TRUNCATE ON public."LiveMetricCoverageAudit"
+57:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+58: ALTER TABLE public."LiveMetricCoverageAudit" ENABLE ROW LEVEL SECURITY;
+59: REVOKE ALL ON TABLE public."LiveMetricCoverageAudit" FROM PUBLIC;
+60: REVOKE ALL ON FUNCTION public.wp20_metric_coverage_guard(),public.wp20_metric_coverage_changed() FROM PUBLIC;
+61: DO $$ DECLARE api_role TEXT; BEGIN
+62:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+63:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+64:    EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricCoverageAudit" FROM %I',api_role);
+65:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_coverage_guard(),public.wp20_metric_coverage_changed() FROM %I',api_role);
+66:   END IF;
+67:  END LOOP;
+68: END $$;
+
+FILE prisma/migrations/20261015190000_live_metric_registration_coverage_proof/migration.sql
+1: -- Legacy positive registration audits lack this provenance and are not trusted.
+2: ALTER TABLE public."LiveMetricCoverageAudit"
+3:  ADD COLUMN "registrationRevision" BIGINT CHECK ("registrationRevision">=0),
+4:  ADD COLUMN "registrationCount" INTEGER CHECK ("registrationCount">=0);
+5: CREATE FUNCTION public.wp20_metric_registration_coverage_guard() RETURNS trigger
+6: LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+7: BEGIN
+8:  IF NEW."registrationRevision" IS NOT NULL THEN
+9:   IF NEW.kind<>'registrations' OR NEW.status<>'covered' OR NEW."registrationCount" IS NULL
+10:    OR NEW."registrationRevision" IS DISTINCT FROM public.wp20_metric_registration_revision(NEW."vendorId",NEW."liveId") THEN
+11:    RAISE EXCEPTION 'registration coverage source mismatch' USING ERRCODE='23514';
+12:   END IF;
+13:  END IF;
+14:  RETURN NEW;
+15: END $$;
+16: CREATE TRIGGER "LiveMetricCoverageAudit_registration_guard" BEFORE INSERT ON public."LiveMetricCoverageAudit"
+17:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_registration_coverage_guard();
+18: REVOKE ALL ON FUNCTION public.wp20_metric_registration_coverage_guard() FROM PUBLIC;
+19: DO $$ DECLARE api_role TEXT; BEGIN
+20:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+21:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+22:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_registration_coverage_guard() FROM %I',api_role);
+23:   END IF;
+24:  END LOOP;
+25: END $$;
+
+FILE scripts/wp20-registration-matched-audit.mjs
+1: import assert from 'node:assert/strict';
+2: /** Exercise the real lifecycle with an isolated synthetic live, not forged audit rows. */
+3: export async function verifyMatchedRegistrationAudit(db, service, vendor) {
+4:  const form=await db.registrationForm.create({data:{vendorId:vendor.id,name:'Synthetic matched audit',slug:'matched-audit',headline:'Synthetic',fields:[]}});
+5:  const video=await db.video.create({data:{vendorId:vendor.id,title:'Synthetic matched audit',videoUrl:'https://example.test/matched.mp4',durationSec:100}});
+6:  const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+7:  const start=new Date(+clock.now-1000),expires=new Date(+clock.now+3600000);
+8:  const live=await db.live.create({data:{vendorId:vendor.id,formId:form.id,videoId:video.id,title:'Synthetic matched audit',slug:'matched-audit',scheduledAt:start}});
+9:  const versionId='matched-audit-version';
+10:  let phase='setup';
+11:  try {
+12:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ($1,$2,$3,$4,'live',$5,true,$6,$7)`,versionId,vendor.id,live.id,video.id,'d'.repeat(64),start,expires);
+13:   // An audited empty source is distinguishable from missing historical evidence.
+14:   const [emptyClock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+15:   const emptyScope={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:emptyClock.now};
+16:   phase='empty-proof';
+17:   const emptyProof=await service.publishRegistrationCoverage(db,emptyScope);
+18:   assert.equal(emptyProof.status,'recorded');
+19:   const [emptyRow]=await db.$queryRawUnsafe('SELECT "registrationCount" FROM "LiveMetricCoverageAudit" WHERE id=$1',emptyProof.proofId);
+20:   assert.equal(emptyRow.registrationCount,0);
+21:   phase='matched-source';
+22:   const submission=await db.formSubmission.create({data:{formId:form.id,liveId:live.id,name:'Synthetic',email:'matched@example.test',verificationStatus:'UNVERIFIED'}});
+23:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistrationCapture" ("submissionId","vendorId","liveId","versionId") VALUES ($1,$2,$3,$4)`,submission.id,vendor.id,live.id,versionId);
+24:   const [verified]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+25:   await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'VERIFIED',verifiedAt:verified.now}});
+26:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistration" (id,"vendorId","liveId","versionId","submissionId","verifiedAt") VALUES ('matched-audit-registration',$1,$2,$3,$4,$5)`,vendor.id,live.id,versionId,submission.id,verified.now);
+27:   // Let DB time move beyond the verified timestamp before closing the half-open window.
+28:   await db.$executeRawUnsafe('DO $$ BEGIN PERFORM pg_sleep(0.005); END $$');
+29:   const [end]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+30:   const scope={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:end.now};
+31:   const result=await service.auditMetricRegistrationSources(db,scope);
+32:   assert.equal(result.status,'enumerated');assert.equal(result.count,1);assert.equal(result.projectionCount,1);
+33:   assert.equal(result.outcomes.matched,1);assert.equal(result.projectionOutcomes.matched,1);
+34:   assert.equal(Object.values(result.outcomes).reduce((a,b)=>a+b,0),1);
+35:   assert.equal(Object.values(result.projectionOutcomes).reduce((a,b)=>a+b,0),1);
+36:   assert.equal(result.coverage,'unknown');
+37:   const repeated=await service.auditMetricRegistrationSources(db,scope);
+38:   assert.equal(repeated.digest,result.digest);
+39:   // Force a committed source change after the audit snapshot closes and before
+40:   // the publisher starts its write transaction. This is a real DB race boundary.
+41:   let transactions=0;
+42:   const racingDb={$transaction:async (callback,options)=>{
+43:    const answer=await db.$transaction(callback,options);
+44:    if (++transactions===1) await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'UNVERIFIED'}});
+45:    return answer;
+46:   }};
+47:   phase='race-count';
+48:   const proofCount=async()=>{const [row]=await db.$queryRawUnsafe('SELECT COUNT(*)::integer AS count FROM "LiveMetricCoverageAudit" WHERE "versionId"=$1',versionId);return row.count;};
+49:   const countBeforeRace=await proofCount();
+50:   phase='race-publish';
+51:   assert.deepEqual(await service.publishRegistrationCoverage(racingDb,scope),{status:'source_changed'});
+52:   assert.equal(await proofCount(),countBeforeRace);
+53:   await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'VERIFIED'}});
+54:   phase='post-race-publish';
+55:   const proof=await service.publishRegistrationCoverage(db,scope);
+56:   assert.equal(proof.status,'recorded');
+57:   assert.deepEqual(await service.publishRegistrationCoverage(db,scope),proof);
+58:   phase='coverage-read';
+59:   const coverage=async id=>{
+60:    const [v]=await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1',versionId);
+61:    const lease={vendorId:vendor.id,liveId:live.id,versionId,reportId:id,workerId:'matched-audit-worker'};
+62:    await db.$queryRawUnsafe('SELECT public.wp20_metric_report_create($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::bigint,$8::timestamptz)',vendor.id,live.id,versionId,id,start,end.now,v.sourceRevision,expires);
+63:    assert.equal(await service.claimMetricReport(db,lease),true);
+64:    return db.$transaction(async tx=>{
+65:     await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+66:     return service.readMetricCoverage(tx,lease,'registrations');
+67:    },{isolationLevel:'RepeatableRead',timeout:10000});
+68:   };
+69:   assert.deepEqual((await coverage('matched-audit-before-revoke')).coverage,{status:'complete'});
+70:   // Current source identity changes must make the persisted projection visibly invalid.
+71:   await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'UNVERIFIED'}});
+72:   const changed=await service.auditMetricRegistrationSources(db,scope);
+73:   assert.equal(changed.status,'enumerated');assert.equal(changed.count,0);
+74:   assert.equal(changed.projectionCount,1);assert.equal(changed.projectionOutcomes.invalid_source,1);
+75:   assert.ok(changed.registrationRevision>result.registrationRevision);
+76:   assert.notEqual(changed.digest,result.digest);
+77:   assert.deepEqual(await service.publishRegistrationCoverage(db,scope),{status:'incomplete'});
+78:   assert.deepEqual((await coverage('matched-audit-after-revoke')).coverage,{status:'unavailable',reason:'unknown_history'});
+79:   return {status:'PASS',matchedBothDirections:'PASS',stableDigest:'PASS',revokedSourceDetected:'PASS',privateProofPublish:'PASS',emptySourceProof:'PASS',auditToPublishRace:'PASS',staleProofRejected:'PASS',coverage:'complete before revoke; unknown after revoke'};
+80:  } catch(error) { error.auditPhase=phase; throw error; } finally {
+81:   await db.$executeRawUnsafe('DELETE FROM "LiveMetricVersion" WHERE id=$1',versionId);
+82:   await db.live.delete({where:{id:live.id}});
+83:   await db.registrationForm.delete({where:{id:form.id}});
+84:   await db.video.delete({where:{id:video.id}});
+85:  }
+86: }

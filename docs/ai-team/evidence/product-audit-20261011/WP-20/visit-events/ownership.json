@@ -1,0 +1,1 @@
+{"writer": "root", "files": ["prisma/schema.prisma", "prisma/migrations/20261014180000_live_metric_visits/migration.sql", "scripts/wp20-metric-persistence-disposable.mjs"], "depth": 0, "automatic_spawn": false}

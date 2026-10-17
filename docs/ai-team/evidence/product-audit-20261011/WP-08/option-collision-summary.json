@@ -1,0 +1,23 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:7a5680b3ba8bebe78af3525a9c5f7b0dd0e25147af5680a64b1147e1569c2941",
+  "changed_files": [
+    "src/components/landing-pages/funnel-display-labels.ts",
+    "src/components/landing-pages/funnel-display-labels.test.ts",
+    "src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap"
+  ],
+  "targeted_passed": 79,
+  "lint": "PASS",
+  "typecheck": "PASS",
+  "diff_check": "PASS",
+  "source_hashes": "unchanged after tests",
+  "findings_disposition": "suffix collision repaired with unique positional prefixes only on final collisions; ZWSP/BOM removed from display only; complete status snapshot added and inspected",
+  "review": "repair independent verification NOT_RUN; whole integrated review incomplete",
+  "browser": "NOT_RUN on this repair revision",
+  "remaining": [
+    "repair independent review",
+    "current snapshot browser receipt",
+    "remaining integrated diff review",
+    "canonical acceptance"
+  ]
+}

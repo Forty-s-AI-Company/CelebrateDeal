@@ -1,0 +1,29 @@
+{
+  "source": "security-review-cli.json",
+  "reviewed_revision": "sha256:92818023d3973be2a435fc5f6bd746e87f1843d8395be03d4abee5319d8c12b7",
+  "current_revision": "sha256:5e9a1e6626cbb26b69fc5aeaa2b1d0112393b8d43da3d33904eebf1a9bd3f3ef",
+  "independent_rereview": "BUDGET_EXHAUSTED after AGY RATE_LIMITED; no further dispatch",
+  "implementation_dispositions": [
+    {
+      "finding": "MAJOR unbounded storage",
+      "action": "Active/published form and schema eligibility; global128 physical-row cap with transaction advisory lock; PostgreSQL concurrent boundary PASS",
+      "remaining": "Independent review pending; IP trust remains WP11; global cap does not trust IP"
+    },
+    {
+      "finding": "MINOR cookie mismatch",
+      "action": "Shared protocol helper and HTTP/HTTPS tests PASS"
+    },
+    {
+      "finding": "MINOR parser throws",
+      "action": "Rejected with reason: bounded parser returns null and catches multipart errors; >1MB and malformed multipart route tests PASS"
+    },
+    {
+      "finding": "MINOR extra origin gate",
+      "action": "Removed wrapper gate; original same-origin process unchanged; retention still requires canonical origin"
+    },
+    {
+      "finding": "MINOR checkbox duplicates",
+      "action": "Rejected with reason: schema supports single-valued text/email/tel/number/url only; duplicate fields remain invalid"
+    }
+  ]
+}

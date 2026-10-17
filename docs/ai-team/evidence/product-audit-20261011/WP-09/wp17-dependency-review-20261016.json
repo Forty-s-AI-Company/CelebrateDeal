@@ -1,0 +1,187 @@
+{
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "review": {
+    "summary": "WP-09 does not need all of WP-17 to be complete. WP-09's acceptance criteria are: at least 3 sales templates and 3 webinar templates, legacy compatibility, applying and publicly publishing templates, targeted tests, a public E2E run and axe scans. All of these use only WP-17's local capability: the one-entry webinar creation flow, generated pages, public registration and playback. That local subitem is canonical READY and passed in a real browser. The parts of WP-17 still open are the WP-02/WP-04 scheduler and actual external reminder delivery. WP-09's acceptance never uses those, and WP-09 explicitly does not claim reminders, Email/LINE, payment settlement or Production publishing. So the WP-17 prerequisite can count as met by the local READY capability. WP-17 stays incomplete, and its external reminder and provider requirements remain open and owned by WP-17.\n\nI found no BLOCKER or MAJOR issues. Three MINOR traceability and guard gaps should be closed before WP-09 is recorded as complete.\n\nFuture guards this completion needs:\n1. Record the dependency as scoped to the WP-17 local subitem at a pinned revision, so it is not read as whole WP-17 being done.\n2. If that WP-17 local subitem's revision changes or loses READY status, rerun WP-09's public E2E and axe checks.\n3. WP-09 templates must not promise or switch on reminder, Email/LINE or payment-settlement behavior until WP-17 and its providers have their own verified completion. If any template adds that, it is new scope that needs WP-17 complete first.\n4. Whole-WP-17 completion still needs real scheduler and external reminder delivery evidence. WP-09's completion must not be cited as evidence for it.\n\nAn empty set of BLOCKER/MAJOR findings does not certify release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "Authoritative plan: WP-09 dependency list",
+        "area": "WP-09 Dependencies: 'WP-08, WP-17, content authorization'",
+        "issue": "The plan lists the whole of WP-17 as a dependency without saying which part. If WP-09 completes while whole WP-17 is incomplete, a gate check could flag the dependency as unmet, or a later reader could take WP-09's completion to mean WP-17's reminder/provider scope was accepted.",
+        "evidence": "The plan lists WP-17 as a dependency. The evidence says whole WP-17 is incomplete (scheduler and external reminder delivery pending), while only the local creation/registration/playback subitem is canonical READY.",
+        "impact": "Ambiguous gate state: either WP-09 waits on unrelated external-delivery work, or WP-17's external requirements are wrongly treated as satisfied.",
+        "recommended_fix": "Record WP-09's prerequisite as 'WP-17 local subitem (one-entry creation, generated pages, public registration, Email verification, synthetic playback, payment-gate preservation) canonical READY'. Explicitly state that WP-17's reminder/scheduler/provider requirements stay open and owned by WP-17. Do not delete or weaken them.",
+        "required_test": "A gate/traceability check showing WP-09 depends on the WP-17 local subitem ID and that WP-17 still lists open scheduler and external-reminder acceptance items.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "WP-09 completion evidence record",
+        "area": "WP-17 local subitem READY reference",
+        "issue": "The evidence pins WP-09 to its own source revision hash but gives no revision or hash for the WP-17 local subitem that WP-09's browser flow actually used. So it is not shown that the six-template public registration flow ran against the same WP-17 build that holds READY.",
+        "evidence": "'WP-09 current source hashes match revision sha256:7a2dd025…'. WP-17 is described only as 'local subitem canonical READY and actual browser passed', with no revision binding.",
+        "impact": "If WP-17's local flow changes later, WP-09's E2E and axe evidence could go stale without anyone noticing, while the dependency still shows as satisfied.",
+        "recommended_fix": "Record the WP-17 local subitem's revision/hash next to WP-09's revision in the completion record. Add a guard that reruns WP-09's public E2E and axe checks if that revision changes or loses READY status.",
+        "required_test": "Evidence showing the WP-09 six-template apply/publish/registration E2E ran against the recorded WP-17 subitem revision. A gate check that invalidates WP-09 completion if the hash doesn't match.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "WP-09 completion evidence record",
+        "area": "Template content / scope guard for reminder and provider claims",
+        "issue": "Completion depends on WP-09 not consuming reminder/Email/LINE/payment-settlement delivery. But the evidence names no check that stops webinar template copy or settings from promising or enabling reminders that WP-17 can't deliver yet.",
+        "evidence": "'WP-09 does not claim to deliver reminders, Email/LINE, payment settlement or Production publishing' is stated as a claim, not tied to a test or content-review item. The templates are editable and generic.",
+        "impact": "Published webinar pages could tell registrants they will get reminders that never arrive. That would make WP-17's external delivery gap a real WP-09 dependency after the fact.",
+        "recommended_fix": "Add a guard (test or content-review checklist) confirming the 3 webinar templates neither render nor enable reminder, LINE or payment-settlement promises while WP-17 external delivery is pending. Or gate any such blocks on WP-17 being fully complete.",
+        "required_test": "A targeted test or snapshot check over the webinar templates' rendered output confirming there is no reminder/LINE/settlement promise and no reminder trigger, plus a review sign-off.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "plan_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "payment"
+      ],
+      "important_findings": true,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "plan_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "QUOTA_EXHAUSTED",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "QUOTA_EXHAUSTED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "completed": false,
+  "execution_provider": "claude_cli"
+}

@@ -1,0 +1,187 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "deep_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "concurrency",
+        "migration",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "deep_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I re-reviewed only the supplied files and snippets. I found no BLOCKER or MAJOR issues. All five earlier findings look addressed in this code:\n- **Storage cap:** an advisory transaction lock, a purge, and a count of all physical rows, including expired ones not yet purged, put a hard cap of 128 rows on drafts. Only saveRegistrationRetryDraft inserts rows.\n- **Cookie names:** the writer and reader now use the same helpers. Both always choose the secure `__Host-` name outside development or when NEXT_PUBLIC_APP_URL is https.\n- **Oversized/invalid bodies:** the bounded parser returns null instead of throwing, and processSubmission exceptions are mapped to a 503.\n- **Origin check:** the extra check is gone from the submission wrapper. Only the draft-save step checks Origin against NEXT_PUBLIC_APP_URL.\n- **Duplicate/non-text fields:** these are rejected, which matches a schema that only allows single-valued text, email, tel, number and url fields.\n\nOther checks: the 400k size cap holds against my own worst-case estimate (about 389 KB if every one of the 32×2000 characters is written as a 6-byte \\uXXXX escape, plus metadata). `__proto__` keys are blocked by the key pattern. The redirect target is limited to same-origin entry paths, and the encrypted envelope binds idHash, formId, sourcePath and expiresAt.\n\nRemaining risks, each reported below as MINOR: (1) anyone can fill the shared 128-row cap and keep it full, which turns off draft saving for all users, and every request queues on one lock; (2) the cap only holds if the transaction runs at READ COMMITTED or SERIALIZABLE, and the isolation level isn't set in code; (3) the writer doesn't check the encrypted length that the reader enforces.\n\nNot verifiable from the supplied text:\n- the output format of encryptSensitiveValue;\n- how processSubmission handles a null formData;\n- how checkRateLimit stores and keys its counters;\n- the Prisma or database default isolation level and pool size;\n- lock key collisions elsewhere;\n- page-level publish and access checks before the boundary runs;\n- remote CI and human acceptance testing, both of which were not run.\n\nThe PASS receipts, real-database concurrency results and browser tests you cite were described but not supplied, so I haven't verified them. An empty or non-blocking result here doesn't certify a release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry.ts",
+        "area": "saveRegistrationRetryDraft: global REGISTRATION_RETRY_MAX_ROWS=128 cap + pg_advisory_xact_lock(1760313600, 5); src/lib/registration-form-retry-response.ts registrationRetryResponse rate limit",
+        "issue": "One unauthenticated client can easily fill the shared 128-row cap and keep it full. Every draft write also queues on one advisory lock while holding a pooled DB connection, including when the table is already full.",
+        "evidence": "An eligible public form is enough to save a draft. Failing on purpose (for example, leaving a required field empty) leads to registrationRetryResponse and then saveRegistrationRetryDraft. The attacker sends no cookie, so no earlier draft is deleted, and each row stays for 10 minutes. The only per-client limit is checkRateLimit (10/min per IP), and the task itself says the forwarded IP can be spoofed until WP11. Inside the transaction, the lock is taken before count(), so requests rejected because the table is full still wait in line for the lock.",
+        "impact": "About 128 requests every 10 minutes make every real user's no-JS retry fall back to 'unavailable'. This fails safely, with no data exposure and no growth beyond the cap, but the feature loses availability. A spoofed-IP flood also makes many transactions wait on one lock, each holding a Prisma pool connection, which can slow other DB work, including the main submission path.",
+        "recommended_fix": "Treat this as an accepted residual risk with an owner (WP11 IP trust), or reduce it. Options: run a cheap count() before the transaction and return early when the table is full; set short maxWait/timeout values on $transaction; add per-form or per-sourcePath sub-limits so one form can't use up the global pool. Record the risk in the WP05 risk register.",
+        "required_test": "Integration test: with 128 rows already present, N concurrent saves (N greater than the pool size) all return null within a set time, and a separate DB query on the same pool still completes. Also confirm the route returns registrationRetry=unavailable.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry.ts",
+        "area": "saveRegistrationRetryDraft: db.$transaction(async (tx) => ...) without an isolationLevel option",
+        "issue": "The cap is only correct under READ COMMITTED (or SERIALIZABLE). The isolation level isn't set in code. Under REPEATABLE READ, PostgreSQL takes the snapshot when the first statement starts, which is the pg_advisory_xact_lock SELECT, before the lock wait ends. count() would then miss rows that other transactions committed during the wait.",
+        "evidence": "The first statement in the transaction is `SELECT pg_advisory_xact_lock(...)`, and the count() and create() that follow depend on seeing earlier commits. Prisma uses the database default isolation level, which can be changed with default_transaction_isolation or a global Prisma setting. The supplied concurrency test (8 writers, 127 rows occupied) only shows behavior under whatever default the test database had.",
+        "impact": "If the deployment's default isolation is ever REPEATABLE READ, concurrent writers can push the table past 128 rows, so the physical storage limit no longer holds.",
+        "recommended_fix": "Pass `{ isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }` (or Serializable, with retry handling) to $transaction so the cap no longer depends on database configuration.",
+        "required_test": "Repeat the real-PostgreSQL concurrency test with default_transaction_isolation set to 'repeatable read' at the database or role level. Exactly one write should succeed, with at most 128 rows at the end.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry.ts",
+        "area": "saveRegistrationRetryDraft (no envelope-length check) vs readRegistrationRetryDraft `stored.encryptedPayload.length > MAX_ENVELOPE_CHARS`",
+        "issue": "The writer checks plaintext byte length, but the reader checks ciphertext character length against a formula that assumes base64 output plus at most 64 characters of overhead. Whether the two agree depends on encryptSensitiveValue's output format, which wasn't supplied. The writer doesn't check the bound the reader enforces.",
+        "evidence": "MAX_ENVELOPE_CHARS = 4*ceil(400000/3)+64. If the envelope uses hex, separate base64 segments with padding, a longer version or key-id prefix, or any overhead above 64 characters, a payload near the cap can be stored but never read back.",
+        "impact": "A legitimate large draft (for example, many long fields with control or escaped characters) would take up one of the 128 slots, and the retry would silently show 'not preserved'. This is not a confidentiality issue.",
+        "recommended_fix": "Before create(), add `if (encryptedPayload.length > MAX_ENVELOPE_CHARS) return null;` so writer and reader use the same bound. Alternatively, derive the bound from the encryptSensitiveValue format and test it.",
+        "required_test": "Unit test: save a draft with 32 fields of 2000 control characters each, the longest formId, liveId and sourcePath, and check that readRegistrationRetryDraft returns it (or that the save returns null, never stored but unreadable).",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ]
+}

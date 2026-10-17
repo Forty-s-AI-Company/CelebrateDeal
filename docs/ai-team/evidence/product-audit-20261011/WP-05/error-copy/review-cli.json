@@ -1,0 +1,177 @@
+{
+  "reviewed": true,
+  "completed": false,
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "observed": {
+    "model": "claude-sonnet-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "finalModel": "claude-sonnet-5-5",
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "The supplied change meets the stated scope. Named statuses (400/403/429/404/503) keep their messages, any other defined status gets neutral retry guidance without network advice, and a no-status rejection keeps the network advice. I found no BLOCKER or MAJOR defects. Two low-severity observations remain. The `status !== undefined` guard also treats 0 and NaN as HTTP responses, and the tests cover only the helper, not the call sites that must pass `response.status`. No tests were run; this review is based only on the supplied text.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "formSubmissionErrorMessage (helper module, supplied snippet)",
+        "area": "fallback branch `if (status !== undefined)`",
+        "issue": "The guard treats any defined value, including 0 or NaN, as a received HTTP response. A caller that passes a sentinel such as 0 for a failed/opaque fetch would show \"server rejected\" neutral text instead of network guidance.",
+        "evidence": "`if (status !== undefined) return \"資料暫時無法送出；內容仍保留，請稍後再試。\";` The tests exercise only 409/422/500/502/504 and `undefined`; no 0/NaN case.",
+        "impact": "Low. Real fetch rejections throw rather than yield status 0, so this only matters if a call site normalizes a missing status to 0 or NaN. The result would be network advice mistakenly suppressed.",
+        "recommended_fix": "Treat only valid HTTP statuses as present, e.g. `if (Number.isInteger(status) && status >= 100) ...`. Otherwise fall through to the network message. Alternatively, document that callers must pass `undefined` for transport failures.",
+        "required_test": "Assert that `formSubmissionErrorMessage(0)` and `formSubmissionErrorMessage(NaN)` return the network-check message, if the stricter guard is adopted.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "NIT",
+        "file": "Call sites of postRegistrationSubmission / formSubmissionErrorMessage (not supplied)",
+        "area": "Integration of status propagation (outside supplied scope)",
+        "issue": "The new neutral message only takes effect if call sites pass `response.status` on non-OK responses. The supplied tests cover the helper in isolation, so they cannot show that a caller does not call `formSubmissionErrorMessage()` without a status after an HTTP failure, for example in a catch block after a JSON parse error.",
+        "evidence": "Only the helper and its unit tests were supplied. The original MINOR concerned HTTP failures being given network advice, which depends on caller behavior.",
+        "impact": "If any caller omits the status on an HTTP error, users would still see the misleading network advice. This cannot be confirmed or ruled out from the supplied text.",
+        "recommended_fix": "Have the callers read `response.status` before any body parsing. Pass it to `formSubmissionErrorMessage` for every `!response.ok` result, and pass `undefined` only when `fetch` rejects.",
+        "required_test": "Add a component or integration test with a mocked `fetch` resolving to `{ ok: false, status: 500, json: () => Promise.reject(...) }`, asserting the rendered message lacks \"網路\". Add one with `fetch` rejecting, asserting it contains \"檢查網路\".",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "accepted": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "low",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "routine",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "business_review",
+    "difficulty": "low",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/lib/registration-submission-client.ts",
+      "src/lib/registration-submission-client.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/lib/registration-submission-client.test.ts",
+      "src/lib/registration-submission-client.ts"
+    ],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

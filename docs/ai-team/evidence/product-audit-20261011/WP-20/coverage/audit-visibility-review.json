@@ -1,0 +1,182 @@
+{
+  "agy_discovery_process_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "exitCode": 3
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "permission",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I reviewed only the three supplied files. Calls run one after another work as intended. The guard checks for a primary repeatable-read transaction before it changes anything. It turns row_security off with is_local and lowers statement_timeout to at most 5000 ms, or 5000 ms when it was 0. It restores both settings afterwards and keeps the original error when restoring fails after a SQL abort. All audit kinds go through the guard, including the revision CTE. Gap rows are kept in both SQL and TypeScript. Visits and viewing can never show positive coverage. A known visit audit gap returns the not_read gap result without reading sources. Two problems remain. (1) MAJOR, conditional: the guard has no protection when two calls run at the same time on the same transaction. If a caller fetches several kinds at once (for example with Promise.all), one read can run with row_security back on. That brings back the silent RLS filtering this fix is meant to stop. (2) MINOR: the 'primary repeatable read' check passes for a non-transaction or pooled client when the database's default isolation is repeatable read. The settings change then does not stick, and nothing checks again before the read. The read-sources algorithm was not re-reviewed beyond how it is wrapped. Callers, the schema and SQL functions, RLS policies, grants, tests and deployment were not supplied and are not certified. No test or release result is claimed. Items the brief already lists as still open are not repeated here.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-metric-read-visibility.ts",
+        "area": "withMetricReadVisibility: settings capture, set_config(off) and finally restore (whole function body)",
+        "issue": "Nothing prevents two calls running at the same time on the same transaction. Each call saves the current row_security value and puts it back later at its own await points. If two calls overlap, one call's restore can turn RLS back on while the other call is still reading.",
+        "evidence": "Sequence on one tx: A reads rowSecurity='on' and sets off. B then reads rowSecurity='off', because A already changed it, and sets off. A finishes and restores 'on'. B's read() now runs with row_security=on, so RLS filters rows silently instead of raising 42501. B then 'restores' 'off', which leaves RLS off and the tighter timeout in place for the rest of the transaction. Nothing serializes calls or rejects re-entry, and the read never re-checks current_setting('row_security') before running. readMetricCoverage is a per-kind API, so a caller that fetches several kinds at once (for example Promise.all over registrations/orders/visits) on one tx triggers this.",
+        "impact": "An RLS-filtered audit read can again show only covered rows and hide gap rows. Registration/order coverage would then be reported as complete when it is not, which is exactly the problem this fix targets. Other statements in the same transaction can also run with RLS off and a shortened timeout. Because RLS off fails instead of granting access, this causes spurious failures rather than data exposure. It only happens if a caller runs these reads concurrently. Callers were not supplied.",
+        "recommended_fix": "Serialize use per transaction: keep a WeakMap<tx, state> and reject, or queue, a second call while one is active. On re-entry, reuse the outer call's state instead of saving 'off' as the original value. As extra protection, re-check current_setting('row_security')='off' right before or inside each read statement. Alternatively, document and enforce in the type that callers must never run these reads concurrently on one tx.",
+        "required_test": "Use a synthetic non-owner role subject to RLS, with a policy that shows only covered audit rows, and a real repeatable-read transaction with a valid lease. Run Promise.all([readMetricCoverage(tx,lease,'registrations'), readMetricCoverage(tx,lease,'orders')]). Expect every read to reject with 42501 or a concurrency error, never a completeness result. Afterwards, current_setting('row_security') and statement_timeout must match their original values.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-read-visibility.ts",
+        "area": "isolation/primary check and set_config(...,true) before read()",
+        "issue": "The 'primary repeatable read' check doesn't prove the reads share one transaction. If default_transaction_isolation is repeatable read, a pooled or autocommit client passes the check. set_config with is_local=true is then undone when its own statement ends, so read() runs with row_security still on.",
+        "evidence": "The guard reads current_setting('transaction_isolation') once, in a separate statement. set_config('row_security','off',true) only lasts for the current transaction. The parameter type Pick<Prisma.TransactionClient,'$queryRaw'> also accepts a PrismaClient. Nothing re-checks that row_security is actually 'off' before read() runs. The doc comment forbids pooled clients, but nothing in the code enforces that.",
+        "impact": "If a future or misconfigured caller passes a pooled client on a database with repeatable read as the default, the audit read silently drops RLS-filtered rows, so gaps are hidden and coverage can falsely look complete. The brief says actual callers pass an explicit transaction, but the callers weren't supplied, so this is only extra protection.",
+        "recommended_fix": "After the set_config, run a check that current_setting('row_security')='off' and that statement_timeout has the expected value, and throw if not. Better, make every read statement include that check, so a pooled client or a statement on a different connection fails instead of being silently filtered. Optionally use a branded transaction-facade type so a PrismaClient can't be passed.",
+        "required_test": "Use a synthetic database or role with default_transaction_isolation='repeatable read'. Call readMetricCoverage with the non-transaction PrismaClient and an RLS policy that hides gap rows. Expect a rejection, never a coverage result built from filtered rows.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "completed": false,
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "normalized_status": "REVIEW_COMPLETED"
+}

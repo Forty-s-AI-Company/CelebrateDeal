@@ -1,0 +1,10 @@
+{
+  "files": {
+    "prisma/migrations/20261015170000_live_metric_registration_source_revision/migration.sql": "fea7c962d49e054787d0a496ab8ec722c6bf1f6124c2805ed7c363f0c8e79fbc",
+    "prisma/migrations/20261015180000_live_metric_registration_report_binding/migration.sql": "a0bbe40a79af4c7db8ee8d6c9f8396a2b854fa9b55f3fe982d2a82bd76bbfadf",
+    "src/lib/live-metric-report-reader.ts": "228420600149c24a0149b6d02401403b1a9070992d106702656c05ca139fa664",
+    "src/lib/live-metric-completion-store.ts": "b8b71f37d50596dffbadce94ba7ef7dee98e750c50382e9df8027565a37eb7de",
+    "scripts/wp20-registration-source-concurrency.mjs": "5c8c4a207c01f3aaa1adf3ef163521626f6d0eaf270515c6f71af3907c620f79",
+    "scripts/wp20-metric-source-invalidation.mjs": "fa87d92eb137a90ad765d773298bc2447758d77088275b1d136dcd5eb4b39ce4"
+  }
+}

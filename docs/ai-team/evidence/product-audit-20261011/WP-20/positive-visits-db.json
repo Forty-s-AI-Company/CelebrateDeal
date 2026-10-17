@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "stage": "negative-and-permission",
+  "checks": {
+    "actualHttpAndGuardedSourceWrites": "PASS",
+    "openFrameCannotBeDeleted": "PASS",
+    "admissionAfterClosureRejected": "PASS",
+    "actualPrivateProducerPublished": "PASS",
+    "actualLeaseReaderAcceptsMatchingVisitsProof": "PASS",
+    "sealedFactsAndIntentsFrozenButRetryReadable": "PASS",
+    "legacyViewingAndFailedReceiptCannotCertify": "PASS",
+    "nonOwnerCannotForgeProofOrMarker": "PASS",
+    "parentCascadeCleansProof": "PASS"
+  },
+  "browser": "NOT_RUN",
+  "fullFiveMetrics": "NOT_RUN",
+  "sourceCounts": {
+    "pages": 10,
+    "intents": 10,
+    "visits": 10
+  },
+  "migrationStatus": "PASS",
+  "migrationCount": 130,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

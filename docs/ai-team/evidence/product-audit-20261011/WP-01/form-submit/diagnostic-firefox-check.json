@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "registration-firefox-diagnostic", "revision": "sha256:b6133a5651789c22c497e8a860d5786d1428e0ebe65700cbf0e5cff4d3d20a84", "status": "PASS", "exit_code": 0, "duration_seconds": 36.391}

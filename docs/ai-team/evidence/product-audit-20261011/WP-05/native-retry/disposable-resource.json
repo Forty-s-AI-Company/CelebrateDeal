@@ -1,0 +1,9 @@
+{
+  "container": "celebratedeal-wp05-retry-20261012",
+  "container_id": "adf15c5b5ef6bd57be32c2dd3aaeba62a61e67a2aa945d20d5da2cdc097fce26",
+  "host": "127.0.0.1",
+  "port": 64506,
+  "database": "celebratedeal_test",
+  "synthetic_only": true,
+  "existing_databases_untouched": true
+}

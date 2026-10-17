@@ -1,0 +1,102 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "sourceHashes": {
+    "scripts/wp20-next-runtime-probe.mjs": "24eb586481b7cf77945be83a1d0ee7ec3bf2adb42c7f32af59b3bfbef68acc0d",
+    "scripts/wp20-next-runtime-disposable.mjs": "1e94fbba02a42e6933dae5368c897c33977ea29ff086ffe1036b1e74ff759f56",
+    "src/lib/live-metric-ingress-gateway.ts": "3b3e4e2a1eff199e12d5dd3908940f5dcb851d6439226c13c38472541062dd67",
+    "src/lib/live-metric-ingress-proof.ts": "0f705bd92ad4317506f2341c7722bcbacc03110f80043723b5893f46ead8165a",
+    "src/lib/live-metric-ingress-source.ts": "197af2ea54aecb4413c7d914c8f8b033f4a6d14e7e6eb1e8910aabd587fabe26",
+    "src/components/metric-registration-visit.tsx": "76af1a5af88ec7df64c133b6925d14aece6498dcb85b97fbfda0b717021af850",
+    "src/app/form/[slug]/page.tsx": "d34f790b8a67c0bd4588331f9f16ab47040fe84ba19f90dac38244f2f3252cd3",
+    "src/app/(viewer)/live/[slug]/page.tsx": "8c72f5b0f55a234b080a588ee9c392ebd9a1dd394af6adc39b31832c47dd24f6",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "8c0629c4d838688e1f97a6610ec3062cd0abf7dbdc17dc777996989e9b79d45c",
+    "prisma/schema.prisma": "504ebc9b3776a4804918c80e1701a2bd3fe6466f9cbd2ea189c32135add694a7"
+  },
+  "runtime": {
+    "status": "PASS",
+    "stage": "complete",
+    "checks": {
+      "bootstrapDisabledCollectionLeavesNoSource": "PASS",
+      "ownedFullNextStartupWithExactMarker": "PASS",
+      "actualNextFormSsrHydrationPrepareAndVisitPersist": "PASS",
+      "realBrowserRefreshPreservesFirstPartyVisitorIdentity": "PASS",
+      "actualNextViewerSsrHydrationUsesSameVisitor": "PASS",
+      "allRealPageSourcesBoundAndSixCanonicalVisitApiResponses": "PASS"
+    },
+    "server": {
+      "started": true,
+      "ready": true,
+      "stopped": true,
+      "classifications": [
+        "READY_MARKER"
+      ],
+      "spawnError": false,
+      "starts": 2
+    },
+    "browser": {
+      "sourceResponses": [
+        200,
+        200,
+        200
+      ],
+      "visitResponses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "blockedExternal": 0,
+      "blockedAuxiliary": 1,
+      "assetStatuses": {
+        "200": 24
+      },
+      "encodedAssets": 23,
+      "firstSourceElapsedMs": 17015,
+      "dom": {
+        "secure": true,
+        "locks": true,
+        "contentType": "text/html",
+        "scripts": 6,
+        "hasFixture": true
+      },
+      "webSocketConnections": 3,
+      "consoleErrors": 1,
+      "consoleClasses": [
+        "RESOURCE_LOAD"
+      ]
+    },
+    "cleanup": {
+      "browser": "PASS",
+      "gateway": "PASS",
+      "nodeModulesLink": "PASS"
+    },
+    "bootstrapResponses": [
+      200,
+      200
+    ],
+    "observedCounts": {
+      "pages": 3,
+      "intents": 3,
+      "visits": 3,
+      "visitors": 1
+    },
+    "gatewayDiagnostics": {
+      "upstreamTimeoutMs": 120000,
+      "socketTimeouts": 0,
+      "errors": {}
+    },
+    "gatewayClose": {
+      "settlementFailures": 0,
+      "admissionFailures": 0,
+      "pendingFrames": 0
+    }
+  },
+  "migrationCount": 128,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

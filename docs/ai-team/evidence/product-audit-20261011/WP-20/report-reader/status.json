@@ -1,0 +1,32 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:e6da9dfc27d0667c65a50596e83236f8e6e9ae47d9f85417e6545f271d0bf666",
+  "targeted": {
+    "status": "PASS",
+    "count": 18
+  },
+  "scoped_lint": "PASS",
+  "typecheck": "PASS",
+  "database": {
+    "status": "PASS",
+    "checks": 122,
+    "migrations": 97,
+    "cleanup": "PASS",
+    "reader_scope": "populated two-page reconciliation, concurrent committed append invisible in original snapshot and visible in new snapshot, exact 3000ms union of disjoint fixture rows, empty page/isolation/tenant/worker guards"
+  },
+  "read_budgets": {
+    "rows": 1000000,
+    "pages": 4000,
+    "milliseconds": 30000,
+    "query_cancellation": "caller transaction timeout still required"
+  },
+  "review": "NOT_RUN",
+  "remaining": [
+    "whole-report bounded snapshot adapter",
+    "isolated CPU executor",
+    "scheduler/UI",
+    "uncertainty/visitor provisioning/full browser reconciliation/independent review"
+  ],
+  "cohort_database": "PASS: scoped registration, verified epoch, visitor association, cursor exhaustion, wrong tenant rejection",
+  "session_database": "PASS: two-page same-registration session list, retains incomplete sessions, excludes foreign registration"
+}

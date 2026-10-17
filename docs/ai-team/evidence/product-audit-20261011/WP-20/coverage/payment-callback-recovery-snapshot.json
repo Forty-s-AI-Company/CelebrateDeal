@@ -1,0 +1,31 @@
+{
+  "revision": "sha256:09ca9c61cf20f6c4b719f98bd9be669f48fb6c5b898503c66b87d96b16ea0d82",
+  "files": [
+    "scripts/wp20-payment-callback-recovery-disposable.mjs",
+    "src/app/api/webhooks/payments/route.ts",
+    "src/lib/payment-providers/ecpay-like.ts",
+    "src/lib/webhook-retry.ts",
+    "src/lib/payment-webhooks.ts",
+    "src/lib/inventory-reservations.ts",
+    "src/lib/commerce-orders.ts",
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql"
+  ],
+  "status": "PASS",
+  "callback200": 2,
+  "callback500": 18,
+  "persistedFailures": 18,
+  "recovered": 18,
+  "finalPayments": 20,
+  "finalOrders": 20,
+  "finalEntitlements": 20,
+  "invalidSignatureRejected": true,
+  "retryPolicyUnchanged": true,
+  "limitations": [
+    "direct Request invocation, not deployed HTTP/TLS",
+    "synthetic ecpay-like HMAC, not PayUni gateway",
+    "recovery service invoked sequentially without waiting for deployed timer",
+    "first-burst pressure FAIL and latency/availability risk remain",
+    "initial P1001 cause not isolated; owned-client constructor binding and bounded pool both changed"
+  ]
+}

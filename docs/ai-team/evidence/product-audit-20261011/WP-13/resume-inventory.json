@@ -1,0 +1,40 @@
+{
+  "at": "2026-10-16T01:17:29.292347+00:00",
+  "status": "IN_PROGRESS",
+  "scope": "WP13 source inventory and existing unit baseline only",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "ownership": "root sole writer; no external resource writer or subagent; depth0; dispatch0",
+  "sourceHashes": {
+    "src/components/message-template-form-client.tsx": "9e6d2adb2178c34e80819ce155fed9487f663c955eca84bc98dffa6b92a1bfa4",
+    "src/lib/message-template.ts": "e9e41df9ccf2af0090638c907618524fc85379171c744e9ca3d136fae0ffd61d",
+    "src/lib/line-notification-materializer.ts": "0208774177fbd7dd27ce13ba728025157d82d4b100e54d2c7aaa77c2f849a453",
+    "src/lib/line-notification.ts": "516711774484b8f9d480d0a8c9a50895360ceccaf55c8f231b59dcc80457a49b",
+    "src/app/api/webhooks/line/[vendorId]/route.ts": "094cfb024a210dcb7540f9cdd84b4348ce066c55d02faa46f2d4765693f1c1c5",
+    "src/lib/line-rich-menu.ts": "32d3b3a520411b446010cd313e85997bc675bd94442441e56f1e74f26b34d2d9"
+  },
+  "baseline": {
+    "tests": 47,
+    "passed": 47,
+    "failed": 0,
+    "evidence": "baseline-unit.json",
+    "limitation": "Existing tests only; do not prove original WP13 acceptance or provider delivery."
+  },
+  "confirmed_gaps": [
+    "Template schema accepts LINE, but template editor disables LINE selection.",
+    "Registration LINE materializer uses fixed reminder messages; it does not read merchant-authored message templates.",
+    "Webhook verifies exact raw-body signature then acknowledges; follow/unfollow event handling is not implemented."
+  ],
+  "next_scope": "Implement original WP13 selectable LINE template contract and guarded materialization using existing outbox; preserve signature and tenant boundary. Do not merely enable a UI option.",
+  "deferred": [
+    "WP04 scheduler dependency",
+    "actual provider and synthetic recipient capability",
+    "Sandbox end-to-end delivery"
+  ],
+  "whole_wp_ready": false,
+  "product_changes_this_checkpoint": [],
+  "review": "NOT_RUN for inventory; no new product patch; implementation review remains required",
+  "rollback": "Remove only this checkpoint documents; no product or external state changed."
+}

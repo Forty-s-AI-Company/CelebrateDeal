@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "exit_code": 0,
+  "tests": 11,
+  "revision": "sha256:b053dd2005095d51ba25f9346c64f447ebf4eb23b287e2d7a7c81c80a9f2ede8",
+  "files": [
+    "src/lib/webhook-retry.ts",
+    "src/lib/webhook-retry.test.ts"
+  ],
+  "command": "node node_modules/vitest/vitest.mjs run src/lib/webhook-retry.test.ts",
+  "scope": "Existing retry scheduler with mocked DB and payment processor, first processor deliberately blocked; twenty claimed events drain sequentially with original retryCount/maxRetries",
+  "notProven": [
+    "real payment DB convergence",
+    "production deployment",
+    "failed order contention acceptance"
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "fallback_reason": "AGY_IDLE_TIMEOUT_AND_CLI_STREAM_TRUNCATION",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "prior_receipt": "viewing-ledger-review.json",
+  "process_status": "SUCCESS",
+  "exitCode": 0,
+  "model_key": "opus",
+  "review": {
+    "summary": "Scope: Migration 118, the changed audit context, the digest code and the identity guard. I found no new BLOCKER in this code. The fixes match their stated intent: every whole-row change is recorded and only a true no-op is skipped; provenance reads run through the definer function, so filtered zero counts can't appear; per-session any-event overlap handles changed expiry; TRUNCATE guards and the replica check are in place; and the count is a sound revision because the ledger is append-only. New local issues: 1 MAJOR (a ledger row on every progress write), 4 MINOR, 4 NIT. The existing release gates stay BLOCKED and are not waived: synchronized20 is still 7 successes / 13 failures, the full WP, producer, intake and deployment are unfinished, the separate non-owner runtime and its grants are NOT_VERIFIED, and performance/load, populated-upgrade and catalog/partial-index drift tests are NOT_VERIFIED. This is a private foundation only: it gives no positive coverage and does not enable production. The harness source wasn't supplied, so the receipt counts only as reported evidence. The prior record (6 MAJOR in the findings, 5 in its summary) should be corrected to 6.",
+    "findings": [
+      {
+        "area": "Release gate (existing)",
+        "issue": "The full WP is still not achieved: synchronized20 is 7 successes / 13 failures, and producer, intake and deployment work is unfinished.",
+        "evidence": "Stated in the request; the local receipt only covers the private ledger.",
+        "impact": "Release and any positive coverage claim are blocked.",
+        "severity": "BLOCKER",
+        "confidence": 0.95,
+        "required_test": "Synchronized20 at 20/20, plus producer, intake and deployment end-to-end tests.",
+        "file": "WP20 release",
+        "recommended_fix": "Keep coverage at 'unknown' and collection disabled until every gate passes."
+      },
+      {
+        "area": "Deployment/permissions (existing)",
+        "issue": "A separate non-owner runtime role with scoped grants is NOT_VERIFIED. If the runtime role is the owner, it can disable triggers or change DDL, so none of the immutability holds.",
+        "evidence": "No GRANT on the provenance function to any runtime role. Trust boundary trusts the owner. Prisma setups often share one role.",
+        "impact": "Immutability and provenance are only guaranteed under a role setup nobody has deployed.",
+        "severity": "BLOCKER",
+        "confidence": 0.9,
+        "required_test": "Deployed check: the runtime role is not the owner and lacks BYPASSRLS/superuser, holds only EXECUTE on the provenance function, and gets denied on direct DML/TRUNCATE/ALTER of ledger and source tables.",
+        "file": "deployment config",
+        "recommended_fix": "Add an explicit runtime grant migration and a startup assertion that current_user is not the owner."
+      },
+      {
+        "area": "Release gate (existing)",
+        "issue": "Performance/load, populated-upgrade, partial-index drift and full catalog tests are still NOT_VERIFIED.",
+        "evidence": "Stated in the request; the receipt comes from a fresh, empty DB.",
+        "impact": "Upgrade behaviour and scale behaviour are unknown.",
+        "severity": "MAJOR",
+        "confidence": 0.9,
+        "required_test": "Migrate a populated snapshot; load-test session progress and audit; compare the catalog/index definitions against the expected ones.",
+        "file": "migration 118",
+        "recommended_fix": "Keep these as explicit release prerequisites."
+      },
+      {
+        "area": "Ledger growth (new local)",
+        "issue": "Every non-no-op session UPDATE, including progress or heartbeat updates, adds a permanent immutable row through a synchronous definer trigger. Rows only go when the version is deleted. Revision and provenance scan and group every scope row, and no index has sessionId available for the grouping.",
+        "evidence": "The source trigger records a 'state' row for any to_jsonb difference. per_session uses GROUP BY sessionId over the whole scope. The indexes are scope, window(kind, anchorAt) and the issued-only partial index.",
+        "impact": "Writes grow with progress frequency, and audit cost grows linearly with the number of events.",
+        "severity": "MAJOR",
+        "confidence": 0.55,
+        "required_test": "Load test at realistic heartbeat rates: measure ledger rows per session, write latency, and provenance query time and plan as volume grows.",
+        "file": "migration 118 wp20_metric_viewing_source/provenance",
+        "recommended_fix": "Add a (vendorId, liveId, versionId, sessionId) index, set a budget for progress write frequency, or record a coarser change class. Document retention."
+      },
+      {
+        "area": "Provenance correctness",
+        "issue": "With an empty or inverted window, the function still returns one aggregate row, with viewingRevision 0 and zero counts, even though the real revision is above zero.",
+        "evidence": "Aggregates without GROUP BY under WHERE window_start<window_end. The audit SQL does not itself require startAt<endAt.",
+        "impact": "If scope validation upstream is ever bypassed, the digest binds a false revision.",
+        "severity": "MINOR",
+        "confidence": 0.6,
+        "required_test": "Call provenance and audit with startAt=endAt and startAt>endAt. Expect an error or 'unavailable', never revision 0.",
+        "file": "migration 118 wp20_metric_viewing_provenance",
+        "recommended_fix": "Raise an error on an invalid window, or compute the revision independently of the window filter."
+      },
+      {
+        "area": "Privileges",
+        "issue": "API roles are revoked by a hard-coded list. Default privileges for other roles could still grant DML or TRIGGER on the ledger tables. A TRIGGER grant would let a role attach a BEFORE INSERT trigger that changes genuine rows.",
+        "evidence": "The DO block only covers anon, authenticated and service_role.",
+        "impact": "Ledger rows could be tampered with in environments that have extra default grants.",
+        "severity": "MINOR",
+        "confidence": 0.5,
+        "required_test": "After migrating, assert that relacl on both ledger tables and the sequence, and proacl on all five functions, contain only the owner.",
+        "file": "migration 118 grants",
+        "recommended_fix": "Assert the ACLs in the migration, or revoke from every grantee found in pg_class.relacl."
+      },
+      {
+        "area": "Test evidence",
+        "issue": "The harness source wasn't supplied, so the receipt booleans can't be checked, including nonOwnerProvenanceNotFiltered and the expected 3 issued / 2 interval / 5 state counts.",
+        "evidence": "The receipt is reported evidence only.",
+        "impact": "The correctness claims rest on tests nobody has reviewed.",
+        "severity": "MINOR",
+        "confidence": 0.8,
+        "required_test": "Review the harness assertions, in particular exact event counts for progress-only updates and the non-owner role setup.",
+        "file": "harness (not supplied)",
+        "recommended_fix": "Supply the harness, or a test listing with its assertions, for the next review."
+      },
+      {
+        "area": "Provenance check strength",
+        "issue": "The INSERT check confirms trigger depth ≥2 and that current_user is the function owner. It does not confirm which function is calling. Any code running as the owner inside a trigger passes.",
+        "evidence": "The check is pg_trigger_depth()<2 OR current_user<>proowner.",
+        "impact": "Within the stated owner-trusted boundary, but it is weaker than a caller-identity check.",
+        "severity": "NIT",
+        "confidence": 0.5,
+        "required_test": "Negative probe: a different owner-owned definer trigger that inserts into the ledger. Record the expected result under the trust boundary.",
+        "file": "migration 118 wp20_metric_viewing_immutable",
+        "recommended_fix": "Document this explicitly, or use a dedicated owner role for these functions only."
+      },
+      {
+        "area": "Revision definition",
+        "issue": "The revision is defined in two places: wp20_metric_viewing_revision uses count(*), provenance uses sum(per-session events). The audit no longer calls the revision function.",
+        "evidence": "The audit takes p.viewingRevision.",
+        "impact": "The two definitions could drift apart, or the old function could be left as dead code.",
+        "severity": "NIT",
+        "confidence": 0.6,
+        "required_test": "Assert the two values are equal across fixtures, or drop the unused function.",
+        "file": "migration 118",
+        "recommended_fix": "Keep a single source of truth."
+      },
+      {
+        "area": "Digest coverage",
+        "issue": "context.durationMs is not in the final digest. The per-row digest would throw if any sequence or ms column comes back as a BigInt.",
+        "evidence": "The final digest only binds revisions, the epoch and counts. JSON.stringify is not given an explicit toString for the per-row numeric fields.",
+        "impact": "A changed durationMs wouldn't change the digest. A bigint column would crash the audit at runtime.",
+        "severity": "NIT",
+        "confidence": 0.35,
+        "required_test": "Change durationMs and check the digest; check the Prisma raw types of the per-row numeric columns.",
+        "file": "audit service",
+        "recommended_fix": "Bind durationMs, or note why it is excluded; stringify bigint fields explicitly."
+      },
+      {
+        "area": "Unsupplied dependencies",
+        "issue": "The identity guard's trigger binding to Session/Interval and the existing interval UPDATE/DELETE prohibition were not supplied. Triggers also don't fire on logical subscribers or under session_replication_role=replica.",
+        "evidence": "Only the guard function body was shown; the negative probe is reported, not shown.",
+        "impact": "Session-id reuse and interval-immutability protections depend on code not reviewed here; a promoted logical replica could have an incomplete ledger.",
+        "severity": "NIT",
+        "confidence": 0.45,
+        "required_test": "Catalog test: pg_trigger bindings and enabled state (origin/always) for the guard, interval and ledger triggers.",
+        "file": "existing migrations",
+        "recommended_fix": "Add a catalog assertion for the trigger bindings; document that logical replication is unsupported."
+      }
+    ]
+  },
+  "execution_provider": "claude_cli"
+}

@@ -1,0 +1,63 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Owned loopback synthetic DB and recorded VOD; fixture authorization, not signed Next HTTP",
+  "checks": {
+    "unverifiedReadinessWritesNoMetrics": "PASS",
+    "realBrowserVerificationRecoveryAndReplayWithoutReload": "PASS",
+    "oldUnmatchedIntakeRetainedAndDistinctNewSessionAnchors": "PASS",
+    "changedVerificationEpochDoesNotAllocateRecovery": "PASS",
+    "exhaustedAdmissionQuotaReturnsFalseWithoutNewIntake": "PASS"
+  },
+  "browserDiagnostics": {
+    "unexpected": 0,
+    "denied": 1,
+    "sourceRequests": 3,
+    "sessionRequests": 3,
+    "readinessRequests": 3,
+    "sameMediaSource": true,
+    "controller": {
+      "stopped": true,
+      "sourceChanged": false,
+      "restart": false,
+      "attempts": 3,
+      "delivery": {
+        "queued": 0,
+        "finalSequence": 4,
+        "sealed": true,
+        "terminal": true,
+        "rejected": false,
+        "capacityReached": false,
+        "collectionLost": false
+      }
+    }
+  },
+  "sessionDiagnostics": [
+    {
+      "complete": true,
+      "closed": true,
+      "intervals": 6
+    },
+    {
+      "complete": true,
+      "closed": true,
+      "intervals": 5
+    }
+  ],
+  "browser": {
+    "sourceRequests": 3,
+    "sessionRequests": 3,
+    "readinessRequests": 3,
+    "expectedAuthorizationRefusals": 1,
+    "intervals": [
+      6,
+      5
+    ],
+    "sameMediaSource": true,
+    "cadenceWaitMs": 30100
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

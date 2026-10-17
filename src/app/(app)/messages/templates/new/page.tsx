@@ -11,7 +11,7 @@ export default async function NewMessageTemplatePage({
   const { error } = await searchParams;
   return (
     <>
-      <PageHeader title="新增訊息模板" description="建立可供 Email 排程與寄送使用的商家模板；未串接的渠道會保持停用。" />
+      <PageHeader title="新增訊息模板" description="可分別建立 Email 與 LINE 通知模板，每份模板選擇一個通道。SMS 尚未串接，不能啟用。" />
       <MessageTemplateForm error={error === "invalid_template" || error === "missing_template" ? error : null} />
     </>
   );

@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "registration-chromium", "revision": "sha256:bd6b48fc1285ce98019f29c2b6b99e4298bb9685600675e4f050ab189c2ac3fd", "status": "FAIL", "exit_code": 1, "duration_seconds": 90.532}

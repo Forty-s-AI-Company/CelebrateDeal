@@ -1,0 +1,79 @@
+{
+  "status": "IN_PROGRESS",
+  "observed_model": "claude-opus-5-5",
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/live-metric-completion-store.ts",
+      "area": "null vs empty / order revision",
+      "issue": "readMetricCompletion compares order revisions with '=' but the publish function uses IS DISTINCT FROM. If wp20_metric_order_revision can return NULL (for example, a live with no order ledger yet), publish accepts the report but the reader returns no row.",
+      "evidence": "Reader: r.\"inputOrderRevision\"=public.wp20_metric_order_revision(...). Publish: report.\"inputOrderRevision\" IS DISTINCT FROM public.wp20_metric_order_revision(vendor_id,live_id).",
+      "impact": "When there are no orders, publish succeeds but the reload returns snapshot_unavailable (lease_or_scope_unavailable) and the report never finishes. The known-empty orders case is treated as missing scope.",
+      "recommended_fix": "Use the same NULL-safe comparison in both places: r.\"inputOrderRevision\" IS NOT DISTINCT FROM public.wp20_metric_order_revision(...). Or make the order revision NOT NULL (e.g. 0) everywhere and assert that.",
+      "required_test": "Real PG test with a live that has zero order ledger entries: publish returns 1, then readMetricCompletion returns available with the stored [] / rows, and the job records metrics.",
+      "confidence": 0.5
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/lib/live-metric-report-snapshot.ts",
+      "area": "budget isolation",
+      "issue": "loadCompletion checks budget.retain only after the whole JSONB projection (up to 64MB and 1M facts) has been fetched and Zod-parsed. The read budget does not stop that allocation.",
+      "evidence": "readMetricCompletion runs factsSchema.parse(record.rows) before budget.retain((completion.rows?.length ?? 0)+1).",
+      "impact": "Peak memory and CPU in the shared snapshot transaction can exceed the remaining budget before limit_exceeded is raised. This weakens the one-budget guarantee.",
+      "recommended_fix": "Select jsonb_array_length(p.rows) first (or store a rowCount column). Call budget.retain on that count before fetching or parsing rows. Optionally pass the remaining budget into readMetricCompletion.",
+      "required_test": "Test with a nearly exhausted budget and a large stored projection: expect limit_exceeded and that the rows payload is never fetched or parsed.",
+      "confidence": 0.6
+    },
+    {
+      "severity": "MINOR",
+      "file": "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql",
+      "area": "revision race / liveness",
+      "issue": "The projection primary key is reportId alone, and inserts use ON CONFLICT DO NOTHING followed by an equality check. If a report's inputRevision can ever be changed (requeue or refresh), the old-revision row blocks every later publish with 'completion projection conflict'.",
+      "evidence": "PRIMARY KEY (reportId); ON CONFLICT (reportId) DO NOTHING; the check then requires p.sourceRevision=source_revision. The reader's join on p.sourceRevision=r.inputRevision suggests revision mismatches were expected.",
+      "impact": "A report could fail permanently at the publish stage, with no recovery path.",
+      "recommended_fix": "Either enforce in the schema that report.inputRevision cannot change (trigger or documented invariant plus test), or key the table on (reportId, sourceRevision), or delete or replace stale-revision rows under the report lock.",
+      "required_test": "Try to change a report's inputRevision after a projection exists, then publish with the new revision. Expect it to be rejected by the invariant or to succeed, never to fail on every retry.",
+      "confidence": 0.35
+    },
+    {
+      "severity": "MINOR",
+      "file": "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql",
+      "area": "cohort manifest consistency",
+      "issue": "The publish function counts every LiveMetricRegistration row in the window. The snapshot cohort comes from readMetricRegistrationPage, which may apply extra filters (identityCurrent, mode, revocation), and metricSnapshotInput compares against people.size. If the two cohort definitions differ, publish throws on every attempt.",
+      "evidence": "Publish: count(*) WHERE vendor/live/version AND verifiedAt in [windowStartAt, windowEndAt). Snapshot input: projection.cohortCount !== people.size.",
+      "impact": "It fails closed, so no wrong metric is produced, but completion and post-completion metrics are permanently unavailable, and the job fails at publish on every lease.",
+      "recommended_fix": "Share one SQL definition of the cohort (a view or function) between the registration page reader and the publish function.",
+      "required_test": "Fixture with a registration the page reader excludes but that sits inside the window: assert the publish count equals the snapshot cohort size and the job records metrics.",
+      "confidence": 0.3
+    },
+    {
+      "severity": "MINOR",
+      "file": "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql",
+      "area": "lock hold / availability",
+      "issue": "Publish holds FOR UPDATE on the version row while it validates up to 1M facts: several jsonb_array_elements passes plus one correlated registration lookup per fact. No statement_timeout is set for the publish call.",
+      "evidence": "The version lock is taken first; the validation passes come after; publishMetricCompletion runs outside any timeout-scoped transaction.",
+      "impact": "Ingestion writers that need the version row (for revision bumps) can be blocked for a long time, and so can claims and finishes.",
+      "recommended_fix": "Set a local statement_timeout in the publish transaction. Validate fact shape and duplicates before taking the locks, and check membership with a single set-based anti-join.",
+      "required_test": "Publish 1M synthetic facts and measure how long the lock is held. Assert a bounded timeout and that a concurrent revision bump is blocked only for a bounded time.",
+      "confidence": 0.45
+    },
+    {
+      "severity": "NIT",
+      "file": "src/lib/live-metric-completion-store.ts",
+      "area": "snapshot isolation assertion",
+      "issue": "The repeatable-read isolation check only runs when the report row is found. If it is not found, the function returns unavailable without confirming isolation.",
+      "evidence": "if (!record) return unavailable; this happens before the isolation check.",
+      "impact": "A misuse outside RR is reported as lease loss instead of a programming error.",
+      "recommended_fix": "Check current_setting('transaction_isolation') in a separate query, or before the lease predicate.",
+      "required_test": "Call readMetricCompletion under read committed with an invalid lease and expect it to throw.",
+      "confidence": 0.5
+    }
+  ],
+  "owner_notes": {
+    "null_order_revision": "Disputed: 20261015140000 migration lines94-98 SELECT count(*) returns 0 for non-null vendor/live. Need reviewer resolution with dependency supplied.",
+    "mutable_report_revision": "Disputed: 20261015150000 guard lines25-27 explicitly rejects changed inputRevision. Need reviewer resolution.",
+    "read_budget": "Accepted for remediation: reserve before payload load/parse.",
+    "publish_timeout": "Accepted for remediation: bounded SQL execution required."
+  },
+  "acceptance": "NOT_READY"
+}

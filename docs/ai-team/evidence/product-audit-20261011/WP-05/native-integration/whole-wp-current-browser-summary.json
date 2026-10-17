@@ -1,0 +1,339 @@
+[
+  {
+    "file": "browser-ui-feedback-final-contract.json",
+    "status": "PASS",
+    "cases": 4,
+    "cleanup": true,
+    "coverage": [
+      {
+        "engine": "chromium",
+        "javascript": false,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true,
+        "sharedSuccessUrlEditable": true,
+        "sharedErrorUrlUnconfirmed": true,
+        "reloadedErrorUrlUnconfirmed": true,
+        "jsErrorFocus": "NOT_APPLICABLE"
+      },
+      {
+        "engine": "chromium",
+        "javascript": true,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true,
+        "sharedSuccessUrlEditable": true,
+        "sharedErrorUrlUnconfirmed": true,
+        "reloadedErrorUrlUnconfirmed": true,
+        "jsErrorFocus": true
+      },
+      {
+        "engine": "firefox",
+        "javascript": false,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true,
+        "sharedSuccessUrlEditable": true,
+        "sharedErrorUrlUnconfirmed": true,
+        "reloadedErrorUrlUnconfirmed": true,
+        "jsErrorFocus": "NOT_APPLICABLE"
+      },
+      {
+        "engine": "firefox",
+        "javascript": true,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true,
+        "sharedSuccessUrlEditable": true,
+        "sharedErrorUrlUnconfirmed": true,
+        "reloadedErrorUrlUnconfirmed": true,
+        "jsErrorFocus": true
+      }
+    ]
+  },
+  {
+    "file": "browser-lp-js-result-final-contract.json",
+    "status": "PASS",
+    "cases": 4,
+    "cleanup": true,
+    "coverage": [
+      {
+        "engine": "chromium",
+        "entry": "root",
+        "javascript": true,
+        "json200": true,
+        "axeSeriousCritical": 0,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "chromium",
+        "entry": "step",
+        "javascript": true,
+        "json200": true,
+        "axeSeriousCritical": 0,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "root",
+        "javascript": true,
+        "json200": true,
+        "axeSeriousCritical": 0,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "step",
+        "javascript": true,
+        "json200": true,
+        "axeSeriousCritical": 0,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      }
+    ]
+  },
+  {
+    "file": "browser-webinar-result-final-contract.json",
+    "status": "PASS",
+    "cases": 4,
+    "cleanup": true,
+    "coverage": [
+      {
+        "engine": "chromium",
+        "entry": "root",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "chromium",
+        "entry": "step",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "root",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "step",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      }
+    ]
+  },
+  {
+    "file": "browser-webinar-pending-result.json",
+    "status": "PASS",
+    "cases": 4,
+    "cleanup": true,
+    "coverage": [
+      {
+        "engine": "chromium",
+        "entry": "root",
+        "javascript": true,
+        "pendingState": true,
+        "duplicateSubmitPrevented": true,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "chromium",
+        "entry": "step",
+        "javascript": true,
+        "pendingState": true,
+        "duplicateSubmitPrevented": true,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "root",
+        "javascript": true,
+        "pendingState": true,
+        "duplicateSubmitPrevented": true,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "step",
+        "javascript": true,
+        "pendingState": true,
+        "duplicateSubmitPrevented": true,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      }
+    ]
+  },
+  {
+    "file": "browser-status-result-acceptance-current.json",
+    "status": "PASS",
+    "cases": 3,
+    "cleanup": true,
+    "coverage": [
+      {
+        "status": 403,
+        "native303": true,
+        "visibleAlert": true,
+        "refill": true,
+        "noSubmission": true
+      },
+      {
+        "status": 404,
+        "native303": true,
+        "visibleAlert": true,
+        "refill": true,
+        "noSubmission": true
+      },
+      {
+        "status": 429,
+        "native303": true,
+        "visibleAlert": true,
+        "refill": true,
+        "noSubmission": true
+      }
+    ]
+  },
+  {
+    "file": "browser-lp-result-acceptance-current.json",
+    "status": "PASS",
+    "cases": 4,
+    "cleanup": true,
+    "coverage": [
+      {
+        "engine": "chromium",
+        "entry": "root",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "chromium",
+        "entry": "step",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "root",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "entry": "step",
+        "javascript": false,
+        "native303": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      }
+    ]
+  },
+  {
+    "file": "browser-partner-result-acceptance-current.json",
+    "status": "PASS",
+    "cases": 4,
+    "cleanup": true,
+    "coverage": [
+      {
+        "engine": "chromium",
+        "javascript": false,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "chromium",
+        "javascript": true,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "javascript": false,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      },
+      {
+        "engine": "firefox",
+        "javascript": true,
+        "error400": true,
+        "refill": true,
+        "success": true,
+        "draftCleared": true,
+        "noMailSent": true
+      }
+    ]
+  }
+]

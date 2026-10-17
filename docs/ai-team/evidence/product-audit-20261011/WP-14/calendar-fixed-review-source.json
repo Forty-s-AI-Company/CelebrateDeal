@@ -1,0 +1,14 @@
+[
+  {
+    "sha256": "9a0f6dcc5590df8ead223bcdfd654eb6490a66be2675b39158f2c91ed0194021",
+    "path": "src/lib/webinar-calendar.ts"
+  },
+  {
+    "sha256": "b591eba381679ed4089bea08d0aba5eedb0230615b2289ded9996c9fbd315202",
+    "path": "src/components/webinar-calendar-download.tsx"
+  },
+  {
+    "sha256": "a34becbf32deac01b1996947c0e5949fa9cde8f7e8359b015761b40c588a0efe",
+    "path": "src/lib/webinar-calendar.test.ts"
+  }
+]

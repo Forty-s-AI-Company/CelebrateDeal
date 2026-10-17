@@ -1,0 +1,184 @@
+{
+  "accepted": false,
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "migration",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 20000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "review": {
+    "summary": "Followup review of only the two changed files supplied (live-metric-playback-controller.ts and sessions/route.ts). I found no BLOCKER or MAJOR defects. Route GET: retryable_conflict now returns 503 private {ready:false} and is checked before the generic MetricIngestError 403 mapping. Other GET and POST mappings are unchanged. The controller's abort ordering holds. finish() sets stopped, aborts the current readiness/source GET, and starts closing the current collector before awaiting pending. stopped is checked after each awaited GET, and no await sits between the last check and collector creation. A collector created during finish is either the captured `current` or is finished by the final `active !== current` branch. The 8s timeout uses the same AbortController and also covers the response body read. Denial and readiness-503 paths keep the 30s backoff. Two MINOR gaps remain in the backoff/recovery contract. (1) After a recovery, the reset condition only checks that a delivery object exists and the collector isn't disabled. It doesn't exclude rejected or collectionLost, which the needsRecovery predicate treats as failure. (2) A transient non-OK response from /api/live-playback-source sets sourceChanged permanently, instead of keeping the stated 30s retry. Both fail closed without inventing data. I made no assumptions about test, lint or typecheck results. The unchanged readiness/authorizer/collector/factory/receipt modules, transport/delivery/media/clock/hook, and the whole-WP gates are not certified here. I didn't re-review the timezone or lock-order claims beyond the supplied text.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-playback-controller.ts",
+        "area": "recover(): post-creation backoff reset `if (active?.state().delivery && !active.state().disabled) nextProbeAt = 0;`",
+        "issue": "The backoff reset only checks that `delivery` exists and the collector isn't disabled. It doesn't exclude `delivery.rejected` or `delivery.collectionLost`, which run() treats as needing recovery. A recovery whose first tick creates a delivery state that is already rejected or lost (for example, the session POST or intake is refused) could clear the 30s backoff.",
+        "evidence": "run() computes `needsRecovery = restart || !active || state?.disabled || state?.delivery?.rejected || state?.delivery?.collectionLost`. The reset condition checks only `delivery` being truthy and `!disabled`. The followup states that only a recovery that actually established delivery resets nextProbeAt, and that denials keep 30s. Whether the collector can show a delivery object with rejected=true after its first tick isn't visible in the supplied scope (collector source not supplied), so confidence is moderate.",
+        "impact": "If the collector reports a rejected or lost delivery after its first tick, every later tick re-probes right away. Each probe does a readiness GET, a source GET that issues a fresh server nonce, and a session POST. This burns through the 64-nonce cap quickly and then sets sourceChanged permanently, so collection is lost for the rest of playback instead of retrying every 30s. It also adds server load and rate-limit pressure. Data integrity is kept (fail closed, no invented samples).",
+        "recommended_fix": "Reset nextProbeAt only when the post-tick state passes the same health predicate run() uses. For example: `const s = active?.state(); if (s?.delivery && !s.disabled && !s.delivery.rejected && !s.delivery.collectionLost) nextProbeAt = 0;`. Better, move the predicate into one shared helper used by both places.",
+        "required_test": "Controller unit test: the fixture lets the readiness and source GETs succeed but makes the session POST or first delivery get rejected, so the collector shows delivery.rejected. Assert that a tick inside the next 30s makes no new readiness or source request, and that a tick after 30s does exactly one new probe.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-playback-controller.ts",
+        "area": "recover(): `if (!identity || sourceIdentity(fresh) !== identity) { sourceChanged = true; return; }` and the `!receipt` branch",
+        "issue": "get() returns null for any non-OK response. A transient 429, 503 or 500 from /api/live-playback-source therefore looks like a source-identity change and sets sourceChanged=true. Nothing ever resets that flag, so tick() becomes a no-op for the rest of the controller's life.",
+        "evidence": "In get(), `return response.ok ? await response.json() : null`. sourceIdentity(null) returns null, which is never equal to a non-null identity, so `sourceChanged = true`. tick() returns early whenever `sourceChanged` is set, and no code path clears it. The readiness GET treats null as 'return and keep the 30s backoff', but the source GET does not. The followup states that transient errors keep the 30s cadence.",
+        "impact": "One transient failure on the source endpoint during a recovery attempt stops metric recovery for the rest of playback, unless the media owner rebuilds the controller. The owner won't do that, because the actual source didn't change. Collection stays fail-closed with visible gaps, so integrity holds, but the recovery contract isn't met.",
+        "recommended_fix": "Handle a null `fresh` (non-OK response or unparseable body) separately from a confirmed identity mismatch: return without setting sourceChanged so the 30s backoff applies. Set sourceChanged only when a well-formed source response carries a different identity. Consider whether a source that is present but has no receipt is transient too, and treat it the same way if so.",
+        "required_test": "Controller unit test: start a recovery where readiness returns {ready:true} and the source GET returns 503. Assert state().sourceChanged is still false. Then, after 30s, the source GET returns the same identity with a new receipt, and a new collector is created.",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "status": "INVALID_REVIEW",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 0
+    },
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

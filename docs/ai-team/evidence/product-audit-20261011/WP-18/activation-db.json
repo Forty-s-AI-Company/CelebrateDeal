@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "checks": {
+    "threeRealRecipesInactiveThenOwnedActivation": "PASS",
+    "forgedGenericEventsCannotQueueOrClaim": "PASS",
+    "disableReenableAdvancesSnapshotVersion": "PASS",
+    "manualDryrunRequiresRealSources": "PASS",
+    "otherVendorRuleNotMutated": "PASS",
+    "unsupportedFunnelScopeNotActivated": "PASS",
+    "realEditedSnapshotCompareAndSwapRejects": "PASS",
+    "requestBoundaryDenialsDoNotMutate": "PASS",
+    "auditWrittenNoSendSideEffects": "PASS",
+    "trustedAuditDoesNotInventUpdatedAt": "PASS",
+    "existingNoShowEmitterQueuesOnlyAbsentWithSignedOptout": "PASS",
+    "actualUnsubscribeHandlerCancelsQueuedNoShow": "PASS",
+    "noShowReplayDoesNotRequeueAfterOptout": "PASS",
+    "futureDifferentNoShowIsSuppressedBeforeProvider": "PASS"
+  },
+  "scope": "Actual server-action persistence/readiness/dedicated dispatch against owned PostgreSQL. Server-action auth/CSRF/navigation/cache boundaries are scoped fixture shims, NOT real HTTP authentication or CSRF verification. Existing NoShow emitter uses synthetic completed watch automation log, not actual playback. Unsubscribe route handler uses a constructed synthetic Request with actual same-origin/signature checks and realDB, not HTTP/browser transport.",
+  "browser": "NOT_RUN",
+  "providerDelivery": "NOT_RUN",
+  "remoteCI": "NOT_RUN",
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

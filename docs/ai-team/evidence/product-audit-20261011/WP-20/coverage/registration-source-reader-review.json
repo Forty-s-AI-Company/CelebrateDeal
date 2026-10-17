@@ -1,0 +1,181 @@
+{
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "finalModel": "claude-opus-5-5",
+  "status": "REVIEW_COMPLETED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "review": {
+    "summary": "I reviewed only the supplied src/lib/live-metric-report-reader.ts against the stated scope. The new registration visit reader matches the main contract: it filters by exact vendor, live, version and event, and requires sourceKind='registration' and a non-null sourceFormId. It also requires an intent with the same scope, event and visitor. Unknown, legacy and viewer facts are left out, and no current Live.formId is used to relabel history. The lease, revision and repeatable-read checks still run on every page through the existing snapshot query. I found no BLOCKER or MAJOR defect in this file. I found two MINOR issues. First, the reader uses inner joins and assumes things the supplied text doesn't show: that LiveMetricVisitPage and LiveMetricVisitIntent each have at most one row per key, and that an intent row only exists once it has been prepared. Second, the denominator counts registration pages for any form, which may not match the form scope used for registrations and orders (raised as a scope proposal). This review doesn't cover the migration, the binding and guard triggers, ACLs, the Migration125 coverage guard, the issue/prepare/collect writers, the omitted test harness, or any test results. An empty or short findings list doesn't mean this change, its tests or a release have passed. The known MAJOR on public request exhaustion and lock availability is still open and outside this scope.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-report-reader.ts",
+        "area": "readMetricVisitPage SQL: JOIN \"LiveMetricVisitPage\" p / JOIN \"LiveMetricVisitIntent\" i",
+        "issue": "The reader uses inner joins rather than semi-joins and has no explicit 'prepared' check on the intent. As a result, whether each visit appears once, and whether unprepared intents are left out, depends on schema uniqueness and intent state that the supplied text doesn't show.",
+        "evidence": "The page is joined on (vendorId, liveId, versionId, eventId) and the intent on (vendorId, liveId, versionId, eventId, visitorId). Neither join has DISTINCT or EXISTS. The intent join filters only on identity columns, with no prepared-state or prepared-time predicate. Yet the task says the reader joins a 'prepared intent' and excludes 'unprepared internal facts'.",
+        "impact": "If either key isn't unique, the same visit row v.id can come back more than once, and duplicates that straddle a page boundary are silently dropped by the (visitedAt, id) cursor. Browser deduplication hides this for distinct-browser counts, but any count of visit facts would be wrong. If intent rows can exist with a visitorId before they are prepared, unprepared facts could get into the registration denominator.",
+        "recommended_fix": "Replace the two inner joins with EXISTS (...) semi-joins so each visit row is emitted exactly once. In the intent EXISTS, add the explicit predicate that marks an intent as prepared, using whatever column the schema has for it. Alternatively, show the unique constraints on the page and intent keys, and that intent visitorId is only set when the intent is prepared.",
+        "required_test": "Disposable probe: (a) try to insert a second page or intent row for the same key, and either show it is rejected or show the reader still returns each v.id exactly once across page sizes 1 and 500. (b) Create an intent that was issued but not prepared, whose visitorId would match a visit, and assert that visit is left out.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-report-reader.ts",
+        "area": "readMetricVisitPage page predicate vs readMetricOrderPage Live.formId join",
+        "issue": "Scope proposal, not a defect in the authorized task: the denominator accepts registration pages for any non-null sourceFormId, while the order reader is tied to the current Live.formId. Their form scopes can differ if the form changes during a report window.",
+        "evidence": "The visit reader checks only p.\"sourceFormId\" IS NOT NULL. The order reader joins \"Live\" l with l.\"formId\"=f.\"formId\", which uses the current form. The registration cohort reader isn't in the supplied text, so its form scope can't be checked.",
+        "impact": "If the form changes mid-window, browsers that visited pages for form A stay in the denominator while numerator facts tied to the current form B are counted. This could bias rates. It is already covered by the remaining fail-closed source-proof work, so it shouldn't be treated as a new blocker here.",
+        "recommended_fix": "In the planned source reconciliation and proof work, define one consistent form-scope rule for the numerator and denominator: either per historical sourceFormId, or as an explicit union with the form change exposed. Don't relabel history with the current form.",
+        "required_test": "Probe where Live.formId changes inside a report window: check that the report stays unavailable under the Migration125 guard, or, once proof exists, that numerator and denominator use the same documented form scope.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "exitCode": 3,
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "agy_discovery_status": "DISCOVERY_VERIFIED"
+}

@@ -1,0 +1,161 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "accepted": false,
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "completed": false,
+  "review": {
+    "summary": "I rechecked the earlier proof-followup MINOR against the supplied code only (the two files in scope, not the full work package). I found no new BLOCKER, MAJOR, MINOR or NIT in that boundary, and the earlier MINOR looks resolved in the code.\n\nHow headers are cleaned before forwarding (gateway):\n- `forwardedHeaders` removes standard hop-by-hop headers, any header the client's Connection header names, and every client-sent `x-celebratedeal-metric-*` header.\n- `handle` then deletes `forwarded`, every `x-forwarded-*` header and `x-real-ip`. Node gives header names in lowercase, so the exact-name and prefix checks hold.\n\nOrigin, Sec-Fetch-Site and Host after cleaning:\n- Origin and Sec-Fetch-Site are restored only from values that already passed the gate, so a Connection header naming them can't remove or change what the upstream sees.\n- Node joins duplicate Origin or Sec-Fetch-Site values with \", \", so duplicates fail the exact-match check and get 403 before anything is written to the database.\n- Host is set to `expectedHost`, the same value already required by the 421 check. A Connection header naming host can't change it.\n- The connection target stays fixed at `127.0.0.1:port`.\n\nRouting and the signed header:\n- Requests whose target is a full URL, and OPTIONS requests, find no allowed route and get 404. So cross-site pages can't get past the browser's preflight check to send custom or forwarded-style headers.\n- The signed header is added only after `admitMetricIngress` returns.\n- Kind, method and target come from the server's own allowed-route lookup, and the target is the exact `request.url` that matched it.\n- The private header is removed from the response.\n\nProof module:\n- The HMAC covers vendor, live, version, run, frame, kind, method, target and format.\n- Verification checks length and exact base64url form before a constant-time compare, then checks the decoded payload against both the run scope and the expected request scope.\n- `requireMetricIngressSource` still makes the server-selected version and kinds decide. With no binding it adds nothing, which matches the claim that unsigned requests stay gaps.\n\nNot verified or certified:\n- The omitted credential-declaration lines.\n- The behaviour of `admitMetricIngress`, `settleMetricIngress` and `requireSameOriginRequest`.\n- The DB rule that a recorded frame can be used once and must match.\n- Any test results: no tests were supplied and none are assumed.\n\nStill open from before: the quota MAJOR, plus pending work on upstream startup, full URLs, the source fence and the nonzero five-metric integration. RSC, query and alias completeness aren't claimed.\n\nPossible scope extension (not a defect in this task): stripping other Next-internal or client-IP style headers (e.g. `x-middleware-subrequest`, `cf-connecting-ip`). The browser-preflight point above means they aren't a concrete risk in this synthetic loopback setup.\n\nNo findings doesn't mean tests or a release passed.",
+    "findings": []
+  }
+}

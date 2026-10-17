@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "stage": "browser-db-bridge",
+  "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+  "checks": {
+    "unconfiguredPlaybackPreserved": "PASS",
+    "committedBeforeSourceAndLostReplyRetained": "PASS",
+    "canonicalSessionBindingIdempotentAndBounded": "PASS",
+    "missingIntakeForeignScopeAndAdmissionRejected": "PASS"
+  },
+  "browser": {
+    "transportFailures": 0,
+    "sessionRequests": 1,
+    "stopped": true,
+    "disabled": false,
+    "delivery": {
+      "queued": 0,
+      "finalSequence": -1,
+      "sealed": true,
+      "terminal": true,
+      "rejected": false,
+      "capacityReached": false
+    }
+  },
+  "errorType": "AssertionError",
+  "differingKeys": null,
+  "errorCode": "ASSERTION_OR_SERVICE_ERROR",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

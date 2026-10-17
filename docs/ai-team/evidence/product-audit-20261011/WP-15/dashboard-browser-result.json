@@ -1,0 +1,199 @@
+{
+  "status": "PASS",
+  "scope": "Real client components and app CSS, synthetic server-action/report adapters; not authenticated full-app E2E",
+  "checks": [
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "state": "collapsed",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "state": "expanded",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "state": "recollapsed",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "state": "active",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "state": "collapsed",
+      "primaryBounds": {
+        "x": 16,
+        "y": 357,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "state": "expanded",
+      "primaryBounds": {
+        "x": 16,
+        "y": 357,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "state": "recollapsed",
+      "primaryBounds": {
+        "x": 16,
+        "y": 357,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "state": "active",
+      "primaryBounds": {
+        "x": 16,
+        "y": 357,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "state": "collapsed",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "state": "expanded",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "state": "recollapsed",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "state": "active",
+      "primaryBounds": {
+        "x": 1152,
+        "y": 36,
+        "width": 88,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "state": "collapsed",
+      "primaryBounds": {
+        "x": 16,
+        "y": 358.5,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "state": "expanded",
+      "primaryBounds": {
+        "x": 16,
+        "y": 358.5,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "state": "recollapsed",
+      "primaryBounds": {
+        "x": 16,
+        "y": 358.5,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "state": "active",
+      "primaryBounds": {
+        "x": 16,
+        "y": 358.5,
+        "width": 358,
+        "height": 44
+      },
+      "a11ySerious": []
+    }
+  ],
+  "cleanup": true
+}

@@ -1,0 +1,13 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/app/api/form-submissions/route.ts",
+    "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "src/lib/email-delivery.ts",
+    "src/lib/automation-workflow.ts",
+    "src/lib/funnel-runtime.ts",
+    "src/lib/landing-page-service.ts",
+    "docs/ai-team/evidence/product-audit-20261011/WP-01/form-submit/browser.cjs"
+  ],
+  "revision": "sha256:867dec95b9dae65c04ce55b65ae6b04c5439583d5e41f77877ac9c974d7880fa"
+}

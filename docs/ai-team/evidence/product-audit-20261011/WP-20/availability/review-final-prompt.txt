@@ -1,0 +1,45 @@
+Review bounded query-free UI follow-up. Product display unchanged from first review; fixed test extraction because Card renders a nested section. The new test spans through the next existing activity grid so all five cards are included. Existing global beforeEach reconfigures analyticsFindMany and formSubmissionCount for each test. Display only unavailable states with data-gap reasons, no metric computation. Source inventory confirms these gaps: missing independent page visitors, incomplete identity linkage, undefined completion criteria, incomplete per-person duration, and incomplete completion-to-order linkage. Do not claim tests executed. Return canonical JSON. Final revision sha256:d9b442e8af4e88a56ab35cc8284ce4b7cf9cea0e3383ca2430a89427f854bf62
+
+--- src/app/(app)/lives/[id]/analytics/page.tsx before
++++ src/app/(app)/lives/[id]/analytics/page.tsx
+@@ -15,0 +16,9 @@
++
++// These requested metrics need distinct source contracts; existing activity counts do not supply them.
++const pendingCoreMetrics = [
++  { label: "報名率", reason: "缺少報名頁的不重複訪客數，尚未能計算報名比例。" },
++  { label: "到場率", reason: "同一報名者與到場紀錄尚未完整連結。" },
++  { label: "完看率", reason: "完看標準與每位觀眾的完成紀錄尚未就緒。" },
++  { label: "平均觀看時長", reason: "每位觀眾的有效觀看時間與重複觀看計算方式尚未就緒。" },
++  { label: "看完下單率", reason: "完成觀看與同一位觀眾的下單紀錄尚未完整連結。" },
++] as const;
+@@ -267,0 +277,11 @@
++      <section className="mb-6" aria-labelledby="core-metric-availability-title">
++        <h2 id="core-metric-availability-title" className="text-lg font-semibold text-slate-950">場次核心指標</h2>
++        <p className="mt-1 text-sm text-slate-600">資料與統計口徑就緒後才會顯示數值。</p>
++        <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
++          {pendingCoreMetrics.map((metric) => <Card key={metric.label}>
++            <h3 className="font-semibold text-slate-950">{metric.label}</h3>
++            <p className="mt-2 font-medium text-slate-700">尚不可計算</p>
++            <p className="mt-2 text-sm text-slate-600">{metric.reason}</p>
++          </Card>)}
++        </div>
++      </section>
+
+--- src/app/(app)/lives/[id]/analytics/page.test.tsx before
++++ src/app/(app)/lives/[id]/analytics/page.test.tsx
+@@ -228,0 +229,15 @@
++
++it.each(["existing activity", "no activity"])("keeps unsupported core metrics unavailable with %s", async (scenario) => {
++  if (scenario === "no activity") {
++    mocks.analyticsFindMany.mockReset().mockResolvedValue([]);
++    mocks.formSubmissionCount.mockReset().mockResolvedValue(0);
++  }
++  const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
++  const section = html.split('<section class="mb-6" aria-labelledby="core-metric-availability-title">')[1]?.split('<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">')[0];
++  expect(section).toBeDefined();
++  for (const label of ["報名率", "到場率", "完看率", "平均觀看時長", "看完下單率"]) expect(section).toContain(label);
++  expect(section?.match(/尚不可計算/g)).toHaveLength(5);
++  expect(section).not.toMatch(/\d+(?:\.\d+)?(?:%| 秒)/);
++  expect(section).toContain("不重複訪客數");
++  expect(section).toContain("完成觀看與同一位觀眾");
++});

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "testsPassed": 70,
+  "files": [
+    "src/lib/database-write-conflict.test.ts",
+    "src/lib/payment-webhook-conflict-retry.test.ts",
+    "src/lib/payment-webhook-invariants.test.ts",
+    "src/lib/payment-webhook-errors.test.ts",
+    "src/lib/payment-webhook-team-conversion.test.ts",
+    "src/lib/webhook-retry.test.ts"
+  ]
+}

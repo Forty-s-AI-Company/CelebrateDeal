@@ -1,3 +1,4 @@
+import { tryRecordCheckoutFollowupCandidate } from "@/lib/checkout-followup";
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { assertFlashSaleAdmission, consumeFlashSaleQuote, flashSaleBearerFromRequest, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
@@ -689,6 +690,7 @@ async function existingCheckoutResponse({
       vendorId: transaction.vendorId,
       orderId: order.id,
     });
+    await tryRecordCheckoutFollowupCandidate(getDb(), { vendorId: transaction.vendorId, orderId: order.id });
     return checkoutResponse({
       request,
       transaction,
@@ -979,6 +981,7 @@ export async function POST(request: Request) {
       vendorId: parsed.data.vendorId,
       orderId: commerceOrderId,
     });
+    await tryRecordCheckoutFollowupCandidate(db, { vendorId: transaction.vendorId, orderId: commerceOrderId });
     return checkoutResponse({
       request,
       transaction: { ...transaction, metadata: transactionMetadata },

@@ -1,0 +1,155 @@
+{
+  "finalModel": "claude-opus-5-5",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "execution_provider": "claude_cli",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "reviewed": true,
+  "accepted": false,
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "review": {
+    "summary": "REVIEW NOT PERFORMED. This is not a pass. The request names src/app/r/[code]/route.ts, route.test.ts, src/lib/rate-limit.ts, and the evidence files before-0.txt and before-1.txt in docs/ai-team/evidence/product-audit-20261011/WP-11/referral-navigation. None of their contents were included in what I was given, and I have no file-reading tools in this session. Because the review is limited to supplied text, I could not check any of the following: (1) whether the limiter-rejection and provider-503 paths redirect only to the fixed same-origin /billing/plans, without using the Host header, user input, or an open redirect; (2) whether those paths skip all DB calls and do not set or clear the attribution cookie; (3) whether Retry-After is passed through only when supplied, and whether the response is non-cacheable (Cache-Control: no-store or private, no-cache); (4) whether the limiter threshold is unchanged at 60 allowed, 61st rejected, and the successful attribution path is unchanged when compared against before-0.txt and before-1.txt; (5) whether writes are bounded and attribution cannot be false; (6) whether tests cover the real in-memory limiter on the 61st request, not only a mock. The empty findings list means nothing was examined. It does not mean the code has no defects, and it does not certify tests, security or release readiness. I make no claim about WP11 completion, and the wider WP11 IP trust topology is outside this review and uncertified. To get a real review, re-run with the full text of route.ts, route.test.ts, the relevant parts of rate-limit.ts, and both before-*.txt files included in the prompt.",
+    "findings": []
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "low",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "billing",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "low",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:82b5c340bc097fbc1d42ddf452ba97dec17c1df3c053f2a14b86e80ba8acf81b",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/app/r/[code]/route.ts",
+      "src/app/r/[code]/route.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/r/[code]/route.test.ts",
+      "src/app/r/[code]/route.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

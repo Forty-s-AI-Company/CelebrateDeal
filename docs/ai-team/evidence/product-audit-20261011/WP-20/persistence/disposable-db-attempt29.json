@@ -1,0 +1,276 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "name": "all metric tables retain default-deny RLS",
+      "status": "PASS"
+    },
+    {
+      "name": "ordinary database role cannot read tables or execute trigger functions",
+      "status": "PASS"
+    },
+    {
+      "name": "RLS still denies rows after an accidental table grant",
+      "status": "PASS"
+    },
+    {
+      "name": "valid interval preserves structural revision",
+      "status": "PASS"
+    },
+    {
+      "name": "collection defaults disabled",
+      "status": "PASS"
+    },
+    {
+      "name": "disabled version cannot collect browser visits",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant version/live binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant video binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-version visitor binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "unverified submission cannot be linked",
+      "status": "PASS"
+    },
+    {
+      "name": "wrong verified timestamp rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant admission rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-version interval rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "same session and sequence cannot duplicate",
+      "status": "PASS"
+    },
+    {
+      "name": "negative sequence",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid payload hash",
+      "status": "PASS"
+    },
+    {
+      "name": "negative media",
+      "status": "PASS"
+    },
+    {
+      "name": "past content duration",
+      "status": "PASS"
+    },
+    {
+      "name": "seek jump",
+      "status": "PASS"
+    },
+    {
+      "name": "oversized wall interval",
+      "status": "PASS"
+    },
+    {
+      "name": "future exposure",
+      "status": "PASS"
+    },
+    {
+      "name": "sequence gaps cannot be stored",
+      "status": "PASS"
+    },
+    {
+      "name": "new sequence cannot repeat an overlapping wall interval",
+      "status": "PASS"
+    },
+    {
+      "name": "complete session must declare its final contiguous sequence",
+      "status": "PASS"
+    },
+    {
+      "name": "intervals are append-only",
+      "status": "PASS"
+    },
+    {
+      "name": "version identity is immutable",
+      "status": "PASS"
+    },
+    {
+      "name": "evidence cannot move scopes",
+      "status": "PASS"
+    },
+    {
+      "name": "session progress cannot be forged without evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "new session cannot claim preexisting progress",
+      "status": "PASS"
+    },
+    {
+      "name": "session completion requires an explicit close",
+      "status": "PASS"
+    },
+    {
+      "name": "session admission identity cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "in-flight verification revocation blocks and rejects interval insertion",
+      "status": "PASS"
+    },
+    {
+      "name": "in-flight admission revocation blocks and rejects interval insertion",
+      "status": "PASS"
+    },
+    {
+      "name": "in-flight video revocation blocks and rejects interval insertion",
+      "status": "PASS"
+    },
+    {
+      "name": "expired admission cannot supply viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "backdated receipt cannot bypass expired admission",
+      "status": "PASS"
+    },
+    {
+      "name": "new session cannot start already expired",
+      "status": "PASS"
+    },
+    {
+      "name": "changed live video rejects old-version evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "revoked verification cannot supply viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "queued report stores its exact input revision",
+      "status": "PASS"
+    },
+    {
+      "name": "report cannot be ready without a result",
+      "status": "PASS"
+    },
+    {
+      "name": "report cannot run without a lease",
+      "status": "PASS"
+    },
+    {
+      "name": "source changes invalidate report and its lease",
+      "status": "PASS"
+    },
+    {
+      "name": "stale report cannot be resurrected as ready",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent duplicate sequence stores exactly one row",
+      "status": "PASS"
+    },
+    {
+      "name": "disabled collection rejects new intervals",
+      "status": "PASS"
+    },
+    {
+      "name": "closed session rejects new intervals",
+      "status": "PASS"
+    },
+    {
+      "name": "final sequence cannot change after it is declared",
+      "status": "PASS"
+    },
+    {
+      "name": "closed metric session cannot be reopened",
+      "status": "PASS"
+    },
+    {
+      "name": "individual deletion cannot invalidate a completed session",
+      "status": "PASS"
+    },
+    {
+      "name": "current report claim has one winner under concurrency",
+      "status": "PASS"
+    },
+    {
+      "name": "only the active report worker can finalize",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent ingestion and report work preserve current revision without deadlock",
+      "status": "PASS"
+    },
+    {
+      "name": "closed-window report finishes while later viewing continues",
+      "status": "PASS"
+    },
+    {
+      "name": "raw report claim is rejected even with a valid lease",
+      "status": "PASS"
+    },
+    {
+      "name": "expired worker leases recover and stop after five attempts",
+      "status": "PASS"
+    },
+    {
+      "name": "registration verification identity cannot be rewritten",
+      "status": "PASS"
+    },
+    {
+      "name": "normal admission release preserves historical viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "released admission cannot append viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "deleting a live preserves the other tenant and removes metric children",
+      "status": "PASS"
+    },
+    {
+      "name": "deleting a vendor preserves the other tenant",
+      "status": "PASS"
+    },
+    {
+      "name": "deleting a version preserves the other tenant",
+      "status": "PASS"
+    },
+    {
+      "name": "session and receipt lifetime remain valid under Asia/Taipei",
+      "status": "FAIL",
+      "code": "23514",
+      "guard": "metric session outside server lifetime",
+      "assertion": null
+    }
+  ],
+  "loadMetrics": null,
+  "passed": 62,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 97,
+    "failure": {
+      "category": "wp20-persistence-check-failed",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

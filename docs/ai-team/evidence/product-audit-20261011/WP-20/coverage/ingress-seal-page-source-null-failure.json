@@ -1,0 +1,52 @@
+{
+  "status": "FAIL",
+  "stage": "cleanup",
+  "checks": {
+    "activeRunCannotSeal": "PASS",
+    "pendingFramesCannotSeal": "PASS"
+  },
+  "sourceHashes": {
+    "prisma/schema.prisma": "e15b9ef839ac03a67c15d13a68e54eac2f65bdc96751348a511ff9d4b0f891f0",
+    "prisma/migrations/20261016170000_live_metric_ingress_source_seal/migration.sql": "f2bacf068d4fff2c55b0278fe23eb9f0aad125f17c90da90769a92a6db975c49",
+    "src/lib/live-metric-ingress-seal.ts": "9ac448f0f1b2c5479975616e0479a6f7fa3f421efedd420f47637c91664385d2",
+    "src/lib/live-metric-ingress.ts": "7c2d967a1ebd5ac68277611714d0c2467397b36c2c9926877d22fbc293d6d823",
+    "src/lib/live-metric-ingress-source.ts": "197af2ea54aecb4413c7d914c8f8b033f4a6d14e7e6eb1e8910aabd587fabe26",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs": "64297162cc2ac41dd4af4acd88a053a8b9d80776be2498177b0946e54341ea3d",
+    "scripts/wp20-ingress-seal-disposable.mjs": "6d119e14a39c0ec145b11d7f47e7ab6045f666b80023aede67c2a9c3d1efaee9",
+    "src/lib/live-publish-readiness.ts": "28855b23642839e8bcf4077b41077bbc7789e893942c62ae1a5094725489479a",
+    "src/lib/live-video-readiness.ts": "2d7f48468ced15b3f4c8803e3116231cd822f2d1e238f31f8f7570a239d1b55e",
+    "src/lib/message-template.ts": "e9e41df9ccf2af0090638c907618524fc85379171c744e9ca3d136fae0ffd61d",
+    "src/lib/registration-form-fields.ts": "06a3de929de678de8a1025ca1f608eb79b75d746138cdd6a93af6b777bc6c285",
+    "src/lib/live-runtime-readiness.ts": "e77a52efe27c9286f070cc6a671d138786d2f15da4adfcb250eaca6137f6e60c",
+    "src/lib/live-runtime-state.ts": "d7d04338809f97787f0cc3fa23c382129137334b9c5e68e02d2c4740a861d11e",
+    "src/lib/sellable-live.ts": "f299163254743cd979108001eb031d61e38ceaff3e683abf25ce5a765332a688",
+    "src/lib/live-metric-contract.ts": "1f165dc3b020696a8a6ab9b476b1387d9299a764399e51ce55c9be7d81a90c39",
+    "src/lib/live-viewing-evidence.ts": "afb402025c5c343b22bece181cb8d75ef51a42cbff940998ef776fda06240dcf",
+    "src/lib/live-metric-ingestion.ts": "039f4732c6ed6976f3a88aed7cfed1f77b9c029a7abc52c92e3ce3806c530287",
+    "src/lib/external-url.ts": "1d11691a7aa3959510d828d5381911b4aabb7ab321c70afe7e96b5b577617e64",
+    "src/lib/live-metric-version.ts": "d141b7d964ed80d0a121a547ed8b62402502433d4c0675ef03f171bbd2570008",
+    "src/lib/live-metric-visitor.ts": "418a3b613d33c7e1e93ad9549ecde37ec6b33dd66cb76141fce80fa814349537",
+    "src/lib/live-metric-visit-context.ts": "a83d497932faaac286ed17380731541e9707b4bb823c5d7aa1697d836333ba61",
+    "src/lib/live-metric-visit-intent.ts": "fc9811588bff24dbc35e0bc93780922c8934dbba931db1267ec9dbde2307ec01",
+    "src/lib/live-metric-ingress-proof.ts": "0f705bd92ad4317506f2341c7722bcbacc03110f80043723b5893f46ead8165a",
+    "src/lib/live-metric-visit-page.ts": "dc9ee47bf4072a0195e7dc7c3846a7b43b653df6cb9e31ea4c36b3e070d5399b",
+    "src/lib/live-metric-registration-page.ts": "cdc90bde00a361485a10e0080161debd1ecc8f05dbf7330029ffe64d10e50fba"
+  },
+  "innerFailure": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "sqlState": null,
+    "line": 44
+  },
+  "migrationCount": 129,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "error": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "sqlState": null,
+    "line": 90
+  }
+}

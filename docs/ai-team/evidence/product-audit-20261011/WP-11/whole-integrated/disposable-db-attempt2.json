@@ -1,0 +1,27 @@
+{
+  "status": "BLOCKED_OR_FAILED",
+  "tests": {
+    "status": "FAIL",
+    "total": 31,
+    "passed": 30,
+    "failed": 1,
+    "skipped": 0,
+    "failures": [
+      {
+        "test": "retains native fields after a queue 503 and resubmits without duplicate registration",
+        "timedOut": false,
+        "assertion": false,
+        "prismaCodes": []
+      }
+    ]
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "failure": {
+    "category": "lease-regression-failed",
+    "errorCode": null,
+    "rootCauseConfirmed": false
+  }
+}

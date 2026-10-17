@@ -1,0 +1,10 @@
+{
+  "runner_sha256": "1868459c9576db8ca5b14189fa2d90615fa1dfdf0bb2e306194a90d09ae04489",
+  "lint": "PASS",
+  "verified": "Cross-tenant update of form bound to Live with original-tenant Video rejected P2003; form/live owners unchanged after rollback",
+  "limitations": [
+    "No claim for Live without Video",
+    "No ready-report fixture in this ownership test",
+    "Remaining joined-field ready-result invalidation requires integration tests"
+  ]
+}

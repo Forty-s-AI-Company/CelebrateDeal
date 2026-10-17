@@ -1,0 +1,8 @@
+{
+  "sourceHashes": {
+    "src/components/quick-webinar-form.tsx": "dc0c6759fcc24bf6679f147815186392b768ed1c45c3d087c8e01bb371004bde",
+    "src/app/(app)/lives/new/page.tsx": "c9b19d595784d310d3dfb54b0d550010ab574c7de2997767e65ceb5f33c18c3a"
+  },
+  "contextChars": 3777,
+  "scope": "FullUIbody except unchanged hidden boundary field; pageintegration summarized"
+}

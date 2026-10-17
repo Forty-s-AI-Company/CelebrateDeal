@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; component/page/harness and evidence. React checklist applied; independent review required.

@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "mode": "verification",
+  "checks": {
+    "actualLegacyReaderTrustsUnprovenRowsCurrentReaderRejectsBothKinds": "PASS",
+    "exactMigrationForcedFailureRollsBackGateAndKeepsCachedReport": "PASS",
+    "affectedRevisionBumpedOnceCachedResultAndLeaseInvalidatedSupportedVersionUnchangedAndRawEvidenceRetained": "PASS",
+    "newGateRejectsUnprovenWritesAndBothOldAndNewReadersIgnoreLegacyPositives": "PASS",
+    "existingAppendOnlyGuardRejectsGapPromotionAndLegacyRevisionRefresh": "PASS",
+    "rejectedMixedBatchRollsBackEarlierGapAndItsLeaseInvalidation": "PASS",
+    "negativeGapsRemainReadableAndRealRegistrationOrderProofsUnaffectedPrivateInvokerGate": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-coverage-reader.ts": "cabfd232d0ae217a85dec0df75a121a74c87f68a6daf47f6a5d274fafb0be12c",
+    "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql": "4d2523a2a88a351e3161fa72707b3b61b54839fe1529febc17b3bed3b9d406a0",
+    "scripts/wp20-unproven-coverage-disposable.mjs": "80fc183064d9efd41322938888cc6874f42d215755ffd65f277b9752cd0fd0a5"
+  },
+  "observedLegacyReader": {
+    "visits": {
+      "rows": 1,
+      "coverage": {
+        "status": "complete"
+      }
+    },
+    "viewing": {
+      "rows": 1,
+      "coverage": {
+        "status": "complete"
+      }
+    }
+  },
+  "bugReproduced": true,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 125
+}

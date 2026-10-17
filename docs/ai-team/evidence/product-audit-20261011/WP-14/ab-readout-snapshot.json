@@ -1,0 +1,17 @@
+{
+  "files": [
+    "src/lib/funnel-operations-service.ts",
+    "src/lib/funnel-operations-service.test.ts",
+    "src/components/landing-pages/funnel-operations-panel.tsx",
+    "src/components/landing-pages/funnel-experiment-report.tsx",
+    "src/components/landing-pages/funnel-experiment-report.test.tsx"
+  ],
+  "sourceHashes": {
+    "src/lib/funnel-operations-service.ts": "3cfa45d7e23ab9b016956468f3e3721121a95d2bd28675fdcb615af1f7fe7630",
+    "src/lib/funnel-operations-service.test.ts": "f936f80692ce6f514635eefb202472a02a7247e15cf6f06d53a72843d072ad43",
+    "src/components/landing-pages/funnel-operations-panel.tsx": "247a7a249447b1e2813fe07ca5f0c4c62c67b49853fce608fedc0b2032868305",
+    "src/components/landing-pages/funnel-experiment-report.tsx": "8e4a04a59987da312395149ba60a5841b2894c83a3b061512d351887bec391ec",
+    "src/components/landing-pages/funnel-experiment-report.test.tsx": "e8d75d9c48c09308c96990871648aa11d688b6d4013eee95f89c45fde30b5c9f"
+  },
+  "revision": "sha256:141c46dc3856d3bf92f55279d9ae8f88c96bc6930a1c8110f349d7530619a26d"
+}

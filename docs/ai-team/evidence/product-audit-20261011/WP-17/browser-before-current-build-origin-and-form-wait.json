@@ -1,0 +1,42 @@
+{
+  "status": "FAIL",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic webinar creation and actual locally encoded WebM playback. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "a new merchant receives an owned draft and persistent creation feedback within three decisions",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 0"
+        }
+      ]
+    },
+    {
+      "title": "three-decision entry creates public pages, confirms a synthetic registration, plays real synthetic media, and blocks an unverified method",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "TimeoutError: locator.selectOption: Timeout 20000ms exceeded.\nCall log:\n  - waiting for getByRole('form', { name: '一場即上線', exact: true }).getByLabel('選擇影片', { exact: true })\n"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T01:10:48.783Z",
+    "duration": 42057.441,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 131
+}

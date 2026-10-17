@@ -1,0 +1,576 @@
+Independent Critical Payment/Permission review and adjudication. Use only BLOCKER, MAJOR, MINOR, NIT severities; each finding must include file,area,issue,evidence,impact,recommended_fix,required_test,confidence. Return concise JSON under6500 characters. Review the supplied exact sources/evidence. Original gate demands20 synchronized Serializable snapshots update distinct orders,2 attempts,20/20 commits. It fails even with metric trigger disabled. Real signed payment callback fixture persisted failed events and actual sequential recovery processed all20 exactly once (not deployed scheduler). New minimal reproduction has no product triggers: plain20/20,indexed2/20; table admission before snapshot20/20 but different request barrier. Do NOT declare original gate PASS, authorize weakening assertions, or recommend product global table locking without tradeoff analysis. Assess whether universal simultaneous-snapshot20/20/2attempt gate is logically appropriate for indexed PG SSI, identify a correct product acceptance and implementation path preserving durable no-loss/exactly-once behavior and original evidence, distinguish actual regression from baseline. Also review order revision helper/cache correctness. Full WP20 remains incomplete (durable completion, trusted coverage, deployed worker, joined-source invalidation). User authorizes unlimited independent reviews but no production. No tools.
+
+FILE scripts/wp20-ssi-minimal-disposable.mjs
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import { main } from "./prisma-loopback-disposable-migration-runner.mjs";
+const require=createRequire(import.meta.url);
+const output="docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ssi-minimal-diagnostic.json";
+const receipt={status:"FAIL",acceptance:"NOT_APPLICABLE",cases:[],cleanup:null};
+let migration;
+try {
+  const source=fs.readFileSync("node_modules/.prisma/client/index.js","utf8");
+  const paths=JSON.parse(source.match(/"relativeEnvPaths":\s*(\{[^}]*\})/u)?.[1]??"null");
+  assert.ok(paths&&Object.values(paths).every(value=>value===null));
+  const {PrismaClient}=require("@prisma/client");
+  migration=await main({afterMigrate:async({databaseUrl})=>{
+    const url=new URL(databaseUrl);
+    assert.equal(url.hostname,"127.0.0.1");assert.equal(url.pathname,"/celebratedeal_test");
+    url.searchParams.set("connection_limit","24");
+    const db=new PrismaClient({datasourceUrl:url.toString()});
+    try {
+      const [marker]=await db.$queryRawUnsafe("SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()");
+      assert.match(marker.marker,/^prisma-no-dotenv:[a-f0-9]{16}$/u);
+      // Separate synthetic tables: no product triggers or shared business rows.
+      for(const mode of ["plain","indexed","admitted"]) {
+        const indexed=mode!=="plain";
+        const admission=mode==="admitted";
+        const table=`"wp20_ssi_${mode}"`;
+        await db.$executeRawUnsafe(`CREATE TABLE ${table}(id int PRIMARY KEY,status int NOT NULL) WITH(fillfactor=50)`);
+        if(indexed)await db.$executeRawUnsafe(`CREATE INDEX ON ${table}(status)`);
+        await db.$executeRawUnsafe(`INSERT INTO ${table} SELECT i,0 FROM generate_series(1,20) i`);
+        let arrived=0,release;
+        const gate=new Promise(resolve=>{release=resolve;});
+        const timer=setTimeout(()=>release(),10000);
+        const outcomes=await Promise.all(Array.from({length:20},async(_,i)=>{
+          const failures=[];
+          // Admission experiment synchronizes incoming requests, not DB snapshots.
+          // The unchanged plain/indexed cases still synchronize all snapshots.
+          if(admission){arrived+=1;if(arrived===20){clearTimeout(timer);release();}await gate;}
+          for(let attempt=0;attempt<2;attempt+=1){
+            try {
+              await db.$transaction(async tx=>{
+                if(admission)await tx.$executeRawUnsafe(`LOCK TABLE ${table} IN SHARE ROW EXCLUSIVE MODE`);
+                // Match the observed index access without any product function.
+                await tx.$executeRawUnsafe("SET LOCAL enable_seqscan=off");
+                await tx.$queryRawUnsafe(`SELECT status FROM ${table} WHERE id=$1`,i+1);
+                if(attempt===0&&!admission){arrived+=1;if(arrived===20){clearTimeout(timer);release();}await gate;}
+                await tx.$executeRawUnsafe(`UPDATE ${table} SET status=1 WHERE id=$1`,i+1);
+              },{isolationLevel:"Serializable",timeout:15000,maxWait:15000});
+              return {committed:true,failures};
+            }catch(error){
+              const code=error?.meta?.code??error?.code;
+              failures.push(["40001","P2034"].includes(code)?code:"OTHER");
+              if(!["40001","P2034"].includes(code))break;
+            }
+          }
+          return {committed:false,failures};
+        }));
+        clearTimeout(timer);assert.equal(arrived,20);
+        receipt.cases.push({mode,indexedStatus:indexed,synchronizedSnapshots:admission?null:arrived,synchronizedRequests:admission?arrived:null,attempts:2,committed:outcomes.filter(x=>x.committed).length,failures:outcomes.flatMap(x=>x.failures)});
+      }
+      assert.equal(receipt.cases.find(item=>item.mode==="admitted").committed,20);
+      receipt.status="DIAGNOSTIC_COMPLETE";
+    }finally{await db.$disconnect();}
+  }});
+}catch{receipt.status="FAIL";}
+receipt.cleanup=migration?.cleanup??"UNKNOWN";
+if(migration?.status!=="PASS")receipt.status="FAIL";
+fs.writeFileSync(output,JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));
+process.exitCode=receipt.status==="DIAGNOSTIC_COMPLETE"?0:1;
+
+
+FILE prisma/migrations/20261015140000_live_metric_order_source/migration.sql
+-- Append-only merchant/live change events avoid a shared payment-path update.
+-- COUNT of immutable scoped events is the report input revision; sequence values
+-- are never used as commit watermarks because transactions can commit out of order.
+-- Do not update LiveMetricVersion or reports from Serializable payment writes.
+CREATE TABLE public."LiveMetricOrderSource" (
+ id BIGSERIAL PRIMARY KEY,
+ "vendorId" TEXT NOT NULL REFERENCES public."Vendor"(id) ON DELETE CASCADE ON UPDATE CASCADE,
+ "liveId" TEXT NOT NULL
+);
+CREATE INDEX "LiveMetricOrderSource_scope_idx" ON public."LiveMetricOrderSource" ("vendorId","liveId");
+
+CREATE FUNCTION public.wp20_metric_order_source_changed() RETURNS trigger
+-- Invoked only as a row trigger; no caller-supplied SQL or privileged output.
+-- The commerce writer keeps its existing privileges; metric tables remain private.
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+DECLARE candidates JSONB:='[]'::jsonb; fact JSONB; payment JSONB; scope RECORD;
+BEGIN
+ IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+  RAISE EXCEPTION 'invalid metric source trigger relation' USING ERRCODE='23514';
+ END IF;
+ IF TG_OP='UPDATE' THEN
+  IF TG_TABLE_NAME='CommerceOrder' THEN
+   IF
+   (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status='draft',NEW.status='cancelled')
+   IS NOT DISTINCT FROM
+   (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status='draft',OLD.status='cancelled')
+   THEN RETURN NULL; END IF;
+  ELSE
+   IF
+   (NEW."vendorId",NEW.metadata->>'formSubmissionId',NEW.metadata->>'sourceLiveId',NEW.metadata->>'billingPurpose')
+   IS NOT DISTINCT FROM
+   (OLD."vendorId",OLD.metadata->>'formSubmissionId',OLD.metadata->>'sourceLiveId',OLD.metadata->>'billingPurpose')
+   THEN RETURN NULL; END IF;
+  END IF;
+ END IF;
+ -- Keep both old and new attribution. Payment changes invalidate their scopes
+ -- even before an order exists, covering concurrent order creation.
+ FOR fact IN SELECT value FROM jsonb_array_elements(
+   (CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END) ||
+   (CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END)) LOOP
+  IF TG_TABLE_NAME='CommerceOrder' THEN
+   IF fact->>'status'='draft' THEN CONTINUE; END IF;
+   SELECT p.metadata INTO payment FROM public."PaymentTransaction" p
+    WHERE p.id=fact->>'primaryPaymentTransactionId' AND p."vendorId"=fact->>'vendorId';
+  ELSE payment:=fact->'metadata';
+  END IF;
+  IF payment->>'billingPurpose'='buyer_order' AND coalesce(payment->>'sourceLiveId','')<>''
+     AND coalesce(payment->>'formSubmissionId','')<>'' THEN
+   candidates:=candidates || jsonb_build_array(jsonb_build_object('vendorId',fact->>'vendorId','liveId',payment->>'sourceLiveId'));
+  END IF;
+ END LOOP;
+ -- Stable old/new scope ordering. No customer metadata is persisted here.
+ FOR scope IN SELECT DISTINCT value->>'vendorId' AS vendor_id,value->>'liveId' AS live_id
+   FROM jsonb_array_elements(candidates) ORDER BY vendor_id,live_id LOOP
+  INSERT INTO public."LiveMetricOrderSource" ("vendorId","liveId")
+   SELECT "vendorId",id FROM public."Live" WHERE id=scope.live_id AND "vendorId"=scope.vendor_id;
+ END LOOP;
+ RETURN NULL;
+END $$;
+CREATE TRIGGER "CommerceOrder_metric_source" AFTER INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_changed();
+CREATE TRIGGER "PaymentTransaction_metric_source" AFTER INSERT OR UPDATE OR DELETE ON public."PaymentTransaction"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_changed();
+ALTER TABLE public."LiveMetricOrderSource" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."LiveMetricOrderSource" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_order_source_changed() FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricOrderSource" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_source_changed() FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+-- Removing events would allow an old COUNT revision to become current again.
+CREATE FUNCTION public.wp20_metric_order_source_immutable() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+BEGIN
+ IF TG_OP='DELETE' AND NOT EXISTS(SELECT 1 FROM public."Vendor" WHERE id=OLD."vendorId") THEN RETURN OLD; END IF;
+ RAISE EXCEPTION 'metric order events are immutable' USING ERRCODE='23514';
+END $$;
+CREATE TRIGGER "LiveMetricOrderSource_immutable" BEFORE UPDATE OR DELETE ON public."LiveMetricOrderSource"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_immutable();
+CREATE TRIGGER "LiveMetricOrderSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricOrderSource"
+ FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+REVOKE ALL ON FUNCTION public.wp20_metric_order_source_immutable() FROM PUBLIC;
+REVOKE ALL ON SEQUENCE public."LiveMetricOrderSource_id_seq" FROM PUBLIC;
+
+-- Private backend capability: callers still authorize vendor/live scope.
+-- A caller-side RLS policy must never turn real events into a false zero count.
+-- No table rows or customer fields leave this function. Explicit EXECUTE grants
+-- belong only to trusted backend workers, never public/authenticated API roles.
+CREATE FUNCTION public.wp20_metric_order_revision(vendor_id TEXT,live_id TEXT) RETURNS BIGINT
+LANGUAGE sql STABLE STRICT SECURITY DEFINER
+SET search_path=pg_catalog SET row_security=off AS $$
+ SELECT count(*) FROM public."LiveMetricOrderSource" WHERE "vendorId"=vendor_id AND "liveId"=live_id
+$$;
+REVOKE ALL ON FUNCTION public.wp20_metric_order_revision(text,text) FROM PUBLIC;
+
+-- Default privileges may grant named API roles independently of PUBLIC.
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricOrderSource_id_seq" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_source_immutable() FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_revision(text,text) FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+
+FILE src/lib/live-metric-report-reader.ts
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import type { MetricReportLease } from "./live-metric-report-lease";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const Request = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id,
+  sessionId: id, afterSequence: z.number().int().min(-1).max(2_147_483_647), take: z.number().int().min(1).max(500) }).strict();
+type ReadRequest = MetricReportLease & { sessionId: string; afterSequence: number; take: number };
+export type MetricIntervalRow = { sequence: number; wallStartAt: Date; wallEndAt: Date; mediaStartMs: number; mediaEndMs: number };
+type SessionState = { isolation: string; registrationId: string; lastSequence: number; complete: boolean; closedAt: Date | null };
+const CohortRequest = Request.omit({ sessionId: true, afterSequence: true }).extend({ afterId: id.nullable() }).strict();
+export type MetricRegistrationRow = { id: string; visitorId: string | null; verifiedAt: Date; identityCurrent: boolean };
+export type MetricSessionRow = { id: string; anchorAt: Date; expiresAt: Date; closedAt: Date | null; complete: boolean; lastSequence: number };
+const SessionPageRequest = CohortRequest.extend({ registrationId: id }).strict();
+const LossRequest = CohortRequest.omit({ afterId: true }).extend({ after: z.date().nullable() }).strict();
+export type MetricVisitLossRow = { visitedAt: Date };
+
+/** The composite key makes timestamps unique within this exact version scope.
+ * Read loss provenance under the same report lease/MVCC snapshot as live facts.
+ */
+export async function readMetricVisitLossPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { after: Date | null; take: number }) {
+  const input = LossRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const cursor = input.after === null ? Prisma.empty : Prisma.sql`AND "visitedAt">${input.after}`;
+  const rows = await tx.$queryRaw<MetricVisitLossRow[]>(Prisma.sql`
+    SELECT "visitedAt" FROM "LiveMetricVisitLoss" WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId}
+      AND "versionId"=${input.versionId} AND "visitedAt">=${report.windowStartAt} AND "visitedAt"<${report.windowEndAt} ${cursor}
+    ORDER BY "visitedAt" LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take, next: page.at(-1)?.visitedAt ?? input.after };
+}
+export type MetricVisitRow = { id: string; visitorId: string; visitedAt: Date };
+type VisitCursor = { id: string; visitedAt: Date };
+const VisitRequest = CohortRequest.omit({ afterId: true }).extend({
+  after: z.object({ id: z.string().uuid(), visitedAt: z.date() }).strict().nullable(),
+}).strict();
+
+/** Preserve individual facts, including repeat visits; browser deduplication
+ * belongs to the metric calculation. No browser hashes leave this reader.
+ */
+export async function readMetricVisitPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { after: VisitCursor | null; take: number }) {
+  const input = VisitRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const cursor = input.after === null ? Prisma.empty : Prisma.sql`AND ("visitedAt",id)>(${input.after.visitedAt},${input.after.id})`;
+  const rows = await tx.$queryRaw<MetricVisitRow[]>(Prisma.sql`
+    SELECT id,"visitorId","visitedAt" FROM "LiveMetricVisit"
+    WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND "visitedAt">=${report.windowStartAt} AND "visitedAt"<${report.windowEndAt} ${cursor}
+    ORDER BY "visitedAt",id LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  const last = page.at(-1);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take,
+    next: last ? { id: last.id, visitedAt: last.visitedAt } : input.after };
+}
+export type MetricReportContext = {
+  windowStartAt: Date; windowEndAt: Date; mode: "live" | "replay";
+  durationMs: number | null; collectionEnabled: boolean; collectionStartedAt: Date | null;
+};
+const LeaseRequest = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id }).strict();
+
+type ReadClient = Pick<Prisma.TransactionClient, "$queryRaw">;
+const snapshotRevisions = new WeakMap<ReadClient, { vendorId: string; liveId: string; revision: bigint }>();
+
+/** Own a fresh facade for exactly one read-only RR callback. The private cache
+ * cannot be supplied by callers, reused on the original client, or survive the
+ * callback. Lease expiry is still checked against the DB clock on every page.
+ */
+export async function withMetricOrderRevision<T>(tx: ReadClient, value: MetricReportLease,
+  read: (snapshot: ReadClient) => Promise<T>): Promise<T> {
+  const scope = LeaseRequest.parse(value);
+  await tx.$queryRaw(Prisma.sql`SET TRANSACTION READ ONLY`);
+  const [state] = await tx.$queryRaw<{ isolation: string; readOnly: string; revision: bigint }[]>(Prisma.sql`
+    SELECT current_setting('transaction_isolation') AS isolation,
+      current_setting('transaction_read_only') AS "readOnly",
+      public.wp20_metric_order_revision(${scope.vendorId},${scope.liveId}) AS revision`);
+  if (!state || state.isolation !== "repeatable read" || state.readOnly !== "on"
+    || typeof state.revision !== "bigint" || state.revision < BigInt(0)) throw new Error("Metric revision requires read-only repeatable-read snapshot");
+  const snapshot: ReadClient = { $queryRaw: tx.$queryRaw.bind(tx) };
+  snapshotRevisions.set(snapshot, { vendorId: scope.vendorId, liveId: scope.liveId, revision: state.revision });
+  try { return await read(snapshot); }
+  finally { snapshotRevisions.delete(snapshot); }
+}
+
+function orderRevision(tx: ReadClient, scope: Pick<MetricReportLease, "vendorId" | "liveId">) {
+  const cached = snapshotRevisions.get(tx);
+  return cached && cached.vendorId === scope.vendorId && cached.liveId === scope.liveId
+    ? Prisma.sql`${cached.revision}::bigint`
+    : Prisma.sql`public.wp20_metric_order_revision(r."vendorId",r."liveId")`;
+}
+
+
+/** Read configuration in the same MVCC snapshot as the facts. Collection start
+ * is provenance only: it does not prove uninterrupted or complete collection.
+ */
+export async function readMetricReportContext(tx: Pick<Prisma.TransactionClient, "$queryRaw">, value: MetricReportLease) {
+  const report = await reportSnapshot(tx, LeaseRequest.parse(value));
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const { windowStartAt, windowEndAt, mode, durationMs, collectionEnabled, collectionStartedAt } = report;
+  return { status: "available" as const, context: { windowStartAt, windowEndAt, mode, durationMs, collectionEnabled, collectionStartedAt } };
+}
+
+export type MetricOrderRow = { id: string; registrationId: string; establishedAt: Date; cancelled: boolean };
+
+/** Resolve only server-owned checkout attribution, never buyer PII. Read the
+ * current order state in the report snapshot so cancellations cannot be mixed
+ * with historical paid events. Drafts are not established orders.
+ */
+export async function readMetricOrderPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { afterId: string | null; take: number }) {
+  const input = CohortRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND o.id>${input.afterId}`;
+  const rows = await tx.$queryRaw<MetricOrderRow[]>(Prisma.sql`
+    SELECT o.id,g.id AS "registrationId",o."createdAt" AT TIME ZONE 'UTC' AS "establishedAt",
+      (o.status='cancelled') AS cancelled
+    FROM "CommerceOrder" o JOIN "PaymentTransaction" p ON p.id=o."primaryPaymentTransactionId" AND p."vendorId"=o."vendorId"
+    JOIN "LiveMetricRegistration" g ON g."vendorId"=o."vendorId" AND g."liveId"=${input.liveId}
+      AND g."versionId"=${input.versionId} AND g."submissionId"=p.metadata->>'formSubmissionId'
+    JOIN "FormSubmission" f ON f.id=g."submissionId" AND f."liveId"=g."liveId"
+    JOIN "RegistrationForm" form ON form.id=f."formId" AND form."vendorId"=g."vendorId"
+    JOIN "Live" l ON l.id=g."liveId" AND l."vendorId"=g."vendorId" AND l."formId"=f."formId"
+    WHERE o."vendorId"=${input.vendorId} AND p.metadata->>'sourceLiveId'=${input.liveId}
+      AND p.metadata->>'billingPurpose'='buyer_order' AND o.status<>'draft'
+      AND f."verificationStatus"='VERIFIED' AND g."verifiedAt"=f."verifiedAt" AT TIME ZONE 'UTC'
+      AND g."verifiedAt">=${report.windowStartAt} AND g."verifiedAt"<${report.windowEndAt}
+      AND o."createdAt">=(${report.windowStartAt}::timestamptz AT TIME ZONE 'UTC')
+      AND o."createdAt"<(${report.windowEndAt}::timestamptz AT TIME ZONE 'UTC') ${cursor}
+    ORDER BY o.id LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+}
+
+/** Enumerate all potentially overlapping sessions, including incomplete ones.
+ * The worker must account for unknown delivery, not filter it into zero views.
+ */
+export async function readMetricSessionPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { registrationId: string; afterId: string | null; take: number }) {
+  const input = SessionPageRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const [registration] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT id FROM "LiveMetricRegistration" WHERE id=${input.registrationId} AND "vendorId"=${input.vendorId}
+      AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND "verifiedAt">=${report.windowStartAt} AND "verifiedAt"<${report.windowEndAt}`);
+  if (!registration) return { status: "unavailable" as const, reason: "registration_outside_cohort" as const };
+  const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND id>${input.afterId}`;
+  const rows = await tx.$queryRaw<MetricSessionRow[]>(Prisma.sql`
+    SELECT id,"anchorAt","expiresAt","closedAt",complete,"lastSequence" FROM "LiveMetricSession"
+    WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND "registrationId"=${input.registrationId} AND "anchorAt"<${report.windowEndAt} AND "expiresAt">${report.windowStartAt} ${cursor}
+    ORDER BY id ASC LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+}
+
+async function reportSnapshot(tx: Pick<Prisma.TransactionClient, "$queryRaw">, input: MetricReportLease) {
+  const [report] = await tx.$queryRaw<(MetricReportContext & { isolation: string })[]>(Prisma.sql`
+    SELECT current_setting('transaction_isolation') AS isolation,r."windowStartAt",r."windowEndAt",
+      v.mode,v."durationMs",v."collectionEnabled",v."collectionStartedAt"
+    FROM "LiveMetricReport" r JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+    WHERE r.id=${input.reportId} AND r."vendorId"=${input.vendorId} AND r."liveId"=${input.liveId} AND r."versionId"=${input.versionId}
+      AND r.status='running' AND r."leaseOwner"=${input.workerId} AND r."leaseExpiresAt">clock_timestamp()
+      AND r."expiresAt">clock_timestamp() AND r."inputRevision"=v."sourceRevision"
+      AND r."inputOrderRevision"=${orderRevision(tx, input)}`);
+  if (report && report.isolation !== "repeatable read") throw new Error("Metric reader requires repeatable-read snapshot");
+  return report ?? null;
+}
+
+/** Enumerate the report's verified-at cohort, not every registration ever seen.
+ * Keep contradicted identity facts visible to the adapter as an invalidation
+ * signal; silently excluding them would change the denominator.
+ */
+export async function readMetricRegistrationPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { afterId: string | null; take: number }) {
+  const input = CohortRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND g.id>${input.afterId}`;
+  const rows = await tx.$queryRaw<MetricRegistrationRow[]>(Prisma.sql`
+    SELECT g.id,g."visitorId",g."verifiedAt",
+      coalesce(f."verificationStatus"='VERIFIED' AND f."verifiedAt"=(g."verifiedAt" AT TIME ZONE 'UTC')
+        AND f."liveId"=g."liveId" AND f."formId"=l."formId",false) AS "identityCurrent"
+    FROM "LiveMetricRegistration" g
+    JOIN "Live" l ON l.id=g."liveId" AND l."vendorId"=g."vendorId"
+    LEFT JOIN "FormSubmission" f ON f.id=g."submissionId"
+    WHERE g."vendorId"=${input.vendorId} AND g."liveId"=${input.liveId} AND g."versionId"=${input.versionId}
+      AND g."verifiedAt">=${report.windowStartAt} AND g."verifiedAt"<${report.windowEndAt} ${cursor}
+    ORDER BY g.id ASC LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+}
+
+/** Shared by all sessions in one report, not reset per person/page. These are
+ * work limits, not sampling or truncation rules. The caller must also bound the
+ * database transaction timeout because a budget cannot cancel an active query.
+ */
+export class MetricReadBudget {
+  private rows = 0;
+  private pages = 0;
+  private readonly started: number;
+  constructor(private readonly limits = { rows: 1_000_000, pages: 4000, milliseconds: 30000 }, private readonly now = () => performance.now()) {
+    if (!Number.isSafeInteger(limits.rows) || limits.rows < 1 || limits.rows > 1_000_000
+      || !Number.isSafeInteger(limits.pages) || limits.pages < 1 || limits.pages > 4000
+      || !Number.isSafeInteger(limits.milliseconds) || limits.milliseconds < 1 || limits.milliseconds > 30000) throw new Error("Invalid metric read budget");
+    this.started = now();
+  }
+  active() { const elapsed = this.now() - this.started; return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < this.limits.milliseconds; }
+  nextPage() { if (!this.active() || this.pages >= this.limits.pages) return false; this.pages++; return true; }
+  retain(count: number) {
+    if (!Number.isSafeInteger(count) || count < 0 || !this.active() || count > this.limits.rows - this.rows) return false;
+    this.rows += count; return true;
+  }
+}
+
+export async function readMetricSessionIntervals(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: Omit<ReadRequest, "afterSequence" | "take">, budget: MetricReadBudget) {
+  const rows: MetricIntervalRow[] = [];
+  let afterSequence = -1;
+  while (budget.nextPage()) {
+    const page = await readMetricIntervalPage(tx, { ...value, afterSequence, take: 500 });
+    if (page.status !== "available") return page;
+    if (!budget.retain(page.rows.length)) break;
+    rows.push(...page.rows);
+    if (!page.hasMore) return { status: "available" as const, rows, registrationId: page.registrationId, deliveryComplete: page.deliveryComplete };
+    afterSequence = page.nextSequence;
+  }
+  // Do not leak a prefix as if it represented all viewing for this session.
+  return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+}
+
+/** Read one indexed session/sequence page inside the worker's repeatable-read
+ * snapshot. Never use OFFSET or an unbounded cohort query. Claim/finish happen
+ * in separate read-committed transactions, as required by the write guards.
+ */
+export async function readMetricIntervalPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">, value: ReadRequest) {
+  const input = Request.parse(value);
+  const [session] = await tx.$queryRaw<SessionState[]>(Prisma.sql`
+    SELECT current_setting('transaction_isolation') AS isolation, s."registrationId",s."lastSequence",s.complete,s."closedAt"
+    FROM "LiveMetricSession" s
+    JOIN "LiveMetricReport" r ON r."vendorId"=s."vendorId" AND r."liveId"=s."liveId" AND r."versionId"=s."versionId"
+    JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+    WHERE s.id=${input.sessionId} AND s."vendorId"=${input.vendorId} AND s."liveId"=${input.liveId} AND s."versionId"=${input.versionId}
+      AND r.id=${input.reportId} AND r.status='running' AND r."leaseOwner"=${input.workerId}
+      AND r."leaseExpiresAt">clock_timestamp() AND r."expiresAt">clock_timestamp()
+      AND r."inputRevision"=v."sourceRevision"
+      AND r."inputOrderRevision"=${orderRevision(tx, input)}`);
+  if (!session) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  if (session.isolation !== "repeatable read") throw new Error("Metric reader requires repeatable-read snapshot");
+  if (input.afterSequence > session.lastSequence) throw new Error("Metric cursor exceeds snapshot");
+  const rows = await tx.$queryRaw<MetricIntervalRow[]>(Prisma.sql`
+    SELECT sequence,"wallStartAt","wallEndAt","mediaStartMs","mediaEndMs" FROM "LiveMetricInterval"
+    WHERE "sessionId"=${input.sessionId} AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND sequence>${input.afterSequence} ORDER BY sequence ASC LIMIT ${input.take + 1}`);
+  if (rows.length > input.take + 1 || rows.some((row, index) => row.sequence !== input.afterSequence + index + 1)) throw new Error("Metric interval snapshot is inconsistent");
+  const hasMore = rows.length > input.take;
+  const page = rows.slice(0, input.take);
+  const nextSequence = page.at(-1)?.sequence ?? input.afterSequence;
+  if (!hasMore && nextSequence !== session.lastSequence) throw new Error("Metric interval snapshot is incomplete");
+  return { status: "available" as const, registrationId: session.registrationId, rows: page, nextSequence, hasMore,
+    // Complete pagination and complete delivery are different facts.
+    deliveryComplete: session.complete && session.closedAt !== null };
+}
+
+/** Read only a current completed aggregate for an already-authorized scope.
+ * This is not an HTTP authorization boundary. Stored status alone is insufficient
+ * because Serializable payment writes invalidate generation without touching reports.
+ */
+export async function readMetricReadyReport(db: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: Omit<MetricReportLease, "workerId">) {
+  const input = LeaseRequest.omit({ workerId: true }).parse(value);
+  const [report] = await db.$queryRaw<{ result: Prisma.JsonValue }[]>(Prisma.sql`
+    SELECT r.result FROM "LiveMetricReport" r
+    JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+    WHERE r.id=${input.reportId} AND r."vendorId"=${input.vendorId} AND r."liveId"=${input.liveId}
+      AND r."versionId"=${input.versionId} AND r.status='ready' AND r."expiresAt">clock_timestamp()
+      AND r."inputRevision"=v."sourceRevision"
+      AND r."inputOrderRevision"=public.wp20_metric_order_revision(r."vendorId",r."liveId")`);
+  return report ? { status: "available" as const, result: report.result }
+    : { status: "unavailable" as const, reason: "report_not_current" as const };
+}
+
+
+EVIDENCE ssi-admission-diagnostic.json
+{
+  "status": "DIAGNOSTIC_COMPLETE",
+  "acceptance": "NOT_APPLICABLE",
+  "cases": [
+    {
+      "mode": "plain",
+      "indexedStatus": false,
+      "synchronizedSnapshots": 20,
+      "synchronizedRequests": null,
+      "attempts": 2,
+      "committed": 20,
+      "failures": []
+    },
+    {
+      "mode": "indexed",
+      "indexedStatus": true,
+      "synchronizedSnapshots": 20,
+      "synchronizedRequests": null,
+      "attempts": 2,
+      "committed": 2,
+      "failures": [
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "40001",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "40001",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "40001",
+        "P2034",
+        "P2034",
+        "40001",
+        "P2034",
+        "P2034",
+        "P2034"
+      ]
+    },
+    {
+      "mode": "admitted",
+      "indexedStatus": true,
+      "synchronizedSnapshots": null,
+      "synchronizedRequests": 20,
+      "attempts": 2,
+      "committed": 20,
+      "failures": []
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}
+
+EVIDENCE order-serialization-sqlstate-snapshot.json
+{
+  "runner_sha256": "375785b15af4bf74777a4c1bca073ecaccf0e760dfaf3e184e79146702a67e32",
+  "lint": "PASS",
+  "confirmed": "Raw UPDATE receives SQLSTATE40001 read/write dependencies; no deadlock proven",
+  "unresolved": "Exact SSI dependency cycle and correction preserving original acceptance"
+}
+
+EVIDENCE ssi-admission-conclusion.json
+{
+  "runner_sha256": "2f379b2642e61024fbfd3c4e4c545b9b87a555378616d5e3fcd8c72b19b98313",
+  "lint": "PASS",
+  "results": {
+    "plain_snapshot_barrier": 20,
+    "indexed_snapshot_barrier": 2,
+    "indexed_request_barrier_with_pre_snapshot_table_lock": 20
+  },
+  "accepted_as_product_fix": false,
+  "limitations": [
+    "Admission changes scheduling: request barrier is not snapshot barrier",
+    "Table lock serializes all writers; not appropriate to adopt without throughput and cross-path design",
+    "Original product20/20 gate still FAIL"
+  ],
+  "next": "Independent Critical adjudication of acceptance semantics and admission design before changing payment code; retain failed original gate"
+}

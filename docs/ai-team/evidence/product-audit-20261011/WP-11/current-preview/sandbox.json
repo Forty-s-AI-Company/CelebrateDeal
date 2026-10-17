@@ -1,0 +1,7 @@
+{
+  "session_id": "sbx_Qf0EcsunKoXhG7mnyXWlehgx1bcU",
+  "redis_url": "https://sb-5ww3dugbuxoc.vercel.run",
+  "persistent": false,
+  "timeout_ms": 2700000,
+  "created_for": "WP11 current Preview synthetic rate-limit bridge; no business DB"
+}

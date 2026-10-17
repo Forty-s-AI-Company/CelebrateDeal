@@ -1,3 +1,4 @@
+import { isDatabaseWriteConflict } from "@/lib/database-write-conflict";
 import { Prisma, type PaymentTransaction } from "@prisma/client";
 import {
   expireCommerceOrderForPayment,
@@ -147,10 +148,6 @@ export function snapshotReservationItems(reservation: Pick<ReservationRecord, "i
   return items;
 }
 
-function isSerializableConflict(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
-}
-
 function isUniqueConstraintConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
@@ -168,7 +165,7 @@ async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => P
         timeout: 10_000,
       });
     } catch (error) {
-      if (!isSerializableConflict(error) || attempt === MAX_SERIALIZABLE_ATTEMPTS) throw error;
+      if (!isDatabaseWriteConflict(error) || attempt === MAX_SERIALIZABLE_ATTEMPTS) throw error;
     }
   }
 

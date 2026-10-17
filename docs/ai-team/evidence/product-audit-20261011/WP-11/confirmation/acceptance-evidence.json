@@ -1,0 +1,158 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\execution.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "lineage": [
+      "review-cli.json",
+      "review-final-cli.json"
+    ],
+    "scope_files": [
+      "src/lib/capability-confirmation.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts"
+    ],
+    "limitations": "One nonblocking MINOR: simultaneous previews share challenge; stale confirmation can invalidate newer preview, requires reopening link. No credential consumed on failure. Reviewer did not run tests. WP11 voucher/IP/rate-limit topology excluded.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\review-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "chromium",
+      "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.109,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\chromium.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "firefox",
+      "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 7.704,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\firefox.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 5.125,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "portal-db-boundaries",
+      "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.406,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\portal-db-boundaries.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "scope-diff",
+      "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.094,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\scope-diff.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.656,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.297,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\unit.json"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/capability-confirmation.ts",
+      "area": "capabilityConfirmation cookie name / clearCapabilityConfirmation (single fixed challenge cookie per browser); route.ts POST failure()",
+      "issue": "Each browser has only one challenge cookie, so opening two magic-link previews makes them interfere with each other. Opening a second link (e.g., after the user clicks 'resend', or for another vendor) overwrites the first tab's challenge. Confirming in the stale tab then fails, and failure() clears the cookie, which also breaks the newer tab's pending confirmation.",
+      "evidence": "The cookie name is the constant `${secure ? \"__Host-\" : \"\"}celebratedeal_access_confirmation` with path \"/\" for every vendor and token. Every GET calls response.cookies.set with this name. A same-origin invalid POST runs clearCapabilityConfirmation for the same name.",
+      "impact": "This is a usability problem, not a security issue. A user with two magic-link emails open can end up on invalid_or_expired with both pages unusable and must request or open a link again. No token is consumed and no authentication is bypassed.",
+      "recommended_fix": "Optional, not blocking. Either accept and document this as a known limitation, or key the challenge per token, e.g., a cookie-name suffix derived from a short hash of the token (still under __Host- and path=/), with a small cap on how many exist. Clear only that token's cookie on failure. Or at minimum, do not clear the cookie when the submitted nonce simply doesn't match the current challenge.",
+      "required_test": "Browser test: open preview A, then preview B in a second tab, and confirm A. Expect A to fail without breaking B (if the fix is adopted), or document the expected behavior. Then confirm B and expect a 303 redirect to the portal.",
+      "confidence": 0.6,
+      "disposition": "confirmed",
+      "reason": "Documented nonblocking multi-tab limitation; no auth bypass or consumed capability; reopening the email link obtains a fresh confirmation."
+    },
+    {
+      "severity": "BLOCKER",
+      "file": "src/lib/capability-confirmation.ts",
+      "area": "PRIVATE_HEADERS Referrer-Policy on capabilityConfirmation response + readCapabilityConfirmation origin check",
+      "issue": "The confirmation page sets `Referrer-Policy: no-referrer`. Under the Fetch spec, a browser then sends `Origin: null` and no `Referer` on the page's form POST. `readCapabilityConfirmation` runs `new URL(\"null\")`, which throws, and the function returns null. Every legitimate confirmation in a modern browser gets a 403 `confirmation_required`.",
+      "evidence": "In PRIVATE_HEADERS, `\"Referrer-Policy\": \"no-referrer\"` is applied to the HTML confirmation page. The form posts from that page. The Fetch spec's 'append a request Origin header' step sets the origin to `null` for non-GET/HEAD requests when the policy is no-referrer (Chromium and Firefox follow this; it's a known cause of failures in Rails' Origin CSRF check). In the reader, `new URL(request.headers.get(\"origin\") ?? request.headers.get(\"referer\") ?? \"\").origin` gets \"null\", the catch block returns null, and POST returns 403. Browser tests are pending, so unit tests would not catch this.",
+      "impact": "The magic-link login stops working for all real users. The failure is safe from a security standpoint (it rejects rather than accepts), but nobody can log in.",
+      "recommended_fix": "Serve the confirmation page with `Referrer-Policy: strict-origin` or `same-origin` instead of `no-referrer`. The page loads no subresources and only posts to the same origin, so the GET URL with the link credential is not leaked cross-site; `strict-origin` also stops the full URL from being sent as Referer. Optionally add `rel=\"noreferrer\"`-free handling. As defense in depth, accept a request only if `Sec-Fetch-Site` is `same-origin` (when the header is present) and the Origin exactly matches the canonical origin. Keep `no-referrer` on the redirect responses.",
+      "required_test": "Real-browser (Playwright, Chromium and Firefox) end-to-end test: GET a valid link, click \u786e\u8ba4\u767b\u5165, and assert a 303 to /portal/{slug} with the session cookie set. Also assert that the POST carries a non-null Origin equal to the canonical origin. Add a unit test that `Origin: null` is rejected.",
+      "confidence": 0.82,
+      "disposition": "resolved",
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "chromium",
+          "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 4.109,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\chromium.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "firefox",
+          "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 7.704,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\confirmation\\verified-checks\\firefox.json"
+        }
+      ],
+      "resolution_note": "Independent final review confirms resolution. Browser actual canonical Origin and origin-only Referer verified, including HTML meta override."
+    }
+  ]
+}

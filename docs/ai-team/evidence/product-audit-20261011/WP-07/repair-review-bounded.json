@@ -1,0 +1,223 @@
+{
+  "completed": false,
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli"
+    }
+  ],
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "All four original WP-07 findings are repaired. (1) The dev environment contract is now documented in docs/launch/local-database-development.md: DATABASE_URL must be injected into the shell, .env files are not loaded, and the preflight fails before Next.js starts. The resolver's error message also points to that doc. (2) The test:unit glob is now quoted. (3) check-local-database.ts and vitest.config.ts now share one URL resolver, resolveLocalDatabaseUrl. (4) New tests cover four cases: a remote target is rejected before the PrismaClient is created, driver errors are sanitized, disconnect is still called on failure, and both line-ending variants of a real CRLF migration file are hashed. I found one remaining MINOR issue, caused by the new docs: following the dev setup and then running npm test in the same shell sends the tests to celebratedeal_dev. The docs suggest that doesn't happen. The explicit shell injection and the no-.env rule are intended and not reported. An empty or short findings list does not certify release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "docs/launch/local-database-development.md",
+        "area": "Final paragraph (shared resolver / '不會自動連至 dev DB') together with scripts/local-database-safety.ts resolveLocalDatabaseUrl test mode",
+        "issue": "The docs now tell developers to inject a DATABASE_URL for celebratedeal_dev into the shell before running npm run dev. In test mode, though, resolveLocalDatabaseUrl returns any injected non-file URL unchanged, and celebratedeal_dev passes ISOLATED_DATABASE_NAME. If a developer follows the dev instructions and then runs npm test or npm run test:db in the same shell, the tests run against the dev DB. The doc line saying it won't connect to the dev DB automatically, and the vitest.config.ts comment about keeping tests away from the developer's interactive database, both suggest otherwise.",
+        "evidence": "resolveLocalDatabaseUrl: `if (mode === \"test\" && (!value || value.startsWith(\"file:\"))) return DEFAULT...; ... return value;`. The test asserts `resolveLocalDatabaseUrl(\"postgresql://localhost/celebratedeal_dev\", \"test\")` returns the dev URL. The docs tell users to inject DATABASE_URL into the session for dev.",
+        "impact": "Following the documented dev workflow can lead test runs to create, update and delete fixture data in the developer's interactive celebratedeal_dev database. This is limited to loopback, so it is not a remote or production risk.",
+        "recommended_fix": "Smallest fix: state in the docs that a shell-injected DATABASE_URL is also used by npm test and test:db, and that users must inject a test URL or unset the variable before running tests. Stricter fix (a scope proposal only): have test mode reject a *_dev database name.",
+        "required_test": "If only the docs change, no test is needed. If test mode is changed to reject *_dev names, add a unit test that resolveLocalDatabaseUrl or the test-mode assertion rejects a celebratedeal_dev URL in test mode.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "WP-07-repair-review",
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "concurrency",
+        "migration",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [
+        "scripts/check-local-database.ts",
+        "scripts/local-database-schema.ts",
+        "scripts/local-database-schema.test.ts",
+        "scripts/local-database-safety.ts",
+        "scripts/local-database-safety.test.ts",
+        "vitest.config.ts",
+        "docs/launch/local-database-development.md"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:2aa7e3fb1f3db46c924615fb717d95c8fe2d54a2ce9026cb6f96ae0f94a7aa06",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "prisma/seed.ts",
+      "package.json",
+      "scripts/local-database-schema.ts",
+      "scripts/local-database-schema.test.ts",
+      "scripts/check-local-database.ts",
+      "src/lib/course-payment-webhooks.db.test.ts",
+      "src/lib/dashboard-read-model.query-event.db.test.ts",
+      "src/lib/inventory-reservations.db.test.ts",
+      "src/lib/password-reset.db.test.ts",
+      "src/lib/payment-webhooks.db.test.ts",
+      "src/lib/post-purchase-upsell-access.db.test.ts",
+      "src/lib/tenant-ledger-invariants.db.test.ts",
+      "src/app/api/cloudflare/stream-webhook/route.db.test.ts",
+      "scripts/g7-checkout-admission-disposable-qa.mjs",
+      "scripts/g7-commerce-disposable-qa.mjs",
+      "scripts/g7-product-catalog-disposable-qa.mjs",
+      "scripts/merchant-affiliate-policy-browser-qa.mjs",
+      "scripts/merchant-affiliate-policy-disposable-qa.mjs",
+      "scripts/wp121-suite-manifest.json",
+      "scripts/local-database-safety.ts",
+      "scripts/local-database-safety.test.ts",
+      "vitest.config.ts",
+      "docs/launch/local-database-development.md"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "docs/launch/local-database-development.md",
+      "package.json",
+      "prisma/seed.ts",
+      "scripts/check-local-database.ts",
+      "scripts/g7-checkout-admission-disposable-qa.mjs",
+      "scripts/g7-commerce-disposable-qa.mjs",
+      "scripts/g7-product-catalog-disposable-qa.mjs",
+      "scripts/local-database-safety.test.ts",
+      "scripts/local-database-safety.ts",
+      "scripts/local-database-schema.test.ts",
+      "scripts/local-database-schema.ts",
+      "scripts/merchant-affiliate-policy-browser-qa.mjs",
+      "scripts/merchant-affiliate-policy-disposable-qa.mjs",
+      "scripts/wp121-suite-manifest.json",
+      "src/app/api/cloudflare/stream-webhook/route.db.test.ts",
+      "src/lib/course-payment-webhooks.db.test.ts",
+      "src/lib/dashboard-read-model.query-event.db.test.ts",
+      "src/lib/inventory-reservations.db.test.ts",
+      "src/lib/password-reset.db.test.ts",
+      "src/lib/payment-webhooks.db.test.ts",
+      "src/lib/post-purchase-upsell-access.db.test.ts",
+      "src/lib/tenant-ledger-invariants.db.test.ts",
+      "vitest.config.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "reviewed": true,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

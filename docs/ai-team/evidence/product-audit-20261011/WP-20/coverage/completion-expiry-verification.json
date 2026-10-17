@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-14T19:51:33.158611+00:00",
+  "status": "PASS",
+  "source": "scripts\\wp20-completion-publish-probe.mjs",
+  "sha256": "9cebd41112b42855229e5bcd202117f0d020fbf739c3ac14c910021129c55447",
+  "checks": [
+    "expired lease rejects completion publish with zero persisted rows",
+    "replacement worker claims expired report",
+    "old worker rejected after replacement claim",
+    "replacement worker publishes successfully",
+    "ESLint exit 0"
+  ],
+  "databaseReceipt": "payment-retry-integration.json",
+  "initialFailure": "completion-expiry-initial-failure.json",
+  "initialFailureCause": "Probe referenced windowStart/windowEnd instead of windowStartAt/windowEndAt; corrected before successful rerun",
+  "limitations": [
+    "Does not close original contention gate",
+    "Does not establish deployed report scheduling or trusted coverage producer readiness",
+    "Independent completion implementation review still required"
+  ]
+}

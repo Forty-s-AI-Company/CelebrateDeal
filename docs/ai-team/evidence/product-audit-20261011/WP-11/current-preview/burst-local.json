@@ -1,0 +1,12 @@
+{
+  "mode": "burst",
+  "requests": 123,
+  "duration_seconds": 13.406,
+  "http_counts": {
+    "400": 120,
+    "429": 3
+  },
+  "validation_400_count": 120,
+  "confirmed_429_count": 3,
+  "within_window": true
+}

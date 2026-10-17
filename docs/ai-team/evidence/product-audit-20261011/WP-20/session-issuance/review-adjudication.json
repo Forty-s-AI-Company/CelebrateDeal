@@ -1,0 +1,24 @@
+{
+  "review_source": "review-current.json",
+  "previous_review": "review-before-visitor-fix.json",
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "disposition": "resolved",
+      "issue": "visitor lockout",
+      "evidence": "same-scope different-browser and null-to-known issuance DB regression; independent follow-up findings empty"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "issue": "admission-submission SQL join",
+      "reason": "Actual legacy admission contains no submission FK; signed registration credential supplies authenticated identity separately from scoped admission. Canonical application contract preserved; no fabricated column or implicit identity."
+    },
+    {
+      "severity": "NIT",
+      "disposition": "resolved",
+      "issue": "shared error category names",
+      "reason": "Documented common metric persistence error categories; no raw SQL/constraints enter public API. No claim that a session request contains sequence data."
+    }
+  ]
+}

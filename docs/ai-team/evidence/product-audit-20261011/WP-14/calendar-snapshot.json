@@ -1,0 +1,27 @@
+{
+  "files": [
+    "src/lib/webinar-calendar.ts",
+    "src/lib/webinar-calendar.test.ts",
+    "src/components/webinar-calendar-download.tsx",
+    "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+    "src/lib/landing-page-service.ts",
+    "src/components/landing-page-workspace.tsx",
+    "tests/e2e/wp17-quick-webinar.spec.ts",
+    "src/components/quick-webinar-form.tsx",
+    "src/components/quick-webinar-form.test.tsx"
+  ],
+  "sourceHashes": {
+    "src/lib/webinar-calendar.ts": "9a0f6dcc5590df8ead223bcdfd654eb6490a66be2675b39158f2c91ed0194021",
+    "src/lib/webinar-calendar.test.ts": "a34becbf32deac01b1996947c0e5949fa9cde8f7e8359b015761b40c588a0efe",
+    "src/components/webinar-calendar-download.tsx": "ade802e609e6e2148d2833b5333271b28c11d1bcb0ea4595719feda4fc64e13d",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "1ec73a1fab9f2d7e65edbbb6c5315c71b6f853cc7489a65f77245d7dd5f9b077",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx": "3a08bb2074cfa1633031c094ef274dc3032b07be046c5721066d1ccedeec0501",
+    "src/lib/landing-page-service.ts": "08f7ab9b41165512b4a1f2568f36cd4ae0dbbb5722e4f5e4d8c08a19778427b4",
+    "src/components/landing-page-workspace.tsx": "757e42990dc40f6bcc1b3ab9b533ff5e7162177bb85af5098be453728a957fa9",
+    "tests/e2e/wp17-quick-webinar.spec.ts": "3d91171de1edc294716c99ed638e291a4d11c46fff7aab1d8dd6b9a2e1739ba6",
+    "src/components/quick-webinar-form.tsx": "e7e4951f6d5a1c2444608f1634d7cb4b9b60ab92176e0beefe55415f77f5d97e",
+    "src/components/quick-webinar-form.test.tsx": "418465d07457081c91ca8cd88bc715dbaf8a96691361051ba93f411670210b57"
+  },
+  "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7"
+}

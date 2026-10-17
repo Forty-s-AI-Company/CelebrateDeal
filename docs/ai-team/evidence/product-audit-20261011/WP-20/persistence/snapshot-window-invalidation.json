@@ -1,0 +1,8 @@
+{
+  "source_revision": "sha256:ca544e13c3563435e5b9913757aef58526ec68168e5c66499d6a639fb2b18749",
+  "snapshot_files": [
+    "prisma/schema.prisma",
+    "prisma/migrations/20261014120000_live_metric_evidence/migration.sql",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ]
+}

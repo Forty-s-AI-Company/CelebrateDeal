@@ -1,0 +1,14 @@
+{
+  "hashes": {
+    "src/lib/live-metric-registration-audit.ts": "1b3bdb6e80f2413a91b06f9f8c6a5adcb9d3c523b073e674e9aec1cbff83f5ea",
+    "src/lib/live-metric-registration-source-audit.ts": "e0df9787e74ac82d206f972f980ee95940ca636bf6b0d11a671e29bd7daebac1",
+    "src/lib/live-metric-registration-audit.test.ts": "73b95102e94c0e4c5078c2aa7fe7c1d07d082c97d2ee4c18a7acf47ff127fa14",
+    "src/lib/live-metric-registration-source-audit.test.ts": "c030eb996c21caf2a4f39485ce930e164ce50a664e57df5e9dca356c779a0f1b",
+    "scripts/wp20-registration-source-concurrency.mjs": "1022b7738ab671340c612c29ce0daf29ba414654aaff3887b773b8d6dad39c27"
+  },
+  "unit": "8 PASS",
+  "db": "106 migrations PASS;21 sources retained after live form switch,all form_mismatch",
+  "lint": "reader/source and reader test PASS before added digest test",
+  "review": "PENDING",
+  "coverage": "unknown"
+}

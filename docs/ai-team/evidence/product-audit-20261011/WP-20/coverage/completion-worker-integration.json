@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "real worker equals canonical calculation",
+      "status": "PASS"
+    },
+    {
+      "name": "real bounded completion worker produces first-crossing candidates",
+      "status": "PASS"
+    },
+    {
+      "name": "oversized facts reject before starting worker",
+      "status": "PASS"
+    },
+    {
+      "name": "hard timeout terminates busy calculation and parent stays responsive",
+      "status": "PASS"
+    },
+    {
+      "name": "crash fails closed without synchronous fallback",
+      "status": "PASS"
+    }
+  ],
+  "cleanup": "PASS",
+  "scope": "Local isolated worker threads, synthetic facts; no DB or secrets"
+}

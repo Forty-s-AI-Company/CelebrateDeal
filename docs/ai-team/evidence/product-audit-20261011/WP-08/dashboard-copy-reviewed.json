@@ -1,0 +1,262 @@
+{
+  "execution_provider": "claude_cli",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "completed": false,
+  "accepted": false,
+  "review": {
+    "summary": "This is a scoped copy review of the WP08 dashboard, goal-picker, webinar-settings, team-performance title excerpt and block-label files. It does not certify the whole WP or any test or release result. Data and API keys are unchanged: the goal ids (audience/sell/custom/webinar), the FormData keys, the webinar draft keys and the template ids. The page titles (營運總覽, 成效分析) and the block labels read correctly. There are no BLOCKER or MAJOR defects. The main issues are leftovers from replacing the English term \"Funnel\": stray spaces before or after 一頁式網站 and other Chinese terms, and one untranslated \"Funnel\" in an error message. Other issues: English technical jargon in the dashboard description, the create button labelled 儲存 (Save), a hardcoded and unreachable \"in development\" notice, and webinar copy that mentions controls this section doesn't have. One scope proposal: calling a multi-page flow 一頁式網站 (\"one-page website\") may be the wrong term.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+        "area": "GOALS custom title; h1; slug label; disabled-status paragraph",
+        "issue": "Leftover half-width spaces from replacing 'Funnel' with 一頁式網站. Chinese text should not have spaces between words.",
+        "evidence": "\"自訂 一頁式網站\", \"建立新的 一頁式網站\", \"一頁式網站 網址 *\", \"自動化線上講座 目前仍在開發中\"",
+        "impact": "The copy looks machine-substituted and unpolished in the main creation flow, and screen readers may pause at the spaces.",
+        "recommended_fix": "Remove the spaces: 自訂一頁式網站, 建立新的一頁式網站, 一頁式網站網址 *, 自動化線上講座目前仍在開發中.",
+        "required_test": "Add a copy test or lint rule that fails on a space between two CJK characters in these strings, and update the snapshot or assertion texts.",
+        "confidence": 0.9
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+        "area": "createFunnel null-content branch",
+        "issue": "An untranslated English product term is left in a user-facing error message.",
+        "evidence": "setMessage(\"Funnel 初始資料無法建立，請檢查名稱與網址。\")",
+        "impact": "The vocabulary is inconsistent: everywhere else the product is called 一頁式網站.",
+        "recommended_fix": "Change it to \"一頁式網站初始資料無法建立，請檢查名稱與網址。\"",
+        "required_test": "Add a unit test that the null createGoalFunnelStepPages path shows the localized message with no 'Funnel' in it.",
+        "confidence": 0.9
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+        "area": "submit button label",
+        "issue": "The create action's button says 儲存 (Save), but the page heading says 建立 (Create) and the pending text is 建立中….",
+        "evidence": "{pending ? \"建立中…\" : \"儲存\"} under h1 \"建立新的 一頁式網站\"",
+        "impact": "Users may think they're saving a draft rather than creating a resource, and the idle and pending labels don't match.",
+        "recommended_fix": "Use 建立 or 建立一頁式網站 as the idle label.",
+        "required_test": "Add a component or browser test asserting the button's accessible name is 建立… when idle and 建立中… when pending.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+        "area": "selected?.disabled status paragraph vs GOALS webinar entry",
+        "issue": "The 'in development' notice hardcodes the webinar name, but no goal is disabled. The webinar goal is enabled and its description says it is functional, so this copy can never appear. If a different goal were disabled later, it would show the wrong name.",
+        "evidence": "GOALS webinar has no disabled flag; paragraph text \"自動化線上講座 目前仍在開發中，完成編輯、排程與播放流程後會開放建立。\"",
+        "impact": "Stale or contradictory copy left in the code that would show the wrong goal name if a goal were ever disabled.",
+        "recommended_fix": "Remove the paragraph, or make it generic using `${selected.title}目前仍在開發中…`.",
+        "required_test": "Add a unit test that the disabled notice shows the selected goal's title, or confirm by test that it is never rendered.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/dashboard/page.tsx",
+        "area": "PageHeader description",
+        "issue": "User-facing description contains internal architecture jargon in English ('Cloudflare-first').",
+        "evidence": "description=\"Cloudflare-first 直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。\"",
+        "impact": "This exposes an implementation detail that means nothing to vendors and breaks the all-Chinese vocabulary.",
+        "recommended_fix": "Change it to e.g. \"直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。\"",
+        "required_test": "Update the dashboard header copy assertion and the loading/a11y state snapshots.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/(app)/dashboard/loading.tsx",
+        "area": "loading description paragraph",
+        "issue": "The loading text lists different metrics (報名、觀看、訂單、Email 寄送) from the page description (觀看、名單、商品點擊、聯盟來源、用量配額).",
+        "evidence": "\"正在整理報名、觀看、訂單與 Email 寄送狀態。\" vs page description",
+        "impact": "The text changes when loading finishes, and the terms 報名 vs 名單 are inconsistent.",
+        "recommended_fix": "Make the loading copy match the page description's terms, or use a generic \"正在整理營運指標。\"",
+        "required_test": "Update the dashboard-loading a11y state text assertion.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+        "area": "intro paragraph",
+        "issue": "There's a stray space after 活動工作室, and the text tells users to 選擇既有活動與報名表 (choose an existing event and registration form), but this section only has timezone and time fields.",
+        "evidence": "\"選擇既有活動與報名表，並在活動工作室 確認來源影片。\"",
+        "impact": "The instructions point to controls that aren't in this section, which is confusing.",
+        "recommended_fix": "Remove the space. Rephrase to say where the event and form are selected (e.g. \"活動與報名表請於流程設定中選擇，並在活動工作室確認來源影片。\"), or move that sentence to wherever those controls are.",
+        "required_test": "Update the webinar settings copy assertion in the editor browser states.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+        "area": "product term 一頁式網站 across title/eyebrow/legend",
+        "issue": "Possible wrong term (scope proposal). 一頁式網站 means a one-page website, but the goal descriptions describe multi-page flows (名單頁與感謝頁, 報名、感謝與播放頁, 從空白流程開始).",
+        "evidence": "GOALS descriptions describe multiple step pages, while the title says 建立新的 一頁式網站",
+        "impact": "Users may expect a single page and be confused when several step pages are created.",
+        "recommended_fix": "Product decision: if the glossary keeps 一頁式網站, consider adding a clarifying subtitle. Otherwise consider 銷售流程 or 導購流程. Raise this as a glossary scope proposal rather than changing it in WP08.",
+        "required_test": "None for WP08. If changed, run a glossary consistency check across the landing-pages UI.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+        "area": "catch branch message",
+        "issue": "The catch-all error message says the connection dropped (連線中斷) for any thrown error.",
+        "evidence": "catch { setMessage(\"連線中斷，一頁式網站尚未建立，請稍後再試。\"); }",
+        "impact": "Server or action exceptions are wrongly described as network failures.",
+        "recommended_fix": "Use neutral wording, e.g. \"建立失敗，一頁式網站尚未建立，請稍後再試。\"",
+        "required_test": "Add a unit test where landingPageAction rejects, asserting the message.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "registerVariants (block catalog)",
+        "area": "label template `${label}・${variantLabel}`",
+        "issue": "Uses the Japanese katakana middle dot (U+30FB) as a separator in Traditional Chinese labels.",
+        "evidence": "label: `${label}・${variantLabel}` → \"訂單表單・編輯版\"",
+        "impact": "The punctuation is slightly off-locale. It looks fine but isn't standard zh-TW.",
+        "recommended_fix": "Use U+00B7 '·' or U+2027 '‧', or a full-width dash or parentheses (e.g. 訂單表單（編輯版）).",
+        "required_test": "Update the block label assertions or snapshots.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true
+}

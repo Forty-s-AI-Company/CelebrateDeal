@@ -35,7 +35,7 @@ export default async function InteractionScriptsPage({
 
   return (
     <>
-      <PageHeader title="留言組" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增留言組</ButtonLink>} />
+      <PageHeader title="互動腳本" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增互動腳本</ButtonLink>} />
       {params.error === "invalid_event" ? (
         <p role="alert" className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
           這份舊腳本含有無效或不安全的事件，請先編輯修正後再複製。
@@ -48,11 +48,11 @@ export default async function InteractionScriptsPage({
       ) : null}
       {params.error === "missing_script" ? (
         <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-          這份留言組已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
+          這份互動腳本已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
         </p>
       ) : null}
       {scripts.length === 0 ? (
-        <EmptyState title="還沒有留言組" description="建立留言組後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增留言組</ButtonLink>} />
+        <EmptyState title="還沒有互動腳本" description="建立互動腳本後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增互動腳本</ButtonLink>} />
       ) : (
         <Card>
           <div className="grid gap-3">

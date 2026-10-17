@@ -1,0 +1,49 @@
+{
+  "status": "FINDINGS_OPEN",
+  "observed_model": "claude-opus-5-5",
+  "previous115RrBlocker": "Reviewer confirms closed for tested schedules; broader cases remain pending",
+  "severityCounts": {
+    "BLOCKER": 0,
+    "MAJOR": 2,
+    "MINOR": 2,
+    "NIT": 1
+  },
+  "items": [
+    {
+      "index": 1,
+      "severity": "MAJOR",
+      "area": "deadlock/lock order",
+      "status": "OPEN"
+    },
+    {
+      "index": 2,
+      "severity": "MAJOR",
+      "area": "payment-path regression / dependency gap",
+      "status": "OPEN"
+    },
+    {
+      "index": 3,
+      "severity": "MINOR",
+      "area": "in-flight upgrade",
+      "status": "OPEN"
+    },
+    {
+      "index": 4,
+      "severity": "MINOR",
+      "area": "test coverage",
+      "status": "OPEN"
+    },
+    {
+      "index": 5,
+      "severity": "NIT",
+      "area": "supplied-dependency disputes",
+      "status": "OPEN"
+    }
+  ],
+  "original20Gate": {
+    "committed": 7,
+    "expected": 20,
+    "attempts": 2,
+    "status": "FAIL"
+  }
+}

@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "order report binding lint", "revision": "sha256:b11fbc0f25fff6e0910f4b45bc328365540d0f4d2429bcc4ea578f5bb7a804cc", "status": "PASS", "exit_code": 0, "duration_seconds": 6.094}

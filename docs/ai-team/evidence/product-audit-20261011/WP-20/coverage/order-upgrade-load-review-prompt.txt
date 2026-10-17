@@ -1,0 +1,300 @@
+Independent Critical Migration117 follow-up. Return schema JSON summary/findings max5, total under5000chars, BLOCKER/MAJOR/MINOR/NIT. Only supplied immutable snapshot, no tools. Previous117 review MAJOR unbounded table touch, MINOR RLS/count guard/test fidelity/scenarios/Production side effects. Latest117 adds statement_timeout30s (per statement, not total migration guarantee), top-level row_security=off, DO expected/touched row count consistency with23514 on mismatch. Real owned disposable100000 linked payments+orders, triggers/constraints on, exact literal full117 SQL executed via psql -f - with BEGIN/COMMIT. Migration5674ms upper bound on lockhold, WAL89350336 bytes, competing writer55P03 at163ms (150ms locktimeout), all100000 payment rows changed MVCC version, full payment fields checksum unchanged, Window/Tenant/scoped/audit counts unchanged, version bumped. Setup110740ms. This is representative synthetic100k, not a Production-scale claim. Trigger-queue peak memory NOT_MEASURED, Production size UNKNOWN/NOT_ACCESSED. Separate real RR old-snapshot regression rejectsP2034. Negative tests force RLS for NOLOGIN role and use the real DO touch:42501, rollback removesrole/restoresRLS. Additional test-only BEFORE UPDATE trigger RETURN NULL causes real guard23514; full transaction rollback removes probe trigger/function and payment fields unchanged. No original guards disabled, no assertions weakened. Test-only fault injection not product bypass. Fidelity limitation: snapshot probe extracts117 statements; load run executes literal whole117 via psql on populated DB, but _prisma_migrations recording for populated upgrade is not newly exercised (main first migrated an empty DB to117). Production access/deploy forbidden by user; treat Production preflight as a future separately authorized release condition, not something this task may execute. Original synchronized20 gate remains7/20 FAIL, fullWP NOT READY. Assess new safeguards/evidence and remaining actionable LOCAL/nonproduction correctness/validation risks. Do not certify trigger memory or actual Production capacity from walltime.
+
+FILE prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql
+1: -- Expire snapshots that predate a relation changed by the old115 function.
+2: -- Writer drain alone does not invalidate a read-only pre-upgrade RR snapshot.
+3: BEGIN;
+4: SET LOCAL lock_timeout='5s';
+5: SET LOCAL statement_timeout='30s';
+6: SET LOCAL row_security=off;
+7: LOCK TABLE public."PaymentTransaction",public."CommerceOrder" IN SHARE ROW EXCLUSIVE MODE;
+8: CREATE OR REPLACE FUNCTION public.wp20_metric_order_payment_lock() RETURNS trigger
+9: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET row_security=off AS $$
+10: DECLARE facts JSONB; payment_row RECORD;
+11: BEGIN
+12:  IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."CommerceOrder"'::regclass THEN
+13:   RAISE EXCEPTION 'invalid order payment lock relation' USING ERRCODE='23514';
+14:  END IF;
+15:  IF TG_OP='UPDATE' AND (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt")
+16:   IS NOT DISTINCT FROM (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt") THEN RETURN NEW; END IF;
+17:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+18:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+19:  FOR payment_row IN SELECT p."vendorId",p.id FROM public."PaymentTransaction" p WHERE EXISTS (
+20:   SELECT 1 FROM jsonb_array_elements(facts) f
+21:   WHERE p.id=f->>'primaryPaymentTransactionId' AND p."vendorId"=f->>'vendorId'
+22:  ) ORDER BY p."vendorId",p.id LOOP
+23:   -- Write the same value to create a new MVCC tuple without changing payment
+24:   -- facts. Existing payment source triggers ignore unchanged facts. A payment
+25:   -- writer with an older RR/Serializable snapshot must abort with 40001.
+26:   UPDATE public."PaymentTransaction" p SET metadata=p.metadata
+27:    WHERE p."vendorId"=payment_row."vendorId" AND p.id=payment_row.id;
+28:  END LOOP;
+29:  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+30:  RETURN NEW;
+31: END $$;
+32: -- Touch currently linked payments even if their last relation change used115.
+33: -- This creates an MVCC conflict for old RR/Serializable payment snapshots.
+34: -- Unlinked payments have no current order window; a later116 link writes its
+35: -- payment row before publishing its own event. Unchanged facts emit no events.
+36: DO $upgrade_touch$
+37: DECLARE expected_count BIGINT; touched_count BIGINT;
+38: BEGIN
+39:  SELECT count(*) INTO expected_count FROM public."PaymentTransaction" p
+40:   WHERE EXISTS (SELECT 1 FROM public."CommerceOrder" o
+41:    WHERE o."vendorId"=p."vendorId" AND o."primaryPaymentTransactionId"=p.id);
+42:  UPDATE public."PaymentTransaction" p SET metadata=p.metadata
+43:   WHERE EXISTS (SELECT 1 FROM public."CommerceOrder" o
+44:    WHERE o."vendorId"=p."vendorId" AND o."primaryPaymentTransactionId"=p.id);
+45:  GET DIAGNOSTICS touched_count=ROW_COUNT;
+46:  IF touched_count<>expected_count THEN
+47:   RAISE EXCEPTION 'payment upgrade source touch incomplete' USING ERRCODE='23514';
+48:  END IF;
+49: END $upgrade_touch$;
+50: -- CREATE OR REPLACE preserves the revoked function ACL from migration115.
+51: UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1;
+52: COMMIT;
+
+
+FILE scripts/wp20-order-upgrade-load-disposable.mjs
+1: import assert from 'node:assert/strict';
+2: import fs from 'node:fs';
+3: import path from 'node:path';
+4: import { spawn } from 'node:child_process';
+5: import { createRequire } from 'node:module';
+6: import { main } from './prisma-loopback-disposable-migration-runner.mjs';
+7: const require=createRequire(import.meta.url),output='docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/order-upgrade-load-result.json';
+8: const receipt={status:'FAIL',stage:'start',linkedPayments:100000,scope:'Synthetic117 touch cost and bounded competing writer; not Production scale certification or producer completeness'};
+9: const save=()=>fs.writeFileSync(output,JSON.stringify(receipt,null,2));
+10: const stage=value=>{receipt.stage=value;save();console.log(JSON.stringify({stage:value}));};
+11: function docker(args,environment,input='') {
+12:  return new Promise(resolve=>{
+13:   const child=spawn('docker',args,{env:environment,windowsHide:true,stdio:['pipe','pipe','pipe']});
+14:   let stdout='',stderr='';
+15:   child.stdout.on('data',x=>{if(stdout.length<8192)stdout+=x.toString('utf8');});
+16:   child.stderr.on('data',x=>{if(stderr.length<8192)stderr+=x.toString('utf8');});
+17:   child.on('error',()=>resolve({exitCode:null,stdout:'',stderr:'runner-start-failed'}));
+18:   child.on('close',code=>resolve({exitCode:code,stdout,stderr}));child.stdin.on('error',()=>{});child.stdin.end(input);
+19:  });
+20: }
+21: let migration;
+22: try {
+23:  const paths=JSON.parse(fs.readFileSync('node_modules/.prisma/client/index.js','utf8').match(/"relativeEnvPaths":\s*(\{[^}]*\})/u)?.[1]??'null');assert.ok(paths&&Object.values(paths).every(x=>x===null));
+24:  const {PrismaClient}=require('@prisma/client');
+25:  const migrationSql=fs.readFileSync('prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql','utf8');
+26:  migration=await main({afterMigrate:async({databaseUrl,environment,tempRoot})=>{
+27:   const url=new URL(databaseUrl);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/celebratedeal_test');url.searchParams.set('connection_limit','4');
+28:   const db=new PrismaClient({datasourceUrl:url.toString()});
+29:   try {
+30:    const [marker]=await db.$queryRawUnsafe("SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()");assert.match(marker.marker,/^prisma-no-dotenv:[a-f0-9]{16}$/u);
+31:    const container=path.basename(tempRoot);assert.match(container,/^celebratedeal-prisma-migrate-[a-f0-9]{16}$/u);
+32:    const ownership=await docker(['inspect','--format','{{ index .Config.Labels "celebratedeal.marker" }}',container],environment);
+33:    assert.equal(ownership.exitCode,0);assert.equal(ownership.stdout.trim(),marker.marker);
+34:    stage('fixtures');
+35:    const vendor=await db.vendor.create({data:{name:'Synthetic upgrade load',slug:'upgrade-load',email:'upgrade-load@example.test',passwordHash:'synthetic-unused'}});
+36:    const video=await db.video.create({data:{vendorId:vendor.id,title:'Synthetic',videoUrl:'https://example.test/synthetic.mp4',durationSec:100}});
+37:    const live=await db.live.create({data:{vendorId:vendor.id,videoId:video.id,title:'Synthetic',slug:'upgrade-load',scheduledAt:new Date()}});
+38:    const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");const created=new Date(+clock.now-60000);
+39:    await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ('upgrade-load-version',$1,$2,$3,'live',$4,true,$5,$6)`,vendor.id,live.id,video.id,'a'.repeat(64),created,new Date(+clock.now+3600000));
+40:    const setup=performance.now();
+41:    await db.$transaction(async tx=>{
+42:     await tx.$executeRawUnsafe("SET LOCAL statement_timeout='180s'");
+43:     stage('fixtures-payments');
+44:     await tx.$executeRawUnsafe(`INSERT INTO "PaymentTransaction" (id,"vendorId","providerName",status,"grossAmountCents","netAmountCents",currency,metadata,"occurredAt","createdAt")
+45:      SELECT 'upgrade-payment-'||lpad(i::text,8,'0'),$1,'synthetic-upgrade-load','paid',100,100,'TWD','{"syntheticLoad":true}'::jsonb,$2,$2 FROM generate_series(1,100000) i`,vendor.id,created);
+46:     stage('fixtures-linked-orders');
+47:     await tx.$executeRawUnsafe(`INSERT INTO "CommerceOrder" (id,"vendorId","primaryPaymentTransactionId","orderNumber","checkoutIdempotencyKey","checkoutIdentityHash",status,currency,"subtotalAmountCents","totalAmountCents","paidAmountCents","paidAt","buyerEncryptedEnvelope","buyerMaskedName","buyerMaskedEmail","createdAt","updatedAt")
+48:      SELECT 'upgrade-order-'||lpad(i::text,8,'0'),$1,'upgrade-payment-'||lpad(i::text,8,'0'),'UPGRADE-'||i,'upgrade-key-'||i,repeat('a',43),'paid','TWD',100,100,100,$2,'synthetic-unused','Synthetic','synthetic@example.test',$2,$2 FROM generate_series(1,100000) i`,vendor.id,created);
+49:    },{timeout:300000});receipt.setupMs=Math.round(performance.now()-setup);
+50:    await db.$executeRawUnsafe('ANALYZE "PaymentTransaction"');await db.$executeRawUnsafe('ANALYZE "CommerceOrder"');
+51:    const facts=async()=> (await db.$queryRawUnsafe(`SELECT count(*)::integer AS count,md5(string_agg(md5(to_jsonb(p)::text),'' ORDER BY id)) AS digest,min(xmin::text) AS xmin,count(DISTINCT xmin::text)::integer AS transactions FROM "PaymentTransaction" p WHERE "vendorId"=$1`,vendor.id))[0];
+52:    const sources=async()=> (await db.$queryRawUnsafe(`SELECT
+53:     (SELECT count(*)::integer FROM "LiveMetricOrderWindowSource" WHERE "vendorId"=$1) AS window,
+54:     (SELECT count(*)::integer FROM "LiveMetricOrderTenantSource" WHERE "vendorId"=$1) AS tenant,
+55:     (SELECT count(*)::integer FROM "LiveMetricOrderSource" WHERE "vendorId"=$1) AS scoped,
+56:     (SELECT count(*)::integer FROM "LiveMetricCoverageAudit" WHERE "vendorId"=$1) AS audits`,vendor.id))[0];
+57:    const before=await facts(),beforeSources=await sources();assert.equal(before.count,receipt.linkedPayments);assert.equal(before.transactions,1);
+58:    const [walBefore]=await db.$queryRawUnsafe('SELECT pg_current_wal_insert_lsn()::text AS lsn');
+59:    stage('literal117-sql');let finished=false;
+60:    const started=performance.now();
+61:    const execution=docker(['exec','-i','-e','PGAPPNAME=wp20-upgrade-load',container,'psql','-X','-q','-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate','-U','postgres','-d','celebratedeal_test','-f','-'],environment,migrationSql).then(value=>{finished=true;return value;});
+62:    let writerStarted=false;
+63:    while(!finished){
+64:     const [state]=await db.$queryRawUnsafe(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity a JOIN pg_locks l ON l.pid=a.pid WHERE a.application_name='wp20-upgrade-load' AND l.relation='public."PaymentTransaction"'::regclass AND l.mode='ShareRowExclusiveLock' AND l.granted) AS held`);
+65:     if(state.held&&!writerStarted){
+66:      writerStarted=true;receipt.tableLockObserved=true;const writerStart=performance.now();
+67:      await assert.rejects(db.$transaction(async tx=>{
+68:       await tx.$executeRawUnsafe("SET LOCAL lock_timeout='150ms'");
+69:       await tx.$executeRawUnsafe('UPDATE "PaymentTransaction" SET metadata=metadata WHERE id=$1','upgrade-payment-00000001');
+70:      },{timeout:5000}),error=>error?.meta?.code==='55P03');
+71:      receipt.writerWaitMs=Math.round(performance.now()-writerStart);assert.ok(receipt.writerWaitMs<2000);
+72:     }
+73:     if(!finished)await db.$queryRawUnsafe('SELECT pg_sleep(0.025)::text');
+74:    }
+75:    const result=await execution;receipt.migrationMs=Math.round(performance.now()-started);receipt.lockHoldUpperBoundMs=receipt.migrationMs;
+76:    receipt.sqlExitCode=result.exitCode;receipt.sqlStatementTimeout=/57014/.test(result.stderr);
+77:    assert.equal(result.exitCode,0);assert.equal(writerStarted,true);assert.ok(receipt.migrationMs<35000);
+78:    const [wal]=await db.$queryRawUnsafe('SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(),$1::pg_lsn)::text AS bytes',walBefore.lsn);receipt.walBytes=Number(wal.bytes);
+79:    const after=await facts();assert.equal(after.count,before.count);assert.equal(after.digest,before.digest);
+80:    const [oldRows]=await db.$queryRawUnsafe('SELECT count(*)::integer AS count FROM "PaymentTransaction" WHERE "vendorId"=$1 AND xmin::text=$2',vendor.id,before.xmin);assert.equal(oldRows.count,0);
+81:    assert.deepEqual(await sources(),beforeSources);
+82:    const [version]=await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1','upgrade-load-version');assert.equal(version.sourceRevision,1n);
+83:    receipt.allRowsMvccChanged=true;receipt.allPaymentFieldsUnchanged=true;receipt.sourceEventDeltaZero=true;receipt.versionBumped=true;
+84:    receipt.triggerQueuePeakMemory='NOT_MEASURED';receipt.productionScale='UNKNOWN_NOT_ACCESSED';receipt.status='PASS';stage('complete');
+85:   } finally {await db.$disconnect();}
+86:  }});
+87: } catch(error){receipt.errorCode=/^(?:P[0-9]{4}|[0-9A-Z]{5})$/.test(error?.meta?.code??error?.code??'')?(error.meta?.code??error.code):'ASSERTION_OR_RUNNER_ERROR';}
+88: receipt.cleanup=migration?.cleanup??'UNKNOWN';if(migration?.status!=='PASS')receipt.status='FAIL';save();console.log(JSON.stringify(receipt));process.exitCode=receipt.status==='PASS'?0:1;
+
+
+FILE scripts/wp20-order-upgrade-snapshot-disposable.mjs
+1: import assert from 'node:assert/strict';
+2: import fs from 'node:fs';
+3: import { createRequire } from 'node:module';
+4: import { main } from './prisma-loopback-disposable-migration-runner.mjs';
+5: const require=createRequire(import.meta.url),base='docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/';
+6: const receipt={status:'FAIL',stage:'start',scope:'Owned disposable source-fence upgrade reproduction; no report completeness claim'};
+7: let migration;
+8: try {
+9:  const paths=JSON.parse(fs.readFileSync('node_modules/.prisma/client/index.js','utf8').match(/"relativeEnvPaths":\s*(\{[^}]*\})/u)?.[1]??'null');
+10:  assert.ok(paths&&Object.values(paths).every(x=>x===null));
+11:  const {PrismaClient}=require('@prisma/client');
+12:  const oldSource=fs.readFileSync('prisma/migrations/20261016030000_live_metric_order_payment_serialization/migration.sql','utf8');
+13:  const newSource=fs.readFileSync('prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql','utf8');
+14:  const oldFunction=oldSource.match(/CREATE FUNCTION public\.wp20_metric_order_payment_lock\(\)[\s\S]*?END \$\$;/u)?.[0]?.replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION');
+15:  const newFunction=newSource.match(/CREATE OR REPLACE FUNCTION public\.wp20_metric_order_payment_lock\(\)[\s\S]*?END \$\$;/u)?.[0];
+16:  const upgradeTouch=newSource.match(/DO \$upgrade_touch\$[\s\S]*?END \$upgrade_touch\$;/u)?.[0];
+17:  assert.ok(oldFunction&&newFunction&&upgradeTouch);
+18:  migration=await main({afterMigrate:async({databaseUrl})=>{
+19:   const url=new URL(databaseUrl);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/celebratedeal_test');
+20:   const db=new PrismaClient({datasourceUrl:databaseUrl});
+21:   try {
+22:    const [marker]=await db.$queryRawUnsafe("SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()");assert.match(marker.marker,/^prisma-no-dotenv:[a-f0-9]{16}$/u);
+23:    receipt.stage='fixtures';
+24:    const vendor=await db.vendor.create({data:{name:'Synthetic upgrade',slug:'upgrade-snapshot',email:'upgrade@example.test',passwordHash:'synthetic-unused'}});
+25:    const video=await db.video.create({data:{vendorId:vendor.id,title:'Synthetic',videoUrl:'https://example.test/synthetic.mp4',durationSec:100}});
+26:    const live=await db.live.create({data:{vendorId:vendor.id,videoId:video.id,title:'Synthetic',slug:'upgrade-snapshot',scheduledAt:new Date()}});
+27:    const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+28:    const start=new Date(+clock.now-10800000),middle=new Date(+clock.now-7200000),end=new Date(+clock.now-3600000);
+29:    await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ('upgrade-version',$1,$2,$3,'live',$4,true,$5,$6)`,vendor.id,live.id,video.id,'d'.repeat(64),start,new Date(+clock.now+3600000));
+30:    const payment=await db.paymentTransaction.create({data:{vendorId:vendor.id,providerName:'synthetic-upgrade',status:'pending',metadata:{syntheticBeforeUpgrade:1}}});
+31:    for(const [id,date,link] of [['upgrade-old',new Date(+start+1000),payment.id],['upgrade-new',new Date(+middle+1000),null]])await db.commerceOrder.create({data:{id,vendorId:vendor.id,primaryPaymentTransactionId:link,orderNumber:id,checkoutIdempotencyKey:id,checkoutIdentityHash:'a'.repeat(43),status:'pending_payment',subtotalAmountCents:100,totalAmountCents:100,buyerEncryptedEnvelope:'synthetic-unused',buyerMaskedName:'Synthetic',buyerMaskedEmail:'synthetic@example.test',createdAt:date}});
+32:    const revision=async()=> (await db.$queryRawUnsafe('SELECT public.wp20_metric_order_window_revision($1,$2::timestamptz,$3::timestamptz) AS revision',vendor.id,middle,end))[0].revision;
+33:    // Reinstall only the known115 function, without disabling a trigger or guard.
+34:    await db.$executeRawUnsafe(oldFunction);
+35:    let beforeCommit,afterCommit,writeCode=null;
+36:    receipt.stage='pre-upgrade-snapshot';
+37:    try {
+38:     await db.$transaction(async oldTx=>{
+39:      await oldTx.$queryRawUnsafe('SELECT metadata FROM "PaymentTransaction" WHERE id=$1',payment.id);
+40:      await db.$transaction(async writer=>{
+41:       await writer.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1','upgrade-old');
+42:       await writer.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,'upgrade-new');
+43:      });
+44:      // Execute117's lock/function/payment-touch/bump protocol atomically.
+45:      await db.$transaction(async upgrade=>{
+46:       await upgrade.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+47:       await upgrade.$executeRawUnsafe("SET LOCAL statement_timeout='30s'");
+48:       await upgrade.$executeRawUnsafe("SET LOCAL row_security=off");
+49:       await upgrade.$executeRawUnsafe('LOCK TABLE public."PaymentTransaction",public."CommerceOrder" IN SHARE ROW EXCLUSIVE MODE');
+50:       await upgrade.$executeRawUnsafe(newFunction);
+51:       await upgrade.$executeRawUnsafe(upgradeTouch);
+52:       await upgrade.$executeRawUnsafe('UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1');
+53:      },{timeout:15000});
+54:      const [version]=await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1','upgrade-version');
+55:      assert.equal(version.sourceRevision,1n);receipt.versionBumped=true;
+56:      beforeCommit=await revision();
+57:      await oldTx.paymentTransaction.update({where:{id:payment.id},data:{metadata:{syntheticAfterUpgrade:1}}});
+58:     },{isolationLevel:'RepeatableRead',timeout:30000});
+59:    } catch(error) {
+60:     writeCode=error?.meta?.code??error?.code;
+61:     if(!['40001','P2034'].includes(writeCode))throw error;
+62:    }
+63:    afterCommit=await revision();
+64:    receipt.oldSnapshotWriteAborted=writeCode!==null;receipt.writeCode=writeCode;
+65:    receipt.destinationRevisionIncreased=typeof beforeCommit==='bigint'&&afterCommit>beforeCommit;
+66:    receipt.stage='upgrade-invalidation';
+67:    assert.ok(receipt.oldSnapshotWriteAborted||receipt.destinationRevisionIncreased,'old pre-upgrade snapshot must abort or invalidate destination window');
+68:    receipt.stage='rls-fail-closed';
+69:    const beforeGuard=await db.paymentTransaction.findUniqueOrThrow({where:{id:payment.id}});
+70:    await assert.rejects(db.$transaction(async guarded=>{
+71:     await guarded.$executeRawUnsafe('CREATE ROLE wp20_upgrade_rls_probe NOLOGIN');
+72:     await guarded.$executeRawUnsafe('GRANT USAGE ON SCHEMA public TO wp20_upgrade_rls_probe');
+73:     await guarded.$executeRawUnsafe('GRANT SELECT,UPDATE ON "PaymentTransaction","CommerceOrder" TO wp20_upgrade_rls_probe');
+74:     await guarded.$executeRawUnsafe('ALTER TABLE "PaymentTransaction" FORCE ROW LEVEL SECURITY');
+75:     await guarded.$executeRawUnsafe('SET LOCAL ROLE wp20_upgrade_rls_probe');
+76:     await guarded.$executeRawUnsafe('SET LOCAL row_security=off');
+77:     await guarded.$executeRawUnsafe(upgradeTouch);
+78:    },{timeout:10000}),error=>error?.meta?.code==='42501');
+79:    assert.deepEqual(await db.paymentTransaction.findUniqueOrThrow({where:{id:payment.id}}),beforeGuard);
+80:    const [rlsState]=await db.$queryRawUnsafe(`SELECT relforcerowsecurity AS forced,
+81:     EXISTS(SELECT 1 FROM pg_roles WHERE rolname='wp20_upgrade_rls_probe') AS probe_role
+82:     FROM pg_class WHERE oid='public."PaymentTransaction"'::regclass`);
+83:    assert.deepEqual(rlsState,{forced:false,probe_role:false});
+84:    receipt.rlsFilteredTouchRejected=true;receipt.rlsFailureRollback=true;
+85:    receipt.stage='touch-count-fail-closed';
+86:    await assert.rejects(db.$transaction(async guarded=>{
+87:     // Fault injection: an extra test-only trigger silently skips UPDATE rows.
+88:     // The real117 row-count guard must reject the whole operation, not certify it.
+89:     await guarded.$executeRawUnsafe(`CREATE FUNCTION public.wp20_upgrade_skip_probe() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$`);
+90:     await guarded.$executeRawUnsafe('CREATE TRIGGER wp20_upgrade_skip_probe BEFORE UPDATE ON "PaymentTransaction" FOR EACH ROW EXECUTE FUNCTION public.wp20_upgrade_skip_probe()');
+91:     await guarded.$executeRawUnsafe('SET LOCAL row_security=off');
+92:     await guarded.$executeRawUnsafe(upgradeTouch);
+93:    },{timeout:10000}),error=>error?.meta?.code==='23514'&&String(error?.meta?.message??'').includes('payment upgrade source touch incomplete'));
+94:    assert.deepEqual(await db.paymentTransaction.findUniqueOrThrow({where:{id:payment.id}}),beforeGuard);
+95:    const [probeState]=await db.$queryRawUnsafe(`SELECT
+96:     EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public."PaymentTransaction"'::regclass AND tgname='wp20_upgrade_skip_probe') AS trigger_exists,
+97:     to_regprocedure('public.wp20_upgrade_skip_probe()') IS NOT NULL AS function_exists`);
+98:    assert.deepEqual(probeState,{trigger_exists:false,function_exists:false});
+99:    receipt.incompleteTouchRejected=true;receipt.incompleteTouchRollback=true;
+100:    receipt.status='PASS';receipt.stage='complete';
+101:   } finally {await db.$disconnect();}
+102:  }});
+103: } catch(error) {receipt.errorCode=/^(?:P[0-9]{4}|[0-9A-Z]{5})$/.test(error?.meta?.code??error?.code??'')?(error.meta?.code??error.code):'ASSERTION_OR_RUNNER_ERROR';}
+104: receipt.cleanup=migration?.cleanup??'UNKNOWN';if(migration?.status!=='PASS')receipt.status='FAIL';
+105: fs.writeFileSync(base+'order-upgrade-snapshot-result.json',JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));process.exitCode=receipt.status==='PASS'?0:1;
+
+
+REAL DB RECEIPT order-upgrade-load-result.json
+{
+  "status": "PASS",
+  "stage": "complete",
+  "linkedPayments": 100000,
+  "scope": "Synthetic117 touch cost and bounded competing writer; not Production scale certification or producer completeness",
+  "setupMs": 110740,
+  "tableLockObserved": true,
+  "writerWaitMs": 163,
+  "migrationMs": 5674,
+  "lockHoldUpperBoundMs": 5674,
+  "sqlExitCode": 0,
+  "sqlStatementTimeout": false,
+  "walBytes": 89350336,
+  "allRowsMvccChanged": true,
+  "allPaymentFieldsUnchanged": true,
+  "sourceEventDeltaZero": true,
+  "versionBumped": true,
+  "triggerQueuePeakMemory": "NOT_MEASURED",
+  "productionScale": "UNKNOWN_NOT_ACCESSED",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}
+
+REAL DB RECEIPT order-upgrade-fail-closed-db.json
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Owned disposable source-fence upgrade reproduction; no report completeness claim",
+  "versionBumped": true,
+  "oldSnapshotWriteAborted": true,
+  "writeCode": "P2034",
+  "destinationRevisionIncreased": false,
+  "rlsFilteredTouchRejected": true,
+  "rlsFailureRollback": true,
+  "incompleteTouchRejected": true,
+  "incompleteTouchRollback": true,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

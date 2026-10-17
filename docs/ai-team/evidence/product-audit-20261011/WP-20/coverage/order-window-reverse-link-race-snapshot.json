@@ -1,0 +1,10 @@
+{
+  "status": "FAIL",
+  "testFile": "scripts/wp20-order-window-link-race.mjs",
+  "sha256": "e77558941ab4de92f74fa88c9515335aaede834ed66b05a5612923117c80f135",
+  "failureAssertion": "destination window must invalidate when pending payment metadata commits",
+  "confirmed": "Payment update trigger ran before destination link became committed; destination revision did not increase after payment commit",
+  "scope": "Actual disposable PostgreSQL; source revision proof invalidation, not end-to-end false report reproduction",
+  "lint": "PASS",
+  "review": "PENDING"
+}

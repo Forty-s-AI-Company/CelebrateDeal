@@ -1,0 +1,94 @@
+{
+  "at": "2026-10-16T03:11:05.548339+00:00",
+  "subtask_status": "READY",
+  "whole_wp_status": "IN_PROGRESS",
+  "revision": "sha256:7913d158e354af56a8edb3b8fa6d9053140ba0ef7897b8f48d120af424a495a4",
+  "changed_files": [
+    "src/lib/line-rich-menu-publication.ts",
+    "src/lib/line-rich-menu-publication.test.ts",
+    "src/lib/line-rich-menu-client.ts",
+    "src/lib/line-rich-menu-client.test.ts",
+    "src/lib/line-rich-menu-draft-content.ts",
+    "src/lib/line-rich-menu-draft-content.test.ts",
+    "src/lib/line-rich-menu-sync.ts",
+    "src/lib/line-rich-menu-sync.db.test.ts",
+    "src/app/actions/line-rich-menu-actions.ts",
+    "src/app/actions/line-rich-menu-actions.test.ts",
+    "src/app/actions/line-actions.ts",
+    "src/app/actions/line-actions.test.ts",
+    "src/components/line-rich-menu-studio.tsx",
+    "src/components/line-rich-menu-studio.test.tsx",
+    "src/components/line-official-account-form.tsx",
+    "src/app/(app)/settings/line/page.tsx",
+    "src/app/(app)/settings/line/page.test.tsx",
+    "next.config.ts"
+  ],
+  "unit": 51,
+  "actual_disposable_pg": 13,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "build": "PASS",
+  "browser": "NOT_RUN",
+  "actual_line_provider": "NOT_RUN",
+  "review_models": [
+    "claude-opus-5-5",
+    "claude-opus-5-5"
+  ],
+  "review_effort": "unknown",
+  "remaining_minor": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/line-rich-menu-publication.ts",
+      "area": "publishPreparedLineRichMenu: `stage=\"set_default\";await client.setDefault(remoteMenuId)` and the catch block",
+      "issue": "Every setDefault failure is treated as possibly still in flight and returns uncertain at stage set_default. That includes a definite non-ok HTTP response (LineRichMenuError with status 400/401/403/429), which means the provider finished handling the request without switching the default.",
+      "evidence": "LineFetchRichMenuClient.setDefault throws LineRichMenuError(\"set_default\", response.status) after it receives a response. The catch block ignores the error type and status, so stage set_default becomes uncertain. Reconcile keeps set_default/confirm records uncertain unless the default equals remoteMenuId, and richMenuPublicationLocked blocks save, delete and sync.",
+      "impact": "A definite, already-finished rejection (for example a rate limit or an invalid token) locks the tenant draft forever with no read-only way to resolve it. The no-fence reasoning only applies to network or timeout failures where no response came back.",
+      "recommended_fix": "Before the catch block, if setDefault throws a LineRichMenuError with a definite 4xx status (keep 408 and all 5xx uncertain), return failed with a stage that shows no switch happened (for example check_current with remoteMenuId kept). Keep network and timeout failures uncertain.",
+      "required_test": "Use a fake client whose setDefault throws LineRichMenuError('set_default', 429) or 400. Assert the saved status is not uncertain, the stage is not set_default or confirm, and the draft is unlocked. A second fake that throws with no status must still save uncertain at set_default.",
+      "confidence": 0.55,
+      "disposition": "unresolved"
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/lib/line-rich-menu-sync.ts",
+      "area": "reconcileLineRichMenuDraft account guard `version(account)!==record.accountVersion` → not_configured; and the account check inside sync isCurrent",
+      "issue": "Reconcile requires the exact same encrypted credentials as the original attempt. If the tenant rotates or reissues the access token for the same channel after an uncertain outcome, including one caused by isCurrent failing on the account-version check, reconcile returns not_configured every time.",
+      "evidence": "richMenuAccountVersion hashes all three encrypted credential columns. Reconcile returns not_configured on any mismatch before reading the provider, and its final transaction also requires version(latest)===record.accountVersion. No path updates accountVersion for the same account id.",
+      "impact": "This contradicts the claim that a final isCurrent failure is always reconcilable read-only. A normal token rotation leaves an uncertain draft locked forever, even though the same channel's default could be read safely.",
+      "recommended_fix": "Either explicitly accept this as a documented scope limit, or bind reconcile to a stable channel identity (account id plus the decrypted channel id, compared without exposing it) instead of the full credential hash, while keeping the strict version check for the mutating sync claim.",
+      "required_test": "Start with an uncertain record, rotate messagingAccessTokenEncrypted for the same account and channel, then run reconcile. Assert the result is either the documented not_configured lock or a successful read-only resolution, per the decision. Assert no provider mutation is called in either case.",
+      "confidence": 0.45,
+      "disposition": "unresolved"
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/app/actions/line-actions.ts",
+      "area": "saveLineOfficialAccountAction transaction: `if(draft&&!content)throw new Error(\"line_sync_pending\")`, together with page.tsx `draft && !parsedMenu` branch",
+      "issue": "If the draft can't be parsed, the owner can never save LINE credentials again, and there is no way to fix it from the app.",
+      "evidence": "The credential save throws line_sync_pending whenever a draft exists but parseRichMenuDraftContent returns null. In that same state the settings page shows only an alert and does not render LineRichMenuStudio, so the owner has no delete control. The error shown is the message about syncing or a pending result, which is misleading.",
+      "impact": "The owner can't rotate or re-enter Messaging credentials, for example after a token is revoked or expires, until an admin edits the database. The message also tells them a sync is in progress when it isn't.",
+      "recommended_fix": "Keep refusing to touch a raw draft that can't be parsed, but either (a) allow saving credentials when the draft has no parseable publication, or (b) use a separate error code with accurate wording and give owners a safe way to delete or reset the unreadable draft. Choose whichever matches the intended policy for preserving the raw draft.",
+      "required_test": "Actual-PG test: seed an unparseable draft, then call saveLineOfficialAccountAction. Assert the intended outcome (credentials saved without changing the draft, or a distinct error code) and that the raw draft is left unchanged.",
+      "confidence": 0.6,
+      "disposition": "unresolved"
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/components/line-rich-menu-studio.tsx",
+      "area": "Sync fieldset: `<input type=\"file\" name=\"image\" ...>` and the sync submit button",
+      "issue": "There is no size check in the browser before upload. An image larger than about 2 MB is rejected by Next.js before the action runs, so the user never sees the image_too_large message.",
+      "evidence": "next.config.ts sets serverActions bodySizeLimit to \"2mb\". The action only returns image_too_large for images from 1,000,001 bytes up to the point where the whole request reaches 2 MB. The client never checks the file size.",
+      "impact": "A common mistake, uploading a large photo, triggers a generic framework error or error boundary instead of the localized \"must be at most 1 MB\" message. The draft data is not at risk.",
+      "recommended_fix": "In the browser, check `file.size > LINE_RICH_MENU_IMAGE_LIMIT` on change or submit, show errors.image_too_large, and block submission. Keep the server-side check.",
+      "required_test": "Browser test: choose a 3 MB PNG and click sync. Assert that the localized image_too_large alert appears and that no server action request is sent.",
+      "confidence": 0.7,
+      "disposition": "unresolved"
+    }
+  ],
+  "unfinished": [
+    "Actual authenticated browser upload/sync/reconcile",
+    "Fixed Sandbox real LINE default/image verification and notification delivery",
+    "WP04 scheduler and deferred external inputs"
+  ],
+  "safety": "Independent worktree, synthetic data and owned disposable PostgreSQL only; main dirty checkout untouched; no Production/push/deploy."
+}

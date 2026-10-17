@@ -1,0 +1,25 @@
+{
+  "status": "READ_ONLY_ANALYSIS",
+  "sources": [
+    {
+      "path": "src/app/api/analytics/route.ts",
+      "sha256": "914ad278e53f1228ebc1a235ddef40303d1486b3e9f72ce3da6ce7761a771d53"
+    },
+    {
+      "path": "src/components/live-playback.tsx",
+      "sha256": "04a655c5161cce5d7092eeefcd348cc8ec37852eab725743410027666dc24dde"
+    },
+    {
+      "path": "src/lib/stream-usage.ts",
+      "sha256": "192a79010eba132d4bdfe2d71d986f4540f9cc5be76fb8d293bd063e884d38c7"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "sha256": "deffaf91ae31bcfa4fb8a0792ebfd1a1f423bdf12537f8e1ed6b1d0963734589"
+    },
+    {
+      "path": "src/app/(app)/lives/[id]/analytics/page.tsx",
+      "sha256": "bbd9a43a80c92d5e14c4b48bdd1e9acfbf9dc2ff45b3a98846745214736dc7ba"
+    }
+  ]
+}

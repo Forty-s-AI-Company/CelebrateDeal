@@ -1,0 +1,30 @@
+{
+  "review": "security-review-final-fallback-cli.json",
+  "findings": [
+    {
+      "id": "SEC-1",
+      "severity": "MINOR",
+      "status": "FIXED_PENDING_REVIEW",
+      "issue": "native redirect loses Retry-After",
+      "next": "Preserve validated Retry-After and add route regression.",
+      "evidence": "checks-security-minors PASS and checks-retry-after-integration/browser.json PASS. Real local limiter429 produces303 with1..60second Retry-After, visible error/refilled fields, persisted disposable PostgreSQL draft and zero submissions.403/404 regression also PASS."
+    },
+    {
+      "id": "SEC-2",
+      "severity": "MINOR",
+      "status": "NOT_REPRODUCED_FOR_REPORTED_INPUTS",
+      "issue": "body parser may throw",
+      "evidence": "Existing native route oversized>1000000 and malformed multipart tests both run and PASS with303/no-store/fixed error destination/noDB lookup or submission write. Helper catches stream read and parser errors. No assertion that every synthetic stream implementation cannot throw."
+    },
+    {
+      "id": "SEC-3",
+      "severity": "MINOR",
+      "status": "FIXED_PENDING_REVIEW",
+      "issue": "no-store absent if receipt encryption fails",
+      "evidence": "snapshot-no-store-repair.json; unit and lint PASS"
+    }
+  ],
+  "ui_review": "BLOCKED_SENSITIVE_INPUT before provider dispatch; not reviewed",
+  "latest_full_regression": "13PASS receipts belong to prior snapshot; not transferred to updated no-store source",
+  "latest_targeted_checks": "checks-security-minors; full regression and independent review not transferred to revised snapshot"
+}

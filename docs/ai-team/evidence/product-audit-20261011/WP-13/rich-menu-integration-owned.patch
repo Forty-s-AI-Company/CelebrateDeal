@@ -1,0 +1,881 @@
+--- a/src/lib/line-rich-menu-publication.ts
++++ b/src/lib/line-rich-menu-publication.ts
+@@ -25,7 +25,8 @@
+     }
+     if (area.action.uri.includes("{{") || area.action.uri.includes("}}")) return { status: "unresolved_links" };
+   }
+-  if (!LineRichMenuSchema.safeParse(menu).success) return { status: "invalid_menu" };
++  const resolved=LineRichMenuSchema.safeParse(menu);
++  if (!resolved.success) return { status: "invalid_menu" };
+   if (imageBytes.byteLength > LINE_RICH_MENU_IMAGE_LIMIT) return { status: "image_too_large" };
+   // Do not pass SVG, external references or other formats into the decoder.
+   const image = Buffer.from(imageBytes);
+@@ -40,8 +41,8 @@
+     // Metadata alone can succeed on a truncated file; require a complete decode.
+     await decoder.raw().toBuffer();
+     const imageHash = createHash("sha256").update(image).digest("hex");
+-    const fingerprint = createHash("sha256").update(`line-rich-menu-v1:${JSON.stringify(menu)}:${imageHash}`).digest("hex");
+-    return { status: "ready", publication: { menu, image, contentType: png ? "image/png" : "image/jpeg", fingerprint } };
++    const fingerprint = createHash("sha256").update(`line-rich-menu-v1:${JSON.stringify(resolved.data)}:${imageHash}`).digest("hex");
++    return { status: "ready", publication: { menu:resolved.data, image, contentType: png ? "image/png" : "image/jpeg", fingerprint } };
+   } catch { return { status: "invalid_image" }; }
+ }
+ 
+@@ -64,6 +65,7 @@
+   client: LineRichMenuClient,
+   publication: PreparedLineRichMenu,
+   isCurrent: () => Promise<boolean>,
++  onProgress: (result: RichMenuPublicationResult) => Promise<void> = async () => {},
+ ): Promise<RichMenuPublicationResult> {
+   let stage: PublicationStage = "check_current";
+   let remoteMenuId: string | null = null,previousMenuId: string | null = null,previousDefaultKnown = false;
+@@ -71,15 +73,19 @@
+   try {
+     if (!await isCurrent()) return result("conflict");
+     stage="read_default";previousMenuId=await client.getDefault();previousDefaultKnown=true;
++    await onProgress(result("uncertain"));
+     stage="check_current";if (!await isCurrent()) return result("conflict");
+     stage="create";remoteMenuId=await client.create(publication.menu);
++    await onProgress(result("uncertain"));
+     stage="upload";await client.uploadImage(remoteMenuId,publication.image,publication.contentType);
+     stage="check_current";if (!await isCurrent()) return result("conflict");
+     if (await client.getDefault() !== previousMenuId) return result("conflict");
++    // Persist intent before sending; a failed checkpoint must not claim a request was sent.
++    await onProgress({...result("uncertain"),stage:"set_default"});
+     stage="set_default";await client.setDefault(remoteMenuId);
+     stage="confirm";
+     if (await client.getDefault() !== remoteMenuId) return result("uncertain");
+-    if (!await isCurrent()) return result("conflict");
++    if (!await isCurrent()) return result("uncertain");
+     return result("synced");
+   } catch {
+     // A create or upload timeout may have left an artifact even before a default
+--- a/src/lib/line-rich-menu-publication.test.ts
++++ b/src/lib/line-rich-menu-publication.test.ts
+@@ -47,10 +47,16 @@
+     expect(await publishPreparedLineRichMenu(remote,await publication(),async()=>true)).toMatchObject({status:"uncertain",stage:"create",remoteMenuId:null});
+     expect(remote.create).toHaveBeenCalledTimes(1);expect(remote.setDefault).not.toHaveBeenCalled();expect(remote.delete).not.toHaveBeenCalled();
+   });
+-  it("does not report the current draft synced if it changes during remote publication", async () => {
++  it("keeps a remotely confirmed switch reconcilable when the lease expires during confirmation", async () => {
+     const current=vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+-    const remote=client();expect((await publishPreparedLineRichMenu(remote,await publication(),current)).status).toBe("conflict");
++    const remote=client();expect((await publishPreparedLineRichMenu(remote,await publication(),current)).status).toBe("uncertain");
+     expect(remote.setDefault).toHaveBeenCalledTimes(1);expect(remote.delete).not.toHaveBeenCalled();
++  });
++  it("does not claim a switch request when its durable pre-switch checkpoint fails",async()=>{
++    const remote=client();
++    const progress=vi.fn(async(result:{stage:string})=>{if(result.stage==="set_default")throw new Error("synthetic checkpoint failure");});
++    expect(await publishPreparedLineRichMenu(remote,await publication(),async()=>true,progress)).toMatchObject({status:"uncertain",stage:"check_current",remoteMenuId:created});
++    expect(remote.setDefault).not.toHaveBeenCalled();
+   });
+ });
+ 
+--- a/src/lib/line-rich-menu-draft-content.ts
++++ b/src/lib/line-rich-menu-draft-content.ts
+@@ -0,0 +1,40 @@
++import { z } from "zod";
++import { LineRichMenuSchema, type LineRichMenu } from "@/lib/line-rich-menu";
++
++const remoteId = z.string().regex(/^richmenu-[a-f0-9]{32}$/u).nullable();
++export const RichMenuPublicationRecordSchema = z.object({
++  attemptId: z.string().uuid(),
++  status: z.enum(["syncing","synced","uncertain","failed","conflict","outdated"]),
++  fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
++  accountId: z.string().min(1).max(128),
++  accountVersion: z.string().regex(/^[a-f0-9]{64}$/u),
++  sourceRevision: z.number().int().positive(),
++  startedAt: z.string().datetime(),
++  expiresAt: z.string().datetime(),
++  stage: z.enum(["read_default","create","upload","check_current","set_default","confirm"]),
++  remoteMenuId: remoteId,
++  previousMenuId: remoteId,
++  previousDefaultKnown: z.boolean(),
++  confirmedAt: z.string().datetime().nullable(),
++  links:z.object({live_url:z.string().max(1000).optional(),consultation_url:z.string().max(1000).optional(),portal_url:z.string().max(1000).optional(),voucher_url:z.string().max(1000).optional()}).strict().default({}),
++}).strict();
++export type RichMenuPublicationRecord = z.infer<typeof RichMenuPublicationRecordSchema>;
++const ContentSchema = z.object({ version:z.literal(1),menu:LineRichMenuSchema,publication:RichMenuPublicationRecordSchema.nullable() }).strict();
++export type RichMenuDraftContent = z.infer<typeof ContentSchema>;
++
++/** Raw legacy menu JSON stays readable; only new publication records use an envelope. */
++export function parseRichMenuDraftContent(value: unknown): RichMenuDraftContent | null {
++  const legacy=LineRichMenuSchema.safeParse(value);
++  if(legacy.success)return {version:1,menu:legacy.data,publication:null};
++  const content=ContentSchema.safeParse(value);return content.success?content.data:null;
++}
++export function richMenuPublicationLocked(record: RichMenuPublicationRecord | null) {
++  return record?.status==="syncing" || record?.status==="uncertain";
++}
++export function saveRichMenuDraftContent(menu: LineRichMenu, previous: RichMenuPublicationRecord | null) {
++  return previous ? {version:1 as const,menu,publication:{...previous,status:"outdated" as const}} : menu;
++}
++export type RichMenuPublicationView = Pick<RichMenuPublicationRecord,"status"|"confirmedAt"|"expiresAt"|"links">;
++export function richMenuPublicationView(record: RichMenuPublicationRecord | null): RichMenuPublicationView | null {
++  return record?{status:record.status,confirmedAt:record.confirmedAt,expiresAt:record.expiresAt,links:record.links}:null;
++}
+--- a/src/lib/line-rich-menu-draft-content.test.ts
++++ b/src/lib/line-rich-menu-draft-content.test.ts
+@@ -0,0 +1,21 @@
++import { describe,expect,it } from "vitest";
++import { createRichMenuTemplate } from "./line-rich-menu";
++import { parseRichMenuDraftContent,richMenuPublicationLocked,richMenuPublicationView,saveRichMenuDraftContent,type RichMenuPublicationRecord } from "./line-rich-menu-draft-content";
++const publication:RichMenuPublicationRecord={attemptId:"a7a1b209-a253-4c55-a3b4-7bed4f458e47",status:"synced",fingerprint:"a".repeat(64),accountId:"synthetic-account",accountVersion:"b".repeat(64),sourceRevision:1,startedAt:"2026-10-16T01:00:00.000Z",expiresAt:"2026-10-16T01:02:00.000Z",stage:"confirm",remoteMenuId:`richmenu-${"c".repeat(32)}`,previousMenuId:null,previousDefaultKnown:true,confirmedAt:"2026-10-16T01:00:30.000Z",links:{live_url:"https://example.test/live/synthetic"}};
++describe("Rich Menu draft compatibility and public state",()=>{
++ it("reads old raw JSON and new publication records without changing the menu",()=>{
++  const menu=createRichMenuTemplate("minimal-4");expect(parseRichMenuDraftContent(menu)).toEqual({version:1,menu,publication:null});
++  expect(parseRichMenuDraftContent({version:1,menu,publication})).toEqual({version:1,menu,publication});
++  expect(saveRichMenuDraftContent(menu,null)).toEqual(menu);
++ });
++ it("marks edits outdated and preserves history while withholding internal account/resource data",()=>{
++  const saved=saveRichMenuDraftContent(createRichMenuTemplate("minimal-4"),publication);
++  expect(parseRichMenuDraftContent(saved)?.publication?.status).toBe("outdated");
++  const view=richMenuPublicationView(publication);expect(view).toEqual({status:"synced",confirmedAt:publication.confirmedAt,expiresAt:publication.expiresAt,links:publication.links});
++  expect(JSON.stringify(view)).not.toContain(publication.accountVersion);expect(JSON.stringify(view)).not.toContain(publication.remoteMenuId);
++ });
++ it("locks unknown and running outcomes, and rejects malformed stored state instead of replacing it",()=>{
++  expect(richMenuPublicationLocked({...publication,status:"uncertain"})).toBe(true);expect(richMenuPublicationLocked({...publication,status:"syncing"})).toBe(true);expect(richMenuPublicationLocked(publication)).toBe(false);
++  expect(parseRichMenuDraftContent({version:1,menu:createRichMenuTemplate("minimal-4"),publication:{...publication,remoteMenuId:"foreign/unbounded"}})).toBeNull();
++ });
++});
+--- a/src/lib/line-rich-menu-sync.ts
++++ b/src/lib/line-rich-menu-sync.ts
+@@ -0,0 +1,119 @@
++import { createHash,randomUUID } from "node:crypto";
++import { Prisma,type PrismaClient,type LineOfficialAccount } from "@prisma/client";
++import { LineFetchRichMenuClient,type LineRichMenuClient } from "@/lib/line-rich-menu-client";
++import { unprotectLineOfficialAccountCredentials } from "@/lib/line-credentials";
++import { prepareLineRichMenuPublication,publishPreparedLineRichMenu,type RichMenuLinks } from "@/lib/line-rich-menu-publication";
++import { RichMenuPublicationRecordSchema,parseRichMenuDraftContent,richMenuPublicationLocked,richMenuPublicationView,type RichMenuPublicationRecord } from "@/lib/line-rich-menu-draft-content";
++
++type Db=Pick<PrismaClient,"$transaction"|"lineRichMenuDraft"|"lineOfficialAccount">;
++type Reference={id:string;revision:number};
++type Context={vendorId:string;actorId:string};
++type Factory=(account:LineOfficialAccount)=>LineRichMenuClient;
++const defaultFactory:Factory=account=>new LineFetchRichMenuClient(unprotectLineOfficialAccountCredentials(account.vendorId,account).messagingAccessToken);
++export const richMenuAccountVersion=(account:Pick<LineOfficialAccount,"id"|"messagingChannelIdEncrypted"|"messagingChannelSecretEncrypted"|"messagingAccessTokenEncrypted">)=>createHash("sha256").update(JSON.stringify([account.id,account.messagingChannelIdEncrypted,account.messagingChannelSecretEncrypted,account.messagingAccessTokenEncrypted])).digest("hex");
++const version=richMenuAccountVersion;
++const json=(value:unknown)=>value as Prisma.InputJsonValue;
++const auditRecord=(record:RichMenuPublicationRecord)=>json({attemptId:record.attemptId,status:record.status,fingerprint:record.fingerprint,accountId:record.accountId,sourceRevision:record.sourceRevision,stage:record.stage,remoteMenuId:record.remoteMenuId,previousMenuId:record.previousMenuId,previousDefaultKnown:record.previousDefaultKnown,confirmedAt:record.confirmedAt});
++export type RichMenuSyncResult={status:"synced"|"uncertain"|"failed"|"conflict"|"not_configured"|"invalid_input"|"invalid_image"|"unresolved_links"|"image_too_large"|"image_size_mismatch"|"locked";reference:Reference;publication:ReturnType<typeof richMenuPublicationView>};
++
++function output(status:RichMenuSyncResult["status"],reference:Reference,record:RichMenuPublicationRecord|null=null):RichMenuSyncResult {
++  return {status,reference,publication:richMenuPublicationView(record)};
++}
++
++/** Caller proves owner+CSRF. All identifiers below are bound to that vendor. */
++export async function syncLineRichMenuDraft(db:Db,context:Context,reference:Reference,postedMenu:unknown,image:Uint8Array,links:RichMenuLinks,factory:Factory=defaultFactory):Promise<RichMenuSyncResult> {
++  const row=await db.lineRichMenuDraft.findFirst({where:{...reference,vendorId:context.vendorId}});
++  const content=row&&parseRichMenuDraftContent(row.menu);
++  if(!row||!content||reference.revision>2_147_483_644)return output("conflict",reference);
++  if(richMenuPublicationLocked(content.publication))return output("locked",reference,content.publication);
++  // A sync always publishes the saved snapshot, never silently omits local edits.
++  const posted=parseRichMenuDraftContent(postedMenu);
++  if(!posted||JSON.stringify(posted.menu)!==JSON.stringify(content.menu))return output("invalid_input",reference,content.publication);
++  const checkedLinks=RichMenuPublicationRecordSchema.shape.links.safeParse(links);
++  if(!checkedLinks.success)return output("invalid_input",reference,content.publication);
++  const prepared=await prepareLineRichMenuPublication(content.menu,image,checkedLinks.data);
++  if(prepared.status!=="ready")return output(prepared.status==="invalid_menu"?"invalid_input":prepared.status,reference,content.publication);
++  const account=await db.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++  if(!account||account.status!=="active")return output("not_configured",reference,content.publication);
++  const started=new Date();let publication:RichMenuPublicationRecord=RichMenuPublicationRecordSchema.parse({attemptId:randomUUID(),status:"syncing",fingerprint:prepared.publication.fingerprint,accountId:account.id,accountVersion:version(account),sourceRevision:reference.revision,startedAt:started.toISOString(),expiresAt:new Date(started.getTime()+120_000).toISOString(),stage:"check_current",remoteMenuId:null,previousMenuId:null,previousDefaultKnown:false,confirmedAt:null,links:checkedLinks.data});
++  const active={id:reference.id,revision:reference.revision+1};
++  try {
++    const claimed=await db.$transaction(async tx=>{
++      const currentAccount=await tx.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++      if(!currentAccount||currentAccount.status!=="active"||version(currentAccount)!==publication.accountVersion)return false;
++      const changed=await tx.lineRichMenuDraft.updateMany({where:{...reference,vendorId:context.vendorId,menu:{equals:json(row.menu)}},data:{revision:{increment:1},menu:json({...content,publication})}});
++      if(changed.count!==1)return false;
++      await tx.auditLog.create({data:{vendorId:context.vendorId,actorId:context.actorId,action:"line_rich_menu_sync_started",targetType:"LineRichMenuDraft",targetId:row.id,after:json({attemptId:publication.attemptId,fingerprint:publication.fingerprint,previous:content.publication?auditRecord(content.publication):null})}});
++      return true;
++    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
++    if(!claimed)return output("conflict",reference);
++  } catch {return output("conflict",reference);}
++
++  async function current() {
++    const fresh=await db.lineRichMenuDraft.findFirst({where:{...active,vendorId:context.vendorId}});
++    const stored=fresh&&parseRichMenuDraftContent(fresh.menu);
++    return fresh&&stored?.publication?.attemptId===publication.attemptId&&stored.publication.status==="syncing"?{row:fresh,content:stored}:null;
++  }
++  async function isCurrent() {
++    if(Date.now()>=Date.parse(publication.expiresAt)||!await current())return false;
++    const latest=await db.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++    return Boolean(latest&&latest.status==="active"&&version(latest)===publication.accountVersion);
++  }
++  let result;
++  try {
++    result=await publishPreparedLineRichMenu(factory(account),prepared.publication,isCurrent,async progress=>{
++      if(!await isCurrent())throw new Error("Rich menu snapshot changed.");
++      const fresh=await current();if(!fresh)throw new Error("Rich menu snapshot changed.");
++      publication=RichMenuPublicationRecordSchema.parse({...publication,...progress,status:"syncing"});
++      const changed=await db.lineRichMenuDraft.updateMany({where:{...active,vendorId:context.vendorId,menu:{equals:json(fresh.row.menu)}},data:{menu:json({...content,publication})}});
++      if(changed.count!==1)throw new Error("Rich menu progress could not be persisted.");
++    });
++  } catch {result={...publication,status:publication.remoteMenuId||publication.stage!=="check_current"?"uncertain" as const:"failed" as const};}
++  publication=RichMenuPublicationRecordSchema.parse({...publication,...result,confirmedAt:result.status==="synced"?new Date().toISOString():null});
++  async function lostOwnership() {
++    const latest=await db.lineRichMenuDraft.findFirst({where:{id:active.id,vendorId:context.vendorId}});
++    const stored=latest&&parseRichMenuDraftContent(latest.menu);
++    return output("uncertain",latest?{id:latest.id,revision:latest.revision}:active,stored?.publication??{...publication,status:"uncertain"});
++  }
++  try {
++    const fresh=await current();if(!fresh)return await lostOwnership();
++    const changed=await db.$transaction(async tx=>{
++      const count=await tx.lineRichMenuDraft.updateMany({where:{...active,vendorId:context.vendorId,menu:{equals:json(fresh.row.menu)}},data:{revision:{increment:1},menu:json({...content,publication})}});
++      if(count.count!==1)return false;
++      await tx.auditLog.create({data:{vendorId:context.vendorId,actorId:context.actorId,action:"line_rich_menu_sync_result",targetType:"LineRichMenuDraft",targetId:row.id,after:auditRecord(publication)}});
++      return true;
++    });
++    return changed?output(result.status, {id:active.id,revision:active.revision+1},publication):await lostOwnership();
++  } catch {return output("uncertain",active,{...publication,status:"uncertain"});}
++}
++
++/** Read-only provider reconciliation never retries a default mutation. */
++export async function reconcileLineRichMenuDraft(db:Db,context:Context,reference:Reference,factory:Factory=defaultFactory):Promise<RichMenuSyncResult> {
++  const row=await db.lineRichMenuDraft.findFirst({where:{...reference,vendorId:context.vendorId}});
++  const content=row&&parseRichMenuDraftContent(row.menu),record=content?.publication;
++  if(!row||!content||!record||reference.revision>2_147_483_644)return output("conflict",reference);
++  if(record.status!=="uncertain"&&!(record.status==="syncing"&&Date.now()>Date.parse(record.expiresAt)))return output("locked",reference,record);
++  const account=await db.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++  if(!account||account.status!=="active"||account.id!==record.accountId||version(account)!==record.accountVersion)return output("not_configured",reference,record);
++  const active={id:row.id,revision:row.revision+1};
++  const reserved={...record,status:"syncing" as const,expiresAt:new Date(Date.now()+120_000).toISOString()};
++  const claimed=await db.lineRichMenuDraft.updateMany({where:{...reference,vendorId:context.vendorId,menu:{equals:json(row.menu)}},data:{revision:{increment:1},menu:json({...content,publication:reserved})}});
++  if(claimed.count!==1)return output("conflict",reference);
++  let publication:RichMenuPublicationRecord={...reserved,status:"uncertain"};
++  try {
++    const actual=await factory(account).getDefault();
++    if(record.remoteMenuId&&actual===record.remoteMenuId)publication={...reserved,status:"synced",confirmedAt:new Date().toISOString()};
++    else if(!record.previousDefaultKnown||!["set_default","confirm"].includes(record.stage))publication={...reserved,status:record.previousDefaultKnown&&actual!==record.previousMenuId?"conflict":"failed",confirmedAt:null};
++  } catch { /* Keep unknown remote outcomes locked; no provider diagnostic is persisted. */ }
++  try {
++    const changed=await db.$transaction(async tx=>{
++      const latest=await tx.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++      if(!latest||version(latest)!==record.accountVersion)return false;
++      const updated=await tx.lineRichMenuDraft.updateMany({where:{...active,vendorId:context.vendorId,menu:{equals:json({...content,publication:reserved})}},data:{revision:{increment:1},menu:json({...content,publication})}});
++      if(updated.count!==1)return false;
++      await tx.auditLog.create({data:{vendorId:context.vendorId,actorId:context.actorId,action:"line_rich_menu_reconciled",targetType:"LineRichMenuDraft",targetId:row.id,after:auditRecord(publication)}});return true;
++    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
++    const status=publication.status as "synced"|"uncertain"|"conflict"|"failed";
++    return changed?output(status,{id:active.id,revision:active.revision+1},publication):output("uncertain",active,{...publication,status:"uncertain"});
++  } catch {return output("uncertain",active,{...publication,status:"uncertain"});}
++}
+--- a/src/lib/line-rich-menu-sync.db.test.ts
++++ b/src/lib/line-rich-menu-sync.db.test.ts
+@@ -0,0 +1,157 @@
++import { randomUUID } from "node:crypto";
++import sharp from "sharp";
++import { afterAll,afterEach,beforeAll,describe,expect,it,vi } from "vitest";
++import { getDb } from "./db";
++import { createRichMenuTemplate } from "./line-rich-menu";
++import { protectLineOfficialAccountCredentials } from "./line-credentials";
++import { parseRichMenuDraftContent,type RichMenuPublicationRecord } from "./line-rich-menu-draft-content";
++import { reconcileLineRichMenuDraft,richMenuAccountVersion,syncLineRichMenuDraft } from "./line-rich-menu-sync";
++const auth=vi.hoisted(()=>vi.fn());
++vi.mock("@/lib/auth",()=>({requireVendorOwner:auth}));
++vi.mock("@/lib/csrf",()=>({assertServerActionSecurity:vi.fn()}));
++vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
++vi.mock("@/lib/audit",()=>({writeAuditLog:vi.fn(),auditSnapshot:(value:unknown)=>value}));
++import { updateRichMenuDraftAction } from "@/app/actions/line-rich-menu-actions";
++import { saveLineOfficialAccountAction } from "@/app/actions/line-actions";
++
++const db=getDb(),vendorIds:string[]=[];
++let image:Uint8Array;
++const links={live_url:"https://example.test/live/synthetic?private_marker=synthetic-config-only",consultation_url:"https://example.test/consult",portal_url:"https://example.test/portal",voucher_url:"https://example.test/voucher"};
++const oldId=`richmenu-${"a".repeat(32)}`;
++beforeAll(async()=>{
++ const target=new URL(process.env.DATABASE_URL??"http://invalid");
++ if(target.hostname!=="127.0.0.1"||target.pathname!=="/celebratedeal_test")throw new Error("Owned disposable database required.");
++ image=await sharp({create:{width:2500,height:1686,channels:3,background:"#2563eb"}}).png().toBuffer();
++});
++afterEach(async()=>{
++ const ids=vendorIds.splice(0);await db.auditLog.deleteMany({where:{vendorId:{in:ids}}});await db.vendor.deleteMany({where:{id:{in:ids}}});
++});
++afterAll(async()=>{await db.$disconnect();});
++
++async function setup() {
++ const suffix=randomUUID();
++ const vendor=await db.vendor.create({data:{name:"Synthetic Rich Menu owner",slug:`menu-${suffix}`,email:`menu-${suffix}@example.test`,passwordHash:"synthetic-unused"}});vendorIds.push(vendor.id);
++ const account=await db.lineOfficialAccount.create({data:{vendorId:vendor.id,status:"active",...protectLineOfficialAccountCredentials(vendor.id,{messagingChannelId:"synthetic-channel-a",messagingChannelSecret:"synthetic-channel-secret-only-value",messagingAccessToken:"synthetic-provider-value-with-no-real-access",loginChannelId:null,loginChannelSecret:null})}});
++ const menu=createRichMenuTemplate("minimal-4"),draft=await db.lineRichMenuDraft.create({data:{vendorId:vendor.id,menu}});
++ const context={vendorId:vendor.id,actorId:"synthetic-owner"};
++ auth.mockResolvedValue({vendor,user:{id:context.actorId},member:{role:"owner"}});
++ return {vendor,account,menu,draft,context,reference:{id:draft.id,revision:draft.revision}};
++}
++function provider() {
++ let selected:string|null=oldId;
++ const created=`richmenu-${randomUUID().replaceAll("-","")}`;
++ const client={getDefault:vi.fn(async()=>selected),create:vi.fn(async()=>created),uploadImage:vi.fn(async()=>{}),setDefault:vi.fn(async(id:string|null)=>{selected=id;}),delete:vi.fn(async()=>{})};
++ return {client,created,select:(value:string|null)=>{selected=value;}};
++}
++function editForm(reference:{id:string;revision:number},menu:unknown,intent="save") {
++ const form=new FormData();for(const [key,value] of Object.entries({...reference,menu:JSON.stringify(menu),intent,_csrf:"synthetic"}))form.set(key,String(value));return form;
++}
++function credentialForm(channel="synthetic-channel-a") {
++ const form=new FormData();for(const [key,value] of Object.entries({messagingChannelId:channel,messagingChannelSecret:"synthetic-rotated-channel-secret-value",messagingAccessToken:"synthetic-rotated-provider-value-with-no-access"}))form.set(key,value);return form;
++}
++async function stored(vendorId:string) {
++ const row=await db.lineRichMenuDraft.findUniqueOrThrow({where:{vendorId}});const content=parseRichMenuDraftContent(row.menu);if(!content)throw new Error("Stored fixture content malformed.");return {row,content,reference:{id:row.id,revision:row.revision}};
++}
++
++describe("Rich Menu owned PostgreSQL publication boundary",()=>{
++ it.each([{...links,unknown:"synthetic"},{...links,portal_url:"x".repeat(1001)}])("rejects malformed stored links before any claim or audit",async invalid=>{
++  const s=await setup(),remote=provider();
++  expect((await syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,invalid,()=>remote.client)).status).toBe("invalid_input");
++  expect((await stored(s.vendor.id)).row.revision).toBe(1);
++  expect(await db.auditLog.count({where:{vendorId:s.vendor.id}})).toBe(0);
++  expect(remote.client.create).not.toHaveBeenCalled();
++ });
++
++ it("rejects a first-sync snapshot when credentials change before its Serializable claim",async()=>{
++  const s=await setup(),remote=provider();
++  const snapshotDb={lineRichMenuDraft:db.lineRichMenuDraft,$transaction:db.$transaction.bind(db),lineOfficialAccount:{...db.lineOfficialAccount,findUnique:vi.fn(async()=>{
++   expect((await saveLineOfficialAccountAction({status:"idle",error:null},credentialForm("synthetic-channel-b"))).status).toBe("saved");
++   return s.account;
++  })} as unknown as typeof db.lineOfficialAccount};
++  expect((await syncLineRichMenuDraft(snapshotDb,s.context,s.reference,s.menu,image,links,()=>remote.client)).status).toBe("conflict");
++  expect(remote.client.create).not.toHaveBeenCalled();expect((await stored(s.vendor.id)).content.publication).toBeNull();
++ });
++
++ it("persists a confirmed snapshot, omits configured URLs from audit and marks subsequent edits outdated",async()=>{
++  const s=await setup(),remote=provider();
++  const result=await syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,links,()=>remote.client);
++  expect(result.status).toBe("synced");expect(result.reference.revision).toBe(3);
++  const saved=await stored(s.vendor.id);expect(saved.content.publication?.status).toBe("synced");expect(saved.content.publication?.remoteMenuId).toBe(remote.created);
++  const history=await db.auditLog.findMany({where:{vendorId:s.vendor.id}});expect(history).toHaveLength(2);expect(JSON.stringify(history)).not.toContain("private_marker");
++  const edited={...s.menu,name:"Saved new version"};
++  expect((await updateRichMenuDraftAction({status:"idle",error:null,reference:null},editForm(saved.reference,edited))).status).toBe("saved");
++  expect((await stored(s.vendor.id)).content.publication?.status).toBe("outdated");
++  expect(remote.client.delete).not.toHaveBeenCalled();
++ });
++
++ it("allows only one concurrent first publication and never reads a foreign draft as owned",async()=>{
++  const s=await setup(),foreign=await setup(),remote=provider();
++  const factory=vi.fn(()=>remote.client);
++  expect((await syncLineRichMenuDraft(db,foreign.context,s.reference,s.menu,image,links,factory)).status).toBe("conflict");expect(factory).not.toHaveBeenCalled();
++  expect((await syncLineRichMenuDraft(db,s.context,s.reference,{...s.menu,name:"Unsaved local change"},image,links,factory)).status).toBe("invalid_input");expect(factory).not.toHaveBeenCalled();
++  const results=await Promise.all([syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,links,factory),syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,links,factory)]);
++  expect(results.map(result=>result.status).sort()).toEqual(["conflict","synced"]);expect(remote.client.create).toHaveBeenCalledTimes(1);expect((await stored(s.vendor.id)).row.revision).toBe(3);
++ });
++
++ it("blocks fresh-tab edits, deletion, duplicate sync and credential switching while the remote operation is pending",async()=>{
++  const s=await setup(),remote=provider();
++  let release!:()=>void,entered!:()=>void;
++  const inside=new Promise<void>(resolve=>{entered=resolve;}),barrier=new Promise<void>(resolve=>{release=resolve;});
++  remote.client.uploadImage.mockImplementationOnce(async()=>{entered();await barrier;});
++  const running=syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,links,()=>remote.client);
++  await inside;
++  try {
++   const active=await stored(s.vendor.id);expect(active.content.publication?.status).toBe("syncing");expect(active.content.publication?.remoteMenuId).toBe(remote.created);
++   for(const intent of ["save","delete"])expect((await updateRichMenuDraftAction({status:"idle",error:null,reference:null},editForm(active.reference,s.menu,intent))).error).toBe("locked");
++   expect((await syncLineRichMenuDraft(db,s.context,active.reference,s.menu,image,links,()=>remote.client)).status).toBe("locked");
++   expect((await saveLineOfficialAccountAction({status:"idle",error:null},credentialForm())).error).toBe("sync_pending");
++   expect((await db.lineOfficialAccount.findUniqueOrThrow({where:{vendorId:s.vendor.id}})).messagingAccessTokenEncrypted).toBe(s.account.messagingAccessTokenEncrypted);
++  } finally {release();}
++  expect((await running).status).toBe("synced");expect(remote.client.create).toHaveBeenCalledTimes(1);
++ });
++
++ it("reconciles an applied timeout using only a read, without repeating the default mutation",async()=>{
++  const s=await setup(),remote=provider();
++  remote.client.setDefault.mockImplementationOnce(async(id)=>{remote.select(id);throw new Error("synthetic ambiguous response");});
++  const result=await syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,links,()=>remote.client);expect(result.status).toBe("uncertain");
++  expect((await stored(s.vendor.id)).content.publication?.status).toBe("uncertain");
++  const resolved=await reconcileLineRichMenuDraft(db,s.context,result.reference,()=>remote.client);expect(resolved.status).toBe("synced");expect(remote.client.setDefault).toHaveBeenCalledTimes(1);
++ });
++
++ it("unlocks through read-only reconciliation when the pre-switch lease check fails without sending a switch",async()=>{
++  const s=await setup(),remote=provider(),expired=Date.now()+600000;let restoreClock=()=>{};
++  // Advance only at the provider barrier, not by counting Prisma's own clock reads.
++  remote.client.getDefault.mockImplementationOnce(async()=>oldId).mockImplementationOnce(async()=>{
++   const clock=vi.spyOn(Date,"now").mockReturnValue(expired);restoreClock=()=>clock.mockRestore();return oldId;
++  });
++  let result;
++  try {result=await syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,links,()=>remote.client);}
++  finally {restoreClock();}
++  expect(result.status).toBe("uncertain");expect(remote.client.setDefault).not.toHaveBeenCalled();
++  expect((await stored(s.vendor.id)).content.publication?.stage).toBe("check_current");
++  expect((await reconcileLineRichMenuDraft(db,s.context,result.reference,()=>remote.client)).status).toBe("failed");
++  const fresh=await stored(s.vendor.id);
++  expect((await updateRichMenuDraftAction({status:"idle",error:null,reference:null},editForm(fresh.reference,s.menu))).status).toBe("saved");
++ });
++
++ it("keeps unapplied ambiguous switches locked, allows same-channel repair, and rejects switching to a different channel",async()=>{
++  const s=await setup(),remote=provider();remote.client.setDefault.mockRejectedValueOnce(new Error("synthetic unknown response"));
++  const first=await syncLineRichMenuDraft(db,s.context,s.reference,s.menu,image,links,()=>remote.client);expect(first.status).toBe("uncertain");
++  const unresolved=await reconcileLineRichMenuDraft(db,s.context,first.reference,()=>remote.client);expect(unresolved.status).toBe("uncertain");
++  expect((await saveLineOfficialAccountAction({status:"idle",error:null},credentialForm("synthetic-other-channel"))).error).toBe("sync_pending");
++  expect((await saveLineOfficialAccountAction({status:"idle",error:null},credentialForm())).status).toBe("saved");
++  const fresh=await stored(s.vendor.id),account=await db.lineOfficialAccount.findUniqueOrThrow({where:{vendorId:s.vendor.id}});
++  expect(fresh.content.publication?.status).toBe("uncertain");expect(fresh.content.publication?.accountVersion).toBe(richMenuAccountVersion(account));
++  remote.select(remote.created);
++  expect((await reconcileLineRichMenuDraft(db,s.context,fresh.reference,()=>remote.client)).status).toBe("synced");expect(remote.client.setDefault).toHaveBeenCalledTimes(1);
++ });
++
++ it("does not reconcile an active lease, but can recover the persisted remote ID after a simulated interrupted operation",async()=>{
++  const s=await setup(),remote=provider(),now=new Date();
++  const record:RichMenuPublicationRecord={attemptId:randomUUID(),status:"syncing",fingerprint:"a".repeat(64),accountId:s.account.id,accountVersion:richMenuAccountVersion(s.account),sourceRevision:1,startedAt:now.toISOString(),expiresAt:new Date(now.getTime()+120000).toISOString(),stage:"set_default",remoteMenuId:remote.created,previousMenuId:oldId,previousDefaultKnown:true,confirmedAt:null,links};
++  await db.lineRichMenuDraft.update({where:{id:s.draft.id},data:{menu:{version:1,menu:s.menu,publication:record}}});
++  expect((await reconcileLineRichMenuDraft(db,s.context,s.reference,()=>remote.client)).status).toBe("locked");expect(remote.client.getDefault).not.toHaveBeenCalled();
++  await db.lineRichMenuDraft.update({where:{id:s.draft.id},data:{menu:{version:1,menu:s.menu,publication:{...record,expiresAt:new Date(now.getTime()-1000).toISOString()}}}});
++  remote.select(remote.created);expect((await reconcileLineRichMenuDraft(db,s.context,s.reference,()=>remote.client)).status).toBe("synced");expect(remote.client.create).not.toHaveBeenCalled();
++ });
++});
+--- a/src/app/actions/line-rich-menu-actions.ts
++++ b/src/app/actions/line-rich-menu-actions.ts
+@@ -7,6 +7,9 @@
+ import { assertServerActionSecurity } from "@/lib/csrf";
+ import { getDb } from "@/lib/db";
+ import { LineRichMenuSchema } from "@/lib/line-rich-menu";
++import { parseRichMenuDraftContent,richMenuPublicationLocked,richMenuPublicationView,saveRichMenuDraftContent,type RichMenuPublicationView } from "@/lib/line-rich-menu-draft-content";
++import { reconcileLineRichMenuDraft,syncLineRichMenuDraft } from "@/lib/line-rich-menu-sync";
++import { LINE_RICH_MENU_IMAGE_LIMIT,LINE_RICH_MENU_PLACEHOLDERS,type RichMenuLinks } from "@/lib/line-rich-menu-publication";
+ 
+ const ReferenceSchema = z.object({
+   id: z.string().min(1).max(128),
+@@ -14,10 +17,68 @@
+ });
+ type DraftReference = z.infer<typeof ReferenceSchema>;
+ export type RichMenuActionState = {
+-  status: "idle" | "saved" | "deleted" | "error";
+-  error: "invalid_input" | "conflict" | "save_failed" | null;
++  status: "idle" | "saved" | "deleted" | "error" | "synced" | "uncertain";
++  error: "invalid_input" | "conflict" | "save_failed" | "locked" | "not_configured" | "invalid_image" | "image_too_large" | "image_size_mismatch" | "unresolved_links" | "sync_failed" | null;
+   reference: DraftReference | null;
++  publication?:RichMenuPublicationView|null;
+ };
++
++function readMenu(formData:FormData) {
++  const raw=formData.get("menu");if(typeof raw!=="string"||raw.length>40_000)return null;
++  try {const parsed=LineRichMenuSchema.safeParse(JSON.parse(raw));return parsed.success?parsed.data:null;}catch{return null;}
++}
++async function publishIntent(formData:FormData,intent:"sync"|"reconcile",reference:DraftReference,context:{vendorId:string;actorId:string}):Promise<RichMenuActionState> {
++  const db=getDb();let result;
++  if(intent==="reconcile")result=await reconcileLineRichMenuDraft(db,context,reference);
++  else {
++    const menu=readMenu(formData);if(!menu)return {status:"error",error:"invalid_input",reference};
++    const image=formData.get("image");
++    if(!(image instanceof Blob)||image.size===0)return {status:"error",error:"invalid_image",reference};
++    if(image.size>LINE_RICH_MENU_IMAGE_LIMIT)return {status:"error",error:"image_too_large",reference};
++    const links:RichMenuLinks={};
++    for(const key of LINE_RICH_MENU_PLACEHOLDERS) {const value=formData.get(key);if(typeof value==="string"&&value.length<=1000)links[key]=value.trim();}
++    result=await syncLineRichMenuDraft(db,context,reference,menu,new Uint8Array(await image.arrayBuffer()),links);
++  }
++  revalidatePath("/settings/line");
++  if(result.status==="synced"||result.status==="uncertain")return {status:result.status,error:null,reference:result.reference,publication:result.publication};
++  return {status:"error",error:result.status==="failed"?"sync_failed":result.status,reference:result.reference,publication:result.publication};
++}
++
++
++async function editDraft(reference:DraftReference|null,vendorId:string,intent:"save"|"delete",formData:FormData):Promise<RichMenuActionState> {
++  const fail=(error:RichMenuActionState["error"]):RichMenuActionState=>({status:"error",error,reference});
++  const invalid=()=>fail("invalid_input");
++  let result:RichMenuActionState;
++    const db = getDb();
++    const current=reference?await db.lineRichMenuDraft.findFirst({where:{vendorId:vendorId,...reference}}):null;
++    const content=current&&parseRichMenuDraftContent(current.menu);
++    if(reference&&(!current||!content))return fail("conflict");
++    if(content&&richMenuPublicationLocked(content.publication))return {...fail("locked"),publication:richMenuPublicationView(content.publication)};
++    if (intent === "delete") {
++      if (!reference) return invalid();
++      const deleted = await db.lineRichMenuDraft.deleteMany({ where: { vendorId: vendorId, ...reference } });
++      if (deleted.count !== 1) return fail("conflict");
++      result = { status: "deleted", error: null, reference: null,publication:null };
++    } else {
++      const menu=readMenu(formData);if(!menu)return invalid();
++      const saved=saveRichMenuDraftContent(menu,content?.publication??null);
++      if (reference) {
++        const updated = await db.lineRichMenuDraft.updateMany({
++          where: { vendorId: vendorId, ...reference },
++          data: { menu: saved, revision: { increment: 1 } },
++        });
++        if (updated.count !== 1) return fail("conflict");
++        result = { status: "saved", error: null, reference: { id: reference.id, revision: reference.revision + 1 },publication:content?.publication?{...richMenuPublicationView(content.publication)!,status:"outdated"}:null };
++      } else {
++        // A unique vendor key makes simultaneous first saves conflict instead of creating orphan drafts.
++        const created = await db.lineRichMenuDraft.create({
++          data: { vendorId: vendorId, menu }, select: { id: true, revision: true },
++        });
++        result = { status: "saved", error: null, reference: created };
++      }
++    }
++  return result;
++}
+ 
+ /** Every write is owner-scoped and compares both identity and revision to reject stale tabs. */
+ export async function updateRichMenuDraftAction(
+@@ -25,7 +86,7 @@
+   formData: FormData,
+ ): Promise<RichMenuActionState> {
+   await assertServerActionSecurity(formData);
+-  const { vendor } = await requireVendorOwner();
++  const auth = await requireVendorOwner();const vendor=auth.vendor;
+   // Prior action state is client-controlled; only echo a bounded reference, never use it for writes.
+   const previousReference = ReferenceSchema.safeParse(previous?.reference);
+   const fallbackReference = previousReference.success ? previousReference.data : null;
+@@ -38,39 +99,18 @@
+   const reference = parsed.success ? parsed.data : null;
+   const fail = (error: RichMenuActionState["error"]): RichMenuActionState => ({ status: "error", error, reference });
+   const intent = formData.get("intent");
+-  if (intent !== "save" && intent !== "delete") return invalid();
++  if (intent !== "save" && intent !== "delete" && intent!=="sync" && intent!=="reconcile") return invalid();
+ 
+   let result: RichMenuActionState;
+   try {
+-    const db = getDb();
+-    if (intent === "delete") {
+-      if (!reference) return invalid();
+-      const deleted = await db.lineRichMenuDraft.deleteMany({ where: { vendorId: vendor.id, ...reference } });
+-      if (deleted.count !== 1) return fail("conflict");
+-      result = { status: "deleted", error: null, reference: null };
+-    } else {
+-      const raw = formData.get("menu");
+-      if (typeof raw !== "string" || raw.length > 40_000) return invalid();
+-      let value: unknown;
+-      try { value = JSON.parse(raw); } catch { return invalid(); }
+-      const menu = LineRichMenuSchema.safeParse(value);
+-      if (!menu.success) return invalid();
+-      if (reference) {
+-        const updated = await db.lineRichMenuDraft.updateMany({
+-          where: { vendorId: vendor.id, ...reference },
+-          data: { menu: menu.data, revision: { increment: 1 } },
+-        });
+-        if (updated.count !== 1) return fail("conflict");
+-        result = { status: "saved", error: null, reference: { id: reference.id, revision: reference.revision + 1 } };
+-      } else {
+-        // A unique vendor key makes simultaneous first saves conflict instead of creating orphan drafts.
+-        const created = await db.lineRichMenuDraft.create({
+-          data: { vendorId: vendor.id, menu: menu.data }, select: { id: true, revision: true },
+-        });
+-        result = { status: "saved", error: null, reference: created };
+-      }
++    if(intent==="sync"||intent==="reconcile")return reference?await publishIntent(formData,intent,reference,{vendorId:vendor.id,actorId:auth.user.id}):invalid();
++    result=await editDraft(reference,vendor.id,intent,formData);
++    if(result.status==="error")return result;
++  } catch (error) {
++    if(intent==="sync"||intent==="reconcile") {
++      revalidatePath("/settings/line");
++      return fail("sync_failed");
+     }
+-  } catch (error) {
+     return fail(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" ? "conflict" : "save_failed");
+   }
+   revalidatePath("/settings/line");
+--- a/src/app/actions/line-rich-menu-actions.test.ts
++++ b/src/app/actions/line-rich-menu-actions.test.ts
+@@ -2,10 +2,11 @@
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+ import { createRichMenuTemplate } from "@/lib/line-rich-menu";
+ 
+-const mocks = vi.hoisted(() => ({ security: vi.fn(), auth: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(), revalidate: vi.fn() }));
++const mocks = vi.hoisted(() => ({ security: vi.fn(), auth: vi.fn(), create: vi.fn(), findFirst:vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(), revalidate: vi.fn(),sync:vi.fn(),reconcile:vi.fn() }));
+ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
+ vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.auth }));
+-vi.mock("@/lib/db", () => ({ getDb: () => ({ lineRichMenuDraft: { create: mocks.create, updateMany: mocks.updateMany, deleteMany: mocks.deleteMany } }) }));
++vi.mock("@/lib/db", () => ({ getDb: () => ({ lineRichMenuDraft: { create: mocks.create,findFirst:mocks.findFirst, updateMany: mocks.updateMany, deleteMany: mocks.deleteMany } }) }));
++vi.mock("@/lib/line-rich-menu-sync",()=>({syncLineRichMenuDraft:mocks.sync,reconcileLineRichMenuDraft:mocks.reconcile}));
+ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
+ import { updateRichMenuDraftAction, type RichMenuActionState } from "./line-rich-menu-actions";
+ const initial: RichMenuActionState = { status: "idle", error: null, reference: null };
+@@ -16,7 +17,8 @@
+ }
+ beforeEach(() => {
+   vi.resetAllMocks();
+-  mocks.auth.mockResolvedValue({ vendor: { id: "vendor-a" } });
++  mocks.auth.mockResolvedValue({ vendor: { id: "vendor-a" },user:{id:"owner-a"} });
++  mocks.findFirst.mockImplementation(async ({where})=>({...where,menu:createRichMenuTemplate("golden-6")}));
+   mocks.create.mockResolvedValue({ id: "draft-a", revision: 1 });
+   mocks.updateMany.mockResolvedValue({ count: 1 });
+   mocks.deleteMany.mockResolvedValue({ count: 1 });
+@@ -49,7 +51,7 @@
+     expect(mocks.revalidate).not.toHaveBeenCalled();
+   });
+   it("deletes only the scoped revision and returns an empty reference for a fresh draft", async () => {
+-    expect(await updateRichMenuDraftAction(initial, form("draft-a", "2", "delete"))).toEqual({ status: "deleted", error: null, reference: null });
++    expect(await updateRichMenuDraftAction(initial, form("draft-a", "2", "delete"))).toEqual({ status: "deleted", error: null, reference: null,publication:null });
+     expect(mocks.deleteMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-a", id: "draft-a", revision: 2 } });
+   });
+   it.each([["id", "x".repeat(129)], ["revision", "-1"], ["revision", "1.5"], ["revision", "2147483648"], ["intent", "publish"], ["menu", "{"], ["menu", "{}"], ["menu", "x".repeat(40001)]])("rejects malformed %s", async (key, value) => {
+@@ -73,4 +75,23 @@
+     mocks.create.mockRejectedValueOnce(new Error("internal connection details"));
+     expect(await updateRichMenuDraftAction(initial, form())).toEqual({ status: "error", error: "save_failed", reference: null });
+   });
++  it("requires an owned saved reference and a bounded image before dispatching sync",async()=>{
++    expect((await updateRichMenuDraftAction(initial,form("","0","sync"))).error).toBe("invalid_input");
++    expect((await updateRichMenuDraftAction(initial,form("draft-a","2","sync"))).error).toBe("invalid_image");
++    const data=form("draft-a","2","sync");data.set("image",new Blob(["synthetic-image"]));data.set("vendorId","foreign");
++    mocks.sync.mockResolvedValue({status:"uncertain",reference:{id:"draft-a",revision:4},publication:null});
++    expect((await updateRichMenuDraftAction(initial,data)).status).toBe("uncertain");
++    expect(mocks.sync).toHaveBeenCalledWith(expect.anything(),{vendorId:"vendor-a",actorId:"owner-a"},{id:"draft-a",revision:2},createRichMenuTemplate("golden-6"),expect.any(Uint8Array),{});
++    expect(mocks.security.mock.invocationCallOrder.at(-1)).toBeLessThan(mocks.sync.mock.invocationCallOrder[0]);
++  });
++  it("reconciles only through the authenticated context without requiring another image",async()=>{
++    mocks.reconcile.mockResolvedValue({status:"synced",reference:{id:"draft-a",revision:6},publication:null});
++    expect((await updateRichMenuDraftAction(initial,form("draft-a","4","reconcile"))).status).toBe("synced");
++    expect(mocks.reconcile).toHaveBeenCalledWith(expect.anything(),{vendorId:"vendor-a",actorId:"owner-a"},{id:"draft-a",revision:4});
++  });
++  it("refreshes authoritative publication state after an unexpected sync failure",async()=>{
++    mocks.reconcile.mockRejectedValueOnce(new Error("synthetic database failure"));
++    expect(await updateRichMenuDraftAction(initial,form("draft-a","4","reconcile"))).toMatchObject({status:"error",error:"sync_failed"});
++    expect(mocks.revalidate).toHaveBeenCalledWith("/settings/line");
++  });
+ });
+--- a/src/app/actions/line-actions.ts
++++ b/src/app/actions/line-actions.ts
+@@ -5,6 +5,9 @@
+ import { requireVendorOwner } from "@/lib/auth";
+ import { assertServerActionSecurity } from "@/lib/csrf";
+ import { getDb } from "@/lib/db";
++import { Prisma } from "@prisma/client";
++import { parseRichMenuDraftContent } from "@/lib/line-rich-menu-draft-content";
++import { richMenuAccountVersion } from "@/lib/line-rich-menu-sync";
+ import {
+   parseLineOfficialAccountCredentials,
+   protectLineOfficialAccountCredentials,
+@@ -15,7 +18,7 @@
+ 
+ export type LineOfficialAccountActionState = {
+   status: "idle" | "saved" | "error";
+-  error: "invalid_credentials" | "save_failed" | null;
++  error: "invalid_credentials" | "save_failed" | "sync_pending" | null;
+ };
+ 
+ export type LineConnectionActionState = {
+@@ -88,7 +91,19 @@
+   const protectedCredentials = protectLineOfficialAccountCredentials(auth.vendor.id, parsed.data);
+   let account: { id: string; status: string; connectedAt: Date };
+   try {
+-    account = await getDb().lineOfficialAccount.upsert({
++    account = await getDb().$transaction(async tx=>{
++      const draft=await tx.lineRichMenuDraft.findUnique({where:{vendorId:auth.vendor.id}});
++      const content=draft&&parseRichMenuDraftContent(draft.menu);
++      if(draft&&!content)throw new Error("line_sync_pending");
++      const publication=content?.publication;
++      if(publication?.status==="syncing")throw new Error("line_sync_pending");
++      if(publication?.status==="uncertain") {
++        // An expired provider value may be rotated for the SAME channel so an
++        // unknown result can be reconciled. A channel switch stays blocked.
++        const old=await tx.lineOfficialAccount.findUnique({where:{vendorId:auth.vendor.id}});
++        if(!old||unprotectLineOfficialAccountCredentials(auth.vendor.id,old).messagingChannelId!==parsed.data.messagingChannelId)throw new Error("line_sync_pending");
++      }
++      const saved = await tx.lineOfficialAccount.upsert({
+       where: { vendorId: auth.vendor.id },
+       create: {
+         vendorId: auth.vendor.id,
+@@ -102,9 +117,16 @@
+         lastValidatedAt: null,
+       },
+       select: { id: true, status: true, connectedAt: true },
+-    });
+-  } catch {
+-    return { status: "error", error: "save_failed" };
++      });
++      if(draft&&content&&publication) {
++        const next={...publication,status:publication.status==="uncertain"?"uncertain" as const:"outdated" as const,accountVersion:richMenuAccountVersion({id:saved.id,...protectedCredentials})};
++        const changed=await tx.lineRichMenuDraft.updateMany({where:{id:draft.id,vendorId:auth.vendor.id,revision:draft.revision,menu:{equals:draft.menu as Prisma.InputJsonValue}},data:{revision:{increment:1},menu:{...content,publication:next} as Prisma.InputJsonValue}});
++        if(changed.count!==1)throw new Error("line_sync_pending");
++      }
++      return saved;
++    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
++  } catch(error) {
++    return { status: "error", error: error instanceof Error&&error.message==="line_sync_pending"?"sync_pending":"save_failed" };
+   }
+ 
+   await writeAuditLog({
+--- a/src/app/actions/line-actions.test.ts
++++ b/src/app/actions/line-actions.test.ts
+@@ -8,11 +8,15 @@
+   update: vi.fn(),
+   writeAuditLog: vi.fn(),
+   revalidatePath: vi.fn(),
++  draft:vi.fn(),draftUpdate:vi.fn(),
+ }));
+ 
+ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
+ vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
+-vi.mock("@/lib/db", () => ({ getDb: () => ({ lineOfficialAccount: { upsert: mocks.upsert, findUnique: mocks.findUnique, update: mocks.update } }) }));
++vi.mock("@/lib/db", () => ({ getDb: () => {
++  const tx={lineOfficialAccount:{upsert:mocks.upsert,findUnique:mocks.findUnique,update:mocks.update},lineRichMenuDraft:{findUnique:mocks.draft,updateMany:mocks.draftUpdate}};
++  return {...tx,$transaction:async(callback:(value:typeof tx)=>Promise<unknown>)=>callback(tx)};
++} }));
+ vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
+ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+ 
+@@ -42,6 +46,7 @@
+     mocks.upsert.mockResolvedValue({ id: "line-account-1", status: "active", connectedAt: new Date("2026-09-05T00:00:00Z") });
+     mocks.findUnique.mockResolvedValue(null);
+     mocks.update.mockResolvedValue({});
++    mocks.draft.mockResolvedValue(null);mocks.draftUpdate.mockResolvedValue({count:1});
+   });
+   afterEach(() => vi.unstubAllEnvs());
+ 
+--- a/src/components/line-rich-menu-studio.tsx
++++ b/src/components/line-rich-menu-studio.tsx
+@@ -3,21 +3,38 @@
+ import { useActionState, useState } from "react";
+ import { updateRichMenuDraftAction, type RichMenuActionState } from "@/app/actions/line-rich-menu-actions";
+ import { createRichMenuTemplate, type LineRichMenu, type LineRichMenuTemplateType } from "@/lib/line-rich-menu";
++import type { RichMenuPublicationView } from "@/lib/line-rich-menu-draft-content";
+ 
+-export type RichMenuDraftView = { id: string; revision: number; menu: LineRichMenu };
++export type RichMenuDraftView = { id: string; revision: number; menu: LineRichMenu;publication?:RichMenuPublicationView|null };
+ const errors = {
+   invalid_input: "請檢查文字長度、網址與選單區塊設定。",
+   conflict: "草稿已在其他分頁更新或刪除。請重新載入頁面後再編輯。",
+   save_failed: "目前無法儲存，請稍後再試。",
++  locked:"同步正在進行或結果尚未確認，請先確認 LINE 目前狀態。",
++  not_configured:"請先確認同一個 LINE 官方帳號已連接，且憑證有效。",
++  invalid_image:"請選擇完整的 PNG 或 JPEG 圖片。",
++  image_too_large:"圖片需小於或等於 1 MB。",
++  image_size_mismatch:"圖片尺寸與此選單畫布不一致。",
++  unresolved_links:"請填妥此範本使用的所有同步連結。",
++  sync_failed:"同步尚未完成，請檢查連線與草稿設定。",
+ };
++const publicationCopy={syncing:"正在同步至 LINE；若操作中斷，稍後可確認目前狀態。",synced:"LINE 已確認使用這次同步的選單。",uncertain:"同步結果尚未確認。請先確認 LINE 目前狀態，避免重複發布。",failed:"這次同步尚未完成。",conflict:"草稿或 LINE 預設選單已變動，尚未確認同步。",outdated:"草稿或官方帳號連線已變更，尚未同步此版本。"};
++
++function PublicationFeedback({publication,unsaved}:{publication:RichMenuPublicationView|null;unsaved:boolean}) {
++  if(!publication)return null;
++  return <p role="status" className="text-sm">{unsaved&&publication.status==="synced"?publicationCopy.outdated:publicationCopy[publication.status]}{publication.confirmedAt?` 上次確認：${new Date(publication.confirmedAt).toLocaleString("zh-TW")}`:""}</p>;
++}
+ 
+ /** Preview cells never navigate to user-provided URLs or contact LINE. */
+-export function LineRichMenuStudio({ csrfToken, existing }: { csrfToken: string; existing: RichMenuDraftView | null }) {
++export function LineRichMenuStudio({ csrfToken, existing,connected=false }: { csrfToken: string; existing: RichMenuDraftView | null;connected?:boolean }) {
+   const [menu, setMenu] = useState<LineRichMenu>(() => existing?.menu ?? createRichMenuTemplate("golden-6"));
+   const initial: RichMenuActionState = {
+     status: "idle", error: null, reference: existing ? { id: existing.id, revision: existing.revision } : null,
+   };
+   const [state, action, pending] = useActionState(updateRichMenuDraftAction, initial);
++  const publication=state.status==="deleted"?null:state.publication??existing?.publication??null;
++  const locked=publication?.status==="syncing"||publication?.status==="uncertain";
++  const unsaved=Boolean(existing&&JSON.stringify(menu)!==JSON.stringify(existing.menu));
+   const load = (type: LineRichMenuTemplateType) => setMenu(createRichMenuTemplate(type));
+   const updateArea = (index: number, key: "label" | "uri" | "text" | "data", value: string) => {
+     setMenu((current) => ({ ...current, areas: current.areas.map((area, i) => i === index
+@@ -26,13 +43,13 @@
+ 
+   return <section className="rounded-lg border border-border bg-white p-5 shadow-sm" aria-labelledby="rich-menu-heading">
+     <h2 id="rich-menu-heading" className="text-lg font-semibold">LINE 圖文選單草稿</h2>
+-    <p className="mt-1 text-sm text-muted-foreground">先設定範本與按鈕，草稿會保存在此商家。同步至 LINE 的功能尚未開放。</p>
++    <p className="mt-1 text-sm text-muted-foreground">先設定並儲存草稿，再上傳圖片、填入可公開的連結，手動同步至此商家的 LINE 官方帳號。同步會更換官方帳號的預設圖文選單。</p>
+     <form action={action} className="mt-5 space-y-4">
+       <input type="hidden" name="_csrf" value={csrfToken} />
+       <input type="hidden" name="id" value={state.reference?.id ?? ""} />
+       <input type="hidden" name="revision" value={state.reference?.revision ?? 0} />
+       <input type="hidden" name="menu" value={JSON.stringify(menu)} />
+-      <fieldset disabled={pending} className="space-y-4 disabled:opacity-60">
++      <fieldset disabled={pending||locked} className="space-y-4 disabled:opacity-60">
+         <legend className="sr-only">圖文選單內容</legend>
+         <div className="flex flex-wrap gap-2">
+           <button type="button" onClick={() => load("golden-6")} className="min-h-11 rounded-md border px-4">載入銷講 6 格範本</button>
+@@ -53,13 +70,24 @@
+             </fieldset>;
+           })}
+         </div>
++        {state.reference ? <fieldset className="space-y-3 rounded-md border p-3">
++          <legend className="px-1 text-sm font-medium">同步至 LINE</legend>
++          <p className="text-sm">先儲存草稿，再選擇圖片。尺寸須為 {menu.size.width} × {menu.size.height}，PNG 或 JPEG，最多 1 MB。此步驟不會自動寄送通知。</p>
++          <label className="grid gap-1 text-sm">選單圖片<input type="file" name="image" accept="image/png,image/jpeg" className="min-h-11 rounded-md border p-2" /></label>
++          {([ ["live_url","直播公開連結"],["consultation_url","諮詢公開連結"],["portal_url","學員入口公開連結"],["voucher_url","優惠券公開連結"] ] as const).map(([name,label])=><label key={name} className="grid gap-1 text-sm">{label}<input name={name} maxLength={1000} defaultValue={publication?.links[name]??""} className="min-h-11 rounded-md border px-3" /></label>)}
++          {!connected?<p className="text-sm">請先連接 LINE 官方帳號。</p>:null}
++          {unsaved?<p className="text-sm">目前編輯尚未儲存，請先儲存草稿。</p>:null}
++          <button name="intent" value="sync" disabled={!connected||unsaved} className="min-h-11 rounded-md bg-blue-700 px-4 text-white disabled:opacity-50">上傳圖片並同步選單</button>
++        </fieldset>:null}
+         <div className="flex flex-wrap gap-3">
+           <button name="intent" value="save" className="min-h-11 rounded-md bg-blue-700 px-4 text-white">{pending ? "處理中…" : "儲存草稿"}</button>
+           {state.reference ? <button name="intent" value="delete" formNoValidate className="min-h-11 rounded-md border px-4">刪除草稿</button> : null}
+         </div>
+       </fieldset>
++      <PublicationFeedback publication={publication} unsaved={unsaved}/>
++      {locked&&state.reference?<button name="intent" value="reconcile" formNoValidate disabled={pending||!connected} className="min-h-11 rounded-md border px-4">確認 LINE 目前狀態</button>:null}
+       {state.status === "error" ? <p role="alert" className="text-sm text-destructive">{state.error ? errors[state.error] : errors.save_failed}</p> : null}
+-      {state.status === "saved" || state.status === "deleted" ? <p role="status" className="text-sm">{state.status === "saved" ? "草稿已儲存。" : "草稿已刪除，可重新編輯後儲存。"}</p> : null}
++      {state.status === "saved" || state.status === "deleted" ? <p role="status" className="text-sm">{state.status === "saved" ? "草稿已儲存。" : "草稿已刪除，可重新編輯後儲存。這不會移除 LINE 目前的預設選單。"}</p> : null}
+     </form>
+     <div className="mx-auto mt-6 max-w-sm" aria-label="圖文選單預覽">
+       <div className="relative overflow-hidden rounded-lg bg-slate-900" style={{ aspectRatio: `${menu.size.width}/${menu.size.height}` }}>
+--- a/src/components/line-rich-menu-studio.test.tsx
++++ b/src/components/line-rich-menu-studio.test.tsx
+@@ -11,7 +11,7 @@
+     expect(html).toContain('name="_csrf" value="synthetic-csrf"');
+     expect(html).toContain('name="revision" value="0"');
+     expect(html).toContain("儲存草稿"); expect(html).not.toContain("刪除草稿");
+-    expect(html).toContain("同步至 LINE 的功能尚未開放");
++    expect(html).toContain("同步會更換官方帳號的預設圖文選單");
+   });
+   it("loads existing content, escaped labels, and revision without exposing clickable preview URLs", () => {
+     const menu = createRichMenuTemplate("minimal-4");
+@@ -23,4 +23,17 @@
+     expect(html).toContain("&lt;svg onload=x&gt;"); expect(html).not.toContain("<svg onload=x>");
+     expect(html).not.toContain("href=");
+   });
++  it("offers explicit image/sync controls only after a saved draft, with public placeholder links",()=>{
++    const menu=createRichMenuTemplate("minimal-4");
++    const html=renderToStaticMarkup(<LineRichMenuStudio csrfToken="synthetic" connected existing={{id:"draft-a",revision:3,menu}}/>);
++    expect(html).toMatch(/<input(?=[^>]*type="file")(?=[^>]*name="image")[^>]*>/u);expect(html).toContain('value="sync"');
++    for(const name of ["live_url","portal_url","consultation_url","voucher_url"])expect(html).toContain(`name="${name}"`);
++    expect(html).toContain("先儲存草稿，再選擇圖片");
++  });
++  it.each(["syncing","uncertain"] as const)("does not show %s as synced and leaves read-only reconciliation available",status=>{
++    const menu=createRichMenuTemplate("minimal-4");
++    const html=renderToStaticMarkup(<LineRichMenuStudio csrfToken="synthetic" connected existing={{id:"draft-a",revision:3,menu,publication:{status,confirmedAt:null,expiresAt:"2026-10-16T01:02:00.000Z",links:{}}}}/>);
++    expect(html).toMatch(/<fieldset disabled=""/u);expect(html).toContain('value="reconcile"');
++    expect(html).toContain("確認 LINE 目前狀態");expect(html).not.toContain("LINE 已確認使用這次同步的選單");
++  });
+ });
+--- a/src/components/line-official-account-form.tsx
++++ b/src/components/line-official-account-form.tsx
+@@ -82,7 +82,7 @@
+           <input className={inputClass} name="loginChannelSecret" type="password" minLength={16} maxLength={512} />
+         </label>
+         {state.status === "saved" ? <p role="status" className="text-sm text-emerald-700">LINE 綁定已安全儲存。</p> : null}
+-        {state.status === "error" ? <p role="alert" className="text-sm text-destructive">憑證格式不完整，或目前無法儲存，請稍後再試。</p> : null}
++        {state.status === "error" ? <p role="alert" className="text-sm text-destructive">{state.error==="sync_pending"?"圖文選單正在同步或結果尚未確認，暫時不能切換官方帳號。若是更新同一帳號已失效的憑證，可在結果待確認時重新儲存，再確認 LINE 目前狀態。":"憑證格式不完整，或目前無法儲存，請稍後再試。"}</p> : null}
+         <SubmitButton disabled={pending} pendingChildren="儲存中…">{connected ? "更新 LINE 綁定" : "綁定 LINE"}</SubmitButton>
+       </form>
+       <div className="border-t border-border pt-5">
+--- a/src/app/(app)/settings/line/page.tsx
++++ b/src/app/(app)/settings/line/page.tsx
+@@ -5,7 +5,7 @@
+ import { getCanonicalAppUrl } from "@/lib/app-url";
+ import { getCsrfToken } from "@/lib/csrf";
+ import { getDb } from "@/lib/db";
+-import { LineRichMenuSchema } from "@/lib/line-rich-menu";
++import { parseRichMenuDraftContent,richMenuPublicationView } from "@/lib/line-rich-menu-draft-content";
+ 
+ function maskIdentityId(identityId: string) {
+   if (identityId.length <= 8) return `***${identityId.slice(-4)}`;
+@@ -31,7 +31,7 @@
+       select: { id: true, revision: true, menu: true },
+     }),
+   ]);
+-  const parsedMenu = draft ? LineRichMenuSchema.safeParse(draft.menu) : null;
++  const parsedMenu = draft ? parseRichMenuDraftContent(draft.menu) : null;
+   const deliveries = account
+     ? await getDb().lineDelivery.findMany({
+         where: { vendorId: auth.vendor.id, lineOfficialAccountId: account.id },
+@@ -58,9 +58,11 @@
+         webhookUrl={webhookUrl}
+         lastValidatedAt={account?.lastValidatedAt?.toLocaleString("zh-TW") ?? null}
+       />
+-      {draft && !parsedMenu?.success ? <p role="alert">選單草稿格式無法載入，請聯絡管理員協助處理；原始草稿已保留。</p> : <LineRichMenuStudio
++      {draft && !parsedMenu ? <p role="alert">選單草稿格式無法載入，請聯絡管理員協助處理；原始草稿已保留。</p> : <LineRichMenuStudio
++        key={draft?`${draft.id}:${draft.revision}`:"new"}
+         csrfToken={csrfToken}
+-        existing={draft && parsedMenu?.success ? { id: draft.id, revision: draft.revision, menu: parsedMenu.data } : null}
++        connected={account?.status==="active"}
++        existing={draft && parsedMenu ? { id: draft.id, revision: draft.revision, menu: parsedMenu.menu,publication:richMenuPublicationView(parsedMenu.publication) } : null}
+       />}
+       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
+         <div className="mb-4">
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -21,6 +21,9 @@
+ const disableSentryAutoUpload = process.env.SENTRY_DISABLE_AUTO_UPLOAD === "true";
+ 
+ const nextConfig: NextConfig = {
++  // Rich Menu image stays capped at 1,000,000 bytes in the action. Leave room
++  // for its bounded menu JSON and multipart metadata at the framework boundary.
++  experimental: { serverActions: { bodySizeLimit: "2mb" } },
+   // Browser-only component QA can run beside a developer's active Next server
+   // without sharing its build lock or cache.
+   ...(process.env.FUNNEL_ELEMENTS_E2E === "true" ? { distDir: ".next-funnel-elements" } : {}),

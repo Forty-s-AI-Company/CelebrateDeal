@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "command": [
+    "node",
+    "node_modules/eslint/bin/eslint.js",
+    "src/lib/live-metric-viewing-source-audit.ts",
+    "src/lib/live-metric-viewing-source-audit.test.ts",
+    "scripts/wp20-viewing-source-ledger-disposable.mjs"
+  ]
+}

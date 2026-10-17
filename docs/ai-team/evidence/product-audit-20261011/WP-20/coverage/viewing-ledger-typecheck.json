@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "command": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "--noEmit",
+    "--incremental",
+    "false"
+  ],
+  "diagnostics": []
+}

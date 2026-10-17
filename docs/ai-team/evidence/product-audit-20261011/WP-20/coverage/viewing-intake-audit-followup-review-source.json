@@ -1,0 +1,9 @@
+{
+  "promptCharacters": 17849,
+  "files": {
+    "src/lib/live-metric-playback-intake-audit.ts": "504c692d2d6bedfa4e1d296227068f82a74cd32e1cdc1d58be0c98093c2c12aa",
+    "src/lib/live-metric-viewing-source-audit.ts": "b51c2b0cbb87f8ab1056d46653437fb776d082b219063e92e7933b4ea378d574",
+    "prisma/migrations/20261016090000_live_metric_private_viewing_pages/migration.sql": "bba8dd6a4112a39d767d2a29d121288c2cc451e1ed649939384df0249cad671d"
+  },
+  "scope": "Full121 SQL and intake helper; parent changed integration excerpts; no harness"
+}

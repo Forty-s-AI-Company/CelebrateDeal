@@ -1,0 +1,9 @@
+[
+  "src/lib/registration-submission-receipt.ts",
+  "src/lib/registration-submission-receipt.test.ts",
+  "src/components/registration-retry-boundary.tsx",
+  "src/components/registration-retry-boundary.test.tsx",
+  "src/app/api/form-submissions/route.ts",
+  "src/app/form/[slug]/page.tsx",
+  "src/app/form/[slug]/page.test.tsx"
+]

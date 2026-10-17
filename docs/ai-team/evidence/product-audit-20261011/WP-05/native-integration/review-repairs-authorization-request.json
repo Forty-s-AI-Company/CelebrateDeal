@@ -1,0 +1,34 @@
+{
+  "status": "AUTHORIZED",
+  "requested_calls": 2,
+  "prior_batch_calls": 4,
+  "prior_extensions": [
+    {
+      "calls": 2,
+      "consumed": 2
+    },
+    {
+      "calls": 2,
+      "consumed": 2,
+      "results": [
+        "AGY_IDLE_TIMEOUT",
+        "CLAUDE_SECURITY_REVIEW_COMPLETED"
+      ]
+    }
+  ],
+  "scope": [
+    "UI remediation",
+    "security MINOR repairs and parser contract"
+  ],
+  "snapshot": "sha256:cbd7bcd7e67496a18c8d50263d6983fe6236722f92cec6bc838e3445689fe9b0",
+  "packets": [
+    "ui-review-sanitized-prompt.txt",
+    "security-review-minors-prompt.txt"
+  ],
+  "local_sensitive_check": "PASS",
+  "provider_calls_this_turn": 0,
+  "fallback": "Use observed AGY failure with canonical router and verified CLI discovery; no repeat of known failed AGY transport without new evidence.",
+  "authorization": "Human: 在這個對話 不需要限制複審次數",
+  "conversation_review_cap": null,
+  "retain_attempt_history": true
+}

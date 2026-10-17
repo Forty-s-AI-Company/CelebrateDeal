@@ -1,0 +1,23 @@
+{
+  "status": "BLOCKED_OR_FAILED",
+  "engines": [
+    {
+      "engine": "chromium",
+      "exitCode": 1,
+      "status": "FAIL",
+      "checks": [],
+      "restored": true,
+      "errorType": "Error"
+    }
+  ],
+  "serverStopped": true,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "failure": {
+    "category": "browser-regression-failed",
+    "errorCode": null,
+    "rootCauseConfirmed": false
+  }
+}

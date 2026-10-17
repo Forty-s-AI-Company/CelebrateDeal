@@ -12,7 +12,7 @@ const receiptPath = path.join(root, ".ai-team", "reports", "g7-14-checkout-admis
 const image = "postgres:16-alpine";
 const requiredSuites = [
   "src/lib/checkout-admission.db.test.ts",
-  "src/lib/inventory-reservations.test.ts",
+  "src/lib/inventory-reservations.db.test.ts",
 ];
 const requiredTests = [
   "binds one server-issued checkout identity to one durable reservation under concurrency",

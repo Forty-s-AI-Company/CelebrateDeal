@@ -1,0 +1,70 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Owned loopback synthetic DB and recorded VOD; fixture authorization, not signed Next HTTP",
+  "checks": {
+    "unverifiedReadinessWritesNoMetrics": "PASS",
+    "realBrowserVerificationRecoveryAndReplayWithoutReload": "PASS",
+    "oldUnmatchedIntakeRetainedAndDistinctNewSessionAnchors": "PASS",
+    "actualSqlTypesAndNonUtcMatchingEpoch": "PASS",
+    "changedVerificationEpochDoesNotAllocateRecovery": "PASS",
+    "exhaustedAdmissionQuotaReturnsFalseWithoutNewIntake": "PASS",
+    "nonUtcQuotaParity": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-playback-controller.ts": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906",
+    "src/lib/live-metric-collector.ts": "76d26ab4f86dbe663c42f26a0cc3073a108054b4b4246aae1b7042de37239892",
+    "src/lib/live-metric-readiness.ts": "6414e8fbc6bd3a7018352718a2d8f5a0509c26f63e5d1f11d771597c7f829598"
+  },
+  "browserDiagnostics": {
+    "unexpected": 0,
+    "denied": 1,
+    "sourceRequests": 3,
+    "sessionRequests": 3,
+    "readinessRequests": 3,
+    "sameMediaSource": true,
+    "controller": {
+      "stopped": true,
+      "sourceChanged": false,
+      "restart": false,
+      "attempts": 3,
+      "delivery": {
+        "queued": 0,
+        "finalSequence": 4,
+        "sealed": true,
+        "terminal": true,
+        "rejected": false,
+        "capacityReached": false,
+        "collectionLost": false
+      }
+    }
+  },
+  "sessionDiagnostics": [
+    {
+      "complete": true,
+      "closed": true,
+      "intervals": 6
+    },
+    {
+      "complete": true,
+      "closed": true,
+      "intervals": 5
+    }
+  ],
+  "browser": {
+    "sourceRequests": 3,
+    "sessionRequests": 3,
+    "readinessRequests": 3,
+    "expectedAuthorizationRefusals": 1,
+    "intervals": [
+      6,
+      5
+    ],
+    "sameMediaSource": true,
+    "cadenceWaitMs": 30100
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

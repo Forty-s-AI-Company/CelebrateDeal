@@ -1,0 +1,115 @@
+{
+  "cleanup": {
+    "status": "RESOLVED",
+    "review": "deadline-cleanup-final-reviewed.json",
+    "evidence": "deadline-cleanup-injection-summary.json",
+    "remaining_nits": [
+      "Report status on exceptional cleanup failure",
+      "Report persistence on disconnect failure"
+    ],
+    "note": "Nonblocking harness NITs; execution exit remains nonzero. No more duplicate review of these accepted limitations."
+  },
+  "part1": {
+    "status": "NO_FINDINGS",
+    "scope": "current encrypted retry storage,response,receipt,fields,migration"
+  },
+  "part2": {
+    "findings": [
+      {
+        "severity": "MINOR",
+        "issue": "raw vs encoded slug/step",
+        "disposition": "requires_contract_confirmation",
+        "evidence": "Public slug rejects non-ASCII. Step builders normalize ASCII; parser validates normalized path but clones raw path, so whitespace-bearing persisted paths require separate factual check. Do not broadly claim arbitrary Unicode paths supported."
+      },
+      {
+        "severity": "MINOR",
+        "issue": "native no redirect fallback",
+        "disposition": "rejected_with_reason",
+        "reason": "Generic renderer line331 sends submission.redirectTo ?? retry?.sourcePath. Published page always wraps renderer with source-bound retry provider; real non-funnel native E2E PASS."
+      }
+    ]
+  },
+  "part3": {
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "issue": "LeadForm native share/ref/lp attribution parity",
+        "disposition": "confirmed",
+        "next": "Server-derived shared query metadata and identical native/JS payloads, preserving backend attribution validation."
+      },
+      {
+        "severity": "MAJOR",
+        "issue": "shareCode SSR/client initial-state mismatch",
+        "disposition": "confirmed",
+        "next": "Remove window-derived initial rendered share value; use serialized server input. Verify hydration in real browser."
+      },
+      {
+        "severity": "MINOR",
+        "issue": "native LINE/focus parity",
+        "disposition": "deferred_existing_behavior",
+        "reason": "LINE interaction currently requires JS; WP13 decisions deferred. Native full navigation and no-JS cannot run focus effect. Do not implement LINE binding changes as WP05."
+      },
+      {
+        "severity": "MINOR",
+        "issue": "helper response contract",
+        "disposition": "rejected_with_reason",
+        "reason": "Review brief misstated contract. Actual postRegistrationSubmission returns Promise<Response>, status is valid and API always sets verificationRequired true. Corrected source supplied to part4."
+      },
+      {
+        "severity": "NIT",
+        "issue": "session radios remain enabled pending",
+        "disposition": "confirmed",
+        "next": "Disable pending radios during attribution repair."
+      }
+    ]
+  },
+  "part4": {
+    "findings": [
+      {
+        "severity": "MINOR",
+        "issue": "native webinar pending lock",
+        "disposition": "review_for_scope",
+        "reason": "Native-only form and duplicate handling should be checked against real API idempotency before product change."
+      },
+      {
+        "severity": "MINOR",
+        "issue": "fetch2xx false success under unexpected redirect",
+        "disposition": "review_for_scope",
+        "reason": "Validate actual API/middleware contract; possible helper improvement must preserve error classification."
+      },
+      {
+        "severity": "MINOR",
+        "issue": "native empty optional identifiers",
+        "disposition": "rejected_with_reason",
+        "reason": "nativeFormPayload normalizes empty landingPageId/funnelStepId to undefined and liveId to null; provided route source proves parity."
+      },
+      {
+        "severity": "MINOR",
+        "issue": "client redirect upstream origin",
+        "disposition": "rejected_with_reason",
+        "reason": "Both public lp page functions generate fixed /lp/ paths with encoded segments; redirectTo is server submission metadata, not document props."
+      }
+    ]
+  },
+  "wp_status": "READY",
+  "product_changes_this_turn": false,
+  "attribution_update": {
+    "status": "READY_SCOPED",
+    "evidence": "acceptance-attribution-repair.json",
+    "major_findings": "native query attribution and SSR initial-state mismatch resolved",
+    "remaining": "Other full-WP review dispositions remain as recorded; do not infer full READY."
+  },
+  "whole_wp_acceptance": "acceptance-whole-wp.json",
+  "final_dispositions": {
+    "native_attribution_and_SSR_MAJORS": "resolved; scoped attribution acceptance and current regression",
+    "webinar_pending_and_client_contract": "resolved; final-contract checks and qualified review",
+    "raw_encoded_paths": "accepted MINOR boundary; authored ASCII paths work, tampered legacy noncanonical paths fail closed",
+    "pending_browser_evidence_MAJOR": "resolved by27 terminal current cases; whole-wp-followup-reviewed.json",
+    "report_traceability_MINOR": "whole-wp-coverage-notes.json maps exact suite source to entry/status",
+    "residuals": [
+      "manual cancellation reload",
+      "global128draft saturation",
+      "noncanonical imported paths"
+    ]
+  }
+}

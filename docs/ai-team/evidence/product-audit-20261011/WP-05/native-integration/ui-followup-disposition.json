@@ -1,0 +1,28 @@
+{
+  "review": "ui-followup-reviewed.json",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "prior_major": "fixed in code, independent reviewer agrees; actual browser blocked at DB fixture",
+  "home": "direct async redirect; anonymous actual HTTP307 PASS; both identity branches unit PASS; real authenticated HTTP NOT_RUN",
+  "nits": [
+    "Potential duplicate screen-reader announcement retained as known behavior pending humanAT",
+    "Verified success on mount focuses confirmation; intended orientation after native fallback, browser behavior still unverified"
+  ],
+  "runtime_redirect": "Separate unresolved prior MINOR. Source shows deadline redirect, not A/B redirect (experiment uses render); need test/decision for retry after expiry without bypassing closed submission gate.",
+  "component_browser": {
+    "status": "PASS",
+    "engines": [
+      "chromium",
+      "firefox"
+    ],
+    "evidence": "component-browser-result.json",
+    "scope": "Actual React components with synthetic HTTP stub; persistent status DOM, success focus, query cleanup, one POST and readonly closed view verified. No real DB/API, human AT or full native fallback certification."
+  },
+  "real_api_db_browser": {
+    "status": "PASS",
+    "evidence": "browser-success-focus-recovered.json",
+    "revision": "sha256:b6a73182bb358875ef9155f42180617f636f9bce96914f1372006f38f570b47d",
+    "cases": 4,
+    "scope": "Standalone registration form; Chromium/Firefox each JS/no-JS; real local API and disposable PostgreSQL; focus, retained fields, one write, cleared draft, URL sharing/reload and no sent mail; cleanup true."
+  }
+}

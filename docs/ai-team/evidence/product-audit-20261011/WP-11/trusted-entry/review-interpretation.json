@@ -1,0 +1,10 @@
+{
+  "review_findings_unmodified": true,
+  "clarification": "Followup prose incorrectly calls the tested provider cloudflare_waf. Actual runner uses memory provider with cloudflare trust mode; these are independent. Evidence run-browser.mjs and HTTP429 assertions prove application counting. Wrapper rejects missing identity, never falls back to unknown.",
+  "accepted_nonblocking_residuals": [
+    "runtime/node requires an adapter-supplied IP and is unsupported in plain Next runtime",
+    "shared proof header needs coordinated injection configuration",
+    "provider-order test has no spy; source ordering reviewed"
+  ],
+  "acceptance_scope": "local approved patch only; no deployment; redacted source declarations represented by explicit semantics"
+}

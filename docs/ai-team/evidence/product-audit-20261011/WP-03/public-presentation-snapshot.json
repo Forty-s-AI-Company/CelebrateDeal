@@ -1,0 +1,27 @@
+{
+  "files": [
+    "src/components/public-policy.tsx",
+    "src/components/public-policy.test.tsx",
+    "src/lib/public-policy-content.ts",
+    "src/app/policies/page.tsx",
+    "src/app/policies/page.test.tsx",
+    "src/app/policies/[slug]/page.tsx",
+    "src/app/policies/[slug]/page.test.tsx",
+    "src/app/support/page.tsx",
+    "src/app/support/page.test.tsx",
+    "tests/e2e/wp03-public-presentation.spec.ts"
+  ],
+  "sourceHashes": {
+    "src/components/public-policy.tsx": "56d9fe05c2efbfdbd07b939ac0f7708e189dafc7bc7f8dd40c7bbda84e66a559",
+    "src/components/public-policy.test.tsx": "ff03861aca31f6b6c8cf6383f74433d189ef3a438ffd6fa07434d23d990c48ef",
+    "src/lib/public-policy-content.ts": "d427462f2c7f4f232a92e99fe95a5e422da6265e72c6ddf4cc7650c656b73ddf",
+    "src/app/policies/page.tsx": "3bb4376a43af5ad36dea4d61b45e7e740f0a5c1029c50ee43902c47100302c18",
+    "src/app/policies/page.test.tsx": "a1e4c81abbf4cad1cab37de360779323eff231eade9b3a90d6e677a4bd5bd552",
+    "src/app/policies/[slug]/page.tsx": "3053615591be467948f3fb1c5cf125b4da0df59fd901b01f045540e673e4cf09",
+    "src/app/policies/[slug]/page.test.tsx": "6f5b3fc652461562c6776c06c7fbb65dfcc4e90011b4bfb4fd2f54ef369a1daa",
+    "src/app/support/page.tsx": "cdf6dd63a0e2b8ccb5dcd1ecf05ff7413a3113066f0d7ade215e67c8420e4bd8",
+    "src/app/support/page.test.tsx": "2bddeb47ac0d3570d8b314f2d0005de5a90f0fd589f5852eca8a654745e2f91e",
+    "tests/e2e/wp03-public-presentation.spec.ts": "f467f92d32868f4d49f2f45a3ceb35c8e9dcd7c72e28c6659f948d68636bf35c"
+  },
+  "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c"
+}

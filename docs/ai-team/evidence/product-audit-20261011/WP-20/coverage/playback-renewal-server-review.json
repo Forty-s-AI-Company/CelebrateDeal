@@ -1,0 +1,186 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the supplied migration and the TS excerpts. The application-level renewal path looks sound on the points I could check:\n- An expired or closed session is rejected before any intake write.\n- The intake renewal re-reads the database clock after lock waits, caps the new expiry to the current admission/version, and increments renewalCount, so the revision changes by exactly 1 per insert, loss or renewal.\n- The session extension re-checks closedAt and clock_timestamp() inside its WHERE clause. If it fails, the whole transaction rolls back, including the intake renewal.\n- Anchor and sequence are never rewritten.\n\nOne substantive gap remains. The database guard does not tie an intake renewal to an open, unexpired bound session, and the only stated session-side database checks are bounds, not monotonicity or liveness. So the no-resurrection rule for sessions is enforced only in application code. A secondary low-confidence concern: a renewal rejected by the trigger's cap check surfaces as a raw database error (code 23514) rather than a typed refusal.\n\nLock ordering against the finish, loss and admission-renewal paths cannot be verified, because their lock acquisition is not supplied. The route, transport, browser and harness code were not reviewed and are not certified. The known release blockers (full WP incomplete, Serializable gate NOT_READY) are not re-reported here.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql",
+        "area": "wp20_metric_playback_intake_guard renewal branch (TG_OP='UPDATE' AND NEW.expiresAt>OLD.expiresAt) and the unsupplied bound-session trigger",
+        "issue": "The database renewal guard checks only the intake's own expiry and the admission/version cap. It does not require that the intake is bound to a LiveMetricSession, or that the bound session is open (closedAt IS NULL) and unexpired. The described bound-session trigger checks only scope, anchor>=issuedAt and expiry<=intake expiry. Nothing stated makes session expiresAt monotonic or blocks extending an already-expired or closed session. The rule against resurrecting expired sessions is therefore enforced only by the TS checks in bindPlaybackLease and the UPDATE's WHERE clause.",
+        "evidence": "The renewal branch's SELECT joins only LiveMetricVersion, Live and LiveViewerSession (the admission) and tests OLD.\"expiresAt\"<=decision_at. It never reads LiveMetricSession. In TS, the session checks (session.closedAt, session.expiresAt<=now, and \"closedAt\" IS NULL AND \"expiresAt\">clock_timestamp()) exist only in application SQL. The context lists the session trigger's checks, and none of them prevent extending a session whose expiresAt is already in the past.",
+        "impact": "Any other app-role write path, or a future regression, can do two things without database rejection. (1) It can extend an unbound intake, or an intake whose session is closed, keeping an old nonce valid. (2) It can raise an expired, unclosed session's expiresAt when its expiry is below the intake's (for example, after an admission was shortened at session creation), which resurrects the lease. The database-level guarantee for sessions is weaker than the one for intakes, even though the threat model defends against the app role.",
+        "recommended_fix": "In the bound-session trigger, on UPDATE of LiveMetricSession.expiresAt, require all of: NEW.expiresAt>=OLD.expiresAt, OLD.closedAt IS NULL, and OLD.expiresAt>date_trunc('milliseconds',clock_timestamp()). Reject any change to expiresAt on closed rows. Optionally, in the intake renewal branch, require exactly one bound LiveMetricSession with closedAt IS NULL and expiresAt>decision_at, locked FOR NO KEY UPDATE in the same order the caller uses.",
+        "required_test": "Database-level tests using the app role and raw SQL. (a) An UPDATE extending expiresAt on an expired, unclosed session whose expiry is below its intake's must fail. (b) An UPDATE extending expiresAt on a closed session must fail. (c) An UPDATE extending expiresAt on an intake with no bound session, or with a closed bound session, must fail. (d) Shortening a session's expiresAt must be rejected or explicitly defined.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-session.ts",
+        "area": "bindPlaybackLease renewal UPDATE of LiveMetricPlaybackIntake",
+        "issue": "The value source.expiresAt is computed by the caller before the trigger re-reads the admission/version rows under lock. If the admission is shortened or revoked, or the version is disabled, between those two reads, the trigger raises SQLSTATE 23514. That error is not translated to MetricIngestError('not_authorized'), so it probably surfaces as a generic server error.",
+        "evidence": "The $executeRaw UPDATE on the intake has no try/catch, and the trigger raises 'playback intake renewal scope or lifetime invalid' USING ERRCODE='23514'. Per the context, the browser treats non-permanent failures as temporary and throws, which leads to retries.",
+        "impact": "A renewal that should be refused permanently comes back as a temporary error. The client keeps retrying until the lease expires instead of stopping cleanly, and the response does not match the intended refusal contract. Data integrity is not affected, because the transaction rolls back.",
+        "recommended_fix": "Catch SQLSTATE 23514 from this renewal UPDATE only, and from the session UPDATE if applicable, and map it to MetricIngestError('not_authorized'). Let all other errors propagate.",
+        "required_test": "Concurrently shorten or revoke the admission, or disable the version, between the caller's source read and the intake renewal. Assert a typed not_authorized refusal (permanent, so the client gets null), with intake and session expiresAt and renewalCount unchanged.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "status": "IDLE_TIMEOUT",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": -1
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "concurrency",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 60000,
+      "expected_duration": 120,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "agy_discovery_process_status": "SUCCESS"
+}

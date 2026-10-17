@@ -1,0 +1,28 @@
+{
+  "revision": "sha256:073a6a0279f5d94757d8992b172161843601ce58115af10d373b1a61918d2a41",
+  "product_hashes_match_accepted": true,
+  "files": [
+    "src/lib/public-policy-content.ts",
+    "src/components/public-policy.tsx",
+    "src/components/public-policy.test.tsx",
+    "src/app/support/page.tsx",
+    "src/app/support/page.test.tsx",
+    "tests/e2e/wp03-public-presentation.spec.ts",
+    ".ai-team/reports/wp03-public-browser-check.mjs",
+    ".ai-team/reports/wp03-public-browser.config.ts"
+  ],
+  "hashes": {
+    "src/lib/public-policy-content.ts": "b35ab7d0639ea6c63a5653ca0631e73dac1e99e00f21f806801dba32c05352d8",
+    "src/components/public-policy.tsx": "9f9623d8ab4e1d9e6d2d43c5b0c5f389f642dad0af124a612e4b38a2e032f4df",
+    "src/components/public-policy.test.tsx": "383c8a524a182a8255ee93bbebdd4386249f85817a1576f16d0c2fddc6b9494d",
+    "src/app/support/page.tsx": "b1546a02ac8fef3ebbe8234942a3e636c2bdd0cec980e4c437afe2dda0bd8476",
+    "src/app/support/page.test.tsx": "60eb6cf390135145f18fae3d99f9eb245324dd26403515256b406484cfcc120f",
+    "tests/e2e/wp03-public-presentation.spec.ts": "de1fe8bf930ddd54b37d6a7339dd4f581785eb7a197f6bf3b8d7b068ea21c504",
+    ".ai-team/reports/wp03-public-browser-check.mjs": "81824082c7c3daa2d346adb11d71615c8e1ff08e978fdbc1c62381c2381e9245",
+    ".ai-team/reports/wp03-public-browser.config.ts": "7b9e89a1234183762d6bdb5bde633ec6229616d1825fe7ef83b3e1f500672db5"
+  },
+  "browser_status": "PASS",
+  "session": 64921,
+  "caller_change": "Only receipt destination and own screenshot output path; shared runner/config unchanged.",
+  "source_hashes_match_after_run": true
+}

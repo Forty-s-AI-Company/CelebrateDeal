@@ -1,0 +1,170 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 1,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "review": {
+    "summary": "I reviewed only the supplied file, src/lib/live-metric-ingress-gateway.ts. Nothing was executed and no tests or release checks were run.\n\nThe timeout option is now validated: integer, min 1000, max 120000, default 15000. The diagnostics only return the timeout setting, the socket-timeout count, and fixed allowlisted error codes. These checks are correct:\n\n- Host check (421) and Origin/Sec-Fetch-Site gate (403) run before admission.\n- The exact method+target route allowlist rejects any client-chosen target.\n- The upstream TCP target is fixed at 127.0.0.1:port.\n- After admission, a request found closing or destroyed is settled as interrupted.\n- After the hop-by-hop/Connection-nominated filter, the validated Origin/Sec-Fetch-Site values are restored and Host is pinned.\n- The forwarded/IP headers and the live-chat marker are stripped by name, and x-celebratedeal-metric-* is stripped by prefix.\n- On shutdown, a failed stop still closes the server and drains handlers, and the failure is still reported.\n\nOne MINOR hardening gap is left: internal-header stripping is an enumerated list, not a namespace. I could not confirm the names of the auxiliary proxy's edge-proof header or METRIC_INGRESS_HEADER from the supplied scope. These items were outside the supplied text and are not certified:\n\n- the proof/IP unit test\n- SSR bootstrap behaviour\n- HMR/WS transport\n- the auxiliary proxy\n- the DB trigger and marker setup\n- credential declarations",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-gateway.ts",
+        "area": "handle(): header strip loop after forwardedHeaders(request.headers); forwardedHeaders() prefix filter",
+        "issue": "Client-supplied internal markers are removed by a fixed list of names plus only the `x-celebratedeal-metric-` prefix. Any other app-internal `x-celebratedeal-*` header (for example the generated edge-proof header the task says belongs only to the exact auxiliary proxy) passes through unless it is on the list. Next.js internal trust headers (e.g. `x-middleware-subrequest`, `x-invoke-*`, `x-middleware-invoke`) also pass through to the owned Next upstream unchanged.",
+        "evidence": "The strip loop deletes only `forwarded`, `x-forwarded-*`, `x-real-ip`, `cf-connecting-ip`, `true-client-ip`, `x-vercel-forwarded-for` and `x-celebratedeal-live-chat-ingress`. forwardedHeaders() excludes hop-by-hop headers and the `x-celebratedeal-metric-` prefix. There is no filter for the wider `x-celebratedeal-` namespace or for Next.js internal headers. The name of the auxiliary edge-proof header is not in the supplied scope, so it cannot be confirmed as covered.",
+        "impact": "A local client could add a fake internal or edge-proof marker, or a Next middleware-bypass header (if the Next version is affected), to an allowlisted route. The upstream might then trust it, and the gateway would still settle the frame as 'responded'. That makes the synthetic auth/permission evidence for that run unreliable. The risk is limited because the gateway is loopback-only, uses synthetic data and has an exact route allowlist.",
+        "recommended_fix": "In the gateway, strip all incoming `x-celebratedeal-` headers (case-insensitive) except the ones this gateway generates afterwards, and always delete METRIC_INGRESS_HEADER explicitly even when no attestor is set. Also strip known Next internal headers (`x-middleware-subrequest`, `x-middleware-invoke`, `x-invoke-path`, `x-invoke-query`, `x-invoke-output`, `x-invoke-status`, `x-invoke-error`), or confirm that the pinned Next version strips them itself.",
+        "required_test": "Extend the real HTTP unit test: send an allowlisted request with a fake `x-celebratedeal-<edge-proof-name>` header, a mixed-case METRIC_INGRESS_HEADER with no attestor, and `x-middleware-subrequest`. Assert that the upstream receives none of them. Assert that browser Origin/Sec-Fetch-Site/Cookie still reach the upstream unchanged.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true,
+  "agy_discovery_status": "DISCOVERY_VERIFIED"
+}

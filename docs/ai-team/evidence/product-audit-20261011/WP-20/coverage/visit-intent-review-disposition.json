@@ -1,0 +1,296 @@
+{
+  "status": "SCOPED_REVIEW_COMPLETED_FULL_WP_NOT_READY",
+  "reviews": {
+    "data": {
+      "status": "REVIEW_COMPLETED",
+      "provider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashesMatch": false,
+      "fileHashMatches": {
+        "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": true,
+        "src/lib/live-metric-visit-collection.ts": false,
+        "src/lib/live-metric-visit-intent.ts": false
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 1,
+        "MINOR": 2,
+        "NIT": 0
+      },
+      "findings": [
+        {
+          "severity": "MAJOR",
+          "file": "src/lib/live-metric-visit-collection.ts",
+          "area": "Event schema (line ~11) and collectMetricVisit requireMetricVisitIntent/recordMetricVisit calls",
+          "issue": "Two different forms of the eventId are used. The intent check lowercases it, but the visit is recorded with the raw value. Because of this, the same intent can match uppercase and lowercase spellings of one event.",
+          "evidence": "The collection Event schema is z.string().uuid() with no transform, and Zod's uuid check accepts uppercase. requireMetricVisitIntent re-parses the value through Input, whose eventId transform lowercases it, so 'ABC…' and 'abc…' both find the single lowercase intent row. recordMetricVisit(bound, …, request.data) is then given the original, un-normalised eventId. If the omitted recordMetricVisit or the visit table removes duplicates by eventId case-sensitively and has no lowercase CHECK, both spellings are recorded as separate visits under one intent.",
+          "impact": "A client or replayer could double-count one logical visit by changing the eventId's case. That breaks the stated rule of one intent for at most one counted visit. How serious this is depends on the omitted record helper or visit schema, which I could not see.",
+          "recommended_fix": "Lowercase the eventId once in the collection Event schema with .transform(v => v.toLowerCase()), or reject non-lowercase values with a regex. Pass that same normalised value to prepareMetricVisitIntent, requireMetricVisitIntent and recordMetricVisit. Optionally add a lowercase CHECK on the visit table's eventId to match the intent table.",
+          "required_test": "On a disposable DB, prepare with a lowercase eventId, then collect it as lowercase and again with the same UUID in uppercase (and mixed case) using the same proof. Assert exactly 1 visit row and that the second collect returns the existing receipt.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-collection.ts",
+          "area": "prepareMetricVisit: `event === undefined ? null : Event.parse(event)`",
+          "issue": "The new eventId-required protocol and the internal legacy prepare share one exported function. If no event is passed, it silently takes the legacy path, which records no intent.",
+          "evidence": "When event is undefined, request is null and prepareMetricVisitIntent is skipped. collect has a public wrapper, collectPreparedMetricVisit, that forces requirePreparation=true, but prepare has no matching public wrapper that requires an event. An HTTP route passing body.eventId from a body without that field would therefore get a 200 response with no intent. I don't have the route, so I can't confirm whether it guards this.",
+          "impact": "A route bug, or a client that leaves out the eventId, would get a successful prepare. Its later collect would then fail with 503 because no intent exists. The prepare itself would not show that the browser wasn't covered by the protocol. This does not cause double counting, but it hides an unprotected path behind the public boundary.",
+          "recommended_fix": "Add an exported preparePreparedMetricVisit (or similarly named public prepare) that requires a non-undefined event and calls the shared function with it. Restrict the event-optional variant to explicit internal or legacy callers.",
+          "required_test": "Unit test: calling the public prepare entry without an eventId is rejected (SCOPE_UNAVAILABLE) and creates no visitor or intent rows. The route test sends a body without eventId and gets a 4xx.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-collection.ts",
+          "area": "prepareMetricVisit: Event.parse called before the try/catch",
+          "issue": "A malformed eventId at prepare throws a raw ZodError instead of a sanitised MetricVisitorError. The collect path, by contrast, maps the same failure to SCOPE_UNAVAILABLE.",
+          "evidence": "In prepare, `const request = event === undefined ? null : Event.parse(event);` sits outside the try. In collect, the same check uses Event.safeParse and throws MetricVisitorError('SCOPE_UNAVAILABLE').",
+          "impact": "The HTTP boundary's error mapping could turn this into a 500 response, or log or expose Zod issue details, including the rejected input. This would bypass the sanitised error contract for the new protocol.",
+          "recommended_fix": "Use Event.safeParse and throw MetricVisitorError('SCOPE_UNAVAILABLE') on failure, matching collectMetricVisit.",
+          "required_test": "Unit test: prepareMetricVisit with eventId 'not-a-uuid', with null, and with extra keys rejects with MetricVisitorError SCOPE_UNAVAILABLE, and no transaction is opened.",
+          "confidence": 0.7
+        }
+      ],
+      "fallbackEvents": [],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "RATE_LIMITED",
+          "exitCode": 3
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "data-followup": {
+      "status": "REVIEW_COMPLETED",
+      "provider": "claude_cli",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "sourceHashesMatch": false,
+      "fileHashMatches": {
+        "src/lib/live-metric-visit-intent.ts": false,
+        "src/lib/live-metric-visit.ts": true,
+        "src/lib/live-metric-visit-collection.ts": false,
+        "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": true
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-collection.ts",
+          "area": "prepareMetricVisit / collectMetricVisit catch blocks; src/lib/live-metric-visit-intent.ts requireMetricVisitIntent",
+          "issue": "When an intent cannot be found or claimed, the code throws a plain Error, and the catch block turns it into PERSISTENCE_UNAVAILABLE. That is the same code used for transient database failures. Cases that will never succeed on retry look identical to temporary outages. Examples: the eventId is already held by another visitor's intent (for example, a retry after a lost prepare reply without the cookie), or collect is called after a version rollover or with a proof that has no matching intent.",
+          "evidence": "requireMetricVisitIntent: `if (rows.length !== 1) throw new Error(\"Metric visit preparation unavailable\")`. Both callers end with `throw new MetricVisitorError(\"PERSISTENCE_UNAVAILABLE\")` for any error that is not a MetricVisitorError. The disclosed lost-prepare test keeps the original intent row, so a later prepare with the same eventId but a newly created visitor always fails the visitor-scoped check.",
+          "impact": "A browser or HTTP layer that retries PERSISTENCE_UNAVAILABLE with the same eventId can loop forever without succeeding. The HTTP layer also cannot tell a permanently unmatched intent apart from a real outage for rate-limiting or monitoring. No visit is wrongly counted, so integrity is intact. The cost is lost liveness, plus noisy error signals.",
+          "recommended_fix": "Throw a distinct MetricVisitorError, for example PREPARATION_REQUIRED or EVENT_UNAVAILABLE, from requireMetricVisitIntent and from the claim check in prepareMetricVisitIntent. Pass it through the existing `instanceof MetricVisitorError` branch so it keeps its own code. Document that clients must generate a new eventId and prepare again on that code, rather than retrying the same event.",
+          "required_test": "Use the local disposable DB with synthetic data. (a) Prepare an event with visitor A. Then prepare the same eventId without a cookie, which creates visitor B. Assert the distinct error code, zero intents for B, and no new visitor committed. (b) Call collectPreparedMetricVisit with a valid proof but no matching intent. Assert the distinct error code and zero LiveMetricVisit rows. (c) Assert that a simulated DB outage still returns PERSISTENCE_UNAVAILABLE.",
+          "confidence": 0.6
+        }
+      ],
+      "fallbackEvents": [],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "RATE_LIMITED",
+          "exitCode": 3
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "data-final": {
+      "status": "REVIEW_COMPLETED",
+      "provider": "claude_cli",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "sourceHashesMatch": true,
+      "fileHashMatches": {
+        "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": true,
+        "src/lib/live-metric-visit-collection.ts": true,
+        "src/lib/live-metric-visit-intent.ts": true
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 0,
+        "NIT": 1
+      },
+      "findings": [
+        {
+          "severity": "NIT",
+          "file": "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql",
+          "area": "wp20_metric_visit_intent_guard lifetime check (NEW.\"preparedAt\"<v.\"expiresAt\", b.\"firstVisitedAt\"<=NEW.\"preparedAt\") together with the src/lib/live-metric-visit-collection.ts prepareMetricVisit catch block",
+          "issue": "A predictable scope/lifetime rejection from the trigger (SQLSTATE 23514) shows up to the caller as PERSISTENCE_UNAVAILABLE (503, retryable) instead of the sanitized SCOPE_UNAVAILABLE.",
+          "evidence": "The trigger stamps preparedAt with clock_timestamp() after resolveMetricVisitContext has already accepted the version. If expiresAt falls between those two moments, the trigger raises 23514. That error is a Prisma error, not a MetricVisitIntentError, so the catch block maps it to PERSISTENCE_UNAVAILABLE. The BEFORE INSERT trigger also runs before ON CONFLICT is resolved, so an idempotent retry after expiry hits the same path.",
+          "impact": "Small. This only happens in a narrow race at the expiry boundary. The client gets one extra retryable 503, and the retry should then resolve to the context's expired or unavailable result. No visit is counted and no data is corrupted.",
+          "recommended_fix": "Optional. In prepareMetricVisitIntent, catch the trigger's 23514 error (for example by checking the SQLSTATE or message) and rethrow MetricVisitIntentError, so the result maps to SCOPE_UNAVAILABLE. Or keep the current 503 and document that a single retry is expected at the expiry boundary.",
+          "required_test": "On a disposable local DB, create a version whose expiresAt is just after context resolution (or inject a delay between context resolution and the intent insert). Check that prepareTrackedMetricVisit returns the intended error code, that no intent row and no visit row is created, and that a retry gives the deterministic expired result.",
+          "confidence": 0.55
+        }
+      ],
+      "fallbackEvents": [],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "INVALID_REVIEW",
+          "exitCode": 0
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "http": {
+      "status": "REVIEW_COMPLETED",
+      "provider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashesMatch": false,
+      "fileHashMatches": {
+        "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": false,
+        "src/lib/live-metric-visit-client.ts": false
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 1,
+        "MINOR": 2,
+        "NIT": 0
+      },
+      "findings": [
+        {
+          "severity": "MAJOR",
+          "file": "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts",
+          "area": "POST visit branch: collectPreparedMetricVisit(getDb(), proofs, scope.data, { eventId: body.data.eventId }, proof)",
+          "issue": "Nothing at the public call site shows that a prepared intent is required. The task says collect without the require flag is an explicit internal/legacy path, yet the public route passes only { eventId } with no require-intent option. The rule is therefore enforced only if collectPreparedMetricVisit hardcodes it, and that helper was not supplied.",
+          "evidence": "The options object at the call site contains only eventId. The task text separates 'Public collect requires exact same-scope visitor/event intent' from 'collect without require flag remain explicit internal paths'. No flag appears in the route.",
+          "impact": "If the helper's default does not require an intent, a public visit POST with a valid proof and a fresh eventId (no prior prepare) would call recordMetricVisit. That would count visits with no logical-visit expectation and break the core integrity rule of the new protocol. If the helper always enforces it, there is no defect, only an unverifiable boundary.",
+          "recommended_fix": "Make the public path state the requirement at the call site, for example a required literal option like { eventId, requirePreparedIntent: true }, or a separate public-only export that cannot run without an intent. Keep the legacy/internal collector under a clearly different name that this route cannot import.",
+          "required_test": "Route-level test against the disposable DB: POST action=visit with a valid proof cookie and a new eventId that was never prepared. Expect a non-200 response (sanitized 503/404), 0 visit rows and 0 intent rows. Then prepare+visit with the same eventId and expect exactly 1 visit.",
+          "confidence": 0.35
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-client.ts",
+          "area": "attempt(): controller.signal.aborted checks after Prepare.safeParse and after Receipt.safeParse",
+          "issue": "Retryability for timeouts is inconsistent, and a confirmed success can be thrown away. A timeout that makes fetch or json() reject goes to catch and returns retryable:true. A timeout that fires just after a successful parse returns retryable:false. In the visit case this happens even though the server already returned a valid receipt for this eventId and version.",
+          "evidence": "`if (!prepared.success || controller.signal.aborted) return { status: \"unavailable\", retryable: false }` and `if (!receipt.success || ... || controller.signal.aborted) return { status: \"unavailable\", retryable: false }`, compared with `catch { return { status: \"unavailable\", retryable: true } }`.",
+          "impact": "A recorded visit can be reported to the caller as non-retryable unavailable, so `recorded` is never cached. Callers that obey retryable:false give up and under-report client status. No double count, because the same-event retry on the server is idempotent, but the client result is wrong.",
+          "recommended_fix": "Once a valid receipt matches eventId and versionId, set `recorded` and return it no matter what the abort state is. Treat an abort-only failure before the visit receipt as retryable:true, the same way thrown aborts are handled. Keep retryable:false only for schema, eventId or version mismatches.",
+          "required_test": "Client unit test with a fake fetcher and lock: (a) the timer fires after the visit response body parses successfully, so expect status 'recorded'; (b) the timer fires between the prepare parse and the visit, so expect retryable:true, and a second collect() reuses the same eventId and records exactly once.",
+          "confidence": 0.7
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts",
+          "area": "catch block error mapping (PERSISTENCE_UNAVAILABLE and non-MetricVisitorError mapped to 503)",
+          "issue": "The intended permanent failure, where a prepare reply was lost and a retry under a new visitor hits an existing intent for another visitor, appears to come back as 503. The client treats 503 as retryable:true. This deterministic conflict is therefore presented as transient.",
+          "evidence": "The task says retries for another visitor 'fail instead of taking over' and that missing-intent errors are 'sanitized to 503'. The route maps PERSISTENCE_UNAVAILABLE and every unknown error to 503, and the client's unavailable() marks status>=500 as retryable.",
+          "impact": "Callers that follow retryable:true keep retrying a permanently failed eventId. Each retry spends the 120/min rate budget and opens transactions with no chance of success. Integrity holds (no double count), but load and availability suffer, and the client can't tell a conservative-unknown result from a real outage.",
+          "recommended_fix": "Give the scope/event visitor conflict its own MetricVisitorError code (for example INTENT_CONFLICT) in the helper. Map it to a non-retryable sanitized status such as 409 or 403, with no identity details in the body, so the client returns retryable:false for that eventId.",
+          "required_test": "Disposable-DB route test: prepare eventId E with no cookie, discard the Set-Cookie, then prepare E again with no cookie. Expect a non-retryable status that is not 5xx, 1 intent, 0 visits, and no new visitor row persisted. Client test: that status gives retryable:false.",
+          "confidence": 0.5
+        }
+      ],
+      "fallbackEvents": [],
+      "attempts": [
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "http-followup": {
+      "status": "REVIEW_COMPLETED",
+      "provider": "claude_cli",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "sourceHashesMatch": true,
+      "fileHashMatches": {
+        "src/lib/live-metric-visit-client.ts": true,
+        "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": true,
+        "src/lib/live-metric-visit-collection.ts": true
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-collection.ts",
+          "area": "prepareMetricVisit, existingProof branch (versionForLive null -> PROOF_INVALID); route catch PROOF_* -> 403; client unavailable(403) retryable:false",
+          "issue": "When the browser's HttpOnly proof cookie exists but no longer verifies, prepare throws PROOF_INVALID and never reissues a cookie. This can happen if its key leaves LIVE_METRIC_VISITOR_KEYRING, if the cookie is corrupted, or if server-side expiry is earlier than the browser cookie expiry because of clock skew. JavaScript cannot clear an HttpOnly cookie, and the client treats 403 as not retryable.",
+          "evidence": "In prepareMetricVisit: `if (!oldVersion) throw new MetricVisitorError(\"PROOF_INVALID\")`. The route maps `error.code.startsWith(\"PROOF_\")` to 403 with no Set-Cookie. The client's `unavailable(status)` sets retryable only for 429 or >=500. The no-cookie path does issue a fresh identity, so refusing to replace an unverifiable cookie adds no security: any client can drop the cookie itself.",
+          "impact": "Every later page visit from that browser for that vendor/live scope fails with 403 until the old cookie expires, which could be the whole proof lifetime. For example, after a keyring rotation that drops a key, every browser holding a cookie signed with that key silently stops recording visits. Nothing is counted wrongly; the result is a bounded under-count and an availability gap. Severity also depends on the omitted versionForLive and keyring retention behaviour, which were not supplied.",
+          "recommended_fix": "In prepareMetricVisit only, treat an unverifiable existingProof the same as a version change: set retained = null and issue a fresh identity and cookie, which replaces the bad one. Keep collectPreparedMetricVisit strict (403) so events are never recorded against an unverified identity. Alternatively, have the route clear the cookie on PROOF_* errors (Max-Age=0, same __Host- attributes) so the next prepare starts clean.",
+          "required_test": "Use a local disposable DB with synthetic data. Issue a proof with keyring K1, then switch the config to a keyring without K1, or tamper with the cookie value. Prepare must succeed with exactly one new visitor and a replacement cookie (or the cookie must be cleared and the next prepare succeed). The following visit must record exactly one visit. Collect called directly with the bad proof must still return 403 and record nothing.",
+          "confidence": 0.4
+        }
+      ],
+      "fallbackEvents": [],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "RATE_LIMITED",
+          "exitCode": 0
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    }
+  },
+  "dataInitialConditionalMajor": "Existing record writer already lowercases and DB already CHECKs lowercase. Added collection normalization plus real lower/upper/mixed case exactly-one-visit regression; reviewer confirmed correction on supplied source.",
+  "httpInitialConditionalMajor": "Explicit public collect wrapper already hardcoded requirePreparation=true. Resupplied complete wrapper with HTTP source; qualified followup confirmed. No unsafe missing flag was found.",
+  "fixed": [
+    "explicit event-required public prepare wrapper",
+    "sanitized invalid events before transaction",
+    "nonretryable typed intent absence/conflict",
+    "valid receipt retained despite timeout; aborted prepare remains retryable"
+  ],
+  "dataFinalNit": "Retained: expiry between context and intent INSERT may yield one sanitized retryable503 before next context lookup deterministically rejects. No counted fact or committed intent on failure.",
+  "httpFinalMinor": "Retained/deferred: invalid or retired-key proof is refused, no silent visitor rotation. Existing strict proof policy predates patch and avoids identity inflation; key retention/recovery across deployment is not certified. No claim that invalid cookie availability gap is fixed.",
+  "notCertified": [
+    "all rendered-page source universe/no-JS/initial request losses",
+    "positive visits/viewing coverage/proof/fence/reader binding",
+    "actual signed Next HTTP and persistent Preview/staging deployment/runtime roles",
+    "populated122-to123 upgrade/load/long soak",
+    "fullWP20/remoteCI"
+  ]
+}

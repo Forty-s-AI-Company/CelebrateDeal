@@ -1,0 +1,191 @@
+{
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "review": {
+    "summary": "I reviewed only the WP-20 snippets you supplied, and I found no BLOCKER or MAJOR issues. The authorization checks match the existing setup: the vendor/live comes from the authenticated session, the project scope is applied, `videoId` and the fingerprint must match, and no report ID is taken from the request. The query uses Prisma parameters and only reads data. Leaving out a selection still uses the latest report. An invalid selection returns before any database query, so it can't fall back to another report. Precision handling works for minutes, seconds and 1–3 digit fractions, and impossible dates like Feb 30 or 24:00 are rejected by checking the parsed value against the input. The unattributed count only shows on a ready report, is checked to be a non-negative safe integer, and is shown separately from the registration-rate numerator. There are three findings. MINOR: when the selection is invalid, the status line wrongly says the latest report has expired ('最新報表已失效'). MINOR: the exact-window match against the real database is only tested with mocks. NIT: the status messages say 'latest' / 'no report for this video' even when the user picked a specific window. No findings here does not mean tests or the release passed; browser remote CI is still NOT_RUN.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "live analytics page (coreReportStateMessage / loadCoreMetricReport)",
+        "area": "coreReportStateMessage fallthrough; loadCoreMetricReport `if (window === false) return { state: 'invalid_window', ... }`",
+        "issue": "The 'invalid_window' state has no case in coreReportStateMessage, so it falls through to the default message '最新報表已失效，暫時無法顯示數值。' ('the latest report has expired').",
+        "evidence": "coreReportStateMessage only handles ready/queued/running/failed/none and returns the 'expired' copy for anything else. The page always renders `{coreReportStateMessage(coreReport.state)}`, and loadCoreMetricReport returns state 'invalid_window' for malformed input. The invalid-window tests only check for the '請選取有效的 UTC' alert and that no metric numbers appear. They never check the status line.",
+        "impact": "When a manager enters a bad period, the page says the latest report has expired, which is untrue. The real latest report was never looked at. This false status sits right next to the input-error alert and could lead the manager to think the reporting pipeline is broken.",
+        "recommended_fix": "Add an explicit case for 'invalid_window' with neutral copy (for example, '所選期間無效，未查詢報表。'), or hide the status paragraph when selectedWindow === false.",
+        "required_test": "Add an assertion to the existing invalid-window it.each: the html must not contain '最新報表已失效', and `data-core-report-state=\"invalid_window\"` must show the intended copy.",
+        "confidence": 0.85
+      },
+      {
+        "severity": "MINOR",
+        "file": "live analytics page (loadCoreMetricReport SQL) + page tests",
+        "area": "`AND r.\"windowStartAt\"=${window.start} AND r.\"windowEndAt\"=${window.end} AND v.mode=${window.mode}`",
+        "issue": "The exact-equality filter on the stored window (JS Date parameters compared with the stored timestamp columns) is only tested through mocks that check `query.values`. Nothing confirms that Postgres matches a stored report for a selected window.",
+        "evidence": "The tests check `mocks.metricCandidateQuery.mock.calls[0][0].values` contains `new Date(...)`. The real pipeline PASS you mention (40/60/66.67/83.33sec/50, unattributed 1) covers the worker and stored report, not this page's selection query. How a Date parameter compares to a `timestamp(3)` column without a time zone depends on the parameter type and the session time zone, and a stored value with sub-millisecond precision would never equal the input.",
+        "impact": "If the types or time zone don't line up in the real database, every explicit selection returns state 'none'. The page would then report 'no report' for windows that do exist. This fails safe (no wrong numbers shown), but the WP-20 period-selection feature would quietly not work.",
+        "recommended_fix": "No code change is needed if the behavior is confirmed. Otherwise, cast both sides explicitly, e.g. `r.\"windowStartAt\" = ${window.start}::timestamptz` with the column type in mind, or compare ISO strings in a single agreed format.",
+        "required_test": "Add a DB-backed test that uses the stored report from the existing five-source pipeline fixture: selecting its exact UTC window and mode (including a minute-precision 'YYYY-MM-DDTHH:MM' input) returns that report. Shifting the window by 1 ms or switching the mode returns 'none'.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "live analytics page (coreReportStateMessage)",
+        "area": "messages for 'none' / 'ready' / 'queued' when selectedWindow is an object",
+        "issue": "When the user has picked a specific window, the status messages still say '最新報表…' ('latest report…'), and 'none' says '目前影片尚無可用報表' ('this video has no usable report yet'). Both are wrong when reports exist for other windows.",
+        "evidence": "coreReportStateMessage(state) ignores selectedWindow. The 'does not substitute an older…' test renders state 'none' with an explicit window, but the copy is never checked.",
+        "impact": "The wording can mislead managers into thinking no reports exist at all, or that the window they picked is the latest one. The numbers shown are still correct.",
+        "recommended_fix": "Pass selectedWindow into coreReportStateMessage and use period-specific wording when a window is selected, for example '所選期間尚無報表。'",
+        "required_test": "With an explicit selection and a null candidate, the html must contain the period-specific 'none' copy and must not contain '目前影片尚無可用報表'.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "completed": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 15762,
+      "expected_duration": 0,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

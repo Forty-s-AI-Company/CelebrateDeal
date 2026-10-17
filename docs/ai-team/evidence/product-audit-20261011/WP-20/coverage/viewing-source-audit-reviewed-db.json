@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Actual private read-only viewing inspection; no positive proof or UI claim",
+  "results": {
+    "sessionCount": 3,
+    "intervalCount": 2,
+    "openVisible": true,
+    "emptyClosedVisible": true,
+    "pageSizeIndependentDigest": true,
+    "repeatableReadSnapshot": true,
+    "freshSnapshotSeesClose": true,
+    "revocationVisible": true,
+    "partialBudgetDiscarded": true,
+    "foreignScopeDenied": true,
+    "coverage": "unknown"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

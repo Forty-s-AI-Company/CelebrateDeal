@@ -1,0 +1,639 @@
+--- a/src/app/actions/sales-workspace-actions.ts
++++ b/src/app/actions/sales-workspace-actions.ts
+@@ -4,7 +4,8 @@
+ import { redirect } from "next/navigation";
+ import { requireVendorManagerContext } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
+-import { canPublishSalesProject, parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
++import { publishOwnedSalesProject } from "@/lib/sales-project-publication";
++import { parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
+ import { assertServerActionOrigin, assertServerActionSecurity } from "@/lib/csrf";
+ import type { Prisma } from "@prisma/client";
+ 
+@@ -113,40 +114,9 @@
+   const { vendor } = await requireVendorManagerContext();
+   const projectId = String(formData.get("projectId") ?? "").trim();
+   if (!projectId || projectId.length > 191) throw new Error("project_not_found");
+-  const db = getDb();
+-  const project = await db.salesProject.findFirst({
+-    where: { id: projectId, vendorId: vendor.id, status: { not: "archived" } },
+-    select: { id: true, primaryFlow: true },
+-  });
+-  if (!project) throw new Error("project_not_found");
+-  const now = new Date();
+-  const [pricedProducts, funnels, lives, consultations, paymentMethods] = await Promise.all([
+-    db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId, product: { isActive: true, priceCents: { gt: 0 } } } }),
+-    db.registrationForm.count({ where: { vendorId: vendor.id, projectId, isActive: true } }),
+-    db.live.count({ where: { vendorId: vendor.id, projectId } }),
+-    db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId, isActive: true }, select: { weeklySchedule: true } }),
+-    // A legacy or inconsistent row cannot satisfy the publication gate merely by status.
+-    db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+-  ]);
+-  const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
+-    if (!entry || typeof entry !== "object") return false;
+-    const ranges = (entry as { ranges?: unknown }).ranges;
+-    return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
+-  }));
+-  const ready = canPublishSalesProject(project.primaryFlow, {
+-    exists: true,
+-    hasLinkedProduct: pricedProducts > 0,
+-    hasPricedProduct: pricedProducts > 0,
+-    hasFunnelTemplate: funnels > 0,
+-    hasLiveSession: lives > 0,
+-    hasConsultationService: consultations.length > 0,
+-    hasAvailability,
+-    hasPaymentMethod: paymentMethods > 0,
+-    hasPreviewableFlow: true,
+-    isPublished: false,
+-  });
+-  if (!ready) redirect(`/projects/${encodeURIComponent(projectId)}?error=not_ready`);
+-  await db.salesProject.updateMany({ where: { id: projectId, vendorId: vendor.id, status: { not: "archived" } }, data: { status: "published", publishedAt: now } });
++  const result = await publishOwnedSalesProject(getDb(), vendor.id, projectId);
++  if (result.status === "not_found") throw new Error("project_not_found");
++  if (result.status === "not_ready") redirect(`/projects/${encodeURIComponent(projectId)}?error=not_ready`);
+   revalidatePath("/", "layout");
+   revalidatePath(`/projects/${projectId}`);
+   redirect(`/projects/${encodeURIComponent(projectId)}?published=1`);
+--- a/src/app/(app)/lives/new/page.tsx
++++ b/src/app/(app)/lives/new/page.tsx
+@@ -1,4 +1,6 @@
+ import Link from "next/link";
++import { randomUUID } from "node:crypto";
++import { QuickWebinarForm } from "@/components/quick-webinar-form";
+ import { notFound } from "next/navigation";
+ import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
+ import { LiveStepperForm } from "@/components/live-stepper-form";
+@@ -64,7 +66,7 @@
+   const draftLookupAt = new Date();
+   const videos = await db.video.findMany({
+     where: liveReadyVideoWhere(vendor.id),
+-    select: { id: true, title: true },
++    select: { id: true, title: true, durationSec: true, sourceType: true },
+     orderBy: { createdAt: "desc" },
+   });
+   const products = await db.product.findMany({
+@@ -167,13 +169,15 @@
+ 
+   return (
+     <>
+-      <PageHeader title="建立直播間" description="用八個清楚步驟完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。" />
++      <PageHeader title="建立直播間" description={initialDraft ? "繼續完成原本的八步設定與伺服器草稿。" : "先用影片與時間快速建場，自動建立報名、確認與播放頁；需要細部調整時，可使用下方完整設定。"} />
+       {draft && !initialDraft ? (
+         <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+           指定的直播草稿已失效、已完成或不屬於目前商店。系統沒有載入任何內容，你可以改選下方仍有效的草稿。
+         </p>
+       ) : null}
+       {!initialDraft ? <LiveDraftResumeNotice drafts={resumableDrafts} timeZone={vendor.timezone} /> : null}
++      {!initialDraft ? <QuickWebinarForm videos={videos.filter(video => ["url", "cloudflare_stream"].includes(video.sourceType) && video.durationSec !== null && video.durationSec > 0 && video.durationSec <= 43_200)} timeZone={vendor.timezone} csrfToken={csrfToken} requestId={randomUUID()} /> : null}
++      <h2 className="mb-4 text-lg font-semibold">完整直播設定</h2>
+       <LiveStepperForm
+         videos={videos}
+         products={products}
+--- /dev/null
++++ b/src/lib/sales-project-publication.ts
+@@ -0,0 +1,40 @@
++import type { Prisma } from "@prisma/client";
++import { canPublishSalesProject } from "@/lib/sales-workspace";
++
++/** 原專案發布條件共用於既有入口與快速建場；不改 verified 付款條件。 */
++export async function publishOwnedSalesProject(db: Pick<Prisma.TransactionClient, "salesProject" | "salesProjectProduct" | "registrationForm" | "live" | "consultationEvent" | "paymentMethodReference">, vendorId: string, projectId: string) {
++  const project = await db.salesProject.findFirst({
++    where: { id: projectId, vendorId: vendorId, status: { not: "archived" } },
++    select: { id: true, primaryFlow: true },
++  });
++  if (!project) return { status: "not_found" } as const;
++  const now = new Date();
++  const [pricedProducts, funnels, lives, consultations, paymentMethods] = await Promise.all([
++    db.salesProjectProduct.count({ where: { vendorId: vendorId, projectId, product: { isActive: true, priceCents: { gt: 0 } } } }),
++    db.registrationForm.count({ where: { vendorId: vendorId, projectId, isActive: true } }),
++    db.live.count({ where: { vendorId: vendorId, projectId } }),
++    db.consultationEvent.findMany({ where: { vendorId: vendorId, projectId, isActive: true }, select: { weeklySchedule: true } }),
++    // A legacy or inconsistent row cannot satisfy the publication gate merely by status.
++    db.paymentMethodReference.count({ where: { vendorId: vendorId, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
++  ]);
++  const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
++    if (!entry || typeof entry !== "object") return false;
++    const ranges = (entry as { ranges?: unknown }).ranges;
++    return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
++  }));
++  const ready = canPublishSalesProject(project.primaryFlow, {
++    exists: true,
++    hasLinkedProduct: pricedProducts > 0,
++    hasPricedProduct: pricedProducts > 0,
++    hasFunnelTemplate: funnels > 0,
++    hasLiveSession: lives > 0,
++    hasConsultationService: consultations.length > 0,
++    hasAvailability,
++    hasPaymentMethod: paymentMethods > 0,
++    hasPreviewableFlow: true,
++    isPublished: false,
++  });
++  if (!ready) return { status: "not_ready" } as const;
++  const updated = await db.salesProject.updateMany({ where: { id: projectId, vendorId: vendorId, status: { not: "archived" } }, data: { status: "published", publishedAt: now } });
++  return { status: updated.count === 1 ? "published" : "not_ready" } as const;
++}
+--- /dev/null
++++ b/src/lib/sales-project-publication.test.ts
+@@ -0,0 +1,32 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { publishOwnedSalesProject } from "./sales-project-publication";
++
++const db = { salesProject: { findFirst: vi.fn(), updateMany: vi.fn() }, salesProjectProduct: { count: vi.fn() }, registrationForm: { count: vi.fn() }, live: { count: vi.fn() }, consultationEvent: { findMany: vi.fn() }, paymentMethodReference: { count: vi.fn() } };
++beforeEach(() => {
++  vi.resetAllMocks();
++  db.salesProject.findFirst.mockResolvedValue({ id: "project", primaryFlow: "live" });
++  db.salesProject.updateMany.mockResolvedValue({ count: 1 });
++  db.salesProjectProduct.count.mockResolvedValue(1); db.registrationForm.count.mockResolvedValue(1); db.live.count.mockResolvedValue(1); db.consultationEvent.findMany.mockResolvedValue([]); db.paymentMethodReference.count.mockResolvedValue(1);
++});
++describe("unchanged project release requirements", () => {
++  it("retains the exact owned valid verified payment predicate and priced product requirement", async () => {
++    expect(await publishOwnedSalesProject(db as never, "vendor", "project")).toEqual({ status: "published" });
++    expect(db.paymentMethodReference.count).toHaveBeenCalledWith({ where: { vendorId: "vendor", scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: expect.any(Date) }, OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }] } });
++    expect(db.salesProjectProduct.count).toHaveBeenCalledWith({ where: { vendorId: "vendor", projectId: "project", product: { isActive: true, priceCents: { gt: 0 } } } });
++    expect(db.salesProject.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "project", vendorId: "vendor", status: { not: "archived" } } }));
++  });
++  it.each(["product", "form", "live", "verified payment"])("does not publish without %s", async missing => {
++    ({ product: db.salesProjectProduct.count, form: db.registrationForm.count, live: db.live.count, "verified payment": db.paymentMethodReference.count }[missing]!).mockResolvedValue(0);
++    expect(await publishOwnedSalesProject(db as never, "vendor", "project")).toEqual({ status: "not_ready" });
++    expect(db.salesProject.updateMany).not.toHaveBeenCalled();
++  });
++  it("does not read other tenant setup or update a missing project", async () => {
++    db.salesProject.findFirst.mockResolvedValue(null);
++    expect(await publishOwnedSalesProject(db as never, "vendor", "foreign")).toEqual({ status: "not_found" });
++    expect(db.paymentMethodReference.count).not.toHaveBeenCalled();
++  });
++  it("does not claim publication when the conditional update loses its target", async () => {
++    db.salesProject.updateMany.mockResolvedValue({ count: 0 });
++    expect(await publishOwnedSalesProject(db as never, "vendor", "project")).toEqual({ status: "not_ready" });
++  });
++});
+--- /dev/null
++++ b/src/lib/quick-webinar.ts
+@@ -0,0 +1,105 @@
++import type { Prisma, PrismaClient } from "@prisma/client";
++import { z } from "zod";
++import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
++import { parseZonedDateTimeLocal } from "@/lib/zoned-date-time";
++import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
++import { instantiateFunnelTemplate } from "@/lib/funnel-template-gallery";
++import { replaceFunnelStepPage } from "@/lib/funnel-step-pages";
++import type { FunnelNode } from "@/lib/funnel-page-document";
++import { publishOwnedSalesProject } from "@/lib/sales-project-publication";
++
++export const QuickWebinarInputSchema = z.object({
++  requestId: z.string().uuid(),
++  videoId: z.string().trim().min(1).max(128),
++  startsAtLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u),
++  title: z.string().trim().max(120).default(""),
++}).strict();
++export type QuickWebinarInput = z.infer<typeof QuickWebinarInputSchema>;
++export class QuickWebinarInputError extends Error {
++  constructor(public readonly code: "video_unavailable" | "schedule_invalid" | "project_unavailable" | "request_conflict") { super(code); }
++}
++type Context = { vendorId: string; userId: string; timeZone: string; projectId: string | null };
++
++async function publishInitialQuickProject(tx: Prisma.TransactionClient, context: Context, project: { id: string; status: string; publishedAt: Date | null }, allowAttempt = true) {
++  if (project.status === "published" && project.publishedAt) return true;
++  // 只自動發布從未上線的草稿；已有發布歷史或人工調整時，保留原管理入口。
++  if (!allowAttempt || project.status !== "draft" || project.publishedAt) return false;
++  if ((await publishOwnedSalesProject(tx, context.vendorId, project.id)).status !== "published") return false;
++  await tx.auditLog.create({ data: { vendorId: context.vendorId, actorId: context.userId, actorLabel: "vendor_manager", action: "publish_quick_webinar_project", targetType: "SalesProject", targetId: project.id } });
++  return true;
++}
++
++/** 固定使用伺服器影片長度與商家時區；只讓使用者決定影片、時間、選填名稱。 */
++export function quickWebinarSchedule(local: string, timeZone: string, durationSec: number, now = new Date()) {
++  let startsAt: Date;
++  try { startsAt = parseZonedDateTimeLocal(local, timeZone); }
++  catch { throw new QuickWebinarInputError("schedule_invalid"); }
++  if (!Number.isFinite(durationSec) || durationSec <= 0 || durationSec > 43_200 || startsAt.getTime() <= now.getTime() + 60_000) throw new QuickWebinarInputError("schedule_invalid");
++  const endsAt = new Date(startsAt.getTime() + Math.ceil(durationSec) * 1000);
++  return { startsAt, endsAt, replayEndsAt: new Date(endsAt.getTime() + 7 * 86_400_000) };
++}
++
++export function quickWebinarContent(key: string, title: string, slug: string, timeZone: string, schedule: ReturnType<typeof quickWebinarSchedule>) {
++  let content = createGoalFunnelStepPages({ id: `quick_${key}`, name: title, domain: slug, goal: "webinar" });
++  if (!content) throw new Error("quick_webinar_document_invalid");
++  const registration = content.flow.steps.find(s => s.type === "webinar_registration_page")!;
++  const replaced = replaceFunnelStepPage(content, registration.id, instantiateFunnelTemplate("webinar-course-registration"), "webinar-course-registration");
++  if (!replaced.ok) throw new Error("quick_webinar_document_invalid");
++  content = replaced.state;
++  content.flow.webinar = { timezone: timeZone, startsAt: schedule.startsAt.toISOString(), endsAt: schedule.endsAt.toISOString(), replayEndsAt: schedule.replayEndsAt.toISOString() };
++  // 不把範例講者或「席次已保留」帶到新場次；公開表單仍使用原 Email 確認流程。
++  for (const step of content.flow.steps) {
++    const visit = (nodes: FunnelNode[]) => nodes.forEach(node => {
++      if (node.type === "headline" && node.props.level === "h1") node.props.text = step.type === "webinar_registration_page" ? title : step.type === "webinar_thank_you_page" ? "已收到報名資料，請完成 Email 確認" : `${title}｜播放與回放`;
++      if (node.id.endsWith("_speaker_title")) node.props.text = "參加方式";
++      if (node.id.endsWith("_speaker_text")) node.props.text = "報名後請完成 Email 確認，再依活動時間使用觀看入口。";
++      if (node.id.endsWith("_intro") && step.type === "webinar_registration_page") node.props.text = "報名參加這場線上講座，活動時間與觀看入口會顯示在本頁。";
++      if (node.id.endsWith("_live_badge")) node.props.text = "活動播放與回放";
++      if (node.children) visit(node.children);
++    });
++    visit(content.pages[step.id]!.root);
++  }
++  return content;
++}
++
++/** 建場寫入同一交易；穩定資源 ID 防止同一表單重送建立多套資源。 */
++export async function prepareQuickWebinar(db: PrismaClient, context: Context, input: QuickWebinarInput) {
++  const parsed = QuickWebinarInputSchema.parse(input);
++  const key = parsed.requestId.replaceAll("-", "");
++  const pageId = `qw_page_${key}`;
++  return db.$transaction(async tx => {
++    const video = await tx.video.findFirst({ where: { ...liveReadyVideoWhere(context.vendorId, parsed.videoId), sourceType: { in: ["url", "cloudflare_stream"] }, durationSec: { gt: 0, lte: 43_200 } }, select: { id: true, title: true, durationSec: true } });
++    if (!video?.durationSec) throw new QuickWebinarInputError("video_unavailable");
++    const title = parsed.title || video.title.trim().slice(0, 120) || "我的線上講座";
++    const existing = await tx.landingPage.findFirst({ where: { id: pageId, vendorId: context.vendorId }, select: { id: true, slug: true, projectId: true, name: true, revision: true, unpublishedAt: true, draftLive: { select: { id: true, videoId: true, scheduledAt: true } } } });
++    if (existing) {
++      let requestedStart: Date;
++      try { requestedStart = parseZonedDateTimeLocal(parsed.startsAtLocal, context.timeZone); }
++      catch { throw new QuickWebinarInputError("schedule_invalid"); }
++      if (existing.projectId !== context.projectId || (parsed.title && existing.name !== parsed.title) || existing.draftLive?.videoId !== video.id || existing.draftLive.scheduledAt.getTime() !== requestedStart.getTime()) throw new QuickWebinarInputError("request_conflict");
++      const project = await tx.salesProject.findFirst({ where: { id: existing.projectId!, vendorId: context.vendorId, status: { not: "archived" } }, select: { id: true, status: true, publishedAt: true } });
++      if (!project) throw new QuickWebinarInputError("project_unavailable");
++      const projectReady = await publishInitialQuickProject(tx, context, project, existing.revision === 1 && !existing.unpublishedAt);
++      return { pageId, slug: existing.slug, liveId: existing.draftLive.id, projectId: existing.projectId!, projectReady, reused: true };
++    }
++    const schedule = quickWebinarSchedule(parsed.startsAtLocal, context.timeZone, video.durationSec);
++    let project = context.projectId ? await tx.salesProject.findFirst({ where: { id: context.projectId, vendorId: context.vendorId, status: { not: "archived" }, primaryFlow: "live" }, select: { id: true, status: true, publishedAt: true } }) : null;
++    if (context.projectId && !project) throw new QuickWebinarInputError("project_unavailable");
++    if (!project) {
++      project = await tx.salesProject.create({ data: { id: `qw_project_${key}`, vendorId: context.vendorId, name: title, slug: `quick-${key}`, mode: "live_course", primaryFlow: "live", onboardingEnabled: true }, select: { id: true, status: true, publishedAt: true } });
++      await tx.userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: context.userId, vendorId: context.vendorId } }, create: { userId: context.userId, vendorId: context.vendorId, selectedProjectId: project.id, selectedMode: "live_course", taskPanelCollapsed: true }, update: { selectedProjectId: project.id } });
++    }
++    const slug = `quick-webinar-${key}`;
++    const form = await tx.registrationForm.create({ data: { id: `qw_form_${key}`, vendorId: context.vendorId, projectId: project.id, name: `${title}｜報名`, slug, headline: title, fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出報名", successMessage: "已收到資料，請完成 Email 確認。" } });
++    const confirmation = await tx.messageTemplate.create({ data: { id: `qw_confirm_${key}`, vendorId: context.vendorId, name: `${title}｜報名確認`, channel: "email", trigger: "registration_confirmed", subject: "{{live_title}} 報名已確認", body: "{{name}}，你的報名與 Email 已確認。\n活動時間：{{live_start_at}}\n觀看入口：{{live_url}}\n取消訂閱：{{unsubscribe_url}}", isActive: true } });
++    const reminder = await tx.messageTemplate.create({ data: { id: `qw_reminder_${key}`, vendorId: context.vendorId, name: `${title}｜開播提醒`, channel: "email", trigger: "live_reminder", subject: "{{live_title}} 即將開始", body: "{{name}}，活動將於 {{live_start_at}} 開始。\n觀看入口：{{live_url}}\n取消訂閱：{{unsubscribe_url}}", isActive: true } });
++    const live = await tx.live.create({ data: { id: `qw_live_${key}`, vendorId: context.vendorId, projectId: project.id, videoId: video.id, formId: form.id, messageTemplateId: confirmation.id, title, slug, scheduledAt: schedule.startsAt, status: "scheduled", streamMode: "vod", replayEnabled: true, replayAvailableUntil: schedule.replayEndsAt } });
++    await tx.liveNotificationRule.create({ data: { id: `qw_rule_${key}`, vendorId: context.vendorId, liveId: live.id, messageTemplateId: reminder.id, trigger: "before_live", offsetMinutes: 60, sortOrder: 0, isActive: true } });
++    const content = quickWebinarContent(key, title, slug, context.timeZone, schedule);
++    await tx.landingPage.create({ data: { id: pageId, vendorId: context.vendorId, projectId: project.id, name: title, slug, draftFormId: form.id, draftLiveId: live.id, draftContent: content as unknown as Prisma.InputJsonValue } });
++    // 既有已發布專案維持原語意；草稿專案用與原發布入口完全相同的條件檢查。
++    const projectReady = await publishInitialQuickProject(tx, context, project);
++    await tx.auditLog.create({ data: { vendorId: context.vendorId, actorId: context.userId, actorLabel: "vendor_manager", action: "create_quick_webinar", targetType: "Live", targetId: live.id, after: { pageId, projectId: project.id, videoId: video.id, projectReady } } });
++    return { pageId, slug, liveId: live.id, projectId: project.id, projectReady, reused: false };
++  }, { timeout: 15_000 });
++}
+--- /dev/null
++++ b/src/lib/quick-webinar.test.ts
+@@ -0,0 +1,32 @@
++import { describe, expect, it } from "vitest";
++import { quickWebinarContent, quickWebinarSchedule, QuickWebinarInputSchema } from "./quick-webinar";
++import { parseFunnelStepPages } from "./funnel-step-pages";
++
++describe("quick webinar schedule and generated content", () => {
++  it("uses the vendor timezone and authoritative duration for all three pages", () => {
++    const schedule = quickWebinarSchedule("2030-08-01T10:00", "Asia/Taipei", 1800, new Date("2030-07-01"));
++    expect(schedule.startsAt.toISOString()).toBe("2030-08-01T02:00:00.000Z");
++    expect(schedule.endsAt.toISOString()).toBe("2030-08-01T02:30:00.000Z");
++    expect(schedule.replayEndsAt.toISOString()).toBe("2030-08-08T02:30:00.000Z");
++    const content = quickWebinarContent("synthetickey", "合成講座", "synthetic-webinar", "Asia/Taipei", schedule);
++    expect(parseFunnelStepPages(content)).not.toBeNull();
++    expect(content.flow.steps.filter(s => !s.isSystem).map(s => s.type)).toEqual(["webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page"]);
++    expect(content.flow.webinar?.startsAt).toBe(schedule.startsAt.toISOString());
++    expect(JSON.stringify(content)).toContain("已收到報名資料，請完成 Email 確認");
++    expect(JSON.stringify(content)).not.toContain("請填入實際講者");
++    expect(JSON.stringify(content)).not.toContain('"type":"video"');
++  });
++  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, 43201])("rejects unavailable duration %s", duration => {
++    expect(() => quickWebinarSchedule("2030-08-01T10:00", "Asia/Taipei", duration, new Date("2030-07-01"))).toThrow("schedule_invalid");
++  });
++  it.each(["invalid", "2030-03-10T02:30", "2030-11-03T01:30"])("fails closed on invalid or ambiguous local time %s", local => {
++    expect(() => quickWebinarSchedule(local, "America/New_York", 600, new Date("2029-01-01"))).toThrow("schedule_invalid");
++  });
++  it("rejects starts in the past and unsupported timezones", () => {
++    expect(() => quickWebinarSchedule("2020-01-01T10:00", "Asia/Taipei", 600)).toThrow("schedule_invalid");
++    expect(() => quickWebinarSchedule("2030-01-01T10:00", "invalid/zone", 600)).toThrow("schedule_invalid");
++  });
++  it("rejects extra caller fields rather than accepting caller-owned tenant/end-time facts", () => {
++    expect(QuickWebinarInputSchema.safeParse({ requestId: "12345678-1234-4123-8123-123456789abc", videoId: "video", startsAtLocal: "2030-08-01T10:00", title: "", vendorId: "foreign" }).success).toBe(false);
++  });
++});
+--- /dev/null
++++ b/src/app/actions/quick-webinar-actions.ts
+@@ -0,0 +1,50 @@
++"use server";
++
++import { revalidatePath } from "next/cache";
++import { requireVendorManagerContext } from "@/lib/auth";
++import { assertServerActionSecurity } from "@/lib/csrf";
++import { getDb } from "@/lib/db";
++import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
++import { QuickWebinarInputSchema, QuickWebinarInputError, prepareQuickWebinar } from "@/lib/quick-webinar";
++import { getLandingPagePublicationStatus, publishLandingPage } from "@/lib/landing-page-service";
++
++export type QuickWebinarState = {
++  status: "idle" | "ready" | "needs_attention" | "error";
++  message: string;
++  publicUrl?: string;
++  editorUrl?: string;
++  liveUrl?: string;
++  missing?: Array<{ label: string; href: string }>;
++};
++
++export async function createQuickWebinarAction(_previous: QuickWebinarState, formData: FormData): Promise<QuickWebinarState> {
++  await assertServerActionSecurity(formData);
++  const { auth, vendor } = await requireVendorManagerContext();
++  const parsed = QuickWebinarInputSchema.safeParse(Object.fromEntries(["requestId", "videoId", "startsAtLocal", "title"].map(key => [key, formData.get(key) ?? ""])));
++  if (!parsed.success) return { status: "error", message: "請選擇影片、有效時間，並確認名稱不超過 120 字。" };
++  let created: Awaited<ReturnType<typeof prepareQuickWebinar>>;
++  try {
++    const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
++    created = await prepareQuickWebinar(getDb(), { vendorId: vendor.id, userId: auth.user.id, timeZone: vendor.timezone, projectId: scope.projectId }, parsed.data);
++  } catch (error) {
++    const message = error instanceof QuickWebinarInputError
++      ? { video_unavailable: "影片尚未就緒、缺少長度，或已無法使用，請重新選擇。", schedule_invalid: "請填入商家時區中的有效未來時間；夏令時間重複或不存在的時間無法使用。", project_unavailable: "目前專案不適合建立線上講座，請先選取有效的直播專案。", request_conflict: "這個建立請求已使用不同設定，請到既有場次調整。" }[error.code]
++      : error instanceof Error && error.message === "sales_project_required" ? "請先從專案選單選取專案，再建立線上講座。" : "目前無法完成建立，請稍後以相同設定重試。";
++    return { status: "error", message };
++  }
++  revalidatePath("/", "layout");
++  const links = { editorUrl: `/landing-pages/${created.pageId}`, liveUrl: `/lives/${created.liveId}/edit` };
++  try {
++    const page = await getDb().landingPage.findFirst({ where: { id: created.pageId, vendorId: vendor.id, projectId: created.projectId }, select: { status: true, revision: true, unpublishedAt: true } });
++    if (!page || page.unpublishedAt) return { status: "needs_attention", message: "先前場次的頁面已停止發布，請在設定頁確認後再發布。", ...links };
++    if (created.reused && page.status !== "published" && page.revision > 1) return { status: "needs_attention", message: "草稿已經調整過，請在頁面設定確認內容後發布。", ...links };
++    if (created.projectReady && page.status !== "published") await publishLandingPage(created.pageId, page.revision);
++    const publication = await getLandingPagePublicationStatus(created.pageId);
++    revalidatePath("/lives");
++    revalidatePath("/landing-pages");
++    if (!publication.available) return { status: "needs_attention", message: publication.message, missing: publication.missing, ...links };
++    return { status: "ready", message: "已建立並發布報名、確認與播放頁。提醒設定已建立，實際寄送仍依排程與收件設定。", publicUrl: `/lp/${created.slug}`, ...links };
++  } catch {
++    return { status: "needs_attention", message: "場次與草稿已建立，發布尚未完成。請開啟設定頁檢查資源與發布狀態。", ...links };
++  }
++}
+--- /dev/null
++++ b/src/app/actions/quick-webinar-actions.test.ts
+@@ -0,0 +1,60 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++const mocks = vi.hoisted(() => ({ security: vi.fn(), manager: vi.fn(), scope: vi.fn(), prepare: vi.fn(), page: vi.fn(), publish: vi.fn(), publication: vi.fn(), revalidate: vi.fn() }));
++vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
++vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.manager }));
++vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
++vi.mock("@/lib/db", () => ({ getDb: () => ({ landingPage: { findFirst: mocks.page } }) }));
++vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.scope }));
++vi.mock("@/lib/quick-webinar", async original => ({ ...await original<typeof import("@/lib/quick-webinar")>(), prepareQuickWebinar: mocks.prepare }));
++vi.mock("@/lib/landing-page-service", () => ({ publishLandingPage: mocks.publish, getLandingPagePublicationStatus: mocks.publication }));
++import { createQuickWebinarAction } from "./quick-webinar-actions";
++const previous = { status: "idle" as const, message: "" };
++function input() { const form = new FormData(); Object.entries({ requestId: "12345678-1234-4123-8123-123456789abc", videoId: "video", startsAtLocal: "2030-08-01T10:00", title: "合成場次", vendorId: "foreign", projectId: "foreign" }).forEach(([k,v]) => form.set(k,v)); return form; }
++beforeEach(() => {
++  vi.resetAllMocks();
++  mocks.manager.mockResolvedValue({ auth: { user: { id: "user" } }, vendor: { id: "vendor", timezone: "Asia/Taipei" } });
++  mocks.scope.mockResolvedValue({ projectId: "project" });
++  mocks.prepare.mockResolvedValue({ pageId: "page", liveId: "live", slug: "synthetic-webinar", projectId: "project", projectReady: true, reused: false });
++  mocks.page.mockResolvedValue({ status: "draft", revision: 1, unpublishedAt: null });
++  mocks.publication.mockResolvedValue({ available: true, message: "公開頁可使用", missing: [] });
++});
++describe("quick webinar protected action", () => {
++  it("uses only authenticated tenant/project scope and checks real public availability before giving a URL", async () => {
++    const result = await createQuickWebinarAction(previous,input());
++    expect(mocks.prepare).toHaveBeenCalledWith(expect.anything(), { vendorId: "vendor", userId: "user", timeZone: "Asia/Taipei", projectId: "project" }, { requestId: "12345678-1234-4123-8123-123456789abc", videoId: "video", startsAtLocal: "2030-08-01T10:00", title: "合成場次" });
++    expect(mocks.page).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page", vendorId: "vendor", projectId: "project" } }));
++    expect(mocks.publish).toHaveBeenCalledWith("page",1);
++    expect(result).toMatchObject({ status: "ready", publicUrl: "/lp/synthetic-webinar" });
++  });
++  it("stops at CSRF failure before authorization or persistence", async () => {
++    mocks.security.mockRejectedValue(new Error("synthetic-security-denied"));
++    await expect(createQuickWebinarAction(previous,input())).rejects.toThrow("synthetic-security-denied");
++    expect(mocks.manager).not.toHaveBeenCalled();expect(mocks.prepare).not.toHaveBeenCalled();
++  });
++  it("stops a denied manager before looking up project scope", async () => {
++    mocks.manager.mockRejectedValue(new Error("synthetic-role-denied"));
++    await expect(createQuickWebinarAction(previous,input())).rejects.toThrow("synthetic-role-denied");
++    expect(mocks.scope).not.toHaveBeenCalled();expect(mocks.prepare).not.toHaveBeenCalled();
++  });
++  it("keeps aggregate view read-only", async () => {
++    mocks.scope.mockRejectedValue(new Error("sales_project_required"));
++    expect(await createQuickWebinarAction(previous,input())).toMatchObject({ status: "error", message: expect.stringContaining("選取專案") });
++    expect(mocks.prepare).not.toHaveBeenCalled();
++  });
++  it("does not give a public URL or publish a funnel when the project gate is incomplete", async () => {
++    mocks.prepare.mockResolvedValue({ pageId: "page", liveId: "live", projectId: "project", slug: "synthetic", projectReady: false });
++    mocks.publication.mockResolvedValue({ available: false, message: "專案尚未發布，公開網址目前無法開啟", missing: [{ label: "尚無有效且已驗證的商家付款方式", href: "/billing/payment-methods" }] });
++    const result=await createQuickWebinarAction(previous,input());expect(result.status).toBe("needs_attention");expect(result.publicUrl).toBeUndefined();expect(result.missing).toHaveLength(1);expect(mocks.publish).not.toHaveBeenCalled();
++  });
++  it.each([{ status: "draft", revision: 2, unpublishedAt: null },{ status: "draft", revision: 3, unpublishedAt: new Date() }])("does not republish an edited or manually stopped replay", async page => {
++    mocks.prepare.mockResolvedValue({ pageId: "page", liveId: "live", projectId: "project", slug: "synthetic", projectReady: true, reused: true });mocks.page.mockResolvedValue(page);
++    expect((await createQuickWebinarAction(previous,input())).status).toBe("needs_attention");expect(mocks.publish).not.toHaveBeenCalled();
++  });
++  it("does not create a new publication version for an already-published replay", async () => {
++    mocks.page.mockResolvedValue({ status: "published", revision: 2, unpublishedAt: null });
++    expect((await createQuickWebinarAction(previous,input())).status).toBe("ready");expect(mocks.publish).not.toHaveBeenCalled();
++  });
++  it("preserves created-resource links but never claims success after publication failure", async () => {
++    mocks.publish.mockRejectedValue(new Error("synthetic-publication-failure"));const result=await createQuickWebinarAction(previous,input());expect(result.status).toBe("needs_attention");expect(result.publicUrl).toBeUndefined();expect(result.editorUrl).toBe("/landing-pages/page");expect(result.message).not.toContain("synthetic-publication-failure");
++  });
++});
+--- /dev/null
++++ b/src/components/quick-webinar-form.tsx
+@@ -0,0 +1,41 @@
++"use client";
++
++import { useActionState, useState } from "react";
++import Link from "next/link";
++import { createQuickWebinarAction, type QuickWebinarState } from "@/app/actions/quick-webinar-actions";
++import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
++
++export function QuickWebinarForm({ videos, timeZone, csrfToken, requestId }: {
++  videos: Array<{ id: string; title: string }>;
++  timeZone: string; csrfToken: string; requestId: string;
++}) {
++  const [state, action, pending] = useActionState(createQuickWebinarAction, { status: "idle", message: "" } as QuickWebinarState);
++  // revalidatePath 會重送 Server Component props；同一張表單仍沿用原建立識別。
++  const [submissionId] = useState(requestId);
++  const [videoId, setVideoId] = useState("");
++  const [startsAt, setStartsAt] = useState("");
++  const [title, setTitle] = useState("");
++  const completed = state.status === "ready" || state.status === "needs_attention";
++  const control = "min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2";
++  return <section aria-labelledby="quick-webinar-title" className="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-5">
++    <h2 id="quick-webinar-title" className="text-xl font-bold text-slate-950">一場即上線</h2>
++    <p className="mt-2 text-sm text-slate-700">選影片與開始時間，名稱可留空。系統自動建立報名、確認、播放頁與開播前一小時的 Email 提醒設定，回放保留七天。</p>
++    <form action={action} aria-label="一場即上線" aria-busy={pending} className="mt-4 grid gap-4">
++      <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
++      <input type="hidden" name="requestId" value={submissionId} />
++      <label className="grid gap-1 text-sm font-medium">選擇影片<select required name="videoId" value={videoId} onChange={e => setVideoId(e.target.value)} disabled={pending || completed || !videos.length} className={control}><option value="">請選擇已就緒且有長度的影片</option>{videos.map(video => <option key={video.id} value={video.id}>{video.title}</option>)}</select></label>
++      {!videos.length ? <p className="text-sm text-slate-700">目前沒有可用影片。<Link className="underline" href="/videos">前往影片庫上傳並確認處理完成</Link></p> : null}
++      <label className="grid gap-1 text-sm font-medium">開始時間（{timeZone}）<input required type="datetime-local" name="startsAtLocal" value={startsAt} onChange={e => setStartsAt(e.target.value)} disabled={pending || completed} className={control} /></label>
++      <label className="grid gap-1 text-sm font-medium">活動名稱（選填，預設使用影片名稱）<input name="title" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} disabled={pending || completed} className={control} /></label>
++      <p className="text-sm text-slate-600">會沿用目前選取的直播專案。未選過專案的新帳號會建立新專案；若缺商品、已驗證付款方式等發布條件，會保留草稿並列出缺項。</p>
++      {!completed ? <button type="submit" disabled={pending || !videos.length} className="min-h-11 rounded-md bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{pending ? "建立與檢查中…" : "建立並檢查上線"}</button> : <p className="text-sm text-slate-700">這場的建立結果已固定，請使用下方連結繼續調整。</p>}
++    </form>
++    {state.message ? <div role={state.status === "error" ? "alert" : "status"} className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
++      <p>{state.message}</p>
++      {state.missing?.length ? <ul className="mt-2 list-disc pl-5">{state.missing.map(item => <li key={item.label}><Link className="underline" href={item.href}>{item.label}</Link></li>)}</ul> : null}
++      <div className="mt-3 flex flex-wrap gap-4">{state.publicUrl ? <Link className="font-semibold underline" href={state.publicUrl}>開啟公開報名頁</Link> : null}{state.editorUrl ? <Link className="underline" href={state.editorUrl}>檢查頁面與發布設定</Link> : null}{state.liveUrl ? <Link className="underline" href={state.liveUrl}>調整場次與提醒</Link> : null}</div>
++      {/* 完整導覽會重新取得建立識別；不讓新的建場意圖沿用已完成表單的 ID。 */}
++      {completed ? <button type="button" className="mt-3 inline-block min-h-11 py-2 font-semibold underline" onClick={() => window.location.assign("/lives/new")}>建立另一場</button> : null}
++    </div> : null}
++  </section>;
++}
+--- /dev/null
++++ b/src/components/quick-webinar-form.test.tsx
+@@ -0,0 +1,33 @@
++// @vitest-environment happy-dom
++import { renderToStaticMarkup } from "react-dom/server";
++import { createRoot } from "react-dom/client";
++import { act } from "react";
++import { describe, expect, it, vi } from "vitest";
++vi.mock("@/app/actions/quick-webinar-actions", () => ({ createQuickWebinarAction: vi.fn() }));
++import { QuickWebinarForm } from "./quick-webinar-form";
++
++describe("quick webinar entry", () => {
++  it("has only video/time/optional-title decisions and states publication prerequisites", () => {
++    const html=renderToStaticMarkup(<QuickWebinarForm videos={[{id:"video",title:"合成影片"}]} timeZone="Asia/Taipei" csrfToken="synthetic" requestId="synthetic-request" />);
++    expect(html).toContain('aria-label="一場即上線"');
++    expect(html.match(/<select\b/g)).toHaveLength(1);
++    expect(html.match(/<input(?![^>]*type="hidden")/g)).toHaveLength(2);
++    expect(html).toContain('name="videoId"');expect(html).toContain('name="startsAtLocal"');expect(html).toContain('name="title"');
++    expect(html).toContain("Asia/Taipei");expect(html).toContain("已驗證付款方式");expect(html).toContain("保留草稿並列出缺項");
++    expect(html).not.toContain("已發布報名");
++  });
++  it("offers the real video library and disables creation with no supported media", () => {
++    const html=renderToStaticMarkup(<QuickWebinarForm videos={[]} timeZone="Asia/Taipei" csrfToken="synthetic" requestId="synthetic-request" />);
++    expect(html).toContain('href="/videos"');expect(html).toMatch(/<button[^>]*disabled/u);
++  });
++  it("keeps the same request identity when layout revalidation sends new server props", async () => {
++    const props = { videos: [{ id: "video", title: "合成影片" }], timeZone: "Asia/Taipei", csrfToken: "synthetic" };
++    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
++    const container = document.createElement("div");const root = createRoot(container);
++    try {
++      await act(async () => root.render(<QuickWebinarForm {...props} requestId="original-request" />));
++      await act(async () => root.render(<QuickWebinarForm {...props} requestId="new-server-render" />));
++      expect((container.querySelector('input[name="requestId"]') as HTMLInputElement).value).toBe("original-request");
++    } finally { await act(async () => root.unmount());vi.unstubAllGlobals(); }
++  });
++});
+--- /dev/null
++++ b/tests/e2e/wp17-quick-webinar.spec.ts
+@@ -0,0 +1,128 @@
++import { randomUUID } from "node:crypto";
++import AxeBuilder from "@axe-core/playwright";
++import { expect, test, type Page } from "@playwright/test";
++import { PrismaClient } from "@prisma/client";
++import { hashPassword } from "../../src/lib/password";
++import { formatZonedDateTimeLocal } from "../../src/lib/zoned-date-time";
++import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
++
++const db = new PrismaClient();
++const run = randomUUID();
++const email = `wp17-${run}@example.test`;
++const password = "Synthetic-WP17-Password-123!";
++const proof = "wp17-owned-loopback-ingress-proof-20261016";
++const headers = { "x-real-ip": "192.0.2.17", "x-forwarded-for": "192.0.2.17", "x-celebratedeal-live-chat-ingress": proof };
++const videoSource = "https://video.example.test/wp17-synthetic.webm";
++let vendorId = "", userId = "", projectId = "", videoId = "", methodId = "", productId = "";
++let newMerchant: { vendorId: string; email: string; videoId: string };
++
++test.beforeAll(async () => {
++  const vendor = await db.vendor.create({ data: { name: "WP17 合成商家", slug: `wp17-${run}`, email, passwordHash: hashPassword(password), timezone: "Asia/Taipei", tracking: { create: {} } } });vendorId = vendor.id;
++  const user = await db.user.create({ data: { email, name: "WP17 合成擁有者", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId, role: "owner", status: "active" } } } });userId = user.id;
++  const project = await db.salesProject.create({ data: { vendorId, name: "WP17 合成專案", slug: `wp17-project-${run}`, mode: "live_course", primaryFlow: "live" } });projectId = project.id;
++  await db.userOnboardingPreference.create({ data: { vendorId, userId, selectedProjectId: projectId } });
++  const product = await db.product.create({ data: { vendorId, name: "合成課程", slug: `wp17-product-${run}`, priceCents: 12800, currency: "TWD", inventory: 3, isActive: true, fulfillmentType: "physical", fulfillmentTypeConfirmed: true } });productId = product.id;
++  await db.salesProjectProduct.create({ data: { vendorId, projectId, productId } });
++  const method = await db.paymentMethodReference.create({ data: { vendorId, providerName: "demo", providerPaymentMethodRef: `synthetic-reference-${run}`, status: "verified", verifiedAt: new Date(Date.now() - 1000) } });methodId = method.id;
++  // 與下方實際產生的約兩秒合成影片一致；不假造 readyState 或 timeupdate。
++  const video = await db.video.create({ data: { vendorId, title: "WP17 合成影片", sourceType: "url", videoUrl: videoSource, durationSec: 2, status: "ready" } });videoId = video.id;
++  const freshEmail = `wp17-new-${run}@example.test`;
++  const fresh = await db.vendor.create({ data: { name: "WP17 合成新商家", slug: `wp17-new-${run}`, email: freshEmail, passwordHash: hashPassword(password), timezone: "Asia/Taipei", tracking: { create: {} } } });
++  await db.user.create({ data: { email: freshEmail, name: "合成新商家擁有者", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId: fresh.id, role: "owner", status: "active" } } } });
++  const freshVideo = await db.video.create({ data: { vendorId: fresh.id, title: "新商家合成影片", sourceType: "url", videoUrl: videoSource, durationSec: 2, status: "ready" } });
++  newMerchant = { vendorId: fresh.id, email: freshEmail, videoId: freshVideo.id };
++});
++
++test("a new merchant receives an owned draft and persistent creation feedback within three decisions", async ({ page, baseURL }) => {
++  test.setTimeout(90_000);page.setDefaultTimeout(20_000);
++  const origin = new URL(baseURL!).origin;await page.route("**/*", route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());await page.setExtraHTTPHeaders(headers);
++  await page.goto("/login");await page.getByLabel("Email", { exact: true }).fill(newMerchant.email);await page.getByLabel("密碼", { exact: true }).fill(password);await page.getByRole("button", { name: "登入", exact: true }).click();await expect(page).toHaveURL(/\/dashboard/u);await page.goto("/lives/new");
++  const quick = page.getByRole("form", { name: "一場即上線", exact: true });expect(await quick.locator('select, input:not([type="hidden"])').count()).toBe(3);
++  await quick.getByLabel("選擇影片", { exact: true }).selectOption(newMerchant.videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 300_000), "Asia/Taipei"));await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
++  await expect(page.getByText("專案尚未發布，公開網址目前無法開啟", { exact: true })).toBeVisible();await expect(page.getByRole("link", { name: "開啟公開報名頁", exact: true })).toHaveCount(0);
++  await expect(page.getByRole("link", { name: "尚無有效且已驗證的商家付款方式", exact: true })).toBeVisible();
++  await expect(quick.getByLabel("選擇影片", { exact: true })).toHaveValue(newMerchant.videoId);
++  await expect(quick.getByLabel("選擇影片", { exact: true })).toBeDisabled();await expect(page.getByRole("button", { name: "建立另一場", exact: true })).toBeVisible();
++  expect(await db.salesProject.count({ where: { vendorId: newMerchant.vendorId } })).toBe(1);expect(await db.live.count({ where: { vendorId: newMerchant.vendorId } })).toBe(1);expect(await db.landingPage.count({ where: { vendorId: newMerchant.vendorId, status: "draft", publishedVersionId: null } })).toBe(1);await axe(page);
++});
++test.afterAll(async () => { await db.$disconnect(); });
++
++async function axe(page: Page) {
++  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
++  expect(result.violations.filter(v => v.impact === "serious" || v.impact === "critical").map(v => ({ id: v.id, impact: v.impact }))).toEqual([]);
++}
++
++test("three-decision entry creates public pages, confirms a synthetic registration, plays real synthetic media, and blocks an unverified method", async ({ page, browser, baseURL }) => {
++  test.setTimeout(360_000);page.setDefaultTimeout(20_000);
++  const origin = new URL(baseURL!).origin;
++  // 以瀏覽器自己的 encoder 產生實際可解碼的合成 WebM，不連外取素材。
++  const bytes = await page.evaluate(async () => {
++    const canvas = document.createElement("canvas");canvas.width = 160;canvas.height = 90;
++    const ctx = canvas.getContext("2d")!;const stream = canvas.captureStream(10);
++    const recorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp8" });const chunks: Blob[] = [];
++    return new Promise<number[]>(resolve => {
++      recorder.ondataavailable = event => chunks.push(event.data);
++      recorder.onstop = async () => resolve(Array.from(new Uint8Array(await new Blob(chunks, { type: "video/webm" }).arrayBuffer())));
++      recorder.start();let frame = 0;
++      const timer = setInterval(() => { ctx.fillStyle = frame++ % 2 ? "#2563eb" : "#047857";ctx.fillRect(0, 0, 160, 90); }, 100);
++      setTimeout(() => { clearInterval(timer);recorder.stop();stream.getTracks().forEach(track => track.stop()); }, 1800);
++    });
++  });
++  const media = Buffer.from(bytes);expect(media.length).toBeGreaterThan(100);
++  const installRoutes = async (target: Page) => {
++    await target.route("**/*", route => route.request().url() === videoSource ? route.fulfill({ status: 200, contentType: "video/webm", headers: { "access-control-allow-origin": "*" }, body: media }) : new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
++  };
++  await installRoutes(page);await page.setExtraHTTPHeaders(headers);
++  await page.goto("/login");await page.getByLabel("Email", { exact: true }).fill(email);await page.getByLabel("密碼", { exact: true }).fill(password);await page.getByRole("button", { name: "登入", exact: true }).click();await expect(page).toHaveURL(/\/dashboard/u);
++  await page.goto("/lives/new");
++  const quick = page.getByRole("form", { name: "一場即上線", exact: true });
++  expect(await quick.locator('select, input:not([type="hidden"])').count()).toBe(3);
++  await quick.getByLabel("選擇影片", { exact: true }).selectOption(videoId);
++  await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 180_000), "Asia/Taipei"));
++  await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
++  const publicLink = page.getByRole("link", { name: "開啟公開報名頁", exact: true });await expect(publicLink).toBeVisible();
++  const publicPath = (await publicLink.getAttribute("href"))!;expect(publicPath).toMatch(/^\/lp\/quick-webinar-[a-f0-9]+$/u);
++  const live = await db.live.findFirstOrThrow({ where: { vendorId }, include: { form: true } });
++  expect(live.title).toBe("WP17 合成影片");expect(await db.live.count({ where: { vendorId } })).toBe(1);
++  expect((await db.salesProject.findUniqueOrThrow({ where: { id: projectId } })).status).toBe("published");
++  expect(await db.liveNotificationRule.count({ where: { vendorId, liveId: live.id, trigger: "before_live", offsetMinutes: 60, isActive: true } })).toBe(1);
++  // 完成後轉為唯讀；新建意圖必須使用「建立另一場」取得新的建立識別。
++  await expect(quick.getByLabel("選擇影片", { exact: true })).toHaveValue(videoId);
++  await expect(quick.getByLabel(/^開始時間/u)).toHaveValue(formatZonedDateTimeLocal(live.scheduledAt, "Asia/Taipei"));
++  await expect(quick.getByLabel("選擇影片", { exact: true })).toBeDisabled();await expect(quick.getByRole("button", { name: "建立並檢查上線", exact: true })).toHaveCount(0);
++  await page.getByRole("button", { name: "建立另一場", exact: true }).click();
++  await expect(quick.getByLabel("選擇影片", { exact: true })).toHaveValue("");await quick.getByLabel("選擇影片", { exact: true }).selectOption(videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 240_000), "Asia/Taipei"));await quick.getByLabel(/^活動名稱/u).fill("WP17 第二場合成講座");await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();await expect(publicLink).toBeVisible();expect(await publicLink.getAttribute("href")).not.toBe(publicPath);expect(await db.live.count({ where: { vendorId } })).toBe(2);
++  const attendee = await browser.newContext({ baseURL, extraHTTPHeaders: headers });const viewer = await attendee.newPage();viewer.setDefaultTimeout(20_000);await installRoutes(viewer);
++  try {
++    expect((await viewer.goto(publicPath))?.status()).toBe(200);
++    for (const width of [1280, 390]) { await viewer.setViewportSize({ width, height: 900 });await axe(viewer);await viewer.screenshot({ path: test.info().outputPath(`registration-${width}.png`), fullPage: true }); }
++    const registration = viewer.locator('form[action="/api/form-submissions"]');await registration.getByLabel("姓名", { exact: true }).fill("WP17 合成報名者");await registration.getByLabel("Email", { exact: true }).fill(`attendee-${run}@example.test`);await registration.getByRole("button", { name: "送出報名", exact: true }).click();
++    await expect(viewer).toHaveURL(/\/thank-you\?submitted=verification_required$/u);
++    const submission = await db.formSubmission.findFirstOrThrow({ where: { liveId: live.id, email: `attendee-${run}@example.test` } });expect(submission.verificationStatus).toBe("UNVERIFIED");
++    const delivery = await db.emailDelivery.findFirstOrThrow({ where: { vendorId, sourceFormSubmissionId: submission.id, trigger: "form_submission_verification" } });
++    // 僅使用此 fixture 剛產生的驗證能力，記憶體內走實際頁面；不記錄／保存其值。
++    const payload = revealEmailDeliveryPayload(delivery.payloadEncryptedEnvelope, { vendorId, deliveryId: delivery.id });
++    const url = payload.body.match(/http:\/\/127\.0\.0\.1:\d+\/verify-registration\?[^\s]+/u)?.[0];
++    if (!url || new URL(url).origin !== origin) throw new Error("Synthetic verification link is unavailable.");
++    let verificationFailed = false;
++    try { await viewer.goto(url);await viewer.getByRole("button", { name: "確認 Email 並完成報名", exact: true }).click();await expect(viewer.getByRole("heading", { name: "Email 已確認", exact: true })).toBeVisible(); }
++    catch { verificationFailed = true; }
++    finally { await viewer.goto(`${publicPath}/thank-you`); }
++    if (verificationFailed) throw new Error("Synthetic verification flow failed; sensitive navigation details withheld.");
++    expect((await db.formSubmission.findUniqueOrThrow({ where: { id: submission.id } })).verificationStatus).toBe("VERIFIED");
++    expect(await db.emailDelivery.count({ where: { vendorId, sourceFormSubmissionId: submission.id, trigger: "registration_confirmed", status: "queued" } })).toBe(1);
++    await viewer.goto(`${publicPath}/broadcast`);await axe(viewer);
++    // 等實際伺服器時間到開播；不更改場次事實、不偽造 media API 或時鐘。
++    await expect(viewer.getByRole("link", { name: /前往授權播放/u })).toBeVisible({ timeout: Math.max(30_000, live.scheduledAt.getTime() - Date.now() + 20_000) });
++    await viewer.getByRole("link", { name: /前往授權播放/u }).click();await expect(viewer).toHaveURL(new RegExp(`/live/${live.slug}$`, "u"));
++    const video = viewer.locator("video").first();await expect(video).toBeVisible();
++    expect(await video.evaluate(async element => { const media = element as HTMLVideoElement;media.muted = true;try { await media.play();return true; } catch { return false; } })).toBe(true);
++    await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
++    expect(await video.evaluate(element => (element as HTMLVideoElement).error === null)).toBe(true);
++  } finally { await attendee.close(); }
++  // 另一個合成草稿專案缺付款驗證，必須保留草稿／缺項，不提供公開成功連結。
++  const blocked = await db.salesProject.create({ data: { vendorId, name: "WP17 待補專案", slug: `wp17-blocked-${run}`, mode: "live_course", primaryFlow: "live" } });
++  await db.salesProjectProduct.create({ data: { vendorId, projectId: blocked.id, productId } });await db.paymentMethodReference.update({ where: { id: methodId }, data: { status: "pending", verifiedAt: null } });await db.userOnboardingPreference.update({ where: { userId_vendorId: { userId, vendorId } }, data: { selectedProjectId: blocked.id } });
++  await page.reload();await quick.getByLabel("選擇影片", { exact: true }).selectOption(videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 300_000), "Asia/Taipei"));await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
++  await expect(page.getByText("專案尚未發布，公開網址目前無法開啟", { exact: true })).toBeVisible();await expect(publicLink).toHaveCount(0);await expect(page.getByRole("link", { name: "尚無有效且已驗證的商家付款方式", exact: true })).toBeVisible();expect((await db.salesProject.findUniqueOrThrow({ where: { id: blocked.id } })).status).toBe("draft");
++});

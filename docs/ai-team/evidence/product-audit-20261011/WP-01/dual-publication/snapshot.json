@@ -1,0 +1,12 @@
+{
+  "revision": "sha256:3a0851737db3047e7cec5d32cb29e0e153cb9d516e04678dd51da441add500d4",
+  "files": [
+    "src/lib/landing-page-service.ts",
+    "src/app/actions/landing-page-actions.ts",
+    "src/components/landing-page-workspace.tsx",
+    "src/app/(app)/landing-pages/[id]/page.tsx",
+    "src/lib/landing-page-service.test.ts",
+    "src/app/actions/landing-page-actions.test.ts",
+    "src/app/(app)/landing-pages/[id]/page.test.tsx"
+  ]
+}

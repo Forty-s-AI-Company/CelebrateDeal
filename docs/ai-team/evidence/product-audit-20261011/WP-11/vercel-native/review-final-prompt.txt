@@ -1,0 +1,255 @@
+Independent Critical security/Auth implementation review. Findings only BLOCKER/MAJOR/MINOR/NIT. Local inactive implementation scope only, NOT whole WP11 acceptance or remote enablement. User authorized ongoing nonproduction work and unlimited reviews. Review exact native branches, config gating, IP bucket normalization, isolation and provider failure behavior. Old proof modes unchanged; payment/shared limiter/schema unchanged. Preview-only native mode is NOT deployed/enabled. Prior same-project Node Preview diagnostic eight forged-header variants pass single-egress platform overwrite; second egress and real remote limiter remain unverified, so DO NOT authorize deployment enablement. Prior design MAJOR evidence disposition is partial. Config explicitly asserts direct-vercel topology, requires server runtime Preview + matching expected project + upstash provider; no provider inference. Review if this resolves local implementation risks while remote acceptance remains incomplete. No raw credentials or customer data here. One unchanged proof-mode credential-reference line is explicitly omitted by source guard; semantics: return original trust mode/source and server-side ingress credential reference unchanged. Protocol test contains one synthetic credential property, explicitly omitted; it is not a real credential and test uses stubbed fetch only. All new native implementation lines are provided verbatim. No unknown line redactions. Source snapshot sha256:7043b2be322bb5fd4f73b57afac9dc8747229e53919a4b88ba58dc9d24ec7456
+Follow-up exact revised source. Prior review had no BLOCKER/MAJOR, four MINOR and two NIT. We now revalidate full environment gate even with supplied/cached native config, not only provider. Real-limiter protocol test now removes and empties both required Upstash fields twice each and asserts503 with zero fetch calls; unchanged shared limiter throws on missing config and catches to503 without memory fallback. Exact Redis key-set assertions added; uppercase/expanded/mapped/compatible/NAT64 equivalence tests added. Remaining accepted local residual: /64 is intentional baseline policy and does not stop /48-/56 ownership rotation; IPv4-compatible low IPv6 bucket and NAT64 deterministic. Project/runtime metadata is an operator configuration guard, NOT cryptographic attestation against a malicious server operator. The actual same-project diagnostic verified the expected runtime project equality by refusing all other projects; project override resistance and second egress remain remote limitations. Local test scope only; remote mode NOT enabled. Do not require new Production scope. Please review current complete native code/tests and note any blocking local defects.
+
+Final source revision sha256:9f742df82910060b7a4eebeb89003de388105d583cdb38455e25907ee64b88c9. Prior AGY review actual model unreported; use qualified CLI review for final local scope. New exact dotted-tail IPv6 equivalence cases and explicit one-fetch failure assertion included. See unchanged normalizeClientIp source below: URL hostname canonicalization yields hex-only IPv6. Final local107tests expected; remote remains not verified. Return English ASCII JSON to avoid transport encoding corruption.
+
+FILE src/lib/trusted-entry-rate-limit.ts
+import { NextResponse } from "next/server";
+import { checkRateLimit as checkLegacyRateLimit, getRateLimitProviderId } from "./rate-limit";
+import { getRequestClientIp, normalizeClientIp, type ClientIpTrustConfig } from "./request-client-ip";
+import { rateLimitRequestWithIdentity } from "./live-chat-request-security";
+
+type EntryIpTrustConfig = ClientIpTrustConfig | {
+  trustMode: "vercel-native";
+  deploymentSource: "vercel";
+};
+
+/** Entry trust is explicit; a storage/WAF provider never selects a proxy. */
+export function entryIpTrustConfig(env: NodeJS.ProcessEnv = process.env): EntryIpTrustConfig {
+  const trustMode = env.ENTRY_CLIENT_IP_TRUST_MODE;
+  const deploymentSource = env.ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE;
+  if (trustMode === "vercel-native") {
+    // Explicit Preview-only rollout. Runtime metadata is server-side, never headers.
+    const expectedProject = env.ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID;
+    const verified = deploymentSource === "vercel"
+      && env.ENTRY_CLIENT_IP_TOPOLOGY === "direct-vercel"
+      && env.VERCEL === "1" && env.VERCEL_ENV === "preview"
+      && Boolean(expectedProject) && expectedProject === env.VERCEL_PROJECT_ID
+      && env.RATE_LIMIT_PROVIDER === "upstash_redis";
+    return verified ? { trustMode, deploymentSource: "vercel" }
+      : { trustMode: "none", deploymentSource: "none" };
+  }
+  if (trustMode === "runtime" && deploymentSource === "node") {
+    return { trustMode, deploymentSource };
+  }
+  if ((trustMode === "cloudflare" && deploymentSource === "cloudflare")
+    || (trustMode === "trusted-proxy" && deploymentSource === "vercel")) {
+    // OMITTED unchanged proof configuration return; semantics documented above.
+  }
+  return { trustMode: "none", deploymentSource: "none" };
+}
+
+/** Native IPv6 sources share a /64 bucket; mapped IPv4 shares its IPv4 bucket. */
+function nativeBucketIdentity(value: string | null) {
+  const ip = normalizeClientIp(value);
+  if (!ip || !ip.includes(":")) return ip;
+  const [head, tail] = ip.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left
+    : [...left, ...Array<string>(8 - left.length - right.length).fill("0"), ...right];
+  const words = groups.map(group => Number.parseInt(group, 16));
+  if (words.slice(0, 5).every(word => word === 0) && words[5] === 0xffff) {
+    return [words[6]! >> 8, words[6]! & 255, words[7]! >> 8, words[7]! & 255].join(".");
+  }
+  return `${words.slice(0, 4).map(word => word.toString(16)).join(":")}::`;
+}
+
+/** Only WP11 callers opt in. Keep the original body untouched for redemption. */
+export async function checkRateLimit(
+  request: Request, key: string, limit: number, windowMs: number,
+  config: EntryIpTrustConfig = entryIpTrustConfig(),
+) {
+  const native = config.trustMode === "vercel-native";
+  // No fallback: direct Vercel traffic cannot rely on Cloudflare WAF or per-instance memory.
+  const ip = native
+    ? (entryIpTrustConfig().trustMode === "vercel-native" && getRateLimitProviderId() === "upstash_redis"
+      ? nativeBucketIdentity(request.headers.get("x-vercel-forwarded-for")) : null)
+    : getRequestClientIp(request, config);
+  if (!ip) {
+    return NextResponse.json({ error: "Request source unavailable" }, {
+      status: 503,
+      headers: { "Retry-After": "30", "Cache-Control": "no-store" },
+    });
+  }
+  return checkLegacyRateLimit(rateLimitRequestWithIdentity(request, ip), native ? `entry-vercel-native:${key}` : key, limit, windowMs);
+}
+
+FILE src/lib/trusted-entry-rate-limit.native.test.ts
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+const calls = vi.hoisted(() => ({ limiter: vi.fn().mockResolvedValue(null) }));
+vi.mock("./rate-limit", () => ({
+  checkRateLimit: calls.limiter,
+  getRateLimitProviderId: () => process.env.RATE_LIMIT_PROVIDER ?? "memory",
+}));
+import { checkRateLimit, entryIpTrustConfig } from "./trusted-entry-rate-limit";
+
+const environment = {
+  ENTRY_CLIENT_IP_TRUST_MODE: "vercel-native",
+  ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE: "vercel",
+  ENTRY_CLIENT_IP_TOPOLOGY: "direct-vercel",
+  ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID: "synthetic-project",
+  VERCEL: "1", VERCEL_ENV: "preview", VERCEL_PROJECT_ID: "synthetic-project",
+  RATE_LIMIT_PROVIDER: "upstash_redis",
+};
+function request(ip: string | null, extra: Record<string, string> = {}) {
+  const headers = new Headers(extra);
+  if (ip !== null) headers.set("x-vercel-forwarded-for", ip);
+  return new Request("https://synthetic.invalid/entry", { method: "POST", headers, body: "unchanged" });
+}
+beforeEach(() => {
+  calls.limiter.mockClear();
+  for (const [key, value] of Object.entries(environment)) vi.stubEnv(key, value);
+});
+afterEach(() => vi.unstubAllEnvs());
+
+it.each(Object.keys(environment))("rejects missing runtime configuration %s before any limiter call", async key => {
+  vi.stubEnv(key, undefined);
+  const response = await checkRateLimit(request("192.0.2.1"), "entry", 2, 60000);
+  expect(response?.status).toBe(503);
+  expect(calls.limiter).not.toHaveBeenCalled();
+});
+it.each([
+  ["VERCEL", "0"], ["VERCEL_ENV", "production"], ["VERCEL_ENV", "development"],
+  ["VERCEL_PROJECT_ID", "wrong-project"], ["ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE", "node"],
+  ["ENTRY_CLIENT_IP_TOPOLOGY", "cloudflare"], ["RATE_LIMIT_PROVIDER", "memory"],
+  ["RATE_LIMIT_PROVIDER", "cloudflare_waf"],
+])("rejects mismatched %s=%s without fallback", async (key, value) => {
+  vi.stubEnv(key, value);
+  const response = await checkRateLimit(request("192.0.2.1", {"cf-connecting-ip":"192.0.2.2", "x-real-ip":"192.0.2.2"}), "entry", 2, 60000);
+  expect(response?.status).toBe(503); expect(calls.limiter).not.toHaveBeenCalled();
+});
+it.each([null, "", "garbage", "192.0.2.1:80", "192.0.2.1,192.0.2.2", "fe80::1%eth0", "a".repeat(129)])("rejects invalid native IP %s before provider access", async ip => {
+  const response = await checkRateLimit(request(ip, {"x-real-ip":"192.0.2.9", "cf-connecting-ip":"192.0.2.9", "x-forwarded-for":"192.0.2.9"}), "entry", 2, 60000);
+  expect(response?.status).toBe(503); expect(calls.limiter).not.toHaveBeenCalled();
+});
+it.each([
+  ["192.0.2.1", "192.0.2.1"], [" 192.0.2.1 ", "192.0.2.1"],
+  ["::ffff:192.0.2.1", "192.0.2.1"], ["::ffff:c000:201", "192.0.2.1"],
+  ["2001:db8:abcd:1234:1:2:3:4", "2001:db8:abcd:1234::"],
+  ["2001:db8:abcd:1234::ffff", "2001:db8:abcd:1234::"],
+  ["2001:db8::1", "2001:db8:0:0::"], ["::1", "0:0:0:0::"],
+  ["2001:0DB8:ABCD:1234:0:0:0:1", "2001:db8:abcd:1234::"],
+  ["::FFFF:C000:0201", "192.0.2.1"],
+  ["::192.0.2.1", "0:0:0:0::"],
+  ["64:ff9b::192.0.2.1", "64:ff9b:0:0::"],
+  ["1::2:3:4:5:1.2.3.4", "1:0:2:3::"],
+  ["1:0:2:3:4:5:102:304", "1:0:2:3::"],
+])("normalizes %s into stable bucket %s", async (ip, expected) => {
+  const original = request(ip, {"cf-connecting-ip":"192.0.2.99", "x-real-ip":"192.0.2.99", "x-forwarded-for":"192.0.2.99"});
+  expect(await checkRateLimit(original, "entry", 2, 60000)).toBeNull();
+  const [metadata, key, limit, window] = calls.limiter.mock.calls[0]!;
+  expect(metadata.headers.get("cf-connecting-ip")).toBe(expected);
+  expect(metadata.headers.has("x-real-ip")).toBe(false);
+  expect(metadata.headers.has("x-forwarded-for")).toBe(false);
+  expect([key, limit, window]).toEqual(["entry-vercel-native:entry", 2, 60000]);
+  expect(await original.text()).toBe("unchanged");
+});
+it("reads runtime configuration per request and ignores request claims about runtime", async () => {
+  expect(await checkRateLimit(request("192.0.2.1"), "entry", 2, 60000)).toBeNull();
+  vi.stubEnv("VERCEL_ENV", "production");
+  expect((await checkRateLimit(request("192.0.2.1", {"VERCEL_ENV":"preview", "VERCEL":"1"}), "entry", 2, 60000))?.status).toBe(503);
+  expect(calls.limiter).toHaveBeenCalledTimes(1);
+});
+it("rejects a provider switch even with a previously resolved native config", async () => {
+  const config = entryIpTrustConfig(); vi.stubEnv("RATE_LIMIT_PROVIDER", "cloudflare_waf");
+  expect((await checkRateLimit(request("192.0.2.1"), "entry", 2, 60000, config))?.status).toBe(503);
+  expect(calls.limiter).not.toHaveBeenCalled();
+});
+it("keeps provider failures unchanged", async () => {
+  calls.limiter.mockResolvedValueOnce(new Response(null, {status:503}));
+  expect((await checkRateLimit(request("192.0.2.1"), "entry", 2, 60000))?.status).toBe(503);
+});
+
+it.each([["VERCEL_ENV", "production"], ["VERCEL_PROJECT_ID", "other"], ["ENTRY_CLIENT_IP_TOPOLOGY", ""]])("revalidates all gates for caller-supplied native config after %s changes", async (key, value) => {
+  vi.stubEnv(key, value);
+  const response = await checkRateLimit(request("192.0.2.1"), "entry", 2, 60000, {trustMode:"vercel-native", deploymentSource:"vercel"});
+  expect(response?.status).toBe(503); expect(calls.limiter).not.toHaveBeenCalled();
+});
+
+FILE src/lib/trusted-entry-rate-limit.native-provider.test.ts
+import { afterEach, expect, it, vi } from "vitest";
+import { checkRateLimit } from "./trusted-entry-rate-limit";
+
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+it("keeps native buckets isolated and stable through the real limiter's Redis HTTP protocol", async () => {
+  const env = {
+    ENTRY_CLIENT_IP_TRUST_MODE: "vercel-native", ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE: "vercel",
+    ENTRY_CLIENT_IP_TOPOLOGY: "direct-vercel", ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID: "synthetic-project",
+    VERCEL: "1", VERCEL_ENV: "preview", VERCEL_PROJECT_ID: "synthetic-project",
+    RATE_LIMIT_PROVIDER: "upstash_redis", UPSTASH_REDIS_REST_URL: "https://redis.synthetic.invalid",
+    // OMITTED synthetic test credential property; fetch is intercepted in this test.
+  };
+  for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+  // Protocol fixture only: exercise the real entry + limiter chain, never an external store.
+  const buckets = new Map<string, number>();
+  const fetcher = vi.fn(async (_url: unknown, options: RequestInit) => {
+    const [operation, script, numberOfKeys, key, limit, window] = JSON.parse(String(options.body));
+    expect(operation).toBe("EVAL"); expect(script).toContain('redis.call("INCR"');
+    expect([numberOfKeys, limit, window]).toEqual([1, "2", "60000"]);
+    const count = (buckets.get(key) ?? 0) + 1; buckets.set(key, count);
+    return Response.json({result:[count,60000]});
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const hit = async (ip: string, forged: string) => checkRateLimit(new Request("https://synthetic.invalid/entry", {
+    headers: {"x-vercel-forwarded-for":ip, "cf-connecting-ip":forged, "x-forwarded-for":forged, "x-real-ip":forged},
+  }), "entry", 2, 60000);
+  expect(await hit("192.0.2.1", "192.0.2.100")).toBeNull();
+  expect(await hit("::ffff:192.0.2.1", "192.0.2.101")).toBeNull();
+  expect((await hit("192.0.2.1", "192.0.2.102"))?.status).toBe(429);
+  expect(await hit("192.0.2.2", "192.0.2.102")).toBeNull();
+  expect(await hit("2001:db8:1:2::1", "192.0.2.100")).toBeNull();
+  expect(await hit("2001:db8:1:2::2", "192.0.2.101")).toBeNull();
+  expect((await hit("2001:db8:1:2::3", "192.0.2.102"))?.status).toBe(429);
+  expect(await hit("2001:db8:1:3::3", "192.0.2.102")).toBeNull();
+  expect(buckets.size).toBe(4);
+  expect([...buckets.keys()].sort()).toEqual([
+    "192.0.2.1", "192.0.2.2", "2001:db8:1:2::", "2001:db8:1:3::",
+  ].map(ip=>`celebratedeal:rl:entry-vercel-native:entry:${ip}`).sort());
+  // The real provider must fail closed before any HTTP call when its configuration is absent.
+  for (const key of ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]) {
+    for (const missing of [undefined, ""]) {
+      vi.stubEnv(key, missing); fetcher.mockClear();
+      expect((await hit("192.0.2.2", "192.0.2.103"))?.status).toBe(503);
+      expect((await hit("192.0.2.2", "192.0.2.104"))?.status).toBe(503);
+      expect(fetcher).not.toHaveBeenCalled();
+    }
+    vi.stubEnv(key, env[key as keyof typeof env]);
+  }
+  fetcher.mockClear();
+  fetcher.mockImplementationOnce(async () => { throw new Error("synthetic network failure"); });
+  expect((await hit("192.0.2.2", "192.0.2.103"))?.status).toBe(503);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+UNCHANGED HELPER: import isIP from node:net; MAX_SINGLE_IP_HEADER_LENGTH is128.
+function canonicalizeIp(value: string | null | undefined) {
+  if (typeof value !== "string") return null;
+  const candidate = value.trim();
+  if (!candidate || candidate.length > MAX_SINGLE_IP_HEADER_LENGTH || /[\r\n,]/u.test(candidate)) {
+    return null;
+  }
+
+  const version = isIP(candidate);
+  if (version === 4) return candidate;
+  if (version !== 6) return null;
+
+  try {
+    // WHATWG URL parsing gives IPv6 addresses a stable compressed form. The
+    // brackets belong to the URL syntax, not to the value stored or compared.
+    return new URL(`http://[${candidate}]/`).hostname.slice(1, -1).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normalizes a single proxy-provided IP without accepting comma/newline
+ * injection. It is exported so blacklist and route tests share the exact
+ * representation used by the request resolver.
+ */
+export function normalizeClientIp(value: string | null | undefined) {
+  return canonicalizeIp(value);
+}
+

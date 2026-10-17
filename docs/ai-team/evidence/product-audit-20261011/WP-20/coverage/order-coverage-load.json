@@ -1,0 +1,391 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "orders": 100000,
+  "ledgerEvents": 1000000,
+  "constraintsAndTriggersEnabled": true,
+  "setupMs": 68289,
+  "auditMs": 1256,
+  "auditStatus": "enumerated",
+  "contextReads": 1,
+  "pages": 200,
+  "coverageMs": 251,
+  "coverageAuditRows": 10000,
+  "scope": "Reader performance only: synthetic owner-inserted proof, not valid producer completeness",
+  "plans": [
+    {
+      "planningMs": 0.851,
+      "executionMs": 0.839,
+      "plan": {
+        "node": "Limit",
+        "rows": 501,
+        "loops": 1,
+        "totalMs": 0.624,
+        "sharedHits": 29,
+        "children": [
+          {
+            "node": "Nested Loop",
+            "rows": 501,
+            "loops": 1,
+            "totalMs": 0.595,
+            "sharedHits": 29,
+            "children": [
+              {
+                "node": "Nested Loop",
+                "rows": 501,
+                "loops": 1,
+                "totalMs": 0.496,
+                "sharedHits": 27,
+                "children": [
+                  {
+                    "node": "Nested Loop",
+                    "rows": 501,
+                    "loops": 1,
+                    "totalMs": 0.376,
+                    "sharedHits": 25,
+                    "children": [
+                      {
+                        "node": "Nested Loop",
+                        "rows": 501,
+                        "loops": 1,
+                        "totalMs": 0.285,
+                        "sharedHits": 23,
+                        "children": [
+                          {
+                            "node": "Index Scan",
+                            "index": "CommerceOrder_pkey",
+                            "rows": 501,
+                            "loops": 1,
+                            "totalMs": 0.181,
+                            "sharedHits": 21,
+                            "children": []
+                          },
+                          {
+                            "node": "Materialize",
+                            "rows": 0,
+                            "loops": 501,
+                            "totalMs": 0,
+                            "sharedHits": 2,
+                            "children": [
+                              {
+                                "node": "Nested Loop",
+                                "rows": 0,
+                                "loops": 1,
+                                "totalMs": 0.017,
+                                "sharedHits": 2,
+                                "children": [
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "PaymentTransaction_vendorId_id_key",
+                                    "rows": 0,
+                                    "loops": 1,
+                                    "totalMs": 0.016,
+                                    "sharedHits": 2,
+                                    "children": []
+                                  },
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "FormSubmission_pkey",
+                                    "rows": 0,
+                                    "loops": 0,
+                                    "totalMs": 0,
+                                    "sharedHits": 0,
+                                    "children": []
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "node": "Materialize",
+                        "rows": 0,
+                        "loops": 501,
+                        "totalMs": 0,
+                        "sharedHits": 2,
+                        "children": [
+                          {
+                            "node": "Index Only Scan",
+                            "index": "RegistrationForm_vendorId_id_key",
+                            "rows": 0,
+                            "loops": 1,
+                            "totalMs": 0.01,
+                            "sharedHits": 2,
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "node": "Materialize",
+                    "rows": 1,
+                    "loops": 501,
+                    "totalMs": 0,
+                    "sharedHits": 2,
+                    "children": [
+                      {
+                        "node": "Index Scan",
+                        "index": "Live_vendorId_projectId_status_idx",
+                        "rows": 1,
+                        "loops": 1,
+                        "totalMs": 0.013,
+                        "sharedHits": 2,
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "node": "Materialize",
+                "rows": 0,
+                "loops": 501,
+                "totalMs": 0,
+                "sharedHits": 2,
+                "children": [
+                  {
+                    "node": "Index Scan",
+                    "index": "LiveMetricRegistration_scope_submission_key",
+                    "rows": 0,
+                    "loops": 1,
+                    "totalMs": 0.01,
+                    "sharedHits": 2,
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "planningMs": 0.952,
+      "executionMs": 0.955,
+      "plan": {
+        "node": "Limit",
+        "rows": 500,
+        "loops": 1,
+        "totalMs": 0.728,
+        "sharedHits": 29,
+        "children": [
+          {
+            "node": "Nested Loop",
+            "rows": 500,
+            "loops": 1,
+            "totalMs": 0.698,
+            "sharedHits": 29,
+            "children": [
+              {
+                "node": "Nested Loop",
+                "rows": 500,
+                "loops": 1,
+                "totalMs": 0.592,
+                "sharedHits": 27,
+                "children": [
+                  {
+                    "node": "Nested Loop",
+                    "rows": 500,
+                    "loops": 1,
+                    "totalMs": 0.432,
+                    "sharedHits": 25,
+                    "children": [
+                      {
+                        "node": "Nested Loop",
+                        "rows": 500,
+                        "loops": 1,
+                        "totalMs": 0.329,
+                        "sharedHits": 23,
+                        "children": [
+                          {
+                            "node": "Index Scan",
+                            "index": "CommerceOrder_pkey",
+                            "rows": 500,
+                            "loops": 1,
+                            "totalMs": 0.23,
+                            "sharedHits": 21,
+                            "children": []
+                          },
+                          {
+                            "node": "Materialize",
+                            "rows": 0,
+                            "loops": 500,
+                            "totalMs": 0,
+                            "sharedHits": 2,
+                            "children": [
+                              {
+                                "node": "Nested Loop",
+                                "rows": 0,
+                                "loops": 1,
+                                "totalMs": 0.012,
+                                "sharedHits": 2,
+                                "children": [
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "PaymentTransaction_vendorId_id_key",
+                                    "rows": 0,
+                                    "loops": 1,
+                                    "totalMs": 0.012,
+                                    "sharedHits": 2,
+                                    "children": []
+                                  },
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "FormSubmission_pkey",
+                                    "rows": 0,
+                                    "loops": 0,
+                                    "totalMs": 0,
+                                    "sharedHits": 0,
+                                    "children": []
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "node": "Materialize",
+                        "rows": 0,
+                        "loops": 500,
+                        "totalMs": 0,
+                        "sharedHits": 2,
+                        "children": [
+                          {
+                            "node": "Index Only Scan",
+                            "index": "RegistrationForm_vendorId_id_key",
+                            "rows": 0,
+                            "loops": 1,
+                            "totalMs": 0.01,
+                            "sharedHits": 2,
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "node": "Materialize",
+                    "rows": 1,
+                    "loops": 500,
+                    "totalMs": 0,
+                    "sharedHits": 2,
+                    "children": [
+                      {
+                        "node": "Index Scan",
+                        "index": "Live_vendorId_projectId_status_idx",
+                        "rows": 1,
+                        "loops": 1,
+                        "totalMs": 0.013,
+                        "sharedHits": 2,
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "node": "Materialize",
+                "rows": 0,
+                "loops": 500,
+                "totalMs": 0,
+                "sharedHits": 2,
+                "children": [
+                  {
+                    "node": "Index Scan",
+                    "index": "LiveMetricRegistration_scope_submission_key",
+                    "rows": 0,
+                    "loops": 1,
+                    "totalMs": 0.011,
+                    "sharedHits": 2,
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "planningMs": 0.213,
+      "executionMs": 135.488,
+      "plan": {
+        "node": "Limit",
+        "rows": 1,
+        "loops": 1,
+        "totalMs": 135.426,
+        "sharedHits": 8656,
+        "children": [
+          {
+            "node": "Result",
+            "subplan": "CTE revisions",
+            "rows": 1,
+            "loops": 1,
+            "totalMs": 131.973,
+            "sharedHits": 8342,
+            "children": []
+          },
+          {
+            "node": "Sort",
+            "rows": 1,
+            "loops": 1,
+            "totalMs": 135.424,
+            "sharedHits": 8656,
+            "children": [
+              {
+                "node": "Nested Loop",
+                "rows": 1,
+                "loops": 1,
+                "totalMs": 135.416,
+                "sharedHits": 8656,
+                "children": [
+                  {
+                    "node": "Seq Scan",
+                    "rows": 1,
+                    "loops": 1,
+                    "totalMs": 0.01,
+                    "sharedHits": 1,
+                    "children": []
+                  },
+                  {
+                    "node": "Nested Loop",
+                    "rows": 1,
+                    "loops": 1,
+                    "totalMs": 135.4,
+                    "sharedHits": 8655,
+                    "children": [
+                      {
+                        "node": "Seq Scan",
+                        "rows": 1,
+                        "loops": 1,
+                        "totalMs": 3.42,
+                        "sharedHits": 313,
+                        "children": []
+                      },
+                      {
+                        "node": "CTE Scan",
+                        "rows": 1,
+                        "loops": 1,
+                        "totalMs": 131.975,
+                        "sharedHits": 8342,
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "revisionCteLoops": 1,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

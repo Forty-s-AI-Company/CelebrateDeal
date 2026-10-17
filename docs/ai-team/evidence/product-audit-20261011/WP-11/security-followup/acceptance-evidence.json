@@ -1,0 +1,225 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\execution.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "lineage": [
+      "review-cli.json"
+    ],
+    "scope_files": [
+      "src/lib/capability-confirmation.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/lib/automation-voucher-exchange.ts",
+      "src/lib/automation-voucher-exchange.db.test.ts",
+      "src/app/api/automation/vouchers/redeem/route.ts",
+      "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts",
+      "src/app/r/[code]/route.ts",
+      "src/app/r/[code]/route.test.ts",
+      "src/app/api/live-admission/route.ts",
+      "src/app/api/live-admission/route.test.ts"
+    ],
+    "limitations": "Two rate-limit availability MINOR findings retained. Prior portal-ineligible voucher recovery MINOR retained. IP trust topology and full WP11 not accepted.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\review-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "checkout-schema-invariant",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.11,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\checkout-schema-invariant.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db-boundaries",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.984,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\db-boundaries.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "http-rate-limits",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.703,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\http-rate-limits.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 7.625,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "portal-chromium",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 5.234,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\portal-chromium.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "portal-firefox",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.953,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\portal-firefox.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "scope-diff",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.062,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\scope-diff.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.234,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.562,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\unit.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "voucher-chromium",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 13.141,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\voucher-chromium.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "voucher-firefox",
+      "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 9.625,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\voucher-firefox.json"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/app/r/[code]/route.ts",
+      "area": "GET lines 11-13 (checkRateLimit early return)",
+      "issue": "When the referral limiter trips or fails closed, a top-level browser visit gets the limiter's raw 429/503 response instead of being redirected to /billing/plans.",
+      "evidence": "`const limited = await checkRateLimit(request, \"platform-referral-entry\", 60, 60_000); if (limited) return limited;` runs before any redirect. This route is a GET link people open from shared referral URLs, and per-IP keying (whose trust model is explicitly uncertified) puts many users behind one NAT/CGNAT/campus egress in the same bucket.",
+      "impact": "Real prospects behind a shared IP, or everyone during a limiter-provider outage that returns 503, land on an error page instead of the plans page. That breaks the referral link and loses the conversion. The protection goal (no unbounded click writes) doesn't require blocking the navigation itself.",
+      "recommended_fix": "When `limited` is set, skip recordPlatformReferralClick and do NOT set or clear the referral cookie (leave any existing attribution alone). Still issue NextResponse.redirect to /billing/plans, e.g. with no referral flag or a neutral flag, and add Retry-After/no-store headers as needed. The DB write stays rate-limited while the navigation degrades gracefully.",
+      "required_test": "Route unit/HTTP test: request 61 within the window and a simulated provider 503 both return a 3xx to /billing/plans, call recordPlatformReferralClick zero times, and send no Set-Cookie for PLATFORM_REFERRAL_COOKIE. Requests 1-60 behave as before.",
+      "confidence": 0.55,
+      "disposition": "unresolved"
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/app/api/live-admission/route.ts",
+      "area": "DELETE lines ~59-61 (live-admission-release limiter)",
+      "issue": "If a release is rate-limited, the viewer's admission slot isn't released and stays held until the lease expires. Release calls bunch up when many viewers behind one IP leave together.",
+      "evidence": "Admissions from one IP can be spread over several minutes at up to 120/min. Releases happen in a burst at session end (page close / end of class), and anything above 120/min from that IP gets a 429 before releaseLiveViewer runs. Unload-time release requests are typically fire-and-forget and are not retried.",
+      "impact": "Held slots can temporarily use up the vendor's concurrent-viewer quota, so later legitimate viewers get 429/503 until the leases expire. How long this lasts depends on the lease TTL, which isn't visible in this snapshot.",
+      "recommended_fix": "Confirm that the lease TTL/heartbeat expiry bounds the leak to an acceptable window and document it. Otherwise key the release limiter on the viewer token, or IP+token, rather than IP alone, or allow a higher burst for release. A token-bound release only frees that viewer's own slot, so it's low-risk to allow more generously.",
+      "required_test": "HTTP test: admit N>120 viewers from one IP, spread across windows, then release all of them within one minute. Assert either that every slot is released or that held slots expire within the documented lease TTL, and that a new admission succeeds after that bound.",
+      "confidence": 0.35,
+      "disposition": "unresolved"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "unresolved",
+      "issue": "Portal-ineligible voucher recovery requires merchant intervention",
+      "lineage": "../voucher-confirmation/review-final-cli.json"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "issue": "Captured confirmation body could reconstruct unkeyed cookie",
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "unit",
+          "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 4.562,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\unit.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "voucher-chromium",
+          "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 13.141,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\voucher-chromium.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "voucher-firefox",
+          "revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 9.625,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\security-followup\\final-checks\\voucher-firefox.json"
+        }
+      ],
+      "review_evidence": "review-cli.json"
+    }
+  ]
+}

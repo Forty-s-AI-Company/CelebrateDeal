@@ -1,0 +1,82 @@
+[
+  {
+    "id": "UI-1",
+    "severity": "MAJOR",
+    "file": "src/app/loading.tsx -> src/app/root-loading.tsx (and src/app/p/[slug]/loading.tsx -> loading-shell.tsx)",
+    "issue": "The fix for no-JS form errors removes the root Suspense/loading boundary for every public route without its own loading.tsx, not just the three registration routes.",
+    "disposition": "confirmed",
+    "action": "Non-registration top-level segments now reuse root skeleton; home redirect locally wrapped; global NavigationProgress already present. Await latest regression and independent repair review."
+  },
+  {
+    "id": "UI-2",
+    "severity": "MINOR",
+    "file": "src/app/loading.test.tsx / src/app/root-loading.tsx / src/app/p/[slug]/loading-shell.tsx",
+    "issue": "After the rename, root-loading.tsx and loading-shell.tsx are ordinary components that nothing imports as route boundaries. loading.test.tsx still passes against them.",
+    "disposition": "resolved_pending_independent_review",
+    "action": "Root loading wired into16segments and home; unreferenced partner loading-shell removed. Recovery copy saved as partner-loading-shell-before-removal.txt, no native loading boundary reintroduced."
+  },
+  {
+    "id": "UI-3",
+    "severity": "MINOR",
+    "file": "src/components/registration-retry-boundary.tsx; src/app/lp/[slug]/page.tsx; src/app/lp/[slug]/[stepPath]/page.tsx; src/app/p/[slug]/page.tsx",
+    "issue": "The URL alone drives the success state (submitted=verification_required) and the error state (registrationRetry=...). The state persists on reload and Back, and anyone can share it.",
+    "disposition": "partially_resolved",
+    "action": "Verified success remains bound to short-lived result proof. Absent valid draft, old/shared error URL now gives an explicitly unconfirmed result and warns against duplicate submission instead of claiming failure. Known draft retains precise failure feedback. One-time flash consumption is not implemented.",
+    "evidence": "result-proof.md; ui-feedback-repair.md; browser-ui-feedback.json"
+  },
+  {
+    "id": "UI-4",
+    "severity": "MINOR",
+    "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "issue": "The form now contains hidden formId, landingPageId, funnelStepId, liveId, redirectTo and __registrationReturnPath fields. Unlike lead-form, the diff shows no matching change that filters these out of the JS answer payload.",
+    "disposition": "rejected_with_reason",
+    "reason": "Actual submit handler explicitly maps submission.form.fields to payload; no Object.fromEntries of whole FormData. See src/components/landing-pages/funnel-page-document-renderer.tsx submit function."
+  },
+  {
+    "id": "UI-5",
+    "severity": "MINOR",
+    "file": "src/components/lead-form.tsx; src/components/landing-pages/funnel-page-document-renderer.tsx; src/components/landing-pages/funnel-webinar-experience.tsx",
+    "issue": "After a native 303 the error appears in the initial HTML. aria-live and role=alert regions present at load are generally not announced, no focus is moved, and fields aren't linked with aria-invalid/aria-describedby. Also, only the webinar consumer visibly uses the shared RegistrationSubmissionFeedback; the shown diff doesn't confirm that lead-form and the funnel renderer use the same live-region markup.",
+    "disposition": "partially_verified",
+    "reason": "All three consumers share feedback. Chromium/Firefox JS submit errors focus role=alert in current /form regression. No-JS visible markup verified; human AT announcement and field-specific association remain unverified. No blanket aria-invalid applied to unrelated fields."
+  },
+  {
+    "id": "UI-6",
+    "severity": "MINOR",
+    "file": "src/app/lp/[slug]/page.tsx; src/app/lp/[slug]/[stepPath]/page.tsx",
+    "issue": "A single formId (`page.submissionForm?.id ?? page.webinar?.form.id`) is chosen for every branch. The webinar branch, however, renders resource.form.id.",
+    "disposition": "resolved",
+    "action": "Both root and step select webinar.form.id only for webinar goal; generic branches use submissionForm.id. Dual-form regression failed before repair and now passes.",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "binding-unit",
+        "revision": "sha256:5403b5c0380d56a80822a71e3ce555abd74649bddf48757e0bb22aeb22d04199",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 3.469,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-webinar-binding\\binding-unit.json"
+      }
+    ],
+    "additional_test_scope": "snapshot-binding-targeted.json includes both pages AND changed test file; binding-targeted-receipt.json PASS"
+  },
+  {
+    "id": "UI-7",
+    "severity": "MINOR",
+    "file": "src/app/lp/[slug]/[stepPath]/page.tsx; src/app/lp/[slug]/page.tsx",
+    "issue": "sourcePath is built from unencoded values that don't match each other: the raw params slug/stepPath in the step page versus page.slug at the root. redirectTo, by contrast, uses encodeURIComponent(page.slug).",
+    "disposition": "resolved_pending_independent_review",
+    "action": "Step sourcePath now uses canonical page.slug and step.path. Mixed-case input regression PASS. Existing pageSlug/pathPattern contracts allow lowercase ASCII alphanumeric and hyphens only; no unsupported non-ASCII route expansion.",
+    "evidence": "snapshot-ui-path-repair.json; checks-ui-path-repair; checks-ui-feedback-repair"
+  },
+  {
+    "id": "UI-8",
+    "severity": "NIT",
+    "file": "src/components/lead-form.tsx",
+    "issue": "`redirectTo ?? retry?.sourcePath` keeps an empty-string redirectTo while the guard uses `||`. Also, defaulting redirectTo to sourcePath changes the native success destination for forms that had none before.",
+    "disposition": "resolved_pending_independent_review",
+    "action": "Empty redirectTo now falls back to retry.sourcePath using ||; undefined/empty/explicit destination matrix PASS. Return to source is intentional native feedback behavior.",
+    "evidence": "checks-ui-feedback-repair"
+  }
+]

@@ -1,0 +1,185 @@
+{
+  "accepted": false,
+  "status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "finalModel": "claude-opus-5-5",
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "agy_discovery_process_status": "SUCCESS",
+  "completed": false,
+  "review": {
+    "summary": "I read only the three supplied files: the migration, live-metric-visit-page.ts and live-metric-visit-collection.ts. I can't verify the page component, the HTTP route, the context/visitor/proof/intent/record helpers, the Next config, the tests or the deployed state, and none of them are certified here. In the supplied code, the main protocol looks right: the public tracked prepare forces requirePage=true and checks the exact scoped current-version, unexpired page row before any visitor is provisioned. The expectation is committed before the eventId is returned, and the database clock sets issuedAt. Page rows are immutable through the trigger, and the trigger only allows deletes that come from the version cascade. The table and guard function are owner-only, which the migration asserts. Collect still requires the exact visitor intent. I found two substantive concerns. (1) Every dynamic public render runs an unauthenticated, permanent INSERT. The rows have no rate bound and can't be removed except by deleting the version, so the table can grow without limit. (2) If the trigger rejects the scope or lifetime (for example, a render racing version expiry), that rejection is turned into PERSISTENCE_UNAVAILABLE, so the public page throws an error instead of rendering normally without the collector. An empty or short findings list doesn't mean tests or a release passed. FullWP20 remains incomplete.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "prisma/migrations/20261016120000_live_metric_visit_page/migration.sql",
+        "area": "wp20_metric_visit_page_guard (UPDATE/DELETE immutability) together with issueMetricVisitPage INSERT per render",
+        "issue": "Anyone without authentication can make the server insert permanent rows, and nothing limits how many.",
+        "evidence": "issueMetricVisitPage runs on every dynamic render (connection() opts out of static/cached rendering). Each call inserts a row into LiveMetricVisitPage. The guard rejects every UPDATE and DELETE unless the parent LiveMetricVersion row is gone, and TRUNCATE is blocked. In the supplied code, nothing applies a rate limit, quota or retention to page issuance. The HTTP rate controls that were described only cover the prepare/collect endpoints.",
+        "impact": "Repeated GETs, bots or prefetches against a public live page add rows to the table and its two indexes, and each request opens its own write transaction. Expired rows can never be cleaned up without deleting the metric version, which also deletes the statistics. This gives an attacker a cheap way to grow storage and load connections and the DB, and it hurts the availability of the public page.",
+        "recommended_fix": "Bound issuance before the INSERT, for example with a per-client or per-scope limit or a cap on unexpired rows per version. Alternatively, add a narrowly guarded purge path for rows that expired and were never matched (no visit intent with the same scoped event), run by the owner only and documented as removing UNCOUNTED expectations only. If immutability until version deletion has to stay, record this as an approved risk and add monitoring of the table size.",
+        "required_test": "On a disposable DB, render or issue N expectations in a loop and confirm that the limit or purge behavior works. If you add a purge, confirm it deletes only expired, unmatched rows and still rejects matched or unexpired rows and direct arbitrary deletes.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "issueMetricVisitPage catch block / INSERT vs trigger lifetime check",
+        "issue": "When the trigger rejects the scope or lifetime, the error becomes PERSISTENCE_UNAVAILABLE, so the page crashes instead of rendering normally without the collector.",
+        "evidence": "The trigger takes issuedAt from clock_timestamp() later than resolveMetricVisitContext read the clock. It then raises SQLSTATE 23514 if collection is disabled, if collectionStartedAt > issuedAt, if NEW.expiresAt > version.expiresAt, or if expiresAt <= issuedAt. That error comes back as a Prisma error, not a MetricVisitorError, so the catch throws PERSISTENCE_UNAVAILABLE. Only SCOPE_UNAVAILABLE and LIFETIME_UNAVAILABLE return null.",
+        "impact": "A render that lands right at version or page expiry gets a 500 error and loses the public page, when it should render normally. The same happens if the omitted context helper ever returns an expiresAt that doesn't fit the trigger's bounds. The spec says an unavailable or inactive configuration keeps ordinary rendering.",
+        "recommended_fix": "Use a dedicated SQLSTATE or constraint-specific message for the 'scope or lifetime invalid' check. Map that code, and only that code, to the same null result as LIFETIME_UNAVAILABLE. Keep all other DB errors as PERSISTENCE_UNAVAILABLE. You could also compute expiresAt in SQL as LEAST(version.expiresAt, …), with a pre-check against clock_timestamp().",
+        "required_test": "On a disposable DB, set a version's expiresAt a few ms in the future (or use a fixed clock) so the trigger lifetime check fails during issue. Confirm that issueMetricVisitPage returns null, that no row persists, and that unrelated DB failures still throw.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "execution_provider": "claude_cli",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "exitCode": 0
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "reviewed": true
+}

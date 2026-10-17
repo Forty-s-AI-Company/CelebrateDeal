@@ -1,0 +1,161 @@
+{
+  "completed": false,
+  "accepted": false,
+  "attempts": [
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-sonnet-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-sonnet-5-5",
+    "effort": "unknown"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "plan_review",
+      "complexity": "high",
+      "risk": "medium",
+      "risk_score": 0,
+      "engineering_profile": "large",
+      "large_workload": true,
+      "risk_categories": [],
+      "important_findings": true,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "medium",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 15,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "plan_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "QUOTA_EXHAUSTED",
+    "review_scope_files": [],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": "senior_review"
+  },
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-sonnet-5-5",
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "No BLOCKER or MAJOR found in the supplied evidence boundary. I reviewed only the task text. The five files, test output, re-attestation receipt and WP-17 snapshot were not included, so I could not independently verify the revision hash, byte-identity, the READY receipt or the test results. This is not a certification of test or release success. Taken as stated, the evidence is internally consistent. Only the gallery test changed. No runtime or E2E source changed, so the earlier public browser run and twelve accessibility scans can reasonably be reused. The WP-17 dependency is clearly bounded, and the rerun condition (the pinned snapshot changes or loses READY) is explicit. WP-17 scheduling and external delivery are correctly left open. One low-severity note follows.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "gallery test (template gallery test, new webinar-template and rendered-state assertions)",
+        "area": "Negative-copy guard on templates and rendered registration, thank-you and broadcast HTML",
+        "issue": "The guard against promises of unavailable external services is, as described, a negative-copy check. A denylist like this only catches the phrases it lists, so reworded promises could pass.",
+        "evidence": "The task says the test checks that the templates 'contain no promises for unavailable external services' and applies 'the same negative-copy guard' to the rendered HTML. It does not say whether the check uses a closed phrase list or a structural invariant. The test source was not supplied.",
+        "impact": "A later template or copy change could imply email reminders, SMS, calendar delivery or a live stream in different wording without failing the test. This is a regression-detection gap, not a current defect, and does not block delivery.",
+        "recommended_fix": "If it is not already so, keep the guard's term list explicit and broad (reminder, SMS, calendar invite, email confirmation, live stream, and similar). Pair it with the positive assertion that the form targets the existing native endpoint. Do not add a shared framework.",
+        "required_test": "Add or confirm a case where a deliberately offending phrase in a template or rendered state makes the guard fail, so the guard is shown not to pass vacuously.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "QUOTA_EXHAUSTED",
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED"
+}

@@ -1,0 +1,227 @@
+{
+  "review": {
+    "summary": "I reviewed the supplied scheduler, unit tests and disposable DB harness. Several things hold up: the scope is frozen and parsed before any database access; selection is read-only, uses the DB clock, filters on all three scope fields and is capped by a parameterized LIMIT; jobs run one at a time, each with a fresh workerId; the admission budget only stops new work and running jobs are awaited; and the result reports counts only. I found no blocker. The main risk is that the selection query does not match the hidden claim conditions, so a row that can never be claimed can stay first in line and stall the queue at the default jobs=1. The query also deliberately picks up reports whose leases have expired. That is a retry, which conflicts with the 'already queued / no retries' scope, and it has no real-DB test. If a job throws instead of returning a status, the tick rejects, the counts for that tick are lost and the raw error reaches the caller. The competing-ticks evidence does not force both ticks to select the same report, so it may not have exercised the lost-claim path it is named for. The harness has no negative checks for windowEndAt or expiry, and its foreign-tenant test uses a vendor that doesn't exist. I reviewed source only and executed nothing. Per the task, this does not certify the full WP, deployed scheduling, source collection coverage, or the original Serializable20 gate, which remains 7/20 FAIL.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-metric-report-scheduler.ts",
+        "area": "selection SQL WHERE/ORDER BY/LIMIT (candidate query)",
+        "issue": "The selection query only approximates the conditions that decide whether a report can be claimed. Rows that match the selection but can never be claimed are returned again on every tick, so they can block everything behind them.",
+        "evidence": "Selection orders by createdAt,id with LIMIT jobs (default 1) and filters only on scope, expiry, windowEndAt and status/lease. The comment says 'Selection is only a hint: the job's atomic DB-clock claim decides ownership.' The claim may also check things the selection does not, such as an attempts cap, sourceRevision or collection state; those conditions were not supplied. When a claim fails with not_claimed the row's status does not change, so the same oldest row is selected next tick. Nothing skips past it or pages forward.",
+        "impact": "With default jobs=1, one queued row (or one with an expired lease) that the claim always rejects stops every later report in that scope from being processed. Ticks keep returning not_claimed:1 and the scheduler stalls without any error. With jobs>1 the effect is smaller but still present.",
+        "recommended_fix": "Build the selection from the same predicate the claim uses, for example a shared SQL fragment or view that includes every claim condition. Alternatively, after a not_claimed result, continue past already-tried ids within the admission budget (e.g. keyset on createdAt,id) instead of re-selecting the same oldest rows.",
+        "required_test": "Real-DB test: set up an oldest report in scope that matches the selection but that claimMetricReport rejects (e.g. attempts cap reached or stale sourceRevision, whichever the claim enforces), plus a newer claimable report. Run the default-jobs=1 tick twice. Assert the newer report reaches ready, or that the scheduler explicitly reports the blocked head row.",
+        "confidence": 0.42
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-report-scheduler.ts",
+        "area": "WHERE clause: (r.status='running' AND r.\"leaseExpiresAt\"<=clock_timestamp())",
+        "issue": "The tick also picks up reports that are already running but whose lease has expired, and runs them again. That is a retry. It goes beyond 'already queued reports', contradicts the 'No ... retries here' docstring, and is only checked by a string match in the unit test.",
+        "evidence": "The docstring says 'No new reports, collection enablement, coverage certificates or retries here', yet the query admits expired running leases. The unit test only checks the query text contains the substring. The DB harness covers only an active lease (activeLeaseExcluded), not an expired one being reclaimed, the resulting attempts count, or how many times reclaim can repeat.",
+        "impact": "Work that crashed or stalled is retried automatically every time its lease expires. Unless the unchanged claim caps attempts, this can repeat forever, and none of this behaviour has real-DB evidence. This expands the authorized scope without saying so.",
+        "recommended_fix": "Either limit selection to status='queued' and raise expired-lease recovery as a separate scope proposal, or keep the branch but document it as authorized lease recovery, rely on (and test) the claim's attempts cap, and correct the docstring.",
+        "required_test": "Real-DB harness: claim a report with a short lease, let it expire on the DB clock, run a tick, and assert the claim succeeds with a new workerId, attempts increments to 2, and the old worker's finish is rejected. Also assert that a report at the attempts cap is not executed again.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-report-scheduler.ts",
+        "area": "for-loop around await runMetricReportJob(...)",
+        "issue": "If runMetricReportJob rejects instead of returning a status (for example a Prisma connection error during the claim or finish step), the whole tick rejects. The counts already gathered are lost, later candidates are never reported as deferred, and the raw error goes to the host's logs. Only selection errors are sanitized.",
+        "evidence": "The selection call is wrapped in try/catch and maps failures to {status:'unavailable', reason:'selection_failed'} with the comment 'Never expose query errors or selected report identities'. The job loop has no equivalent handling, and no unit test covers ports.job rejecting.",
+        "impact": "The host loses count accounting for that tick, and errors that may carry query or report details can reach scheduler logs, contradicting the data-minimization intent. Behaviour when the job throws is undefined and untested.",
+        "recommended_fix": "Catch rejections per job, count them in a sanitized bucket (e.g. failed, or a separate 'unavailable' count), decide whether to stop admitting new work after an exception, and return the partial counts without the error object.",
+        "required_test": "Unit test: ports.job resolves for the first candidate and rejects with new Error('private report r-123') for the second. Assert the tick resolves with attempted=2 and sanitized counts, the remaining candidates are counted as deferred, and the serialized result contains neither the error message nor any report id.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-report-scheduler-disposable.mjs",
+        "area": "stage 'competing-ticks' (Promise.all of two ticks)",
+        "issue": "The race test does not force both ticks to select the same report before either one claims it. It therefore may not exercise the lost-claim path, yet the receipt records competingTicksExactlyOneExecution: PASS.",
+        "evidence": "The two ticks share one PrismaClient. The only assertions are sum(recorded)==1, executions==3 and the final row ready with attempts=1. Those all also pass if one tick finishes completely before the other selects (selected=0). Nothing asserts that both ticks had selected=1 or that one returned not_claimed=1.",
+        "impact": "The real-DB evidence may overstate concurrency safety. Claim atomicity under truly overlapping selection is not shown by this receipt.",
+        "recommended_fix": "Wrap db.$transaction (selection) in a barrier so both ticks finish selection before either proceeds. Then assert race[0].selected===1, race[1].selected===1, exactly one recorded and one not_claimed, and executions incremented by exactly one.",
+        "required_test": "Barrier-synchronized competing-ticks test in the disposable DB with the outcome assertions above. Also check that the receipt fields correspond one-to-one with those assertions.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-report-scheduler-disposable.mjs",
+        "area": "fixtures / exclusion assertions",
+        "issue": "The real-DB harness has no negative tests for windowEndAt > now, an expired report, or an expired version. Its 'foreignTenantExcluded' check uses a vendor id that does not exist, not a real second tenant.",
+        "evidence": "Every fixture uses end = now-1000 and expires = now+1h. The foreign-tenant check calls the tick with vendorId 'synthetic-foreign', which has no rows at all, so selected=0 holds trivially. No second vendor with its own live/version/reports is created.",
+        "impact": "The eligibility predicates the scope relies on (time bounds, expiry, tenant isolation) have only string-match unit coverage, not database evidence.",
+        "recommended_fix": "Add fixtures for a report whose window has not ended, an expired report, a report on an expired version, and a real second vendor with its own live/version/queued report. Run ticks with mixed scopes (vendor A with version B, etc.).",
+        "required_test": "Assert selected=0 and the status is unchanged for each ineligible fixture, and assert that a mixed-tenant scope selects nothing while the real foreign report stays queued.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "scripts/wp20-report-scheduler-disposable.mjs",
+        "area": "receipt.results",
+        "issue": "The receipt sets every result label to PASS together at the end, and some labels have no distinct assertion behind them (e.g. 'duplicateTickNoExecution').",
+        "evidence": "receipt.results is assigned as one literal after all assertions. No assertion is explicitly tied to a duplicate tick apart from the idle tick and the race-sum check.",
+        "impact": "Readers of the evidence may think specific behaviours were checked separately when they were not.",
+        "recommended_fix": "Set each result label right after the specific assertion that proves it, and remove or rename labels that have no matching assertion.",
+        "required_test": "Check that every results key is written next to a dedicated assertion in the harness.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 45,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 0,
+      "provider": "agy_wrapper",
+      "status": "INVALID_REVIEW"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "agy_discovery_process_status": "SUCCESS",
+  "accepted": false,
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "completed": false,
+  "finalModel": "claude-opus-5-5"
+}

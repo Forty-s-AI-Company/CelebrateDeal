@@ -1,0 +1,21 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:bf36160c7a27a734d0b13d6061b968be736a3e42ea232b115155cdd94661c491",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "lineage": [
+    "review-cli.json",
+    "redirect-review.json",
+    "final-review-attempt.json"
+  ],
+  "scope_files": [
+    "src/components/app-shell.tsx",
+    "src/components/app-shell.test.ts",
+    "src/app/(app)/settings/commissions/page.tsx"
+  ],
+  "findings": []
+}

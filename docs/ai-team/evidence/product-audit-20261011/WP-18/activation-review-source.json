@@ -1,0 +1,13 @@
+{
+  "sourceHashes": {
+    "src/lib/automation-workflow.ts": "2265d23082fa197e0237c19749d71a82a2c1def78522a949128adba93b4881d4",
+    "src/lib/automation-workflow.test.ts": "d92b6b1de0d14a45962eeeacaf2410254550edb8e4839b37cd723ca665b6b025",
+    "src/app/actions/automation-actions.ts": "c51643612f92fe0661077fa6870f1f264aa6033087ab0ab6af7f6b093772e425",
+    "src/app/actions/automation-actions.test.ts": "e53848d41cde1024312bb7810c0177731a203c90a983cec2f948a886375030b8",
+    "src/app/(app)/settings/automations/page.tsx": "f7a521495aa1a71ebfc90926933bb822ee864e804218e872e3e19f31906e794f",
+    "src/app/(app)/settings/automations/page.test.tsx": "28d45aabc92a4c4a591db4dc250ff9a1c9f1a3b5170280c4dbde45c6ffdd91b9"
+  },
+  "supplied": "Full actions; full readiness/dryrun/generic early guard; exact UI contract summary",
+  "contextChars": 14442,
+  "wholeWP18": "NOT_READY"
+}

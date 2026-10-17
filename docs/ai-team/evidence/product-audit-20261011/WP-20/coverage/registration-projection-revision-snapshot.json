@@ -1,0 +1,11 @@
+{
+  "files": {
+    "prisma/migrations/20261015200000_live_metric_registration_projection_revision/migration.sql": "37d5e0bb1e623af3fad4e72a8133ac57130c436c1c6fc2c3b908edb63e068641",
+    "scripts/wp20-registration-proof-mutation-probe.mjs": "8cd24a04e677f6e5c6de8316648be3631adf99b7955b4e429e65114307ce952c",
+    "scripts/wp20-registration-matched-audit.mjs": "4ba056920b1d3d7da86f8e26a19f9ffe8b8155cf49411d0a4a757dc1f166fdc2",
+    "scripts/wp20-payment-retry-disposable.mjs": "1631a2eaaccf43347edcbb16214f3f156106f6a25fd6e0cb7311ffcfae6f1cfc"
+  },
+  "databaseLatest": "PASS",
+  "initialRun": "FAIL",
+  "independentReview": "NOT_RUN"
+}

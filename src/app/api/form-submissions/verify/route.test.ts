@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/form-submission-verification-domain", () => ({
   verifyFormSubmission: mocks.verifyFormSubmission,
 }));

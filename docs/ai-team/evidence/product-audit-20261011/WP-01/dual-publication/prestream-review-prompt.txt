@@ -1,0 +1,222 @@
+Independent read-only Critical review. Return schema findings BLOCKER/MAJOR/MINOR/NIT. No edits. D1 dual publication: user requires unpublished project warning/missing links in merchant UI, no anonymous leakage; project gate including verified payment and schema unchanged. Prior MAJOR streamed404=200; MINOR diagnosis errors block editor, stale unpublish, public id unchecked, gate query drift; NIT unknown feedback/color. Review fixes plus pure-read proxy GET/HEAD preflight, runtime parity, visitor consistency, failclosed503. includePresentation=false skips only display data; original route guards stay. Actual66 tests/lint/tsc/browser PASS, GET/HEAD404 for draft project/disabledform/invalidops; publishedform200; axe0. Gate parity tested live/consultation against real action. No claim reviewer ran tests. csrf variable cosmetic alias only. No secrets/deployment. Snapshot sha256:9aa578dcad8c03e92859126493e7348ba44cfd0a0aaa4e9a76b43a901eac9e79
+Final additions with locations; deleted baseline lines omitted to fit transport.
+diff --git a/src/app/(app)/landing-pages/[id]/page.tsx b/src/app/(app)/landing-pages/[id]/page.tsx
+index e000f991..843f5679 100644
+--- a/src/app/(app)/landing-pages/[id]/page.tsx
++++ b/src/app/(app)/landing-pages/[id]/page.tsx
+@@ -3 +3 @@ import { LandingPageWorkspace } from "@/components/landing-page-workspace";
++import { getLandingPageForEditor, getLandingPagePublicationStatus, LandingPageNotFoundError, LandingPageScopeError, type LandingPageStoredContent } from "@/lib/landing-page-service";
+@@ -16,0 +17,4 @@ export default async function EditLandingPage({ params, searchParams }: { params
++  const publication = await getLandingPagePublicationStatus(id).catch((error: unknown) => {
++    if (error instanceof LandingPageNotFoundError || error instanceof LandingPageScopeError) notFound();
++    return { available: false, message: "尚無法確認公開網址狀態，請重新整理後再查看。", projectHref: "/projects", missing: [] };
++  });
+@@ -29 +33 @@ export default async function EditLandingPage({ params, searchParams }: { params
++  return <LandingPageWorkspace initialPublication={publication} key={`${page.id}-${query.step ?? "default"}`} returnHref={returnHref} commerceProducts={data.commerceProducts} page={{ id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision, content, formId: page.formId, liveId: page.liveId, versions: page.versions.map(({ version }) => ({ version })) }} webinarResources={data.webinarResources} forms={data.forms} lives={data.lives} csrfName={CSRF_FIELD_NAME} csrfField={await getCsrfToken()} />;
+diff --git a/src/app/actions/landing-page-actions.ts b/src/app/actions/landing-page-actions.ts
+index 065e87b2..27c68be6 100644
+--- a/src/app/actions/landing-page-actions.ts
++++ b/src/app/actions/landing-page-actions.ts
+@@ -6,0 +7 @@ import {
++  getLandingPagePublicationStatus,
+@@ -107,0 +109,11 @@ function success(message: string, result: { id: string; revision?: number }) {
++/** 診斷失敗不回滾已完成的寫入，但必須清除過期的公開狀態。 */
++async function successWithPublication(message: string, result: { id: string; revision?: number }): Promise<LandingPageActionState> {
++  let publication: NonNullable<LandingPageActionState["publication"]>;
++  try {
++    publication = await getLandingPagePublicationStatus(result.id);
++  } catch {
++    publication = { available: false, message: "尚無法確認公開網址狀態，請重新整理後再查看。", projectHref: "/projects", missing: [] };
++  }
++  return { ...success(`${message}${publication.message}`, result), publication };
++}
++
+@@ -134 +146 @@ export async function landingPageAction(
++      return successWithPublication("草稿已儲存。", saved);
+@@ -141 +153 @@ export async function landingPageAction(
++      return successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published);
+@@ -147 +159 @@ export async function landingPageAction(
++      return successWithPublication("已取消發布；歷史版本與草稿都仍保留。", await unpublishLandingPage(id, expectedRevision));
+@@ -161 +173 @@ export async function landingPageAction(
++      return successWithPublication("步驟已自動儲存。", await saveLandingPageStepMetadata({ id, revision: expectedRevision, mutation }));
+diff --git a/src/components/landing-page-workspace.tsx b/src/components/landing-page-workspace.tsx
+index d94c0a01..1e3d08ec 100644
+--- a/src/components/landing-page-workspace.tsx
++++ b/src/components/landing-page-workspace.tsx
+@@ -2,0 +3,2 @@
++import type { LandingPagePublicationStatus } from "@/lib/landing-page-service";
++
+@@ -79 +81 @@ function normalizeCommerceProducts(products?: FunnelCommerceProduct[]) { return
++export function LandingPageWorkspace({ initialPublication, page, forms, lives, csrfField, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref }: { initialPublication?: LandingPagePublicationStatus; commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfField: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string }) {
+@@ -92,0 +95,2 @@ export function LandingPageWorkspace({ page, forms, lives, csrfField, csrfName,
++  const [publicationResult, setPublicationResult] = useState<{ source: typeof initialPublication; value: typeof initialPublication }>();
++  const publication = publicationResult && publicationResult.source === initialPublication ? publicationResult.value : initialPublication;
+@@ -137,0 +142 @@ export function LandingPageWorkspace({ page, forms, lives, csrfField, csrfName,
++        if (result.publication) setPublicationResult({ source: initialPublication, value: result.publication });
+@@ -198 +203 @@ export function LandingPageWorkspace({ page, forms, lives, csrfField, csrfName,
++        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "Funnel 已發布（公開狀態見下方）" : "草稿頁面") : "新頁面"}</span>
+@@ -206,0 +212,6 @@ export function LandingPageWorkspace({ page, forms, lives, csrfField, csrfName,
++        {publication ? <section aria-label="公開網址狀態" role="status" className={`col-span-full rounded-lg border p-3 text-sm text-slate-900 ${publication.available ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
++          <p>{publication.message}</p>
++          {publication.missing.length ? <ul className="mt-2 list-disc pl-5">{publication.missing.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
++          {!publication.available ? <a className="mt-2 inline-block underline" href={publication.projectHref}>前往專案檢查與發布</a> : null}
++        </section> : null}
++
+diff --git a/src/lib/landing-page-service.ts b/src/lib/landing-page-service.ts
+index 57449a80..d6131366 100644
+--- a/src/lib/landing-page-service.ts
++++ b/src/lib/landing-page-service.ts
+@@ -1 +1 @@
++import { funnelOperationsReferencesValid, parseFunnelOperations } from "@/lib/funnel-operations";
+@@ -51,0 +52,9 @@ export type LandingPageActionState = {
++  publication?: LandingPagePublicationStatus;
++};
++
++/** 商家端診斷；不改變公開頁或專案發布的判斷。 */
++export type LandingPagePublicationStatus = {
++  available: boolean;
++  message: string;
++  projectHref: string;
++  missing: Array<{ label: string; href: string }>;
+@@ -619 +628,2 @@ export async function duplicateLandingPage(pageId: string) {
++export async function loadPublicLandingPage(slug: string, onUnavailable?: (reason: string) => void, includePresentation = true): Promise<PublicLandingPage | null> {
++  const unavailable = (reason: string) => { onUnavailable?.(reason); return null; };
+@@ -621 +631 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  if (!safeSlug) return unavailable("公開網址格式不正確。");
+@@ -664 +674 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  if (candidates.length !== 1) return unavailable("找不到唯一可公開的 Funnel 版本；請確認 Funnel 與專案發布狀態。");
+@@ -666 +676 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  if (!page) return unavailable("找不到公開頁面。");
+@@ -668 +678 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  if (!version || !page.publishedAt || version.vendorId !== page.vendorId || version.pageId !== page.id) return unavailable("Funnel 發布版本不存在或不一致，請重新發布。");
+@@ -670 +680 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  if (!content || invalidWebinarContainer(content)) return unavailable("已發布版本的頁面內容格式無效，請修復後重新發布。");
+@@ -679 +689 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  if (forms.length !== ids.length) return unavailable("已發布版本的報名表不存在、已停用或不屬於此專案。");
+@@ -681 +691 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  if (version.liveId && (!live || live.vendorId !== page.vendorId || live.projectId !== page.projectId || !PUBLIC_LIVE_STATUSES.has(live.status) || !live.formId || ids.length === 0 || ids.some((formId) => formId !== live.formId))) return unavailable("已發布版本的直播不可公開，或直播與報名表的專案綁定不一致。");
+@@ -686 +696 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  const commerceByPageId = includePresentation && page.projectId
+@@ -689 +699 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++  const consultationEvents = includePresentation ? await publicConsultationEvents(db(), { vendorId: page.vendorId, projectId: page.projectId }, content) : [];
+@@ -701,0 +712,60 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
++
++/** 先取得已授權的選中專案與頁面，再診斷；不向匿名公開頁揭露原因。 */
++export async function getLandingPagePublicationStatus(pageId: string): Promise<LandingPagePublicationStatus> {
++  const scope = await editorProject();
++  const page = await db().landingPage.findFirst({
++    where: { id: identifier(pageId) ?? "", vendorId: scope.vendorId, projectId: scope.projectId },
++    select: { slug: true, status: true, operations: true },
++  });
++  if (!page) throw new LandingPageNotFoundError();
++  const projectHref = `/projects/${encodeURIComponent(scope.projectId)}`;
++  const project = await db().salesProject.findFirst({
++    where: { id: scope.projectId, vendorId: scope.vendorId },
++    select: { status: true, publishedAt: true, primaryFlow: true },
++  });
++  if (!project) return { available: false, message: "所屬專案不存在，公開網址目前無法開啟。", projectHref, missing: [] };
++  if (project.status !== "published" || !project.publishedAt) {
++    const now = new Date();
++    // Read-only mirror of publishSalesProjectAction: never relax its verified payment predicate.
++    const [products, forms, lives, consultations, paymentMethods] = await Promise.all([
++      db().salesProjectProduct.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId, product: { isActive: true, priceCents: { gt: 0 } } } }),
++      db().registrationForm.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true } }),
++      db().live.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId } }),
++      db().consultationEvent.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { weeklySchedule: true } }),
++      db().paymentMethodReference.count({ where: { vendorId: scope.vendorId, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
++    ]);
++    const availability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
++      if (!entry || typeof entry !== "object") return false;
++      const ranges = (entry as { ranges?: unknown }).ranges;
++      return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
++    }));
++    const missing: LandingPagePublicationStatus["missing"] = [];
++    if (!products) missing.push({ label: "尚未連結啟用且價格大於 0 的商品", href: "/products" });
++    if (!forms) missing.push({ label: "尚未建立啟用的報名表", href: "/forms" });
++    if (!paymentMethods) missing.push({ label: "尚無有效且已驗證的商家付款方式", href: "/billing/payment-methods" });
++    if (project.primaryFlow === "live" && !lives) missing.push({ label: "尚未建立直播場次", href: "/lives" });
++    if (project.primaryFlow === "consultation") {
++      if (!consultations.length) missing.push({ label: "尚未建立啟用的諮詢服務", href: "/consultations" });
++      if (!availability) missing.push({ label: "尚未設定可預約時間", href: "/consultations" });
++    }
++    return { available: false, message: "專案尚未發布，公開網址目前無法開啟", projectHref, missing };
++  }
++  if (page.status !== "published") return { available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
++  let reason = "公開頁目前無法開啟，請檢查發布資源。";
++  const publicPage = await loadPublicLandingPage(page.slug, (value) => { reason = value; });
++  if (publicPage && publicPage.id !== pageId) return { available: false, message: "公開網址與目前頁面的發布版本不一致，請確認網址與發布版本。", projectHref, missing: [] };
++  if (publicPage && "pages" in publicPage.content) {
++    const steps = publicPage.content;
++    const operations = parseFunnelOperations(page.operations);
++    if (!operations || !funnelOperationsReferencesValid(page.operations, steps.flow.steps)) {
++      return { available: false, message: "Funnel 的 A/B 或截止設定無效，公開步驟可能回傳 404；請到 Funnel 管理修正。", projectHref, missing: [{ label: "檢查 Funnel 管理設定", href: `/landing-pages/${encodeURIComponent(pageId)}/operations` }] };
++    }
++    if (!steps.flow.steps.some((step) => !step.isSystem) || steps.flow.steps.some((step) => !step.isSystem && !steps.pages[step.id])) {
++      return { available: false, message: "已發布版本缺少可公開的步驟頁面，請補齊後重新發布。", projectHref, missing: [] };
++    }
++    if (operations.deadline.enabled && operations.deadline.expiresAt && new Date(operations.deadline.expiresAt) <= new Date()) {
++      return { available: true, message: "專案與 Funnel 均已發布，但活動已截止；公開頁依設定顯示截止訊息或轉向其他步驟。", projectHref, missing: [] };
++    }
++  }
++  return { available: Boolean(publicPage), message: publicPage ? "專案與 Funnel 均已發布，公開頁目前可開啟。" : reason, projectHref, missing: [] };
++}
+diff --git a/src/proxy.ts b/src/proxy.ts
+index 76eb6277..b5be55b1 100644
+--- a/src/proxy.ts
++++ b/src/proxy.ts
+@@ -28 +28 @@ function markerResponse(method: string): Response {
++export async function proxy(request: NextRequest): Promise<Response> {
+@@ -34,0 +35,10 @@ export function proxy(request: NextRequest): Response {
++  const visitorId = isFunnelVisitorId(existingVisitorId) ? existingVisitorId : crypto.randomUUID();
++  if (request.method === "GET" || request.method === "HEAD") {
++    try {
++      // 限 /lp；在根 loading 開始串流前決定 HTTP 狀態。其他入口不載入 DB 模組。
++      const { publicLandingPageStatus } = await import("@/lib/public-landing-page-status");
++      if (await publicLandingPageStatus(request.nextUrl.pathname, visitorId) === 404) return publicUnavailable(request.method, 404);
++    } catch {
++      return publicUnavailable(request.method, 503);
++    }
++  }
+@@ -40 +49,0 @@ export function proxy(request: NextRequest): Response {
+@@ -53,0 +63,10 @@ export function proxy(request: NextRequest): Response {
++/** 靜態匿名錯誤頁；不得插入 path、商家原因或資料庫錯誤。 */
++function publicUnavailable(method: string, status: 404 | 503) {
++  const title = status === 404 ? "404" : "暫時無法開啟頁面";
++  const message = status === 404 ? "找不到此頁面。" : "請稍後再試。";
++  return new Response(method === "HEAD" ? null : `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head><body><main><h1>${title}</h1><p>${message}</p></main></body></html>`, {
++    status,
++    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store, max-age=0", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex", ...(status === 503 ? { "Retry-After": "30" } : {}) },
++  });
++}
++
+NEW src/lib/public-landing-page-status.ts
+import { loadPublicLandingPage } from "@/lib/landing-page-service";
+import { resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
+import { getPublicFunnelPage } from "@/lib/funnel-public-page";
+
+/** 串流前純讀檢查；不發事件、不公開拒絕原因、不快取可用性。 */
+export async function publicLandingPageStatus(pathname: string, visitorId: string): Promise<200 | 404> {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] !== "lp" || segments.length < 2 || segments.length > 3) return 404;
+  let slug: string;
+  let stepPath: string | undefined;
+  try {
+    slug = decodeURIComponent(segments[1]);
+    stepPath = segments[2] ? decodeURIComponent(segments[2]) : undefined;
+  } catch { return 404; }
+  // 執行完整既有公開判斷，只省略與 HTTP 狀態無關的展示資料。
+  const page = await loadPublicLandingPage(slug, undefined, false);
+  if (!page) return 404;
+  if (!("pages" in page.content)) return stepPath ? 404 : 200;
+  const steps = page.content;
+  const requested = stepPath
+    ? steps.flow.steps.find((step) => step.path === stepPath && !step.isSystem)
+    : steps.flow.steps.find((step) => !step.isSystem);
+  if (!requested || !getPublicFunnelPage(steps, requested.path)) return 404;
+  const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: requested.id, visitorId });
+  if (!runtime || runtime.decision.status === "unavailable") return 404;
+  if (runtime.decision.status !== "render") return 200; // 截止與合法轉址仍交公開 route 呈現。
+  const renderedStepId = runtime.decision.renderedStepId;
+  const rendered = steps.flow.steps.find((step) => step.id === renderedStepId);
+  return rendered && getPublicFunnelPage(steps, rendered.path) ? 200 : 404;
+}

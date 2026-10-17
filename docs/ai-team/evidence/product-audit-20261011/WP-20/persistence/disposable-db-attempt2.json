@@ -1,0 +1,140 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "valid scoped interval increments source revision",
+      "status": "PASS"
+    },
+    {
+      "name": "collection defaults disabled",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant version/live binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant video binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-version visitor binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "unverified submission cannot be linked",
+      "status": "PASS"
+    },
+    {
+      "name": "wrong verified timestamp rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant admission rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-version interval rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "same session and sequence cannot duplicate",
+      "status": "PASS"
+    },
+    {
+      "name": "negative sequence",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid payload hash",
+      "status": "PASS"
+    },
+    {
+      "name": "negative media",
+      "status": "PASS"
+    },
+    {
+      "name": "past content duration",
+      "status": "PASS"
+    },
+    {
+      "name": "seek jump",
+      "status": "PASS"
+    },
+    {
+      "name": "oversized wall interval",
+      "status": "PASS"
+    },
+    {
+      "name": "future exposure",
+      "status": "PASS"
+    },
+    {
+      "name": "intervals are append-only",
+      "status": "PASS"
+    },
+    {
+      "name": "version identity is immutable",
+      "status": "PASS"
+    },
+    {
+      "name": "evidence cannot move scopes",
+      "status": "PASS"
+    },
+    {
+      "name": "session completion requires an explicit close",
+      "status": "PASS"
+    },
+    {
+      "name": "queued report stores its exact input revision",
+      "status": "PASS"
+    },
+    {
+      "name": "report cannot be ready without a result",
+      "status": "PASS"
+    },
+    {
+      "name": "report cannot run without a lease",
+      "status": "PASS"
+    },
+    {
+      "name": "source changes invalidate report and its lease",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent duplicate sequence stores exactly one row",
+      "status": "PASS"
+    },
+    {
+      "name": "disabled collection rejects new intervals",
+      "status": "PASS"
+    },
+    {
+      "name": "closed session rejects new intervals",
+      "status": "PASS"
+    },
+    {
+      "name": "deletion advances revision for cached-report invalidation",
+      "status": "PASS"
+    },
+    {
+      "name": "scoped DDL rollback preserves existing product tables",
+      "status": "PASS"
+    }
+  ],
+  "passed": 30,
+  "migration": {
+    "status": "PASS",
+    "count": 97,
+    "failure": {
+      "category": "none",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

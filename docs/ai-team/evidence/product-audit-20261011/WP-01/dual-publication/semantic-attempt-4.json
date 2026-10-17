@@ -1,0 +1,23 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "label": "project-unpublished",
+      "httpStatus": 200,
+      "notFoundUi": true,
+      "noindex": true,
+      "authoredContentAbsent": true
+    }
+  ],
+  "axe": [
+    {
+      "label": "merchant-diagnosis",
+      "scope": "[aria-label=\"公開網址狀態\"]",
+      "violations": []
+    }
+  ],
+  "restored": true,
+  "stage": "published-multi-step",
+  "errorType": "TimeoutError",
+  "contextRequired": false
+}

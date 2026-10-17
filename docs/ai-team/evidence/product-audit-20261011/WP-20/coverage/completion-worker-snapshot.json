@@ -1,0 +1,14 @@
+{
+  "files": {
+    "src/lib/live-metric-executor.ts": "5929a04c061da475d62436dc3b69f9ce398a34eba401dd21b5ddbdb82c1be07e",
+    "src/lib/live-metric-worker.ts": "a1cacdc5653f968aef0f419a0265563b56d0f0e7f1c396542091a7c914182193",
+    "scripts/wp20-metric-executor-qa.mjs": "2d08d6d79bb101a3e64febb4d3c8168799f0e7465cd37cad23b13f0230e29cc6",
+    "src/lib/live-core-metrics-read-model.ts": "d738b716844eced64c9aa489c753f942cd37b82e3459bd39aec215ab048b5d42"
+  },
+  "unit_tests": 55,
+  "unit_status": "PASS",
+  "lint": "PASS",
+  "full_typecheck": "NOT_RUN",
+  "persistence": "NOT_IMPLEMENTED",
+  "review": "NOT_RUN"
+}

@@ -1,0 +1,8 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/app/(app)/lives/[id]/analytics/page.tsx",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx"
+  ],
+  "revision": "sha256:568dc4e09fcae88e4c30bb293b0ca666ba9f74aeb90cde28eca24587bd7824e3"
+}

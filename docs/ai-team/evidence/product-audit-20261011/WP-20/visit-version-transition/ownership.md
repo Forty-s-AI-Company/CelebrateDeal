@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; proof/collection source/tests and evidence; Auth review required.

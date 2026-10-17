@@ -1,0 +1,63 @@
+{
+  "rows": [
+    {
+      "case": "admission",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "chat-read",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "chat-write",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "private-read",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "private-write",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "portal-preview",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "voucher-preview",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "broadcast-read",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "real_redis_stopped": true,
+  "business_database_accessed": false
+}

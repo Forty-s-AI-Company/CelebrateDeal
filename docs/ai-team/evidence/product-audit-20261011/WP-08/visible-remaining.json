@@ -1,0 +1,487 @@
+[
+  {
+    "file": "src/components/landing-pages/funnel-commerce-element.tsx",
+    "line": 20,
+    "text": "付款方式會在金流商安全頁面提供。CelebrateDeal 不在此收集卡號；付款設定未就緒時不會建立付款。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 30,
+    "text": "顯示 Popup"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 80,
+    "text": "https:// 或 /path 或 #anchor"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 83,
+    "text": "選擇 Popup"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 83,
+    "text": "請先在 Popups 建立一個視窗。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 84,
+    "text": "表單 ID（選填）"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 85,
+    "text": "下一個步驟 ID"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 87,
+    "text": "網址只接受 HTTPS、同源路徑或頁面錨點；不會在編輯器內執行自訂程式碼。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 11,
+    "text": "收集 Email，預設建立名單頁與感謝頁流程。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 13,
+    "text": "自訂 Funnel"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 14,
+    "text": "自動化 Webinar"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 53,
+    "text": "Create funnel"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 54,
+    "text": "建立新的 Funnel"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 55,
+    "text": "先設定基本資料與用途；建立後會進入 Funnel 管理與模板選擇。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 58,
+    "text": "Funnel 網址 *"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 58,
+    "text": "/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 58,
+    "text": "autumn-launch"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "新台幣 TWD"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "美元 USD"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "歐元 EUR"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "日圓 JPY"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 61,
+    "text": "選擇 Funnel 目標 *"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 62,
+    "text": "自動化 Webinar 目前仍在開發中，完成編輯、排程與播放流程後會開放建立。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-list.tsx",
+    "line": 31,
+    "text": "Funnel 清單"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-list.tsx",
+    "line": 51,
+    "text": "/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-list.tsx",
+    "line": 54,
+    "text": "開啟 Funnel →"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-list.tsx",
+    "line": 58,
+    "text": "找不到符合條件的 Funnel"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 253,
+    "text": "/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 269,
+    "text": "公開網址：/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 304,
+    "text": "Asia/Taipei"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 305,
+    "text": "例如 2026-12-31T23:59:00+08:00；DST 地區請明確填入當時 offset。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 326,
+    "text": "Page view 為伺服器公開頁交付紀錄，包含重新整理；conversion 為同一匿名訪客依序到達下一步，非成交。未取得匿名識別的瀏覽不計入。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 328,
+    "text": "· Page view"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 328,
+    "text": "· Submission"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 329,
+    "text": "檢視來源事件 ID（前 20 筆）"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 333,
+    "text": "只列出伺服器驗證 Funnel 來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 336,
+    "text": "來源為 CommerceOrder／PaymentTransaction 的已付款 projection，排除測試訂單；退款另列，不將不同幣別相加。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "line": 429,
+    "text": "原始 HTML 已在 sandbox 隔離預覽"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 25,
+    "text": "Section"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 25,
+    "text": "Row"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 33,
+    "text": "FAQ"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 34,
+    "text": "Raw HTML"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 34,
+    "text": "reCAPTCHA"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 226,
+    "text": "Elements"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 227,
+    "text": "Blocks"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 230,
+    "text": "Popups"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 235,
+    "text": "Undo"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 236,
+    "text": "Redo"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 240,
+    "text": "搜尋 Elements"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 240,
+    "text": "Funnel 流程"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 240,
+    "text": "URL Path"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 240,
+    "text": "請由上方「Funnel 管理」開啟 Automation、A/B、報表、期限與全域設定。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 240,
+    "text": "套用後會替換目前畫布與 Popup；頁面名稱、版本及設定會保留。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 241,
+    "text": "Popups"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 242,
+    "text": "尚未建立 Popup。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 242,
+    "text": "Exit intent（桌機單次觸發；手機不支援）"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 242,
+    "text": "Padding"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 242,
+    "text": "Border"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 242,
+    "text": "Shadow"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 242,
+    "text": "Exit intent："
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 242,
+    "text": "寬度與圓角可進入「編輯」後選取 Popup Section 調整。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 246,
+    "text": "English"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 247,
+    "text": "SEO 標題"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 248,
+    "text": "SEO 描述"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 251,
+    "text": "Tracking："
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 251,
+    "text": "Affiliate："
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 253,
+    "text": "Breadcrumb"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-popup-preview.tsx",
+    "line": 160,
+    "text": "找不到可預覽的 Popup。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-popup-preview.tsx",
+    "line": 307,
+    "text": "關閉 Popup"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 85,
+    "text": "Funnel steps 資料無法通過驗證。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 103,
+    "text": "Funnel steps"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 104,
+    "text": "Funnel steps"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 105,
+    "text": "流程 Undo"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 105,
+    "text": "流程 Redo"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 110,
+    "text": "Webinar 報名頁"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 110,
+    "text": "Webinar 感謝頁"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 110,
+    "text": "Webinar 播放頁"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 112,
+    "text": "URL Path"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 112,
+    "text": "步驟 URL Path"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 113,
+    "text": "模板 Gallery"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "line": 113,
+    "text": "縮圖與完整預覽都使用正式 renderer；套用後會展開成可獨立編輯節點。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-template-gallery-picker.tsx",
+    "line": 33,
+    "text": "這個 Funnel 類型還沒有可用模板"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-template-gallery-picker.tsx",
+    "line": 33,
+    "text": "你仍可從空白頁開始，之後再加入 Blocks。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-template-gallery-picker.tsx",
+    "line": 70,
+    "text": "預覽與套用共用同一份 PageDocument 與 renderer。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "line": 30,
+    "text": "找不到 Webinar 頁面。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "line": 83,
+    "text": "送出後請至 Email 完成確認，才會列入正式名單。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "line": 14,
+    "text": "Webinar 排程"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "line": 15,
+    "text": "Webinar 排程與重播"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "line": 16,
+    "text": "選擇既有活動與報名表，並在活動 Studio 確認來源影片。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 18,
+    "text": "前往外部 HTTPS 網址"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 23,
+    "text": "外部 HTTPS 網址"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 48,
+    "text": "2XL"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 48,
+    "text": "4XL"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 71,
+    "text": "Elements · 基本內容"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 72,
+    "text": "Elements · 版面配置"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 73,
+    "text": "Blocks · Webinar 轉換"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 90,
+    "text": "倒數計時＋報名 CTA"
+  }
+]

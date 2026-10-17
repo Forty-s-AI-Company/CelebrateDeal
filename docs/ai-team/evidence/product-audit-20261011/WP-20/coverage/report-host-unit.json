@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "sourceHashes": {
+    "src/lib/live-metric-report-host.ts": "30ccc4100b62111e9f9d3cded6f1c1f719047ba5dacebb0ad322c5cb00cb4b33",
+    "src/lib/live-metric-report-scheduler.ts": "aec9c44b548a2007e397ee6e805b95a4816c00a428c0edd9afefb9da68a61d98",
+    "scripts/run-metric-report-host.mjs": "e36b9881b99526f5e7e11b5a5f57c326374d405ad7f4d6dfbb02ad1f4b8cc435",
+    "scripts/build-metric-report-host.mjs": "5ecf0933afd25e3a9faaaf64aac1de9ba83e9a9a4a395f45ded0467f47040c61",
+    "scripts/wp20-report-host-disposable.mjs": "dbb32f48db43ce0e6b3f009092319ac68ace8f2e9ed2fdac2b73667d64682753",
+    "scripts/metric-report-host-artifacts.mjs": "5ad7af0e56f3c2762e54f1cc4eb7484196e35c071861258b47eb05d1188bcdbd",
+    "scripts/metric-report-host-runtime.mjs": "f9e6d38c488c058bef72434ad6e5d2daed13085d1a67cc7d839b0ec5b11b0ebf",
+    "scripts/metric-report-host-build-gate.mjs": "8df201bcec912b80f1f436ff8801e8f5bb788e29acf9197944916af6eca66a0f",
+    "scripts/metric-report-host-contract.test.mjs": "c8c5024759764548b48817f44a1f2374c61e50bfea5f8b5780910b8c08297484",
+    "src/lib/live-metric-report-host.test.ts": "4626b6343a08188a26ee49fb063d32074b201411db7b144e5ad8aaaeac8f4e78",
+    "src/lib/live-metric-report-queue.test.ts": "10722e10bfcdbd3fae772186d1c67a587714fdd246f6e667af8be8cefee413d9",
+    "src/lib/live-metric-report-scheduler.test.ts": "762f86a1064f4201a2f3010d468f5173c94c33611b83f9e7ee7850ccecb38976",
+    "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+    "src/lib/live-metric-report-lease.test.ts": "e8ca394c98bb37890976d82555bc4dedfc0f26a35a1a62cd406112bca8de39c6",
+    "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+    "src/lib/live-metric-report-reader.test.ts": "767e2aa6a1a4a18f83e99e7dda286837758cf4e3524880fdfd3a9a01eada06f9",
+    "src/lib/live-metric-coverage-reader.test.ts": "68f20248cf000ba6538e0050115615886940e100bbdeeb4cfc07510b9b6ffdee",
+    "src/lib/live-metric-order-coverage.test.ts": "2ababe347d7025a98720d97eae280185457dafb70b1763afa1934c4c3eb09414",
+    "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656",
+    "package.json": "6ec227aad916381e8b99961faffd6840e726354aff7556a8c68ae2849bdd9e9a"
+  },
+  "testsPassed": 106
+}

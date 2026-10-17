@@ -139,3 +139,6 @@ next-env.d.ts
 
 # MediaMTX local runtime configuration may contain private hosts or credentials.
 /ops/media/mediamtx.local.yml
+
+# Standalone metric worker build artifacts
+/.metric-worker/

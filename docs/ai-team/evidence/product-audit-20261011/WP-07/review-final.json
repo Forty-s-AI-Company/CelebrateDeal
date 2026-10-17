@@ -1,0 +1,17 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:081855c5144d76503e5cba90e681bbcf19374d5b59d2d94e84d5f7825b612b66",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "source_receipts": [
+    "review-attempt.json",
+    "repair-review-bounded.json",
+    "documentation-review.json"
+  ],
+  "lineage": "Product/test bytes reproduce prior reviewed snapshot when only the documented paragraph is reverted in memory. Final document independently reviewed at current revision.",
+  "findings": []
+}

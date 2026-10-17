@@ -1,0 +1,26 @@
+[
+  {
+    "before": "isabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };\n\nconst palette: Array<{ t",
+    "after": "isabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };\n\nconst palette: Array<{ t"
+  },
+  {
+    "before": "ssion({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds }: Props) {\n  const [history, setHistory] = useState(() => createFunnelPageHistory(document));\n  c",
+    "after": "ssion({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds, stepNames }: Props) {\n  const [history, setHistory] = useState(() => createFunnelPageHistory(document));\n  c"
+  },
+  {
+    "before": "tton className={control} onClick={() => replaceDocument(createFunnelPopup(history.present, { name: `Popup ${history.present.popups.length + 1}` }))}>＋ 新增</button></div>\n          {!history.present.popups.l",
+    "after": "tton className={control} onClick={() => replaceDocument(createFunnelPopup(history.present, { name: `彈出視窗 ${history.present.popups.length + 1}` }))}>＋ 新增</button></div>\n          {!history.present.popups.l"
+  },
+  {
+    "before": "amber-50 p-3 text-xs leading-5 text-amber-900\">追蹤設定：{history.present.settings.tracking.reason}<br />Affiliate：{history.present.settings.affiliate.reason}</div>\n        </div> : selected ? <div className=\"grid ",
+    "after": "amber-50 p-3 text-xs leading-5 text-amber-900\">追蹤設定：{history.present.settings.tracking.reason}<br />推薦夥伴：{history.present.settings.affiliate.reason}</div>\n        </div> : selected ? <div className=\"grid "
+  },
+  {
+    "before": "ctor node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} stepIds={stepIds} onCommand={commit} />\n          <div className=\"grid grid-cols-2 gap-2\"><button cl",
+    "after": "ctor node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} popupNames={Object.fromEntries(history.present.popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds ?? history.present.flow?.steps.map((step) => step.id)} stepNames={stepNames ?? Obje"
+  },
+  {
+    "before": "ted} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} stepIds={stepIds} onCommand={commit} />\n          <div className=\"grid grid-cols-2 gap-2\"><button className={control",
+    "after": "{Object.fromEntries(history.present.popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds ?? history.present.flow?.steps.map((step) => step.id)} stepNames={stepNames ?? Object.fromEntries((history.present.flow?.steps ?? []).map((step) => [step.id, step.name]))} onCommand={commit} />\n          <div className=\"grid grid-cols-2 gap-2\"><button className={control"
+  }
+]

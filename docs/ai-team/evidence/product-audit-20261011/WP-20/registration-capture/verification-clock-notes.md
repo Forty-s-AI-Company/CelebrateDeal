@@ -1,0 +1,11 @@
+# First verification database epoch
+
+IN_PROGRESS; independent follow-up NOT_RUN. Revision sha256:ecd850d2882458f5e52557ee1ae782171ee3d684cc5d04ccaebf58296f9822dd.
+
+Changed verifyFormSubmission conditional update to parameterized SQL assigning verifiedAt from date_trunc(milliseconds,clock_timestamp()) AT TIME ZONE UTC. Preserved identity, UNVERIFIED, verificationVersion and exact stored expiry predicates, claim count check, Serializable isolation, token verification and expiry validation using the existing supplied authentication clock. Already-verified paths retain the original epoch. No historical timestamp rewriting.
+
+DB140/migrations100/targeted token+verify-route tests/lint/TypeScript and cleanup PASS. New actual-domain disposable test creates synthetic signed verification proof using a build-time synthetic key (never reads host secrets), captures first submission, calls real verifyFormSubmission under Asia/Taipei with app time -60s and +60s, confirms DB ordering and no future epoch, materializes registration, verifies replay leaves epoch unchanged, and expired proof remains invalid. Existing DB/auth guards not relaxed. Transport route tests mock the domain; the new DB case executes the domain and actual cryptographic verification directly. No email sent.
+
+Review MAJOR4 remediation: future NEW captures and verified epochs share DB clock; no application-clock ordering reversal in tested offsets. Historical skew, host database clock jumps, visitor erasure/retention lifecycle, global lock ordering and final re-review remain unresolved/not accepted. Capture/form route and projection scheduler/session integration still absent. Current services-review.json does not cover this changed domain file.
+
+Scope: src/lib/form-submission-verification-domain.ts; scripts/wp20-metric-persistence-disposable.mjs; evidence/handoff/goal checkpoint. Root sole writer independent worktree; requested/effective ai-team-pro; recommendation route-verification-clock.json, implementation observed unknown; depth0 no new review dispatch automatic_spawn=false. Rollback only this conditional claim/time-source change and synthetic domain regression; preserve existing metric infrastructure. No push/deployment/production operations.

@@ -1,0 +1,10 @@
+{
+  "revision": "sha256:9e0b46840e8cd57bbe2f0dfca2992a8b8b59acd3c23dfd8985f4409ccafb0ac7",
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql",
+    "src/lib/live-metric-report-reader.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "review": "NOT_RUN_AFTER_SECURITY_DEFINER_CHANGE"
+}

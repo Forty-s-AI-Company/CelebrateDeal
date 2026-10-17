@@ -1,0 +1,219 @@
+{
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "completed": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "concurrency",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 60000,
+      "expected_duration": 120,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "IDLE_TIMEOUT",
+      "exitCode": -1
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "review": {
+    "summary": "I found no BLOCKER in the supplied migration or helper excerpts. The earlier MAJOR (database-enforced liveness and monotonic expiry) looks fixed for bound sessions. The new intake renewal branch only allows an expiry-only increase, enforced with a JSON diff. The database counts the renewal itself: a forged renewalCount or a combined renewal+loss write is rejected as immutable. The renewal branch also requires a fresh clock, READ COMMITTED isolation, the version/admission cap, and an open, unexpired bound session that it locks and rechecks. The session guard blocks lowering expiry, extending a closed or expired bound session, and changing the binding, anchor or admission. It also revalidates every write against the intake, whose expiry only ever increases, so reading it without a lock is safe. In the app path, if the intake renewal succeeds but the session update then matches 0 rows, the helper throws, which rolls back both writes. The anchor and sequence are never rewritten. Renewals never create intake rows, so the 64-intake limit is unaffected. The revision value (count + count(lossAt) + sum(renewalCount)) goes up by exactly 1 per insert, loss or renewal, and only decreases on the version-cascade delete. I checked the supplied catch: SQLSTATE 23514 maps to evidence_rejected and is not passed through as a raw error. So boundary races during renewal (intake or session expiring between the WHERE clause and the trigger) end as permanent failures, which is correct for an expired lease. Lock wait failures (55P03) are not mapped and pass through raw. The remaining findings are one possibly important behaviour regression and some hardening gaps. They are limited to the supplied text: I did not review the route, transport, close/finish, loss, the omitted source locks or the test harness. This does not certify the runtime database role, long-duration or live/WHEP behaviour, or the fullWP release gates, which are known to be incomplete.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-session.ts",
+        "area": "final decision: `+session.expiresAt > +source.expiresAt` check after bindPlaybackLease",
+        "issue": "Now that sessions can be extended, a later or concurrent open/renewal whose computed source.expiresAt is lower than the extended session expiry fails permanently with not_authorized. Before this change it would have been harmless.",
+        "evidence": "Request A renews intake and session to S_A. Request B, with source S_B < S_A (for example an older signed viewer credential that is still valid, or an in-flight retry), then reaches bindPlaybackLease. There no renewal happens and source.expiresAt = min(S_B, S_A) = S_B. The caller then checks session.expiresAt (S_A) > source.expiresAt (S_B) and throws not_authorized. Before renewals existed, the session expiry was set from source at creation and never grew, so this check could not fire on a monotonic source.",
+        "impact": "Out-of-order or overlapping renewals from the same nonce, or a retry with an earlier credential, permanently end collection (transport.open returns null) for a session that is still validly leased. This hurts gapless lease continuity. Whether it happens depends on whether source.expiresAt can go down between requests; that code was not supplied.",
+        "recommended_fix": "For renewal requests where the session is open, unexpired and bound to the same intake, and source.expiresAt > now but below session.expiresAt, treat it as a no-op. Return the current lease (or cap the returned expiresAtMs to source) instead of not_authorized. Only reject when the source authority has actually been revoked or shortened below now, or show that source.expiresAt is monotonic per admission.",
+        "required_test": "Two overlapping renewals on the same session/nonce with different valid source expiries (higher first, lower second). The second must not permanently end the session. A real admission revocation must still reject.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql",
+        "area": "wp20_metric_session_intake_guard UPDATE branch",
+        "issue": "The replaced bound-session guard blocks extending expiry when OLD.closedAt is set, but it does not stop closedAt changing from non-NULL back to NULL. A closed session could therefore be reopened and then extended in a second statement.",
+        "evidence": "The guard checks expiresAt monotonicity, open/unexpired on expiry change, intakeId, anchorAt and admissionSessionId. Nothing compares NEW.closedAt with OLD.closedAt. If closedAt is set to NULL first, the expiry rule sees OLD.closedAt IS NULL on the next UPDATE and allows the extension, up to the intake expiry.",
+        "impact": "If no other supplied or existing trigger makes closedAt write-once, a direct write by the app role can resurrect a completed session, which defeats the never-resurrect guarantee. This only matters if another guard does not already enforce it; such a guard is not in the supplied text.",
+        "recommended_fix": "In the same guard, reject `OLD.\"closedAt\" IS NOT NULL AND NEW.\"closedAt\" IS DISTINCT FROM OLD.\"closedAt\"`, or confirm and cite the existing trigger that makes closedAt immutable.",
+        "required_test": "Using the deployed app role, run UPDATE closedAt=NULL on a closed bound session, then extend its expiresAt. Both must fail with 23514.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-session.ts",
+        "area": "PlaybackLeaseOptions / session renewal branch",
+        "issue": "`renewPlaybackIntake` can be set without `requirePlaybackIntake`. In that case the session expiry is extended to source.expiresAt with no intake bound, and the new database monotonic/liveness rule only applies when OLD.intakeId IS NOT NULL.",
+        "evidence": "The type allows `{renewPlaybackIntake:true}` alone. The caller's renewal UPDATE runs whenever `options.renewPlaybackIntake && source > session.expiresAt`. The guard's first IF requires `OLD.\"intakeId\" IS NOT NULL`.",
+        "impact": "Not reachable today (the only caller passes both flags), but a future caller could extend unbound sessions with no database lease bound or revision bump.",
+        "recommended_fix": "Make the options a discriminated union, or throw when renewPlaybackIntake is set without requirePlaybackIntake. Optionally also require session.intakeId in the renewal branch.",
+        "required_test": "Unit test: `{renewPlaybackIntake:true}` without requirePlaybackIntake is rejected and never runs the session UPDATE.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-session.ts",
+        "area": "renewal path (intake renewalCount / session ledger writes)",
+        "issue": "Renewals are not limited by count or by minimum extension size. Every request that raises the source expiry by even 1 ms writes the intake row and the session row, adds a viewing-ledger row and bumps the version revision.",
+        "evidence": "The renewal happens whenever `+source.expiresAt > +intake.expiresAt`. renewalCount is an unbounded BIGINT. The ledger records every changed whole session row. Unlike the intake count limit of 64, nothing here bounds renewals.",
+        "impact": "If admission expiry slides on every authorization, one viewer can cause unbounded ledger growth and revision churn, at a rate limited only by the route (not supplied).",
+        "recommended_fix": "Only renew within a window before expiry or when the extension is at least a minimum step, and/or cap renewalCount per intake in the trigger. Report extra rate limiting as a scope proposal if it belongs at the route.",
+        "required_test": "Repeated renewal calls with slightly increasing source expiry: the number of ledger rows and renewalCount stay within the documented limit.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "NIT",
+        "file": "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql",
+        "area": "wp20_metric_playback_intake_guard renewal branch lock acquisition",
+        "issue": "On a direct intake UPDATE, the database locks the intake row before the trigger locks Live, viewer session, version and metric session. The app path takes those locks in the opposite order, so the two can deadlock.",
+        "evidence": "A BEFORE ROW UPDATE trigger runs after the target row is locked; the trigger then runs PERFORM ... FOR SHARE / FOR NO KEY UPDATE on the source and session rows. The helper comment says normal callers hold the source and session locks before `FOR UPDATE` on the intake.",
+        "impact": "No integrity loss: PostgreSQL deadlock detection aborts one transaction with 40P01, which is mapped to retryable_conflict. This only affects direct writes outside the app path.",
+        "recommended_fix": "Document that direct intake renewals must lock the session first, or accept the deadlock-retry behaviour explicitly.",
+        "required_test": "Concurrent direct intake UPDATE vs app renewal on the same intake: one succeeds, the other gets 40P01/retryable, and the intake/session state stays consistent.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  }
+}

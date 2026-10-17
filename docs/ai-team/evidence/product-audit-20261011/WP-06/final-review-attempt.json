@@ -1,0 +1,175 @@
+{
+  "attempts": [
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "product-audit-WP-06-final-review",
+    "signals": {
+      "task_type": "review",
+      "complexity": "low",
+      "risk": "critical",
+      "risk_score": 20,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "permission",
+        "revenue_sharing",
+        "security",
+        "ui_only",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "ux_ui",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/components/app-shell.tsx",
+        "src/components/app-shell.test.ts",
+        "src/app/(app)/settings/commissions/page.tsx"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "low",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:bf36160c7a27a734d0b13d6061b968be736a3e42ea232b115155cdd94661c491",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/components/app-shell.tsx",
+      "src/components/app-shell.test.ts",
+      "src/app/(app)/settings/commissions/page.tsx"
+    ],
+    "required_checks": [
+      "navigation-tests",
+      "lint",
+      "typecheck",
+      "navigation-browser-smoke"
+    ],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/(app)/settings/commissions/page.tsx",
+      "src/components/app-shell.test.ts",
+      "src/components/app-shell.tsx"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "completed": false,
+  "review": {
+    "summary": "No defects found. WP-06 stays within the three files listed and makes no backend permission changes.\n\n**Navigation changes**\n- `/settings/commissions` no longer appears in either the sidebar or the account menu.\n- `/settings/line` was added with a new `ownerOnly` flag. The check only filters links, and it rejects every non-owner role before the finance and manager checks run.\n- The support and platform-admin paths return before that check, so they can never see the LINE link.\n- The new `/partner-pages` link uses the same rules as the existing `/team-templates` link: it needs the `funnel_builder` feature but not a manager role. Owner, admin and accountant see it; support does not.\n\n**Tests**\nThe new tests in `app-shell.test.ts` check:\n- LINE is visible to owners only, including for null and platform-admin roles.\n- Partner pages appear only when `funnel_builder` is enabled.\n- Every link shown to each supported role points to a real `page.tsx`, and the removed `/settings/commissions` link stays gone.\n\n**Legacy redirect**\nThe new `settings/commissions/page.tsx` only calls `redirect(\"/affiliates\")`, so it creates no new access path. The `/affiliates` page's own checks still apply, so a non-manager or a vendor without that feature is stopped there, not at the redirect.\n\n**Prior finding**\nThe earlier Opus review's only finding, missing redirect proof, is closed. The browser run shows `/settings/commissions` ending at `/affiliates` with status 200. It also shows every seeded owner sidebar and account-menu link, including `/settings/line` and `/partner-pages`, returning 200 at its own path.\n\n**Limits of this review**\n- I didn't check the sha256 hash against the files.\n- The browser run covers the owner role only. Whether an accountant can load `/partner-pages` depends on that page's own access check, which wasn't provided. Per the task it is vendor-scoped, and the new link follows the existing `/team-templates` pattern, so I'm not raising it as a defect.\n- An empty findings list doesn't confirm that the tests passed or that this is ready to release.",
+    "findings": []
+  }
+}

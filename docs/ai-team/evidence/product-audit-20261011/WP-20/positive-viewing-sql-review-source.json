@@ -1,0 +1,9 @@
+{
+  "sourceHashes": {
+    "prisma/migrations/20261016190000_live_metric_viewing_coverage/migration.sql": "392d3cf7e695a52f4400fd78ea6227778eea192c770ee032a0dafbc50dbf4170",
+    "src/lib/live-metric-viewing-coverage.ts": "4e93d7fcb6db850cdaffd96796328fd64636caba23215cdfeee9dd233129a2a8",
+    "prisma/schema.prisma": "99d155c2a906916cc1ed01b00c133dd557cad40b4a7df76bd39d2f27af695626"
+  },
+  "supplied": "complete migration131 and writer/completeDelivery predicate; schema2fields described",
+  "promptChars": 19283
+}

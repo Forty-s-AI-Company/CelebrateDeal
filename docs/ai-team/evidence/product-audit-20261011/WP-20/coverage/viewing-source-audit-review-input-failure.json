@@ -1,0 +1,17 @@
+{
+  "observed": {
+    "model": "unknown",
+    "source": "not_reported",
+    "effort": "unknown"
+  },
+  "completed": false,
+  "attempts": [],
+  "verification": {
+    "status": "INVALID_INPUT",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "reviewed": false,
+  "normalized_status": "INVALID_INPUT",
+  "status": "INVALID_INPUT"
+}

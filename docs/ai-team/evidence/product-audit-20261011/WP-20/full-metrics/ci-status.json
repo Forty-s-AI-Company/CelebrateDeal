@@ -1,0 +1,8 @@
+{
+  "existing_workflow": ".github/workflows/ci.yml",
+  "push_lint_unit_workflow": "EXISTS",
+  "remote_ci": "NOT_RUN",
+  "global_lint": "PREVIOUS_FAIL_299_EVIDENCE_CJS_ERRORS_NOT_RERUN",
+  "scoped_checks": "checks-scaled",
+  "no_rule_disabled": true
+}

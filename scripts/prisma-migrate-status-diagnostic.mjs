@@ -16,10 +16,10 @@ const PRISMA_ERROR_CATEGORY = Object.freeze({
   P3019: "migration-provider-mismatch",
 });
 
-// Canonical history contains both legacy 12-digit and current 14-digit
+// Canonical history contains 8-digit dates, legacy 12-digit and current 14-digit
 // timestamp prefixes. The directory name is still allowlisted by the caller.
-const SAFE_MIGRATION_NAME = /\b\d{12,14}_[a-z0-9_]+\b/gi;
-const SAFE_MIGRATION_NAME_EXACT = /^\d{12,14}_[a-z0-9_]+$/i;
+const SAFE_MIGRATION_NAME = /\b(?:\d{8}|\d{12,14})_[a-z0-9_]+\b/gi;
+const SAFE_MIGRATION_NAME_EXACT = /^(?:\d{8}|\d{12,14})_[a-z0-9_]+$/i;
 
 function safeText(value) {
   return typeof value === "string" ? value : "";

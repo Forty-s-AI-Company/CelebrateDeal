@@ -1,0 +1,10 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "WP04-prerequisite",
+  "revision": "sha256:d980a258e9342e086ee014d2222a6eb269acba1f8fda056835d833313ee37838",
+  "status": "WAITING_AUTHORIZATION",
+  "exit_code": null,
+  "source_receipt": "../WP-04/vercel-scheduler-live-inventory-20261016.json",
+  "detail": "Original WP04 not accepted: no verified deployed scheduler/heartbeat/isolation/fixedSandbox delivery evidence; prior nonproduction authorization already granted."
+}

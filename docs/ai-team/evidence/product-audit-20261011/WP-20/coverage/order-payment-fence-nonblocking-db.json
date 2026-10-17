@@ -1,0 +1,461 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 20,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "registrationVendorCascade": {
+    "status": "PASS",
+    "vendorDeleted": true,
+    "metricOrphans": 0,
+    "sourceOrphans": 0
+  },
+  "registrationTruncateProtection": {
+    "status": "PASS",
+    "cases": [
+      {
+        "table": "FormSubmission",
+        "rejected": true
+      },
+      {
+        "table": "Live",
+        "rejected": true
+      },
+      {
+        "table": "RegistrationForm",
+        "rejected": true
+      },
+      {
+        "table": "LiveMetricRegistration",
+        "rejected": true
+      }
+    ]
+  },
+  "matchedRegistrationAudit": {
+    "status": "PASS",
+    "mutationProtection": {
+      "status": "PASS",
+      "captureImmutable": "PASS",
+      "captureUnique": "PASS",
+      "registrationUnique": "PASS",
+      "projectionDeleteInvalidates": "PASS"
+    },
+    "matchedBothDirections": "PASS",
+    "stableDigest": "PASS",
+    "revokedSourceDetected": "PASS",
+    "privateProofPublish": "PASS",
+    "emptySourceProof": "PASS",
+    "auditToPublishRace": "PASS",
+    "revisionToInsertRace": "PASS",
+    "staleProofRejected": "PASS",
+    "projectionProofLifecycle": "PASS",
+    "coverage": "complete before revoke; unknown after revoke"
+  },
+  "registrationSourceConcurrency": {
+    "status": "PASS",
+    "submitted": 20,
+    "committed": 20,
+    "concurrentMs": 87,
+    "snapshotIsolation": "PASS",
+    "nextSnapshotSeesLateSource": "PASS",
+    "oldFormRowsRemainVisible": "PASS",
+    "reverseProjectionAudit": "PASS",
+    "bidirectionalSummary": "PASS",
+    "scope": "ReadCommitted concurrent calls; not synchronized Serializable payment acceptance"
+  },
+  "sourceInvalidation": [
+    {
+      "field": "verificationStatus",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "verifiedAt",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "formId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveFormId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    }
+  ],
+  "linkedFormOwnership": "REJECTED_BY_FOREIGN_KEY",
+  "noVideoMetricOwnership": "REJECTED_BY_IMMUTABLE_VERSION",
+  "roleSafeRevision": "PASS",
+  "revisionSnapshotConcurrency": "PASS",
+  "orderSourceAudit": {
+    "status": "PASS",
+    "coverageGuard": {
+      "status": "PASS",
+      "windowSource": {
+        "status": "PASS",
+        "apiRolesDenied": 3,
+        "immutableAndNoTruncate": "PASS",
+        "paymentWindowRevision": "PASS",
+        "repeatableReadSnapshot": "PASS",
+        "outsideWindowUnchanged": true,
+        "movedDateFencesBothWindows": true,
+        "relinkWindows": "PASS",
+        "unlinkedPaymentThenLink": "PASS",
+        "rollbackRestoresRevisions": "PASS",
+        "linkRace": {
+          "status": "PASS",
+          "schedules": [
+            {
+              "first": "payment",
+              "leaderIsolation": "ReadCommitted",
+              "followerIsolation": "ReadCommitted",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "committed"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "ReadCommitted",
+              "followerIsolation": "ReadCommitted",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "committed"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "ReadCommitted",
+              "followerIsolation": "RepeatableRead",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "40001"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "ReadCommitted",
+              "followerIsolation": "RepeatableRead",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "P2034"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "ReadCommitted",
+              "followerIsolation": "Serializable",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "40001"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "ReadCommitted",
+              "followerIsolation": "Serializable",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "P2034"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "RepeatableRead",
+              "followerIsolation": "ReadCommitted",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "committed"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "RepeatableRead",
+              "followerIsolation": "ReadCommitted",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "committed"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "RepeatableRead",
+              "followerIsolation": "RepeatableRead",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "40001"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "RepeatableRead",
+              "followerIsolation": "RepeatableRead",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "P2034"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "RepeatableRead",
+              "followerIsolation": "Serializable",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "40001"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "RepeatableRead",
+              "followerIsolation": "Serializable",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "P2034"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "Serializable",
+              "followerIsolation": "ReadCommitted",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "committed"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "Serializable",
+              "followerIsolation": "ReadCommitted",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "committed"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "Serializable",
+              "followerIsolation": "RepeatableRead",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "40001"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "Serializable",
+              "followerIsolation": "RepeatableRead",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "P2034"
+              }
+            },
+            {
+              "first": "payment",
+              "leaderIsolation": "Serializable",
+              "followerIsolation": "Serializable",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "40001"
+              }
+            },
+            {
+              "first": "relink",
+              "leaderIsolation": "Serializable",
+              "followerIsolation": "Serializable",
+              "status": "PASS",
+              "blockingObserved": true,
+              "followerResult": {
+                "status": "rejected",
+                "code": "P2034"
+              }
+            }
+          ],
+          "repeatableReadRace": "PASS",
+          "repeatableReadOutcome": {
+            "status": "rejected",
+            "code": "P2034"
+          },
+          "lockTimeoutRollback": "PASS",
+          "recoveryAfterLockRelease": "PASS",
+          "oldWindowInvalidated": true,
+          "newWindowInvalidated": true,
+          "committedMetadataVisible": true
+        },
+        "paymentFenceFacts": {
+          "status": "PASS",
+          "triggers": [
+            {
+              "name": "PaymentTransaction_metric_no_truncate",
+              "function": "wp20_metric_visit_no_truncate",
+              "enabled": "O"
+            },
+            {
+              "name": "PaymentTransaction_metric_source",
+              "function": "wp20_metric_order_source_changed",
+              "enabled": "O"
+            },
+            {
+              "name": "PaymentTransaction_metric_tenant_revision",
+              "function": "wp20_metric_order_tenant_changed",
+              "enabled": "O"
+            },
+            {
+              "name": "PaymentTransaction_metric_window_revision",
+              "function": "wp20_metric_order_window_changed",
+              "enabled": "O"
+            }
+          ],
+          "publications": [],
+          "foreignKey": {
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (\"vendorId\", \"primaryPaymentTransactionId\") REFERENCES \"PaymentTransaction\"(\"vendorId\", id) ON UPDATE CASCADE ON DELETE RESTRICT"
+          },
+          "terminalPaymentFieldsUnchanged": true,
+          "deltas": {
+            "old_window": 1,
+            "later_window": 1,
+            "tenant": 2,
+            "scoped": 2,
+            "audits": 0
+          },
+          "nonblocking": [
+            {
+              "isolationLevel": "RepeatableRead",
+              "sqlState": "P2034",
+              "staleWriteRejected": true,
+              "freshRetry": "PASS"
+            },
+            {
+              "isolationLevel": "Serializable",
+              "sqlState": "P2034",
+              "staleWriteRejected": true,
+              "freshRetry": "PASS"
+            }
+          ],
+          "vendorCascade": "PASS",
+          "scope": "Actual disposable catalog only; deployed databases and external CDC not inspected"
+        },
+        "scope": "Source ledger including payment commit before order relink commit; other schedules remain pending"
+      },
+      "outsideWindowLiveness": "PASS_WINDOW_ISOLATED",
+      "forcedProofConflict": "PASS",
+      "separateEmptyWindows": "PASS",
+      "auditedEmptyProof": "PASS",
+      "explicitExclusions": [
+        "other_purpose",
+        "other_live"
+      ],
+      "claimTenantFence": "PASS",
+      "finishTenantFence": "PASS",
+      "readyReportTenantFence": "PASS",
+      "revisionToInsertRace": "PASS",
+      "raceWritesNothing": "PASS",
+      "reauditRecovers": "PASS",
+      "producerMatched": "PASS",
+      "producerIdempotent": "PASS",
+      "producerIncompleteRejected": "PASS",
+      "auditToPublishRace": "PASS",
+      "validStored": 1,
+      "invalidRejected": 9,
+      "noRejectedRowsPersisted": true,
+      "legacyPositiveIgnored": true,
+      "tenantOnlyChangeInvalidates": true,
+      "restoringFactsDoesNotRevive": true,
+      "scope": "Storage/reader plus actual matched producer, incomplete refusal and audit-to-publish race; full WP remains incomplete"
+    },
+    "collectionToggleFenced": "PASS",
+    "historicalInventoryRetained": "PASS",
+    "databaseCancellation": "PASS",
+    "recoveryAfterCancellation": "PASS",
+    "tenantLedgerProtection": {
+      "status": "PASS",
+      "identityCases": [
+        {
+          "table": "CommerceOrder",
+          "outcome": "revision-increased"
+        },
+        {
+          "table": "PaymentTransaction",
+          "outcome": "revision-increased"
+        }
+      ],
+      "apiRolesDenied": 3,
+      "immutableUpdate": "PASS",
+      "immutableDelete": "PASS",
+      "truncateRejected": "PASS",
+      "sourceTablesTruncateRejected": "PASS",
+      "leastPrivilegeCount": "PASS"
+    },
+    "matchedOrders": 20,
+    "boundedEnumeration": "PASS",
+    "unattributedTenantRevision": "PASS",
+    "stableDigest": "PASS",
+    "tenantSnapshotConcurrency": "PASS",
+    "oneContextPerSnapshot": "PASS",
+    "overflowRejected": "PASS",
+    "readOnlyRequired": true,
+    "exclusionsVisible": true,
+    "sourceOrders": 20,
+    "missingProjectionsVisible": true,
+    "missingAttributionVisible": true,
+    "foreignScopeRejected": true,
+    "pagination": "PASS",
+    "coverage": "unknown"
+  },
+  "counts": {
+    "payments": 20,
+    "orders": 20,
+    "entitlements": 20
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "status": "PASS",
+  "scope": "same-project Preview exact limiter chain plus real disposable Redis via bounded HTTP bridge; NOT commercial Upstash service",
+  "results": {
+    "sandbox_before": {
+      "exit": 0,
+      "result": {
+        "mode": "one",
+        "http_status": 400,
+        "synthetic_reached": true,
+        "rate_limited": false,
+        "source_unavailable": false,
+        "provider_unavailable": false
+      }
+    },
+    "local_burst": {
+      "exit": 0,
+      "result": {
+        "mode": "burst",
+        "requests": 123,
+        "duration_seconds": 13.813,
+        "http_counts": {
+          "400": 120,
+          "429": 3
+        },
+        "synthetic_400_count": 120,
+        "confirmed_429_count": 3,
+        "within_window": true
+      }
+    },
+    "sandbox_after": {
+      "exit": 0,
+      "result": {
+        "mode": "one",
+        "http_status": 400,
+        "synthetic_reached": true,
+        "rate_limited": false,
+        "source_unavailable": false,
+        "provider_unavailable": false
+      }
+    },
+    "local_after": {
+      "exit": 0,
+      "result": {
+        "mode": "one",
+        "http_status": 429,
+        "synthetic_reached": false,
+        "rate_limited": true,
+        "source_unavailable": false,
+        "provider_unavailable": false
+      }
+    }
+  },
+  "business_database_operations": false,
+  "raw_ip_output": false
+}

@@ -1,0 +1,11 @@
+{
+  "status": "ok",
+  "keys": [
+    "status",
+    "deployment",
+    "message",
+    "next"
+  ],
+  "exit": 0,
+  "errors": []
+}

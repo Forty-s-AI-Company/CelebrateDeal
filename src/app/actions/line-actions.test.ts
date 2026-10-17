@@ -5,14 +5,18 @@ const mocks = vi.hoisted(() => ({
   requireVendorOwner: vi.fn(),
   upsert: vi.fn(),
   findUnique: vi.fn(),
-  update: vi.fn(),
+  update: vi.fn(), validate:vi.fn(),
   writeAuditLog: vi.fn(),
   revalidatePath: vi.fn(),
+  findMany:vi.fn(), draft:vi.fn(),draftUpdate:vi.fn(),
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ lineOfficialAccount: { upsert: mocks.upsert, findUnique: mocks.findUnique, update: mocks.update } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => {
+  const tx={lineOfficialAccount:{create:mocks.upsert,findMany:mocks.findMany,findFirst:mocks.findUnique,findUnique:mocks.findUnique,update:mocks.update,updateMany:mocks.validate},lineRichMenuDraft:{findFirst:mocks.draft,updateMany:mocks.draftUpdate}};
+  return {...tx,$transaction:async(callback:(value:typeof tx)=>Promise<unknown>)=>callback(tx)};
+} }));
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
@@ -22,6 +26,7 @@ import { protectLineOfficialAccountCredentials } from "@/lib/line-credentials";
 function credentialsForm() {
   const form = new FormData();
   form.set("_csrf", "valid");
+  form.set("displayName", "Synthetic course account");
   form.set("messagingChannelId", "2000123456");
   form.set("messagingChannelSecret", "messaging-secret-1234567890");
   form.set("messagingAccessToken", "access-token-with-at-least-thirty-two-characters");
@@ -40,10 +45,22 @@ describe("saveLineOfficialAccountAction", () => {
       member: { role: "owner" },
     });
     mocks.upsert.mockResolvedValue({ id: "line-account-1", status: "active", connectedAt: new Date("2026-09-05T00:00:00Z") });
-    mocks.findUnique.mockResolvedValue(null);
-    mocks.update.mockResolvedValue({});
+    mocks.findUnique.mockResolvedValue(null);mocks.findMany.mockResolvedValue([]);
+    mocks.update.mockResolvedValue({});mocks.validate.mockResolvedValue({count:1});
+    mocks.draft.mockResolvedValue(null);mocks.draftUpdate.mockResolvedValue({count:1});
   });
   afterEach(() => vi.unstubAllEnvs());
+  it("never overwrites another account when creating a new one",async()=>{
+    const existing=protectLineOfficialAccountCredentials("vendor-1",{messagingChannelId:"other-channel",messagingChannelSecret:"synthetic-other-secret-12345",messagingAccessToken:"synthetic-other-access-at-least-thirty-two",loginChannelId:null,loginChannelSecret:null});
+    mocks.findMany.mockResolvedValue([{id:"existing",...existing}]);
+    expect(await saveLineOfficialAccountAction({status:"idle",error:null},credentialsForm())).toEqual({status:"saved",error:null});
+    expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({isDefault:false,displayName:"Synthetic course account"})}));
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+  it("rejects a foreign explicit account before any update",async()=>{
+    const data=credentialsForm();data.set("accountId","foreign");
+    expect(await saveLineOfficialAccountAction({status:"idle",error:null},data)).toEqual({status:"error",error:"save_failed"});expect(mocks.update).not.toHaveBeenCalled();expect(mocks.upsert).not.toHaveBeenCalled();
+  });
 
   it("requires CSRF and owner authorization before saving only encrypted values", async () => {
     await expect(saveLineOfficialAccountAction({ status: "idle", error: null }, credentialsForm()))
@@ -52,7 +69,7 @@ describe("saveLineOfficialAccountAction", () => {
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledOnce();
     expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
     const payload = mocks.upsert.mock.calls[0]?.[0];
-    expect(payload.create.messagingChannelIdEncrypted).toMatch(/^v1\./u);
+    expect(payload.data.messagingChannelIdEncrypted).toMatch(/^v1\./u);
     expect(JSON.stringify(payload)).not.toContain("messaging-secret-1234567890");
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: "save_line_official_account",
@@ -87,7 +104,8 @@ describe("saveLineOfficialAccountAction", () => {
     }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await testLineOfficialAccountAction({ status: "idle", error: null, bot: null }, credentialsForm());
+    const connectionForm = credentialsForm();connectionForm.set("accountId","line-account-1");
+    const result = await testLineOfficialAccountAction({ status: "idle", error: null, bot: null }, connectionForm);
 
     expect(result).toEqual({
       status: "validated",
@@ -98,8 +116,8 @@ describe("saveLineOfficialAccountAction", () => {
       method: "GET",
       headers: { Authorization: "Bearer access-token-with-at-least-thirty-two-characters" },
     }));
-    expect(mocks.update).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1" },
+    expect(mocks.validate).toHaveBeenCalledWith({
+      where: { vendorId:"vendor-1", id:"line-account-1",...protectedCredentials },
       data: { lastValidatedAt: expect.any(Date) },
     });
     expect(JSON.stringify(result)).not.toContain("access-token-with-at-least-thirty-two-characters");
@@ -112,5 +130,11 @@ describe("saveLineOfficialAccountAction", () => {
       .resolves.toEqual({ status: "error", error: "not_configured", bot: null });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+  it("does not mark rotated credentials as validated after a stale connection check",async()=>{
+    mocks.findUnique.mockResolvedValue({id:"line-account-1",...protectLineOfficialAccountCredentials("vendor-1",{messagingChannelId:"2000123456",messagingChannelSecret:"synthetic-long-channel-secret",messagingAccessToken:"synthetic-access-at-least-thirty-two-characters",loginChannelId:null,loginChannelSecret:null})});
+    mocks.validate.mockResolvedValueOnce({count:0});vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({displayName:"Synthetic bot"})));
+    const data=credentialsForm();data.set("accountId","line-account-1");
+    expect(await testLineOfficialAccountAction({status:"idle",error:null,bot:null},data)).toEqual({status:"error",error:"connection_failed",bot:null});
   });
 });

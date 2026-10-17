@@ -1,0 +1,26 @@
+{
+  "scope": "120 renewal checkpoint; not full Goal diff",
+  "files": {
+    "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql": "09870ab15d12c60aa333ef8d3b72edd16f554a091e75b29d07030215ce142ed6",
+    "prisma/schema.prisma": "6034146d22a4a5a635d146376e2b2cf1884c35f9336695d7a7544051feec25f2",
+    "src/lib/live-metric-session.ts": "df008ac87d65607cc115d94186d396a21d84f67358466f31d3124ea44d6113b4",
+    "src/lib/live-metric-session.test.ts": "bb942f9bc9af2615b1034e1e0b06195e2b9cab7c8c8b2038b72868777682978d",
+    "src/lib/live-metric-clock.ts": "7445ae150c69ff4e7fd5a7e3b7e077c1dd1d66ae5d6ecef0c1ee7e718ff3a24e",
+    "src/lib/live-metric-clock.test.ts": "6ce78e5f25246aa6b588d14e795493255f8a94372e5b4cd446ed2f0853b6084d",
+    "src/lib/live-metric-collector.ts": "5770c3fef8d0f6cf692cfdc97bc297897458c32e7af58aa415e88c1025ad5ed9",
+    "src/lib/live-metric-collector.test.ts": "3525156354de669f17e7e5e1b83338616147bb5018d8768546a63265218c4da8",
+    "src/lib/live-metric-delivery.ts": "a04cbd317c0a2cfb9cb003e8840f89f3ce63508f29a4f921d3f15b5ec46e3fa2",
+    "src/lib/live-metric-delivery.test.ts": "0bd9a0ae59e1ce9fd39f6c5b278b3354a83fd3b04adf4502e1099d89cf67677a",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": "09c7b433fa66bf41a3a6b15dd8bfd8c75586c9af83a2ee334c6990d9fcb1646b",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.test.ts": "34047f27397f900c2d54933d1251c777d45ab1faa669136d826c9f2f1d2af171",
+    "scripts/wp20-playback-intake-disposable.mjs": "6c9197397d5c4d5e6de0c1f2916c41144a7b1278d63224e6e8358f50b1593028",
+    ".ai-team/reports/wp20-renewal-migration.py": "290d0b33fd0b0ecc83a60e7f76ce0a1a6d71cbd20c92b670043b300adfaf58ed",
+    ".ai-team/reports/wp20-renewal-refactor.py": "2709858446e57690a3fda89fd6d1a0908435201b76119528d7d10aed2df18992",
+    ".ai-team/reports/wp20-renewal-validate.py": "4dad73cfb29ebb3cf4e1d80e8f46af2b8aaa732a3c37093ebce2dc01fe765d20",
+    ".ai-team/reports/wp20-playback-renewal-review.ps1": "86e1a5d1576ce5bab4d7a288bd7092280fbdca5354792920390f8601d431ff16",
+    ".ai-team/reports/wp20-renewal-checkpoint.py": "456312bdba68eba7a68d42e1f8375c293259a2cfe45ffe85fcbfb546b4536b67",
+    "docs/launch/product-audit-20261012-handoff.md": "fad9e9adc1274bb3d2bb04003ab4d4ccb355cb063a68f0a6cae938f5830a5468",
+    "docs/launch/product-audit-20261011-progress.md": "91f3212c0172a921dc18a6698c81fa03ee0fad32131f8733998db018a914afd4",
+    "docs/launch/wp20-coverage-producer-contract.md": "f44bc1f26ea199f534fcd8385805e65a572fc46d443743c9002936c8610991bc"
+  }
+}

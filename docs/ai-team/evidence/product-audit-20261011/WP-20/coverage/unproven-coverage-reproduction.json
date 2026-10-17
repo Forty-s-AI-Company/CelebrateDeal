@@ -1,0 +1,29 @@
+{
+  "status": "REPRODUCED",
+  "stage": "complete",
+  "mode": "pre-fix-reproduction",
+  "checks": {},
+  "sourceHashes": {
+    "src/lib/live-metric-coverage-reader.ts": "119bc7cfa9f24c1a56b158c874d03a69ffab8409e7fb9599370056431c4eb474"
+  },
+  "observed": {
+    "visits": {
+      "rows": 1,
+      "coverage": {
+        "status": "complete"
+      }
+    },
+    "viewing": {
+      "rows": 1,
+      "coverage": {
+        "status": "complete"
+      }
+    }
+  },
+  "bugReproduced": true,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 124
+}

@@ -1,0 +1,11 @@
+# Authenticated reconciliation job adapter
+
+IN_PROGRESS. Revision sha256:bf99e5b069caf1e4808142824008aff600e6441c574e262ddebcf638f7a65ad8. Targeted job route tests, scoped lint and TypeScript PASS. No deployment or scheduled run performed; full HTTP+DB integration and independent review NOT_RUN for this adapter.
+
+Added POST /api/jobs/live-metric-registrations using existing requireJobSecret. Authorization precedes body parsing/DB creation. Strict shared service schema requires vendorId/liveId/versionId/afterSubmissionId/take; no default global scope. Body bounded1024 bytes, batch bounded1..20, maxDuration60. Responses (including401/400/503) are private,no-store. Pending/terminal counts, cursor, hasMore and unknown coverage are preserved. Exceptions return a fixed error without raw DB diagnostics or identities.
+
+Tests cover missing/wrong auth, absent configuration, missing scope/extra fields/out-of-range batches/bad cursors, malformed/oversized body, exact scoped dispatch, preservation of incomplete semantics and sanitized errors. Reconciler is mocked in route tests; actual DB143 evidence from reconcile-notes.md remains prior service evidence, not this route's end-to-end PASS. The only service change is exporting/renaming its existing request schema for reuse, without SQL/iteration changes.
+
+Scheduler contract: supply an authorized synthetic nonproduction scope, continue nextSubmissionId while hasMore, then begin a later full pass from null so delayed verification/retryable rows are revisited. A page/pass terminal status never closes coverage gaps. Pending production deployment remains unauthorized. Runtime scheduler/Preview execution is still not installed or verified; user nonproduction authorization already exists and does not need renewal.
+
+Scope: src/lib/live-metric-registration-reconcile.ts; src/app/api/jobs/live-metric-registrations/route.ts; src/app/api/jobs/live-metric-registrations/route.test.ts; evidence/handoff/checkpoint. Root sole writer independent worktree; requested/effective ai-team-pro, route-job-adapter.json recommendation, implementation observed unknown; depth0 no external dispatch automatic_spawn=false. Rollback only new route/tests and request-schema export rename; retain reconciliation storage and services.

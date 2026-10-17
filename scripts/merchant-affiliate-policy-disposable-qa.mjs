@@ -29,7 +29,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
     const errorCodes = [...new Set(detail.match(/\b(?:P\d{4}|42[0-9A-Z]{3}|23[0-9A-Z]{3})\b/gu) ?? [])];
     return { postgresCategories, errorCodes, knownMessages, safeLocations, knownConstraints, locations: [...new Set(detail.match(/merchant-affiliate-policy(?:\.db\.test)?\.ts:\d+:\d+/gu) ?? [])], exception: ["PrismaClientValidationError", "PrismaClientKnownRequestError", "PrismaClientUnknownRequestError", "ZodError", "AssertionError", "TypeError"].find(name => detail.includes(name)) ?? "UNCLASSIFIED", invariant: ["append-only", "immutable", "Invalid", "expected"].filter(term=>detail.includes(term)) };
   }));
-  const expectedSuites = ["/src/lib/merchant-affiliate-policy.db.test.ts", "/src/lib/payment-webhooks.test.ts"];
+  const expectedSuites = ["/src/lib/merchant-affiliate-policy.db.test.ts", "/src/lib/payment-webhooks.db.test.ts"];
   const exactSuite = report.testResults?.length === expectedSuites.length && expectedSuites.every(expected => report.testResults.some(suite => suite.name.replaceAll("\\", "/").endsWith(expected)));
   if (child.status !== 0 || !report.success || !exactSuite || report.numTotalTests !== 61 || report.numPassedTests !== 61 || report.numPendingTests !== 0) throw new Error("course-database-gate-failed");
 

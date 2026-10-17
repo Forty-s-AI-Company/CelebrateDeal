@@ -1,0 +1,178 @@
+{
+  "status": "IN_PROGRESS",
+  "scope": "Original WP17 one-entry webinar launch,3domain choices; data creation/publication action and defaultready-media entry; retain original8step advancedpath",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "routeAdvisory": {
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "implementationObserved": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "owner": "root solewriter, read-only sequential externalreviews, parentDepth0/maxDepth1/maxParallel1/automaticSpawnfalse",
+  "worktree": "C:/Users/eden/.codex/worktrees/product-audit-goal-plan/CelebrateDeal",
+  "base": "efb8b7e9",
+  "changedFiles": [
+    "src/app/actions/sales-workspace-actions.ts",
+    "src/app/(app)/lives/new/page.tsx",
+    "src/lib/sales-project-publication.ts",
+    "src/lib/sales-project-publication.test.ts",
+    "src/lib/quick-webinar.ts",
+    "src/lib/quick-webinar.test.ts",
+    "src/app/actions/quick-webinar-actions.ts",
+    "src/app/actions/quick-webinar-actions.test.ts",
+    "src/components/quick-webinar-form.tsx",
+    "src/components/quick-webinar-form.test.tsx",
+    "tests/e2e/wp17-quick-webinar.spec.ts"
+  ],
+  "sourceHashes": {
+    "src/app/actions/sales-workspace-actions.ts": "046ec76d0a50a4a6c8bc5b9be2ac6b6675ad7a1586cce782e454bb4ef79a4053",
+    "src/app/(app)/lives/new/page.tsx": "c9b19d595784d310d3dfb54b0d550010ab574c7de2997767e65ceb5f33c18c3a",
+    "src/lib/sales-project-publication.ts": "ece7265c8c20c9bf53e7dad0a5a694ad11a45b3505e4bd14d8ae9d5f49c7d567",
+    "src/lib/sales-project-publication.test.ts": "740f799751e3ef58ba2cf7730e9f0faf5d7f87fb0195de8174599a0c8938e4c7",
+    "src/lib/quick-webinar.ts": "172ad94a4c4a415f9b51fd35d31e3c7348a7c77d6d77d74ba70108f5b2ead4a4",
+    "src/lib/quick-webinar.test.ts": "b336061dc29d4ce8cb3d0d6eb07653ca0a3e912a0aec6bfc9df864c536537b90",
+    "src/app/actions/quick-webinar-actions.ts": "7426202d270ea9ed10f858262a0d8c63708bc1cd114b4ec554fbeeef128e0ddf",
+    "src/app/actions/quick-webinar-actions.test.ts": "a64642900de025ac0833d302b9e1fc6d2eaa394a9b0656a224d3c381ee4ceed5",
+    "src/components/quick-webinar-form.tsx": "901fc2ed24603d4a879577ee404d38c6ae256d1ea6c682a1ac5e773cab3ea9ae",
+    "src/components/quick-webinar-form.test.tsx": "af9146a835849bf11f36283fb78f0745d39bd019c2ee97aa14a81f87d6eafdf2",
+    "tests/e2e/wp17-quick-webinar.spec.ts": "26d0ac92a142f94c876faac3e89758dd639278e34ab93276cd114b8b9e4cd58f"
+  },
+  "decisionDefinition": {
+    "required": [
+      "owned ready VOD video with known duration",
+      "start time in vendor timezone"
+    ],
+    "optional": [
+      "title, otherwise persisted video title"
+    ],
+    "excludedFromDecisionCount": "submit command and navigation; no automatic claim that absent merchant prerequisites are satisfied",
+    "zeroProjectAccount": "Creates tenant-owned draft project, never synthesizes product/method verification",
+    "originalRequirementsPreserved": [
+      "3 generated pages",
+      "actual playable synthetic media pending",
+      "reminder receipt pendingWP04",
+      "missing items no published-success",
+      "WP02/WP04 original dependencies retained"
+    ]
+  },
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "tests": 46,
+      "files": 5,
+      "evidence": "unit.json"
+    },
+    "actualPG": {
+      "status": "PASS",
+      "checks": 13,
+      "evidence": "db.json"
+    },
+    "typecheck": {
+      "status": "PASS",
+      "session": 5488
+    },
+    "lint": {
+      "status": "PASS",
+      "session": 5488,
+      "errors": 0,
+      "warnings": 1,
+      "warningReason": "Deliberate full document navigation starts a fresh creation intent; no lint config/rule disabled; package lint allows warnings"
+    },
+    "publicationEligibilityExactExtraction": {
+      "status": "PASS",
+      "evidence": "publication-extraction-proof.json"
+    },
+    "criticalReview": {
+      "status": "REVIEW_COMPLETED",
+      "observedModels": [
+        "claude-opus-5-5",
+        "claude-opus-5-5"
+      ],
+      "effort": "unknown",
+      "latestFindings": 0
+    },
+    "build": {
+      "status": "PASS",
+      "evidence": "build.json",
+      "limitation": "Prior compile failure preserved in build-length-exception.json; cause unconfirmed."
+    },
+    "browser": {
+      "status": "FAIL",
+      "evidence": "browser.json",
+      "passed": 0,
+      "failed": 2,
+      "limitation": "Quick form control count and video selection failed; playback and downstream browser acceptance not verified."
+    },
+    "UIReview": {
+      "status": "REVIEW_COMPLETED",
+      "observedModels": [
+        "claude-opus-5-5",
+        "claude-opus-5-5"
+      ],
+      "effort": "unknown",
+      "latest": "ui-fixed-review.json",
+      "latestBlockerMajor": 0,
+      "retained": "low-confidence Back/cache MINOR, navigation semantic NIT"
+    },
+    "remoteCI": "NOT_RUN",
+    "providerDelivery": "NOT_RUN",
+    "wholeWP17Gate": "NOT_RUN"
+  },
+  "reviewDispositions": [
+    {
+      "finding": "implicit project republish",
+      "disposition": "fixed+source clarified",
+      "evidence": "No supported unpublish API exists; guard retains prior publishedAt draft offline, PG replay/newlaunch simulated historyPASS. Do not claim nonexistent action E2E or arbitrary deleted history detection."
+    },
+    {
+      "finding": "blank title after source rename",
+      "disposition": "fixed",
+      "evidence": "PG request reuse after renamePASS"
+    },
+    {
+      "finding": "project publication audit",
+      "disposition": "fixed",
+      "evidence": "Newquick publication auditPG PASS; original endpoint did not previously audit"
+    },
+    {
+      "finding": "confirmation mail asks verification again",
+      "disposition": "fixed",
+      "evidence": "Actual verify route triggers confirmed template afterverification; text nowconfirmed"
+    },
+    {
+      "finding": "global trigger fallback template",
+      "disposition": "rejected_with_reason",
+      "evidence": "Current send paths use input.template/live.messageTemplate/rule.messageTemplate; no send code changed, newrecords explicitlybound; finalqualifiedreview nofindings"
+    },
+    {
+      "finding": "RSC request ID changes",
+      "disposition": "fixed",
+      "evidence": "Client keeps initial submissionId viauseState; actualReactrerender unitPASS, browser replaypending"
+    },
+    {
+      "finding": "completed form editable with completed identity",
+      "severity": "MAJOR",
+      "disposition": "fixed",
+      "evidence": "ready/needs_attention locks inputs/removes submit; explicit建立另一場fullnavigation fetchesfreshID; ui-fixed review0B/M; actualsecondcreate browserpending"
+    },
+    {
+      "finding": "Back/router cached completed identity",
+      "severity": "MINOR",
+      "disposition": "retained_nonblocking",
+      "evidence": "Lowconfidence composition risk; server rejects different video/time/nonempty title for reusedrequest. No new routingcache framework; browserBack notyetverified."
+    }
+  ],
+  "notVerified": [
+    "fullHTTP/browser creation/publication/verification/media until current test runs",
+    "actual externalEmail/LINE reminder receipts and scheduler dependency",
+    "wholeWP17 canonical acceptance"
+  ],
+  "rollback": "owned.patch only11ownedfiles. Two before snapshots preserve priorwork; newfiles remove only after scope verification. No reset/clean/restore, originaldirtycheckout untouched.",
+  "safety": "Only synthetic loopback/disposable resources. No .env content/real secrets/customer/payment data; no provider sends/push/deploy. Internal test-only capabilities used in memory, no raw value logging/traces.",
+  "next": "Poll same freshbuild23856; afterPASS launch prepared wp17-browser-check.mjs using build.json.port. Do not edit product code during build or run concurrenttsc. Full browser actual2secWebM/time/registration+newmerchant+newintent pending."
+}

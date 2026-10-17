@@ -1,0 +1,9 @@
+{
+  "file": "scripts/wp20-metric-persistence-disposable.mjs",
+  "sha256": "9195da9c587745dedce4ad4d4ac5f63c6669f8b743e93f9b879ba1e051cb0f74",
+  "status": "PARTIAL_VALIDATION",
+  "nonzeroMetrics": "PASS in persistence-115-nonzero-pass-other-live-failure.json",
+  "originalSerializableGate": "NOT_REACHED",
+  "latestOtherLiveFixtureChange": "NOT_RERUN",
+  "review": "order-payment-serialization-review-disposition.json"
+}

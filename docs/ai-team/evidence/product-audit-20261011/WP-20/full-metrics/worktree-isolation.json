@@ -1,0 +1,7 @@
+{
+  "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "git_worktree_entry": "worktree C:/Users/eden/.codex/worktrees/product-audit-goal-plan/CelebrateDeal\nHEAD efb8b7e9a737ea30ea691870318d85bf74830331\ndetached",
+  "original_worktree_mutations_this_turn": false,
+  "commit_push_deploy_this_turn": false,
+  "scope": "All edits and tests in this turn used explicit isolated workdir or absolute isolated paths."
+}

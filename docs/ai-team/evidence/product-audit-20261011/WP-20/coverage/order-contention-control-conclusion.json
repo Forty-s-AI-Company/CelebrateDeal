@@ -1,0 +1,22 @@
+{
+  "acceptance": "FAIL",
+  "enabled": {
+    "committed": 11,
+    "writers": 20,
+    "conflicts": 28
+  },
+  "diagnosticOnlyDisabledTrigger": {
+    "committed": 13,
+    "writers": 20,
+    "conflicts": 26,
+    "acceptance": "NOT_APPLICABLE"
+  },
+  "triggerRestored": true,
+  "cleanup": "PASS",
+  "conclusion": "New metric trigger is not the sole source; baseline order transactions also conflict. Counts from one run do not establish relative regression or throughput.",
+  "sourceFacts": [
+    "payment-webhooks.ts processPaymentWebhook has two attempts for P2034/P2002",
+    "payments route failure preserves WebhookEvent failed with nextRetryAt and bounded signed-provider retry claim"
+  ],
+  "remaining": "Validate PostgreSQL dependency cause and actual webhook redelivery convergence without changing existing retry limits; current all-20 assertion still fails."
+}

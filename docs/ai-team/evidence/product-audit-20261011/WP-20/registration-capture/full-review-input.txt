@@ -1,0 +1,1841 @@
+Perform an independent Auth/Migration correctness/security review of supplied current source. Return only concrete BLOCKER/MAJOR/MINOR/NIT findings with file/evidence/impact/fix/required_test/confidence and summary. No tools, no actions. This is unfinished infrastructure, not a claim of final readiness. Prior actual disposable DB143, lint/tsc and targeted tests pass. They do not prove absence of bugs. No production deployment.
+Previous findings: optional capture SQL failure now has savepoint and restored timeouts; terminal/pending materialization states explicit; verifiedAt now DB clock; projection timestamp stays SQL; replay after verification returns existing capture; session fallback uses capture only when no registration exists; bounded scoped reconciler and authenticated job added. Please validate these fixes and look for cross-function/concurrency flaws, not merely style. Existing registration visitor FK is NO ACTION; submission/version parent deletion cascades metric records. No isolated visitor erasure API is claimed implemented. Evaluate actual invariant consequences, and clearly distinguish needed lifecycle policy from a proven regression.
+Scope excludes final durable coverage producer/report UI/deployed scheduler, still incomplete and honestly reported unknown. Do not report those absences as false completion. However identify code that would make future correctness impossible or expose unauthenticated writes. No automatic generation/enablement of collection keys/versions.
+
+FILE src/lib/live-metric-registration-capture.ts
+import { randomUUID } from "node:crypto";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { resolveMetricVisitContext } from "./live-metric-visit-context";
+import type { createMetricVisitorProofService } from "./live-metric-visitor-proof";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const Identity = z.object({ vendorId: id, liveId: id, submissionId: id }).strict();
+const CaptureIdentity = Identity.extend({ versionId: id }).strict();
+type Proofs = ReturnType<typeof createMetricVisitorProofService>;
+export class MetricRegistrationError extends Error {
+  constructor(readonly code: "INVALID_INPUT" | "SCOPE_UNAVAILABLE" | "IDENTITY_CONFLICT" | "PERSISTENCE_UNAVAILABLE") {
+    super("Metric registration unavailable"); this.name = "MetricRegistrationError";
+  }
+}
+
+/** Isolate optional metrics SQL from the business submission transaction.
+ * The caller still owns commit/rollback. Unavailable capture is an evidence gap,
+ * never evidence that collection was complete. A dead connection/expired outer
+ * transaction cannot be rescued; failed rollback is therefore propagated.
+ */
+export async function captureMetricRegistration(tx: Prisma.TransactionClient,
+  value: z.infer<typeof CaptureIdentity>, proofs: Proofs, proof: unknown = null) {
+  const parsed = CaptureIdentity.safeParse(value);
+  if (!parsed.success) throw new MetricRegistrationError("INVALID_INPUT");
+  return withCaptureBoundary(tx, () => captureMetricRegistrationInner(tx, parsed.data, proofs, proof));
+}
+
+/** Public form entry resolves current scope within the same failure boundary;
+ * even a context lookup failure cannot poison the business transaction. */
+export async function capturePublicMetricRegistration(tx: Prisma.TransactionClient,
+  value: z.infer<typeof Identity>, proofs: Proofs, proof: unknown = null) {
+  const parsed = Identity.safeParse(value);
+  if (!parsed.success) throw new MetricRegistrationError("INVALID_INPUT");
+  return withCaptureBoundary(tx, async () => {
+    const input = parsed.data;
+    const context = await resolveMetricVisitContext(tx, { vendorId: input.vendorId, liveId: input.liveId });
+    return captureMetricRegistrationInner(tx, { ...input, versionId: context.versionId }, proofs, proof);
+  });
+}
+
+async function withCaptureBoundary(tx: Prisma.TransactionClient, action: () => Promise<{ visitorId: string | null }>) {
+  // The identifier is generated internally, never interpolated from user data.
+  const savepoint = Prisma.raw(`metric_capture_${randomUUID().replaceAll("-", "")}`);
+  try { await tx.$executeRaw(Prisma.sql`SAVEPOINT ${savepoint}`); }
+  catch { throw new MetricRegistrationError("PERSISTENCE_UNAVAILABLE"); }
+  try {
+    const [settings] = await tx.$queryRaw<{ statement: string; lock: string }[]>(Prisma.sql`
+      SELECT current_setting('statement_timeout') AS statement,current_setting('lock_timeout') AS lock`);
+    await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','1000',true),set_config('lock_timeout','500',true)`);
+    const result = await action();
+    await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout',${settings.statement},true),set_config('lock_timeout',${settings.lock},true)`);
+    await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT ${savepoint}`);
+    return { status: "captured" as const, ...result };
+  } catch (error) {
+    try {
+      // PostgreSQL permits this even after a constraint/statement timeout error.
+      // It also restores SET LOCAL values and releases locks acquired since SAVEPOINT.
+      await tx.$executeRaw(Prisma.sql`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT ${savepoint}`);
+    } catch { throw new MetricRegistrationError("PERSISTENCE_UNAVAILABLE"); }
+    return { status: "unavailable" as const,
+      code: error instanceof MetricRegistrationError ? error.code : "PERSISTENCE_UNAVAILABLE" as const };
+  }
+}
+
+/** Internal only: the caller resolves version from public server context and
+ * calls this in the FIRST submission creation transaction, never on duplicate
+ * form submissions. Missing/invalid proofs preserve unknown attribution.
+ * A current cookie is never accepted later to repair an unknown capture.
+ */
+async function captureMetricRegistrationInner(tx: Prisma.TransactionClient,
+  value: z.infer<typeof CaptureIdentity>, proofs: Proofs, proof: unknown = null) {
+  const parsed = CaptureIdentity.safeParse(value);
+  if (!parsed.success) throw new MetricRegistrationError("INVALID_INPUT");
+  const input = parsed.data;
+  try {
+    // Existing provenance is independent of current verification/collection
+    // state. Return it before INSERT's guards run; never replace it on retries.
+    const existing = await tx.$queryRaw<{ vendorId: string; liveId: string; versionId: string; visitorId: string | null }[]>(Prisma.sql`
+      SELECT "vendorId","liveId","versionId","visitorId" FROM "LiveMetricRegistrationCapture" WHERE "submissionId"=${input.submissionId}`);
+    if (existing.length === 1) {
+      const row = existing[0];
+      if (row.vendorId !== input.vendorId || row.liveId !== input.liveId || row.versionId !== input.versionId)
+        throw new MetricRegistrationError("IDENTITY_CONFLICT");
+      return { visitorId: row.visitorId };
+    }
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "LiveMetricVersion" WHERE id=${input.versionId}
+      AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} FOR SHARE`);
+    const [version] = await tx.$queryRaw<{ nowAt: Date }[]>(Prisma.sql`
+      SELECT date_trunc('milliseconds',clock_timestamp()) AS "nowAt" FROM "LiveMetricVersion"
+      WHERE id=${input.versionId} AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId}
+        AND "collectionEnabled" AND "collectionStartedAt"<=clock_timestamp() AND "expiresAt">clock_timestamp()`);
+    if (!version) throw new MetricRegistrationError("SCOPE_UNAVAILABLE");
+    const scope = { vendorId: input.vendorId, liveId: input.liveId, versionId: input.versionId };
+    const verifiedVisitor = proofs.verify(proof, scope, +version.nowAt);
+    let visitorId: string | null = null;
+    if (verifiedVisitor !== null) {
+      const visitors = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT id FROM "LiveMetricVisitor" WHERE id=${verifiedVisitor} AND "vendorId"=${input.vendorId}
+          AND "liveId"=${input.liveId} AND "versionId"=${input.versionId} FOR KEY SHARE`);
+      visitorId = visitors.length === 1 ? visitors[0].id : null;
+    }
+    await tx.$executeRaw(Prisma.sql`INSERT INTO "LiveMetricRegistrationCapture"
+      ("submissionId","vendorId","liveId","versionId","visitorId")
+      VALUES (${input.submissionId},${input.vendorId},${input.liveId},${input.versionId},${visitorId})
+      ON CONFLICT ("submissionId") DO NOTHING`);
+    const rows = await tx.$queryRaw<{ visitorId: string | null }[]>(Prisma.sql`
+      SELECT "visitorId" FROM "LiveMetricRegistrationCapture" WHERE "submissionId"=${input.submissionId}
+        AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}`);
+    if (rows.length !== 1) throw new MetricRegistrationError("IDENTITY_CONFLICT");
+    return { visitorId: rows[0].visitorId };
+  } catch (error) {
+    if (error instanceof MetricRegistrationError) throw error;
+    const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.meta?.code : undefined;
+    if (code === "23514" || code === "23503") throw new MetricRegistrationError("SCOPE_UNAVAILABLE");
+    throw new MetricRegistrationError("PERSISTENCE_UNAVAILABLE");
+  }
+}
+
+/** Replayable projection after verification commits. Verification keeps its
+ * Serializable protection; metric writes retain their ReadCommitted guard.
+ * The persisted capture is the retry source, so no browser is required.
+ * Callers must schedule reconciliation and keep coverage unknown until drained.
+ */
+export async function materializeMetricRegistration(db: Pick<PrismaClient, "$transaction">,
+  value: z.infer<typeof Identity>, expectedVersionId?: string) {
+  const parsed = Identity.safeParse(value);
+  if (!parsed.success || (expectedVersionId !== undefined && !id.safeParse(expectedVersionId).success)) throw new MetricRegistrationError("INVALID_INPUT");
+  const input = parsed.data;
+  try {
+    return await db.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      const references = await tx.$queryRaw<{ versionId: string }[]>(Prisma.sql`
+        SELECT "versionId" FROM "LiveMetricRegistrationCapture" WHERE "submissionId"=${input.submissionId}
+          AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId}
+          ${expectedVersionId === undefined ? Prisma.empty : Prisma.sql`AND "versionId"=${expectedVersionId}`}`);
+      if (references.length !== 1) return { status: "missing_capture" as const, retryable: false };
+      const versionId = references[0].versionId;
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "LiveMetricVersion" WHERE id=${versionId}
+        AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} FOR SHARE`);
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Live" WHERE id=${input.liveId} AND "vendorId"=${input.vendorId} FOR SHARE`);
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "FormSubmission" WHERE id=${input.submissionId} FOR SHARE`);
+      // Keep timestamp precision and timezone conversion in PostgreSQL. The
+      // classifier separates retryable sources from terminal evidence gaps;
+      // neither terminal nor pending means coverage is complete.
+      const source = Prisma.sql`FROM "LiveMetricRegistrationCapture" c
+        LEFT JOIN "FormSubmission" f ON f.id=c."submissionId"
+        LEFT JOIN "RegistrationForm" form ON form.id=f."formId"
+        LEFT JOIN "Live" l ON l.id=c."liveId" AND l."vendorId"=c."vendorId"
+        LEFT JOIN "LiveMetricVersion" v ON v.id=c."versionId" AND v."vendorId"=c."vendorId" AND v."liveId"=c."liveId"
+        WHERE c."submissionId"=${input.submissionId} AND c."vendorId"=${input.vendorId}
+          AND c."liveId"=${input.liveId} AND c."versionId"=${versionId}`;
+      type State = "eligible" | "scope_changed" | "pending_verification" | "missing_verified_time"
+        | "clock_order_conflict" | "outside_retention" | "pending_clock";
+      const [eligibility] = await tx.$queryRaw<{ state: State }[]>(Prisma.sql`SELECT CASE
+        WHEN f.id IS NULL OR l.id IS NULL OR v.id IS NULL OR form."vendorId" IS DISTINCT FROM c."vendorId"
+          OR f."liveId" IS DISTINCT FROM c."liveId" OR f."formId" IS DISTINCT FROM l."formId" THEN 'scope_changed'
+        WHEN f."verificationStatus"='UNVERIFIED' THEN 'pending_verification'
+        WHEN f."verifiedAt" IS NULL THEN 'missing_verified_time'
+        WHEN (f."verifiedAt" AT TIME ZONE 'UTC')<c."capturedAt" THEN 'clock_order_conflict'
+        WHEN (f."verifiedAt" AT TIME ZONE 'UTC')>=v."expiresAt" THEN 'outside_retention'
+        WHEN (f."verifiedAt" AT TIME ZONE 'UTC')>clock_timestamp() THEN 'pending_clock'
+        ELSE 'eligible' END AS state ${source}`);
+      if (!eligibility) return { status: "missing_capture" as const, retryable: false };
+      if (eligibility.state !== "eligible") return {
+        status: eligibility.state,
+        retryable: eligibility.state === "pending_verification" || eligibility.state === "pending_clock",
+      };
+      await tx.$executeRaw(Prisma.sql`INSERT INTO "LiveMetricRegistration"
+        (id,"vendorId","liveId","versionId","submissionId","visitorId","verifiedAt")
+        SELECT ${randomUUID()},c."vendorId",c."liveId",c."versionId",c."submissionId",c."visitorId",
+          f."verifiedAt" AT TIME ZONE 'UTC' ${source}
+        ON CONFLICT ("vendorId","liveId","versionId","submissionId") DO NOTHING`);
+      const registrations = await tx.$queryRaw<{ id: string; identityMatches: boolean }[]>(Prisma.sql`
+        SELECT g.id, (g."visitorId" IS NOT DISTINCT FROM c."visitorId"
+          AND g."verifiedAt"=(f."verifiedAt" AT TIME ZONE 'UTC')) AS "identityMatches"
+        FROM "LiveMetricRegistration" g
+        JOIN "LiveMetricRegistrationCapture" c ON c."submissionId"=g."submissionId"
+          AND c."vendorId"=g."vendorId" AND c."liveId"=g."liveId" AND c."versionId"=g."versionId"
+        JOIN "FormSubmission" f ON f.id=g."submissionId"
+        WHERE g."vendorId"=${input.vendorId} AND g."liveId"=${input.liveId}
+          AND g."versionId"=${versionId} AND g."submissionId"=${input.submissionId}`);
+      if (registrations.length !== 1 || !registrations[0].identityMatches)
+        return { status: "identity_conflict" as const, retryable: false };
+      return { status: "recorded" as const, retryable: false, registrationId: registrations[0].id, versionId };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+  } catch (error) {
+    if (error instanceof MetricRegistrationError) throw error;
+    throw new MetricRegistrationError("PERSISTENCE_UNAVAILABLE");
+  }
+}
+
+
+FILE src/lib/live-metric-registration-reconcile.ts
+import { performance } from "node:perf_hooks";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { materializeMetricRegistration, MetricRegistrationError } from "./live-metric-registration-capture";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+export const MetricRegistrationReconcileRequest = z.object({ vendorId: id, liveId: id, versionId: id,
+  afterSubmissionId: id.nullable(), take: z.number().int().min(1).max(20) }).strict();
+type Database = Pick<PrismaClient, "$transaction">;
+
+/** Internal scheduler boundary; caller must authorize the supplied scope.
+ * Each pass visits captures, including unresolved/terminal ones, in stable key
+ * order. Continue with nextSubmissionId while hasMore, then start a NEW pass
+ * from null later so late verifications and failed writes are reconsidered.
+ * A completed page/pass is never proof of complete collection or zero loss.
+ */
+export async function reconcileMetricRegistrations(db: Database, value: z.infer<typeof MetricRegistrationReconcileRequest>) {
+  const parsed = MetricRegistrationReconcileRequest.safeParse(value);
+  if (!parsed.success) throw new MetricRegistrationError("INVALID_INPUT");
+  const input = parsed.data;
+  const started = performance.now();
+  let candidates: { submissionId: string }[];
+  try {
+    candidates = await db.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      const cursor = input.afterSubmissionId === null ? Prisma.empty : Prisma.sql`AND "submissionId">${input.afterSubmissionId}`;
+      return tx.$queryRaw<{ submissionId: string }[]>(Prisma.sql`
+        SELECT "submissionId" FROM "LiveMetricRegistrationCapture"
+        WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+          ${cursor} ORDER BY "submissionId" ASC LIMIT ${input.take + 1}`);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 7000, maxWait: 3000 });
+  } catch { throw new MetricRegistrationError("PERSISTENCE_UNAVAILABLE"); }
+  const page = candidates.slice(0, input.take);
+  const outcomes: Record<string, number> = {};
+  let processed = 0, retryable = 0, terminalGaps = 0;
+  let nextSubmissionId = input.afterSubmissionId;
+  for (const candidate of page) {
+    // One already-started projection may use its bounded 10s transaction plus
+    // 5s acquisition wait. Never start another after the 20s batch deadline.
+    if (performance.now() - started >= 20000) break;
+    try {
+      const result = await materializeMetricRegistration(db, {
+        vendorId: input.vendorId, liveId: input.liveId, submissionId: candidate.submissionId,
+      }, input.versionId);
+      outcomes[result.status] = (outcomes[result.status] ?? 0) + 1;
+      if (result.retryable) retryable++;
+      else if (result.status !== "recorded") terminalGaps++;
+    } catch {
+      outcomes.persistence_unavailable = (outcomes.persistence_unavailable ?? 0) + 1;
+      retryable++;
+    }
+    // Advance even over failures: a bad row cannot starve the rest of a pass.
+    // A new pass must revisit it; this cursor is NOT an acceptance watermark.
+    nextSubmissionId = candidate.submissionId;
+    processed++;
+  }
+  return { status: processed < page.length ? "budget_exhausted" as const : "batch_complete" as const,
+    processed, retryable, terminalGaps, outcomes, nextSubmissionId,
+    hasMore: processed < page.length || candidates.length > input.take,
+    coverage: "unknown" as const };
+}
+
+
+FILE src/lib/live-metric-registration-pass.ts
+import { z } from "zod";
+import { MetricRegistrationReconcileRequest } from "./live-metric-registration-reconcile";
+
+const count = z.number().int().min(0).max(20);
+const Receipt = z.object({ status: z.enum(["batch_complete", "budget_exhausted"]),
+  processed: count, retryable: count, terminalGaps: count,
+  outcomes: z.record(z.string(), count), nextSubmissionId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable(),
+  hasMore: z.boolean(), coverage: z.literal("unknown") }).strict();
+type Input = z.infer<typeof MetricRegistrationReconcileRequest>;
+type SendPage = (input: Input, signal: AbortSignal) => Promise<unknown>;
+
+/** One bounded scheduler pass. Transport supplies authentication and a reviewed
+ * target; this module never discovers hosts or credentials. Resume at the last
+ * acknowledged cursor after failures; start from null on a later full pass.
+ */
+export async function runMetricRegistrationPass(sendPage: SendPage, input: Input, maxPages = 5) {
+  const request = MetricRegistrationReconcileRequest.parse(input);
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 10) throw new Error("Invalid page budget");
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error("Pass deadline")); }, 60000);
+  });
+  let pages = 0, processed = 0, retryable = 0, terminalGaps = 0;
+  let cursor = request.afterSubmissionId;
+  const seen = new Set<string>(); if (cursor !== null) seen.add(cursor);
+  const result = (status: "pass_complete" | "page_limit" | "transport_unavailable" | "invalid_receipt" | "no_progress" | "deadline") =>
+    ({ status, pages, processed, retryable, terminalGaps, nextSubmissionId: cursor, coverage: "unknown" as const });
+  try {
+    while (pages < maxPages) {
+      let raw: unknown;
+      try { raw = await Promise.race([sendPage({ ...request, afterSubmissionId: cursor }, controller.signal), deadline]); }
+      catch { return result(controller.signal.aborted ? "deadline" : "transport_unavailable"); }
+      const parsed = Receipt.safeParse(raw);
+      if (!parsed.success) return result("invalid_receipt");
+      const page = parsed.data;
+      if (page.processed > request.take || page.retryable + page.terminalGaps > page.processed
+        || Object.values(page.outcomes).reduce((sum, n) => sum+n, 0) !== page.processed
+        || (page.processed === 0 && page.nextSubmissionId !== cursor)) return result("invalid_receipt");
+      if (page.processed > 0 && (page.nextSubmissionId === null || seen.has(page.nextSubmissionId))) return result("no_progress");
+      pages++; processed += page.processed; retryable += page.retryable; terminalGaps += page.terminalGaps;
+      cursor = page.nextSubmissionId; if (cursor !== null) seen.add(cursor);
+      if (!page.hasMore) return result("pass_complete");
+      if (page.processed === 0) return result("no_progress");
+    }
+    return result("page_limit");
+  } finally { clearTimeout(timer); controller.abort(); }
+}
+
+
+FILE src/lib/form-submission-verification-domain.ts
+import { materializeMetricRegistration } from "./live-metric-registration-capture";
+import { createHash } from "node:crypto";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
+
+export type FormSubmissionVerificationResult =
+  | { status: "invalid" }
+  | {
+      status: "already_verified";
+      chatSession: { submissionId: string };
+    }
+  | {
+      status: "verified";
+      chatSession: { submissionId: string };
+      confirmation: {
+        vendorId: string;
+        vendorName: string;
+        liveId: string;
+        liveSlug: string;
+        liveTitle: string;
+        formSubmissionId: string;
+        recipientName: string;
+        recipientEmail: string;
+        liveScheduledAt: Date;
+        liveReminderOffsetMinutes: number;
+        emailBrand: {
+          senderName: string | null;
+          supportEmail: string | null;
+          contactUrl: string | null;
+        };
+        template: {
+          id: string;
+          vendorId: string;
+          channel: string;
+          trigger: string;
+          subject: string | null;
+          body: string;
+          isActive: boolean;
+        } | null;
+        reminderTemplate: {
+          id: string;
+          vendorId: string;
+          channel: string;
+          trigger: string;
+          subject: string | null;
+          body: string;
+          isActive: boolean;
+        } | null;
+      } | null;
+    };
+
+function matchesCurrentVerificationClaim(
+  submission: {
+    verificationVersion: number;
+    verificationExpiresAt: Date | null;
+  },
+  verifiedToken: { version: number; expiresAt: Date },
+  now: Date,
+) {
+  return submission.verificationVersion === verifiedToken.version
+    && Boolean(submission.verificationExpiresAt)
+    && Math.floor(submission.verificationExpiresAt!.getTime() / 1_000)
+      === Math.floor(verifiedToken.expiresAt.getTime() / 1_000)
+    && submission.verificationExpiresAt! > now;
+}
+
+export async function verifyFormSubmission(
+  db: PrismaClient,
+  token: string,
+  now = new Date(),
+): Promise<FormSubmissionVerificationResult> {
+  const verifiedToken = verifyFormSubmissionVerificationToken(token, now);
+  if (!verifiedToken) return { status: "invalid" };
+
+  let metricIdentity: { vendorId: string; liveId: string; submissionId: string } | null = null;
+  const result = await db.$transaction(async (tx) => {
+    const submission = await tx.formSubmission.findUnique({
+      where: { id: verifiedToken.submissionId },
+      select: {
+        id: true,
+        formId: true,
+        liveId: true,
+        name: true,
+        email: true,
+        verificationStatus: true,
+        verificationVersion: true,
+        verificationExpiresAt: true,
+        form: {
+          select: {
+            vendorId: true,
+            vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+          },
+        },
+        affiliateClick: {
+          select: { id: true, vendorId: true, affiliateId: true, referralCode: true },
+        },
+        live: {
+          select: {
+            id: true,
+            vendorId: true,
+            formId: true,
+            slug: true,
+            title: true,
+            scheduledAt: true,
+            liveReminderOffsetMinutes: true,
+            messageTemplate: {
+              select: {
+                id: true,
+                vendorId: true,
+                channel: true,
+                trigger: true,
+                subject: true,
+                body: true,
+                isActive: true,
+              },
+            },
+            liveReminderTemplate: {
+              select: {
+                id: true,
+                vendorId: true,
+                channel: true,
+                trigger: true,
+                subject: true,
+                body: true,
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!submission) return { status: "invalid" as const };
+    if (
+      submission.liveId !== null
+      && (!submission.live
+        || submission.live.vendorId !== submission.form.vendorId
+        || submission.live.formId !== submission.formId)
+    ) {
+      return { status: "invalid" as const };
+    }
+    // Scope comes only from the validated persisted submission. The projection
+    // below runs only after token validation succeeds and this transaction commits.
+    metricIdentity = submission.liveId
+      ? { vendorId: submission.form.vendorId, liveId: submission.liveId, submissionId: submission.id }
+      : null;
+    if (submission.verificationStatus === "VERIFIED") {
+      return matchesCurrentVerificationClaim(submission, verifiedToken, now)
+        ? {
+            status: "already_verified" as const,
+            chatSession: { submissionId: submission.id },
+          }
+        : { status: "invalid" as const };
+    }
+    if (!matchesCurrentVerificationClaim(submission, verifiedToken, now)) {
+      return { status: "invalid" as const };
+    }
+
+    // Authentication still uses the supplied verification clock above. The
+    // persisted event time uses the same DB clock as capture/viewing evidence,
+    // so application clock skew cannot reverse their recorded ordering.
+    // Keep the exact conditional claim and Serializable transaction unchanged.
+    const claimedCount = await tx.$executeRaw(Prisma.sql`
+      UPDATE "FormSubmission" SET "verificationStatus"='VERIFIED',
+        "verifiedAt"=date_trunc('milliseconds',clock_timestamp()) AT TIME ZONE 'UTC'
+      WHERE id=${submission.id} AND "verificationStatus"='UNVERIFIED'
+        AND "verificationVersion"=${verifiedToken.version}
+        AND "verificationExpiresAt"=(${submission.verificationExpiresAt}::timestamptz AT TIME ZONE 'UTC')`);
+    if (claimedCount !== 1) {
+      const current = await tx.formSubmission.findUnique({
+        where: { id: submission.id },
+        select: {
+          verificationStatus: true,
+          verificationVersion: true,
+          verificationExpiresAt: true,
+        },
+      });
+      return current?.verificationStatus === "VERIFIED"
+        && matchesCurrentVerificationClaim(current, verifiedToken, now)
+        ? {
+            status: "already_verified" as const,
+            chatSession: { submissionId: submission.id },
+          }
+        : { status: "invalid" as const };
+    }
+
+    if (submission.liveId) {
+      await tx.analyticsEvent.create({
+        data: {
+          vendorId: submission.form.vendorId,
+          liveId: submission.liveId,
+          visitorId: createHash("sha256").update(submission.id).digest("hex"),
+          eventType: "lead_submit",
+          trustLevel: "VERIFIED_FORM_SUBMISSION",
+          payload: {
+            formId: submission.formId,
+            ref: submission.affiliateClick?.referralCode ?? null,
+          },
+        },
+      });
+    }
+
+    if (submission.affiliateClick) {
+      await tx.affiliateClick.updateMany({
+        where: {
+          id: submission.affiliateClick.id,
+          vendorId: submission.form.vendorId,
+          affiliateId: submission.affiliateClick.affiliateId,
+          referralCode: submission.affiliateClick.referralCode,
+          convertedAt: null,
+        },
+        data: { convertedAt: now },
+      });
+    }
+
+    return {
+      status: "verified" as const,
+      chatSession: { submissionId: submission.id },
+      confirmation: submission.live ? {
+        vendorId: submission.form.vendorId,
+        vendorName: submission.form.vendor.name,
+        liveId: submission.live.id,
+        liveSlug: submission.live.slug,
+        liveTitle: submission.live.title,
+        formSubmissionId: submission.id,
+        recipientName: submission.name,
+        recipientEmail: submission.email,
+        liveScheduledAt: submission.live.scheduledAt,
+        liveReminderOffsetMinutes: submission.live.liveReminderOffsetMinutes,
+        emailBrand: {
+          senderName: submission.form.vendor.senderName,
+          supportEmail: submission.form.vendor.supportEmail,
+          contactUrl: submission.form.vendor.contactUrl,
+        },
+        template: submission.live.messageTemplate,
+        reminderTemplate: submission.live.liveReminderTemplate,
+      } : null,
+    };
+  }, { isolationLevel: "Serializable" });
+  if (result.status !== "invalid" && metricIdentity) {
+    try {
+      // Separate bounded ReadCommitted transaction; no current browser identity
+      // is used. Repeated verification can replay a previously failed projection.
+      await materializeMetricRegistration(db, metricIdentity);
+    } catch {
+      // Verification is already committed. Preserve its success; the durable
+      // capture remains the reconciliation source, and coverage stays unknown.
+      // Never log SQL, a verification credential, or a customer identity here.
+    }
+  }
+  return result;
+}
+
+
+FILE src/lib/live-metric-version.ts
+import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import { MetricIngestError, type MetricIngestIdentity } from "./live-metric-ingestion";
+import type { MetricSessionContext } from "./live-metric-session";
+import { resolveLiveRuntimeWindow } from "./live-runtime-state";
+import { parseSafeExternalHttpUrl } from "./external-url";
+import { isExistingLiveVideoReady } from "./live-video-readiness";
+
+type MetricVideoContent = {
+  id: string; vendorId: string; sourceType: string; videoUrl: string; durationSec: number;
+  cloudflareStreamUid: string | null; cloudflareLiveInputUid: string | null; cloudflarePlaybackId: string | null;
+};
+
+/** Content identifiers only: no titles, signed viewer credentials or stream keys.
+ * This identifies the stored source configuration, not a hash of remote bytes.
+ * Provisioning and lookup must share this exact versioned serialization.
+ */
+export function metricVideoFingerprint(video: MetricVideoContent): string {
+  return createHash("sha256").update(JSON.stringify(["metric-video-v1", video.vendorId, video.id,
+    video.sourceType, video.videoUrl, video.durationSec, video.cloudflareStreamUid,
+    video.cloudflareLiveInputUid, video.cloudflarePlaybackId])).digest("hex");
+}
+
+/** Called inside issuance after Live/submission/admission locks. The Video lock
+ * precedes metric version locks. Never read secrets or enable/create a version.
+ */
+export async function resolveMetricSessionContext(tx: Prisma.TransactionClient, identity: MetricIngestIdentity): Promise<MetricSessionContext> {
+  const reference = await tx.live.findFirst({ where: { id: identity.liveId, vendorId: identity.vendorId }, select: { videoId: true } });
+  if (!reference?.videoId) throw new MetricIngestError("not_authorized");
+  await tx.$queryRaw(Prisma.sql`SELECT id FROM "Video" WHERE id=${reference.videoId} AND "vendorId"=${identity.vendorId} FOR SHARE`);
+  const live = await tx.live.findFirst({
+    where: { id: identity.liveId, vendorId: identity.vendorId },
+    select: {
+      streamMode: true, scheduledAt: true, status: true, startedAt: true, endedAt: true,
+      replayAvailableUntil: true, replayEnabled: true,
+      video: { select: { id: true, vendorId: true, sourceType: true, videoUrl: true, durationSec: true,
+        cloudflareStreamUid: true, cloudflareLiveInputUid: true, cloudflarePlaybackId: true,
+        status: true, cloudflareReadyToStream: true, liveInputStatus: true } },
+    },
+  });
+  if (!live?.video || live.video.vendorId !== identity.vendorId || !isExistingLiveVideoReady(live.video)) throw new MetricIngestError("not_authorized");
+  if (!Number.isSafeInteger(live.video.durationSec) || live.video.durationSec < 0
+    || (live.video.sourceType !== "browser_live" && !parseSafeExternalHttpUrl(live.video.videoUrl))) throw new MetricIngestError("not_authorized");
+  const [{ now }] = await tx.$queryRaw<{ now: Date }[]>(Prisma.sql`SELECT clock_timestamp() AS now`);
+  const runtime = resolveLiveRuntimeWindow(live, now);
+  if (runtime.state !== "playing" && runtime.state !== "replay") throw new MetricIngestError("not_authorized");
+  const mode = runtime.state === "replay" ? "replay" : "live";
+  const durationMs = live.video.durationSec > 0 ? live.video.durationSec * 1000 : null;
+  if (durationMs !== null && (!Number.isSafeInteger(durationMs) || durationMs > 2147483647)) throw new MetricIngestError("not_authorized");
+  const fingerprint = metricVideoFingerprint(live.video);
+  const versions = await tx.$queryRaw<{ id: string; expiresAt: Date; durationMs: number | null }[]>(Prisma.sql`
+    SELECT id,"expiresAt","durationMs" FROM "LiveMetricVersion"
+    WHERE "vendorId"=${identity.vendorId} AND "liveId"=${identity.liveId} AND "videoId"=${live.video.id}
+      AND mode=${mode} AND fingerprint=${fingerprint} AND "collectionEnabled"
+      AND "collectionStartedAt"<=clock_timestamp() AND "expiresAt">clock_timestamp() FOR SHARE`);
+  if (versions.length !== 1 || versions[0].durationMs !== durationMs) throw new MetricIngestError("not_authorized");
+  const visitorId = await resolveMetricRegistrationVisitor(tx, identity, versions[0].id);
+  return { versionId: versions[0].id, expiresAt: new Date(Math.min(+versions[0].expiresAt, runtime.endsAt ? +runtime.endsAt : Infinity)), visitorId };
+}
+
+/** Reuse only the immutable first-registration binding for the same verified
+ * epoch. Current viewing cookies/IP/admission credentials cannot establish the
+ * historical registration source. Before projection commits, immutable first-
+ * submission capture may provide the source; an existing registration (even
+ * unknown or from another verified epoch) always prevents that fallback.
+ */
+export async function resolveMetricRegistrationVisitor(tx: Prisma.TransactionClient,
+  identity: MetricIngestIdentity, versionId: string): Promise<string | null> {
+  const rows = await tx.$queryRaw<{ visitorId: string }[]>(Prisma.sql`
+    SELECT r."visitorId" FROM "LiveMetricRegistration" r
+    JOIN "FormSubmission" f ON f.id=r."submissionId" AND f."liveId"=r."liveId"
+    JOIN "RegistrationForm" form ON form.id=f."formId" AND form."vendorId"=r."vendorId"
+    JOIN "Live" l ON l.id=r."liveId" AND l."vendorId"=r."vendorId" AND l."formId"=f."formId"
+    JOIN "LiveMetricVisitor" v ON v.id=r."visitorId" AND v."vendorId"=r."vendorId"
+      AND v."liveId"=r."liveId" AND v."versionId"=r."versionId"
+    WHERE r."vendorId"=${identity.vendorId} AND r."liveId"=${identity.liveId}
+      AND r."versionId"=${versionId} AND r."submissionId"=${identity.submissionId}
+      AND f."verificationStatus"='VERIFIED' AND f."verifiedAt" IS NOT NULL
+      AND r."verifiedAt"=f."verifiedAt" AT TIME ZONE 'UTC'
+    UNION ALL
+    SELECT c."visitorId" FROM "LiveMetricRegistrationCapture" c
+    JOIN "FormSubmission" f ON f.id=c."submissionId" AND f."liveId"=c."liveId"
+    JOIN "RegistrationForm" form ON form.id=f."formId" AND form."vendorId"=c."vendorId"
+    JOIN "Live" l ON l.id=c."liveId" AND l."vendorId"=c."vendorId" AND l."formId"=f."formId"
+    JOIN "LiveMetricVisitor" v ON v.id=c."visitorId" AND v."vendorId"=c."vendorId"
+      AND v."liveId"=c."liveId" AND v."versionId"=c."versionId"
+    JOIN "LiveMetricVersion" version ON version.id=c."versionId" AND version."vendorId"=c."vendorId" AND version."liveId"=c."liveId"
+    WHERE c."vendorId"=${identity.vendorId} AND c."liveId"=${identity.liveId}
+      AND c."versionId"=${versionId} AND c."submissionId"=${identity.submissionId}
+      AND f."verificationStatus"='VERIFIED' AND f."verifiedAt" IS NOT NULL
+      AND (f."verifiedAt" AT TIME ZONE 'UTC')>=c."capturedAt"
+      AND (f."verifiedAt" AT TIME ZONE 'UTC')<version."expiresAt"
+      AND (f."verifiedAt" AT TIME ZONE 'UTC')<=clock_timestamp()
+      AND NOT EXISTS (SELECT 1 FROM "LiveMetricRegistration" existing
+        WHERE existing."vendorId"=c."vendorId" AND existing."liveId"=c."liveId"
+          AND existing."versionId"=c."versionId" AND existing."submissionId"=c."submissionId")`);
+  return rows.length === 1 ? rows[0].visitorId : null;
+}
+
+
+FILE src/lib/live-metric-session.ts
+import { createHash, randomUUID } from "node:crypto";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { MetricIngestError, type MetricIngestAuthorization, type MetricIngestIdentity } from "./live-metric-ingestion";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const IdentitySchema = z.object({ vendorId: id, liveId: id, submissionId: id, admissionId: id }).strict();
+const RequestSchema = z.object({ requestId: z.string().uuid() }).strict();
+const ContextSchema = z.object({ versionId: id, expiresAt: z.date(), visitorId: id.nullable().optional() }).strict();
+export type MetricSessionContext = z.infer<typeof ContextSchema>;
+export type MetricSessionContextResolver = (tx: Prisma.TransactionClient, identity: MetricIngestIdentity) => Promise<MetricSessionContext>;
+export type MetricSessionAuthorizer = Exclude<MetricIngestAuthorization, MetricIngestIdentity>;
+export type MetricSessionReceipt = {
+  sessionId: string; versionId: string; anchorAtMs: number; expiresAtMs: number;
+  durationMs: number | null; lastSequence: number; lastElapsedMs: number;
+};
+// Resource bounds, not analytics denominators or a data-retention policy.
+export const METRIC_SESSION_LIMITS = { openPerAdmission: 16, totalPerAdmission: 64, totalPerRegistration: 256 } as const;
+export class MetricSessionLimitError extends Error {
+  constructor(readonly reason: "open" | "admission_total" | "registration_total" = "open") { super("Metric session limit reached"); this.name = "MetricSessionLimitError"; }
+}
+type SessionRow = { id: string; anchorAt: Date; expiresAt: Date; lastSequence: number; lastElapsedMs: number; closedAt: Date | null };
+
+/** Only an idempotency key comes from the browser. Version, lifetime and any
+ * proven first-party visitor association belong to the server context.
+ */
+export function parseMetricSessionRequest(value: unknown) {
+  const parsed = RequestSchema.safeParse(value);
+  if (!parsed.success) throw new MetricIngestError("invalid_payload");
+  return parsed.data;
+}
+
+function assertIdentity(value: unknown): asserts value is MetricIngestIdentity {
+  if (!IdentitySchema.safeParse(value).success) throw new MetricIngestError("not_authorized");
+}
+
+/** Provision only against an already-enabled version. No defaults enable
+ * collection or decide retention. Caller supplies the isolated provisioning
+ * lifetime; the effective session also cannot outlive its version/admission.
+ */
+export async function issueMetricSession(
+  db: Pick<PrismaClient, "$transaction">,
+  authorize: MetricSessionAuthorizer,
+  contextSource: MetricSessionContext | MetricSessionContextResolver,
+  value: unknown,
+): Promise<MetricSessionReceipt> {
+  const request = parseMetricSessionRequest(value);
+  if (typeof contextSource !== "function" && !ContextSchema.safeParse(contextSource).success) throw new MetricIngestError("invalid_payload");
+  return db.$transaction(async (tx) => {
+    const identity = await authorize(tx, "resolve");
+    assertIdentity(identity);
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "Live" WHERE id=${identity.liveId} AND "vendorId"=${identity.vendorId} FOR SHARE`);
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "FormSubmission" WHERE id=${identity.submissionId} FOR NO KEY UPDATE`);
+    // Serialize issuance for one admission without upgrading a later version
+    // lock. Interval ingestion takes these same source locks in the same order.
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "LiveViewerSession" WHERE id=${identity.admissionId} FOR NO KEY UPDATE`);
+    const context = typeof contextSource === "function" ? await contextSource(tx, identity) : contextSource;
+    if (!ContextSchema.safeParse(context).success) throw new MetricIngestError("invalid_payload");
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "LiveMetricVersion" WHERE id=${context.versionId} AND "vendorId"=${identity.vendorId} AND "liveId"=${identity.liveId} FOR SHARE`);
+    const sources = await tx.$queryRaw<{ verifiedAt: Date; durationMs: number | null; expiresAt: Date }[]>(Prisma.sql`
+      SELECT f."verifiedAt" AT TIME ZONE 'UTC' AS "verifiedAt", v."durationMs",
+        LEAST(v."expiresAt", a."expiresAt" AT TIME ZONE 'UTC', ${context.expiresAt}::timestamptz) AS "expiresAt"
+      FROM "Live" l
+      JOIN "FormSubmission" f ON f."liveId"=l.id AND f."formId"=l."formId"
+      JOIN "RegistrationForm" rf ON rf.id=f."formId" AND rf."vendorId"=l."vendorId"
+      JOIN "LiveViewerSession" a ON a."liveId"=l.id AND a."vendorId"=l."vendorId"
+      JOIN "LiveMetricVersion" v ON v."liveId"=l.id AND v."vendorId"=l."vendorId" AND v."videoId" IS NOT DISTINCT FROM l."videoId"
+      WHERE l.id=${identity.liveId} AND l."vendorId"=${identity.vendorId}
+        AND f.id=${identity.submissionId} AND a.id=${identity.admissionId} AND v.id=${context.versionId}
+        AND f."verificationStatus"='VERIFIED' AND f."verifiedAt" IS NOT NULL
+        AND f."verifiedAt"<=(clock_timestamp() AT TIME ZONE 'UTC')
+        AND a."createdAt"<=(clock_timestamp() AT TIME ZONE 'UTC')
+        AND v."collectionEnabled" AND v."collectionStartedAt"<=clock_timestamp()
+        AND v."expiresAt">clock_timestamp() AND a."expiresAt">(clock_timestamp() AT TIME ZONE 'UTC')
+        AND ${context.expiresAt}::timestamptz>clock_timestamp()`);
+    if (sources.length !== 1) throw new MetricIngestError("not_authorized");
+    const source = sources[0];
+    if (context.visitorId != null) {
+      const visitors = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM "LiveMetricVisitor"
+        WHERE id=${context.visitorId} AND "vendorId"=${identity.vendorId} AND "liveId"=${identity.liveId} AND "versionId"=${context.versionId}`);
+      if (visitors.length !== 1) throw new MetricIngestError("not_authorized");
+    }
+    await tx.$executeRaw(Prisma.sql`INSERT INTO "LiveMetricRegistration"
+      (id,"vendorId","liveId","versionId","submissionId","visitorId","verifiedAt")
+      VALUES (${randomUUID()},${identity.vendorId},${identity.liveId},${context.versionId},${identity.submissionId},${context.visitorId ?? null},${source.verifiedAt})
+      ON CONFLICT ("vendorId","liveId","versionId","submissionId") DO NOTHING`);
+    const registrations = await tx.$queryRaw<{ id: string; verifiedAt: Date; visitorId: string | null }[]>(Prisma.sql`
+      SELECT id,"verifiedAt","visitorId" FROM "LiveMetricRegistration" WHERE "vendorId"=${identity.vendorId}
+        AND "liveId"=${identity.liveId} AND "versionId"=${context.versionId} AND "submissionId"=${identity.submissionId}`);
+    const registration = registrations[0];
+    // This is first-registration attribution, not a device access restriction.
+    // Later devices (or initially unknown attribution) never rewrite history.
+    // A changed verification epoch remains fail-closed: it is not the same
+    // immutable cohort fact and must not silently inherit old viewing evidence.
+    if (!registration || +registration.verifiedAt !== +source.verifiedAt) throw new MetricIngestError("not_authorized");
+    // Binding the key to all server identities prevents cross-tenant/key replay.
+    const sessionId = `ms_${createHash("sha256").update(JSON.stringify([identity.vendorId, identity.liveId, context.versionId, identity.submissionId, identity.admissionId, request.requestId.toLowerCase()])).digest("hex")}`;
+    const existing = await tx.$queryRaw<SessionRow[]>(Prisma.sql`SELECT id,"anchorAt","expiresAt","lastSequence","lastElapsedMs","closedAt"
+      FROM "LiveMetricSession" WHERE id=${sessionId} AND "registrationId"=${registration.id}
+        AND "admissionSessionId"=${identity.admissionId} AND "versionId"=${context.versionId} FOR UPDATE`);
+    // All blocking source/registration/session work precedes the final
+    // moderation decision, matching interval ingestion's revalidation contract.
+    if (typeof contextSource === "function") {
+      // A lock wait may cross a playback/replay boundary even though no source
+      // row changed. Re-resolve server context before the final auth decision.
+      const refreshed = await contextSource(tx, identity);
+      if (!ContextSchema.safeParse(refreshed).success || refreshed.versionId !== context.versionId
+        || +refreshed.expiresAt < +source.expiresAt) throw new MetricIngestError("not_authorized");
+    }
+    const current = await authorize(tx, "revalidate");
+    assertIdentity(current);
+    if (current.vendorId !== identity.vendorId || current.liveId !== identity.liveId
+      || current.submissionId !== identity.submissionId || current.admissionId !== identity.admissionId) throw new MetricIngestError("not_authorized");
+    const [{ now }] = await tx.$queryRaw<{ now: Date }[]>(Prisma.sql`SELECT date_trunc('milliseconds',clock_timestamp()) AS now`);
+    if (+source.expiresAt <= +now) throw new MetricIngestError("not_authorized");
+    let session = existing[0];
+    if (session) {
+      if (session.closedAt) throw new MetricIngestError("session_closed");
+      if (+session.expiresAt <= +now || +session.expiresAt > +source.expiresAt) throw new MetricIngestError("not_authorized");
+    } else {
+      // Source NO KEY UPDATE locks serialize issuance, while allowing FK key-share reads.
+      // The admissionSessionId index bounds lookup to one credential's history.
+      // Existing-key retries bypass quota without creating any extra row.
+      const [usage] = await tx.$queryRaw<{ total: number; open: number }[]>(Prisma.sql`
+        SELECT count(*)::int AS total,
+          count(*) FILTER (WHERE "closedAt" IS NULL AND "expiresAt">clock_timestamp())::int AS open
+        FROM "LiveMetricSession" WHERE "admissionSessionId"=${identity.admissionId}
+          AND "vendorId"=${identity.vendorId} AND "liveId"=${identity.liveId}`);
+      if (usage.total >= METRIC_SESSION_LIMITS.totalPerAdmission) throw new MetricSessionLimitError("admission_total");
+      if (usage.open >= METRIC_SESSION_LIMITS.openPerAdmission) throw new MetricSessionLimitError("open");
+      const [history] = await tx.$queryRaw<{ total: number }[]>(Prisma.sql`SELECT count(*)::int AS total
+        FROM "LiveMetricSession" WHERE "vendorId"=${identity.vendorId} AND "liveId"=${identity.liveId}
+          AND "versionId"=${context.versionId} AND "registrationId"=${registration.id}`);
+      if (history.total >= METRIC_SESSION_LIMITS.totalPerRegistration) throw new MetricSessionLimitError("registration_total");
+      await tx.$executeRaw(Prisma.sql`INSERT INTO "LiveMetricSession"
+        (id,"vendorId","liveId","versionId","registrationId","admissionSessionId","anchorAt","expiresAt")
+        VALUES (${sessionId},${identity.vendorId},${identity.liveId},${context.versionId},${registration.id},${identity.admissionId},${now},${source.expiresAt})`);
+      session = { id: sessionId, anchorAt: now, expiresAt: source.expiresAt, lastSequence: -1, lastElapsedMs: 0, closedAt: null };
+    }
+    return { sessionId: session.id, versionId: context.versionId, anchorAtMs: +session.anchorAt, expiresAtMs: +session.expiresAt,
+      durationMs: source.durationMs, lastSequence: session.lastSequence, lastElapsedMs: session.lastElapsedMs };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 }).catch((error: unknown) => {
+    if (error instanceof MetricIngestError || error instanceof MetricSessionLimitError) throw error;
+    const parsed = z.object({ code: z.string().optional(), meta: z.object({ code: z.string().optional() }).passthrough().optional() }).passthrough().safeParse(error);
+    const code = parsed.success ? parsed.data.code : undefined;
+    const sqlState = parsed.success ? parsed.data.meta?.code : undefined;
+    if (sqlState === "23514" || sqlState === "23503") throw new MetricIngestError("evidence_rejected");
+    if (sqlState === "23505" || code === "P2002") throw new MetricIngestError("sequence_conflict");
+    if (sqlState === "40P01" || sqlState === "40001" || ["P2034", "P2028", "P2024"].includes(code ?? "")) throw new MetricIngestError("retryable_conflict");
+    throw error;
+  });
+}
+
+
+FILE src/app/api/form-submissions/route.ts
+import { attachRegistrationResult } from "@/lib/registration-submission-receipt";
+import { registrationRetryResponse, clearRegistrationRetry } from "@/lib/registration-form-retry-response";
+import { createHash } from "node:crypto";
+import { NextRequest, NextResponse } from "next/server";
+import { capturePublicMetricRegistration } from "@/lib/live-metric-registration-capture";
+import { metricVisitorProofsFromConfig } from "@/lib/live-metric-visitor-config";
+import { z } from "zod";
+import type { Prisma } from "@prisma/client";
+import { readFormDataBody, readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+import { getDb } from "@/lib/db";
+import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import {
+  attributionCookieFromRequest,
+  liveShareCodeFromRequest,
+  recordLeadAttribution,
+  referralCodeFromRequest,
+  resolveReferral,
+  resolveTeamFunnelAttribution,
+  sourcePageSlugFromRequest,
+  visitorIdFromRequest,
+} from "@/lib/team-funnel-attribution";
+import {
+  parseRegistrationFormFields,
+  REGISTRATION_FORM_FIELD_KEY,
+  REGISTRATION_FORM_RESERVED_FIELDS,
+} from "@/lib/registration-form-fields";
+import { normalizeBlacklistIdentifier } from "@/lib/blacklist-identifiers";
+import { allowsLegacyAffiliateAttribution, defaultAffiliateCode } from "@/lib/live-quota-policy";
+import { validateRegistrationFormAnswers } from "@/lib/registration-form-answers";
+import { ensureFormSubmissionVerificationDelivery } from "@/lib/email-delivery";
+import { captureOperationalError } from "@/lib/monitoring";
+import { FORM_SUBMISSION_VERIFICATION_TTL_MS } from "@/lib/form-submission-verification";
+import { funnelVisitorIdFromRequest, resolveTrustedFunnelSubmission } from "@/lib/funnel-runtime";
+import {
+  createFormSubmissionLineBindingToken,
+  FORM_SUBMISSION_LINE_BINDING_COOKIE,
+  formSubmissionLineBindingCookieOptions,
+} from "@/lib/form-submission-line-binding-session";
+import {
+  hasPublicRegistrationSession,
+  publicRegistrationSessionWhere,
+} from "@/lib/public-registration-form";
+
+const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
+const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
+const SubmissionAnswers = z.record(
+  z.string().regex(REGISTRATION_FORM_FIELD_KEY),
+  z.string().max(2_000),
+).refine((answers) => Object.keys(answers).length <= 32);
+
+const SubmissionPayload = z.object({
+  formId: z.string().min(1).max(128),
+  landingPageId: z.string().regex(/^[A-Za-z0-9_-]+$/u).max(128).optional(),
+  funnelStepId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,95}$/u).optional(),
+  liveId: z.string().min(1).max(128).nullable().optional(),
+  payload: SubmissionAnswers,
+  referralCode: z.string().min(1).max(80).nullable().optional(),
+  shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).nullable().optional(),
+  redirectTo: z.string().max(2_048).optional(),
+  utm: z.object({
+    source: z.string().trim().max(120).optional(),
+    medium: z.string().trim().max(120).optional(),
+    campaign: z.string().trim().max(160).optional(),
+    content: z.string().trim().max(160).optional(),
+    term: z.string().trim().max(160).optional(),
+  }).strict().optional(),
+});
+
+function stableSubmissionId(formId: string, liveId: string | null, email: string) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([formId, liveId, email]))
+    .digest("hex")
+    .slice(0, 32);
+  return `formsub_${digest}`;
+}
+
+function isUniqueConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+}
+
+function submissionContactError({
+  name,
+  email,
+  submittedPhone,
+  phone,
+}: {
+  name: string;
+  email: string;
+  submittedPhone: string | null;
+  phone: string | null;
+}) {
+  if (!z.string().min(1).max(160).safeParse(name).success || !z.string().email().max(320).safeParse(email).success) {
+    return "Name and email are required";
+  }
+  if (submittedPhone && !phone) return "Invalid phone";
+  return null;
+}
+
+async function resolveSubmissionAttribution({
+  request,
+  vendorId,
+  liveId,
+  referralCode,
+  liveShareCode,
+  liveQuotaPolicy,
+}: {
+  request: Request;
+  vendorId: string;
+  liveId: string | null;
+  referralCode: string | null | undefined;
+  liveShareCode: string | null | undefined;
+  liveQuotaPolicy: unknown;
+}) {
+  const parsedAttributionCookie = attributionCookieFromRequest(request);
+  const attributionCookie = parsedAttributionCookie && parsedAttributionCookie.visitorId === visitorIdFromRequest(request)
+    ? parsedAttributionCookie
+    : null;
+  const sourcePageSlug = sourcePageSlugFromRequest(request);
+  const resolvedLiveShareCode = liveShareCode ?? liveShareCodeFromRequest(request);
+  const legacyAffiliateEnabled = !liveId || allowsLegacyAffiliateAttribution(liveQuotaPolicy);
+  const defaultReferralCode = legacyAffiliateEnabled && !sourcePageSlug && !resolvedLiveShareCode
+    ? defaultAffiliateCode(liveQuotaPolicy)
+    : null;
+  const referral = await resolveReferral({
+    vendorId,
+    queryCode: legacyAffiliateEnabled && !resolvedLiveShareCode ? referralCodeFromRequest(request) : null,
+    legacyCode: legacyAffiliateEnabled && !resolvedLiveShareCode ? referralCode ?? defaultReferralCode : null,
+    cookie: legacyAffiliateEnabled ? attributionCookie : null,
+  });
+  const attribution = await resolveTeamFunnelAttribution({
+    vendorId,
+    liveId,
+    sourcePageSlug: resolvedLiveShareCode ? null : sourcePageSlug,
+    referral,
+    liveShareCode: resolvedLiveShareCode,
+  });
+  return { referral, attribution, liveShareCode: resolvedLiveShareCode };
+}
+
+async function loadFormLiveQuotaPolicy({
+  formId,
+  vendorId,
+  liveId,
+}: {
+  formId: string;
+  vendorId: string;
+  liveId: string | null;
+}) {
+  if (!liveId) return { found: true, quotaPolicy: null as unknown, notification: null };
+
+  const live = await getDb().live.findFirst({
+    where: {
+      id: liveId,
+      ...publicRegistrationSessionWhere(formId, vendorId),
+    },
+    select: {
+      id: true,
+      title: true,
+      quotaPolicy: true,
+      vendor: { select: { name: true } },
+      messageTemplate: {
+        select: {
+          id: true,
+          vendorId: true,
+          channel: true,
+          trigger: true,
+          subject: true,
+          body: true,
+          isActive: true,
+        },
+      },
+    },
+  });
+  return live ? {
+    found: true,
+    quotaPolicy: live.quotaPolicy,
+    notification: {
+      liveId: live.id,
+      liveTitle: live.title,
+      vendorName: live.vendor.name,
+      template: live.messageTemplate,
+    },
+  } : { found: false, quotaPolicy: null as unknown, notification: null };
+}
+
+async function hasVisiblePublicRegistrationSession({
+  formId,
+  vendorId,
+  hideExpiredSessions,
+}: {
+  formId: string;
+  vendorId: string;
+  hideExpiredSessions: boolean;
+}) {
+  const sessions = await getDb().live.findMany({
+    where: publicRegistrationSessionWhere(formId, vendorId),
+    select: { scheduledAt: true, status: true },
+  });
+  return hasPublicRegistrationSession(sessions, {
+    now: new Date(),
+    hideExpiredSessions,
+  });
+}
+
+async function missingLiveSelectionResponse(input: {
+  submittedLiveId: string | null;
+  formId: string;
+  vendorId: string;
+  hideExpiredSessions: boolean;
+}) {
+  if (input.submittedLiveId) return null;
+  const hasVisibleSession = await hasVisiblePublicRegistrationSession({
+    formId: input.formId,
+    vendorId: input.vendorId,
+    hideExpiredSessions: input.hideExpiredSessions,
+  });
+  return hasVisibleSession ? NextResponse.json({ error: "Live session selection required" }, { status: 400 }) : null;
+}
+
+type VerifiableSubmission = {
+  id: string;
+  name: string;
+  email: string;
+  liveId: string | null;
+  verificationStatus: "UNVERIFIED" | "VERIFIED";
+  verificationVersion: number;
+  verificationExpiresAt: Date | null;
+};
+
+type TrustedFunnelSource = NonNullable<Awaited<ReturnType<typeof resolveTrustedFunnelSubmission>>>;
+type TrustedFunnelSourceResolution =
+  | { ok: true; source: TrustedFunnelSource | null }
+  | { ok: false; response: NextResponse };
+
+async function resolveTrustedFunnelSource(input: {
+  landingPageId: string | undefined;
+  funnelStepId: string | undefined;
+  formId: string;
+  liveId: string | null;
+  request: Request;
+}): Promise<TrustedFunnelSourceResolution> {
+  if (!input.funnelStepId) return { ok: true, source: null };
+  if (!input.landingPageId) return { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
+  const visitorId = funnelVisitorIdFromRequest(input.request);
+  if (!visitorId) return { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
+  const source = await resolveTrustedFunnelSubmission({
+    pageId: input.landingPageId,
+    stepId: input.funnelStepId,
+    formId: input.formId,
+    liveId: input.liveId,
+    visitorId,
+  });
+  return source
+    ? { ok: true, source }
+    : { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
+}
+
+/** Marketing hints never authorize access, commissions or automation targeting. */
+async function resolveMarketingPageHint(pageId: string | undefined, vendorId: string, source: TrustedFunnelSource | null) {
+  if (source || !pageId) return {};
+  const page = await getDb().landingPage.findFirst({
+    where: { id: pageId, vendorId, status: "published", publishedAt: { not: null }, publishedVersionId: { not: null } },
+    select: { id: true },
+  });
+  return page ? { attribution: { landingPageId: page.id, evidence: "client_reported" } } : {};
+}
+
+const verifiableSubmissionSelect = {
+  id: true,
+  name: true,
+  email: true,
+  liveId: true,
+  verificationStatus: true,
+  verificationVersion: true,
+  verificationExpiresAt: true,
+} satisfies Prisma.FormSubmissionSelect;
+
+type MetricSubmissionSource = {
+  vendorId: string; liveId: string;
+  proofs: NonNullable<ReturnType<typeof metricVisitorProofsFromConfig>>;
+  proof: string | null;
+};
+
+function metricSubmissionSource(request: Request, vendorId: string, liveId: string | null): MetricSubmissionSource | null {
+  if (!liveId) return null;
+  const proofs = metricVisitorProofsFromConfig(process.env.LIVE_METRIC_VISITOR_KEYRING);
+  if (!proofs) return null;
+  // Matches the visit endpoint's scope-specific HttpOnly cookie. Never trust
+  // a submitted visitor ID or Funnel marketing hint as this metric identity.
+  const name = `__Host-cd-metric-${createHash("sha256").update(JSON.stringify([vendorId, liveId])).digest("hex").slice(0, 32)}`;
+  const cookies = new NextRequest(request.url, { headers: request.headers }).cookies.getAll(name);
+  const value = cookies.length === 1 ? cookies[0].value : null;
+  const proof = value && value.length <= 2048 ? value : null;
+  return { vendorId, liveId, proofs, proof };
+}
+
+/** New submission and provenance commit together. Metric unavailability is
+ * isolated by its savepoint; existing Funnel correctness remains mandatory. */
+async function createPublicSubmission(data: Prisma.FormSubmissionCreateArgs["data"], source: TrustedFunnelSource | null,
+  metric: MetricSubmissionSource | null): Promise<VerifiableSubmission> {
+  const database = getDb();
+  if (!source && !metric) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
+  return database.$transaction(async (transaction) => {
+    const submission = await transaction.formSubmission.create({ data, select: verifiableSubmissionSelect });
+    if (source) await transaction.funnelSubmission.upsert({
+      where: { submissionId: submission.id },
+      create: { vendorId: source.vendorId, pageId: source.pageId, stepId: source.stepId, submissionId: submission.id, visitId: source.visitId },
+      update: {},
+      select: { id: true },
+    });
+    if (metric) await capturePublicMetricRegistration(transaction,
+      { vendorId: metric.vendorId, liveId: metric.liveId, submissionId: submission.id }, metric.proofs, metric.proof);
+    return submission;
+  });
+}
+
+function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: string; email: string; funnelSource: TrustedFunnelSource | null }) {
+  return {
+    vendorId: input.vendorId,
+    eventId: `form-registered:${input.submissionId}`,
+    trigger: "form_registered" as const,
+    subjectType: "buyer_registration" as const,
+    subjectId: input.submissionId,
+    subjectKeyHash: automationCustomerKeyHash(input.vendorId, input.email),
+    recipientEmail: input.email,
+    ...(input.funnelSource ? { funnelPageId: input.funnelSource.pageId } : {}),
+  };
+}
+
+async function refreshExpiredVerification(submission: VerifiableSubmission, now = new Date()) {
+  if (
+    submission.verificationStatus === "VERIFIED"
+    || (submission.verificationExpiresAt && submission.verificationExpiresAt > now)
+  ) return submission;
+
+  const verificationExpiresAt = new Date(now.getTime() + FORM_SUBMISSION_VERIFICATION_TTL_MS);
+  await getDb().formSubmission.updateMany({
+    where: {
+      id: submission.id,
+      verificationStatus: "UNVERIFIED",
+      verificationVersion: submission.verificationVersion,
+      OR: [
+        { verificationExpiresAt: null },
+        { verificationExpiresAt: { lte: now } },
+      ],
+    },
+    data: {
+      verificationVersion: { increment: 1 },
+      verificationExpiresAt,
+    },
+  });
+  return getDb().formSubmission.findUniqueOrThrow({
+    where: { id: submission.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      liveId: true,
+      verificationStatus: true,
+      verificationVersion: true,
+      verificationExpiresAt: true,
+    },
+  });
+}
+
+async function enqueueSubmissionVerificationSafely({
+  vendorId,
+  vendorName,
+  emailBrand,
+  submission,
+}: {
+  vendorId: string;
+  vendorName: string;
+  emailBrand: { senderName: string | null; supportEmail: string | null; contactUrl: string | null };
+  submission: VerifiableSubmission;
+}) {
+  if (submission.verificationStatus === "VERIFIED") return true;
+  if (!submission.verificationExpiresAt) return false;
+  try {
+    const delivery = await ensureFormSubmissionVerificationDelivery({
+      vendorId,
+      vendorName,
+      liveId: submission.liveId,
+      formSubmissionId: submission.id,
+      recipientName: submission.name,
+      recipientEmail: submission.email,
+      verificationVersion: submission.verificationVersion,
+      verificationExpiresAt: submission.verificationExpiresAt,
+      emailBrand,
+    });
+    return delivery.status !== "suppressed";
+  } catch (error) {
+    try {
+      captureOperationalError(error, {
+        source: "form_submission",
+        operation: "verification_email_enqueue",
+        status: "failed",
+      });
+    } catch {
+      // Monitoring must not expose contact data or change the durable state.
+    }
+    return false;
+  }
+}
+
+function availablePublicForm<T extends { isActive: boolean }>(form: T | null): T | null {
+  if (!form || !form.isActive) return null;
+  return form;
+}
+
+async function processSubmission(request: Request, retryFormData?: FormData | null) {
+  const contentType = request.headers.get("content-type") ?? "";
+  const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
+  if (isNativeFormPost && !request.headers.get("origin")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: !isNativeFormPost });
+  if (sameOrigin) return sameOrigin;
+
+  const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
+  if (limited) return limited;
+
+  const nativeFormData = isNativeFormPost ? retryFormData !== undefined ? retryFormData : await readFormDataBody(request) : null;
+  const parsed = SubmissionPayload.safeParse(
+    isNativeFormPost ? nativeFormPayload(nativeFormData) : await readJsonBody(request),
+  );
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+
+  const name = parsed.data.payload.name?.trim() ?? "";
+  const email = normalizeBlacklistIdentifier("email", parsed.data.payload.email ?? "") ?? "";
+  const submittedPhone = parsed.data.payload.phone?.trim() || null;
+  const phone = submittedPhone ? normalizeBlacklistIdentifier("phone", submittedPhone) : null;
+
+  const contactError = submissionContactError({ name, email, submittedPhone, phone });
+  if (contactError) {
+    return NextResponse.json({ error: contactError }, { status: 400 });
+  }
+
+  const form = availablePublicForm(await getDb().registrationForm.findUnique({
+    where: { id: parsed.data.formId },
+    include: {
+      vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+    },
+  }));
+  if (!form) {
+    return NextResponse.json({ error: "Form not found" }, { status: 404 });
+  }
+  if (form.projectId) {
+    const project = await getDb().salesProject.findFirst({
+      where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } },
+      select: { id: true },
+    });
+    if (!project) return NextResponse.json({ error: "Form not found" }, { status: 404 });
+  }
+
+  const fieldSpecs = parseRegistrationFormFields(form.fields);
+  if (!fieldSpecs.success) {
+    return NextResponse.json({ error: "Form configuration unavailable" }, { status: 503 });
+  }
+  const normalizedFieldAnswers = validateRegistrationFormAnswers(fieldSpecs.data, parsed.data.payload);
+  if (!normalizedFieldAnswers.success) {
+    return NextResponse.json({ error: "Invalid form answers" }, { status: 400 });
+  }
+
+  const submittedLiveId = parsed.data.liveId ?? null;
+  const missingLiveResponse = await missingLiveSelectionResponse({ submittedLiveId, formId: form.id, vendorId: form.vendorId, hideExpiredSessions: form.hideExpiredSessions });
+  if (missingLiveResponse) return missingLiveResponse;
+
+  const liveContext = await loadFormLiveQuotaPolicy({
+    formId: form.id,
+    vendorId: form.vendorId,
+    liveId: submittedLiveId,
+  });
+  if (!liveContext.found) {
+    return NextResponse.json({ error: "Live not found" }, { status: 404 });
+  }
+
+  // A public Funnel source is only accepted when the current published page,
+  // its bound form/live pair, deadline and observed visit all re-resolve.
+  // Legacy form posts omit funnelStepId and retain their existing behavior.
+  const funnelResolution = await resolveTrustedFunnelSource({ landingPageId: parsed.data.landingPageId, funnelStepId: parsed.data.funnelStepId, formId: form.id, liveId: submittedLiveId, request });
+  if (!funnelResolution.ok) return funnelResolution.response;
+  const funnelSource = funnelResolution.source;
+
+  const blocked = await getDb().blacklist.findFirst({
+    where: {
+      vendorId: form.vendorId,
+      isActive: true,
+      OR: [
+        { identifierType: "email", identifier: email },
+        ...(phone ? [{ identifierType: "phone", identifier: phone }] : []),
+      ],
+    },
+  });
+
+  if (blocked) {
+    return NextResponse.json({ error: "Submission blocked" }, { status: 403 });
+  }
+
+  const duplicate = await getDb().formSubmission.findFirst({
+    where: { formId: form.id, liveId: submittedLiveId, email },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      liveId: true,
+      verificationStatus: true,
+      verificationVersion: true,
+      verificationExpiresAt: true,
+    },
+  });
+
+  const { referral, attribution, liveShareCode } = await resolveSubmissionAttribution({
+    request,
+    vendorId: form.vendorId,
+    liveId: submittedLiveId,
+    referralCode: parsed.data.referralCode,
+    liveShareCode: parsed.data.shareCode,
+    liveQuotaPolicy: liveContext.quotaPolicy,
+  });
+  if (liveShareCode && !attribution) {
+    return NextResponse.json({ error: "Live share unavailable" }, { status: 400 });
+  }
+  if (duplicate) {
+    const refreshed = await refreshExpiredVerification(duplicate);
+    const verificationQueued = await enqueueSubmissionVerificationSafely({
+      vendorId: form.vendorId,
+      vendorName: form.vendor.name,
+      emailBrand: {
+        senderName: form.vendor.senderName,
+        supportEmail: form.vendor.supportEmail,
+        contactUrl: form.vendor.contactUrl,
+      },
+      submission: refreshed,
+    });
+    if (!verificationQueued) {
+      return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+    }
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, duplicate.id);
+  }
+
+  const submissionId = stableSubmissionId(parsed.data.formId, submittedLiveId, email);
+  const normalizedAnswers = {
+    ...normalizedFieldAnswers.data,
+    name,
+    email,
+    ...(fieldSpecs.data.some((field) => field.key === "phone") ? { phone: phone ?? "" } : {}),
+  };
+  const marketingAttribution = await resolveMarketingPageHint(parsed.data.landingPageId, form.vendorId, funnelSource);
+  const verificationExpiresAt = new Date(Date.now() + FORM_SUBMISSION_VERIFICATION_TTL_MS);
+  let submission: VerifiableSubmission;
+  try {
+    submission = await createPublicSubmission({
+        id: submissionId,
+        formId: parsed.data.formId,
+        liveId: submittedLiveId,
+        name,
+        email,
+        phone,
+        source: submittedLiveId ? "live" : "form",
+        answers: normalizedAnswers as Prisma.InputJsonValue,
+        ...marketingAttribution,
+        verificationStatus: "UNVERIFIED",
+        verificationVersion: 1,
+        verificationExpiresAt,
+        affiliateClickId: referral?.source === "cookie" ? referral.clickId ?? null : null,
+      }, funnelSource, metricSubmissionSource(request, form.vendorId, submittedLiveId));
+  } catch (error) {
+    if (!isUniqueConflict(error)) throw error;
+    const concurrentSubmission = await getDb().formSubmission.findUnique({
+      where: { id: submissionId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        liveId: true,
+        verificationStatus: true,
+        verificationVersion: true,
+        verificationExpiresAt: true,
+      },
+    });
+    if (!concurrentSubmission) throw error;
+    const verificationQueued = await enqueueSubmissionVerificationSafely({
+      vendorId: form.vendorId,
+      vendorName: form.vendor.name,
+      emailBrand: {
+        senderName: form.vendor.senderName,
+        supportEmail: form.vendor.supportEmail,
+        contactUrl: form.vendor.contactUrl,
+      },
+      submission: concurrentSubmission,
+    });
+    if (!verificationQueued) {
+      return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+    }
+    return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id);
+  }
+  await recordLeadAttribution(submission.id, attribution);
+  const verificationQueued = await enqueueSubmissionVerificationSafely({
+    vendorId: form.vendorId,
+    vendorName: form.vendor.name,
+    emailBrand: {
+      senderName: form.vendor.senderName,
+      supportEmail: form.vendor.supportEmail,
+      contactUrl: form.vendor.contactUrl,
+    },
+    submission,
+  });
+  if (!verificationQueued) {
+    return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
+  }
+
+  // Registration succeeds independently from marketing delivery. The durable
+  // automation execution key makes a retried request converge without a resend.
+  try {
+    await dispatchAutomationEvent(getDb(), formRegisteredAutomationEvent({ vendorId: form.vendorId, submissionId: submission.id, email, funnelSource }));
+  } catch (error) {
+    captureOperationalError(error, { area: "form_registration_automation", vendorId: form.vendorId });
+  }
+
+  return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);
+}
+
+function submissionResponse(
+  request: Request,
+  redirectTo: string | undefined,
+  isNativeFormPost: boolean,
+  formSubmissionId: string,
+  issueLineBindingCapability = false,
+) {
+  const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
+    ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
+    : NextResponse.json({ ok: true, verificationRequired: true });
+
+  response.cookies.set(FORM_SUBMISSION_COOKIE, formSubmissionId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: new URL(request.url).protocol === "https:",
+    path: "/",
+    maxAge: FORM_SUBMISSION_COOKIE_TTL_SECONDS,
+  });
+  if (issueLineBindingCapability) {
+    response.cookies.set(
+      FORM_SUBMISSION_LINE_BINDING_COOKIE,
+      createFormSubmissionLineBindingToken(formSubmissionId),
+      formSubmissionLineBindingCookieOptions(new URL(request.url).protocol === "https:"),
+    );
+  }
+  return response;
+}
+
+function withSubmittedSearchParam(redirectTo: string, requestUrl: string) {
+  const redirectUrl = new URL(redirectTo, requestUrl);
+  redirectUrl.searchParams.set("submitted", "verification_required");
+  return redirectUrl;
+}
+
+function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
+  try {
+    return redirectTo.startsWith("/")
+      && new URL(redirectTo, requestUrl).origin === new URL(requestUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+function nativeFormPayload(formData: FormData | null) {
+  if (!formData) return {};
+  const payload: Record<string, unknown> = {};
+
+  for (const [key, value] of formData.entries()) {
+    if (!REGISTRATION_FORM_RESERVED_FIELDS.has(key)) {
+      if (typeof value !== "string") return {};
+      payload[key] = value;
+    }
+  }
+
+  const liveId = formData.get("liveId");
+  const landingPageId = formData.get("landingPageId");
+  const funnelStepId = formData.get("funnelStepId");
+  const referralCode = formData.get("referralCode");
+  const shareCode = formData.get("shareCode");
+  const redirectTo = formData.get("redirectTo");
+  return {
+    formId: String(formData.get("formId") ?? ""),
+    landingPageId: typeof landingPageId === "string" && landingPageId ? landingPageId : undefined,
+    funnelStepId: typeof funnelStepId === "string" && funnelStepId ? funnelStepId : undefined,
+    liveId: typeof liveId === "string" && liveId ? liveId : null,
+    payload,
+    referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,
+    shareCode: typeof shareCode === "string" && shareCode ? shareCode : null,
+    redirectTo: typeof redirectTo === "string" && redirectTo.startsWith("/") ? redirectTo : undefined,
+  };
+}
+
+/** 保留JSON契約；native錯誤只在驗證同源後保存加密草稿。 */
+export async function POST(request: Request) {
+  const native = /application\/x-www-form-urlencoded|multipart\/form-data/i.test(request.headers.get("content-type") ?? "");
+  if (!native) {
+    const response = await processSubmission(request);
+    if (response.ok) await clearRegistrationRetry(request, response);
+    return response;
+  }
+  // 有界讀取容納32×2000字元的URL編碼；JSON上限與欄位驗證保持原樣。
+  const formData = await readFormDataBody(request, 1_000_000);
+  let response: NextResponse;
+  try { response = await processSubmission(request, formData); }
+  catch { response = NextResponse.json({ error: "Submission unavailable" }, { status: 503 }); }
+  if (response.status >= 400) {
+    const retryResponse = await registrationRetryResponse(request, formData, response.status);
+    // 保留伺服器限流等待時間；不轉送其他錯誤回應標頭。
+    const retryAfter = response.headers.get("Retry-After");
+    if (response.status === 429 && retryAfter && /^\d{1,8}$/.test(retryAfter)) retryResponse.headers.set("Retry-After", retryAfter);
+    return retryResponse;
+  }
+  await clearRegistrationRetry(request, response);
+  attachRegistrationResult(request, response, formData);
+  return response;
+}
+
+
+FILE src/app/api/jobs/live-metric-registrations/route.ts
+import { NextResponse } from "next/server";
+import { readJsonBody, requireJobSecret } from "@/lib/api-security";
+import { getDb } from "@/lib/db";
+import { MetricRegistrationReconcileRequest, reconcileMetricRegistrations } from "@/lib/live-metric-registration-reconcile";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+const headers = { "Cache-Control": "private, no-store" };
+const json = (value: unknown, status: number) => NextResponse.json(value, { status, headers });
+
+/** Scheduler-only: one explicitly scoped bounded page per authenticated call.
+ * No global scan or implicit collection enablement. The caller continues the
+ * cursor, and starts a fresh pass later; coverage remains the service's unknown.
+ */
+export async function POST(request: Request) {
+  if (!requireJobSecret(request)) return json({ error: "Unauthorized" }, 401);
+  let body: unknown;
+  try { body = await readJsonBody(request, 1024); }
+  catch { return json({ error: "Invalid reconciliation request" }, 400); }
+  const parsed = MetricRegistrationReconcileRequest.safeParse(body);
+  if (!parsed.success) return json({ error: "Invalid reconciliation request" }, 400);
+  try {
+    const result = await reconcileMetricRegistrations(getDb(), parsed.data);
+    // Successful execution does not promise every row is recorded. Pending and
+    // terminal gaps remain explicit for the scheduler and later report coverage.
+    return json(result, 200);
+  } catch {
+    return json({ error: "Reconciliation unavailable" }, 503);
+  }
+}
+
+
+FILE prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql
+-- No historical backfill: current devices cannot establish original attribution.
+CREATE TABLE public."LiveMetricRegistrationCapture" (
+ "submissionId" TEXT PRIMARY KEY, "vendorId" TEXT NOT NULL, "liveId" TEXT NOT NULL,
+ "versionId" TEXT NOT NULL, "visitorId" TEXT,
+ "capturedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+ CONSTRAINT "LiveMetricRegistrationCapture_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES public."FormSubmission"(id) ON DELETE CASCADE ON UPDATE NO ACTION,
+ CONSTRAINT "LiveMetricRegistrationCapture_vendorId_liveId_versionId_fkey" FOREIGN KEY ("vendorId","liveId","versionId") REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION,
+ CONSTRAINT "LiveMetricRegistrationCapture_visitor_fkey" FOREIGN KEY ("vendorId","liveId","versionId","visitorId") REFERENCES public."LiveMetricVisitor"("vendorId","liveId","versionId",id) ON DELETE NO ACTION ON UPDATE NO ACTION
+);
+CREATE INDEX "LiveMetricRegistrationCapture_scope_submission_idx" ON public."LiveMetricRegistrationCapture"("vendorId","liveId","versionId","submissionId");
+CREATE INDEX "LiveMetricRegistrationCapture_scope_visitor_idx" ON public."LiveMetricRegistrationCapture"("vendorId","liveId","versionId","visitorId");
+CREATE FUNCTION public.wp20_metric_capture_guard() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+BEGIN
+ IF TG_OP='UPDATE' THEN
+  RAISE EXCEPTION 'metric initial capture is immutable' USING ERRCODE='23514';
+ ELSIF TG_OP='DELETE' THEN
+  IF EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=OLD."versionId")
+   AND EXISTS(SELECT 1 FROM public."FormSubmission" WHERE id=OLD."submissionId") THEN
+   RAISE EXCEPTION 'metric initial capture requires parent deletion' USING ERRCODE='23514';
+  END IF;
+  RETURN OLD;
+ END IF;
+ PERFORM 1 FROM public."LiveMetricVersion" WHERE id=NEW."versionId" AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'metric capture scope unavailable' USING ERRCODE='23514'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=NEW."versionId" AND "collectionEnabled" AND "collectionStartedAt"<=clock_timestamp() AND "expiresAt">clock_timestamp()) THEN
+  RAISE EXCEPTION 'metric capture collection unavailable' USING ERRCODE='23514';
+ END IF;
+ PERFORM 1 FROM public."FormSubmission" s
+ JOIN public."RegistrationForm" f ON f.id=s."formId" AND f."vendorId"=NEW."vendorId"
+ JOIN public."Live" l ON l.id=s."liveId" AND l."vendorId"=NEW."vendorId" AND l."formId"=s."formId"
+ WHERE s.id=NEW."submissionId" AND s."liveId"=NEW."liveId" AND s."verificationStatus"='UNVERIFIED' FOR SHARE OF s;
+ IF NOT FOUND THEN RAISE EXCEPTION 'metric capture initial submission unavailable' USING ERRCODE='23514'; END IF;
+ NEW."capturedAt" := date_trunc('milliseconds',clock_timestamp());
+ RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricRegistrationCapture_guard" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricRegistrationCapture" FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_capture_guard();
+CREATE FUNCTION public.wp20_metric_capture_no_truncate() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+BEGIN RAISE EXCEPTION 'metric capture truncate prohibited' USING ERRCODE='23514'; END $$;
+CREATE TRIGGER "LiveMetricRegistrationCapture_no_truncate" BEFORE TRUNCATE ON public."LiveMetricRegistrationCapture" FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_capture_no_truncate();
+ALTER TABLE public."LiveMetricRegistrationCapture" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."LiveMetricRegistrationCapture" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_capture_guard(),public.wp20_metric_capture_no_truncate() FROM PUBLIC;
+DO $$ DECLARE api_role text; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricRegistrationCapture" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_capture_guard(),public.wp20_metric_capture_no_truncate() FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+
+SCHEMA EXCERPT FormSubmission
+model FormSubmission {
+  id                    String                           @id @default(cuid())
+  formId                String
+  liveId                String?
+  name                  String
+  email                 String
+  /// Vendor-bound irreversible identity used to join CRM activity without storing a second customer profile.
+  customerKeyHash       String?
+  phone                 String?
+  answers               Json?
+  source                String                           @default("form")
+  attribution           Json?
+  verificationStatus    FormSubmissionVerificationStatus @default(UNVERIFIED)
+  verificationVersion   Int                              @default(1)
+  verificationExpiresAt DateTime?
+  verifiedAt            DateTime?
+  affiliateClickId      String?
+  createdAt             DateTime                         @default(now())
+
+  form                     RegistrationForm          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  live                     Live?                     @relation(fields: [liveId], references: [id], onDelete: SetNull)
+  affiliateClick           AffiliateClick?           @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
+  teamAttribution          TeamLeadAttribution?
+  chatMessages             LiveChatMessage[]
+  privateChatMessages      LivePrivateChatMessage[]
+  liveInteractionResponses LiveInteractionResponse[]
+  funnelSubmission         FunnelSubmission?
+
+  @@unique([liveId, id])
+  @@index([formId, verificationStatus, createdAt])
+  @@index([liveId, verificationStatus, createdAt])
+  @@index([affiliateClickId])
+  @@index([formId, customerKeyHash, createdAt])
+  metricRegistrations LiveMetricRegistration[]
+  metricCapture LiveMetricRegistrationCapture?
+
+}
+
+SCHEMA EXCERPT LiveMetricVersion
+model LiveMetricVersion {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  liveId              String
+  videoId             String?
+  mode                String
+  fingerprint         String   @db.Char(64)
+  durationMs          Int?
+  collectionEnabled   Boolean  @default(false)
+  collectionStartedAt DateTime? @db.Timestamptz(3)
+  /// Structural version revision; ordinary evidence invalidates overlapping windows only.
+  sourceRevision      BigInt   @default(0)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  /// Explicit lifetime supplied by the isolated test/provisioning context.
+  expiresAt           DateTime @db.Timestamptz(3)
+
+  live          Live                     @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  visitors      LiveMetricVisitor[]
+  registrations LiveMetricRegistration[]
+  sessions      LiveMetricSession[]
+  reports       LiveMetricReport[]
+  visitLosses   LiveMetricVisitLoss[]
+  registrationCaptures LiveMetricRegistrationCapture[]
+
+  @@unique([vendorId, liveId, id])
+  @@unique([vendorId, liveId, mode, fingerprint])
+  @@index([expiresAt])
+}
+
+SCHEMA EXCERPT LiveMetricVisitor
+model LiveMetricVisitor {
+  id             String   @id @default(cuid())
+  vendorId       String
+  liveId         String
+  versionId      String
+  browserHash    String   @db.Char(64)
+  firstVisitedAt DateTime @db.Timestamptz(3)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  version       LiveMetricVersion        @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade)
+  registrations LiveMetricRegistration[]
+
+  visits LiveMetricVisit[]
+  registrationCaptures LiveMetricRegistrationCapture[]
+
+  @@unique([vendorId, liveId, versionId, id], map: "LiveMetricVisitor_scope_id_key")
+  @@unique([vendorId, liveId, versionId, browserHash], map: "LiveMetricVisitor_scope_browser_key")
+  @@index([vendorId, liveId, versionId, firstVisitedAt], map: "LiveMetricVisitor_scope_visit_idx")
+}
+
+SCHEMA EXCERPT LiveMetricRegistrationCapture
+model LiveMetricRegistrationCapture {
+  submissionId String @id
+  vendorId String
+  liveId String
+  versionId String
+  visitorId String?
+  capturedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction)
+  visitor LiveMetricVisitor? @relation(fields: [vendorId, liveId, versionId, visitorId], references: [vendorId, liveId, versionId, id], onDelete: NoAction, onUpdate: NoAction)
+  @@index([vendorId, liveId, versionId, submissionId], map: "LiveMetricRegistrationCapture_scope_submission_idx")
+  @@index([vendorId, liveId, versionId, visitorId], map: "LiveMetricRegistrationCapture_scope_visitor_idx")
+}
+
+SCHEMA EXCERPT LiveMetricRegistration
+model LiveMetricRegistration {
+  id           String   @id @default(cuid())
+  vendorId     String
+  liveId       String
+  versionId    String
+  submissionId String
+  visitorId    String?
+  verifiedAt   DateTime @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  version    LiveMetricVersion  @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade)
+  submission FormSubmission     @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  visitor    LiveMetricVisitor? @relation(fields: [vendorId, liveId, versionId, visitorId], references: [vendorId, liveId, versionId, id], onDelete: NoAction)
+  sessions   LiveMetricSession[]
+
+  @@unique([vendorId, liveId, versionId, id], map: "LiveMetricRegistration_scope_id_key")
+  @@unique([vendorId, liveId, versionId, submissionId], map: "LiveMetricRegistration_scope_submission_key")
+  @@index([vendorId, liveId, versionId, verifiedAt], map: "LiveMetricRegistration_scope_verified_idx")
+  @@index([submissionId])
+}
+
+EXISTING REGISTRATION GUARD
+CREATE FUNCTION public.wp20_metric_registration_guard() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+BEGIN
+  IF current_setting('transaction_isolation')<>'read committed' THEN
+    RAISE EXCEPTION 'metric writes require read committed isolation' USING ERRCODE='23514';
+  END IF;
+  PERFORM 1 FROM public."Live" WHERE id=NEW."liveId" AND "vendorId"=NEW."vendorId" FOR SHARE;
+  PERFORM 1 FROM public."FormSubmission" WHERE id=NEW."submissionId" FOR SHARE;
+  PERFORM 1 FROM public."LiveMetricVersion" WHERE id=NEW."versionId"
+    AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+  IF TG_OP='UPDATE' AND (NEW."submissionId",NEW."visitorId",NEW."verifiedAt")
+    IS DISTINCT FROM (OLD."submissionId",OLD."visitorId",OLD."verifiedAt") THEN
+    RAISE EXCEPTION 'metric registration identity is immutable' USING ERRCODE='23514';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public."FormSubmission" s
+    JOIN public."RegistrationForm" f ON f."id" = s."formId"
+    JOIN public."Live" l ON l."id" = s."liveId" AND l."vendorId" = f."vendorId"
+    WHERE s."id" = NEW."submissionId" AND s."liveId" = NEW."liveId" AND f."vendorId" = NEW."vendorId"
+      AND s."verificationStatus" = 'VERIFIED' AND s."verifiedAt" = NEW."verifiedAt"
+      AND l."formId" = s."formId"
+  ) THEN
+    RAISE EXCEPTION 'verified metric registration required' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricRegistration_verified" BEFORE INSERT OR UPDATE ON "LiveMetricRegistration"
+  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_registration_guard();
+
+
+EXISTING API AUTH HELPER FIRST 45 LINES
+import { timingSafeEqual } from "node:crypto";
+import { NextResponse } from "next/server";
+
+export const CLIENT_REQUEST_HEADER = "x-celebratedeal-client";
+export const CLIENT_REQUEST_HEADER_VALUE = "web";
+export const MAX_JSON_BODY_BYTES = 64 * 1024;
+
+function safeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function bearerToken(request: Request) {
+  const header = request.headers.get("authorization") ?? "";
+  const parts = header.trim().split(/\s+/);
+  if (parts.length !== 2) return null;
+
+  const scheme = parts[0]!;
+  const token = parts[1]!;
+  return scheme.toLowerCase() === "bearer" && token ? token : null;
+}
+
+export function isAuthorizedBearer(request: Request, secret: string | undefined) {
+  if (!secret) return false;
+  const token = bearerToken(request);
+  return Boolean(token && safeEqual(token, secret));
+}
+
+export function requireJobSecret(request: Request) {
+  return isAuthorizedBearer(request, process.env.JOB_SECRET);
+}
+
+export function requireCronSecret(request: Request) {
+  return isAuthorizedBearer(request, process.env.CRON_SECRET);
+}
+
+export function requireSharedSecretHeader(request: Request, headerName: string, secret: string | undefined) {
+  if (!secret) return false;
+  const incoming = request.headers.get(headerName);
+  return Boolean(incoming && safeEqual(incoming, secret));
+}
+
+export function unauthorizedJson(message = "Unauthorized") {
+  return NextResponse.json({ error: message }, { status: 401 });

@@ -1,0 +1,23 @@
+{
+  "files": [
+    "src/lib/checkout-followup.ts",
+    "src/lib/checkout-followup.test.ts",
+    "src/lib/email-delivery.ts",
+    "src/lib/email-delivery.test.ts",
+    "src/app/api/jobs/email-deliveries/route.ts",
+    "src/app/api/jobs/email-deliveries/route.test.ts",
+    "src/lib/completed-followup.ts",
+    "src/lib/completed-followup.test.ts"
+  ],
+  "owner": "root sole writer",
+  "team": "ai-team-pro",
+  "risk_categories": [
+    "payment"
+  ],
+  "schema": "NO CHANGE",
+  "metricsImplementation": "READ ONLY existing completion/report/provenance; no metric schema/writer/host/worker changes",
+  "scope": "Actual completed/no-established-attributed-order recipient queue and send-time guard, existing Email job and unavailable-source recovery. Original generic trigger activation remains blocked until acceptance.",
+  "orderMeaning": "Any established order for this recipient in the vendor, via customer HMAC or valid primary/secondary payment attribution across lives; pending/cancelled/refunded all count as already ordered. Any unclassified null-hash non-draft order leaves absence unavailable.",
+  "previousTurn": "progress: checkout queue product source and185tests/16PG checks persisted",
+  "scopeReconciliation": "Original audit/Goal Plan preserved in completed-scope-reconciliation.json; no automatic missing-observation repair feature added as acceptance gate."
+}

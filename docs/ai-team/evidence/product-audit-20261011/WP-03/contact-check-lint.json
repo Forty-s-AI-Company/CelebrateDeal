@@ -1,0 +1,13 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "revision": "sha256:073a6a0279f5d94757d8992b172161843601ce58115af10d373b1a61918d2a41",
+  "name": "lint",
+  "status": "PASS",
+  "exit_code": 0,
+  "details": {
+    "session": 92042,
+    "completion_chunk": "cbda14",
+    "supplemental_e2e_lint_chunk": "80f4ba"
+  }
+}

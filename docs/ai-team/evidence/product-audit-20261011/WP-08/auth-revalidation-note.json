@@ -1,0 +1,10 @@
+{
+  "auth_status": {
+    "exitCode": 0,
+    "loggedIn": true,
+    "authMethod": "claude.ai"
+  },
+  "repeat_wrapper": "AUTH_REQUIRED with exit0 and unknown observed model",
+  "read_only_diagnosis": "Invoke-AiTeamProcess.ps1 classifies whole combined output containing not authenticated as AUTH_REQUIRED; Invoke-ClaudeCliReview.ps1 returns before native terminal parse. Potential content misclassification, unproven without raw output; no raw logs read.",
+  "next": "Chinese review response with explicit component-test coverage; no classifier or security changes"
+}

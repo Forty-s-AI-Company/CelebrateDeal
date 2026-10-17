@@ -1,0 +1,8 @@
+{
+  "observed_model": "claude-sonnet-5-5",
+  "status": "SUCCESS",
+  "review_output": "{\"summary\":\"No blocking or major defects in the flag repair. `export const dynamicParams = false;` is a valid App Router segment config. It sits beside the existing `generateStaticParams`, which returns the 3 own keys of `policyDrafts`. With the flag, slugs outside that set should get a 404 before rendering, as the supplied Next docs state. This is the intended fix for the unknown-slug HTTP 200 streaming. `resolveDraft` still uses `Object.hasOwn`, and `notFound()` remains as a defensive fallback, so prototype-key slugs such as `__proto__` or `constructor` stay safe. The change touches only this one route. It adds no middleware, access rule, or content publication change. I did not run anything. The pending browser rerun is the real confirmation that an unknown slug now returns 404 instead of a streamed 200. That confirmation is not a defect in this change.\",\"findings\":[]}",
+  "exit_code": 0,
+  "process_status": "SUCCESS",
+  "observed_effort": "unknown"
+}

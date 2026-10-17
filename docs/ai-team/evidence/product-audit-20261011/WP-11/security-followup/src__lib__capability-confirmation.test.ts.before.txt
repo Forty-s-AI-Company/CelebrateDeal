@@ -1,0 +1,83 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+const settings = vi.hoisted(() => ({ origin: "https://app.example.test" }));
+vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => settings.origin }));
+import { capabilityConfirmation, readCapabilityConfirmation } from "./capability-confirmation";
+const path = "/portal/teacher/access";
+async function preview(capability = "synthetic-link") {
+  const response = capabilityConfirmation(path, capability);
+  const html = await response.text();
+  const fields = new URLSearchParams();
+  for (const key of ["capability", "confirmation", "issued"]) fields.set(key, html.match(new RegExp(`name="${key}" value="([^"]*)"`))![1]);
+  return { response, html, fields, cookie: response.headers.get("set-cookie")!.split(";")[0] };
+}
+function post(fields: URLSearchParams, cookie: string, origin = "https://app.example.test", route = path) {
+  return new Request(`https://app.example.test${route}`, { method: "POST", headers: { origin, cookie }, body: fields });
+}
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); settings.origin = "https://app.example.test"; });
+describe("capability confirmation boundary", () => {
+  it("binds the confirmation to a private browser challenge and canonical action", async () => {
+    const p = await preview();
+    expect(await readCapabilityConfirmation(post(p.fields, p.cookie), path)).toBe("synthetic-link");
+    expect(p.response.headers.get("set-cookie")).toContain("__Host-");
+    expect(p.response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(p.response.headers.get("set-cookie")).toContain("Secure");
+    expect(p.response.headers.get("cache-control")).toBe("private, no-store");
+    expect(p.response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(p.html).toContain('method="post"');
+    expect(p.html).not.toContain("<script");
+  });
+  it("rejects cross-origin, missing origin, cross-browser and missing challenge", async () => {
+    const a = await preview(), b = await preview();
+    for (const request of [post(a.fields, a.cookie, "https://evil.example"), post(a.fields, a.cookie, ""), post(a.fields, a.cookie, "null"), post(a.fields, b.cookie), post(a.fields, "")]) expect(await readCapabilityConfirmation(request, path)).toBeNull();
+  });
+  it("rejects substitutions of credential, path and duplicate cookie or form fields", async () => {
+    const p = await preview();
+    const changed = new URLSearchParams(p.fields); changed.set("capability", "other-link");
+    expect(await readCapabilityConfirmation(post(changed, p.cookie), path)).toBeNull();
+    expect(await readCapabilityConfirmation(post(p.fields, p.cookie, undefined, "/portal/other/access"), "/portal/other/access")).toBeNull();
+    expect(await readCapabilityConfirmation(post(p.fields, `${p.cookie}; ${p.cookie}`), path)).toBeNull();
+    const duplicate = new URLSearchParams(p.fields); duplicate.append("capability", "other");
+    expect(await readCapabilityConfirmation(post(duplicate, p.cookie), path)).toBeNull();
+  });
+  it("expires after five minutes and rejects future timestamps", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-12T00:00:00Z"));
+    const p = await preview(); vi.advanceTimersByTime(300_000);
+    expect(await readCapabilityConfirmation(post(p.fields, p.cookie), path)).toBeNull();
+    vi.setSystemTime(new Date("2026-10-11T23:59:59Z"));
+    expect(await readCapabilityConfirmation(post(p.fields, p.cookie), path)).toBeNull();
+  });
+  it("rejects HTTP production while allowing loopback development", async () => {
+    settings.origin = "http://127.0.0.1:31024"; vi.stubEnv("NODE_ENV", "production");
+    expect(() => capabilityConfirmation(path, "synthetic")).toThrow("requires HTTPS");
+    await expect(readCapabilityConfirmation(post(new URLSearchParams(), ""), path)).rejects.toThrow("requires HTTPS");
+    vi.stubEnv("NODE_ENV", "development"); expect(capabilityConfirmation(path, "synthetic").status).toBe(200);
+    settings.origin = "http://public.example.test"; expect(() => capabilityConfirmation(path, "synthetic")).toThrow("requires HTTPS");
+  });
+  it("shows an escaped vendor and only permits origin-only referrers", async () => {
+    const response = capabilityConfirmation(path, "synthetic", "<Vendor>");
+    const html = await response.text();
+    expect(html).toContain("&lt;Vendor&gt;");
+    expect(html).toContain('name="referrer" content="strict-origin"');
+    expect(response.headers.get("referrer-policy")).toBe("strict-origin");
+  });
+  it("escapes untrusted values and bounds request bodies", async () => {
+    const p = await preview('"><script>alert(1)</script>');
+    expect(p.html).not.toContain("<script>");
+    expect(p.html).toContain("&lt;script&gt;");
+    const body = new URLSearchParams({ capability: "x".repeat(9000) });
+    expect(await readCapabilityConfirmation(post(body, p.cookie), path)).toBeNull();
+  });
+});
+
+it("keeps voucher and portal confirmation cookies and actions isolated", async () => {
+  const route = "/api/automation/vouchers/redeem";
+  const response = capabilityConfirmation(route, "synthetic-voucher", "合成商家", "voucher");
+  const html = await response.text(); const fields = new URLSearchParams();
+  for (const key of ["capability", "confirmation", "issued"]) fields.set(key, html.match(new RegExp(`name="${key}" value="([^"]*)"`))![1]);
+  const cookie = response.headers.get("set-cookie")!.split(";")[0];
+  expect(cookie.startsWith("__Host-celebratedeal_voucher_confirmation=")).toBe(true);
+  expect(html).toContain("確認並前往結帳"); expect(html).toContain("尚不會付款");
+  expect(await readCapabilityConfirmation(post(fields, cookie, undefined, route), route, "voucher")).toBe("synthetic-voucher");
+  expect(await readCapabilityConfirmation(post(fields, cookie, undefined, route), route)).toBeNull();
+  expect(await readCapabilityConfirmation(post(fields, cookie), path, "voucher")).toBeNull();
+});

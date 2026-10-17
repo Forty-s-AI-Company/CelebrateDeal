@@ -1,0 +1,11 @@
+{
+  "scope": "Synthetic pure calculation, 10000 one-second segments, no DB/network",
+  "segments": 10000,
+  "duration_ms": 311,
+  "result": {
+    "status": "available",
+    "firstCompletedAtMs": 9000000
+  },
+  "expected_first_completed_at_ms": 9000000,
+  "status": "PASS"
+}

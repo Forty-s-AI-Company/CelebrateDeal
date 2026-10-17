@@ -1,0 +1,14 @@
+{
+  "sourceHashes": {
+    "src/lib/line-webinar-template.ts": "a51290f81c73b6dccb4ba143df50b6da84b7a39a94e105cc076e8adc7f72e721",
+    "src/lib/line-notification-materializer.ts": "f12d53a89fb97e3f940a1aea3a74bfbf8b32de0ab8d8a5e3321e27a1892832d6",
+    "src/components/message-template-form-client.tsx": "e76d43ad74825de23a18ad015ada45af8de17a99079f075ca838dbeb63bf8ef4"
+  },
+  "unchangedDependencyHashes": {
+    "src/lib/line-notification.ts": "57070a8be35115510cdd072dd2572a7f094b692d70c002437ea19014ea2f8e2b",
+    "src/lib/line-live-started.ts": "423cdb17a4bcd0d4fce4ab09ef29b47732f4789eb52aad49bf63b1af7befc2c7",
+    "src/lib/message-template.ts": "259f55586012e3d01852fbcf254b04a76955fa8af6d7c815e375d6c932e45aeb"
+  },
+  "contextChars": 21951,
+  "scope": "Full3changedmodules + exact nullable/no-default identity schema excerpt.3otherproductmodules byte-identical to canonical full review."
+}

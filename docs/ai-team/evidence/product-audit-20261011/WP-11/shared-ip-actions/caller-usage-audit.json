@@ -1,0 +1,70 @@
+{
+  "callers": [
+    {
+      "file": "src/app/actions/auth-security-actions.ts",
+      "source_limiter_calls": [
+        69,
+        79,
+        176,
+        228,
+        284
+      ],
+      "recipient_only_calls": []
+    },
+    {
+      "file": "src/app/actions/buyer-support-actions.ts",
+      "source_limiter_calls": [
+        57,
+        58
+      ],
+      "recipient_only_calls": []
+    },
+    {
+      "file": "src/app/actions/consultation-actions.ts",
+      "source_limiter_calls": [
+        541
+      ],
+      "recipient_only_calls": []
+    },
+    {
+      "file": "src/app/actions/registration-actions.ts",
+      "source_limiter_calls": [
+        31
+      ],
+      "recipient_only_calls": []
+    },
+    {
+      "file": "src/app/actions/student-portal-actions.ts",
+      "source_limiter_calls": [
+        55
+      ],
+      "recipient_only_calls": [
+        68
+      ]
+    },
+    {
+      "file": "src/app/actions/vendor-member-actions.ts",
+      "source_limiter_calls": [
+        51,
+        153
+      ],
+      "recipient_only_calls": []
+    },
+    {
+      "file": "src/lib/mfa-recovery-regeneration.ts",
+      "source_limiter_calls": [
+        49
+      ],
+      "recipient_only_calls": []
+    },
+    {
+      "file": "src/lib/registration-form-retry-response.ts",
+      "source_limiter_calls": [
+        46
+      ],
+      "recipient_only_calls": []
+    }
+  ],
+  "removed_header_consumers": "Only metadata Request objects supplied to checkRateLimit; no audit/session consumer of these builders. Audit metadata reads remain outside builders.",
+  "whole_wp_ready": false
+}

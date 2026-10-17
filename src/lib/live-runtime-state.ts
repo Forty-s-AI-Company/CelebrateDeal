@@ -248,6 +248,18 @@ export function resolveLiveRuntime(
   };
 }
 
+/** Known end of the currently playable phase. A live input may have no known
+ * end yet; callers must still recheck runtime when accepting later events. */
+export function resolveLiveRuntimeWindow(input: LiveRuntimeCandidate, now = new Date()) {
+  const decision = evaluateLiveRuntime(input, now);
+  return {
+    state: decision.state,
+    playbackStartSeconds: decision.playbackStartSeconds,
+    endsAt: decision.state === "playing" ? decision.completionAt
+      : decision.state === "replay" ? input.replayAvailableUntil : null,
+  };
+}
+
 /** Returns only the canonical four-state value for simple domain gates. */
 export function resolveLiveRuntimeState(
   input: LiveRuntimeCandidate,

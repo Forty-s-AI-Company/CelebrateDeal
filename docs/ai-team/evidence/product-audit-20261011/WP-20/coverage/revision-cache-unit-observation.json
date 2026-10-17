@@ -1,0 +1,10 @@
+{
+  "revision": "sha256:d174d0a9d58e8cdd9247cb7601e4a223c68357229e35e05396a1db779659d78f",
+  "status": "PASS",
+  "source": "observed exec_command exit 0",
+  "test_files": 3,
+  "tests": 36,
+  "scope": "mocked transaction boundary and reader/snapshot unit tests only",
+  "database_integration": "NOT_RUN",
+  "independent_review": "NOT_RUN"
+}

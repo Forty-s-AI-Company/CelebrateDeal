@@ -1,0 +1,20 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "engine": "chromium",
+      "entry": "root",
+      "javascript": false,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "successFeedbackVisible": true,
+      "draftCleared": true,
+      "noMailSent": true
+    }
+  ],
+  "cleanup": true,
+  "step": "success",
+  "stage": "chromium:step",
+  "errorType": "TimeoutError"
+}

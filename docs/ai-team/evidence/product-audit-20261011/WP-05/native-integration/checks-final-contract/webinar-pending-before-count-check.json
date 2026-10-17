@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "webinar-pending", "revision": "sha256:2292fa0b450af979a983cf8ffc06d93ad53bc9f874b7b482d8e64b7c0c35a83b", "status": "FAIL", "exit_code": 1, "duration_seconds": 33.172}

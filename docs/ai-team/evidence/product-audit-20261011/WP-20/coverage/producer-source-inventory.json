@@ -1,0 +1,14 @@
+{
+  "status": "READ_ONLY_INVENTORY",
+  "sourceHashes": {
+    "src/lib/live-metric-registration-reconcile.ts": "27e965ef29b35cc3f938d92b5a5a3127b9dfc788b519cdda402319910642c817",
+    "src/lib/live-metric-registration-capture.ts": "2942c290b7903c21f956df3c8b69335f23a63c2c96465d2e8852ff66a1285b6c",
+    "src/lib/live-metric-visit-collection.ts": "271d11e7a53b81d3d11403f81744de18590270e65daf158b3fd5b0a4176d9485",
+    "prisma/migrations/20261015120000_live_metric_coverage_audit/migration.sql": "a3e28fb266dc7606b5a5c4740e2447ed14926aed4780890d94198246c4d5689f",
+    "prisma/migrations/20261014120000_live_metric_evidence/migration.sql": "c679cf9282a70cf31dd79d4a006eede7ccae6aec728afcbcc37d4a44e6b0b608"
+  },
+  "finding": "capture-only reconciliation misses original submissions without capture",
+  "next": "authoritative registration source reconciliation with revision invalidation",
+  "implementation": "NOT_RUN",
+  "acceptance": "NOT_READY"
+}

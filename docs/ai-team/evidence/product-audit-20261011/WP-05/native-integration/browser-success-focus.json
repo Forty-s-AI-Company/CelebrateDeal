@@ -1,0 +1,7 @@
+{
+  "checks": [],
+  "status": "FAIL",
+  "cleanup": true,
+  "failedStage": "fixture",
+  "errorType": "PrismaClientInitializationError"
+}

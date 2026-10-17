@@ -1,0 +1,8 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "cleanup": true,
+  "stage": "fixture",
+  "errorType": "AssertionError",
+  "errorCode": "ERR_ASSERTION"
+}

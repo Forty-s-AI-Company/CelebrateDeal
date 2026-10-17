@@ -1,0 +1,208 @@
+{
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "agy_discovery_process_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "concurrency",
+        "payment",
+        "production_data",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:4965f39c1540338b4ca213bfd4af250d3df00ba44db3b8f7a1bb1577c076b5ef",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/app/api/live-admission/route.lease-db.test.ts",
+      "src/app/api/live-admission/route.ts",
+      "src/lib/live-quota-admission.ts",
+      "src/lib/live-quota-admission.test.ts",
+      "src/lib/rate-limit.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/api/live-admission/route.lease-db.test.ts",
+      "src/app/api/live-admission/route.ts",
+      "src/lib/live-quota-admission.test.ts",
+      "src/lib/live-quota-admission.ts",
+      "src/lib/rate-limit.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I reviewed only the repair diff and the DB test that were supplied. I found no BLOCKER or MAJOR defects in that scope.\n\n- **Expiry boundary:** the renewal check `existing.expiresAt <= now` is the exact complement of the stated active-count rule (`expiresAt > now`). So an expired renewing session never counts itself, and a still-valid session (checked at TTL-1ms) keeps its slot without a capacity check.\n- **Tenant isolation:** the vendorId/liveId match before reviving a session is unchanged. The added count uses the requested vendorId/liveId, so one tenant's sessions cannot be counted against another's.\n- **Concurrency:** the count and the update run in the same Serializable transaction. Renewing an expired row moves it into the active set that concurrent transactions have just counted. PostgreSQL's serializable conflict detection should then abort one transaction, and the retry sees the cap as full. This is the same mechanism the new-session path relies on.\n- **Released sessions:** if DELETE releases a session by expiring it rather than deleting the row, the patch also closes a path for reviving a released session past the cap.\n\nThe remaining findings are about how strong the tests are, not about whether the code is correct. I did not review the source that wasn't supplied, including: where `now` is computed relative to the retry loop, the body of `activeSessionWhere`, the retry/503 mapping, lifecycle reconciliation, and whether the new-session path applies any extra capacity checks beyond the per-live count. An empty or non-blocking findings list does not mean the tests or the release passed.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/live-admission/route.lease-db.test.ts",
+        "area": "test 'concurrent expired renewals cannot overfill the last slot'",
+        "issue": "The concurrency test does not show that the two transactions actually overlapped. It passes the same way if the two requests run one after the other.",
+        "evidence": "`Promise.all([POST(..first), POST(..second)])` followed only by `expect(statuses).toEqual([200, 429])` and an active-count check. Nothing records whether a P2034 retry or a serialization conflict happened. With a small Prisma connection pool, or with request handling ordered by the event loop, the second transaction can start after the first commits. In that case it sees active=1 and returns 429 without ever exercising the Serializable path.",
+        "impact": "The test could keep passing if Serializable isolation or the retry loop were removed or downgraded, because it may never create the race. The claim that concurrency is covered is weaker than it looks.",
+        "recommended_fix": "Make the race deterministic or observable. Options: expose a test-only counter or hook for P2034 retries and assert it is ≥1 in at least one run; run the two inner transactions directly with a barrier between the count and the update; or increase fan-out (for example, 5–10 expired sessions with cap 1, all renewing at once), assert exactly one 200 with the rest 429 or 503, and repeat several times.",
+        "required_test": "A deterministic interleaving test, or a high-fan-out repeated concurrency test, that fails when the transaction isolation is lowered to ReadCommitted. This proves the test detects the race it is meant to cover.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/live-admission/route.lease-db.test.ts",
+        "area": "tests 2-4 (renewal paths)",
+        "issue": "Two cases are missing: an expired renewal racing a brand-new admission while the cap is full, and checking that a rejected expired renewal leaves its row unchanged.",
+        "evidence": "Test 4 only races two expired renewals against each other. No test races an expired renewal with a request that has no cookie (the create path), which is the other realistic way to overfill a slot. Test 2 checks the active count after the 429 but not that the rejected session's expiresAt stayed the same, and not what cookie the 429 response sends.",
+        "impact": "A future regression that lets the renewal path and the create path both admit (for example, if either path's count moves outside the transaction) would not be caught. A partial update before the throw would also go unnoticed.",
+        "recommended_fix": "Add a test with cap 1 and one expired session X: at the same moment, renew X and POST a new viewer without a cookie. Assert exactly one 200 and an active count of 1. In test 2, also assert that the rejected session's expiresAt in the DB is unchanged after the 429.",
+        "required_test": "A loopback PostgreSQL test of an expired renewal racing a new admission at the cap. Plus an assertion that a rejected expired renewal does not change its stored expiresAt.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-quota-admission.ts",
+        "area": "expired same-live renewal branch (~lines 225-229)",
+        "issue": "The capacity check is now written out separately in the renewal branch instead of sharing one helper with the new-session path.",
+        "evidence": "The new `tx.liveViewerSession.count({ where: activeSessionWhere(...) })` followed by `if (active >= policy.maxConcurrentViewers) throw ...viewer_limit_reached` repeats the check the context says the create path already performs.",
+        "impact": "If the capacity rule changes later (for example, a vendor-wide cap or a reserved-slot rule), one path could be updated and the other missed, letting expired renewals skip the new rule again.",
+        "recommended_fix": "Move the check into a single helper, such as `assertViewerCapacity(tx, input, policy, now)`, and call it from both the expired-renewal path and the create path.",
+        "required_test": "The existing four DB tests still pass after the refactor.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ]
+}

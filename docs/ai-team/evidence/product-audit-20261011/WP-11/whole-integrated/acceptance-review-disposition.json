@@ -1,0 +1,126 @@
+{
+  "status": "REVIEW_COMPLETED_NONBLOCKING_FINDINGS",
+  "revision": "sha256:4a1b964080a65416f6a6423c7b7a67df8a52ef12c8305ea5aacd3aa96ac4e778",
+  "observed_model": "claude-opus-5-5",
+  "source_review_composition": [
+    "shared-ip-api/review-current.json",
+    "shared-ip-actions/review-current.json",
+    "whole-integrated/integration-review-cli.json",
+    "shared-chat-identity/review-cli.json"
+  ],
+  "counts": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 6,
+    "NIT": 2
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/probe.py",
+      "area": "matrix mode: referral-invalid (307), portal-confirm (303), voucher-confirm (403), admission-release (400); provider-outage case list",
+      "issue": "The remote matrix can't tell 'native identity resolved and limiter reached' apart from an early rejection for four routes. Referral answers 307 whether it succeeded, was limited, or had no source (503). Its path `/r/%20` may also exit before the limiter. Redirect responses have no JSON body, so `source_unavailable` is always false for them and the 303/307 rows can't fail on a source problem. The Origin header is the staging alias, not the Preview host, so the voucher-confirm 403 and portal-confirm 303 may be origin or challenge rejections that happen before the limiter. The provider-outage set leaves out referral, voucher-confirm, portal-confirm and admission-release, so no remote artifact shows those four reached the native limiter. The deployment doc requires referral, voucher and portal in the remote smoke.",
+      "evidence": "Every matrix row computes `source_unavailable` from `body.get(\"error\")`, but a 303 or 307 has no JSON body. The referral route turns any 503 into a redirect (see the earlier integration review). provider-outage.json lists admission, chat-read/write, private-read/write, portal-preview, voucher-preview and broadcast-read only. The fixture regex allows `platform-referral-entry|automation-voucher-confirm|student-portal-access-confirm|live-admission-release` keys, but nothing shows those keys were hit.",
+      "impact": "Reading 'route_matrix 10/10' as remote proof that all ten routes use the native identity overstates the evidence for four routes. The risk that remains is low: these routes share `checkRateLimit`, the remote proof for six sibling routes covers the shared resolver and limiter, and the new real-resolver unit test covers referral. It is an evidence-claim gap, not a code defect.",
+      "recommended_fix": "In the acceptance record, list referral, voucher-confirm, portal-confirm and admission-release as covered remotely only at the HTTP boundary, with limiter reach proven by unit tests. Optionally, add them to the provider-outage probe and check status plus the error body or event for JSON routes, and check the server-side `platform_referral_source_unavailable` event count (as a category only) for referral.",
+      "required_test": "Optional re-probe: with Redis stopped, assert voucher-confirm, portal-confirm and admission-release return 503 'Rate limit provider unavailable'. For referral, assert a fixed limiter-unavailable or source event category through log-count evidence without request data. Otherwise, record the limitation.",
+      "confidence": 0.6,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    },
+    {
+      "severity": "MINOR",
+      "file": "docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/second-egress.json",
+      "area": "distinct egress proof (second-egress.json, first-egress-after.json)",
+      "issue": "The result 'second 400 while first 429' only holds if the runs went burst, then second network, then first network again, inside one 60s window, and the second run really came from a different network. Neither artifact records a timestamp, a sequence number, or any category showing which network was used. The summary states the network was different but nothing shows it.",
+      "evidence": "Both files contain only mode, http_status, validation_reached and rate_limited. Burst duration is 13.406s and no absolute times are recorded.",
+      "impact": "The proof that separate clients get separate buckets is plausible but can't be fully reproduced from the artifacts. Distinct identities still have unit-test coverage.",
+      "recommended_fix": "Record monotonic or relative timestamps for burst, second and first-after, plus a fixed network label (for example 'runner-A' or 'runner-B'), without recording raw IPs.",
+      "required_test": "Re-run with timestamps showing all three steps within one window and labelled networks, or record the limitation in the acceptance.",
+      "confidence": 0.5,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    },
+    {
+      "severity": "MINOR",
+      "file": "docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/summary.json",
+      "area": "readiness: 'platform project metadata not manually overridden'",
+      "issue": "The earlier disposition required confirming in a fresh Preview that `VERCEL_PROJECT_ID` is injected by the platform. The only artifact, readiness.json, shows `native_configured=true`. That passes even if an operator set both `ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID` and `VERCEL_PROJECT_ID` by hand. The 'not manually overridden' claim has no supporting artifact.",
+      "evidence": "readiness.json fields: http_status, native_configured, configuration_ready, topology_probe_required, shape_valid. No artifact shows whether `VERCEL_PROJECT_ID` exists as a user-defined env var.",
+      "impact": "The project-binding guarantee in native mode is asserted, not shown. It fails closed if absent, so this is not a safety issue.",
+      "recommended_fix": "Attach a non-secret check: a boolean showing no user-defined `VERCEL_PROJECT_ID` exists in the Preview env-var names list (names only, no values). Otherwise, mark the item as asserted by the operator in the acceptance.",
+      "required_test": "Produce a names-only check that `VERCEL_PROJECT_ID` is not a user-scoped env var for the temporary Preview, or record it as an accepted limitation.",
+      "confidence": 0.45,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    },
+    {
+      "severity": "MINOR",
+      "file": "docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/redis-http-fixture.py",
+      "area": "shared limiter provider compatibility",
+      "issue": "The remote limiter ran against Redis 6 behind a narrow HTTP bridge that implements only the exact EVAL request, not commercial Upstash. Upstash behaviour such as TLS, latency, timeouts, auth errors and rate limits was not exercised. The bridge also checks the limit/window and key-name format but not the shape of the identity, so it can't detect a /64 grouping regression.",
+      "evidence": "summary.json limitations: 'real Redis6 with narrow synthetic HTTP bridge, not commercial Upstash'. The fixture regex suffix `[0-9a-f:.]+` accepts both a full IPv6 address and a /64.",
+      "impact": "Upstash compatibility for native mode rests on the existing legacy limiter, not on WP11 evidence. Acceptable for nonproduction if stated.",
+      "recommended_fix": "Record it in the acceptance as a nonproduction limitation. Before any Production work, smoke-test against the real provider.",
+      "required_test": "None for nonproduction acceptance beyond recording it. A future real-provider smoke would cover it.",
+      "confidence": 0.5,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    },
+    {
+      "severity": "MINOR",
+      "file": "docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/cleanup-verification.json",
+      "area": "temporaryPreview: {unavailable: true, error: true}",
+      "issue": "Removal of the temporary Preview is inferred from a lookup that errored. The artifact doesn't separate 'deleted or not found' from 'auth, network or API error'. The removal of the fixture bridge or tunnel isn't evidenced either; only `real_redis_stopped` is.",
+      "evidence": "cleanup-verification.json records `unavailable: true, error: true`, with no reason category, for the temporary Preview. No teardown artifact exists for the bridge.",
+      "impact": "A temporary Preview may still exist, wired to the synthetic limiter endpoint. It would fail closed (503), but the rollback and cleanup claim is not deterministic.",
+      "recommended_fix": "Record a fixed reason category (for example `not_found` or `deleted`) for the temporary deployment, plus a teardown category for the bridge or tunnel.",
+      "required_test": "Re-verify cleanup with a lookup that returns a not-found category for the temporary deployment ID and shows the bridge endpoint unreachable.",
+      "confidence": 0.5,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/lib/live-chat-native.integration.test.ts",
+      "area": "'invalid native identity never reaches write/private business or limiter' it.each([chatPost, privateGet, privatePost])",
+      "issue": "The test sends the GET-shaped `request()` with no body or content-type to the POST handlers, and accepts either 403 or 503. It shows that business code and the limiter were not called. It doesn't show that the rejection came from the native identity gate rather than a body, content-type or method check that happens to return 403.",
+      "evidence": "`const source = request(\"/api/live-chat/messages\", \"invalid\"); const response = await route(source); expect([403, 503]).toContain(response.status);`. No body is sent for the POST handlers and the response body is not checked.",
+      "impact": "If the identity gate regressed for writes, the test could still pass because an unrelated 403 fires first. The positive native write tests reduce but don't remove this.",
+      "recommended_fix": "For the POST handlers, build a valid JSON POST (as in the positive test) with the invalid `x-vercel-forwarded-for`, then assert the exact status and the identity-specific error body for each route.",
+      "required_test": "Use a valid POST body plus an invalid native header. Assert the specific status and source-related error per route, and that no limiter, DB or business call happens.",
+      "confidence": 0.55,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    },
+    {
+      "severity": "NIT",
+      "file": "docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/redis-http-fixture.py",
+      "area": "TEST_AUTH constant; bind 0.0.0.0:3000",
+      "issue": "The fixture's bearer token is hardcoded in committed evidence and the bridge binds to all interfaces. It is synthetic and scope-limited, but anyone with repo access could write in-scope keys while the bridge is reachable, and secret scanners may flag the string.",
+      "evidence": "`TEST_AUTH = \"Bearer wp11-synthetic-fixture-only-no-real-data\"`; `ThreadingHTTPServer((\"0.0.0.0\",3000),Handler)`.",
+      "impact": "Negligible, since the store is disposable and synthetic. Hygiene only.",
+      "recommended_fix": "Generate the fixture token per run from the environment (never committed) and bind only to the tunnel interface, or record that the bridge was torn down.",
+      "required_test": "None required. Optionally, a secret-scan pass over the evidence directory.",
+      "confidence": 0.4,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    },
+    {
+      "severity": "NIT",
+      "file": "docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/headers-local.json",
+      "area": "IPv6 /64 grouping remote coverage",
+      "issue": "The 'ipv6' header case is a forged header that the platform overwrites, so it doesn't exercise native /64 grouping. No remote run came from a real IPv6 network. /64 grouping is proven only by unit and integration tests.",
+      "evidence": "The headers case `ipv6` sets `x-vercel-forwarded-for: 2001:db8::123`, which the edge replaces. The burst and egress runs don't state the IP family.",
+      "impact": "Remote IPv6 behaviour is unverified. Unit tests cover the logic.",
+      "recommended_fix": "Record it as a limitation, or run the one or burst probe from an IPv6-only runner.",
+      "required_test": "Optional: run the burst from two addresses in one IPv6 /64 and expect one shared bucket.",
+      "confidence": 0.4,
+      "disposition": "confirmed",
+      "disposition_reason": "Nonblocking limitation retained; no additional scope or false PASS. Cleanup independently clarified as not_found and Sandbox stopped."
+    }
+  ],
+  "cleanup_followup": "current-preview/cleanup-verification.json",
+  "metadata_provenance": "Deployment call has no manual override; inherited project-level variable origin NOT_VERIFIED; no secret enumeration",
+  "global_lint": "FAIL299 docs evidence errors, src errors0; not accepted as global PASS"
+}

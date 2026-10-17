@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "wp02-payment-readiness-disposable/v1",
+  "status": "PASS",
+  "tests": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "migrationCount": 132,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "loopbackOnly": true,
+    "syntheticDataOnly": true,
+    "sourceEnvironmentContentsRead": false,
+    "rawDatabaseOutputPersisted": false
+  },
+  "failureDiagnostics": []
+}

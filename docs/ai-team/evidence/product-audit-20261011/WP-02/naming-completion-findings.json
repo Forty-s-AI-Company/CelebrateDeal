@@ -1,0 +1,11 @@
+{
+  "revision": "sha256:d4206a80139938f01ee084961302b9f345c2a0b736a9c43555ccd74cf82034fd",
+  "findings": [
+    {
+      "severity": "MINOR",
+      "disposition": "confirmed",
+      "summary": "The disposable PostgreSQL test evaluates the exact readiness predicate directly instead of invoking all three product entry points.",
+      "reason": "Retained as a non-blocking maintenance risk. Existing unit tests assert the exact Onboarding and Dashboard ORM predicates, the publication guard has its own unchanged contract test, and the independent review confirmed no current mismatch. Sharing or rewiring the Billing gate would expand this WP beyond the user-authorized focused validation scope."
+    }
+  ]
+}

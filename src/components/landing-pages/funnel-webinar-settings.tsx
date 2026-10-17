@@ -10,10 +10,10 @@ export function FunnelWebinarSettings({ state, disabled, onChange, onValidityCha
   const [draft, setDraft] = useState(initialDraft);
   const draftRef = useRef(draft);
   const [error, setError] = useState("");
-  const fields = [["timezone", "Webinar 時區"], ["startsAt", "Webinar 開始時間（UTC）"], ["endsAt", "Webinar 結束時間（UTC）"], ["replayEndsAt", "重播截止時間（UTC）"]] as const;
-  return <section aria-label="Webinar 排程" className="mb-4 rounded-xl border border-blue-200 bg-white p-4">
-    <h2 className="font-bold">Webinar 排程與重播</h2>
-    <p className="my-2 text-sm text-slate-600">選擇既有活動與報名表，並在活動 Studio 確認來源影片。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。</p>
+  const fields = [["timezone", "線上講座時區"], ["startsAt", "線上講座開始時間（UTC）"], ["endsAt", "線上講座結束時間（UTC）"], ["replayEndsAt", "重播截止時間（UTC）"]] as const;
+  return <section aria-label="線上講座排程" className="mb-4 rounded-xl border border-blue-200 bg-white p-4">
+    <h2 className="font-bold">線上講座排程與重播</h2>
+    <p className="my-2 text-sm text-slate-600">設定線上講座時區、開始與結束時間，以及重播截止時間。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。</p>
     <div className="grid gap-3 md:grid-cols-2">{fields.map(([key, label]) => <label key={key} className="grid gap-1 text-sm">{label}<input disabled={disabled} value={draft[key] ?? ""} placeholder={key === "timezone" ? "Asia/Taipei" : "2026-09-17T10:00:00.000Z"} className="min-h-10 rounded border px-3" onChange={(event) => {
       // Playwright and fast keyboard input can dispatch several changes before
       // React renders again; keep the full draft outside the render closure.

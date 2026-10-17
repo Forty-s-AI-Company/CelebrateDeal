@@ -1,0 +1,11 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/lib/line-webhook-events.ts",
+    "src/lib/line-webhook-events.test.ts",
+    "src/app/api/webhooks/line/[vendorId]/route.ts",
+    "src/app/api/webhooks/line/[vendorId]/route.test.ts",
+    "docs/launch/line-notification-operations.md"
+  ],
+  "revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3"
+}

@@ -1,0 +1,229 @@
+{
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli"
+    }
+  ],
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-sonnet-5-5"
+  },
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "The shared transport is small and correct. The fixed URL, headers and JSON body match the previous inline fetch calls. The PublicSubmissionForm lock via a ref is set synchronously and released on both the error and network-failure paths, and FormData is read before the re-render disables the inputs. No BLOCKER or MAJOR defects were found in the supplied scope. Remaining concerns are minor: the unconditional verification copy appended to PublicSubmissionForm success, focus loss when controls are disabled, redundant or conditionally mounted live regions, a generic \"check network\" message for server-side failures, and no component-level test for the new lock. This review is based on reading the diff only; no tests were run or claimed.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "PublicSubmissionForm success branch (setMessage with FORM_SUBMISSION_VERIFICATION_MESSAGE, followed by window.location.assign)",
+        "issue": "The Email-confirmation copy is now appended unconditionally to every PublicSubmissionForm success message. The form's fields are arbitrary and may have no email field. When `redirectTo` is set, the page navigates immediately, so the instruction is rendered and then lost.",
+        "evidence": "`setMessage(`${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`); if (submission.redirectTo) window.location.assign(submission.redirectTo);` The fields come from `submission.form.fields` with no check for an email field.",
+        "impact": "Visitors to funnel forms without an email field, or whose server flow does not require confirmation, may be told to check Email for a confirmation link that never arrives. For redirecting funnels the verification instruction is effectively invisible, so the 'preserve verification behavior' goal is only partly met.",
+        "recommended_fix": "Append the verification message only when the form actually collects an email and the server flow requires confirmation. Alternatively, drive the copy from the API response or a form flag. Decide explicitly whether the redirect target page is responsible for showing the verification instruction.",
+        "required_test": "Component test: with a form that has no email field, the success message does not contain the verification copy. With `redirectTo` set, assert the intended behavior (copy shown on the target page, or navigation delayed).",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "PublicSubmissionForm inputs/button `disabled` while submitting; error recovery",
+        "issue": "Disabling the focused submit button and all inputs during submission drops keyboard and screen-reader focus to the document body. After an error nothing restores focus to the error message, the first invalid field or the submit button.",
+        "evidence": "All inputs and the button use `disabled={status === \"submitting\" || status === \"success\"}`. The error path only calls `setStatus(\"error\"); setMessage(...)`. No ref or focus management is added.",
+        "impact": "Keyboard and assistive-tech users lose their place on every failed submit and must re-navigate the form from the top. This weakens the 'accessible states' goal.",
+        "recommended_fix": "Keep the button focusable using `aria-disabled` and the ref lock rather than `disabled`, or use `readOnly` for inputs. Alternatively, move focus to the error `<p>` (tabIndex=-1) or the submit button when status becomes `error`.",
+        "required_test": "Browser or component test: after a mocked 400/429/network failure, `document.activeElement` is the error message or the submit button, not `body`.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "JSX live regions after the submit button",
+        "issue": "There are two live-region mechanisms. A persistent sr-only `role=status` span announces submitting, while the result `<p>` is conditionally mounted with `role` plus a redundant `aria-live`. Dynamically inserting a populated `role=status` node is not reliably announced by all screen readers. Redundant `aria-live` on `role=alert` or `role=status` is noise.",
+        "evidence": "`<span role=\"status\" aria-live=\"polite\" className=\"sr-only\">…</span>` and `{message ? <p role={status === \"error\" ? \"alert\" : \"status\"} aria-live={status === \"error\" ? \"assertive\" : \"polite\"} …>{message}</p> : null}`",
+        "impact": "The success message may not be announced in some AT combinations. Maintainers face redundant, hard-to-reason-about ARIA.",
+        "recommended_fix": "Use one persistent live region (always mounted) and update its text for submitting, success and error. Use `role=alert` only for the error text. Drop the redundant `aria-live` attributes.",
+        "required_test": "Component test asserting that a single always-mounted status region receives submitting, success and error text. Manual NVDA/VoiceOver check of the announcements.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-submission-client.ts",
+        "area": "formSubmissionErrorMessage default branch, now used by PublicSubmissionForm",
+        "issue": "PublicSubmissionForm previously showed 'check fields and retry' for non-429 failures. It now falls to the generic message 'check your network' for any status other than 400/403/404/429/503, including 5xx server errors and other 4xx. The 403 copy is also new for LeadForm.",
+        "evidence": "`return \"送出失敗；內容仍保留，請檢查網路後再試。\";` is returned for e.g. 500/502/409/422 where the response did arrive. The `response.ok === false` branch of PublicSubmissionForm passes `response.status`, so these responses reach it.",
+        "impact": "Users are told to check their connection when the server actually rejected or failed the request, which is misleading and may cause pointless retries. The change in error copy is a user-visible behavior difference not covered by the 'preserve behavior' statement.",
+        "recommended_fix": "Add a neutral branch for `status >= 500` and other 4xx (for example 'service is temporarily unavailable or could not be processed, please try again later'). Reserve the 'check network' text for the no-status/rejected-fetch case.",
+        "required_test": "Unit test: `formSubmissionErrorMessage(500)` and `formSubmissionErrorMessage(422)` do not mention the network, while `formSubmissionErrorMessage()` does.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-submission-client.test.ts",
+        "area": "Whole test file; component coverage gap",
+        "issue": "The tests cover only the pure helper. They do not exercise the claimed same-frame lock, state transitions, retry unlock, payload parity in either component, or the new success message composition. Some assertions are weak.",
+        "evidence": "The tests call only `postRegistrationSubmission` and `formSubmissionErrorMessage`. `expect(formSubmissionErrorMessage(status)).not.toContain(\"internal\")` is trivially true because the function never receives the response body. The test title uses 'request rejection' for 403.",
+        "impact": "The main behavioral changes in this work package (the ref lock preventing double POST in the same frame, unlocking on error/exception, button and aria state, preserved LeadForm payload and redirect) have no regression protection.",
+        "recommended_fix": "Add component tests (jsdom/RTL) that fire two synchronous submit events and assert `fetch` is called once. Cover error → retry succeeds, a network rejection unlocks, and LeadForm/PublicSubmissionForm bodies are unchanged. Replace the trivial 'internal' assertion with one proving the response body is never rendered.",
+        "required_test": "Component tests: double submit → one fetch; 400/429/503/network error → form re-enabled and values preserved; success → locked, with the verification message and redirect asserted.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/lead-form.tsx",
+        "area": "Import plus `export { ... } from` of the same symbols; call to `postRegistrationSubmission(buildFormSubmissionRequestBody(...))`",
+        "issue": "The module both imports and re-exports the helper names from a 'use client' file, creating two import paths for one contract. `postRegistrationSubmission` takes `Record<string, unknown>`; if `buildFormSubmissionRequestBody` returns an interface-typed value, this may not type-check, which cannot be verified from the supplied diff.",
+        "evidence": "`import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from ...;` followed by `export { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE } from ...;`. The body parameter type is `Record<string, unknown>`.",
+        "impact": "Minor maintainability drift: callers can keep importing from the component module, and new code may do so as well. A possible type mismatch would surface only at typecheck.",
+        "recommended_fix": "Migrate remaining importers to `@/lib/registration-submission-client` and remove the re-export once callers are updated. Type the helper body as `object` or a shared request-body type exported from the builder.",
+        "required_test": "Run typecheck and an import search for `formSubmissionErrorMessage` callers before removing the re-export.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "medium",
+      "risk_score": 0,
+      "engineering_profile": "large",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "medium",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:686eef480bbe310a19aacb38d8c1f444de3ca7519e38b9e8970a58abc02fdeda",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/components/lead-form.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "src/lib/registration-submission-client.ts",
+      "src/lib/registration-submission-client.test.ts",
+      "src/components/lead-form.test.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.test.tsx"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/components/landing-pages/funnel-page-document-renderer.test.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "src/components/lead-form.test.tsx",
+      "src/components/lead-form.tsx",
+      "src/lib/registration-submission-client.test.ts",
+      "src/lib/registration-submission-client.ts"
+    ],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": "senior_review"
+  },
+  "execution_provider": "claude_cli",
+  "accepted": false,
+  "completed": false,
+  "reviewed": true,
+  "finalModel": "claude-sonnet-5-5"
+}

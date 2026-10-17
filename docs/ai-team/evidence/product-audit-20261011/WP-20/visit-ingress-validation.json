@@ -1,0 +1,25 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-visit-reconciliation.ts": "db39ff0eace26525efbbddd3aaf9b99dbfdcd9703ad454e69d5bed4d4b06f466",
+    "src/lib/live-metric-visit-reconciliation.test.ts": "8ac71b63864dca19653838fd5d8ee885cfaf1dd5efdf625ef91addba4862088b"
+  },
+  "checks": {
+    "targetedTests": {
+      "status": "PASS",
+      "count": 53,
+      "files": 3
+    },
+    "lint": "PASS",
+    "tsc": "PASS",
+    "diffCheck": "PASS",
+    "disposableDb": "PASS",
+    "browser": "NOT_RUN",
+    "fullFiveMetrics": "NOT_RUN"
+  },
+  "firstFailures": [
+    "ESLint complexity69 fixed via same-file private functions",
+    "DB fixture extra openedAt rejected before reader",
+    "DB probe pg_sleep void deserialize error fixed textcast"
+  ],
+  "scope": "two existing source/test files; no new product module, schema, migration or framework"
+}

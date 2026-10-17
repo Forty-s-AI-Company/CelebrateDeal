@@ -1,0 +1,207 @@
+{
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "attempts": [
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "status": "REVIEW_COMPLETED",
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "production_data"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "review": {
+    "summary": "I reviewed only the supplied sources. I found no case where an error is shown as a success, no change to the email confirmation rules, and stable identity for the feedback element. The two MAJOR issues are about the no‑JS form sending different data from the JS form. The JS path reads `ref` and `lp` from the URL and sends them as `referralCode` and `landingPageId`. The no‑JS form has no hidden inputs for either value. Its hidden `shareCode` input is always empty when the server renders it, because `window` doesn't exist on the server. When `?share=` is in the URL, the server and the browser also render different `shareCode` values, which causes a hydration mismatch. Smaller issues: on `/form`, a confirmed no‑JS success has no LINE reminder button and moves no focus; the JS success path ignores the helper's `verificationRequired`/`error` fields; and the session radio buttons stay enabled while a submission is in progress. The known NIT (some screen readers may announce the focused live message twice) still stands and is not re‑reported. These findings come from reading the code, not from running tests.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/components/lead-form.tsx",
+        "area": "LeadForm hidden inputs (shareCode/formId block) and onSubmit referralCode/landingPageId derivation",
+        "issue": "The no‑JS form doesn't send the same attribution data as the JS form. The JS path sends `referralCode` (from `?ref`) and `landingPageId` (from `?lp`), but the form has no hidden inputs for either. The hidden `shareCode` input takes its value from `useState(() => typeof window === 'undefined' ? '' : ...)`, so the server always renders it empty. No‑JS submissions therefore never carry the share code.",
+        "evidence": "onSubmit builds the body with `referralCode: new URLSearchParams(window.location.search).get('ref')` and `landingPageId: ...get('lp')`. The JSX has hidden inputs only for formId, __registrationReturnPath, liveId, shareCode and redirectTo. The shareCode initializer returns '' when `window` is undefined. The `/form` page's searchParams type has only submitted/liveId/registrationRetry, so share, ref and lp are never read on the server.",
+        "impact": "Registrations from the no‑JS path, or from a page whose JS hasn't loaded yet, lose partner referral, share and landing‑page attribution. This matters especially on the `/p/[slug]` partner funnel. The JS and no‑JS paths therefore record different data for the same visit.",
+        "recommended_fix": "Read `share`, `ref` and `lp` from searchParams in the server pages, validate them with the existing patterns, and pass them to LeadForm as props. Render hidden `shareCode`, `referralCode` and `landingPageId` inputs from those props, and have the JS path use the same props instead of reading `window.location`. Make sure the native request handler maps these field names the same way as the JSON body.",
+        "required_test": "In Chromium and Firefox, with JS on and with JS off, submit /form/<slug>?share=S&ref=R&lp=L and /p/<slug>?share=S&ref=R&lp=L. Assert that the stored registration has identical shareCode, referralCode and landingPageId either way, and that no hydration warning is logged.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MAJOR",
+        "file": "src/components/lead-form.tsx",
+        "area": "`const [shareCode] = useState(() => typeof window === 'undefined' ? '' : ...)` and `<input type=\"hidden\" name=\"shareCode\" value={shareCode} />`",
+        "issue": "When `?share=` is in the URL, the server renders `value=\"\"` and the browser's first render uses the real share code. This hydration mismatch is not patched in the DOM. React reports it as a hydration error.",
+        "evidence": "The lazy initializer branches on `typeof window`, so the server and the browser produce different initial values for a rendered attribute.",
+        "impact": "Pages opened with `?share=` produce console or recoverable hydration errors. The hidden input keeps the empty server value, which causes the no‑JS mismatch described in the previous finding.",
+        "recommended_fix": "Pass the share code as a prop resolved from searchParams on the server. Don't compute rendered state from `window` during the first client render.",
+        "required_test": "Hydrate /form/<slug>?share=S in Chromium and Firefox and assert that no hydration mismatch is reported and the hidden shareCode input's DOM value equals S.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/form/[slug]/page.tsx",
+        "area": "submittedVerificationMessage / verifiedSubmission branch",
+        "issue": "On `/form`, a confirmed no‑JS success shows only the success and verification text. It has no LINE reminder button, which the JS success path shows. It also doesn't move focus to the message, which the JS path does with `focusSuccess`.",
+        "evidence": "LeadForm's success branch renders `<LineLoginButton request={{ mode: 'registration', ... }}>🟢 接收 LINE 開播提醒與電子票券</LineLoginButton>`. submittedVerificationMessage renders only two `<p>` elements in a role=status div.",
+        "impact": "Registrants who submit without JS on `/form` can't get the LINE start reminder or e‑ticket from the success page. The success feedback also differs between the two paths.",
+        "recommended_fix": "Share one success component between LeadForm and the confirmed‑success branch. It should include the LINE button with redirectPath `/form/${slug}` and focus the message on mount.",
+        "required_test": "Do a no‑JS submit on /form/<slug> that ends with a confirmed `submitted` receipt. Assert that the LINE button is present with the correct redirectPath and that the success text is announced the same way as on the JS path.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/lead-form.tsx",
+        "area": "onSubmit `if (response.ok) {...} else { formSubmissionErrorMessage(response.status) }`",
+        "issue": "The stated helper contract returns `{ok, verificationRequired, error}`, but LeadForm ignores `verificationRequired` and `error`. On success it always shows the verification‑required message. On failure it builds the message from `response.status`, which isn't part of the stated contract.",
+        "evidence": "The success branch always renders `FORM_SUBMISSION_VERIFICATION_MESSAGE`. The error branch reads `response.status` and never reads `response.error`.",
+        "impact": "If `verificationRequired` is false, users are wrongly told to verify their email. If the helper doesn't expose `status`, specific server errors such as duplicates or rate limits fall back to the generic message.",
+        "recommended_fix": "Store `verificationRequired` from the response and show the verification paragraph only when it is true. Build the error message from the field the helper actually returns, or confirm that `status` is part of the helper's type.",
+        "required_test": "Using model fixtures, mock the helper to return {ok:true, verificationRequired:false}, {ok:true, verificationRequired:true}, and {ok:false} with each error code. Assert the matching visible text and live‑region announcements.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/lead-form.tsx",
+        "area": "session radio `<input type=\"radio\" name=\"liveId\" ...>`",
+        "issue": "Text fields and the submit button are disabled while a submission is in progress, but the session radio buttons are not.",
+        "evidence": "Only the field inputs and the button have `disabled={status === 'loading'}`. The radio input has no disabled prop.",
+        "impact": "Users can change the selected session after the payload has already been captured. After an error, the form then shows a session different from the one that was sent, which is confusing.",
+        "recommended_fix": "Add `disabled={status === 'loading'}` to the radio inputs, or wrap the controls in a `<fieldset disabled>`.",
+        "required_test": "While a submission is pending, assert that the radio buttons are disabled. After a failed submission, assert that the checked radio matches the session that was sent.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "normalized_status": "REVIEW_COMPLETED"
+}

@@ -25,8 +25,8 @@ const requiredTests = [
 ];
 const requiredSuites = [
   "src/lib/commerce-orders.db.test.ts",
-  "src/lib/inventory-reservations.test.ts",
-  "src/lib/payment-webhooks.test.ts",
+  "src/lib/inventory-reservations.db.test.ts",
+  "src/lib/payment-webhooks.db.test.ts",
   "src/lib/payuni-refund-reconciliation.test.ts",
 ];
 

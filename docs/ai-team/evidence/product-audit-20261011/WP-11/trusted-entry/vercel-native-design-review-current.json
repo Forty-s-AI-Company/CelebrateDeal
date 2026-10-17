@@ -1,0 +1,248 @@
+{
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "critical",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "completed": false,
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "The vercel-native design can safely remove the external proof dependency, but only for deployments where Vercel's own edge is the first hop and no other proxy sits in front. It is not ready to enable yet. The design rests on the claim that Vercel strips or overwrites a client-supplied x-vercel-forwarded-for. The cited doc does not say that directly; it only contrasts this header with x-forwarded-for, which can be overridden. So a live forgery test on Preview is required before any mode switch.\n\nMain gaps:\n1. The planned diagnostic must run under the same team, plan and proxy settings as the app, or its result won't carry over.\n2. If any third-party proxy sits in front of Vercel, everyone behind it lands in one rate-limit bucket. This hurts normal use and lets one abuser lock out real users.\n3. The design doesn't say what happens when the mode is set but the environment checks fail, or when the header is missing or has several values. Both need to fail closed with no fallback to another header or mode.\n4. The production-environment allowance and the timing of when environment variables are read need tightening.\n\nThe design already ignores cf-connecting-ip, x-real-ip, x-forwarded-for, client proof and request headers claiming Vercel runtime. It keeps the default as none, changes only the entry helper, and leaves auth, billing and schema alone. Spoof resistance holds if the live test passes.\n\nThe firewall change looks narrowly scoped (one exact host appended, same deny action and conditions, no drafts, removing that host rolls it back). Two things to check: the added host may be a movable alias, and the firewall is not authentication.\n\nNo BLOCKER-level defects, assuming the stated order holds: diagnostic → independent review → app mode switch. Any change to that order would raise severity.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "WP11 design: vercel-native trust basis",
+        "area": "Assumption that x-vercel-forwarded-for is overwritten by Vercel's edge",
+        "issue": "The cited Vercel doc explicitly says x-forwarded-for is overwritten to prevent spoofing. It does not explicitly say a client-supplied x-vercel-forwarded-for is stripped or overwritten. 'Platform-specific variant unlike overridable x-forwarded-for' is about Trusted Proxy or upstream proxies changing x-forwarded-for, not about Vercel cleaning this header. The design reads more into the doc than it states.",
+        "evidence": "Task text: the doc says x-forwarded-for is overwritten, Enterprise Trusted Proxy may customize it, and x-vercel-forwarded-for is the platform variant. Nothing quoted says inbound x-vercel-forwarded-for is cleaned.",
+        "impact": "If Vercel passes through or appends to a client-supplied x-vercel-forwarded-for, an attacker can pick any rate-limit bucket. That brings back the spoofing the proof-backed limiter blocks today.",
+        "recommended_fix": "Treat this as an open assumption until proven live. Before turning on the app mode, run a forgery test on real Preview using a non-routable sentinel value (for example from 192.0.2.0/24 or 2001:db8::/32). Also try: duplicate header instances, header-name case variants, comma-joined lists, an empty value, and sending it together with forged x-forwarded-for and x-real-ip. Re-run the test after any project setting change (Trusted Proxy, plan change, adding a proxy in front). Record the doc's retrieval date in the security review.",
+        "required_test": "Live Preview requests through the same edge path as the app. The diagnostic returns only booleans: received==sentinel (must be false in every variant), single-valued (must be true), parses as an IP (must be true), and equals x-real-ip (expected true, informational only). Run from at least two different egress networks and confirm the 'same/different between runs' booleans match the real network change.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MAJOR",
+        "file": "WP11 design: independent diagnostic deployment",
+        "area": "Diagnostic results applying to the app project",
+        "issue": "An 'independent minimal diagnostic' in a different project or team may not share the app project's edge settings: team plan, Enterprise Trusted Proxy, firewall/WAF rules, Deployment Protection, any proxy in front, or runtime type (Edge vs Node). Results from a different setup do not prove how the app project behaves.",
+        "evidence": "The design says to deploy an independent diagnostic but does not require it to match the app project's network and proxy settings. The doc notes Trusted Proxy changes header handling.",
+        "impact": "A passing result could be wrongly applied to the app project. Spoofing would then go unnoticed.",
+        "recommended_fix": "Do one of two things. (a) Deploy the diagnostic as a separate Preview deployment inside the same Vercel project and team, using the same runtime as the entry routes, behind the same Deployment Protection and firewall. Make it a route or branch that never touches the DB or limiter, then delete it after. Or (b) write down and compare the settings that matter (team, plan, Trusted Proxy off, no proxy in front, runtime) before relying on results from another project. The diagnostic must never echo raw headers or IPs, and should not log them.",
+        "required_test": "A recorded settings-match checklist plus the forgery test from the previous finding, run on the matching setup. Afterwards, confirm the diagnostic deployment/route is removed and its hostname is not on the approved firewall host list.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MAJOR",
+        "file": "WP11 design: third-party proxy handling",
+        "area": "'For upstream third-party proxy, use actual connecting proxy IP bucket conservatively'",
+        "issue": "vercel-native mode cannot tell whether a proxy sits in front of Vercel. If one does, x-vercel-forwarded-for becomes the proxy's egress IP, so many real users share a few buckets. That is safe against spoofing but breaks the stated goal of useful normal behavior. It also lets one abuser exhaust a shared bucket and lock out legitimate users who share that proxy PoP.",
+        "evidence": "The design treats the proxy-IP bucket as acceptable. It also requires that the mode is never chosen automatically from the storage/WAF provider. But nothing stops someone putting a proxy in front of a deployment that is in native mode.",
+        "impact": "Normal users get throttled in groups, and targeted lockout of other users becomes possible, while the setting still looks healthy.",
+        "recommended_fix": "State that vercel-native is valid only when Vercel's edge is the first hop. Add a deployment checklist item and a runtime signal: count native-mode bucket keys and alert when a few keys take most of the traffic. Reject or alert when well-known proxy markers (for example a cf-ray header) are present, as a monitoring signal only, never as a trust input. For proxy-fronted setups, require the existing proof-backed mode instead of native mode.",
+        "required_test": "A unit test that native mode never reads cf-connecting-ip, x-real-ip or x-forwarded-for, even when they differ from x-vercel-forwarded-for. Then a deployment check on Preview confirming there is no proxy in front (DNS points straight to Vercel), recorded in the review.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "entry client-IP helper (proposed vercel-native branch)",
+        "area": "Behavior when environment checks partly match, and on bad header values",
+        "issue": "The design lists the conditions for turning the mode on. It does not say what happens if ENTRY_CLIENT_IP_TRUST_MODE=vercel-native but VERCEL, VERCEL_ENV or DEPLOYMENT_SOURCE don't match, or if the header is missing, malformed or has several values. Falling back to another mode or header, or to an unlimited path, would be unsafe.",
+        "evidence": "The design says 'enable only when...' and 'reject missing/malformed/multi-hop' but does not name the result of rejection or of a partial config match.",
+        "impact": "A silent fallback could rate-limit on a header the attacker controls, or skip the limiter entirely.",
+        "recommended_fix": "On a partial config match, return the same 503 the routes return today, before any payload or DB access, and log a config error with no IP in it. On a bad header, return the same 503 or a fixed rejection. Never fall back to another header or mode. Read the environment at request time on the server; do not let the build step bake these values into the code, so a moved build can't carry the mode with it.",
+        "required_test": "A table-driven unit test covering each combination of the four env conditions × header states (missing, empty, IPv4, IPv6, IPv4-mapped IPv6, zoned IPv6, comma list, whitespace, port suffix, garbage). Only the full match plus one valid IP may reach rateLimitRequestWithIdentity. Every other case returns the fail-closed response with zero calls to the limiter or DB.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "WP11 design: environment gate",
+        "area": "VERCEL_ENV allows 'production'",
+        "issue": "The gate accepts VERCEL_ENV=production while all production deployment is prohibited. Protection then depends only on where ENTRY_CLIENT_IP_TRUST_MODE happens to be set.",
+        "evidence": "The gate condition says 'VERCEL_ENV preview or production', and the task says all production deployment is prohibited.",
+        "impact": "A change to the environment-variable scope could turn the mode on in production before it has been reviewed.",
+        "recommended_fix": "Set ENTRY_CLIENT_IP_TRUST_MODE and DEPLOYMENT_SOURCE only for the Preview environment, scoped to a specific branch if possible. Optionally limit the code gate to preview until production gets separate approval.",
+        "required_test": "List the project's environment variables (names and scopes only, no values) and confirm the mode variables are absent from the Production scope.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "WP11 design: validation via invalid payload plus limiter behavior",
+        "area": "Alternative ingress check",
+        "issue": "Using 'exact invalid payload response plus limiter behavior' as a check goes through rateLimitRequestWithIdentity, which writes to the durable limiter provider. That may conflict with 'no database reads/writes during ingress checks' if the limiter store counts as a database. It is also weaker evidence than the boolean diagnostic, because it can't tell a spoofed key from a real one when only one network is used.",
+        "evidence": "The design says the limiter keeps the 'server-side durable provider', and that there are no DB reads/writes during ingress checks.",
+        "impact": "Possibly breaking the no-write rule, and possibly false confidence in spoof resistance.",
+        "recommended_fix": "Make the boolean diagnostic the required check. Use limiter-behavior tests only after the mode is enabled, with a separate key namespace for native mode, and state explicitly whether limiter-store writes are allowed.",
+        "required_test": "After enabling: from network A, send requests with a forged x-vercel-forwarded-for sentinel until the limit is hit. Confirm network B is not limited, and that rotating the forged header on A does not reset A's limit.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "entry client-IP helper / normalizeClientIp",
+        "area": "Bucket granularity in native mode",
+        "issue": "Native mode keys on the real client address. If normalizeClientIp keys IPv6 on the full /128 address, a client with a /64 block can rotate addresses and bypass the limit. This is evasion, not spoofing, but it weakens the limiter compared with what the proof-backed design intended. The supplied text doesn't say how normalizeClientIp handles IPv6.",
+        "evidence": "The design reuses the existing normalizeClientIp unchanged, and the supplied text gives no detail on IPv6 bucketing.",
+        "impact": "The limit can be bypassed by anyone with an IPv6 range.",
+        "recommended_fix": "Check how normalizeClientIp handles IPv6. If it uses /128, add /64 bucketing in the entry helper's native branch only, or document it as accepted residual risk. Also put native-mode keys under a separate prefix so they can't collide with proof-backed identities.",
+        "required_test": "A unit test showing two addresses in the same IPv6 /64 map to the same bucket key, IPv4-mapped IPv6 maps to the IPv4 key, and native and proof keys can't collide.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "Vercel project firewall rule (prior scoped change)",
+        "area": "Added Preview hostname in the 'host not-in approved list' deny rule",
+        "issue": "The change itself is scoped as described. But if the added hostname is a branch or custom alias rather than an immutable deployment URL, it can later point at any new deployment from that branch, which widens what the allowlist covers. The firewall host allowlist also does not authenticate anyone; access control still depends on Deployment Protection and app auth.",
+        "evidence": "The task says one exact new Preview hostname was appended, the deny action and conditions are unchanged, and the hostname type isn't stated.",
+        "impact": "Unreviewed future deployments could be reached through the allowed alias.",
+        "recommended_fix": "Record whether the host is an immutable deployment URL or an alias. If it is an alias, keep it tied to the reviewed branch and remove it when the review window ends. Check that the rule matches hosts exactly (not 'contains' or a prefix), and that Deployment Protection still applies to the host.",
+        "required_test": "Read-only export of the published firewall config: one deny rule, the same conditions, the host list equals the previous list plus one exact hostname, exact-match operator, no drafts. Then live checks: a non-approved Preview host gets the deny; the approved host without Deployment Protection access gets a 401/403 or redirect, not app content.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 0,
+      "provider": "agy_wrapper",
+      "status": "TOOL_DENIED"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "DISCOVERY_VERIFIED"
+}

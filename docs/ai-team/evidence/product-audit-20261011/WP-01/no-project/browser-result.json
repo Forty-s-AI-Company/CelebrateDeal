@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "results": [
+    {
+      "label": "建立專案",
+      "destination": "/projects/new",
+      "status": 200
+    },
+    {
+      "label": "選擇既有專案",
+      "destination": "/projects",
+      "status": 200
+    }
+  ]
+}

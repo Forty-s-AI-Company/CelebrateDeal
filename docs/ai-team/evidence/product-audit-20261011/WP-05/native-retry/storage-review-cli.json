@@ -1,0 +1,219 @@
+{
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:ead19a57791a4e1e1b3bc026506eb68a0b7d87b7e8e2eceab4b865c5e3eaf1cc",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "prisma/schema.prisma",
+      "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+      "src/lib/registration-form-retry.ts",
+      "src/lib/registration-form-retry.test.ts",
+      "src/lib/registration-form-retry.db.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+      "prisma/schema.prisma",
+      "src/lib/registration-form-retry.db.test.ts",
+      "src/lib/registration-form-retry.test.ts",
+      "src/lib/registration-form-retry.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "accepted": false,
+  "review": {
+    "summary": "This review covers only the supplied WP05 retry-draft helper, its unit and disposable-DB tests, and the additive migration and schema. I found no BLOCKER or MAJOR defects. Isolation is sound: a row is found only by the SHA-256 of a 256-bit random capability, which is never stored. The read also checks formId and sourcePath against both the plain columns and the encrypted envelope. Because idHash, formId, sourcePath and expiresAt are sealed inside the AES-GCM payload, a stored expiry change or a ciphertext moved to another row is rejected. Expiry is enforced at exactly the TTL, and every failure (bad config, DB error, tampering, oversize input) returns null with no plaintext fallback. Cleanup is capped at 100 rows per call and limited to expired rows, and the migration only adds a new table and index. Remaining issues are MINOR/NIT: the payload size limits don't line up, there is no way to delete a draft early, there is no test for the row-transplant protection, the cookie name could resist subdomain cookie tossing, and the real-DB cleanup check could become flaky. Abuse controls and same-origin checks are left to the caller, as stated. A global row or storage cap is a scope proposal, not a defect. This review does not certify native303, full WP05, route wiring, or delivery/release acceptance. An empty BLOCKER/MAJOR set is not a test or release receipt.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry.ts",
+        "area": "MAX_PAYLOAD_BYTES checks in saveRegistrationRetryDraft and readRegistrationRetryDraft",
+        "issue": "The write limit (300,000 bytes of serialized plaintext) and the read limit (encryptedPayload.length > 600,000 chars) come from different measurements, and neither is derived from the ciphertext encoding. Also, input that passes the schema (32 fields × 2,000 UTF-16 units) can still go over 300 KB after JSON escaping.",
+        "evidence": "On save, JSON.stringify output is limited to 300 KB. On read, the stored string is limited to MAX_PAYLOAD_BYTES*2. If sensitive-data encodes in hex, or adds a version prefix, IV and tag to a hex body, a payload near 300 KB becomes more than 600,000 chars. That draft saves fine but can never be read. Separately, control characters or lone surrogates become \\uXXXX (6 bytes each): 2,000 × 6 × 32 = 384,000 bytes, so that input is silently refused. The tests only cover CJK text (about 192 KB).",
+        "impact": "Fails closed, so this is not a security issue. But a draft near the limit could save and then be unreadable, wasting storage and losing the retry. The real maximum is not what the schema promises.",
+        "recommended_fix": "Base the read limit on the library's actual output size (e.g. the base64 length of 12+16+MAX_PAYLOAD_BYTES plus any prefix). Or check the decrypted plaintext length against MAX_PAYLOAD_BYTES. Document that the save limit is measured after JSON escaping.",
+        "required_test": "Unit test: save a payload just under MAX_PAYLOAD_BYTES (e.g. escape-heavy or 3-byte characters padded to the limit) and confirm it reads back without being rejected. Also add a test that schema-valid escape-heavy input gets the documented result.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry.ts",
+        "area": "exported API (no delete/consume function)",
+        "issue": "There is no function to delete a draft by capability. Reads never consume the draft, so it stays readable and stored until expiry and the next opportunistic purge, even after the registration succeeds or the user abandons it.",
+        "evidence": "readRegistrationRetryDraft never deletes the row, and the only deletion path is purgeExpiredRegistrationRetryDrafts, which handles expired rows only. The test 'allowing refresh before expiry' confirms repeated reads work.",
+        "impact": "Encrypted PII (name, email) stays in the database for the full TTL, and possibly longer while the system is idle, after it is no longer needed. Anyone holding the cookie, such as the next person on a shared device, can replay it within 10 minutes unless the caller also clears the cookie.",
+        "recommended_fix": "Add deleteRegistrationRetryDraft(db, capability) (deleteMany by lookupHash, with errors swallowed). Document that the caller must call it and clear the cookie after a successful submission. Optionally offer read-and-delete for single-use flows.",
+        "required_test": "Unit and disposable-DB tests: after deletion, reading with the same capability returns null and the row count for that formId is 0. Deleting with a malformed or unknown capability does not throw.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry.test.ts",
+        "area": "'rejects a forged stored expiry and ciphertext corruption' test",
+        "issue": "The code says the envelope binding stops ciphertext from being moved to another row, but no test checks this. The corruption test also replaces one character with '!', which Node's base64 decoder may silently skip instead of seeing a tampered byte.",
+        "evidence": "No test copies row A's encryptedPayload into row B and reads with B's capability, or changes the stored formId/sourcePath columns to match a different request. The corruption case only shows that some change at offset 15 fails. It does not prove a ciphertext or tag bit-flip is rejected.",
+        "impact": "A later refactor that drops the idHash, formId or sourcePath comparison inside the envelope would still pass every test. That would quietly allow moving a ciphertext to another row or form.",
+        "recommended_fix": "Add tests that (a) save two drafts, swap their encryptedPayload values, and expect both reads to return null; (b) change the stored formId and sourcePath columns to match another request and expect null; (c) flip one bit in the decoded ciphertext and in the tag, re-encode with valid characters, and expect null.",
+        "required_test": "The three unit tests above, each expecting null.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry.ts",
+        "area": "REGISTRATION_RETRY_COOKIE / registrationRetryCookieOptions",
+        "issue": "The cookie name has no __Host- prefix, so a sibling subdomain or a non-secure origin could set (toss) this cookie for the main host.",
+        "evidence": "The cookie name is 'celebratedeal_registration_retry' with path '/', secure set by a flag, and no domain. A related host that can set parent-domain cookies could create its own draft and plant that capability in a victim's browser.",
+        "impact": "The victim's form would be prefilled with attacker-chosen answers (e.g. the attacker's email). They might then submit a registration with data they did not enter. The impact is limited because the attacker cannot read the victim's draft this way.",
+        "recommended_fix": "In production (secure=true), use the name '__Host-celebratedeal_registration_retry', keeping path '/', no Domain, and Secure. Fall back to the current name only on non-secure dev hosts.",
+        "required_test": "Unit test: registrationRetryCookieOptions(true) together with the selected name meets the __Host- rules (Secure, Path=/, no Domain).",
+        "confidence": 0.45
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/registration-form-retry.db.test.ts",
+        "area": "final count assertion after the expired read",
+        "issue": "Cleanup removes up to 100 of the oldest expired rows across the whole table. If the disposable DB holds more than 100 expired rows from earlier aborted runs, this test's row may not be purged, and the expectation that the count is 0 would fail.",
+        "evidence": "purgeExpiredRegistrationRetryDrafts orders by expiresAt ascending with take: 100 and no formId filter. afterEach only removes rows for formIds created in the current run.",
+        "impact": "The test could fail intermittently on a reused disposable DB. Production behavior is unaffected.",
+        "recommended_fix": "Delete all expired rows in the dedicated DB in beforeAll, or assert that a read returns null instead of asserting physical deletion.",
+        "required_test": "Run the DB test twice with an interrupted run in between and confirm it stays green.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR"
+}

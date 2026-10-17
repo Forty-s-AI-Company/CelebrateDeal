@@ -1,0 +1,172 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I re-checked only the revised browser-deadline.cjs and its disposition. The earlier MAJOR is fixed. The redirect-branch thank-you reload now checks for HTTP 200, the preserved submitted=verification_required query, that the thank-you page was reached before closure, and the configured thank-you content. The verifiedSuccess claim is limited to the configured target staying viewable. The unknown-query checks, the control-name renames and the mail claim match the disposition. Two cleanup problems remain, both MINOR: cleanup fails when only part of the fixture was created, and funnelVisit rows are counted but never explicitly deleted. Neither affects whether the deadline checks are correct when the test passes. An empty or non-blocking result here does not mean the test or the release has been verified.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "browser-deadline.cjs",
+        "area": "finally cleanup block (formSubmission deleteMany and the counts Promise.all)",
+        "issue": "Cleanup reads form.id without checking that form exists. If the fixture fails after vendor is created but before form is (for example, salesProject.create or registrationForm.create throws), `db.formSubmission.deleteMany({where:{formId:form.id}})` throws a TypeError. Every delete after it is skipped, including the vendor delete.",
+        "evidence": "The vendor branch runs `if(vendor){... await db.formSubmission.deleteMany({where:{formId:form.id}}); ... await db.vendor.delete(...)}` and the count block also uses `form.id`. Only the earlier retry-draft delete is guarded with `if(form)`.",
+        "impact": "A fixture failure leaves the synthetic vendor and project rows behind, and the cause is reported as cleanupError 'TypeError' instead of the real fixture error. This works against the disposition's claim that cleanup is explicit and complete.",
+        "recommended_fix": "Run the formSubmission and retry-draft deletes and counts only when form exists (for example, `form?.id` inside `if(form)` blocks, or filter by `form:{vendorId:vendor.id}`), so the vendor-scoped deletes still run.",
+        "required_test": "Force a throw right after vendor creation (for example, an invalid salesProject payload in a scratch run). Check that the report shows the fixture failure, that cleanup=true, and that the vendor row count is 0.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "browser-deadline.cjs",
+        "area": "finally cleanup block (delete sequence and the funnelVisit count)",
+        "issue": "funnelVisit is one of the 10 tables required to have zero rows, but it is never explicitly deleted. Its rows (likely created by every public /lp page view in the loop) are removed only if a cascade from landingPage or vendor happens to apply.",
+        "evidence": "The deletes cover funnelSubmission, landingPageVersion, landingPage, emailDelivery, formSubmission, registrationForm, salesProject and vendor, but not funnelVisit. Yet `db.funnelVisit.count({where:{vendorId:vendor.id}})` must be 0. The disposition says there are 'Explicit dependent fixture deletes ... for 10 affected tables'.",
+        "impact": "If there is no cascade, landingPage or vendor deletion fails with an FK error, or the zero-count assertion fails. Either way the synthetic rows are left behind and a passing deadline run is reported as a cleanup failure. Also, report.cleanupRowCounts is assigned after the assertion, so the counts are missing exactly when they would help diagnose the failure.",
+        "recommended_fix": "Add `await db.funnelVisit.deleteMany({where:{vendorId:vendor.id}})` before deleting landingPage. Assign report.cleanupRowCounts before calling assert.ok(counts.every(...)).",
+        "required_test": "Run the script for one engine and check that cleanupRowCounts is all zeros, with funnelVisit at index 5. Also check that a run where funnelVisit rows exist (confirmed by a pre-cleanup count) still finishes with cleanup=true.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "accepted": false,
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED"
+}

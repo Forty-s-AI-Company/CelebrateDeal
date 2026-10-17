@@ -1,0 +1,12 @@
+{
+  "files": {
+    "prisma/migrations/20261015200000_live_metric_registration_projection_revision/migration.sql": "37d5e0bb1e623af3fad4e72a8133ac57130c436c1c6fc2c3b908edb63e068641",
+    "prisma/migrations/20261015170000_live_metric_registration_source_revision/migration.sql": "fea7c962d49e054787d0a496ab8ec722c6bf1f6124c2805ed7c363f0c8e79fbc",
+    "prisma/migrations/20261015190000_live_metric_registration_coverage_proof/migration.sql": "076eb0b765f0e91a4ebff6b07938ead89eb83102d7ec0763c67e38553b358df5",
+    "prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql": "2a957cba8644fc3def9211ca56dc672a6d9017cc47d295d54a1ef19dccb51cb8",
+    "src/lib/live-metric-registration-coverage.ts": "f03819b61fde47ef57f94b2ff28f3283a09538b9dd79d8efd85b9e4d39139fec",
+    "src/lib/live-metric-coverage-reader.ts": "252bd12b75391c358e7333fac2655e6ad661c218a6c8c850a774bead53356da9",
+    "scripts/wp20-registration-vendor-cascade.mjs": "6ee337ab87e9efad2f4e92534863a436a377b0baa4ae613416c06357a2db6f4e",
+    "scripts/wp20-registration-proof-mutation-probe.mjs": "8cd24a04e677f6e5c6de8316648be3631adf99b7955b4e429e65114307ce952c"
+  }
+}

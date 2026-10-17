@@ -1,0 +1,269 @@
+{
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "permission"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 4042,
+      "expected_duration": 0,
+      "code_surface_area": 1,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "completed": false,
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "review": {
+    "summary": "Text-only review of CelebrateDeal terms/privacy/refund draft 1 (2026-10-16). The draft is careful. It avoids blanket no-refund statements and broad waivers, it doesn't invent providers, retention periods or regions, and it doesn't claim that online courses automatically fall under the withdrawal exceptions. No BLOCKER-level text defect was found.\n\nSeparately from the text defects, the draft cannot be published until the owner supplies some facts. These are already flagged in the draft: operator legal name, tax ID, address, contact address, effective date, who sells, collects payment and issues invoices for merchant goods, actual providers and regions, retention periods, and whether PayUni e-invoicing is enabled and integrated. None of these is reported as a defect below.\n\nText defects that can be fixed without owner facts:\n- Several public-facing sections contain internal drafting instructions and have no clear subject for their obligations.\n- Statutory points that don't depend on owner facts are missing:\n  - the 7-day withdrawal right for distance sales, the no-cost rule, and the 15-day deadline to return payment\n  - where indirectly collected personal data comes from\n  - deadlines for answering data-rights requests, marketing opt-out, and breach notification\n  - minors\n- It isn't clear whether merchants receive individual-level viewing and analytics data.\n- The 'order reference is enough' refund promise conflicts with refunds for non-card payments, which may need bank details.\n- The 'arbitrary fees' wording suggests reasonable fees could reduce statutory refunds.\n\nNo finding asks for platform implementation work. An empty or short findings list does not certify legal sufficiency or that the draft is ready to publish.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "Public sections: 通知、方案與服務變更; 爭議處理; 活動統計與識別限制 (last sentence); 對象、地區與安全 (正式版本應列出…); 保存與權利 (本草案不憑空承諾固定年限); 申請與適用範圍 (客服應分清…)",
+        "issue": "Internal drafting and implementation instructions are mixed into the text meant for users. Many obligations are written as subjectless '不得/應' rules, not as commitments from a named party to the user.",
+        "evidence": "Public sections contain '正式啟用前應呈現實際追蹤項目…不以這份草案作為正式追蹤已獲同意的證據', '正式版本應列出實際服務商…不把尚未確認的供應商或機房位置寫成事實', '本草案不憑空承諾固定年限', '不得要求完整卡號、驗證碼、密碼或金鑰' (no stated subject), '客服應分清申請已收到…'. The draft has its own section for non-public notes ('編輯依據與待辦（不直接放上公開頁）'), but these lines are outside it.",
+        "impact": "If these sections are moved to a public page as written, they read as a requirements memo. Users can't tell what the operator actually commits to, for example whether 'we will never ask for your card number' is a promise. The self-referential 'this draft' wording would also be wrong once the policy is published. This undermines the goal of a concrete, coherent draft.",
+        "recommended_fix": "Move all 'formal version should…/this draft does not…' instructions into the non-public editorial section or into bracketed 【待填】 placeholders. Rewrite the remaining obligations as first-person operator commitments, e.g. '我們不會要求您提供完整卡號、驗證碼、密碼或金鑰', '我們會區分並告知申請已受理、審核中、已送出退款及退款完成之狀態', '正式追蹤項目、目的與選擇方式：【待填】'.",
+        "required_test": "Docs check: no sentence in a public section refers to '本草案/正式版本' or tells an unnamed party what to do. Each obligation names who owes it (平台/商家/使用者).",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MAJOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "退款與付款支援 › 消費者權利與數位內容; 處理方式",
+        "issue": "The draft points to statutory withdrawal rights only in general terms. It leaves out the core distance-sale rules, which don't depend on owner facts: the 7-day no-reason withdrawal period, that the consumer pays nothing to withdraw, how to give notice, and the seller's 15-day deadline to return payment. It also makes refund timing depend on 'gateway procedures'.",
+        "evidence": "'依法享有的解除契約及其他救濟權利不受本政策限制' and '退款方式及入帳時間依實際交易與金流程序說明' are the only refund-right and timing statements. Consumer Protection Act Art. 18–19 and 19-2 set the 7-day period, no cost to the consumer, and return of payment within 15 days after the withdrawal notice or the return of goods.",
+        "impact": "Consumers aren't told about a key right or how to use it. Making timing depend on 'gateway procedures' could be read as allowing refunds later than the legal deadline. Art. 18 also makes the seller disclose withdrawal information, which this text doesn't do.",
+        "recommended_fix": "Add a neutral statutory paragraph: 'Where a merchant good or platform plan is a distance sale to a consumer, the consumer may withdraw within 7 days after receiving the good or service, without giving a reason or paying any cost, by written notice (including email) to 【待填聯絡管道】. The seller returns payment within 15 days after receiving the notice. Timing on the card issuer or gateway side does not extend the seller's obligation. Exceptions apply only when the conditions are met and the consumer was clearly told before the transaction.' Keep the seller as a placeholder until the collection scope is decided.",
+        "required_test": "Docs check: the refund section names the 7-day period, the no-cost rule, the notice channel placeholder, and the 15-day deadline, and no sentence makes the statutory deadline depend on gateway timing.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MAJOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "隱私通知 › 蒐集範圍與目的; 活動統計與識別限制; 對象、地區與安全 (recipients)",
+        "issue": "Page-visit and playback-interval records linked to registrations are collected for 'activity statistics', but the only listed recipient is the 'merchant responsible for fulfillment'. The draft doesn't say whether merchants get individual-level, identifiable behavior and viewing data or only aggregates.",
+        "evidence": "Data categories include '頁面造訪與播放區間紀錄'. Statistics are based on '可驗證報名關係'. Recipients: '負責履約的商家、PayUni…'. Analytics is not fulfillment, and nothing limits merchant access to aggregate data.",
+        "impact": "The 'fulfillment' label could cover sharing identifiable viewing behavior with merchants. That is a material processing use the user hasn't clearly been told about (PDPA Art. 8 purpose and recipient), and it reads as overbroad processing.",
+        "recommended_fix": "Add an explicit sentence: '商家可取得之活動統計為【彙總／可連結至個別報名者之造訪與播放區間】，用途限於【…】'. List 'event analytics' as its own purpose and recipient line, separate from fulfillment. If individual-level sharing isn't decided yet, put it behind a 【待填】 placeholder rather than the fulfillment label.",
+        "required_test": "Docs check: the recipient list ties each data category (especially page-visit and playback records) to a recipient and purpose, and says whether merchants see individual-level or aggregate analytics.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "隱私通知 › 蒐集範圍與目的",
+        "issue": "The draft doesn't say where indirectly collected data comes from. LINE binding status comes from LINE, payment results from PayUni, and registration or attendee data may be entered by merchants. PDPA Art. 9 requires telling people the source of data not collected from them directly.",
+        "evidence": "The list covers 'LINE綁定狀態', '訂單與付款結果參照', '報名內容', but no source is named and no Art. 9 notice is given.",
+        "impact": "A required notice element is missing. This can be fixed now because the source categories are already known from the features described.",
+        "recommended_fix": "Add: '部分資料非直接由您提供，來源包括：您授權綁定之LINE帳號、PayUni回傳之交易結果、商家為辦理活動提供或匯入之報名資料。'",
+        "required_test": "Docs check: each indirectly obtained category has a named source.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "退款與付款支援 › 申請與適用範圍 ('…即可，不必提供完整付款憑證或敏感驗證資訊'); 隱私通知 data categories",
+        "issue": "Saying the order reference 'is enough' is an unsupported promise. Refunds for ATM or convenience-store payments usually need the consumer's bank account details. That data category also isn't listed in the privacy notice.",
+        "evidence": "'申請時提供訂單參照、問題與希望的處理方式即可'. The privacy categories mention only '訂單與付款結果參照'.",
+        "impact": "The refund section contradicts what refund processing actually needs, and it leaves a personal-data category (refund account) out of the notice.",
+        "recommended_fix": "Change to: '通常提供訂單參照即可；非信用卡付款之退款可能需提供退款帳戶資訊，僅於必要時經【正式管道】蒐集。' Add 'refund account information (if needed)' to the data categories with a refund purpose.",
+        "required_test": "Docs check: the refund instructions and the privacy categories agree on refund account data.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "退款與付款支援 › 處理方式 (last sentence)",
+        "issue": "'不得以任意手續費條款減損' implies that reasonable, non-arbitrary fees could still reduce refunds owed by law. Statutory withdrawal under Consumer Protection Act Art. 19 can't carry any cost to the consumer.",
+        "evidence": "'依法應退還的款項不得以任意手續費條款減損'.",
+        "impact": "This could mislead consumers into accepting fee deductions on statutory refunds.",
+        "recommended_fix": "Change to: '依法應退還之款項，不得以手續費或其他費用扣減；法定解除權之行使，消費者不負擔任何費用。'",
+        "required_test": "Docs check: no wording suggests that any fee may reduce a statutory refund.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "隱私通知 › 保存與權利",
+        "issue": "The rights section leaves out disclosures that don't depend on owner facts: response deadlines for rights requests (PDPA Art. 13: 15 days for access and copies, 30 days for correction, stopping use and deletion, each extendable once with notice), whether a reasonable fee may be charged for copies (Art. 14), a free right to refuse marketing at any time (Art. 20), and notice to data subjects after a breach (Art. 12).",
+        "evidence": "The section lists the rights and the request channel but has no deadlines, fee statement, explicit marketing opt-out or breach-notification commitment. '不選擇行銷通知不應影響' uses the weak '不應'.",
+        "impact": "Users don't learn what to expect, and the statutory commitments are missing or hedged.",
+        "recommended_fix": "Add the statutory response periods, a fee statement (with the amount as 【待填】 or 'free'), 'you may refuse marketing messages at any time, free of charge, via 【管道】; we will stop once notified', and 'we will notify affected data subjects of a breach as required by law'. Change '不應影響' to '不影響'.",
+        "required_test": "Docs check: the rights section contains response periods, a fee statement, a marketing opt-out method and a breach-notification commitment.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "隱私通知 › 對象、地區與安全 ('採必要權限、傳輸保護及稽核等措施')",
+        "issue": "The draft states security measures as existing fact, while the same draft says actual providers, data flows and implementation are unconfirmed.",
+        "evidence": "Present-tense '採必要權限、傳輸保護及稽核等措施，僅提供各項服務所需資料' versus the editorial note '實際資料流…待補'.",
+        "impact": "This could become an unsupported representation if the controls aren't in place when the policy is published.",
+        "recommended_fix": "Make it a placeholder or a conditional commitment tied to verified controls ('【上線前依實際控制項填寫】'), or list it in the editorial checklist as a fact to confirm before publication.",
+        "required_test": "Docs check: every security statement is either marked for verification or tied to a confirmed control.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "使用條款 (structure: 帳號與內容; 通知、方案與服務變更; 爭議處理)",
+        "issue": "Standard terms clauses that don't need owner facts are missing: account suspension or termination (grounds, notice, data and content handling afterwards), minors (legal-representative consent), recurring-plan renewal and cancellation (the draft mentions '計價週期'), how changes to the terms themselves are notified and the user's option to stop using the service, and governing law and jurisdiction without excluding the consumer's statutory forum.",
+        "evidence": "The sections cover conduct rules, price and service change notice, and the complaint channel only. There is no termination, minors, auto-renewal, terms-amendment or governing-law clause.",
+        "impact": "Material contract terms are undefined. The platform's remedies for misuse can't be relied on, and users of recurring plans don't know how to cancel.",
+        "recommended_fix": "Add short clauses: suspension or termination for breach, with notice where reasonable and treatment of paid rights; minors need legal-representative consent; plan renewal and cancellation method and effect (amounts and periods as 【待填】); terms amendments notified 【N日】 in advance with the option to stop and an explanation of effects; Taiwan law governs, with jurisdiction not prejudicing consumer statutory forums.",
+        "required_test": "Docs check: the terms include termination, minors, renewal and cancellation, amendment notice, and governing-law clauses with placeholders where owner facts are needed.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "CelebrateDeal 使用條款、隱私與退款政策 (draft 1)",
+        "area": "退款與付款支援 › 消費者權利與數位內容 ('需事先同意才提供的數位內容')",
+        "issue": "The exception wording is slightly loose. The exception covers intangible digital content or online services completed once provided, and only where the consumer gave prior consent and was told beforehand that the withdrawal right is lost. It shouldn't cover live sessions scheduled for the future.",
+        "evidence": "'若個別商品主張法定合理例外…需事先同意才提供的數位內容，不能用預先勾選或事後公告代替'.",
+        "impact": "Small risk that merchants read live or scheduled courses as covered by the exception.",
+        "recommended_fix": "Add: '僅限非以有形媒介提供、經消費者事先明示同意始提供且已告知將喪失解除權之數位內容或一經提供即完成之線上服務；尚未提供之直播或分期課程不當然適用。'",
+        "required_test": "Docs check: the exception wording names prior express consent, advance notice of losing the withdrawal right, and the content types, and doesn't extend to unprovided live sessions.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "accepted": false,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

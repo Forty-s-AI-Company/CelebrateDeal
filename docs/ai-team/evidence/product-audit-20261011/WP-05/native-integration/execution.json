@@ -1,0 +1,1 @@
+{"kind": "execution", "revision": "sha256:5e9a1e6626cbb26b69fc5aeaa2b1d0112393b8d43da3d33904eebf1a9bd3f3ef", "status": "COMPLETED", "source": "desktop_native", "provider_terminal": true, "tool_operations": "completed", "observed_model": "unknown", "observed_effort": "unknown", "scope": "Native retry implementation complete; full WP05 acceptance remains incomplete"}

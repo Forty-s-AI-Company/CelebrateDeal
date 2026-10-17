@@ -1,0 +1,13 @@
+{
+  "hashes": {
+    "src/lib/live-metric-registration-audit.ts": "cb71e711243d37c43f13b755e4c12f7c46a770279288ba85da8f9305c8a5a54e",
+    "src/lib/live-metric-registration-audit.test.ts": "abe819db38691a45eace6cdd9104376c7818dbef1d4cb94df7e69036c658577d",
+    "scripts/wp20-registration-source-concurrency.mjs": "83ed90d369cb6d1243f3b6e3ad9237ae4d7e2506022a4c3f7c30a8692a769129",
+    "scripts/wp20-payment-retry-disposable.mjs": "83bf06f455bfda5a53407c3257f3b011ddbfd50b11d5a827bb1f4553366f30bf"
+  },
+  "unit": "9 PASS",
+  "lint": "reader/test PASS",
+  "db": "106 migrations PASS; registration_without_capture and after form switch invalid_source PASS",
+  "integration": "reverse reader not yet wired to full enumeration summary",
+  "review": "PENDING"
+}

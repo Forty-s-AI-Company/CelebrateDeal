@@ -1,0 +1,44 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "name": "reconciliation pages past pending failures and terminal gaps then repairs later passes",
+      "status": "PASS"
+    },
+    {
+      "name": "real verification records DB epoch despite app clock skew and nonUTC session",
+      "status": "PASS"
+    },
+    {
+      "name": "verification commits despite projection failure and replay repairs it",
+      "status": "PASS"
+    },
+    {
+      "name": "session and projection preserve first capture in either order and concurrently",
+      "status": "FAIL",
+      "code": "ASSERTION_OR_RUNNER_ERROR",
+      "errorType": "AssertionError",
+      "differingReceiptFields": [],
+      "guard": null,
+      "assertion": null
+    }
+  ],
+  "loadMetrics": null,
+  "indexMetrics": null,
+  "visitDeletionMetrics": null,
+  "passed": 3,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 101,
+    "failure": {
+      "category": "wp20-persistence-check-failed",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

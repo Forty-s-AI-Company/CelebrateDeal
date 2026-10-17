@@ -1,0 +1,15 @@
+{
+  "unit": {
+    "status": "PASS",
+    "tests": 12
+  },
+  "lint": "PASS",
+  "integration": "PASS",
+  "forcedDatabaseCollision": "NOT_RUN",
+  "typecheck": "NOT_RUN_CURRENT",
+  "independentReview": "PENDING",
+  "files": {
+    "src/lib/live-metric-order-coverage.ts": "d98198a0724f73ac1df7b1e10a8b8b9d21231b5e2bc3f6ab98b508d8a8f00f9b",
+    "src/lib/live-metric-order-coverage.test.ts": "2ababe347d7025a98720d97eae280185457dafb70b1763afa1934c4c3eb09414"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "sourceHashes": {
+    "src/lib/automation-workflow.ts": "caf582d425245da1a0dd8d33510148ef2c5b23c6a45789149e4aa4252244a4df",
+    "src/lib/automation-workflow.test.ts": "d11b4028bf691796046fbaea7b4eb9e54650ed67867663706894e394045b1b32",
+    "src/app/actions/automation-actions.ts": "e8d4e629b99f69fd9ced00b2484c347ab730587137a5e88917b7765ca47af30b",
+    "src/app/actions/automation-actions.test.ts": "25d45090ba801c21a50daeade1799d0cb34f32e77f40c28345905387da9c175b",
+    "src/app/(app)/settings/automations/page.tsx": "f9dc5c9bd83fdcb07d9d37d5ff5bcb32bb053fad2753bff17b865bfa3c4e827c",
+    "src/app/(app)/settings/automations/page.test.tsx": "74aa672f958d0c28d0e651ab415d0d8bb8cb2e619128c1ea39a2fadc3dcca860"
+  },
+  "scope": "full library and actions changed hunks, exact page helpers/recipe form/toggle form, custom-select restriction/error copy description",
+  "contextChars": 11684,
+  "wholeWp18": "IN_PROGRESS"
+}

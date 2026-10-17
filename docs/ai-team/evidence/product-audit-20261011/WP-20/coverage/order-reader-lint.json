@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "order-reader-lint", "revision": "sha256:1c45fa897ef5b2322a632ae05ad0ef7d8c37acbd11bbbc4d36009f3530188ef0", "status": "PASS", "exit_code": 0, "duration_seconds": 3.735}

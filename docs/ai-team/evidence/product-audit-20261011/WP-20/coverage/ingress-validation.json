@@ -1,0 +1,26 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-ingress.ts": "7c2d967a1ebd5ac68277611714d0c2467397b36c2c9926877d22fbc293d6d823",
+    "src/lib/live-metric-ingress.test.ts": "67c903fd35038431f0a28aea80f849b83936d6560b6dcc67ae13ba6c32aafce0",
+    "src/lib/live-metric-ingress-gateway.ts": "db8310b21fdfbb58a547809b80f206fc70825bed7a197cfe7010b0f7b80c55e7",
+    "scripts/wp20-ingress-disposable.mjs": "fb2af3e1a279f60fbffc362fd84cbdf1344e48e07d3d3b22b001f7d11a1d1203",
+    "prisma/schema.prisma": "f55ef5a79b1626f5f4db6bcf8291aad91c2e466e85d8ce4aa99e36af610cfd16",
+    "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql": "d3f2e4c62c04a0b37e76ba7a4ec78de92625984c7a43b141645c353b39361070"
+  },
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 10
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "status": "PASS"
+}

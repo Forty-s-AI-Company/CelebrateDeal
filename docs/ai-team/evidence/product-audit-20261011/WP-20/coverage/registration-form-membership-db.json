@@ -1,0 +1,68 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 20,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "registrationSourceConcurrency": {
+    "status": "PASS",
+    "submitted": 20,
+    "committed": 20,
+    "concurrentMs": 192,
+    "snapshotIsolation": "PASS",
+    "nextSnapshotSeesLateSource": "PASS",
+    "oldFormRowsRemainVisible": "PASS",
+    "scope": "ReadCommitted concurrent calls; not synchronized Serializable payment acceptance"
+  },
+  "sourceInvalidation": [
+    {
+      "field": "verificationStatus",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "verifiedAt",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "formId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveFormId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    }
+  ],
+  "linkedFormOwnership": "REJECTED_BY_FOREIGN_KEY",
+  "noVideoMetricOwnership": "REJECTED_BY_IMMUTABLE_VERSION",
+  "roleSafeRevision": "PASS",
+  "revisionSnapshotConcurrency": "PASS",
+  "counts": {
+    "payments": 20,
+    "orders": 20,
+    "entitlements": 20
+  }
+}

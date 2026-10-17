@@ -1,0 +1,164 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\calendar-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "calendar-unit",
+      "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "calendar-unit.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\calendar-unit-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "calendar-resource-regression",
+      "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "calendar-resource-regression-unit.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\calendar-resource-regression-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "calendar-build-typecheck",
+      "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "calendar-build.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\calendar-build-typecheck-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "calendar-browser",
+      "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "calendar-browser.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\calendar-browser-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "calendar-lint",
+      "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "desktop_exec_session36172",
+      "warnings": 1,
+      "scope": "Final10source scoped ESLint, existing intentional full-navigation warning, no suppression or threshold changes.",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\calendar-lint-receipt.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+    "status": "PASS",
+    "independent": true,
+    "role": "senior_review",
+    "model": "claude-sonnet-5-5",
+    "observed_model": "claude-sonnet-5-5",
+    "observed_effort": "unknown",
+    "provider_receipts": [
+      "calendar-review.json",
+      "calendar-fixed-review.json",
+      "calendar-hydration-review.json"
+    ],
+    "coverage": "All6current product files byte-exact through combined immutable reviews: three full new/UI modules, readiness quick form and two additive DTO exact diffs. Nine of ten product/test paths also have exact reviewer hashes; extra existing parent SSR test assertion is a stronger validation-only addition executed by unit suite. Queries/access/token/gate rules unchanged.",
+    "covered_current_paths": [
+      "src/components/landing-page-workspace.tsx",
+      "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "src/components/quick-webinar-form.test.tsx",
+      "src/components/quick-webinar-form.tsx",
+      "src/components/webinar-calendar-download.tsx",
+      "src/lib/landing-page-service.ts",
+      "src/lib/webinar-calendar.test.ts",
+      "src/lib/webinar-calendar.ts",
+      "tests/e2e/wp17-quick-webinar.spec.ts"
+    ],
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\calendar-review-qualification.json"
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/webinar-calendar.ts",
+      "area": "createWebinarCalendar, date guards (the line checking start/end/now years)",
+      "issue": "The upper year bound for start and end depends entirely on the imported parseFunnelWebinarSettings. The local guards check only `< 1` for start and end, and check both bounds for `now`. If the parser is later loosened, `utc(start)` or `utc(end)` would emit an extended-year string such as `+010000…`, which is invalid iCalendar.",
+      "evidence": "The local guard is `start.getUTCFullYear() < 1 || end.getUTCFullYear() < 1 || now.getUTCFullYear() > 9999`. It has no `start/end > 9999` check. The calendar test covers `+010000` only through the parser path, and the parser source is not in the supplied scope.",
+      "impact": "There is no current exploit, because the parser is said to reject these dates. This is a regression risk: the calendar's own output validity rests on a distant module's contract.",
+      "recommended_fix": "Add a cheap local assertion that start and end years are between 1 and 9999, or check that `utc(start)` and `utc(end)` match `/^\\d{8}T\\d{6}Z$/`.",
+      "required_test": "Keep the `+010000` calendar test. Also add a parser-independent test that the output never contains `+` in a DTSTART or DTEND value.",
+      "confidence": 0.4,
+      "disposition": "rejected_with_reason",
+      "provider_receipt": "calendar-fixed-review.json",
+      "reason": "No present defect: imported canonical parser requires exact four-digit UTC ISO syntax, finite Date.parse and exact canonical ISO equality. Existing negative extended-year/invalid-date tests pass. Loosening that shared contract later is outside this unchanged-parser scope; no duplicate parser or new framework introduced."
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/components/webinar-calendar-download.tsx",
+      "area": "download() click path",
+      "issue": "No automated test covers the component click path, and the earlier click-path MINOR is still open. Nothing tests the preview no-op, the failure copy when `createWebinarCalendar` returns null, the `.ics` blob download, link cleanup, or revocation of the object URL. The task states that a real browser download has not been verified.",
+      "evidence": "The supplied tests exercise only `createWebinarCalendar`. The component's `URL.createObjectURL`, `link.click`, `setTimeout` revoke and catch branches have no supplied test.",
+      "impact": "A regression in the download wiring, the preview guard or the error state would not be caught by the supplied tests.",
+      "recommended_fix": "Add a jsdom component test with a stubbed `URL.createObjectURL` and `HTMLAnchorElement.click`. Run a browser download smoke test before release.",
+      "required_test": "Test these cases: (1) a normal click creates a blob with type `text/calendar`, a download name of `webinar.ics`, and a revoke call after 30s using fake timers; (2) preview mode does nothing; (3) an invalid or started event shows the generic alert; (4) a throwing `createObjectURL` shows the download-failure alert.",
+      "confidence": 0.6,
+      "disposition": "unresolved",
+      "provider_receipt": "calendar-fixed-review.json"
+    },
+    {
+      "severity": "NIT",
+      "file": "src/lib/webinar-calendar.ts",
+      "area": "VEVENT property list (UID, DTSTAMP, no SEQUENCE)",
+      "issue": "A rescheduled event keeps the same UID, and DTSTAMP is the download time. It has no SEQUENCE or LAST-MODIFIED, so some calendar clients may ignore the update or create a duplicate event when a user re-imports a changed schedule.",
+      "evidence": "The VEVENT lines are UID, DTSTAMP, DTSTART, DTEND, SUMMARY, DESCRIPTION and URL. The test titled 'keeps event identity stable on reschedule' checks only UID and DTSTART/DTEND.",
+      "impact": "The UI copy already tells users to update their saved event, so the impact is limited to client-specific import behavior.",
+      "recommended_fix": "Optionally derive a monotonic SEQUENCE from a persisted revision. If none exists, leave this as documented behavior.",
+      "required_test": "If a revision field is added, test that a changed schedule produces a higher SEQUENCE with the same UID.",
+      "confidence": 0.3,
+      "disposition": "unresolved",
+      "provider_receipt": "calendar-fixed-review.json"
+    },
+    {
+      "severity": "MINOR",
+      "confidence": 0.6,
+      "file": "src/components/quick-webinar-form.test.tsx",
+      "area": "test \"offers the real video library and disables creation with no supported media\" (renderToStaticMarkup, `<button[^>]*disabled`)",
+      "issue": "The no-videos test no longer proves that an empty video list disables creation. Every SSR render now has a disabled submit button because of the hydration guard. The `<button[^>]*disabled` assertion would pass even if `!videos.length` were removed from the button's disabled condition.",
+      "evidence": "The submit button has `disabled={!hydrated || pending || !videos.length}`. `renderToStaticMarkup` uses the server snapshot, so `hydrated` is false. The assertion therefore matches in both the empty and non-empty cases. The only post-mount test (`createRoot`) uses a non-empty `videos` list and checks only the select.",
+      "impact": "Removing the empty-library disable condition would not fail any unit test. A merchant with no ready videos could then submit an invalid request after hydration.",
+      "recommended_fix": "Add a client-mounted test (`createRoot` with `act`) for `videos=[]`. Assert that the submit button is disabled after mount. Add the same test with one video and assert it is enabled.",
+      "required_test": "After mount, `videos=[]` leaves the submit button disabled and `videos=[one]` leaves it enabled. Also add a `hydrateRoot` test that starts from SSR markup, asserts the controls are disabled before the effects flush, and asserts they are enabled afterwards.",
+      "disposition": "unresolved",
+      "provider_receipt": "calendar-hydration-review.json"
+    },
+    {
+      "severity": "MINOR",
+      "confidence": 0.3,
+      "file": "tests/e2e/wp17-quick-webinar.spec.ts",
+      "area": "fresh-intent block: `completedIntent` read, click \"建立另一場\", then immediate `inputValue()` comparison",
+      "issue": "`inputValue()` is read once, not retried, right after a click that starts a full navigation (`window.location.assign`). If the old document is still attached when it runs, it reads the old `requestId`. The `!==` check then fails spuriously.",
+      "evidence": "`expect((await quick.locator('input[name=\"requestId\"]').inputValue())===completedIntent).toBe(false)` is a one-shot read, not a retrying web-first assertion. Playwright normally waits for navigations the click starts, and the prior diagnostic run got through this step. The risk is a possible timing race rather than an observed failure.",
+      "impact": "A possible flaky E2E failure that could be misread as an intent-reuse regression.",
+      "recommended_fix": "Use a retrying assertion, such as `await expect(quick.locator('input[name=\"requestId\"]')).not.toHaveValue(completedIntent)`. Alternatively, wait for the navigation with `page.waitForURL` or `waitForNavigation` before reading the value.",
+      "required_test": "Run the fresh-intent step repeatedly (for example `--repeat-each=5`). The `requestId` must differ from `completedIntent` every time, with no flakes.",
+      "disposition": "unresolved",
+      "provider_receipt": "calendar-hydration-review.json"
+    }
+  ]
+}

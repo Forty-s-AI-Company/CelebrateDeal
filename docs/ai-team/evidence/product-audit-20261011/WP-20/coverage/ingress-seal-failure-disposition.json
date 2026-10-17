@@ -1,0 +1,14 @@
+{
+  "initialFailure": "Callback primary error initially masked by migration status assertion; sanitized callback diagnostics added",
+  "strictScope": "Runner passed admittedAt in strict settlement input; explicit run/frameId fixed; original Zod rejection retained",
+  "intermittentPageNull": {
+    "status": "UNEXPLAINED",
+    "receipt": "ingress-seal-page-source-null-failure.json",
+    "change": "Fixed name/code/sqlState-only transaction observation, no raw query/log/value output",
+    "laterResult": "14 DB cases PASS; not proof original null fixed"
+  },
+  "reviewMinor": {
+    "functionAcl": "Explicit exact-signature revoke added and real NOLOGIN denial/single overload tested",
+    "markerGate": "Intentional owned-disposable-only source-seal foundation; marker not access-control/ownership proof; retained MINOR"
+  }
+}

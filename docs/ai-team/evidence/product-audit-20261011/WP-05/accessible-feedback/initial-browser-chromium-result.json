@@ -1,0 +1,27 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "label": "project-unpublished",
+      "httpStatus": 404,
+      "notFoundUi": true,
+      "noindex": true,
+      "authoredContentAbsent": true,
+      "merchantReasonsAbsent": true
+    }
+  ],
+  "axe": [
+    {
+      "label": "merchant-diagnosis",
+      "scope": "[aria-label=\"公開網址狀態\"]",
+      "violations": []
+    }
+  ],
+  "restored": true,
+  "stage": "published-multi-step",
+  "errorType": "AssertionError",
+  "errorCategories": [],
+  "assertionCode": "ERR_ASSERTION",
+  "stackLocation": "    at WORKTREE\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\accessible-feedback\\browser.cjs:34:64",
+  "contextRequired": false
+}

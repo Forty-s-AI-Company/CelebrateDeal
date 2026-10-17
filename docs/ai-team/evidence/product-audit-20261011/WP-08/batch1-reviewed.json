@@ -1,0 +1,242 @@
+{
+  "attempts": [
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli"
+    }
+  ],
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "revenue_sharing",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "I reviewed the display-only scope only. I found no unsafe rendering: all output is plain JSX text and nothing uses dangerouslySetInnerHTML. I also saw no stored-key mutation in the supplied code. Tab comparisons, persisted goal and step keys, templateId and experiment state values stay unchanged, and reportStatusLabel safely rejects inherited and unknown keys. The most important problem is that the panel test, as supplied, never defines `html`. Either the excerpt is incomplete or the test cannot run, which conflicts with the stated PASS. The other findings are about lost meaning and maintainability: one shared status map with no type checking that can collapse real states into 「未知狀態」, raw cent amounts, tab labels with no type checking, and several page titles that narrow or blur what the page does. None of these blocks this non-final batch, but the test issue should be fixed or explained before relying on the 49-test PASS. An empty or short findings list does not certify browser or a11y results, or the raw-identifier audit, which remain out of scope.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/components/landing-pages/funnel-operations-panel.test.tsx",
+        "area": "localized merchant operations test body",
+        "issue": "The test reads `html` but never defines it. `renderToStaticMarkup` is imported but never called, so FunnelOperationsPanel is never rendered.",
+        "evidence": "After `const before = structuredClone(initial);` the next statements are `expect(html).toContain(label)` and `expect(html).not.toContain(oldLabel)`. No `const html = renderToStaticMarkup(<FunnelOperationsPanel initial={initial} />)` exists in the supplied file.",
+        "impact": "As supplied, this fails typecheck or throws a ReferenceError, which contradicts the reported PASS. If the real file differs, the reviewed text is not the tested source. Either way, the main evidence that translated tabs and step labels render without mutating content is unverified.",
+        "recommended_fix": "Add the render call (`const html = renderToStaticMarkup(<FunnelOperationsPanel initial={initial} />);`) before the assertions, or supply the exact file under the attested sha256 hash.",
+        "required_test": "Run this test file alone and confirm it renders the panel and passes. As a sanity check, temporarily revert one tab label and confirm the test fails.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-display-labels.ts",
+        "area": "reportStatusLabels / reportStatusLabel",
+        "issue": "One untyped `Record<string,string>` holds verification, order and payment statuses together. A real status that is missing from the map (for example a fulfilment, completed or disputed order state) shows as 「未知狀態」 and loses its meaning. Shared keys such as `pending` → 「處理中」 also read wrong as a payment status, where the meaning is closer to waiting for payment.",
+        "evidence": "`const reportStatusLabels: Record<string, string> = {...}`. SalesReport calls `reportStatusLabel(row.status)` and `reportStatusLabel(row.paymentStatus)`, and LeadsReport uses the same map for `verificationStatus`. Nothing checks the map against the backend enums.",
+        "impact": "Merchants may see 「未知狀態 / 已付款」 for legitimate orders and cannot tell them apart. New backend states quietly lose meaning without any compile-time signal. This is safe in that it never shows success, but it loses useful meaning.",
+        "recommended_fix": "Split the map into separate verification, order and payment maps, each typed with `satisfies Record<VerificationStatus|OrderStatus|PaymentStatus, string>`, so missing states fail typecheck. Keep 「未知狀態」 only as the fallback at runtime.",
+        "required_test": "Add a type-level or exhaustiveness test that iterates the exported backend status enums and checks that each one maps to a non-fallback label.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-display-labels.ts",
+        "area": "funnelTabLabels / experimentStatusLabels / experimentArmLabels",
+        "issue": "These maps use `as const`, unlike the goal and step maps, which use `satisfies Record<...>`. If someone adds or renames a tab or experiment status, `funnelTabLabels[item]` returns undefined (or fails only by accident), and the tab renders with an empty label.",
+        "evidence": "The goal and step maps use `satisfies Record<FunnelGoal, string>` and `satisfies Record<FunnelStepType, string>`, but the tab map is `{ Configuration: ..., \"Deadline settings\": ... } as const` with no link to the tab const array.",
+        "impact": "Future drift could produce blank or unlabeled tab buttons or status text, which is also an accessibility problem, with no type error.",
+        "recommended_fix": "Export the tab tuple type (or derive it) and use `satisfies Record<FunnelTab, string>`. Do the same for experiment status and arm types.",
+        "required_test": "Add a test that checks `Object.keys(funnelTabLabels)` equals the panel's tab array and that experiment status keys equal the experiment status enum.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "SalesReport (funnel operations panel)",
+        "area": "Sales table amount column",
+        "issue": "Amounts are shown as raw integer minor units labelled 「已付／退款（分）」. For TWD, merchants do not think in 分, so 100000 is easy to misread as NT$100,000.",
+        "evidence": "`<td>{row.paidAmountCents} / {row.refundedAmountCents}</td>` under the header \"已付／退款（分）\", next to the currency code `row.currency`.",
+        "impact": "Merchants could misread revenue or refunds by a factor of 100. This is a display accuracy problem only; no data is affected.",
+        "recommended_fix": "Format the amounts with Intl.NumberFormat using the row's currency and its minor-unit exponent. Keep the raw cents in the data and drop 「（分）」 from the header. If this is out of scope, record it as follow-up.",
+        "required_test": "Add a render test with a TWD row of 100000 cents and assert it shows NT$1,000 (or the agreed format).",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "navigation / server PageHeader titles",
+        "area": "/orders, /support-cases, /messages/deliveries, /team-templates, /affiliates/commissions",
+        "issue": "Several new titles narrow or shift the page's meaning compared with the old titles. 訂單與履約 → 訂單管理 drops fulfilment. 客服案件 → 售後服務 excludes pre-sale inquiries. Email 寄送營運 → 寄送紀錄 suggests the page is read-only even if it allows actions. 團隊展業 → 團隊模板 changes what the page is understood to be for. 聯盟分潤 → 佣金結算 implies a payout or settlement step, which overlaps with 月結 and 批次出款.",
+        "evidence": "The navigation title mapping lists these previous_title → label pairs. The batch states that only title strings changed and page functionality did not.",
+        "impact": "Merchants may fail to find fulfilment, pre-sale support or delivery-operation features, or may confuse commission accrual with settlement or payout. This affects wayfinding only, not eligibility.",
+        "recommended_fix": "Confirm each title against what the destination page actually does. Consider 訂單與出貨, 客服案件, 寄送管理, and 佣金明細 or 聯盟佣金 where the page does not settle anything.",
+        "required_test": "Add a navigation-title snapshot, and have the product owner sign off on each route's label against its page capabilities in the pending browser/a11y pass.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "navigation / server PageHeader titles",
+        "area": "/billing/payouts (批次出款), /billing/course-payouts (課程分潤)",
+        "issue": "The corrected labels remove the earlier 稅務匯出 and 勞報單審核 wording. If these pages still include tax export or labor-report (勞報單) review, which are Taiwan compliance workflows, merchants lose the cue to find them. The old title 課程 F/G 分潤 also carried a specific scope that the new title drops.",
+        "evidence": "The contract says 稅務匯出 → 批次出款 and 勞報單審核 → 課程分潤 'corrected to actual destination semantics', but no page capability evidence is supplied.",
+        "impact": "Compliance tasks such as tax export or labor-report review may become hard to find, or the title may mislead merchants about whether the page does them.",
+        "recommended_fix": "Check whether either page exposes tax export or 勞報單 review. If so, mention it in the title or subtitle (for example 批次出款與稅務匯出). If not, record the evidence in the review notes.",
+        "required_test": "During the pending browser audit, add a page-capability check that the payouts and course-payouts pages either lack the tax or 勞報單 actions or name them in visible headings.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-display-labels.ts",
+        "area": "funnelStepLabels opt_in_page / downsell; navigation /settings/tracking",
+        "issue": "Some terms are ambiguous. 「名單頁」 for opt_in_page reads like a list page rather than a lead-capture page. 「降價加購頁」 mixes discount and add-on ideas; downsell is a cheaper alternative offered after an upsell is declined. 「追蹤」 on its own can read as 'follow', and the old title 追蹤設定 was clearer.",
+        "evidence": "opt_in_page: \"名單頁\", downsell: \"降價加購頁\", /settings/tracking label \"追蹤\" (previously 追蹤設定).",
+        "impact": "Minor confusion for merchants; no functional impact.",
+        "recommended_fix": "Consider 名單收集頁, 替代優惠頁 (or 降階方案頁), and 追蹤設定.",
+        "required_test": "Update the snapshot and the copy review sign-off.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-operations-panel.test.tsx",
+        "area": "comment line",
+        "issue": "The Traditional Chinese comment uses the Simplified character 「径」 in 「路径」.",
+        "evidence": "// 真實 flow 與 panel：可見名稱改變，但頁面路径、步驟識別值與資料完全保留。",
+        "impact": "Cosmetic inconsistency only; it is not shown to users.",
+        "recommended_fix": "Change it to 「路徑」.",
+        "required_test": "None.",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "completed": false,
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  }
+}

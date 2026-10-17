@@ -1,0 +1,183 @@
+{
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "IDLE_TIMEOUT",
+      "exitCode": -1,
+      "provider": "agy_wrapper"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 16000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I reviewed only the two supplied files. The Migration122 change does what the scope says: it now marks reports stale only when they belong to the exact same vendor, live, version and window, and only when one of their revisions changed or the report expired. It also keeps the version-first lock and leaves isolation, retry, payments and trigger behaviour alone. I found one possible MAJOR defect in the producer. Its dedup and failed-generation queries compare timestamps without forcing UTC or casting the parameters. The DB function does force UTC (`SET timezone='UTC'`) and does cast to timestamptz. If the session time zone is not UTC and the columns are timestamp without time zone, the producer's checks can miss rows that the function then matches. That would either break enqueue or let a failed window get a fresh five-attempt cap. This depends on the column types and Prisma's parameter types, which I couldn't see, so confidence is moderate. I also found one MINOR issue: a catch-all that hides these errors. I ran no tests and am not claiming any results. The omitted guard, claim, finish and reader code is not certified by this review.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-metric-report-queue.ts",
+        "area": "version-lock query and existing-report dedup query (window/collection/clock comparisons)",
+        "issue": "The producer compares `windowStartAt`/`windowEndAt`, `collectionStartedAt` and `clock_timestamp()` to bare Prisma Date parameters, with no `::timestamptz` cast and no transaction-local `timezone='UTC'`. `wp20_metric_report_create` does both: it takes TIMESTAMPTZ(3) parameters and runs with `SET timezone='UTC'`. So the producer's checks and the function's checks may disagree about whether two timestamps are equal.",
+        "evidence": "The function header has `SET timezone='UTC'` and the create call uses `${input.startAt}::timestamptz`. But the dedup query uses `r.\"windowStartAt\"=${input.startAt} AND r.\"windowEndAt\"=${input.endAt}` and the version query uses `v.\"collectionStartedAt\"<=${input.startAt}` and `${input.endAt}<=clock_timestamp()`, all without casts. The only `set_config` call sets `statement_timeout`. Casting only in the create call suggests the author knew the parameter type matters.",
+        "impact": "Assume the columns are Prisma's default timestamp(3) without time zone (or the bound parameter type is), and the deployed session time zone is not UTC. Then the dedup query can miss an exact-window row that the function later matches under UTC. If the missed row is a matching failed generation, a new five-attempt generation is created, which breaks the stated rule that failed generations are not silently retried. If the missed row is an active one with the same revisions, the function leaves it alone, the INSERT hits the active unique index, and the call returns `enqueue_failed` every time. The `endAt<=clock_timestamp()` and `collectionStartedAt` checks would also be off by the zone offset. Owner fixtures running on a UTC database would not catch this.",
+        "recommended_fix": "Run `SELECT set_config('timezone','UTC',true)` at the start of the transaction, next to `statement_timeout`. Also cast every Date parameter explicitly (`${input.startAt}::timestamptz`, `${input.endAt}::timestamptz`) in the version and dedup queries, so they use the same comparison rules as `wp20_metric_report_create`. Alternatively, move the dedup and failed-generation check into the UTC-pinned SQL function.",
+        "required_test": "In a disposable DB test, set the session/database timezone to a non-UTC zone such as 'America/New_York' and create a failed generation for an exact window with current revisions. Enqueue the same window again and assert it returns `previous_failure` and inserts no new row. Repeat with a matching ready row and assert `{available, created:false}` with no unique violation.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-report-queue.ts",
+        "area": "outer try/catch around db.$transaction",
+        "issue": "Every error is caught and returned as `enqueue_failed`, with no logging and no error class attached. Lock timeouts, statement timeouts, unique-index violations, guard rejections (23514) and the 'Report enqueue not confirmed' error all look the same to the caller.",
+        "evidence": "`} catch { return { status: \"unavailable\", reason: \"enqueue_failed\" }; }` has no binding and no logging.",
+        "impact": "If the producer's dedup check and the function's stale predicate ever disagree (for example, the timezone mismatch above), the only symptom is an active-window unique violation, and it is silently turned into a generic, retryable-looking 'unavailable'. A real integrity violation can't be told apart from ordinary contention, so it can be retried indefinitely without anyone noticing.",
+        "recommended_fix": "Bind the error and log it in a structured, non-sensitive way, or at least record the SQLSTATE and Prisma error code. Consider returning separate reasons, such as `lock_timeout` vs `integrity_violation`, so the scheduler host can back off on contention and alert on integrity failures.",
+        "required_test": "Unit test with a mocked `$transaction` that throws a unique-violation error (P2010/23505) and then a lock-timeout error (55P03/57014). Assert that the returned reasons or emitted logs differ and that neither leaks credentials or row data.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED"
+}

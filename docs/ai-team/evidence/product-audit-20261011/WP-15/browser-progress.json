@@ -1,0 +1,18 @@
+{
+  "status": "PARTIAL_VERIFIED",
+  "checks": "16 states PASS: Chromium/Firefox desktop/mobile x collapsed/expanded/recollapsed/active",
+  "primary_action": "create-live full bounds within viewport, height >=44",
+  "new_artifacts": [
+    "run-dashboard-browser.cjs",
+    "dashboard-browser-entry.jsx",
+    "dashboard-browser-result.json"
+  ],
+  "remaining": [
+    "operations target sizes and viewport",
+    "saved expanded preference browser state",
+    "current snapshot full required checks",
+    "qualified independent review",
+    "canonical acceptance"
+  ],
+  "scope_limit": "Actual AppShell, UI components and verbatim DashboardKpiContent extracted at build time; synthetic data and actions; PageHeader fixture mirrors route title/description/action; no authenticated full route or DB validation"
+}

@@ -1,0 +1,128 @@
+{
+  "status": "FAIL",
+  "stage": "order-source-audit",
+  "networkAttempts": 0,
+  "processed": 20,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "registrationVendorCascade": {
+    "status": "PASS",
+    "vendorDeleted": true,
+    "metricOrphans": 0,
+    "sourceOrphans": 0
+  },
+  "registrationTruncateProtection": {
+    "status": "PASS",
+    "cases": [
+      {
+        "table": "FormSubmission",
+        "rejected": true
+      },
+      {
+        "table": "Live",
+        "rejected": true
+      },
+      {
+        "table": "RegistrationForm",
+        "rejected": true
+      },
+      {
+        "table": "LiveMetricRegistration",
+        "rejected": true
+      }
+    ]
+  },
+  "matchedRegistrationAudit": {
+    "status": "PASS",
+    "mutationProtection": {
+      "status": "PASS",
+      "captureImmutable": "PASS",
+      "captureUnique": "PASS",
+      "registrationUnique": "PASS",
+      "projectionDeleteInvalidates": "PASS"
+    },
+    "matchedBothDirections": "PASS",
+    "stableDigest": "PASS",
+    "revokedSourceDetected": "PASS",
+    "privateProofPublish": "PASS",
+    "emptySourceProof": "PASS",
+    "auditToPublishRace": "PASS",
+    "revisionToInsertRace": "PASS",
+    "staleProofRejected": "PASS",
+    "projectionProofLifecycle": "PASS",
+    "coverage": "complete before revoke; unknown after revoke"
+  },
+  "registrationSourceConcurrency": {
+    "status": "PASS",
+    "submitted": 20,
+    "committed": 20,
+    "concurrentMs": 116,
+    "snapshotIsolation": "PASS",
+    "nextSnapshotSeesLateSource": "PASS",
+    "oldFormRowsRemainVisible": "PASS",
+    "reverseProjectionAudit": "PASS",
+    "bidirectionalSummary": "PASS",
+    "scope": "ReadCommitted concurrent calls; not synchronized Serializable payment acceptance"
+  },
+  "sourceInvalidation": [
+    {
+      "field": "verificationStatus",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "verifiedAt",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "formId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveFormId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    }
+  ],
+  "linkedFormOwnership": "REJECTED_BY_FOREIGN_KEY",
+  "noVideoMetricOwnership": "REJECTED_BY_IMMUTABLE_VERSION",
+  "roleSafeRevision": "PASS",
+  "revisionSnapshotConcurrency": "PASS",
+  "auditReason": null,
+  "concurrentCodes": null,
+  "actualStatus": null,
+  "expectedStatus": null,
+  "failureFrames": [
+    "wp20-order-payment-deadlock.mjs:56:11",
+    "wp20-order-window-source-probe.mjs:86:17",
+    "wp20-order-coverage-guard-probe.mjs:191:21",
+    "wp20-order-source-audit-probe.mjs:148:23",
+    "wp20-payment-retry-disposable.mjs:223:32"
+  ],
+  "auditPhase": null,
+  "assertion": null,
+  "sqlState": null,
+  "guard": null,
+  "errorCode": "ASSERTION_OR_RUNNER_ERROR"
+}

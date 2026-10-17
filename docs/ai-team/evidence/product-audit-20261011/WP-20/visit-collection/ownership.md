@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; new collector service/tests and evidence. Independent Auth review required.

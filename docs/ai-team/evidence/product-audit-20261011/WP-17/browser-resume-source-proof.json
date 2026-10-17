@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "scope": "Eight WP17 backend/page/unit sources unchanged; component and its unit repaired, E2E only locator/wait updated. No access/project/method/publication/schema logic changes.",
+  "unchangedSourceHashes": {
+    "src/app/actions/sales-workspace-actions.ts": "046ec76d0a50a4a6c8bc5b9be2ac6b6675ad7a1586cce782e454bb4ef79a4053",
+    "src/app/(app)/lives/new/page.tsx": "c9b19d595784d310d3dfb54b0d550010ab574c7de2997767e65ceb5f33c18c3a",
+    "src/lib/sales-project-publication.ts": "ece7265c8c20c9bf53e7dad0a5a694ad11a45b3505e4bd14d8ae9d5f49c7d567",
+    "src/lib/sales-project-publication.test.ts": "740f799751e3ef58ba2cf7730e9f0faf5d7f87fb0195de8174599a0c8938e4c7",
+    "src/lib/quick-webinar.ts": "172ad94a4c4a415f9b51fd35d31e3c7348a7c77d6d77d74ba70108f5b2ead4a4",
+    "src/lib/quick-webinar.test.ts": "b336061dc29d4ce8cb3d0d6eb07653ca0a3e912a0aec6bfc9df864c536537b90",
+    "src/app/actions/quick-webinar-actions.ts": "7426202d270ea9ed10f858262a0d8c63708bc1cd114b4ec554fbeeef128e0ddf",
+    "src/app/actions/quick-webinar-actions.test.ts": "a64642900de025ac0833d302b9e1fc6d2eaa394a9b0656a224d3c381ee4ceed5"
+  },
+  "repairedSourceHashes": {
+    "src/components/quick-webinar-form.tsx": "15dc79b2f85d596138ba51d65a27f110298d01dba77730ba589d7159fbfb8c62",
+    "src/components/quick-webinar-form.test.tsx": "6016e862d7aafa71a9883759cdc7a204dee197a65a81873eb0a1a80d8686e5df"
+  },
+  "currentE2EHash": "a288792ed39ff6f5b51c6cf52ae16258967d504f7a7cd579235520ab9229c0c7",
+  "build": "build.json",
+  "buildOriginPort": 64638
+}

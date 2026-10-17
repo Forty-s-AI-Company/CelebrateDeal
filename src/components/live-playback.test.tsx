@@ -420,6 +420,22 @@ describe("LivePlayback checkout", () => {
       playbackStartSeconds: 21,
     });
   });
+  it("retains valid server intake metadata with the authorized source", async () => {
+    hookState.effectsEnabled = true;
+    const receipt = { metricRequestId: "de305d54-75b4-431b-adb2-eb6b9e546014", metricIssuedAtMs: 1000, metricExpiresAtMs: 90000 };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ playbackUrl: "https://video.example.test/authorized.mp4", ...receipt }) }));
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" })).toBeNull();
+    await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" }))
+      .toEqual({ playbackUrl: "https://video.example.test/authorized.mp4", playbackStartSeconds: 0, ...receipt });
+  });
+  it("keeps playback usable but does not manufacture tracking for malformed intake metadata", async () => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ playbackUrl: "https://video.example.test/authorized.mp4", metricRequestId: "invalid" }) }));
+    renderPlaybackSource({ runtimeState: "playing", status: "live" }); await flushHookEffects();
+    expect(renderPlaybackSource({ runtimeState: "playing", status: "live" }))
+      .toEqual({ playbackUrl: "https://video.example.test/authorized.mp4", playbackStartSeconds: 0 });
+  });
 
   it.each([
     ["blocked admission", { runtimeState: "playing", status: "live" }, "blocked"],
@@ -505,10 +521,10 @@ describe("LivePlayback checkout", () => {
 
     await vi.advanceTimersByTimeAsync(30_000);
     expect(renderAdmissionPlayback()).toEqual(admitted);
-    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === "/api/live-admission" && init?.method === "POST")).toHaveLength(2);
 
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === "/api/live-admission" && init?.method === "POST")).toHaveLength(2);
 
     renewal.resolve({ ok: false });
     await renewal.promise;
@@ -571,6 +587,8 @@ describe("LivePlayback checkout", () => {
     expect(vi.getTimerCount()).toBe(1);
 
     cleanupHookEffects();
+    // The metric close promise settles before its bounded release timer clears.
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(0);
     initialAdmission.resolve({ ok: true });
     await initialAdmission.promise;
@@ -730,12 +748,12 @@ describe("LivePlayback checkout", () => {
     let tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
     const firstVideo = findElements(tree, (element) => element.type === "video")[0];
     if (!firstVideo) throw new Error("Expected first HLS video element");
-    const currentTarget = {
+    const currentTarget = Object.assign(new EventTarget(), {
       currentTime: 99,
       readyState: 1,
       src: "",
       canPlayType: vi.fn(() => "probably"),
-    };
+    });
     const videoRef = firstVideo.props.ref as { current: HTMLVideoElement | null };
     videoRef.current = currentTarget as unknown as HTMLVideoElement;
     const firstLoadedMetadata = firstVideo.props.onLoadedMetadata as (event: { currentTarget: HTMLVideoElement }) => void;
@@ -788,7 +806,7 @@ describe("LivePlayback checkout", () => {
     let tree = renderLive({ runtimeState: "playing", status: "live", admissionRequired: true });
     const video = findElements(tree, (element) => element.type === "video")[0];
     if (!video) throw new Error("Expected playing video element");
-    const currentTarget = { currentTime: 99, readyState: 1 };
+    const currentTarget = Object.assign(new EventTarget(), { currentTime: 99, readyState: 1 });
     const videoRef = video.props.ref as { current: HTMLVideoElement | null };
     videoRef.current = currentTarget as unknown as HTMLVideoElement;
     const onLoadedMetadata = video.props.onLoadedMetadata as (event: { currentTarget: HTMLVideoElement }) => void;
@@ -808,7 +826,7 @@ describe("LivePlayback checkout", () => {
     await flushHookEffects();
 
     expect(currentTarget.currentTime).toBe(0);
-    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === "/api/live-admission" && init?.method === "POST")).toHaveLength(2);
     expect(findElements(tree, (element) => element.type === "video")).toHaveLength(1);
   });
 

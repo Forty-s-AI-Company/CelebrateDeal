@@ -1,0 +1,393 @@
+--- a/src/lib/webinar-calendar.ts
++++ b/src/lib/webinar-calendar.ts
+@@ -0,0 +1,51 @@
++import { parseFunnelWebinarSettings } from "@/lib/funnel-webinar";
++
++export type WebinarCalendarInput = {
++  liveId: string;
++  title: string;
++  schedule: unknown;
++  slug: string;
++  broadcastPath: string;
++  origin: string;
++};
++
++const escapeText = (text: string) => text.replace(/\\/gu, "\\\\").replace(/\r\n|\r|\n/gu, "\\n").replace(/;/gu, "\\;").replace(/,/gu, "\\,");
++const utc = (date: Date) => date.toISOString().replace(/[-:]/gu, "").replace(/\.\d{3}Z$/u, "Z");
++
++/** RFC5545 folds bytes, not JS characters. Never split a UTF-8 code point. */
++function fold(line: string) {
++  const encoder = new TextEncoder();
++  let result = "", size = 0;
++  for (const character of line) {
++    const length = encoder.encode(character).byteLength;
++    if (size + length > 75) { result += "\r\n "; size = 1; }
++    result += character; size += length;
++  }
++  return result;
++}
++
++/** Local, optional calendar export. It never contains recipient data or access grants. */
++export function createWebinarCalendar(input: WebinarCalendarInput, now = new Date()): string | null {
++  const schedule = parseFunnelWebinarSettings(input.schedule);
++  if (!schedule?.startsAt || !schedule.endsAt || !Number.isFinite(now.getTime())) return null;
++  const start = new Date(schedule.startsAt), end = new Date(schedule.endsAt);
++  if (start.getTime() <= now.getTime() || start.getUTCFullYear() < 1 || end.getUTCFullYear() < 1 || now.getUTCFullYear() < 1 || now.getUTCFullYear() > 9999) return null;
++  if (utc(end) <= utc(start)) return null;
++  if (!/^[A-Za-z0-9_-]{1,128}$/u.test(input.liveId) || !input.title.trim() || input.title.length > 200 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(input.title)) return null;
++  const segment = /^[A-Za-z0-9_-]{1,100}$/u;
++  // Funnel step paths are validated segments without the landing slug's 100-char cap.
++  if (!segment.test(input.slug) || !/^[A-Za-z0-9_-]+$/u.test(input.broadcastPath)) return null;
++  let url: URL;
++  try {
++    const origin = new URL(input.origin);
++    if (origin.origin !== input.origin || !["https:", "http:"].includes(origin.protocol)) return null;
++    url = new URL(`/lp/${encodeURIComponent(input.slug)}/${encodeURIComponent(input.broadcastPath)}`, origin);
++  } catch { return null; }
++  // Keep the public handoff, never /play, a media URL, query capability or attendee.
++  const description = `請完成 Email 確認，再依活動時間使用公開觀看入口。\n活動改期時，請更新已加入的行程。\n${url.href}`;
++  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//CelebrateDeal//Webinar Calendar//ZH-TW", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
++    `UID:celebratedeal-live-${input.liveId}`, `DTSTAMP:${utc(now)}`, `DTSTART:${utc(start)}`, `DTEND:${utc(end)}`,
++    `SUMMARY:${escapeText(input.title.trim())}`, `DESCRIPTION:${escapeText(description)}`, `URL:${url.href}`, "END:VEVENT", "END:VCALENDAR"];
++  // No VALARM, attendee or organizer is invented. The user configures reminders.
++  return lines.map(fold).join("\r\n") + "\r\n";
++}
+--- a/src/lib/webinar-calendar.test.ts
++++ b/src/lib/webinar-calendar.test.ts
+@@ -0,0 +1,55 @@
++import { describe, expect, it } from "vitest";
++import { createWebinarCalendar } from "./webinar-calendar";
++
++const now = new Date("2030-01-01T00:00:00.000Z");
++const input = { liveId: "owned_live", title: "公開講座", origin: "https://example.test", slug: "owned-page", broadcastPath: "broadcast", schedule: { timezone: "Asia/Taipei", startsAt: "2030-01-02T01:00:00.000Z", endsAt: "2030-01-02T02:00:00.000Z", replayEndsAt: null } };
++const unfold = (value: string) => value.replace(/\r\n /gu, "");
++
++describe("optional public webinar calendar", () => {
++  it("exports the public schedule and handoff, without recipients, access grants or invented alarms", () => {
++    const calendar = createWebinarCalendar(input, now)!;
++    expect(calendar).toContain("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
++    expect(calendar).toContain("DTSTAMP:20300101T000000Z\r\n");
++    expect(calendar).toContain("DTSTART:20300102T010000Z\r\nDTEND:20300102T020000Z\r\n");
++    expect(calendar).toContain("UID:celebratedeal-live-owned_live\r\n");
++    expect(calendar).toContain("URL:https://example.test/lp/owned-page/broadcast\r\n");
++    expect(unfold(calendar)).toContain("請完成 Email 確認");
++    for (const forbidden of ["ATTENDEE", "ORGANIZER", "VALARM", "/play", "fsv1.", "mailto:"]) expect(calendar).not.toContain(forbidden);
++    expect(calendar.endsWith("END:VCALENDAR\r\n")).toBe(true);
++  });
++  it("escapes title line injection and folds long UTF8 lines without corrupting Chinese or emoji", () => {
++    const title = "課程😀，練習;\\\r\nBEGIN:VEVENT\n" + "繁體中文".repeat(20);
++    const calendar = createWebinarCalendar({ ...input, title }, now)!;
++    expect(unfold(calendar)).toContain(`SUMMARY:${title.replace(/\\/gu,"\\\\").replace(/\r\n|\r|\n/gu,"\\n").replace(/;/gu,"\\;").replace(/,/gu,"\\,")}`);
++    expect(calendar.match(/^BEGIN:VEVENT$/gmu)).toHaveLength(1);
++    for (const line of calendar.split("\r\n")) expect(new TextEncoder().encode(line).byteLength).toBeLessThanOrEqual(75);
++    expect(new TextDecoder("utf-8", { fatal: true }).decode(new TextEncoder().encode(calendar))).toBe(calendar);
++  });
++  it("keeps event identity stable on reschedule and uses UTC across daylight saving transitions", () => {
++    const changed = createWebinarCalendar({ ...input, schedule: { timezone: "America/New_York", startsAt: "2030-03-10T06:30:00.000Z", endsAt: "2030-03-10T07:30:00.000Z", replayEndsAt: null } }, now)!;
++    expect(changed).toContain("UID:celebratedeal-live-owned_live\r\n");
++    expect(changed).toContain("DTSTART:20300310T063000Z\r\nDTEND:20300310T073000Z\r\n");
++  });
++  it("supports the existing 200-character Live title and long valid funnel step paths",()=>{
++    const title="講".repeat(200),broadcastPath="broadcast-"+"a".repeat(150);
++    const calendar=unfold(createWebinarCalendar({...input,title,broadcastPath},now)!);
++    expect(calendar).toContain(`SUMMARY:${title}\r\n`);
++    expect(calendar).toContain(`URL:https://example.test/lp/owned-page/${broadcastPath}\r\n`);
++  });
++  it.each(["javascript:alert(1)", "https://example.test/?capability=synthetic", "https://user:synthetic@example.test", "https://example.test/path"])("rejects a non-origin input %s", origin => {
++    expect(createWebinarCalendar({ ...input, origin }, now)).toBeNull();
++  });
++  it("fails closed for missing, started, sub-second, malformed or injected event data", () => {
++    for (const invalid of [
++      { ...input, schedule: null }, { ...input, schedule: { ...input.schedule, startsAt: null } },
++      { ...input, schedule: { ...input.schedule, endsAt: input.schedule.startsAt } },
++      { ...input, schedule: { ...input.schedule, endsAt: "2030-01-02T01:00:00.100Z" } },
++      { ...input, title: "" }, { ...input, title: "x".repeat(201) }, { ...input, title: "title\u0000" },
++      { ...input, schedule: { ...input.schedule, startsAt:"not-a-date" } },
++      { ...input, schedule: { ...input.schedule, startsAt:"+010000-01-01T00:00:00.000Z",endsAt:"+010000-01-01T01:00:00.000Z" } },
++      { ...input, liveId: "id\r\nATTENDEE:injected" }, { ...input, slug: ".." }, { ...input, broadcastPath: "broadcast?capability=synthetic" },
++    ]) expect(createWebinarCalendar(invalid, now)).toBeNull();
++    expect(createWebinarCalendar(input, new Date(input.schedule.startsAt))).toBeNull();
++    expect(createWebinarCalendar(input, new Date("invalid"))).toBeNull();
++  });
++});
+--- a/src/components/webinar-calendar-download.tsx
++++ b/src/components/webinar-calendar-download.tsx
+@@ -0,0 +1,36 @@
++"use client";
++
++import { useState, useSyncExternalStore } from "react";
++import { createWebinarCalendar, type WebinarCalendarInput } from "@/lib/webinar-calendar";
++
++const subscribeToHydration = () => () => undefined;
++
++export function WebinarCalendarDownload({ event, upcoming, preview = false }: {
++  event: Omit<WebinarCalendarInput, "origin">;
++  upcoming: boolean;
++  preview?: boolean;
++}) {
++  const [error, setError] = useState("");
++  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
++  if (!upcoming) return null;
++  function download() {
++    if (preview || !hydrated) return;
++    const calendar = createWebinarCalendar({ ...event, origin: window.location.origin });
++    if (!calendar) { setError("目前無法產生活動行事曆，請確認最新活動時間與資訊。"); return; }
++    try {
++      const href = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
++      const link = document.createElement("a");
++      link.href = href; link.download = "webinar.ics";
++      document.body.appendChild(link);
++      try { link.click(); } finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(href), 30_000); }
++      setError("");
++    } catch { setError("目前無法下載行事曆，請稍後再試。"); }
++  }
++  return <section aria-label="保存活動時間" className="mt-4 rounded-lg border border-slate-300 p-4">
++    <h2 className="font-semibold">把活動加入行事曆</h2>
++    <p className="mt-2 text-sm font-medium">{event.title}</p>
++    <p className="mt-2 text-sm">下載後請匯入你的行事曆，並選擇提醒方式。仍須完成 Email 確認才能取得觀看資格；活動改期時，請更新已加入的行程。</p>
++    <button type="button" disabled={preview || !hydrated} aria-busy={!hydrated} onClick={download} className="mt-3 min-h-11 rounded-lg bg-blue-700 px-4 py-2 text-white disabled:opacity-50">{preview ? "預覽模式，不下載行事曆" : "下載活動行事曆（.ics）"}</button>
++    {error ? <p role="alert" className="mt-2 text-sm text-red-700">{error}</p> : null}
++  </section>;
++}
+--- a/src/components/landing-pages/funnel-webinar-experience.tsx
++++ b/src/components/landing-pages/funnel-webinar-experience.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ import { useRegistrationRetry } from "@/components/registration-retry-context";
+ import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
++import { WebinarCalendarDownload } from "@/components/webinar-calendar-download";
+ 
+ import { useEffect, useRef, useState } from "react";
+ import { flushSync } from "react-dom";
+@@ -10,7 +11,7 @@
+ import type { FunnelStepPages } from "@/lib/funnel-step-pages";
+ 
+ export type WebinarExperienceResource = {
+-  live: { id: string; slug: string; videoId: string; videoTitle: string };
++  live: { id: string; slug: string; title?: string; videoId: string; videoTitle: string };
+   form: { id: string; fields: Array<{ key: string; label: string; type?: string; required?: boolean }>; submitLabel: string; successMessage: string };
+ };
+ 
+@@ -44,7 +45,10 @@
+       <p role={status.status === "missing" ? "alert" : "status"}>{status.message}</p>
+       {start ? <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: state.flow.webinar?.timezone }).format(new Date(start))}</time> · {state.flow.webinar?.timezone}</p> : null}
+       {step.type === "webinar_registration_page" && ready && thankYou ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
+-      {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
++      {step.type === "webinar_thank_you_page" && ready && broadcast ? <>
++        <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a>
++        <WebinarCalendarDownload event={{ liveId: resource.live.id, title: resource.live.title ?? resource.live.videoTitle, schedule: state.flow.webinar, slug, broadcastPath: broadcast.path }} upcoming={status.status === "waiting"} preview={preview} />
++      </> : null}
+       {step.type === "webinar_broadcast_page" && ready && (status.status === "live" || status.status === "replay") ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
+       {status.status === "missing" ? <p className="mt-2 text-sm">{preview ? "請開啟頁面設定，選擇報名表、活動與可播放來源影片，並補齊排程後儲存。" : "活動設定尚未完成，請聯絡活動主辦方確認資源與排程。"}</p> : null}
+     </section> : null}
+--- a/src/components/landing-pages/funnel-webinar-experience.test.tsx
++++ b/src/components/landing-pages/funnel-webinar-experience.test.tsx
+@@ -4,7 +4,7 @@
+ import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
+ 
+ const resource: WebinarExperienceResource = {
+-  live: { id: "owned_live", slug: "owned-live", videoId: "owned_video", videoTitle: "已授權來源" },
++  live: { id: "owned_live", slug: "owned-live", title: "公開活動名稱", videoId: "owned_video", videoTitle: "已授權來源" },
+   form: { id: "owned_form", fields: [{ key: "name", label: "姓名", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出報名", successMessage: "待確認" },
+ };
+ function state() {
+@@ -54,4 +54,17 @@
+     expect(html).toContain('data-webinar-state="expired"');
+     expect(html).not.toContain('/broadcast/play');
+   });
++  it("offers optional calendar export only on a configured future thank-you page",()=>{
++    vi.useFakeTimers();vi.setSystemTime(new Date("2029-12-31T00:00:00.000Z"));
++    const props={state:state(),slug:"current-slug",stepId:"webinar_thank_you",resource};
++    const html=renderToStaticMarkup(<FunnelWebinarExperience {...props}/>);
++    expect(html).toContain("下載活動行事曆（.ics）");expect(html).toContain("仍須完成 Email 確認");
++    expect(html).toMatch(/<button(?=[^>]*disabled)(?=[^>]*aria-busy="true")[^>]*>下載活動行事曆/u);
++    expect(html).toContain("公開活動名稱");expect(html).not.toContain(">Webinar</p>");
++    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props} preview/>)).toContain("預覽模式，不下載行事曆");
++    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props} stepId="webinar_registration"/>)).not.toContain("下載活動行事曆");
++    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props} resource={undefined}/>)).not.toContain("下載活動行事曆");
++    vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
++    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props}/>)).not.toContain("下載活動行事曆");
++  });
+ });
+--- a/src/lib/landing-page-service.ts
++++ b/src/lib/landing-page-service.ts
+@@ -20,7 +20,7 @@
+ import type { FunnelCommerceProduct, FunnelCommerceView } from "@/lib/funnel-commerce";
+ export type PublicFunnelWebinarResource = {
+   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
+-  live: { id: string; slug: string; videoId: string; videoTitle: string };
++  live: { id: string; slug: string; title: string; videoId: string; videoTitle: string };
+ };
+ const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } as const;
+ function webinarContent(content: LandingPageStoredContent) {
+@@ -37,7 +37,7 @@
+   if (live?.status === "ended" && (!live.replayEnabled || (live.replayAvailableUntil && live.replayAvailableUntil.getTime() <= Date.now()))) return undefined;
+   const fields = parseRegistrationFormFields(form?.fields);
+   if (!form || !fields.success || !live?.videoId || live.video?.id !== live.videoId || live.video.vendorId !== vendorId || !isLiveVideoReady(live.video)) return undefined;
+-  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title } };
++  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, title: live.title, videoId: live.videoId, videoTitle: live.video.title } };
+ }
+ const MAX_NAME_LENGTH = 160;
+ const MAX_SLUG_LENGTH = 100;
+--- a/src/components/landing-page-workspace.tsx
++++ b/src/components/landing-page-workspace.tsx
+@@ -248,7 +248,7 @@
+   const video = resources?.lives.find((item) => item.id === liveId);
+   const form = resources?.forms.find((item) => item.id === formId);
+   if (!video?.videoReady || !video.videoId || !live || !form || live.formId !== formId) return undefined;
+-  return { form, live: { id: live.id, slug: live.slug, videoId: video.videoId, videoTitle: video.videoTitle ?? "活動影片" } };
++  return { form, live: { id: live.id, slug: live.slug, title: live.title, videoId: video.videoId, videoTitle: video.videoTitle ?? "活動影片" } };
+ }
+ function WebinarWorkspaceSettings({ content, pending, resources, lives, liveId, onValidityChange, onChange, onSelect }: {
+   content: LandingPageStoredContent; pending: boolean; resources?: FunnelWebinarResources; lives: NonNullable<LandingPageRenderContext["live"]>[]; liveId: string;
+--- a/tests/e2e/wp17-quick-webinar.spec.ts
++++ b/tests/e2e/wp17-quick-webinar.spec.ts
+@@ -1,6 +1,6 @@
+ import { randomUUID } from "node:crypto";
+ import AxeBuilder from "@axe-core/playwright";
+-import { expect, test, type Page } from "@playwright/test";
++import { expect, test, type Page, type Locator } from "@playwright/test";
+ import { PrismaClient } from "@prisma/client";
+ import { hashPassword } from "../../src/lib/password";
+ import { formatZonedDateTimeLocal } from "../../src/lib/zoned-date-time";
+@@ -80,7 +80,8 @@
+   await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(videoId);
+   await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 180_000), "Asia/Taipei"));
+   await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
+-  const publicLink = page.getByRole("link", { name: "開啟公開報名頁", exact: true });await expect(publicLink).toBeVisible();
++  const publicLink = page.getByRole("link", { name: "開啟公開報名頁", exact: true });
++  await expectPublicCreation(page,publicLink,"first");
+   const publicPath = (await publicLink.getAttribute("href"))!;expect(publicPath).toMatch(/^\/lp\/quick-webinar-[a-f0-9]+$/u);
+   const live = await db.live.findFirstOrThrow({ where: { vendorId }, include: { form: true } });
+   expect(live.title).toBe("WP17 合成影片");expect(await db.live.count({ where: { vendorId } })).toBe(1);
+@@ -90,8 +91,6 @@
+   await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toHaveValue(videoId);
+   await expect(quick.getByLabel(/^開始時間/u)).toHaveValue(formatZonedDateTimeLocal(live.scheduledAt, "Asia/Taipei"));
+   await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toBeDisabled();await expect(quick.getByRole("button", { name: "建立並檢查上線", exact: true })).toHaveCount(0);
+-  await page.getByRole("button", { name: "建立另一場", exact: true }).click();
+-  await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toHaveValue("");await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 240_000), "Asia/Taipei"));await quick.getByLabel(/^活動名稱/u).fill("WP17 第二場合成講座");await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();await expect(publicLink).toBeVisible();expect(await publicLink.getAttribute("href")).not.toBe(publicPath);expect(await db.live.count({ where: { vendorId } })).toBe(2);
+   const attendee = await browser.newContext({ baseURL, extraHTTPHeaders: headers });const viewer = await attendee.newPage();viewer.setDefaultTimeout(20_000);await installRoutes(viewer);
+   try {
+     expect((await viewer.goto(publicPath))?.status()).toBe(200);
+@@ -99,6 +98,19 @@
+     const registration = viewer.locator('form[action="/api/form-submissions"]');await registration.getByLabel("姓名", { exact: true }).fill("WP17 合成報名者");await registration.getByLabel("Email", { exact: true }).fill(`attendee-${run}@example.test`);await registration.getByRole("button", { name: "送出報名", exact: true }).click();
+     await expect(viewer).toHaveURL(/\/thank-you\?submitted=verification_required$/u);
+     const submission = await db.formSubmission.findFirstOrThrow({ where: { liveId: live.id, email: `attendee-${run}@example.test` } });expect(submission.verificationStatus).toBe("UNVERIFIED");
++    // WP14: an optional public calendar never grants verification or playback.
++    const [download] = await Promise.all([viewer.waitForEvent("download"), viewer.getByRole("button", { name: "下載活動行事曆（.ics）", exact: true }).click()]);
++    expect(download.suggestedFilename()).toBe("webinar.ics");
++    const stream = await download.createReadStream();if (!stream) throw new Error("Synthetic calendar download missing.");
++    const chunks:Buffer[]=[];for await (const chunk of stream) chunks.push(Buffer.from(chunk));
++    const calendar=Buffer.concat(chunks).toString("utf8").replace(/\r\n /gu,"");
++    expect(calendar).toContain(`UID:celebratedeal-live-${live.id}\r\n`);
++    expect(calendar).toContain(`SUMMARY:${live.title}\r\n`);
++    expect(calendar).toContain(`URL:${origin}${publicPath}/broadcast\r\n`);
++    expect(calendar).toContain(`DTSTART:${live.scheduledAt.toISOString().replace(/[-:]/gu,"").replace(/\.\d{3}Z$/u,"Z")}\r\n`);
++    for (const forbidden of [`attendee-${run}@example.test`,videoSource,"fsv1.","/broadcast/play","ATTENDEE","VALARM"]) expect(calendar).not.toContain(forbidden);
++    expect((await db.formSubmission.findUniqueOrThrow({where:{id:submission.id}})).verificationStatus).toBe("UNVERIFIED");
++    for (const width of [1280,390]) {await viewer.setViewportSize({width,height:900});await axe(viewer);await viewer.screenshot({path:test.info().outputPath(`calendar-thank-you-${width}.png`),fullPage:true});}
+     const delivery = await db.emailDelivery.findFirstOrThrow({ where: { vendorId, sourceFormSubmissionId: submission.id, trigger: "form_submission_verification" } });
+     // 僅使用此 fixture 剛產生的驗證能力，記憶體內走實際頁面；不記錄／保存其值。
+     const payload = revealEmailDeliveryPayload(delivery.payloadEncryptedEnvelope, { vendorId, deliveryId: delivery.id });
+@@ -120,9 +132,30 @@
+     await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
+     expect(await video.evaluate(element => (element as HTMLVideoElement).error === null)).toBe(true);
+   } finally { await attendee.close(); }
++  // Keep the fresh-intent assertions, after the public calendar/verification/playback flow.
++  const completedIntent=await quick.locator('input[name="requestId"]').inputValue();
++  await page.getByRole("button", { name: "建立另一場", exact: true }).click();
++  expect((await quick.locator('input[name="requestId"]').inputValue())===completedIntent).toBe(false);
++  await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toHaveValue("");await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 240_000), "Asia/Taipei"));await quick.getByLabel(/^活動名稱/u).fill("WP17 第二場合成講座");await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();await expectPublicCreation(page,publicLink,"second");expect(await publicLink.getAttribute("href")).not.toBe(publicPath);expect(await db.live.count({ where: { vendorId } })).toBe(2);
+   // 另一個合成草稿專案缺付款驗證，必須保留草稿／缺項，不提供公開成功連結。
+   const blocked = await db.salesProject.create({ data: { vendorId, name: "WP17 待補專案", slug: `wp17-blocked-${run}`, mode: "live_course", primaryFlow: "live" } });
+   await db.salesProjectProduct.create({ data: { vendorId, projectId: blocked.id, productId } });await db.paymentMethodReference.update({ where: { id: methodId }, data: { status: "pending", verifiedAt: null } });await db.userOnboardingPreference.update({ where: { userId_vendorId: { userId, vendorId } }, data: { selectedProjectId: blocked.id } });
+   await page.reload();await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 300_000), "Asia/Taipei"));await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
+   await expect(page.getByText("專案尚未發布，公開網址目前無法開啟", { exact: true })).toBeVisible();await expect(publicLink).toHaveCount(0);await expect(page.getByRole("link", { name: "尚無有效且已驗證的商家付款方式", exact: true })).toBeVisible();expect((await db.salesProject.findUniqueOrThrow({ where: { id: blocked.id } })).status).toBe("draft");
+ });
++
++async function expectPublicCreation(page:Page,publicLink:Locator,stage:"first"|"second") {
++  try {await expect(publicLink).toBeVisible();}
++  catch {
++    // Only fixture-owned counts and known static messages; never dump DOM/session data.
++    const messages:Record<string,string>={create_failed:"目前無法完成建立，請稍後以相同設定重試。",publication_failed:"場次與草稿已建立，發布尚未完成。請開啟設定頁檢查資源與發布狀態。",project_unpublished:"專案尚未發布，公開網址目前無法開啟",invalid_input:"請選擇影片、有效時間，並確認名稱不超過 120 字。",request_conflict:"這個建立請求已使用不同設定，請到既有場次調整。",bad_schedule:"請填入商家時區中的有效未來時間；夏令時間重複或不存在的時間無法使用。",video_unavailable:"影片尚未就緒、缺少長度，或已無法使用，請重新選擇。",project_unavailable:"目前專案不適合建立線上講座，請先選取有效的直播專案。",project_required:"請先從專案選單選取專案，再建立線上講座。"};
++    const outcomes:string[]=[];for(const [name,message]of Object.entries(messages))if(await page.getByText(message,{exact:true}).isVisible())outcomes.push(name);
++    const [ownedLives,verifiedMethods,project,preference]=await Promise.all([
++      db.live.count({where:{vendorId}}),db.paymentMethodReference.count({where:{vendorId,status:"verified",verifiedAt:{not:null,lte:new Date()}}}),
++      db.salesProject.findUnique({where:{id:projectId},select:{status:true}}),db.userOnboardingPreference.findUnique({where:{userId_vendorId:{userId,vendorId}},select:{selectedProjectId:true}}),
++    ]);
++    const form=page.getByRole("form",{name:"一場即上線",exact:true});
++    const controls=await form.evaluate(element=>{const f=element as HTMLFormElement;return {formValid:f.checkValidity(),videoSelected:Boolean((f.elements.namedItem("videoId") as HTMLSelectElement)?.value),startFilled:Boolean((f.elements.namedItem("startsAtLocal") as HTMLInputElement)?.value),titleFilled:Boolean((f.elements.namedItem("title") as HTMLInputElement)?.value)};});
++    throw new Error(`Synthetic quick-creation outcome ${JSON.stringify({stage,outcomes,ownedLives,verifiedMethods,projectPublished:project?.status==="published",expectedProjectSelected:preference?.selectedProjectId===projectId,controls})}`);
++  }
++}
+--- a/src/components/quick-webinar-form.tsx
++++ b/src/components/quick-webinar-form.tsx
+@@ -1,36 +1,41 @@
+ "use client";
+ 
+-import { useActionState, useState } from "react";
++import { useActionState, useState, useSyncExternalStore } from "react";
+ import Link from "next/link";
+ import { createQuickWebinarAction, type QuickWebinarState } from "@/app/actions/quick-webinar-actions";
+ import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
++
++const subscribeToHydration = () => () => undefined;
+ 
+ export function QuickWebinarForm({ videos, timeZone, csrfToken, requestId }: {
+   videos: Array<{ id: string; title: string }>;
+   timeZone: string; csrfToken: string; requestId: string;
+ }) {
+   const [state, action, pending] = useActionState(createQuickWebinarAction, { status: "idle", message: "" } as QuickWebinarState);
++  // SSR controls must not accept input before React can retain their values.
++  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+   // revalidatePath 會重送 Server Component props；同一張表單仍沿用原建立識別。
+   const [submissionId] = useState(requestId);
+   const [videoId, setVideoId] = useState("");
+   const [startsAt, setStartsAt] = useState("");
+   const [title, setTitle] = useState("");
+   const completed = state.status === "ready" || state.status === "needs_attention";
++  const controlsDisabled = !hydrated || pending || completed;
+   const control = "min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2";
+   return <section aria-labelledby="quick-webinar-title" className="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-5">
+     <h2 id="quick-webinar-title" className="text-xl font-bold text-slate-950">一場即上線</h2>
+     <p className="mt-2 text-sm text-slate-700">選影片與開始時間，名稱可留空。系統自動建立報名、確認、播放頁與開播前一小時的 Email 提醒設定，回放保留七天。</p>
+     {/* React resets action forms after submission. Keep this intent's values;
+         only the explicit full navigation below starts a blank creation intent. */}
+-    <form action={action} onReset={event => event.preventDefault()} aria-label="一場即上線" aria-busy={pending} className="mt-4 grid gap-4">
++    <form action={action} onReset={event => event.preventDefault()} aria-label="一場即上線" aria-busy={!hydrated || pending} className="mt-4 grid gap-4">
+       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+       <input type="hidden" name="requestId" value={submissionId} />
+-      <label className="grid gap-1 text-sm font-medium">選擇影片<select required name="videoId" value={videoId} onChange={e => setVideoId(e.target.value)} disabled={pending || completed || !videos.length} className={control}><option value="">請選擇已就緒且有長度的影片</option>{videos.map(video => <option key={video.id} value={video.id}>{video.title}</option>)}</select></label>
++      <label className="grid gap-1 text-sm font-medium">選擇影片<select required name="videoId" value={videoId} onChange={e => setVideoId(e.target.value)} disabled={controlsDisabled || !videos.length} className={control}><option value="">請選擇已就緒且有長度的影片</option>{videos.map(video => <option key={video.id} value={video.id}>{video.title}</option>)}</select></label>
+       {!videos.length ? <p className="text-sm text-slate-700">目前沒有可用影片。<Link className="underline" href="/videos">前往影片庫上傳並確認處理完成</Link></p> : null}
+-      <label className="grid gap-1 text-sm font-medium">開始時間（{timeZone}）<input required type="datetime-local" name="startsAtLocal" value={startsAt} onChange={e => setStartsAt(e.target.value)} disabled={pending || completed} className={control} /></label>
+-      <label className="grid gap-1 text-sm font-medium">活動名稱（選填，預設使用影片名稱）<input name="title" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} disabled={pending || completed} className={control} /></label>
++      <label className="grid gap-1 text-sm font-medium">開始時間（{timeZone}）<input required type="datetime-local" name="startsAtLocal" value={startsAt} onChange={e => setStartsAt(e.target.value)} disabled={controlsDisabled} className={control} /></label>
++      <label className="grid gap-1 text-sm font-medium">活動名稱（選填，預設使用影片名稱）<input name="title" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} disabled={controlsDisabled} className={control} /></label>
+       <p className="text-sm text-slate-600">會沿用目前選取的直播專案。未選過專案的新帳號會建立新專案；若缺商品、已驗證付款方式等發布條件，會保留草稿並列出缺項。</p>
+-      {!completed ? <button type="submit" disabled={pending || !videos.length} className="min-h-11 rounded-md bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{pending ? "建立與檢查中…" : "建立並檢查上線"}</button> : <p className="text-sm text-slate-700">這場的建立結果已固定，請使用下方連結繼續調整。</p>}
++      {!completed ? <button type="submit" disabled={!hydrated || pending || !videos.length} className="min-h-11 rounded-md bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{pending ? "建立與檢查中…" : "建立並檢查上線"}</button> : <p className="text-sm text-slate-700">這場的建立結果已固定，請使用下方連結繼續調整。</p>}
+     </form>
+     {state.message ? <div role={state.status === "error" ? "alert" : "status"} className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+       <p>{state.message}</p>
+--- a/src/components/quick-webinar-form.test.tsx
++++ b/src/components/quick-webinar-form.test.tsx
+@@ -15,6 +15,10 @@
+     expect(html).toContain('name="videoId"');expect(html).toContain('name="startsAtLocal"');expect(html).toContain('name="title"');
+     expect(html).toContain("Asia/Taipei");expect(html).toContain("已驗證付款方式");expect(html).toContain("保留草稿並列出缺項");
+     expect(html).not.toContain("已發布報名");
++    expect(html).toContain('aria-busy="true"');
++    expect(html).toMatch(/<select[^>]*disabled/u);
++    expect(html).toMatch(/<input[^>]*type="datetime-local"[^>]*disabled/u);
++    expect(html).toMatch(/<button[^>]*disabled/u);
+   });
+   it("offers the real video library and disables creation with no supported media", () => {
+     const html=renderToStaticMarkup(<QuickWebinarForm videos={[]} timeZone="Asia/Taipei" csrfToken="synthetic" requestId="synthetic-request" />);
+@@ -26,6 +30,7 @@
+     const container = document.createElement("div");const root = createRoot(container);
+     try {
+       await act(async () => root.render(<QuickWebinarForm {...props} requestId="original-request" />));
++      expect(container.querySelector("select")!.disabled).toBe(false);
+       await act(async () => root.render(<QuickWebinarForm {...props} requestId="new-server-render" />));
+       expect((container.querySelector('input[name="requestId"]') as HTMLInputElement).value).toBe("original-request");
+     } finally { await act(async () => root.unmount());vi.unstubAllGlobals(); }

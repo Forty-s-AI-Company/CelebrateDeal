@@ -1,0 +1,6 @@
+{
+  "src/lib/live-metric-order-coverage.ts": "ff19e647498ec53dd367f35dcf1654257197cc26f61843fa1fdd4ab4b153f3b4",
+  "src/lib/live-metric-coverage-reader.ts": "dcf9f861e66cce8483546680d9644642d2803b7f22d0a5d8e091a8390234e2bf",
+  "prisma/migrations/20261015220000_live_metric_order_coverage_proof/migration.sql": "b6b4848ccf2786fd2b6c248e4d2d6439407f67708babfd985e34f34c118c9e14",
+  "prisma/migrations/20261015230000_live_metric_order_tenant_report_binding/migration.sql": "fd847249022c416f9f143f2221c7f2a5993bd219683b41d69f40a9e64b3501da"
+}

@@ -143,10 +143,10 @@ export async function main() {
     receipt.phases.constraints = constraints.exitCode === 0 && required.every((value) => receipt.assertions.includes(value)) ? "PASS" : "FAIL";
     if (receipt.phases.constraints !== "PASS") throw new Error("constraint-contract-failed");
     const vitestCli = path.join(root, "node_modules", "vitest", "vitest.mjs");
-    const inventoryTests = run(process.execPath, [vitestCli, "run", "src/lib/inventory-reservations.test.ts"], dbEnv);
+    const inventoryTests = run(process.execPath, [vitestCli, "run", "src/lib/inventory-reservations.db.test.ts"], dbEnv);
     receipt.phases.inventoryTests = inventoryTests.exitCode === 0 ? "PASS" : "FAIL";
     if (inventoryTests.exitCode !== 0) throw new Error("inventory-tests-failed");
-    const coursePolicyTests = run(process.execPath, [vitestCli, "run", "src/lib/course-payment-webhooks.test.ts"], dbEnv);
+    const coursePolicyTests = run(process.execPath, [vitestCli, "run", "src/lib/course-payment-webhooks.db.test.ts"], dbEnv);
     receipt.phases.coursePolicyTests = coursePolicyTests.exitCode === 0 ? "PASS" : "FAIL";
     if (coursePolicyTests.exitCode !== 0) throw new Error("course-policy-tests-failed");
     receipt.status = "PASS";

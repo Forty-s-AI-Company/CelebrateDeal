@@ -1,0 +1,10 @@
+{
+  "file": "tests/e2e/wp03-public-presentation.spec.ts",
+  "old_text": "      await expect(main).toContainText(\"客服聯絡管道與服務時段尚未公告\");",
+  "new_text": "      await expect(main).toContainText(\"服務時段尚未公告\");\n      await expect(main.getByRole(\"link\", { name: \"客服信箱：a88221144@gmail.com\" })).toHaveAttribute(\"href\", \"mailto:a88221144@gmail.com\");\n      await expect(main).toContainText(\"Carry Digital Nomad 凱瑞數位\");",
+  "before_sha256": "f467f92d32868f4d49f2f45a3ceb35c8e9dcd7c72e28c6659f948d68636bf35c",
+  "after_sha256": "de1fe8bf930ddd54b37d6a7339dd4f581785eb7a197f6bf3b8d7b068ea21c504",
+  "lint": "PASS",
+  "browser": "NOT_RUN",
+  "independent_review": "NOT_RUN for supplemental E2E assertion-only update;5source files reviewed"
+}

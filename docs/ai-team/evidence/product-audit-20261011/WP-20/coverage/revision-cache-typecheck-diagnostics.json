@@ -1,0 +1,13 @@
+{
+  "exit_code": 2,
+  "diagnostics": [
+    "src/lib/live-metric-order-revision-snapshot.test.ts(8,134): error TS2737: BigInt literals are not available when targeting lower than ES2020.",
+    "src/lib/live-metric-order-revision-snapshot.test.ts(22,59): error TS2737: BigInt literals are not available when targeting lower than ES2020.",
+    "src/lib/live-metric-order-revision-snapshot.test.ts(32,115): error TS2737: BigInt literals are not available when targeting lower than ES2020.",
+    "src/lib/live-metric-order-revision-snapshot.test.ts(38,134): error TS2737: BigInt literals are not available when targeting lower than ES2020.",
+    "src/lib/live-metric-report-reader.ts(81,63): error TS2737: BigInt literals are not available when targeting lower than ES2020.",
+    "src/lib/live-metric-report-snapshot.test.ts(5,35): error TS7006: Parameter 'tx' implicitly has an 'any' type.",
+    "src/lib/live-metric-report-snapshot.test.ts(5,39): error TS7006: Parameter '_lease' implicitly has an 'any' type.",
+    "src/lib/live-metric-report-snapshot.test.ts(5,47): error TS7006: Parameter 'read' implicitly has an 'any' type."
+  ]
+}

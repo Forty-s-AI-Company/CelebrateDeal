@@ -1,0 +1,171 @@
+{
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "permission",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "completed": false,
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "finalModel": "claude-opus-5-5",
+  "claude_cli_discovery_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "I reviewed only the three supplied sources, read-only. I found no BLOCKER or MAJOR defect in the wrapper prefix. For the audit query, the guard rejects a role that would be filtered by RLS instead of showing it only covered rows. It rejects overlapping use, whether the same object is passed twice (checked before any await) or a different facade points at the same transaction (same backend PID and exact transaction start time). The guard entries are always removed in finally. It checks for a primary repeatable-read transaction before changing any setting. After changing settings it confirms the same backend and transaction, row_security=off and the expected timeout, so an autocommit client defaulting to repeatable read cannot pass. It keeps the tighter timeout (and caps 0 at 5000 ms), restores both settings, and keeps the original error when restoring fails in an aborted transaction. readMetricCoverage now wraps the whole audit read. A known visits audit gap still returns before any source scan, with source not_read. reconcileMetricVisitSources uses the shared guard and copies the window dates before any await. One NIT: if a JavaScript error happens and restoring settings then fails, the restore error is swallowed and row_security stays off. Not certified: the readSources/classifier bodies, readMetricReportContext, the wp20_* SQL functions and their SECURITY DEFINER/INVOKER behaviour, schema, RLS policies, grants, actual callers, deployment roles, bundling (separate module copies would each have their own guard sets), tests and harness. Public quota/lock, form failure, least-privilege deployment, full E2E/load and a positive producer remain open as stated. An empty or near-empty findings list does not certify test or release success.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-read-visibility.ts",
+        "area": "readWithSettings catch/finally (failed flag and restore catch)",
+        "issue": "The code swallows a restore error whenever `failed` is true. That includes JavaScript-only failures, such as the live-settings mismatch or a zod parse error inside read(), where the transaction is not aborted. In that rare case row_security stays off and statement_timeout stays at the capped value for the rest of the caller's transaction. The outer finally still removes the guard key, so a later wrapper call on the same transaction would record 'off' and 5000ms as the original values and restore to them.",
+        "evidence": "`catch(error){failed=true;throw error;}` sets failed for every error type. The finally block's `catch(error){ if(!failed)throw error; }` does not tell an aborted SQL transaction apart from a healthy one.",
+        "impact": "Low. row_security=off does not let a role bypass RLS (a filtered role gets an error instead of rows), so no data leaks. A healthy caller transaction could quietly keep the changed timeout and RLS-error behaviour, and the next wrapper call would inherit them as its baseline. This hurts availability and predictability, not completeness.",
+        "recommended_fix": "Keep the original error, but attach the restore failure to it (for example with AggregateError or a cause field), or mark the transaction client as poisoned so later wrapper calls refuse it until the caller rolls back. Another option is to swallow the restore error only when it is SQLSTATE 25P02 (in failed SQL transaction).",
+        "required_test": "In a synthetic real-fixture transaction: make read() throw a plain JavaScript error and inject a restore failure through a facade whose third $queryRaw call rejects. Check that the original error is still raised, that the restore failure is surfaced or the transaction is marked unusable, and that a later wrapper call on the same transaction cannot record row_security='off' as the original setting.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  }
+}

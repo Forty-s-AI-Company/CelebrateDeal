@@ -1,0 +1,12 @@
+{
+  "sourceHashes": {
+    "src/lib/automation-workflow.ts": "33385901a8f0ff50abe4d7aead5dd7988412e13e86cd0b6ee37c5566bd37d11e",
+    "src/lib/automation-workflow.test.ts": "a1d94e12589c12c3408d455678d239dc57d88e14e39db3d43b10d3bb98336929",
+    "src/app/actions/automation-actions.ts": "d0704fcc76e8d264decaea0b08e48c6317af0d43c2423c8df4d66e39ba056e2d",
+    "src/app/actions/automation-actions.test.ts": "510d00e2ffa42e5c736449f0f0f09c50b8f857d835cf66de35dc9b18951d84e9",
+    "src/app/(app)/settings/automations/page.tsx": "14a0d43f0992d2b6bef116ed1e4a3f10098cb977fb69642c601e509c3611bebd",
+    "src/app/(app)/settings/automations/page.test.tsx": "74aa672f958d0c28d0e651ab415d0d8bb8cb2e619128c1ea39a2fadc3dcca860"
+  },
+  "scope": "entire changed rule/trigger readiness, full dryRun, full dispatch prefix through pre-claim readiness, full custom create and toggle; UI exact substitution described",
+  "wholeWp18": "IN_PROGRESS"
+}

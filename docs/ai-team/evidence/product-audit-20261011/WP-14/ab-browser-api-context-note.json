@@ -1,0 +1,6 @@
+{
+  "observed": "Actual merchant UI reached both exact A/B count assertions and failed only at subsequent Node APIRequestContext read (stage api-read). Original error was removed by credential-term filter; precise underlying message unknown.",
+  "fix": "Run the additional API request through the authenticated browser fetch, the same transport/context as the product UI, check HTTP/cache-control/JSON content type explicitly before parsing. No cookie/session reading or injection.",
+  "scope": "Task-only E2E correction; no product/auth/policy changes.",
+  "cause_status": "Request-context difference is a supported inference; exact original response metadata was not retained and is not claimed."
+}

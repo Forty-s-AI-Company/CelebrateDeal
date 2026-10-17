@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "engine": "chromium",
+  "checks": [
+    {
+      "previewGet": 200,
+      "previewHead": 200,
+      "previewNoCheckoutCookie": true,
+      "previewNoRotation": true,
+      "axeViolations": 0
+    },
+    {
+      "confirmedPost": 303,
+      "checkoutReached": true,
+      "originMatches": true,
+      "referrerHasQuery": false,
+      "existingResolverDiscountCents": 100,
+      "noOrderCreated": true
+    },
+    {
+      "capturedBodyForgedCookieRejected": true,
+      "status": 403,
+      "noCheckoutCredentialIssued": true
+    },
+    {
+      "sameConfirmationRetry": 303,
+      "checkoutCredentialRecovered": true
+    },
+    {
+      "oldLinkReplayRejected": true
+    },
+    {
+      "voucherARecoveredAfterB": true,
+      "viaAuthenticatedPortal": true
+    },
+    {
+      "concurrentRequests": 3,
+      "successfulExchanges": 1,
+      "rejectedExchanges": 2
+    }
+  ],
+  "restored": true,
+  "stage": "concurrent",
+  "axe": []
+}

@@ -1,0 +1,813 @@
+Final scoped current review; no tools. Canonical JSON summary/findings, severity BLOCKER/MAJOR/MINOR/NIT. At most4 findings under100words each. Source included, read-only. Prior arithmetic review found correct exact rational coverage/window/threshold; one MAJOR performance remained.
+Changed: precompute common exact LCM scale ONCE bounded at16384bits, precompute/sort eligible starts ONCE, scan scaled integers and short-circuit threshold. No gcd inside binary search. Exact arithmetic unchanged. Synthetic benchmarks10000 jittered rows: sequential131→146ms; concurrent disjoint19013→76ms; partialoverlap18543→72ms, all results same. 200 deterministic randomized cases match prior exact fraction implementation. Full repeatable benchmark source supplied (earlier slow reference as module, no external I/O except local receipt). 2sec budget. Segment/scale limit preserves attendance/average, completion/order unavailable limit_exceeded. Added fractional read-model reconciliation .999rate verified17 crossed27017, T27018 valid,T27017 excludes; preverification durable fact invalid documented.
+Approved formulas: [S,T), verified registration cohort; B/V browser rate,A/R attendance,C/A>=90%media, unionwall/A, noncancelled established order afterfirstcrossing inclusive7days beforeT, provisional. Exact crossing ceil to integerms. Missingnull vs knownempty[], contradictionsinvalid. Scope pure modules only; API/DB/UI and production deployment NOT included/unfinished. Evaluate current fixes/regressions. Previously nonblocking: failclosed invalid batch, current order snapshot adapter required, sampling boundary not authentication.
+FILE: src/lib/live-core-metrics-read-model.ts
+import { evaluatePostCompletionOrder, POST_COMPLETION_ORDER_WINDOW_MS } from "./live-metric-contract";
+import { firstCompletionTime } from "./live-viewing-evidence";
+
+/** Pure reporting contract. The persistence adapter must provide complete,
+ * verified facts for one tenant/live/content version and viewing mode.
+ * null means unknown history; [] means an audited, complete empty history.
+ * IDs are opaque internal references, never email addresses or session counts.
+ */
+export type MetricScope = Readonly<{
+  vendorId: string;
+  liveId: string;
+  contentVersionId: string;
+  mode: "live" | "replay";
+}>;
+type Scoped = Readonly<{ scope: MetricScope }>;
+export type VisitFact = Scoped & Readonly<{ browserId: string; visitedAtMs: number }>;
+export type RegistrationFact = Scoped & Readonly<{
+  personId: string; browserId: string | null; verifiedAtMs: number;
+}>;
+/** Each segment has a constant playback rate; seek/pause/buffering split it.
+ * Wall timestamps are validated by ingestion, not taken on trust from clients.
+ */
+export type ViewingFact = Scoped & Readonly<{
+  personId: string;
+  wallStartMs: number; wallEndMs: number;
+  mediaStartMs: number; mediaEndMs: number;
+}>;
+/** Durable first crossing uses verified-eligible exposure only. A crossing
+ * before verification contradicts this contract and invalidates the batch. */
+export type CompletionFact = Scoped & Readonly<{ personId: string; firstCompletedAtMs: number }>;
+/** Rows are current order snapshots from a read transaction, never historical
+ * order events; the adapter must omit stale pre-cancellation states. */
+export type OrderFact = Scoped & Readonly<{
+  personId: string; establishedAtMs: number; cancelled: boolean;
+}>;
+export type CoreMetricsInput = Readonly<{
+  scope: MetricScope;
+  startMs: number; endMs: number; durationMs: number | null;
+  visits: readonly VisitFact[] | null;
+  registrations: readonly RegistrationFact[] | null;
+  viewing: readonly ViewingFact[] | null;
+  completions: readonly CompletionFact[] | null;
+  orders: readonly OrderFact[] | null;
+}>;
+export type MetricValue =
+  | { status: "unavailable"; reason: "missing_data" | "invalid_data" | "limit_exceeded" }
+  | { status: "not_applicable"; reason: "zero_denominator" }
+  | { status: "available"; value: number; numerator: number; denominator: number; unit: "percent" | "seconds" };
+export type CoreMetrics = {
+  registrationRate: MetricValue;
+  attendanceRate: MetricValue;
+  completionRate: MetricValue;
+  averageViewingSeconds: MetricValue;
+  postCompletionOrderRate: MetricValue;
+  unattributedRegistrations: number | null;
+  provisionalConversions: boolean | null;
+};
+
+const missing = (): MetricValue => ({ status: "unavailable", reason: "missing_data" });
+const invalid = (): MetricValue => ({ status: "unavailable", reason: "invalid_data" });
+const timestamp = (value: number) => Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000;
+const id = (value: string) => typeof value === "string" && value.length > 0;
+const scopeValid = (scope: MetricScope) => scope && id(scope.vendorId) && id(scope.liveId) && id(scope.contentVersionId) && (scope.mode === "live" || scope.mode === "replay");
+const sameScope = (a: MetricScope, b: MetricScope) => scopeValid(a) && a.vendorId === b.vendorId && a.liveId === b.liveId && a.contentVersionId === b.contentVersionId && a.mode === b.mode;
+
+function ratio(numerator: number, denominator: number, unit: "percent" | "seconds" = "percent"): MetricValue {
+  if (!denominator) return { status: "not_applicable", reason: "zero_denominator" };
+  const value = numerator / denominator * (unit === "percent" ? 100 : 1);
+  return Number.isFinite(value) ? { status: "available", value, numerator, denominator, unit } : invalid();
+}
+
+/** Union actual exposure time across sessions/devices. Never fill gaps. */
+function unionLength(intervals: readonly (readonly [number, number])[]): number {
+  let end = 0;
+  let total = 0;
+  for (const [start, nextEnd] of [...intervals].sort((a, b) => a[0] - b[0])) {
+    total += Math.max(0, nextEnd - Math.max(end, start));
+    end = Math.max(end, nextEnd);
+  }
+  return total;
+}
+
+class InvalidMetricFacts extends Error {}
+const requireFact = (condition: unknown) => { if (!condition) throw new InvalidMetricFacts(); };
+type Cohort = Map<string, RegistrationFact>;
+
+function validateScopeAndWindow(input: CoreMetricsInput) {
+  requireFact(input && scopeValid(input.scope) && timestamp(input.startMs) && timestamp(input.endMs) && input.startMs < input.endMs);
+  // Fail closed on mixed scopes; silently dropping rows would change denominators.
+  for (const rows of [input.visits, input.registrations, input.viewing, input.completions, input.orders]) {
+    requireFact(rows === null || (Array.isArray(rows) && Array.from(rows).every((row) => row && sameScope(row.scope, input.scope))));
+  }
+}
+
+function buildCohort(input: CoreMetricsInput): Cohort {
+  const registrations: Cohort = new Map();
+  for (const row of input.registrations!) {
+    requireFact(id(row.personId) && timestamp(row.verifiedAtMs) && (row.browserId === null || id(row.browserId)));
+    const previous = registrations.get(row.personId);
+    requireFact(!previous || (previous.verifiedAtMs === row.verifiedAtMs && previous.browserId === row.browserId));
+    registrations.set(row.personId, row);
+  }
+  return new Map([...registrations].filter(([, row]) => row.verifiedAtMs >= input.startMs && row.verifiedAtMs < input.endMs));
+}
+
+function registrationMetrics(input: CoreMetricsInput, cohort: Cohort, result: CoreMetrics) {
+  if (input.visits === null) return;
+  const visits = new Map<string, number>();
+  for (const row of input.visits) {
+    requireFact(id(row.browserId) && timestamp(row.visitedAtMs));
+    if (row.visitedAtMs >= input.startMs && row.visitedAtMs < input.endMs) visits.set(row.browserId, Math.min(visits.get(row.browserId) ?? Infinity, row.visitedAtMs));
+  }
+  const converted = new Set<string>();
+  let unattributed = 0;
+  for (const row of cohort.values()) {
+    const visit = row.browserId === null ? undefined : visits.get(row.browserId);
+    if (visit !== undefined && row.verifiedAtMs >= visit) converted.add(row.browserId!);
+    else unattributed++;
+  }
+  result.registrationRate = ratio(converted.size, visits.size);
+  result.unattributedRegistrations = unattributed;
+}
+
+function collectSegments(input: CoreMetricsInput, cohort: Cohort): Map<string, ViewingFact[]> {
+  const segments = new Map<string, ViewingFact[]>();
+  for (const row of input.viewing!) {
+    requireFact(id(row.personId) && timestamp(row.wallStartMs) && timestamp(row.wallEndMs) && row.wallEndMs > row.wallStartMs);
+    requireFact(Number.isSafeInteger(row.mediaStartMs) && Number.isSafeInteger(row.mediaEndMs) && row.mediaStartMs >= 0 && row.mediaEndMs > row.mediaStartMs);
+    if (input.durationMs !== null && input.durationMs > 0) requireFact(row.mediaEndMs <= input.durationMs);
+    const registration = cohort.get(row.personId);
+    if (!registration || row.wallEndMs <= registration.verifiedAtMs || row.wallStartMs >= input.endMs) continue;
+    const rows = segments.get(row.personId) ?? [];
+    rows.push(row);
+    segments.set(row.personId, rows);
+  }
+  return segments;
+}
+
+function viewingMetrics(input: CoreMetricsInput, cohort: Cohort, result: CoreMetrics): Map<string, number> {
+  const segments = collectSegments(input, cohort);
+  const completed = new Map<string, number>();
+  let completionLimit = false;
+  let wallMs = 0;
+  for (const [person, rows] of segments) {
+    const verifiedAt = cohort.get(person)!.verifiedAtMs;
+    wallMs += unionLength(rows.map((row) => [Math.max(row.wallStartMs, verifiedAt, input.startMs), Math.min(row.wallEndMs, input.endMs)] as const));
+    if (input.durationMs === null) continue;
+    const completion = firstCompletionTime(input.durationMs, rows, { startMs: Math.max(verifiedAt, input.startMs), endMs: input.endMs - 1 });
+    if (completion.status === "unavailable" && completion.reason === "limit_exceeded") {
+      completionLimit = true;
+      continue;
+    }
+    requireFact(completion.status === "available");
+    if (completion.status === "available" && completion.firstCompletedAtMs !== null) completed.set(person, completion.firstCompletedAtMs);
+  }
+  result.attendanceRate = ratio(segments.size, cohort.size);
+  result.averageViewingSeconds = ratio(wallMs / 1000, segments.size, "seconds");
+  result.completionRate = input.durationMs === null ? missing() : completionLimit ? { status: "unavailable", reason: "limit_exceeded" } : ratio(completed.size, segments.size);
+  return completed;
+}
+
+function orderMetrics(input: CoreMetricsInput, cohort: Cohort, completed: Map<string, number>, result: CoreMetrics) {
+  if (result.completionRate.status === "unavailable") {
+    result.postCompletionOrderRate = { ...result.completionRate };
+    return;
+  }
+  if (input.completions === null || input.orders === null || input.durationMs === null) return;
+  const firstCompletion = new Map<string, number>();
+  for (const row of input.completions) {
+    requireFact(id(row.personId) && timestamp(row.firstCompletedAtMs));
+    const previous = firstCompletion.get(row.personId);
+    requireFact(previous === undefined || previous === row.firstCompletedAtMs);
+    firstCompletion.set(row.personId, row.firstCompletedAtMs);
+  }
+  for (const row of input.orders) requireFact(id(row.personId) && timestamp(row.establishedAtMs) && typeof row.cancelled === "boolean");
+  // Reconcile durable first-crossing facts with independently derived viewing
+  // evidence. [] is known-empty, so a contradiction is invalid, not missing.
+  for (const [person, derivedAt] of completed) {
+    requireFact(firstCompletion.get(person) === derivedAt);
+  }
+  for (const [person, at] of firstCompletion) {
+    if (!cohort.has(person) || at >= input.endMs) continue;
+    requireFact(at >= cohort.get(person)!.verifiedAtMs && completed.get(person) === at);
+  }
+  const ordered = new Set<string>();
+  for (const row of input.orders) {
+    if (!completed.has(row.personId) || row.establishedAtMs >= input.endMs) continue;
+    const eligibility = evaluatePostCompletionOrder(firstCompletion.get(row.personId)!, row);
+    if (eligibility.status === "available" && eligibility.qualifies) ordered.add(row.personId);
+  }
+  result.postCompletionOrderRate = ratio(ordered.size, completed.size);
+  // The last millisecond of the inclusive seven-day window must be observed.
+  result.provisionalConversions = [...completed.keys()].some((person) => input.endMs <= firstCompletion.get(person)! + POST_COMPLETION_ORDER_WINDOW_MS);
+}
+
+export function calculateCoreMetrics(input: CoreMetricsInput): CoreMetrics {
+  const result: CoreMetrics = {
+    registrationRate: missing(), attendanceRate: missing(), completionRate: missing(),
+    averageViewingSeconds: missing(), postCompletionOrderRate: missing(),
+    unattributedRegistrations: null, provisionalConversions: null,
+  };
+  try {
+    validateScopeAndWindow(input);
+    if (input.registrations === null) return result;
+    const cohort = buildCohort(input);
+    registrationMetrics(input, cohort, result);
+    if (input.viewing === null) return result;
+    requireFact(input.durationMs === null || (Number.isSafeInteger(input.durationMs) && input.durationMs > 0));
+    const completed = viewingMetrics(input, cohort, result);
+    orderMetrics(input, cohort, completed, result);
+    return result;
+  } catch (error) {
+    if (!(error instanceof InvalidMetricFacts)) throw error;
+    return { registrationRate: invalid(), attendanceRate: invalid(), completionRate: invalid(), averageViewingSeconds: invalid(), postCompletionOrderRate: invalid(), unattributedRegistrations: null, provisionalConversions: null };
+  }
+}
+
+FILE: src/lib/live-viewing-evidence.ts
+import { COMPLETION_PERCENT } from "./live-metric-contract";
+
+/** These are bounded exposure samples, not proof of human attention. A caller
+ * must reset on seek, buffering, pause, source/version changes and rate changes.
+ * Monotonic elapsed time is later anchored to server time by ingestion.
+ */
+export type PlaybackSample = Readonly<{
+  elapsedMs: number; mediaMs: number; rate: number; playing: boolean;
+}>;
+export type PlaybackSegment = Readonly<{
+  wallStartMs: number; wallEndMs: number; mediaStartMs: number; mediaEndMs: number;
+}>;
+export const MAX_PLAYBACK_SAMPLE_GAP_MS = 5000;
+export const MAX_COMPLETION_SEGMENTS = 10000;
+
+function validSample(sample: PlaybackSample): boolean {
+  return !!sample && Number.isSafeInteger(sample.elapsedMs) && sample.elapsedMs >= 0
+    && Number.isSafeInteger(sample.mediaMs) && sample.mediaMs >= 0
+    && Number.isFinite(sample.rate) && sample.rate >= 0.25 && sample.rate <= 4
+    && typeof sample.playing === "boolean";
+}
+
+/** A discontinuity returns no interval. Do not connect endpoints across gaps.
+ * Integer millisecond samples allow one millisecond of quantization error.
+ * This check bounds accidental seek jumps; the server still validates batches.
+ */
+export function playbackSegment(previous: PlaybackSample | null, current: PlaybackSample): PlaybackSegment | null {
+  if (!previous || !validSample(previous) || !validSample(current) || !previous.playing || !current.playing || previous.rate !== current.rate) return null;
+  const elapsed = current.elapsedMs - previous.elapsedMs;
+  const media = current.mediaMs - previous.mediaMs;
+  if (elapsed <= 0 || elapsed > MAX_PLAYBACK_SAMPLE_GAP_MS || media <= 0 || Math.abs(media - elapsed * current.rate) > 1) return null;
+  return { wallStartMs: previous.elapsedMs, wallEndMs: current.elapsedMs, mediaStartMs: previous.mediaMs, mediaEndMs: current.mediaMs };
+}
+
+/** Derive the earliest integer millisecond at which unique coverage reached
+ * 90%. Segments must be validated constant-rate exposure for one person/version.
+ * Sorting by arrival order is incorrect for delayed and overlapping devices;
+ * instead use a monotone coverage predicate over playback time.
+ */
+export function firstCompletionTime(durationMs: number | null, segments: readonly PlaybackSegment[] | null, window: Readonly<{ startMs: number; endMs: number }> = { startMs: 0, endMs: 8_640_000_000_000_000 }):
+  | { status: "unavailable"; reason: "missing_data" | "invalid_data" | "limit_exceeded" }
+  | { status: "available"; firstCompletedAtMs: number | null } {
+  if (durationMs === null || segments === null) return { status: "unavailable", reason: "missing_data" };
+  if (!Array.isArray(segments) || !Number.isSafeInteger(durationMs) || durationMs <= 0) return { status: "unavailable", reason: "invalid_data" };
+  if (![window.startMs, window.endMs].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000) || window.startMs > window.endMs) return { status: "unavailable", reason: "invalid_data" };
+  if (segments.length > MAX_COMPLETION_SEGMENTS) return { status: "unavailable", reason: "limit_exceeded" };
+  if (Array.from(segments).some((row) => !validSegment(row, durationMs))) return { status: "unavailable", reason: "invalid_data" };
+  if (segments.length === 0) return { status: "available", firstCompletedAtMs: null };
+  let low = Infinity;
+  let high = 0;
+  for (const row of segments) {
+    low = Math.min(low, row.wallStartMs);
+    high = Math.max(high, row.wallEndMs);
+  }
+  low = Math.max(low, window.startMs);
+  high = Math.min(high, window.endMs);
+  const prepared = prepareSegments(segments, window.startMs);
+  if (!prepared) return { status: "unavailable", reason: "limit_exceeded" };
+  if (low > high || !completedAt(durationMs, prepared, high)) return { status: "available", firstCompletedAtMs: null };
+  // At most 53 iterations for safe integer time. No per-millisecond scan and
+  // no invented first-completion timestamp from receipt/arrival order.
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (completedAt(durationMs, prepared, middle)) high = middle;
+    else low = middle + 1;
+  }
+  return { status: "available", firstCompletedAtMs: low };
+}
+
+function validSegment(row: PlaybackSegment, durationMs: number): boolean {
+  return !!row && [row.wallStartMs, row.wallEndMs, row.mediaStartMs, row.mediaEndMs].every((value) => Number.isSafeInteger(value) && value >= 0)
+    && row.wallEndMs <= 8_640_000_000_000_000 && row.wallEndMs > row.wallStartMs
+    && row.mediaEndMs > row.mediaStartMs && row.mediaEndMs <= durationMs;
+}
+
+function gcd(a: bigint, b: bigint): bigint {
+  while (b !== BigInt(0)) { const next = a % b; a = b; b = next; }
+  return a;
+}
+type PreparedSegment = { row: PlaybackSegment; start: bigint; base: bigint; rate: bigint; eligibleAtMs: number };
+type PreparedHistory = { scale: bigint; segments: PreparedSegment[] };
+const MAX_RATIONAL_SCALE = BigInt(1) << BigInt(16384);
+
+function prepareSegments(segments: readonly PlaybackSegment[], eligibleAtMs: number): PreparedHistory | null {
+  const eligible = segments.filter((row) => row.wallEndMs > eligibleAtMs);
+  // One common exact scale avoids huge repeated fraction reductions inside
+  // binary search. Bound its size before allocating scaled per-segment values.
+  let scale = BigInt(1);
+  for (const row of eligible) {
+    const duration = BigInt(row.wallEndMs - row.wallStartMs);
+    scale = scale / gcd(scale, duration) * duration;
+    if (scale > MAX_RATIONAL_SCALE) return null;
+  }
+  const prepared = eligible.map((row) => {
+    const base = BigInt(row.mediaStartMs) * scale;
+    const rate = BigInt(row.mediaEndMs - row.mediaStartMs) * (scale / BigInt(row.wallEndMs - row.wallStartMs));
+    const at = Math.max(row.wallStartMs, eligibleAtMs);
+    return { row, base, rate, eligibleAtMs: at, start: base + rate * BigInt(at - row.wallStartMs) };
+  }).sort((a, b) => a.start < b.start ? -1 : a.start > b.start ? 1 : 0);
+  return { scale, segments: prepared };
+}
+
+/** Preserve original slopes and exact coverage. The fixed denominator is
+ * shared by every interval, so union and threshold tests use integers only.
+ * Sort eligible starts once and stop summing once the threshold is reached.
+ */
+function completedAt(durationMs: number, history: PreparedHistory, atMs: number): boolean {
+  let end = BigInt(0);
+  let covered = BigInt(0);
+  const threshold = BigInt(durationMs) * BigInt(COMPLETION_PERCENT) * history.scale;
+  for (const prepared of history.segments) {
+    if (prepared.eligibleAtMs >= atMs) continue;
+    const intervalEnd = prepared.base + prepared.rate * BigInt(Math.min(prepared.row.wallEndMs, atMs) - prepared.row.wallStartMs);
+    const start = prepared.start > end ? prepared.start : end;
+    if (intervalEnd > start) {
+      covered += intervalEnd - start;
+      end = intervalEnd;
+      if (covered * BigInt(100) >= threshold) return true;
+    }
+  }
+  return false;
+}
+
+FILE: src/lib/live-metric-contract.ts
+/** Approved WP20 rules only. Callers must supply verified, same-person,
+ * same-tenant, same-session/content-version facts. This module does not join
+ * identities, infer missing events, or decide any metric denominator.
+ */
+export const COMPLETION_PERCENT = 90;
+export const POST_COMPLETION_ORDER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+type Unavailable = { status: "unavailable"; reason: "missing_data" | "invalid_data" };
+export type MediaInterval = Readonly<{ startMs: number; endMs: number }>;
+
+/** Intervals describe actually played media positions, not seek endpoints.
+ * null means incomplete/unknown evidence; [] means a known empty history.
+ * Replaying the same positions cannot increase unique coverage.
+ */
+export function evaluateVideoCompletion(
+  durationMs: number | null,
+  intervals: readonly MediaInterval[] | null,
+): Unavailable | { status: "available"; coveredMs: number; completed: boolean } {
+  if (durationMs == null || intervals == null) return { status: "unavailable", reason: "missing_data" };
+  if (!Number.isSafeInteger(durationMs) || durationMs <= 0 || !Array.isArray(intervals) || Array.from(intervals).some((interval) =>
+    !interval || typeof interval !== "object"
+    || !Number.isSafeInteger(interval.startMs) || !Number.isSafeInteger(interval.endMs)
+    || interval.startMs < 0 || interval.endMs < interval.startMs || interval.endMs > durationMs)) {
+    return { status: "unavailable", reason: "invalid_data" };
+  }
+  const sorted = [...intervals].sort((a, b) => a.startMs - b.startMs);
+  let coveredMs = 0;
+  let end = 0;
+  for (const interval of sorted) {
+    coveredMs += Math.max(0, interval.endMs - Math.max(end, interval.startMs));
+    end = Math.max(end, interval.endMs);
+  }
+  // Integer arithmetic avoids rounding a below-threshold viewer up to 90%.
+  const completed = BigInt(coveredMs) * BigInt(100) >= BigInt(durationMs) * BigInt(COMPLETION_PERCENT);
+  return { status: "available", coveredMs, completed };
+}
+
+export type EstablishedOrderFact = Readonly<{
+  establishedAtMs: number | null;
+  cancelled: boolean | null;
+}>;
+
+/** Completion time must come from verified first threshold-crossing evidence;
+ * a total coverage number alone cannot establish when completion occurred.
+ * The 7-day boundary is inclusive, using elapsed UTC milliseconds, not dates.
+ * This is order eligibility, not paid conversion or mature cohort reporting.
+ */
+export function evaluatePostCompletionOrder(
+  firstCompletedAtMs: number | null,
+  order: EstablishedOrderFact,
+): Unavailable | { status: "available"; qualifies: boolean } {
+  if (firstCompletedAtMs == null || order == null || order.establishedAtMs == null || order.cancelled == null) {
+    return { status: "unavailable", reason: "missing_data" };
+  }
+  if (typeof order.cancelled !== "boolean" || ![firstCompletedAtMs, order.establishedAtMs].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000)) {
+    return { status: "unavailable", reason: "invalid_data" };
+  }
+  const elapsed = order.establishedAtMs - firstCompletedAtMs;
+  return { status: "available", qualifies: !order.cancelled && elapsed >= 0 && elapsed <= POST_COMPLETION_ORDER_WINDOW_MS };
+}
+
+FILE: src/lib/live-core-metrics-read-model.test.ts
+import { describe, expect, it } from "vitest";
+import { calculateCoreMetrics, type CoreMetricsInput, type MetricScope, type MetricValue } from "./live-core-metrics-read-model";
+import { POST_COMPLETION_ORDER_WINDOW_MS } from "./live-metric-contract";
+
+const scope: MetricScope = { vendorId: "synthetic-vendor", liveId: "synthetic-live", contentVersionId: "v1", mode: "replay" };
+function fixture(): CoreMetricsInput {
+  return {
+    scope, startMs: 0, endMs: 1_000_000_000, durationMs: 100_000,
+    visits: Array.from({ length: 10 }, (_, i) => ({ scope, browserId: `browser-${i}`, visitedAtMs: 1000 })),
+    registrations: Array.from({ length: 5 }, (_, i) => ({ scope, personId: `person-${i}`, browserId: i < 4 ? `browser-${i}` : null, verifiedAtMs: 2000 })),
+    viewing: [
+      { scope, personId: "person-0", wallStartMs: 3000, wallEndMs: 93000, mediaStartMs: 0, mediaEndMs: 90000 },
+      { scope, personId: "person-0", wallStartMs: 93000, wallEndMs: 123000, mediaStartMs: 0, mediaEndMs: 30000 },
+      { scope, personId: "person-1", wallStartMs: 3000, wallEndMs: 103000, mediaStartMs: 0, mediaEndMs: 100000 },
+      { scope, personId: "person-2", wallStartMs: 3000, wallEndMs: 33000, mediaStartMs: 0, mediaEndMs: 30000 },
+    ],
+    completions: [
+      { scope, personId: "person-0", firstCompletedAtMs: 93000 },
+      { scope, personId: "person-1", firstCompletedAtMs: 93000 },
+    ],
+    orders: [
+      { scope, personId: "person-0", establishedAtMs: 94000, cancelled: false },
+      { scope, personId: "person-1", establishedAtMs: 92000, cancelled: false },
+    ],
+  };
+}
+function value(metric: MetricValue): number {
+  expect(metric.status).toBe("available");
+  if (metric.status !== "available") throw new Error("Metric unavailable");
+  return metric.value;
+}
+
+describe("approved five-metric reporting contract", () => {
+  it("matches the proposal example without intermediate rounding or paid-order substitution", () => {
+    const result = calculateCoreMetrics(fixture());
+    expect(value(result.registrationRate)).toBe(40);
+    expect(value(result.attendanceRate)).toBe(60);
+    expect(value(result.completionRate)).toBeCloseTo(200 / 3, 10);
+    expect(value(result.averageViewingSeconds)).toBeCloseTo(250 / 3, 10);
+    expect(value(result.postCompletionOrderRate)).toBe(50);
+    expect(result.unattributedRegistrations).toBe(1);
+    expect(result.provisionalConversions).toBe(false);
+  });
+  it("deduplicates retransmissions, browsers and overlapping devices", () => {
+    const input = fixture();
+    const result = calculateCoreMetrics({ ...input, visits: [...input.visits!, ...input.visits!], registrations: [...input.registrations!, ...input.registrations!], viewing: [...input.viewing!, ...input.viewing!], completions: [...input.completions!, ...input.completions!], orders: [...input.orders!, ...input.orders!] });
+    expect(result).toEqual(calculateCoreMetrics(input));
+  });
+  it("does not mutate caller arrays", () => {
+    const input = fixture();
+    const before = structuredClone(input);
+    Object.freeze(input.viewing);
+    Object.freeze(input.registrations);
+    calculateCoreMetrics(input);
+    expect(input).toEqual(before);
+  });
+  it("reports zero denominator distinctly from known zero conversion", () => {
+    const empty = { ...fixture(), visits: [], registrations: [], viewing: [], completions: [], orders: [] };
+    const result = calculateCoreMetrics(empty);
+    for (const key of ["registrationRate", "attendanceRate", "completionRate", "averageViewingSeconds", "postCompletionOrderRate"] as const) expect(result[key]).toEqual({ status: "not_applicable", reason: "zero_denominator" });
+    expect(value(calculateCoreMetrics({ ...fixture(), registrations: [], viewing: [], completions: [], orders: [] }).registrationRate)).toBe(0);
+    expect(value(calculateCoreMetrics({ ...fixture(), viewing: [], completions: [], orders: [] }).attendanceRate)).toBe(0);
+  });
+  it.each(["visits", "registrations", "viewing", "completions", "orders"] as const)("never turns missing %s into zero", (key) => {
+    const result = calculateCoreMetrics({ ...fixture(), [key]: null });
+    const dependent = { visits: "registrationRate", registrations: "attendanceRate", viewing: "completionRate", completions: "postCompletionOrderRate", orders: "postCompletionOrderRate" } as const;
+    expect(result[dependent[key]]).toEqual({ status: "unavailable", reason: "missing_data" });
+  });
+  it("keeps available attendance when a live recording has no known duration", () => {
+    const result = calculateCoreMetrics({ ...fixture(), durationMs: null });
+    expect(value(result.attendanceRate)).toBe(60);
+    expect(result.completionRate.status).toBe("unavailable");
+    expect(result.postCompletionOrderRate.status).toBe("unavailable");
+  });
+  it("preserves independent metrics when completion history exceeds the work limit", () => {
+    const input = fixture();
+    const result = calculateCoreMetrics({ ...input, viewing: Array(10001).fill(input.viewing![0]) });
+    expect(value(result.attendanceRate)).toBe(20);
+    expect(value(result.averageViewingSeconds)).toBe(90);
+    expect(result.completionRate).toEqual({ status: "unavailable", reason: "limit_exceeded" });
+    expect(result.postCompletionOrderRate).toEqual({ status: "unavailable", reason: "limit_exceeded" });
+  });
+  it("does not attribute a registration to a later browser visit", () => {
+    const input = fixture();
+    const result = calculateCoreMetrics({ ...input, visits: input.visits!.map((row) => ({ ...row, visitedAtMs: 2500 })) });
+    expect(value(result.registrationRate)).toBe(0);
+    expect(result.unattributedRegistrations).toBe(5);
+  });
+  it("counts one browser once even when several people verify through it", () => {
+    const input = fixture();
+    expect(value(calculateCoreMetrics({ ...input, registrations: input.registrations!.map((row) => ({ ...row, browserId: "browser-0" })) }).registrationRate)).toBe(10);
+  });
+  it("excludes pre-window registrations and the exclusive right boundary", () => {
+    const input = fixture();
+    const result = calculateCoreMetrics({ ...input, startMs: 2000, endMs: 103000, registrations: [
+      ...input.registrations!.slice(0, 3),
+      { scope, personId: "older", browserId: null, verifiedAtMs: 1999 },
+      { scope, personId: "later", browserId: null, verifiedAtMs: 103000 },
+    ] });
+    expect(value(result.attendanceRate)).toBe(100);
+    expect(result.provisionalConversions).toBe(true);
+    expect(result.unattributedRegistrations).toBe(3);
+  });
+  it("clips exposure at verification and report boundaries", () => {
+    const input: CoreMetricsInput = { ...fixture(), endMs: 6000, durationMs: 10000,
+      registrations: [{ scope, personId: "p", browserId: null, verifiedAtMs: 2000 }],
+      viewing: [{ scope, personId: "p", wallStartMs: 1000, wallEndMs: 11000, mediaStartMs: 0, mediaEndMs: 10000 }], completions: [], orders: [] };
+    const result = calculateCoreMetrics(input);
+    expect(value(result.averageViewingSeconds)).toBe(4);
+    expect(value(result.completionRate)).toBe(0);
+  });
+  it("counts replay time but not replayed media as extra completion coverage", () => {
+    const input = fixture();
+    const repeated = Array.from({ length: 5 }, (_, i) => ({ scope, personId: "p", wallStartMs: 10000 + i * 20000, wallEndMs: 30000 + i * 20000, mediaStartMs: 0, mediaEndMs: 20000 }));
+    const result = calculateCoreMetrics({ ...input, registrations: [{ scope, personId: "p", browserId: null, verifiedAtMs: 2000 }], viewing: repeated, completions: [], orders: [] });
+    expect(value(result.averageViewingSeconds)).toBe(100);
+    expect(value(result.completionRate)).toBe(0);
+  });
+  it("preserves seek gaps and counts double speed by wall time", () => {
+    const input = fixture();
+    const result = calculateCoreMetrics({ ...input, registrations: [{ scope, personId: "p", browserId: null, verifiedAtMs: 2000 }], viewing: [
+      { scope, personId: "p", wallStartMs: 3000, wallEndMs: 23000, mediaStartMs: 0, mediaEndMs: 40000 },
+      { scope, personId: "p", wallStartMs: 33000, wallEndMs: 53000, mediaStartMs: 60000, mediaEndMs: 100000 },
+    ], completions: [], orders: [] });
+    expect(value(result.averageViewingSeconds)).toBe(40);
+    expect(value(result.completionRate)).toBe(0);
+  });
+  it.each([[-1, 0], [0, 50], [POST_COMPLETION_ORDER_WINDOW_MS, 50], [POST_COMPLETION_ORDER_WINDOW_MS + 1, 0]])("order offset %i yields %i percent", (offset, expected) => {
+    const result = calculateCoreMetrics({ ...fixture(), orders: [{ scope, personId: "person-0", establishedAtMs: 93000 + offset, cancelled: false }] });
+    expect(value(result.postCompletionOrderRate)).toBe(expected);
+  });
+  it("excludes cancelled orders and orders at report cutoff", () => {
+    const input = fixture();
+    expect(value(calculateCoreMetrics({ ...input, orders: input.orders!.map((row) => ({ ...row, cancelled: true })) }).postCompletionOrderRate)).toBe(0);
+    expect(value(calculateCoreMetrics({ ...input, endMs: 200000, orders: [{ scope, personId: "person-0", establishedAtMs: 200000, cancelled: false }] }).postCompletionOrderRate)).toBe(0);
+  });
+  it("marks the inclusive seventh-day boundary as immature until observed", () => {
+    expect(calculateCoreMetrics({ ...fixture(), endMs: 93000 + POST_COMPLETION_ORDER_WINDOW_MS }).provisionalConversions).toBe(true);
+    expect(calculateCoreMetrics({ ...fixture(), endMs: 93001 + POST_COMPLETION_ORDER_WINDOW_MS }).provisionalConversions).toBe(false);
+  });
+  it("rejects known-empty first completion facts that contradict coverage", () => {
+    expect(calculateCoreMetrics({ ...fixture(), completions: [] }).postCompletionOrderRate).toEqual({ status: "unavailable", reason: "invalid_data" });
+  });
+  it("rejects an impossible durable completion time or completion without coverage", () => {
+    const input = fixture();
+    expect(calculateCoreMetrics({ ...input, completions: [{ ...input.completions![0], firstCompletedAtMs: 4000 }, input.completions![1]] }).postCompletionOrderRate).toEqual({ status: "unavailable", reason: "invalid_data" });
+    expect(calculateCoreMetrics({ ...input, completions: [...input.completions!, { scope, personId: "person-2", firstCompletedAtMs: 30000 }] }).postCompletionOrderRate).toEqual({ status: "unavailable", reason: "invalid_data" });
+  });
+  it("reconciles a fractional slope without re-sloping it at verification or T", () => {
+    const input: CoreMetricsInput = { ...fixture(), durationMs: 29970, endMs: 27018,
+      registrations: [{ scope, personId: "p", browserId: null, verifiedAtMs: 17 }],
+      viewing: [{ scope, personId: "p", wallStartMs: 0, wallEndMs: 30000, mediaStartMs: 0, mediaEndMs: 29970 }],
+      completions: [{ scope, personId: "p", firstCompletedAtMs: 27017 }], orders: [] };
+    expect(value(calculateCoreMetrics(input).completionRate)).toBe(100);
+    expect(value(calculateCoreMetrics(input).postCompletionOrderRate)).toBe(0);
+    expect(calculateCoreMetrics({ ...input, endMs: 27017 }).postCompletionOrderRate.status).toBe("not_applicable");
+    for (const at of [27000, 16]) expect(calculateCoreMetrics({ ...input, completions: [{ scope, personId: "p", firstCompletedAtMs: at }] }).postCompletionOrderRate.status).toBe("unavailable");
+  });
+  it("unions partially overlapping devices without summing exposure twice", () => {
+    const input = fixture();
+    const result = calculateCoreMetrics({ ...input, registrations: [input.registrations![0]], durationMs: 200000, completions: [], orders: [], viewing: [
+      { scope, personId: "person-0", wallStartMs: 3000, wallEndMs: 63000, mediaStartMs: 0, mediaEndMs: 60000 },
+      { scope, personId: "person-0", wallStartMs: 33000, wallEndMs: 93000, mediaStartMs: 0, mediaEndMs: 60000 },
+    ] });
+    expect(value(result.averageViewingSeconds)).toBe(90);
+  });
+  it("pins visit S/T and simultaneous verification and counts orders at T-1", () => {
+    const input = fixture();
+    const result = calculateCoreMetrics({ ...input, endMs: 200000, visits: [
+      { scope, browserId: "browser-0", visitedAtMs: 0 },
+      { scope, browserId: "browser-1", visitedAtMs: 2000 },
+      { scope, browserId: "browser-2", visitedAtMs: 200000 },
+    ], orders: [{ scope, personId: "person-0", establishedAtMs: 199999, cancelled: false }] });
+    expect(value(result.registrationRate)).toBe(100);
+    expect(value(result.postCompletionOrderRate)).toBe(50);
+  });
+  it("excludes a threshold reached exactly at T but includes it one millisecond later", () => {
+    const input: CoreMetricsInput = { ...fixture(), endMs: 93000,
+      registrations: [fixture().registrations![0]], viewing: [fixture().viewing![0]],
+      completions: [fixture().completions![0]], orders: [] };
+    expect(value(calculateCoreMetrics(input).completionRate)).toBe(0);
+    expect(value(calculateCoreMetrics({ ...input, endMs: 93001 }).completionRate)).toBe(100);
+  });
+  it.each([undefined, {}, [null], new Array(2)])("rejects malformed rows without throwing: %j", (viewing) => {
+    const result = calculateCoreMetrics({ ...fixture(), viewing } as CoreMetricsInput);
+    expect(result.attendanceRate).toEqual({ status: "unavailable", reason: "invalid_data" });
+  });
+  it.each(["vendorId", "liveId", "contentVersionId", "mode"] as const)("rejects mixed %s instead of silently changing the denominator", (key) => {
+    const input = fixture();
+    const viewing = input.viewing!.map((row, i) => i ? row : { ...row, scope: { ...scope, [key]: key === "mode" ? "live" : "another" } as MetricScope });
+    expect(calculateCoreMetrics({ ...input, viewing }).attendanceRate).toEqual({ status: "unavailable", reason: "invalid_data" });
+  });
+  it("rejects conflicting registration and completion facts", () => {
+    const input = fixture();
+    expect(calculateCoreMetrics({ ...input, registrations: [...input.registrations!, { ...input.registrations![0], verifiedAtMs: 5000 }] }).attendanceRate.status).toBe("unavailable");
+    expect(calculateCoreMetrics({ ...input, completions: [...input.completions!, { ...input.completions![0], firstCompletedAtMs: 95000 }] }).postCompletionOrderRate.status).toBe("unavailable");
+  });
+  it.each([0, -1, NaN, Infinity, 1.5])("rejects invalid video duration %s", (durationMs) => {
+    expect(calculateCoreMetrics({ ...fixture(), durationMs }).completionRate).toEqual({ status: "unavailable", reason: "invalid_data" });
+  });
+  it("rejects reversed intervals and coverage beyond the video", () => {
+    const input = fixture();
+    for (const patch of [{ wallEndMs: 1 }, { mediaEndMs: 100001 }, { mediaStartMs: -1 }]) {
+      expect(calculateCoreMetrics({ ...input, viewing: [{ ...input.viewing![0], ...patch }] }).completionRate.status).toBe("unavailable");
+    }
+  });
+});
+
+FILE: src/lib/live-viewing-evidence.test.ts
+import { describe, expect, it } from "vitest";
+import { firstCompletionTime, playbackSegment, MAX_COMPLETION_SEGMENTS, type PlaybackSample, type PlaybackSegment } from "./live-viewing-evidence";
+
+const sample: PlaybackSample = { elapsedMs: 1000, mediaMs: 0, rate: 1, playing: true };
+const segment: PlaybackSegment = { wallStartMs: 1000, wallEndMs: 101000, mediaStartMs: 0, mediaEndMs: 100000 };
+
+describe("bounded actual playback segments", () => {
+  it("emits continuous exposure at normal and double speed", () => {
+    expect(playbackSegment(sample, { ...sample, elapsedMs: 2000, mediaMs: 1000 })).toEqual({ wallStartMs: 1000, wallEndMs: 2000, mediaStartMs: 0, mediaEndMs: 1000 });
+    expect(playbackSegment({ ...sample, rate: 2 }, { ...sample, elapsedMs: 2000, mediaMs: 2000, rate: 2 })?.mediaEndMs).toBe(2000);
+  });
+  it.each([
+    { elapsedMs: 2000, mediaMs: 50000 }, // seek
+    { elapsedMs: 2000, mediaMs: 0 }, // buffering
+    { elapsedMs: 9000, mediaMs: 8000 }, // missing samples
+    { elapsedMs: 1000, mediaMs: 1000 }, // non-monotonic time
+    { elapsedMs: 2000, mediaMs: 1000, rate: 2 },
+    { elapsedMs: 2000, mediaMs: 1000, playing: false },
+    { elapsedMs: NaN, mediaMs: 1000 },
+  ])("does not fill discontinuity %j", (patch) => {
+    expect(playbackSegment(sample, { ...sample, ...patch })).toBeNull();
+  });
+  it("requires a new anchor after pause, seek or source reset", () => {
+    const next = { ...sample, elapsedMs: 2000, mediaMs: 1000 };
+    expect(playbackSegment(null, next)).toBeNull();
+    expect(playbackSegment({ ...sample, playing: false }, next)).toBeNull();
+  });
+});
+
+describe("first 90 percent threshold time", () => {
+  it.each([[1000, 49000, 44100], [29970, 30000, 27000], [3, 10, 9]])("preserves rational crossing %i/%i at %i", (duration, wallEndMs, expected) => {
+    const row = { wallStartMs: 0, wallEndMs, mediaStartMs: 0, mediaEndMs: duration };
+    expect(firstCompletionTime(duration, [row])).toEqual({ status: "available", firstCompletedAtMs: expected });
+  });
+  it("preserves the original slope when verification/report bounds cut a segment", () => {
+    const row = { wallStartMs: 0, wallEndMs: 30000, mediaStartMs: 0, mediaEndMs: 29970 };
+    expect(firstCompletionTime(29970, [row], { startMs: 17, endMs: 29000 })).toEqual({ status: "available", firstCompletedAtMs: 27017 });
+    expect(firstCompletionTime(29970, [row], { startMs: 17, endMs: 27016 })).toEqual({ status: "available", firstCompletedAtMs: null });
+  });
+  it("rounds a fractional crossing up consistently instead of backdating it", () => {
+    const row = { wallStartMs: 0, wallEndMs: 50, mediaStartMs: 0, mediaEndMs: 100 };
+    expect(firstCompletionTime(101, [row])).toEqual({ status: "available", firstCompletedAtMs: 46 });
+  });
+  it("finds the crossing inside a sample rather than at receipt/end time", () => {
+    expect(firstCompletionTime(100000, [segment])).toEqual({ status: "available", firstCompletedAtMs: 91000 });
+  });
+  it("uses actual playback rate and integer ceiling at fractional thresholds", () => {
+    expect(firstCompletionTime(100000, [{ ...segment, wallEndMs: 51000 }])).toEqual({ status: "available", firstCompletedAtMs: 46000 });
+    expect(firstCompletionTime(3, [{ wallStartMs: 0, wallEndMs: 10, mediaStartMs: 0, mediaEndMs: 3 }])).toEqual({ status: "available", firstCompletedAtMs: 9 });
+  });
+  it("handles delayed, out-of-order and overlapping device segments", () => {
+    const pieces = [
+      { wallStartMs: 2000, wallEndMs: 52000, mediaStartMs: 50000, mediaEndMs: 100000 },
+      { wallStartMs: 1000, wallEndMs: 51000, mediaStartMs: 0, mediaEndMs: 50000 },
+    ];
+    expect(firstCompletionTime(100000, pieces)).toEqual({ status: "available", firstCompletedAtMs: 46500 });
+    expect(firstCompletionTime(100000, [...pieces, ...pieces].reverse())).toEqual(firstCompletionTime(100000, pieces));
+  });
+  it("does not count replay or skipped gaps as unique coverage", () => {
+    const short = { ...segment, mediaEndMs: 40000 };
+    expect(firstCompletionTime(100000, [short, { ...short, wallStartMs: 200000, wallEndMs: 300000 }])).toEqual({ status: "available", firstCompletedAtMs: null });
+    expect(firstCompletionTime(100000, [short, { ...segment, mediaStartMs: 60000 }])).toEqual({ status: "available", firstCompletedAtMs: null });
+  });
+  it("distinguishes missing evidence from a complete empty history", () => {
+    expect(firstCompletionTime(100000, [])).toEqual({ status: "available", firstCompletedAtMs: null });
+    expect(firstCompletionTime(100000, null).status).toBe("unavailable");
+    expect(firstCompletionTime(null, []).status).toBe("unavailable");
+  });
+  it("bounds work without truncating a viewer history", () => {
+    expect(firstCompletionTime(100000, Array(MAX_COMPLETION_SEGMENTS + 1).fill(segment))).toEqual({ status: "unavailable", reason: "limit_exceeded" });
+  });
+  it("bounds the common rational scale before allocating large histories", () => {
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ wallStartMs: 0, wallEndMs: 1_000_000_000_000 + i, mediaStartMs: 0, mediaEndMs: 100 }));
+    expect(firstCompletionTime(100, rows)).toEqual({ status: "unavailable", reason: "limit_exceeded" });
+  });
+  it.each([{ wallEndMs: 1000 }, { mediaStartMs: -1 }, { mediaEndMs: 100001 }, { wallStartMs: NaN }])("rejects invalid evidence %j", (patch) => {
+    expect(firstCompletionTime(100000, [{ ...segment, ...patch }])).toEqual({ status: "unavailable", reason: "invalid_data" });
+  });
+  it("does not mutate segment order", () => {
+    const rows = Object.freeze([Object.freeze(segment)]);
+    expect(firstCompletionTime(100000, rows).status).toBe("available");
+    expect(rows[0]).toBe(segment);
+  });
+});
+
+FILE: docs/ai-team/evidence/product-audit-20261011/WP-20/full-metrics/performance-check.mjs
+import { writeFileSync, readFileSync } from 'node:fs';
+import { build } from 'esbuild';
+import * as before from './reference-viewing.mjs';
+const compiled = await build({entryPoints:['src/lib/live-viewing-evidence.ts'],bundle:true,platform:'node',format:'esm',write:false});
+const after = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const cases=[];
+let cursor=0;
+cases.push({name:'sequential_jitter',duration:10000000,rows:Array.from({length:10000},(_,i)=>{const start=cursor;cursor+=900+i%201;return {wallStartMs:start,wallEndMs:cursor,mediaStartMs:i*1000,mediaEndMs:(i+1)*1000};})});
+cases.push({name:'simultaneous_disjoint_jitter',duration:10000000,rows:Array.from({length:10000},(_,i)=>({wallStartMs:0,wallEndMs:900+i%201,mediaStartMs:i*1000,mediaEndMs:(i+1)*1000}))});
+cases.push({name:'partially_overlapping_jitter',duration:5000500,rows:Array.from({length:10000},(_,i)=>({wallStartMs:i%151,wallEndMs:i%151+900+i%201,mediaStartMs:i*500,mediaEndMs:i*500+1000}))});
+const prior=JSON.parse(readFileSync('docs/ai-team/evidence/product-audit-20261011/WP-20/full-metrics/performance-jitter-before-scale.json','utf8'));
+const measurements=[];
+for(const sample of cases){let t=performance.now();const baseline=prior.measurements.find(x=>x.name===sample.name);const reference=baseline.result;const beforeMs=baseline.before_ms;t=performance.now();const actual=after.firstCompletionTime(sample.duration,sample.rows);const afterMs=performance.now()-t;measurements.push({name:sample.name,segments:sample.rows.length,before_ms:Math.round(beforeMs),after_ms:Math.round(afterMs),equal:JSON.stringify(reference)===JSON.stringify(actual),budget_ms:2000,budget_pass:afterMs<2000,result:actual});}
+let seed=2457;const random=(n)=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed%n;};
+let mismatches=0;
+for(let k=0;k<200;k++){const rows=Array.from({length:30},()=>{const wallStartMs=random(1000),mediaStartMs=random(50000);return {wallStartMs,wallEndMs:wallStartMs+900+random(201),mediaStartMs,mediaEndMs:mediaStartMs+1000+random(50000)};});const window={startMs:random(100),endMs:1000+random(1200)};if(JSON.stringify(before.firstCompletionTime(100000,rows,window))!==JSON.stringify(after.firstCompletionTime(100000,rows,window)))mismatches++;}
+const receipt={scope:'Synthetic arithmetic only; same exact rational reference before optimization; no DB or network',measurements,random_cases:200,mismatches,status:measurements.every(x=>x.equal&&x.budget_pass)&&mismatches===0?'PASS':'FAIL'};
+writeFileSync('docs/ai-team/evidence/product-audit-20261011/WP-20/full-metrics/performance-jitter.json',JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));
+
+process.exitCode = receipt.status === "PASS" ? 0 : 1;
+
+FILE: docs/ai-team/evidence/product-audit-20261011/WP-20/full-metrics/reference-viewing.mjs
+// src/lib/live-metric-contract.ts
+var COMPLETION_PERCENT = 90;
+var POST_COMPLETION_ORDER_WINDOW_MS = 7 * 24 * 60 * 60 * 1e3;
+
+// src/lib/live-viewing-evidence.ts
+var MAX_PLAYBACK_SAMPLE_GAP_MS = 5e3;
+var MAX_COMPLETION_SEGMENTS = 1e4;
+function validSample(sample) {
+  return !!sample && Number.isSafeInteger(sample.elapsedMs) && sample.elapsedMs >= 0 && Number.isSafeInteger(sample.mediaMs) && sample.mediaMs >= 0 && Number.isFinite(sample.rate) && sample.rate >= 0.25 && sample.rate <= 4 && typeof sample.playing === "boolean";
+}
+function playbackSegment(previous, current) {
+  if (!previous || !validSample(previous) || !validSample(current) || !previous.playing || !current.playing || previous.rate !== current.rate) return null;
+  const elapsed = current.elapsedMs - previous.elapsedMs;
+  const media = current.mediaMs - previous.mediaMs;
+  if (elapsed <= 0 || elapsed > MAX_PLAYBACK_SAMPLE_GAP_MS || media <= 0 || Math.abs(media - elapsed * current.rate) > 1) return null;
+  return { wallStartMs: previous.elapsedMs, wallEndMs: current.elapsedMs, mediaStartMs: previous.mediaMs, mediaEndMs: current.mediaMs };
+}
+function firstCompletionTime(durationMs, segments, window = { startMs: 0, endMs: 864e13 }) {
+  if (durationMs === null || segments === null) return { status: "unavailable", reason: "missing_data" };
+  if (!Array.isArray(segments) || !Number.isSafeInteger(durationMs) || durationMs <= 0) return { status: "unavailable", reason: "invalid_data" };
+  if (![window.startMs, window.endMs].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 864e13) || window.startMs > window.endMs) return { status: "unavailable", reason: "invalid_data" };
+  if (segments.length > MAX_COMPLETION_SEGMENTS) return { status: "unavailable", reason: "limit_exceeded" };
+  if (Array.from(segments).some((row) => !validSegment(row, durationMs))) return { status: "unavailable", reason: "invalid_data" };
+  if (segments.length === 0) return { status: "available", firstCompletedAtMs: null };
+  let low = Infinity;
+  let high = 0;
+  for (const row of segments) {
+    low = Math.min(low, row.wallStartMs);
+    high = Math.max(high, row.wallEndMs);
+  }
+  low = Math.max(low, window.startMs);
+  high = Math.min(high, window.endMs);
+  if (low > high || !completedAt(durationMs, segments, high, window.startMs)) return { status: "available", firstCompletedAtMs: null };
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (completedAt(durationMs, segments, middle, window.startMs)) high = middle;
+    else low = middle + 1;
+  }
+  return { status: "available", firstCompletedAtMs: low };
+}
+function validSegment(row, durationMs) {
+  return !!row && [row.wallStartMs, row.wallEndMs, row.mediaStartMs, row.mediaEndMs].every((value) => Number.isSafeInteger(value) && value >= 0) && row.wallEndMs <= 864e13 && row.wallEndMs > row.wallStartMs && row.mediaEndMs > row.mediaStartMs && row.mediaEndMs <= durationMs;
+}
+var compare = (a, b) => a.n * b.d - b.n * a.d;
+function gcd(a, b) {
+  while (b !== BigInt(0)) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a;
+}
+function add(a, b) {
+  const shared = gcd(a.d, b.d);
+  const n = a.n * (b.d / shared) + b.n * (a.d / shared);
+  const d = a.d * (b.d / shared);
+  const divisor = gcd(n, d);
+  return { n: n / divisor, d: d / divisor };
+}
+function mediaAt(row, atMs) {
+  const d = BigInt(row.wallEndMs - row.wallStartMs);
+  return { n: BigInt(row.mediaStartMs) * d + BigInt(row.mediaEndMs - row.mediaStartMs) * BigInt(atMs - row.wallStartMs), d };
+}
+function completedAt(durationMs, segments, atMs, eligibleAtMs) {
+  const intervals = segments.filter((row) => Math.max(row.wallStartMs, eligibleAtMs) < Math.min(row.wallEndMs, atMs)).map((row) => ({
+    start: mediaAt(row, Math.max(row.wallStartMs, eligibleAtMs)),
+    end: mediaAt(row, Math.min(row.wallEndMs, atMs))
+  })).sort((a, b) => {
+    const order = compare(a.start, b.start);
+    return order < BigInt(0) ? -1 : order > BigInt(0) ? 1 : 0;
+  });
+  let end = { n: BigInt(0), d: BigInt(1) };
+  let covered = { n: BigInt(0), d: BigInt(1) };
+  for (const interval of intervals) {
+    const start = compare(interval.start, end) > BigInt(0) ? interval.start : end;
+    if (compare(interval.end, start) > BigInt(0)) {
+      covered = add(covered, { n: interval.end.n * start.d - start.n * interval.end.d, d: interval.end.d * start.d });
+      end = interval.end;
+    }
+  }
+  return covered.n * BigInt(100) >= BigInt(durationMs) * BigInt(COMPLETION_PERCENT) * covered.d;
+}
+export {
+  MAX_COMPLETION_SEGMENTS,
+  MAX_PLAYBACK_SAMPLE_GAP_MS,
+  firstCompletionTime,
+  playbackSegment
+};

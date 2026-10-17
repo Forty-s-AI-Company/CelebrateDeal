@@ -7,7 +7,11 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limit }));
 vi.mock("@/lib/live-purchase-broadcasts", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/live-purchase-broadcasts")>(), listLivePurchaseBroadcasts: mocks.list }));
 import { GET } from "./route";
 import { LivePurchaseBroadcastAccessDenied } from "@/lib/live-purchase-broadcasts";
-const request = (query = "vendorId=vendor-1&liveId=live-1") => new Request(`http://localhost:3000/api/live-purchase-broadcasts?${query}`);
+const request = (query = "vendorId=vendor-1&liveId=live-1") => {
+  const value = new Request(`http://localhost:3000/api/live-purchase-broadcasts?${query}`);
+  Object.defineProperty(value, "ip", { value: "192.0.2.19", configurable: true });
+  return value;
+};
 beforeEach(() => { vi.resetAllMocks(); mocks.origin.mockReturnValue(null); mocks.token.mockReturnValue("a".repeat(43)); mocks.limit.mockResolvedValue(null); mocks.list.mockResolvedValue([]); });
 afterEach(() => vi.unstubAllEnvs());
 describe("GET exact live purchase broadcasts", () => {
@@ -44,12 +48,18 @@ describe("GET exact live purchase broadcasts", () => {
       req.headers.set("cf-connecting-ip", `198.51.100.${index + 1}`);
       req.headers.set("x-forwarded-for", `203.0.113.${index + 1}`);
       req.headers.set("x-celebratedeal-live-chat-ingress", "forged");
-      if (mode === "runtime") Object.defineProperty(req, "ip", { value: "192.0.2.19" });
+      if (mode === "untrusted") Reflect.deleteProperty(req, "ip");
+      if (mode === "untrusted") {
+        expect((await GET(req)).status).toBe(503);
+        expect(mocks.limit).not.toHaveBeenCalled();
+        expect(mocks.list).not.toHaveBeenCalled();
+        continue;
+      }
       expect((await GET(req)).status).toBe(index < 120 ? 200 : 429);
       const limited = mocks.limit.mock.calls.at(-1)![0] as Request;
       expect(limited.headers.get("cf-connecting-ip")).toBe(mode === "runtime" ? "192.0.2.19" : "unknown");
       expect(limited.headers.get("x-forwarded-for")).toBeNull();
     }
-    expect(mocks.list).toHaveBeenCalledTimes(120);
+    expect(mocks.list).toHaveBeenCalledTimes(mode === "runtime" ? 120 : 0);
   });
 });

@@ -1,0 +1,55 @@
+{
+  "owner": "main",
+  "depth": 0,
+  "automatic_spawn": false,
+  "files": [
+    "src/app/actions/auth-security-actions.ts",
+    "src/app/actions/buyer-support-actions.ts",
+    "src/app/actions/consultation-actions.ts",
+    "src/app/actions/registration-actions.ts",
+    "src/app/actions/student-portal-actions.ts",
+    "src/app/actions/vendor-member-actions.ts",
+    "src/lib/mfa-recovery-regeneration.ts",
+    "src/lib/registration-form-retry-response.ts"
+  ],
+  "tests": [
+    "src/app/actions.test.ts",
+    "src/app/actions.mfa-db.test.ts",
+    "src/app/actions/student-portal-actions.test.ts",
+    "src/app/actions/student-portal-actions-boundary.test.ts",
+    "src/app/actions/registration-actions.test.ts",
+    "src/app/actions/registration-actions.db.test.ts",
+    "src/app/actions/buyer-support-actions.test.ts",
+    "src/app/actions/consultation-actions.test.ts",
+    "src/lib/registration-form-retry-response.test.ts"
+  ],
+  "added": [
+    "src/lib/entry-rate-limit-headers.ts",
+    "src/lib/entry-rate-limit-headers.test.ts",
+    "src/app/actions/source-rate-limit.integration.test.ts",
+    "src/lib/rate-limit-boundary.test.ts"
+  ],
+  "scope": "Migrate8rawsourcecallers,preserve recipient-only limit;explicit metadataallowlist,nottrustbyheaderpresence",
+  "before": {
+    "src/app/actions/auth-security-actions.ts": "b322a8601225b3d33b9865899b253368c48abbebf3f0382853a05ee5c1905714",
+    "src/app/actions/buyer-support-actions.ts": "db8e699bf56aca0a75087fefdb5bb10f8c25b5b1c033a3c7ad3400bf3bb717f9",
+    "src/app/actions/consultation-actions.ts": "0d179e2e4461dc70fc4b988793fa627f3073a554c35ef8025aeadfd3e014b050",
+    "src/app/actions/registration-actions.ts": "21403d997e9de5ca572c211e3e83c40cf5418b77bbe8b2386ae4890b642a1509",
+    "src/app/actions/student-portal-actions.ts": "3b5814c640e3adf652314a777a283128dc0c5a9ce9b54b97740a9cca1e37b1c2",
+    "src/app/actions/vendor-member-actions.ts": "f26df354670b17e9adcdaff632421622542a2a605a04c050ca316b485334c6ce",
+    "src/lib/mfa-recovery-regeneration.ts": "a226e1a05b1b1b2175a53e45bfe5927144d908f149ac7e09d7b05bdd9f5e7d3f",
+    "src/lib/registration-form-retry-response.ts": "269987d5da8538e01071ad225ad8a3eeae7f4ae06af5ff8a7f233865d8812ee1",
+    "src/app/actions.test.ts": "a412d09495d9b481c2a958e2426895ff2b702b2413af223d36b6ea3b88a0a0c1",
+    "src/app/actions.mfa-db.test.ts": "8d6de3d96ff0bb5b5722c0595ab7954eb3d0e98d4317dcef4582f44d857ad2bd",
+    "src/app/actions/student-portal-actions.test.ts": "f51ac2e558a38cd05ae9b48c1812bcb3de2dae5f5d9134d258a86892f52b2ffb",
+    "src/app/actions/student-portal-actions-boundary.test.ts": "9d25dcc6edad6305df0ca791e68a07aff16fc95a4686ae52e95d04de64c34b7f",
+    "src/app/actions/registration-actions.test.ts": "5a1906399c74d179e03ac3f933647f81ad015701e51412f371491e434b7364f5",
+    "src/app/actions/registration-actions.db.test.ts": "c38bdb789db6b17dd99b49e1d9cf5c1d3569008f38ee9bbd71b648c6bed6cdee",
+    "src/app/actions/buyer-support-actions.test.ts": "3e1370bd164b0a73b3c41b1a9ffd2c31adc5d870d661cea93ffdc820622ef374",
+    "src/app/actions/consultation-actions.test.ts": "91764458996839e290a3e2dade5c07e9f18353ae53a7989d12ee3693142d915c",
+    "src/lib/registration-form-retry-response.test.ts": "e52ec5ab02dffe91a8e2c2df88baa91f6ad63ebc84871ffcce6044b6444cd2ba"
+  },
+  "related_tests": [
+    "src/app/api/form-submissions/route.test.ts"
+  ]
+}

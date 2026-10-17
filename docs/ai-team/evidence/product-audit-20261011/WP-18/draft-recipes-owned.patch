@@ -1,0 +1,382 @@
+--- a/src/lib/automation-workflow.ts
++++ b/src/lib/automation-workflow.ts
+@@ -20,8 +20,26 @@
+   "consultation_booked",
+   "consultation_no_show",
+   "form_no_show",
++  "viewer_completed",
++  "checkout_incomplete",
+ ] as const;
+ export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
++
++// Draft recipes must not become sendable before their trusted event producers
++// and send-time eligibility checks are implemented and independently accepted.
++export function automationTriggerReady(trigger: string) {
++  return AUTOMATION_TRIGGERS.includes(trigger as AutomationTrigger)
++    && trigger !== "viewer_completed" && trigger !== "checkout_incomplete";
++}
++
++/** A supported trigger alone cannot make a draft-only template sendable. */
++export function automationRuleReady(input: { trigger: string; condition: unknown; actions: unknown }) {
++  if (!automationTriggerReady(input.trigger)) return false;
++  const rule = parseAutomationRule({ id: "readiness", condition: input.condition, actions: input.actions });
++  if (!rule || rule.condition.type === "completed_and_not_ordered" || rule.condition.type === "order_pending_payment") return false;
++  return !rule.actions.some(action => action.type === "send_email_notification"
++    && (action.template === "completed_followup" || action.template === "checkout_followup"));
++}
+ 
+ export function automationCustomerKeyHash(vendorId: string, email: string) {
+   const normalized = email.trim().toLowerCase();
+@@ -32,6 +50,8 @@
+ }
+ 
+ const AutomationConditionSchema = z.discriminatedUnion("type", [
++  z.object({ type: z.literal("completed_and_not_ordered") }).strict(),
++  z.object({ type: z.literal("order_pending_payment") }).strict(),
+   z.object({ type: z.literal("always") }).strict(),
+   z.object({ type: z.literal("order_amount_gte"), amountCents: z.number().int().min(1) }).strict(),
+   z.object({ type: z.literal("watch_seconds_gte"), seconds: z.number().int().min(1).max(86_400) }).strict(),
+@@ -66,7 +86,7 @@
+   z.object({ type: z.literal("add_customer_tag"), tag: z.string().trim().min(1).max(50) }).strict(),
+   z.object({
+     type: z.literal("send_email_notification"),
+-    template: z.enum(["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay"]),
++    template: z.enum(["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay", "no_show_followup", "completed_followup", "checkout_followup"]),
+   }).strict(),
+ ]).refine((action) => action.type !== "issue_repurchase_voucher" || action.discountType !== "percentage" || action.discountValue <= 99, {
+   message: "Percentage vouchers must remain below 100%.",
+@@ -78,6 +98,24 @@
+ export type AutomationAction = z.infer<typeof AutomationActionSchema>;
+ 
+ export const AUTOMATION_RECIPES = [
++  {
++    id: "followup_no_show", name: "未到場追銷", createAsDraft: true,
++    description: "報名未到場時，以 Email 提供活動回放；建立後先停用，可確認內容再啟用。",
++    trigger: "form_no_show", condition: { type: "always" },
++    actions: [{ type: "send_email_notification", template: "no_show_followup" }],
++  },
++  {
++    id: "followup_completed_no_order", name: "看完未下單追銷", createAsDraft: true,
++    description: "以完成觀看且尚未建立訂單為條件，寄送後續參考資訊；目前僅可建立草稿。",
++    trigger: "viewer_completed", condition: { type: "completed_and_not_ordered" },
++    actions: [{ type: "send_email_notification", template: "completed_followup" }],
++  },
++  {
++    id: "followup_checkout_incomplete", name: "結帳未完成追銷", createAsDraft: true,
++    description: "僅針對仍待付款的訂單寄送結帳提醒；目前僅可建立草稿。",
++    trigger: "checkout_incomplete", condition: { type: "order_pending_payment" },
++    actions: [{ type: "send_email_notification", template: "checkout_followup" }],
++  },
+   {
+     id: "high_intent_chaser",
+     name: "高意向追單漏斗",
+@@ -124,6 +162,7 @@
+   id: string;
+   name: string;
+   description: string;
++  createAsDraft?: boolean;
+   trigger: AutomationTrigger;
+   condition: unknown;
+   actions: readonly unknown[];
+@@ -142,7 +181,7 @@
+     return action;
+   });
+   const parsed = parseAutomationRule({ id: recipe.id, condition: raw.condition, actions });
+-  return parsed ? { name: recipe.name, description: recipe.description, trigger: recipe.trigger, condition: parsed.condition, actions: parsed.actions } : null;
++  return parsed ? { name: recipe.name, description: recipe.description, trigger: recipe.trigger, condition: parsed.condition, actions: parsed.actions, isActive: !("createAsDraft" in recipe && recipe.createAsDraft) } : null;
+ }
+ 
+ export function maskAutomationTarget(value: string | null | undefined) {
+@@ -174,6 +213,9 @@
+   currency?: string;
+   watchSecondsTotal?: number;
+   hasPurchased?: boolean;
++  hasOrdered?: boolean;
++  watchCompleted?: boolean;
++  orderStatus?: string;
+   recipientEmail?: string;
+   consultationUrl?: string;
+   webinarUrl?: string;
+@@ -201,6 +243,14 @@
+ 
+ export function automationConditionMatches(condition: AutomationCondition, event: AutomationEvent) {
+   if (condition.type === "always") return true;
++  if (condition.type === "completed_and_not_ordered") {
++    return event.trigger === "viewer_completed" && typeof event.liveId === "string" && event.liveId.length > 0
++      && event.watchCompleted === true && event.hasOrdered === false;
++  }
++  if (condition.type === "order_pending_payment") {
++    return event.trigger === "checkout_incomplete" && event.subjectType === "buyer_order"
++      && event.orderStatus === "pending_payment";
++  }
+   if (condition.type === "order_amount_gte") {
+     return event.trigger === "payment_paid" && (event.orderAmountCents ?? -1) >= condition.amountCents;
+   }
+@@ -212,8 +262,10 @@
+ }
+ 
+ export function dryRunAutomationRule(input: { condition: unknown; actions: unknown }, event: AutomationEvent) {
++  if (!automationTriggerReady(event.trigger)) return { status: "trigger_not_ready" as const, conditionMatched: false, actionTypes: [] as string[] };
+   const rule = parseAutomationRule({ id: "dry-run", condition: input.condition, actions: input.actions });
+   if (!rule) return { status: "invalid_rule" as const, conditionMatched: false, actionTypes: [] as string[] };
++  if (!automationRuleReady({ trigger: event.trigger, condition: rule.condition, actions: rule.actions })) return { status: "trigger_not_ready" as const, conditionMatched: false, actionTypes: [] as string[] };
+   const conditionMatched = automationConditionMatches(rule.condition, event);
+   return {
+     status: conditionMatched ? "would_dispatch" as const : "would_skip" as const,
+@@ -255,6 +307,9 @@
+ }
+ 
+ const EMAIL_COPY = {
++  no_show_followup: { subject: "錯過活動？這裡有回放資訊", body: "您報名的活動已結束，可由下方連結查看回放資訊與可用期限：\n{{webinar_url}}" },
++  completed_followup: { subject: "活動結束後的下一步", body: "謝謝您參與活動！若仍在考慮，可回到活動頁查看方案內容與相關說明：\n{{webinar_url}}" },
++  checkout_followup: { subject: "您的結帳尚未完成", body: "您有一筆仍待付款的訂單。如需繼續，請回到原結帳頁確認目前狀態與付款方式；若不再需要，可忽略此提醒。請勿因本通知重複建立訂單。" },
+   consultation_confirmation: { subject: "1 對 1 諮詢預約確認", body: "您的諮詢已預約成功。請將時間加入行事曆，並由下方連結進入：\n{{consultation_url}}" },
+   class_reminder: { subject: "課程即將開始", body: "課程即將開始，請由下方連結進入：\n{{webinar_url}}" },
+   repurchase_followup: { subject: "為您保留的專屬優惠", body: "謝謝您的參與，專屬優惠請由下方連結領取：\n{{voucher_url}}" },
+@@ -369,6 +424,7 @@
+  * execution log and cannot issue a second voucher, tag, or LINE outbox row.
+  */
+ export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
++  if (!automationTriggerReady(event.trigger)) return [{ ruleId: "__scope__", status: "trigger_not_ready" }];
+   if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !event.liveId) {
+     return [{ ruleId: "__scope__", status: "missing_live_scope" }];
+   }
+@@ -390,6 +446,10 @@
+     const rule = parseAutomationRule(storedRule);
+     if (!rule) {
+       results.push({ ruleId: storedRule.id, status: "invalid_rule" });
++      continue;
++    }
++    if (!automationRuleReady({ trigger: event.trigger, condition: rule.condition, actions: rule.actions })) {
++      results.push({ ruleId: rule.id, status: "trigger_not_ready" });
+       continue;
+     }
+     const matched = automationConditionMatches(rule.condition, event);
+--- a/src/lib/automation-workflow.test.ts
++++ b/src/lib/automation-workflow.test.ts
+@@ -16,7 +16,7 @@
+   stableLineIdempotencyKey: mocks.stableLineIdempotencyKey,
+ }));
+ 
+-import { AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationConditionMatches, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
++import { AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationRuleReady, automationTriggerReady, automationConditionMatches, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+ 
+ const event = {
+   vendorId: "vendor-1",
+@@ -60,7 +60,7 @@
+   });
+ 
+   it("materializes all four recipes and evaluates dry-runs without side effects", () => {
+-    expect(AUTOMATION_RECIPES).toHaveLength(4);
++    expect(AUTOMATION_RECIPES).toHaveLength(7);
+     expect(materializeAutomationRecipe("high_intent_chaser", "product-1")).toMatchObject({ trigger: "webinar_attended_duration_gte" });
+     expect(materializeAutomationRecipe("vip_auto_tiering", "product-1")).toMatchObject({ condition: { amountCents: 3_000_000 } });
+     expect(materializeAutomationRecipe("consultation_confirmer")).toMatchObject({ trigger: "consultation_booked" });
+@@ -335,3 +335,49 @@
+     expect(db.paymentTransaction.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
+   });
+ });
++
++describe('WP18 follow-up draft recipes',()=>{
++ it.each(['followup_no_show','followup_completed_no_order','followup_checkout_incomplete'])('materializes %s inactive without a product or incentive',id=>{
++  const recipe=materializeAutomationRecipe(id);expect(recipe).not.toBeNull();expect(recipe?.isActive).toBe(false);
++  expect(recipe?.actions).toHaveLength(1);expect(recipe?.actions[0].type).toBe('send_email_notification');
++ });
++ it('keeps existing recipes active and their identities intact',()=>{
++  for(const id of ['high_intent_chaser','consultation_confirmer','vip_auto_tiering','no_show_reactivation']){
++   expect(AUTOMATION_RECIPES.some(r=>r.id===id)).toBe(true);
++   expect(materializeAutomationRecipe(id,'product-1')?.isActive).toBe(true);
++  }
++ });
++ it('requires actual completion and explicitly no order; duration or no payment is not enough',()=>{
++  const recipe=materializeAutomationRecipe('followup_completed_no_order')!;
++  const completed={...event,trigger:'viewer_completed' as const,subjectType:'buyer_registration' as const,liveId:'live-1',watchCompleted:true,hasOrdered:false};
++  expect(automationConditionMatches(recipe.condition,completed)).toBe(true);
++  for(const variant of [{...completed,watchCompleted:false},{...completed,watchCompleted:undefined,watchSecondsTotal:99999},{...completed,hasOrdered:true,hasPurchased:false},{...completed,hasOrdered:undefined},{...completed,liveId:undefined},{...completed,trigger:'viewer_watch_progress' as const}]){
++   expect(automationConditionMatches(recipe.condition,variant)).toBe(false);
++  }
++ });
++ it('requires a still pending order and excludes paid/cancelled/refunded/unknown states',()=>{
++  const recipe=materializeAutomationRecipe('followup_checkout_incomplete')!;
++  expect(automationConditionMatches(recipe.condition,{...event,trigger:'checkout_incomplete',orderStatus:'pending_payment'})).toBe(true);
++  for(const orderStatus of ['paid','cancelled','refunded','failed',undefined])expect(automationConditionMatches(recipe.condition,{...event,trigger:'checkout_incomplete',orderStatus})).toBe(false);
++  expect(automationConditionMatches(recipe.condition,{...event,trigger:'checkout_incomplete',orderStatus:'pending_payment',subjectType:'buyer_registration'})).toBe(false);
++ });
++ it.each(['viewer_completed','checkout_incomplete'] as const)('blocks %s before reading rules or creating any outbox',async trigger=>{
++  const db={automationRule:{findMany:vi.fn()},emailDelivery:{create:vi.fn()},automationExecutionLog:{create:vi.fn()}};
++  expect(automationTriggerReady(trigger)).toBe(false);
++  await expect(dispatchAutomationEvent(db as never,{...event,trigger})).resolves.toEqual([{ruleId:'__scope__',status:'trigger_not_ready'}]);
++  expect(db.automationRule.findMany).not.toHaveBeenCalled();expect(db.emailDelivery.create).not.toHaveBeenCalled();expect(db.automationExecutionLog.create).not.toHaveBeenCalled();
++  expect(dryRunAutomationRule({condition:{type:'always'},actions:[{type:'add_customer_tag',tag:'x'}]},{...event,trigger}).status).toBe('trigger_not_ready');
++ });
++});
++
++it.each(['checkout_followup','completed_followup'])('does not send a stored %s email even when paired with an active payment trigger',async template=>{
++ const rule={id:'mismatched',condition:{type:'always'},actions:[{type:'send_email_notification',template}]};
++ const db={automationRule:{findMany:vi.fn().mockResolvedValue([rule])},automationExecutionLog:{create:vi.fn()},emailDelivery:{create:vi.fn()}};
++ expect(automationRuleReady({trigger:'payment_paid',...rule})).toBe(false);
++ await expect(dispatchAutomationEvent(db as never,event)).resolves.toEqual([{ruleId:'mismatched',status:'trigger_not_ready'}]);
++ expect(db.automationExecutionLog.create).not.toHaveBeenCalled();expect(db.emailDelivery.create).not.toHaveBeenCalled();
++ expect(dryRunAutomationRule(rule,event).status).toBe('trigger_not_ready');
++});
++it.each(['completed_and_not_ordered','order_pending_payment'])('does not mark mismatched %s condition ready on an existing trigger',type=>{
++ expect(automationRuleReady({trigger:'form_no_show',condition:{type},actions:[{type:'add_customer_tag',tag:'test'}]})).toBe(false);
++});
+--- a/src/app/actions/automation-actions.ts
++++ b/src/app/actions/automation-actions.ts
+@@ -6,7 +6,7 @@
+ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+ import { requireVendorOwner } from "@/lib/auth";
+ import { assertServerActionSecurity } from "@/lib/csrf";
+-import { AUTOMATION_TRIGGERS, dryRunAutomationRule, materializeAutomationRecipe } from "@/lib/automation-workflow";
++import { AUTOMATION_TRIGGERS, automationRuleReady, dryRunAutomationRule, materializeAutomationRecipe } from "@/lib/automation-workflow";
+ import { getDb } from "@/lib/db";
+ 
+ const PATH = "/settings/automations";
+@@ -89,6 +89,7 @@
+     name: recipe.name,
+     description: recipe.description,
+     trigger: recipe.trigger,
++    isActive: recipe.isActive,
+     condition: recipe.condition as Prisma.InputJsonValue,
+     actions: recipe.actions as Prisma.InputJsonArray,
+   } });
+@@ -124,7 +125,7 @@
+   try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && error.message === "no_action" ? "no_action" : "invalid_rule"); }
+   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
+   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: auth.vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
+-  const created = await getDb().automationRule.create({ data: { vendorId: auth.vendor.id, name: parsed.name, trigger: parsed.trigger, condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });
++  const created = await getDb().automationRule.create({ data: { vendorId: auth.vendor.id, name: parsed.name, trigger: parsed.trigger, isActive: automationRuleReady(parsed), condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });
+   await writeAuditLog({ vendorId: auth.vendor.id, actorId: auth.user.id, actorLabel: auth.member.role, action: "create_automation_rule", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
+   revalidatePath(PATH);
+   redirect(`${PATH}?updated=created`);
+@@ -135,8 +136,9 @@
+   const auth = await requireVendorOwner();
+   const id = text(formData, "ruleId");
+   if (!id) fail("invalid_rule");
+-  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, isActive: true } });
++  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, isActive: true, trigger: true, condition: true, actions: true } });
+   if (!existing) fail("not_found");
++  if (!existing.isActive && !automationRuleReady(existing)) fail("trigger_not_ready");
+   const updated = await getDb().automationRule.update({
+     where: { vendorId_id: { vendorId: auth.vendor.id, id: existing.id } },
+     data: { isActive: !existing.isActive },
+--- a/src/app/actions/automation-actions.test.ts
++++ b/src/app/actions/automation-actions.test.ts
+@@ -4,7 +4,7 @@
+ import { createAutomationRecipeAction, createAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "./automation-actions";
+ function form() { const f = new FormData(); f.set("name", "付款回購"); f.set("trigger", "payment_paid"); f.set("conditionValue", "100"); f.set("actionLine", "on"); f.set("lineMessage", "謝謝購買"); return f; }
+ beforeEach(() => { vi.clearAllMocks(); runtime.owner.mockResolvedValue(runtime.auth); runtime.db.automationRule.create.mockResolvedValue({ id: "r1", vendorId: "v1" }); runtime.db.automationRule.findFirst.mockResolvedValue({ id: "r1", isActive: true }); runtime.db.automationRule.update.mockResolvedValue({ id: "r1", isActive: false }); });
+-describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid" }) })); expect(runtime.audit).toHaveBeenCalled(); }); it("toggles only a rule in the current vendor", async () => { const f = new FormData(); f.set("ruleId", "r1"); await expect(toggleAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true } }); });
++describe("automation actions", () => { it("requires CSRF and writes tenant-scoped rules", async () => { await expect(createAutomationRuleAction(form())).rejects.toThrow("redirect:/settings/automations?updated=created"); expect(runtime.security).toHaveBeenCalled(); expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "v1", trigger: "payment_paid" }) })); expect(runtime.audit).toHaveBeenCalled(); }); it("toggles only a rule in the current vendor", async () => { const f = new FormData(); f.set("ruleId", "r1"); await expect(toggleAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=toggled"); expect(runtime.db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: "r1", vendorId: "v1" }, select: { id: true, isActive: true, trigger: true, condition: true, actions: true } }); });
+ 
+   it("converts fixed voucher dollars to cents and rejects a free-order percentage", async () => {
+     runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
+@@ -44,3 +44,44 @@
+     expect(runtime.db.automationRule.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "r1", vendorId: "v1" } }));
+   });
+ });
++
++describe('WP18 draft creation and activation',()=>{
++ it.each(['followup_no_show','followup_completed_no_order','followup_checkout_incomplete'])('creates %s inactive under the authenticated vendor',async id=>{
++  const data=new FormData();data.set('recipeId',id);
++  await expect(createAutomationRecipeAction(data)).rejects.toThrow('updated=recipe_created');
++  expect(runtime.security).toHaveBeenCalledWith(data);expect(runtime.owner).toHaveBeenCalled();
++  expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({vendorId:'v1',isActive:false})}));
++  expect(runtime.audit).toHaveBeenCalledWith(expect.objectContaining({vendorId:'v1',action:'create_automation_recipe'}));
++ });
++ it.each(['viewer_completed','checkout_incomplete'])('rejects activation of unfinished %s on the server',async trigger=>{
++  runtime.db.automationRule.findFirst.mockResolvedValue({id:'r1',isActive:false,trigger});const data=new FormData();data.set('ruleId','r1');
++  await expect(toggleAutomationRuleAction(data)).rejects.toThrow('error=trigger_not_ready');expect(runtime.db.automationRule.update).not.toHaveBeenCalled();
++ });
++ it('still allows deactivating an unfinished trigger if an old rule is already active',async()=>{
++  runtime.db.automationRule.findFirst.mockResolvedValue({id:'r1',isActive:true,trigger:'checkout_incomplete'});const data=new FormData();data.set('ruleId','r1');
++  await expect(toggleAutomationRuleAction(data)).rejects.toThrow('updated=toggled');
++  expect(runtime.db.automationRule.update).toHaveBeenCalledWith({where:{vendorId_id:{vendorId:'v1',id:'r1'}},data:{isActive:false}});
++ });
++ it('does not let a crafted custom rule start an unfinished trigger active',async()=>{
++  const data=form();data.set('trigger','checkout_incomplete');
++  await expect(createAutomationRuleAction(data)).rejects.toThrow('updated=created');
++  expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({trigger:'checkout_incomplete',isActive:false})}));
++ });
++ it('requires CSRF before creating draft rules',async()=>{
++  runtime.security.mockRejectedValueOnce(new Error('csrf denied'));const data=new FormData();data.set('recipeId','followup_no_show');
++  await expect(createAutomationRecipeAction(data)).rejects.toThrow('csrf denied');expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
++ });
++});
++
++it.each(['checkout_followup','completed_followup'])('rejects crafted custom email %s and cannot activate an injected stored rule',async template=>{
++ const data=form();data.set('actionEmail','on');data.set('emailTemplate',template);
++ await expect(createAutomationRuleAction(data)).rejects.toThrow('error=invalid_rule');expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
++ runtime.db.automationRule.findFirst.mockResolvedValue({id:'r1',isActive:false,trigger:'payment_paid',condition:{type:'always'},actions:[{type:'send_email_notification',template}]});
++ const toggle=new FormData();toggle.set('ruleId','r1');await expect(toggleAutomationRuleAction(toggle)).rejects.toThrow('error=trigger_not_ready');expect(runtime.db.automationRule.update).not.toHaveBeenCalled();
++});
++
++it('still activates a supported existing draft rule after inspecting its actual condition and actions',async()=>{
++ runtime.db.automationRule.findFirst.mockResolvedValue({id:'r1',isActive:false,trigger:'form_no_show',condition:{type:'always'},actions:[{type:'send_email_notification',template:'webinar_replay'}]});
++ const data=new FormData();data.set('ruleId','r1');await expect(toggleAutomationRuleAction(data)).rejects.toThrow('updated=toggled');
++ expect(runtime.db.automationRule.update).toHaveBeenCalledWith({where:{vendorId_id:{vendorId:'v1',id:'r1'}},data:{isActive:true}});
++});
+--- a/src/app/(app)/settings/automations/page.tsx
++++ b/src/app/(app)/settings/automations/page.tsx
+@@ -1,15 +1,17 @@
+ import { createAutomationRecipeAction, createAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "@/app/actions/automation-actions";
+ import { CsrfField } from "@/components/csrf-field";
+ import { Badge, Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/components/ui";
+-import { AUTOMATION_RECIPES, maskAutomationTarget } from "@/lib/automation-workflow";
++import { AUTOMATION_RECIPES, automationRuleReady, automationTriggerReady, maskAutomationTarget } from "@/lib/automation-workflow";
+ import { requireVendorOwner } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
+ 
+-const TRIGGERS: Record<string, string> = { payment_paid: "訂單付款完成", viewer_watch_progress: "觀看進度更新", webinar_attended_duration_gte: "觀看累積秒數達標", form_registered: "表單報名成功", consultation_booked: "諮詢預約成功", consultation_no_show: "諮詢未出席", form_no_show: "報名但未出席直播" };
++const TRIGGERS: Record<string, string> = { viewer_completed: "完成觀看", checkout_incomplete: "結帳未完成", payment_paid: "訂單付款完成", viewer_watch_progress: "觀看進度更新", webinar_attended_duration_gte: "觀看累積秒數達標", form_registered: "表單報名成功", consultation_booked: "諮詢預約成功", consultation_no_show: "諮詢未出席", form_no_show: "報名但未出席直播" };
+ const ACTIONS: Record<string, string> = { line_push: "LINE 推播", send_email_notification: "Email 通知", add_customer_tag: "客戶打標", issue_repurchase_voucher: "派發回購券" };
+ function actionLabels(value: unknown) { return Array.isArray(value) ? value.map((item) => ACTIONS[String((item as { type?: unknown }).type)] ?? "未知動作") : ["規則資料異常"]; }
+ function conditionLabel(value: unknown) {
+   const condition = value && typeof value === "object" ? value as Record<string, unknown> : {};
++  if (condition.type === "completed_and_not_ordered") return "已完成觀看且尚未下單";
++  if (condition.type === "order_pending_payment") return "訂單仍待付款";
+   if (condition.type === "always") return "事件發生時";
+   if (condition.type === "order_amount_gte") return `訂單滿 NT$${Number(condition.amountCents ?? 0) / 100}`;
+   if (condition.type === "watch_seconds_gte_and_not_purchased") return `觀看滿 ${condition.seconds} 秒且尚未購買`;
+@@ -28,14 +30,14 @@
+   return <>
+     <PageHeader title="自動化" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
+     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">自動化規則已更新。</p> : null}
+-    {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{params.dryRun === "would_dispatch" ? "條件符合，正式事件會執行動作。" : params.dryRun === "would_skip" ? "條件未符合，正式事件會略過。" : "規則無效。"}</p> : null}
+-    {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">規則無法更新（{params.error}）。</p> : null}
++    {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{params.dryRun === "would_dispatch" ? "條件符合，正式事件會執行動作。" : params.dryRun === "would_skip" ? "條件未符合，正式事件會略過。" : params.dryRun === "trigger_not_ready" ? "此範本目前僅供建立草稿，尚不可啟用。" : "規則無效。"}</p> : null}
++    {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{params.error === "trigger_not_ready" ? "此範本目前僅供建立草稿，尚不可啟用。" : `規則無法更新（${params.error}）。`}</p> : null}
+ 
+-    <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{TRIGGERS[recipe.trigger]} → {actionLabels(recipe.actions).join(" + ")}</p>{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></form>)}</div></Card>
++    <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{TRIGGERS[recipe.trigger]} → {actionLabels(recipe.actions).join(" + ")}</p>{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">{"createAsDraft" in recipe && recipe.createAsDraft ? "一鍵建立草稿" : "一鍵套用劇本"}</SubmitButton></form>)}</div></Card>
+ 
+-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue="payment_paid">{Object.entries(TRIGGERS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectField></div><Field label="條件門檻（付款金額元／觀看秒數；事件型觸發可留空）" name="conditionValue" type="number" min={1} step={1} /><div className="grid gap-4 rounded-md border border-border p-4"><p className="font-semibold text-slate-800">動作（至少選一項）</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionLine" /> LINE 推播</label><TextArea label="LINE 推播訊息" name="lineMessage" rows={3} maxLength={1500} placeholder="支援 voucher、consultation、webinar 安全網址佔位符" /><div className="grid gap-4 md:grid-cols-2"><Field label="按鈕文字" name="buttonLabel" maxLength={40} /><Field label="按鈕網址（HTTPS 或安全佔位符）" name="buttonUrl" maxLength={2000} /></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionEmail" /> Email 通知</label><SelectField label="Email 範本" name="emailTemplate" defaultValue="consultation_confirmation"><option value="consultation_confirmation">諮詢預約確認</option><option value="class_reminder">課前提醒</option><option value="repurchase_followup">追購通知</option><option value="webinar_replay">缺席回放與諮詢邀請</option></SelectField><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionVoucher" /> 發送回購券</label><div className="grid gap-4 md:grid-cols-4"><SelectField label="商品" name="productId"><option value="">請選擇商品</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</SelectField><SelectField label="折扣類型" name="discountType" defaultValue="fixed"><option value="fixed">固定金額（元）</option><option value="percentage">百分比</option></SelectField><Field label="折扣值" name="discountValue" type="number" min={1} step={1} /><Field label="效期（天）" name="expiresInDays" type="number" min={1} max={365} defaultValue={30} /></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionTag" /> 加上客戶標籤</label><Field label="客戶標籤" name="customerTag" maxLength={50} /></div><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
++    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">自訂規則</h2><form action={createAutomationRuleAction} className="grid gap-4"><CsrfField /><div className="grid gap-4 md:grid-cols-2"><Field label="規則名稱" name="name" required maxLength={120} /><SelectField label="觸發事件" name="trigger" defaultValue="payment_paid">{Object.entries(TRIGGERS).filter(([trigger]) => automationTriggerReady(trigger)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectField></div><Field label="條件門檻（付款金額元／觀看秒數；事件型觸發可留空）" name="conditionValue" type="number" min={1} step={1} /><div className="grid gap-4 rounded-md border border-border p-4"><p className="font-semibold text-slate-800">動作（至少選一項）</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionLine" /> LINE 推播</label><TextArea label="LINE 推播訊息" name="lineMessage" rows={3} maxLength={1500} placeholder="支援 voucher、consultation、webinar 安全網址佔位符" /><div className="grid gap-4 md:grid-cols-2"><Field label="按鈕文字" name="buttonLabel" maxLength={40} /><Field label="按鈕網址（HTTPS 或安全佔位符）" name="buttonUrl" maxLength={2000} /></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionEmail" /> Email 通知</label><SelectField label="Email 範本" name="emailTemplate" defaultValue="consultation_confirmation"><option value="consultation_confirmation">諮詢預約確認</option><option value="class_reminder">課前提醒</option><option value="repurchase_followup">追購通知</option><option value="webinar_replay">缺席回放與諮詢邀請</option></SelectField><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionVoucher" /> 發送回購券</label><div className="grid gap-4 md:grid-cols-4"><SelectField label="商品" name="productId"><option value="">請選擇商品</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</SelectField><SelectField label="折扣類型" name="discountType" defaultValue="fixed"><option value="fixed">固定金額（元）</option><option value="percentage">百分比</option></SelectField><Field label="折扣值" name="discountValue" type="number" min={1} step={1} /><Field label="效期（天）" name="expiresInDays" type="number" min={1} max={365} defaultValue={30} /></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="actionTag" /> 加上客戶標籤</label><Field label="客戶標籤" name="customerTag" maxLength={50} /></div><SubmitButton pendingChildren="建立中…">建立規則</SubmitButton></form></Card>
+ 
+-    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">視覺化規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => <article key={rule.id} className="grid gap-3 rounded-xl border border-border p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div><div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{TRIGGERS[rule.trigger] ?? rule.trigger}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">動作：{actionLabels(rule.actions).join(" + ")}</span></div><div className="flex flex-wrap gap-3"><form action={toggleAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><SubmitButton pendingChildren="更新中…">{rule.isActive ? "停用" : "啟用"}</SubmitButton></form><form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} /><Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} /><label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form></div></article>) : <p className="text-sm text-slate-600">尚未建立規則。</p>}</div></Card>
++    <Card className="mb-6"><h2 className="mb-4 text-lg font-semibold text-slate-950">視覺化規則</h2><div className="grid gap-4">{rules.length ? rules.map((rule) => <article key={rule.id} className="grid gap-3 rounded-xl border border-border p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{rule.name}</h3><p className="text-xs text-slate-500">{rule.createdAt.toLocaleString("zh-TW")}</p></div><Badge tone={rule.isActive ? "green" : "gray"}>{rule.isActive ? "啟用中" : "已停用"}</Badge></div><div className="flex flex-wrap items-center gap-2 text-sm"><span className="rounded-md bg-slate-100 px-3 py-2">觸發：{TRIGGERS[rule.trigger] ?? rule.trigger}</span><span>→</span><span className="rounded-md bg-amber-50 px-3 py-2">條件：{conditionLabel(rule.condition)}</span><span>→</span><span className="rounded-md bg-emerald-50 px-3 py-2">動作：{actionLabels(rule.actions).join(" + ")}</span></div><div className="flex flex-wrap gap-3"><form action={toggleAutomationRuleAction}><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><SubmitButton pendingChildren="更新中…" disabled={!rule.isActive && !automationRuleReady(rule)}>{rule.isActive ? "停用" : automationRuleReady(rule) ? "啟用" : "尚不可啟用"}</SubmitButton></form><form action={dryRunAutomationRuleAction} className="flex flex-wrap items-end gap-2"><CsrfField /><input type="hidden" name="ruleId" value={rule.id} /><Field label="模擬訂單（元）" name="orderAmount" type="number" min={0} defaultValue={30000} /><Field label="模擬觀看（秒）" name="watchSeconds" type="number" min={0} defaultValue={1800} /><label className="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" name="hasPurchased" /> 已購買</label><SubmitButton pendingChildren="測試中…">Dry-run 測試</SubmitButton></form></div></article>) : <p className="text-sm text-slate-600">尚未建立規則。</p>}</div></Card>
+ 
+     <Card><h2 className="mb-4 text-lg font-semibold text-slate-950">執行日誌（最近 50 筆）</h2><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-border text-slate-500"><th className="p-2">觸發時間</th><th className="p-2">規則</th><th className="p-2">事件</th><th className="p-2">目標（已遮罩）</th><th className="p-2">狀態</th><th className="p-2">錯誤代碼</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id} className="border-b border-border"><td className="p-2">{log.createdAt.toLocaleString("zh-TW")}</td><td className="p-2">{log.rule.name}</td><td className="p-2">{TRIGGERS[log.trigger] ?? log.trigger}</td><td className="p-2 font-mono text-xs">{maskAutomationTarget(log.subjectKeyHash)}</td><td className="p-2"><Badge tone={log.status === "completed" ? "green" : log.status === "failed" ? "red" : "gray"}>{log.status}</Badge></td><td className="p-2">{log.errorCode ?? "—"}</td></tr>)}</tbody></table>{!logs.length ? <p className="py-4 text-sm text-slate-600">尚無執行紀錄。</p> : null}</div></Card>
+   </>;
+--- a/src/app/(app)/settings/automations/page.test.tsx
++++ b/src/app/(app)/settings/automations/page.test.tsx
+@@ -2,4 +2,17 @@
+ const mocks = vi.hoisted(() => ({ owner: vi.fn(), products: vi.fn(), rules: vi.fn(), logs: vi.fn() })); vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.owner })); vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.products }, automationRule: { findMany: mocks.rules }, automationExecutionLog: { findMany: mocks.logs } }) })); vi.mock("@/app/actions/automation-actions", () => ({ createAutomationRuleAction: vi.fn(), createAutomationRecipeAction: vi.fn(), dryRunAutomationRuleAction: vi.fn(), toggleAutomationRuleAction: vi.fn() })); vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="csrf" /> }));
+ import Page from "./page";
+ beforeEach(() => { vi.clearAllMocks(); mocks.owner.mockResolvedValue({ vendor: { id: "v1" } }); mocks.products.mockResolvedValue([{ id: "p1", name: "課程" }]); mocks.rules.mockResolvedValue([{ id: "r1", name: "付款回購", trigger: "payment_paid", condition: { type: "order_amount_gte", amountCents: 10000 }, actions: [{ type: "line_push" }], isActive: true, createdAt: new Date("2026-01-01") }]); mocks.logs.mockResolvedValue([{ id: "l1", rule: { name: "付款回購" }, trigger: "payment_paid", subjectKeyHash: "abcdefgh12345678", status: "failed", errorCode: "action_failed", createdAt: new Date("2026-01-02") }]); });
+-describe("AutomationSettingsPage", () => { it("renders recipes, visual rules, dry-run and masked logs", async () => { const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) })); expect(mocks.rules).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "v1" } })); expect(html).toContain("自動化工作室"); expect(html).toContain("高意向追單漏斗"); expect(html).toContain("Dry-run 測試"); expect(html).toContain("abcd…5678"); expect(html).toContain("action_failed"); expect(html).toContain("LINE 推播訊息"); }); });
++describe("AutomationSettingsPage", () => { it("renders recipes, visual rules, dry-run and masked logs", async () => { const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) })); expect(mocks.rules).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "v1" } })); expect(html).toMatch(/<h1[^>]*>自動化<\/h1>/); expect(html).toContain("高意向追單漏斗"); expect(html).toContain("Dry-run 測試"); expect(html).toContain("abcd…5678"); expect(html).toContain("action_failed"); expect(html).toContain("LINE 推播訊息"); }); });
++
++it('shows all three one-click drafts and marks unfinished rules non-activatable',async()=>{
++ mocks.rules.mockResolvedValue([{id:'draft1',name:'結帳草稿',trigger:'checkout_incomplete',condition:{type:'order_pending_payment'},actions:[{type:'send_email_notification'}],isActive:false,createdAt:new Date('2026-01-01')}]);
++ const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({})}));
++ for(const title of ['未到場追銷','看完未下單追銷','結帳未完成追銷'])expect(html).toContain(title);
++ expect(html.match(/一鍵建立草稿/g)).toHaveLength(3);expect(html).toContain('尚不可啟用');expect(html).toContain('disabled=""');
++ expect(html).not.toContain('<option value="checkout_incomplete"');expect(html).not.toContain('<option value="viewer_completed"');
++ expect(html).toContain('訂單仍待付款');
++});
++it('explains a blocked activation without displaying an opaque error code',async()=>{
++ const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({error:'trigger_not_ready'})}));
++ expect(html).toContain('此範本目前僅供建立草稿，尚不可啟用。');expect(html).not.toContain('規則無法更新（trigger_not_ready）');
++});

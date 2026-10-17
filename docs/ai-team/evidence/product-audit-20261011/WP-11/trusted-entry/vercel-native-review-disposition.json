@@ -1,0 +1,32 @@
+{
+  "review_status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "counts": {
+    "BLOCKER": 0,
+    "MAJOR": 3,
+    "MINOR": 5,
+    "NIT": 0
+  },
+  "mode_enabled": false,
+  "implementation_started": false,
+  "diagnostic_project": "celebrate-deal-staging",
+  "diagnostic_deployment": "dpl_hs6Sc9UKEEJFwovyLWBEAp2Av18c",
+  "remaining": [
+    "Prove overwrite against duplicate/case/comma/empty/IPv6 sentinels on same project Preview",
+    "Verify a second independent egress and distinct buckets; no claim yet",
+    "Restrict candidate mode to Preview until separate Production approval",
+    "Fail closed on every partial environment match and invalid header; no fallback",
+    "Re-review implementation before enabling mode; assess gate required"
+  ],
+  "firewall_review_notes": "Current host is exact generated deployment URL, not moving branch/custom alias; host rule does not substitute for application auth. Existing project protection was not changed.",
+  "platform_overwrite_evidence": "PASS_SINGLE_EGRESS_8_CASES",
+  "same_project_preview_diagnostic": "PASS",
+  "second_egress": "NOT_VERIFIED",
+  "diagnostic_local_contract": "PASS_10_CASES",
+  "diagnostic_typecheck": "PASS",
+  "final_security_acceptance": "NOT_READY"
+}

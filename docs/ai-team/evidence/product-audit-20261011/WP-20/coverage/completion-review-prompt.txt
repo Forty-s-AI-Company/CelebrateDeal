@@ -1,0 +1,910 @@
+Independent Critical Migration/Permission correctness review of WP20 completion projection. Read only supplied fixed sources; no tools or changes. Return JSON findings array only, each severity BLOCKER/MAJOR/MINOR/NIT, file, area, issue, evidence, impact, recommended_fix, required_test, confidence. Focus on actionable introduced defects, tenant boundaries, revision/lease races, null vs empty, earliest 90% union-time correctness, budget isolation. Report under 8000 chars. Context: raw reads use read-only RepeatableRead snapshot; report claim/publish/finish use ReadCommitted and DB clock. Version sourceRevision invalidates on source changes. Orders have independent append-ledger count checked by report reader/publish/finish. Trusted coverage producer and deployed job wiring remain explicitly unfinished; original 20 concurrent Serializable snapshots gate FAIL and is not waived. Actual disposable PG104 migrations and real workers nonzero five metrics passed; expired lease, replacement owner, invalid candidates and repeated publish passed. This review does not establish whole WP acceptance. Do not report missing deployment as a newly discovered implementation bug.
+
+FILE prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql
+-- Internal report-bound projection. One row contains the complete manifest and
+-- candidate facts atomically; absence is unknown, an empty array is known empty.
+CREATE TABLE public."LiveMetricCompletionProjection" (
+ "reportId" TEXT PRIMARY KEY REFERENCES public."LiveMetricReport"(id) ON DELETE CASCADE,
+ "sourceRevision" BIGINT NOT NULL CHECK ("sourceRevision">=0),
+ "algorithmVersion" INTEGER NOT NULL CHECK ("algorithmVersion"=1),
+ "cohortCount" INTEGER NOT NULL CHECK ("cohortCount">=0),
+ rows JSONB NOT NULL CHECK (jsonb_typeof(rows)='array'),
+ "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT clock_timestamp()
+);
+ALTER TABLE public."LiveMetricCompletionProjection" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public."LiveMetricCompletionProjection" FROM PUBLIC;
+
+CREATE FUNCTION public.wp20_metric_completion_publish(
+ vendor_id TEXT,live_id TEXT,version_id TEXT,report_id TEXT,worker_id TEXT,
+ source_revision BIGINT,cohort_count INTEGER,facts JSONB
+) RETURNS INTEGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+DECLARE report public."LiveMetricReport"%ROWTYPE; current_revision BIGINT; actual_cohort BIGINT;
+BEGIN
+ IF current_setting('transaction_isolation')<>'read committed' THEN
+  RAISE EXCEPTION 'completion write requires read committed' USING ERRCODE='23514';
+ END IF;
+ IF facts IS NULL OR jsonb_typeof(facts)<>'array' OR cohort_count IS NULL OR cohort_count<0
+   OR source_revision IS NULL OR source_revision<0 THEN
+  RAISE EXCEPTION 'invalid completion manifest' USING ERRCODE='23514';
+ END IF;
+ IF jsonb_array_length(facts)>cohort_count OR cohort_count>1000000 OR pg_column_size(facts)>67108864 THEN
+  RAISE EXCEPTION 'completion manifest limit exceeded' USING ERRCODE='23514';
+ END IF;
+ -- Match the established version -> report lock order before publishing.
+ SELECT "sourceRevision" INTO current_revision FROM public."LiveMetricVersion"
+  WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+ IF NOT FOUND OR current_revision<>source_revision THEN RETURN 0; END IF;
+ SELECT * INTO report FROM public."LiveMetricReport" WHERE id=report_id
+  AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id FOR UPDATE;
+ IF NOT FOUND OR report.status<>'running' OR report."leaseOwner" IS DISTINCT FROM worker_id
+  OR report."leaseExpiresAt"<=clock_timestamp() OR report."expiresAt"<=clock_timestamp()
+  OR report."inputRevision"<>source_revision
+  OR report."inputOrderRevision" IS DISTINCT FROM public.wp20_metric_order_revision(vendor_id,live_id)
+ THEN RETURN 0; END IF;
+ SELECT count(*) INTO actual_cohort FROM public."LiveMetricRegistration"
+  WHERE "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+    AND "verifiedAt">=report."windowStartAt" AND "verifiedAt"<report."windowEndAt";
+ IF actual_cohort<>cohort_count THEN RAISE EXCEPTION 'completion cohort changed' USING ERRCODE='23514'; END IF;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE jsonb_typeof(f)<>'object'
+   OR NOT (f ? 'personId' AND f ? 'firstCompletedAtMs')
+   OR jsonb_typeof(f->'personId')<>'string' OR jsonb_typeof(f->'firstCompletedAtMs')<>'number'
+   OR (SELECT count(*) FROM jsonb_object_keys(f))<>2) THEN
+  RAISE EXCEPTION 'invalid completion fact shape' USING ERRCODE='23514';
+ END IF;
+ IF (SELECT count(DISTINCT f->>'personId') FROM jsonb_array_elements(facts) f)<>jsonb_array_length(facts) THEN
+  RAISE EXCEPTION 'duplicate completion person' USING ERRCODE='23514';
+ END IF;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE
+  (f->>'firstCompletedAtMs')::numeric<>trunc((f->>'firstCompletedAtMs')::numeric)
+  OR (f->>'firstCompletedAtMs')::numeric<0 OR (f->>'firstCompletedAtMs')::numeric>8640000000000000
+  OR NOT EXISTS(SELECT 1 FROM public."LiveMetricRegistration" g
+   WHERE g.id=f->>'personId' AND g."vendorId"=vendor_id AND g."liveId"=live_id AND g."versionId"=version_id
+    AND g."verifiedAt">=report."windowStartAt" AND g."verifiedAt"<report."windowEndAt"
+    AND (f->>'firstCompletedAtMs')::numeric>=extract(epoch FROM g."verifiedAt")*1000
+    AND (f->>'firstCompletedAtMs')::numeric<extract(epoch FROM report."windowEndAt")*1000)) THEN
+  RAISE EXCEPTION 'completion fact outside cohort window' USING ERRCODE='23514';
+ END IF;
+ INSERT INTO public."LiveMetricCompletionProjection" ("reportId","sourceRevision","algorithmVersion","cohortCount",rows)
+ VALUES (report_id,source_revision,1,cohort_count,facts)
+ ON CONFLICT ("reportId") DO NOTHING;
+ IF NOT EXISTS(SELECT 1 FROM public."LiveMetricCompletionProjection" p WHERE p."reportId"=report_id
+  AND p."sourceRevision"=source_revision AND p."cohortCount"=cohort_count AND p.rows=facts) THEN
+  RAISE EXCEPTION 'completion projection conflict' USING ERRCODE='23514';
+ END IF;
+ RETURN 1;
+END $$;
+REVOKE ALL ON FUNCTION public.wp20_metric_completion_publish(text,text,text,text,text,bigint,integer,jsonb) FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON public."LiveMetricCompletionProjection" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_completion_publish(text,text,text,text,text,bigint,integer,jsonb) FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+
+FILE src/lib/live-metric-completion-store.ts
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import type { CompletionProjection, MetricScope } from "./live-core-metrics-read-model";
+import type { MetricReportLease } from "./live-metric-report-lease";
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const leaseSchema = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id }).strict();
+const factSchema = z.object({ personId: id, firstCompletedAtMs: z.number().int().min(0).max(8_640_000_000_000_000) }).strict();
+const factsSchema = z.array(factSchema).max(1_000_000).superRefine((rows, context) => {
+  if (new Set(rows.map(row => row.personId)).size !== rows.length) context.addIssue({ code: "custom", message: "Duplicate completion person" });
+});
+type Database = Pick<Prisma.TransactionClient, "$queryRaw">;
+export type StoredCompletion = z.infer<typeof factSchema>;
+
+/** Internal writer: caller must establish complete registration/viewing coverage
+ * and delivery before calculating candidates. The DB rechecks lease/revision;
+ * a worker result alone is not permission to certify missing source history.
+ */
+export async function publishMetricCompletion(db: Database, value: MetricReportLease, sourceRevision: bigint,
+  scope: MetricScope, projection: CompletionProjection): Promise<boolean> {
+  const lease = leaseSchema.parse(value);
+  if (typeof sourceRevision !== "bigint" || sourceRevision < BigInt(0)) throw new Error("Invalid completion source revision");
+  if (scope.vendorId !== lease.vendorId || scope.liveId !== lease.liveId || scope.contentVersionId !== lease.versionId
+    || !["live", "replay"].includes(scope.mode)) throw new Error("Completion scope mismatch");
+  if (projection.status !== "available") return false;
+  const cohortCount = z.number().int().min(0).max(1_000_000).parse(projection.cohortCount);
+  if (projection.rows.some(row => row.scope.vendorId !== scope.vendorId || row.scope.liveId !== scope.liveId
+    || row.scope.contentVersionId !== scope.contentVersionId || row.scope.mode !== scope.mode)) throw new Error("Completion scope mismatch");
+  const rows = factsSchema.parse(projection.rows.map(row => ({ personId: row.personId, firstCompletedAtMs: row.firstCompletedAtMs })));
+  if (rows.length > cohortCount) throw new Error("Completion cohort mismatch");
+  const [result] = await db.$queryRaw<{ changed: number }[]>(Prisma.sql`
+    SELECT public.wp20_metric_completion_publish(${lease.vendorId},${lease.liveId},${lease.versionId},${lease.reportId},${lease.workerId},
+      ${sourceRevision}::bigint,${cohortCount}::integer,${JSON.stringify(rows)}::jsonb) AS changed`);
+  return result?.changed === 1;
+}
+
+/** Read in the same RR snapshot as viewing facts. null is missing provenance;
+ * [] is a stored complete empty projection, never inferred from a missing row.
+ */
+export async function readMetricCompletion(tx: Database, value: MetricReportLease) {
+  const lease = leaseSchema.parse(value);
+  const [record] = await tx.$queryRaw<{ isolation: string; rows: unknown; cohortCount: number | null }[]>(Prisma.sql`
+    SELECT current_setting('transaction_isolation') AS isolation,p.rows,p."cohortCount"
+    FROM "LiveMetricReport" r JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+    LEFT JOIN "LiveMetricCompletionProjection" p ON p."reportId"=r.id AND p."sourceRevision"=r."inputRevision" AND p."algorithmVersion"=1
+    WHERE r.id=${lease.reportId} AND r."vendorId"=${lease.vendorId} AND r."liveId"=${lease.liveId} AND r."versionId"=${lease.versionId}
+      AND r.status='running' AND r."leaseOwner"=${lease.workerId} AND r."leaseExpiresAt">clock_timestamp() AND r."expiresAt">clock_timestamp()
+      AND r."inputRevision"=v."sourceRevision" AND r."inputOrderRevision"=public.wp20_metric_order_revision(r."vendorId",r."liveId")`);
+  if (!record) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  if (record.isolation !== "repeatable read") throw new Error("Completion reader requires repeatable-read snapshot");
+  if (record.cohortCount === null) return { status: "available" as const, rows: null, cohortCount: null };
+  const cohortCount = z.number().int().min(0).max(1_000_000).parse(record.cohortCount);
+  const rows = factsSchema.parse(record.rows);
+  if (rows.length > cohortCount) throw new Error("Completion cohort mismatch");
+  return { status: "available" as const, rows, cohortCount };
+}
+
+
+FILE src/lib/live-metric-report-job.ts
+import type { PrismaClient } from "@prisma/client";
+import { claimMetricReport, finishMetricReport, type MetricReportLease } from "./live-metric-report-lease";
+import { loadMetricViewingSnapshot } from "./live-metric-report-snapshot";
+import { metricSnapshotInput } from "./live-metric-snapshot-input";
+import { publishMetricCompletion } from "./live-metric-completion-store";
+import type { createCompletionExecutor, createMetricExecutor } from "./live-metric-executor";
+
+type Database = Pick<PrismaClient, "$queryRaw" | "$transaction">;
+type Executor = ReturnType<typeof createMetricExecutor>;
+
+/** Internal single-job orchestration; caller authenticates and chooses a scoped
+ * queued report. Supply the bounded worker executor, never a browser callback.
+ * No automatic retries or synchronous computation fallback. Unfinished leases
+ * expire through the existing DB-clock protocol so later attempts can recover.
+ */
+export async function runMetricReportJob(db: Database, value: MetricReportLease, execute: Executor, project?: ReturnType<typeof createCompletionExecutor>) {
+  const lease = { ...value };
+  let stage: "claim" | "snapshot" | "conversion" | "execution" | "projection" | "publish" | "reload" | "finish" = "claim";
+  try {
+    if (!await claimMetricReport(db, lease)) return { status: "not_claimed" as const };
+    stage = "snapshot";
+    let snapshot = await loadMetricViewingSnapshot(db, lease);
+    if (snapshot.status !== "available") return { status: "snapshot_unavailable" as const, reason: snapshot.reason };
+    stage = "conversion";
+    let input = metricSnapshotInput(snapshot.data);
+    if (project && input.completions === null && input.registrations !== null && input.viewing !== null && input.durationMs !== null) {
+      const sourceRevision = snapshot.data.context.sourceRevision;
+      if (typeof sourceRevision !== "bigint") throw new Error("Missing snapshot revision");
+      stage = "projection";
+      const candidate = await project(input);
+      if (candidate.status !== "available") return { status: "execution_unavailable" as const, reason: candidate.reason };
+      if (candidate.projection.status === "available") {
+        stage = "publish";
+        if (!await publishMetricCompletion(db, lease, sourceRevision, input.scope, candidate.projection)) return { status: "lease_lost" as const };
+        stage = "reload";
+        snapshot = await loadMetricViewingSnapshot(db, lease);
+        if (snapshot.status !== "available") return { status: "snapshot_unavailable" as const, reason: snapshot.reason };
+        input = metricSnapshotInput(snapshot.data);
+        if (input.completions === null || snapshot.data.context.sourceRevision !== sourceRevision) return { status: "lease_lost" as const };
+      }
+    }
+    stage = "execution";
+    const result = await execute(input);
+    if (result.status !== "available") return { status: "execution_unavailable" as const, reason: result.reason };
+    stage = "finish";
+    // Finish revalidates the lease and source revision after expensive work.
+    // Only aggregate output is persisted; raw person/browser facts stay private.
+    if (!await finishMetricReport(db, lease, result.metrics)) return { status: "lease_lost" as const };
+    return { status: "recorded" as const };
+  } catch {
+    // Failure summaries carry no database errors, identities or worker payloads.
+    return { status: "failed" as const, stage };
+  }
+}
+
+
+FILE src/lib/live-metric-report-snapshot.ts
+import { readMetricCompletion, type StoredCompletion } from "./live-metric-completion-store";
+import type { MetricScope } from "./live-core-metrics-read-model";
+import { readMetricCoverage } from "./live-metric-coverage-reader";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { withMetricOrderRevision, MetricReadBudget, readMetricOrderPage, readMetricVisitLossPage, readMetricVisitPage, readMetricReportContext, readMetricRegistrationPage, readMetricSessionPage, readMetricSessionIntervals,
+  type MetricOrderRow, type MetricVisitLossRow, type MetricVisitRow, type MetricReportContext, type MetricRegistrationRow, type MetricSessionRow, type MetricIntervalRow } from "./live-metric-report-reader";
+import type { MetricReportLease } from "./live-metric-report-lease";
+import { type MetricCoverage } from "./live-metric-coverage";
+
+export type MetricViewingSnapshot = {
+  scope: MetricScope;
+  context: MetricReportContext;
+  visitCoverage: MetricCoverage;
+  registrationCoverage: MetricCoverage;
+  viewingCoverage: MetricCoverage;
+  orderCoverage: MetricCoverage;
+  visitLosses: MetricVisitLossRow[];
+  visits: MetricVisitRow[];
+  orders: MetricOrderRow[];
+  registrations: MetricRegistrationRow[];
+  sessions: Array<{ registrationId: string; session: MetricSessionRow; intervals: MetricIntervalRow[] }>;
+  deliveryComplete: boolean;
+  completionProjection?: { rows: StoredCompletion[]; cohortCount: number } | null;
+};
+type FailureReason = "limit_exceeded" | "lease_or_scope_unavailable" | "registration_outside_cohort" | "identity_changed";
+class SnapshotUnavailable extends Error {
+  constructor(readonly reason: FailureReason) { super(reason); }
+}
+
+/** Database I/O only: this does not run the CPU-heavy metric calculation.
+ * All pages share one MVCC snapshot and one work budget. A failed page discards
+ * the entire snapshot, while incomplete delivery remains explicit metadata.
+ */
+export async function loadMetricViewingSnapshot(db: Pick<PrismaClient, "$transaction">, lease: MetricReportLease,
+  budget = new MetricReadBudget()): Promise<{ status: "available"; data: MetricViewingSnapshot } | { status: "unavailable"; reason: FailureReason }> {
+  try {
+    const data = await db.$transaction(async rawTx => withMetricOrderRevision(rawTx, lease, async tx => {
+      // This timeout limits each SQL statement; the transaction timeout bounds
+      // all statements together. Neither changes the immutable evidence.
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+      const context = await readMetricReportContext(tx, lease);
+      if (context.status !== "available") throw new SnapshotUnavailable(context.reason);
+      // Each metric depends on its own intake audit. A visits certificate
+      // must never certify registration, playback or order history.
+      const coverage = async (kind: "visits" | "registrations" | "viewing" | "orders") => {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const audit = await readMetricCoverage(tx, lease, kind);
+        if (audit.status !== "available") throw new SnapshotUnavailable(audit.reason);
+        if (!budget.retain(audit.rowCount)) throw new SnapshotUnavailable("limit_exceeded");
+        return audit.coverage;
+      };
+      const visitCoverage = await coverage("visits");
+      const registrationCoverage = await coverage("registrations");
+      const viewingCoverage = await coverage("viewing");
+      const orderCoverage = await coverage("orders");
+      const result: MetricViewingSnapshot = { scope: { vendorId: lease.vendorId, liveId: lease.liveId, contentVersionId: lease.versionId, mode: context.context.mode }, context: context.context, visitCoverage,
+        registrationCoverage, viewingCoverage, orderCoverage,
+        visitLosses: [], visits: [], orders: [], registrations: [], sessions: [], deliveryComplete: true };
+      let afterLoss: Date | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricVisitLossPage(tx, { ...lease, after: afterLoss, take: 500 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        result.visitLosses.push(...page.rows);
+        if (!page.hasMore) break;
+        afterLoss = page.next;
+      }
+      // A proven gap is decisive even while the collection-start audit is unknown.
+      if (result.visitLosses.length) result.visitCoverage = { status: "unavailable", reason: "evidence_gap" };
+      let after: { id: string; visitedAt: Date } | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricVisitPage(tx, { ...lease, after, take: 500 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        result.visits.push(...page.rows);
+        if (!page.hasMore) break;
+        after = page.next;
+      }
+      let afterId: string | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricRegistrationPage(tx, { ...lease, afterId, take: 100 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        for (const registration of page.rows) {
+          if (!registration.identityCurrent) throw new SnapshotUnavailable("identity_changed");
+          result.registrations.push(registration);
+          await appendRegistrationSessions(tx, lease, registration.id, budget, result);
+        }
+        if (!page.hasMore) break;
+        afterId = page.nextId;
+      }
+      let afterOrder: string | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricOrderPage(tx, { ...lease, afterId: afterOrder, take: 500 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        result.orders.push(...page.rows);
+        if (!page.hasMore) {
+          result.completionProjection = await loadCompletion(tx, lease, budget);
+          return result;
+        }
+        afterOrder = page.nextId;
+      }
+    }), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000, maxWait: 5000 });
+    return { status: "available", data };
+  } catch (error) {
+    if (error instanceof SnapshotUnavailable) return { status: "unavailable", reason: error.reason };
+    // Infrastructure failures propagate to the job runner. They are never
+    // converted into an empty cohort or a successfully calculated zero.
+    throw error;
+  }
+}
+
+async function appendRegistrationSessions(tx: Pick<Prisma.TransactionClient, "$queryRaw">, lease: MetricReportLease, registrationId: string,
+  budget: MetricReadBudget, result: MetricViewingSnapshot) {
+  let afterId: string | null = null;
+  for (;;) {
+    if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+    const page = await readMetricSessionPage(tx, { ...lease, registrationId, afterId, take: 100 });
+    if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+    if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+    for (const session of page.rows) {
+      const intervals = await readMetricSessionIntervals(tx, { ...lease, sessionId: session.id }, budget);
+      if (intervals.status !== "available") throw new SnapshotUnavailable(intervals.reason);
+      if (intervals.registrationId !== registrationId) throw new SnapshotUnavailable("identity_changed");
+      result.sessions.push({ registrationId, session, intervals: intervals.rows });
+      result.deliveryComplete &&= intervals.deliveryComplete;
+    }
+    if (!page.hasMore) return;
+    afterId = page.nextId;
+  }
+}
+
+
+async function loadCompletion(tx: Pick<Prisma.TransactionClient, "$queryRaw">, lease: MetricReportLease, budget: MetricReadBudget) {
+  if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+  const completion = await readMetricCompletion(tx, lease);
+  if (completion.status !== "available") throw new SnapshotUnavailable(completion.reason);
+  if (!budget.retain((completion.rows?.length ?? 0) + 1)) throw new SnapshotUnavailable("limit_exceeded");
+  return completion.rows === null ? null : { rows: completion.rows, cohortCount: completion.cohortCount! };
+}
+
+
+FILE src/lib/live-metric-snapshot-input.ts
+import type { CoreMetricsInput } from "./live-core-metrics-read-model";
+import type { MetricViewingSnapshot } from "./live-metric-report-snapshot";
+
+/** Pure conversion for the isolated calculator worker. Scope comes from the
+ * leased snapshot, never from a second caller-selected tenant. Coverage and
+ * delivery are separate requirements; neither can stand in for the other.
+ */
+export function metricSnapshotInput(snapshot: MetricViewingSnapshot): CoreMetricsInput {
+  const { scope, context } = snapshot;
+  const registrationsComplete = snapshot.registrationCoverage.status === "complete";
+  const viewingComplete = registrationsComplete && snapshot.viewingCoverage.status === "complete" && snapshot.deliveryComplete;
+  if (snapshot.registrations.some(row => !row.identityCurrent)) throw new Error("Metric snapshot identity unavailable");
+  const people = new Set(snapshot.registrations.map(row => row.id));
+  if (snapshot.sessions.some(row => !people.has(row.registrationId))) throw new Error("Metric snapshot identity unavailable");
+  const projection = snapshot.completionProjection ?? null;
+  if (projection && (projection.cohortCount !== people.size || projection.rows.some(row => !people.has(row.personId))))
+    throw new Error("Metric completion cohort unavailable");
+  return {
+    scope, startMs: context.windowStartAt.getTime(), endMs: context.windowEndAt.getTime(), durationMs: context.durationMs,
+    visits: snapshot.visitCoverage.status === "complete" ? snapshot.visits.map(row => ({ scope, browserId: row.visitorId, visitedAtMs: row.visitedAt.getTime() })) : null,
+    registrations: registrationsComplete ? snapshot.registrations.map(row => ({ scope, personId: row.id,
+      browserId: row.visitorId, verifiedAtMs: row.verifiedAt.getTime() })) : null,
+    viewing: viewingComplete ? snapshot.sessions.flatMap(row => row.intervals.map(interval => ({ scope,
+      personId: row.registrationId, wallStartMs: interval.wallStartAt.getTime(), wallEndMs: interval.wallEndAt.getTime(),
+      mediaStartMs: interval.mediaStartMs, mediaEndMs: interval.mediaEndMs }))) : null,
+    // Completion requires durable first-crossing provenance from the SAME
+    // snapshot. A certificate alone cannot turn absence into [].
+    completions: viewingComplete && projection ? projection.rows.map(row => ({ scope, ...row })) : null,
+    orders: snapshot.orderCoverage.status === "complete" ? snapshot.orders.map(row => ({ scope, personId: row.registrationId,
+      establishedAtMs: row.establishedAt.getTime(), cancelled: row.cancelled })) : null,
+  };
+}
+
+
+FILE src/lib/live-metric-executor.ts
+import { Worker } from "node:worker_threads";
+import type { CoreMetrics, CoreMetricsInput, CompletionProjection, CompletionProjectionInput } from "./live-core-metrics-read-model";
+
+export type MetricExecution = { status: "available"; metrics: CoreMetrics }
+  | { status: "unavailable"; reason: "busy" | "input_limit" | "timeout" | "worker_failed" };
+
+/** The job runner supplies the trusted build artifact, never a request URL.
+ * One calculation per executor; do not queue unbounded payloads in memory.
+ * No synchronous fallback: worker failure must not block the web event loop.
+ */
+export function createMetricExecutor(artifact: URL, timeoutMs = 20000) {
+  const execute = createBoundedExecutor<CoreMetrics>(artifact, "metrics", timeoutMs);
+  return async (input: CoreMetricsInput): Promise<MetricExecution> => {
+    const result = await execute(input);
+    return result.status === "available" ? { status: "available", metrics: result.value } : result;
+  };
+}
+export type CompletionExecution = { status: "available"; projection: CompletionProjection }
+  | { status: "unavailable"; reason: "busy" | "input_limit" | "timeout" | "worker_failed" };
+
+/** Projection remains a candidate until a revision-checked atomic DB write. */
+export function createCompletionExecutor(artifact: URL, timeoutMs = 20000) {
+  const execute = createBoundedExecutor<CompletionProjection>(artifact, "completion", timeoutMs);
+  return async (input: CompletionProjectionInput): Promise<CompletionExecution> => {
+    const result = await execute({ ...input, visits: null, completions: null, orders: null });
+    return result.status === "available" ? { status: "available", projection: result.value } : result;
+  };
+}
+type BoundedResult<T> = { status: "available"; value: T }
+  | { status: "unavailable"; reason: "busy" | "input_limit" | "timeout" | "worker_failed" };
+function createBoundedExecutor<T>(artifact: URL, operation: "metrics" | "completion", timeoutMs: number) {
+  if (artifact.protocol !== "file:" || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw new Error("Invalid metric executor configuration");
+  let active = false;
+  return async (input: CoreMetricsInput): Promise<BoundedResult<T>> => {
+    if (active) return { status: "unavailable", reason: "busy" };
+    const lists = [input.visits, input.registrations, input.viewing, input.completions, input.orders];
+    if (lists.some(rows => rows !== null && !Array.isArray(rows))
+      || lists.reduce((sum, rows) => sum + (rows?.length ?? 0), 0) > 1_000_000) return { status: "unavailable", reason: "input_limit" };
+    active = true;
+    try {
+      return await new Promise<BoundedResult<T>>(resolve => {
+        let worker: Worker;
+        try {
+          worker = new Worker(artifact, { workerData: { operation, input }, env: {}, execArgv: [], stdout: true, stderr: true,
+            resourceLimits: { maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 32, stackSizeMb: 4 } });
+        } catch { resolve({ status: "unavailable", reason: "worker_failed" }); return; }
+        // Consume and discard worker diagnostics; raw facts never enter logs.
+        worker.stdout?.resume(); worker.stderr?.resume();
+        let settled = false;
+        const finish = (result: BoundedResult<T>) => {
+          if (settled) return;
+          settled = true; clearTimeout(timer);
+          void worker.terminate().catch(() => undefined).then(() => resolve(result));
+        };
+        const timer = setTimeout(() => finish({ status: "unavailable", reason: "timeout" }), timeoutMs);
+        worker.once("message", (value: T) => finish({ status: "available", value }));
+        worker.once("error", () => finish({ status: "unavailable", reason: "worker_failed" }));
+        worker.once("exit", () => finish({ status: "unavailable", reason: "worker_failed" }));
+      });
+    } finally { active = false; }
+  };
+}
+
+
+FILE src/lib/live-metric-worker.ts
+import { parentPort, workerData } from "node:worker_threads";
+import { calculateCoreMetrics, calculateCompletionProjection, type CoreMetricsInput } from "./live-core-metrics-read-model";
+
+// Built as a standalone CommonJS artifact. No DB, environment, credentials or
+// network clients are imported into the calculation thread.
+if (!parentPort) throw new Error("Metric calculation requires a worker thread");
+const request = workerData as { operation: "metrics" | "completion"; input: CoreMetricsInput };
+if (request.operation !== "metrics" && request.operation !== "completion") throw new Error("Unknown metric worker operation");
+parentPort.postMessage(request.operation === "completion"
+  ? calculateCompletionProjection(request.input) : calculateCoreMetrics(request.input));
+
+
+FILE src/lib/live-core-metrics-read-model.ts
+import { evaluatePostCompletionOrder, POST_COMPLETION_ORDER_WINDOW_MS } from "./live-metric-contract";
+import { firstCompletionTime } from "./live-viewing-evidence";
+
+// A normal 100-viewer, one-hour event at five-second samples has 72,000
+// distinct rows. Keep that supported; duplicates never consume this budget.
+export const MAX_REPORT_COMPLETION_SEGMENTS = 1000000;
+
+/** Pure reporting contract. The persistence adapter must provide complete,
+ * verified facts for one tenant/live/content version and viewing mode.
+ * null means unknown history; [] means an audited, complete empty history.
+ * IDs are opaque internal references, never email addresses or session counts.
+ */
+export type MetricScope = Readonly<{
+  vendorId: string;
+  liveId: string;
+  contentVersionId: string;
+  mode: "live" | "replay";
+}>;
+type Scoped = Readonly<{ scope: MetricScope }>;
+export type VisitFact = Scoped & Readonly<{ browserId: string; visitedAtMs: number }>;
+export type RegistrationFact = Scoped & Readonly<{
+  personId: string; browserId: string | null; verifiedAtMs: number;
+}>;
+/** Each segment has a constant playback rate; seek/pause/buffering split it.
+ * Wall timestamps are validated by ingestion, not taken on trust from clients.
+ */
+export type ViewingFact = Scoped & Readonly<{
+  personId: string;
+  wallStartMs: number; wallEndMs: number;
+  mediaStartMs: number; mediaEndMs: number;
+}>;
+/** Durable first crossing uses verified-eligible exposure only. A crossing
+ * before verification contradicts this contract and invalidates the batch. */
+export type CompletionFact = Scoped & Readonly<{ personId: string; firstCompletedAtMs: number }>;
+/** Rows are current order snapshots from a read transaction, never historical
+ * order events; the adapter must omit stale pre-cancellation states. */
+export type OrderFact = Scoped & Readonly<{
+  personId: string; establishedAtMs: number; cancelled: boolean;
+}>;
+export type CoreMetricsInput = Readonly<{
+  scope: MetricScope;
+  startMs: number; endMs: number; durationMs: number | null;
+  visits: readonly VisitFact[] | null;
+  registrations: readonly RegistrationFact[] | null;
+  viewing: readonly ViewingFact[] | null;
+  completions: readonly CompletionFact[] | null;
+  orders: readonly OrderFact[] | null;
+}>;
+export type MetricValue =
+  | { status: "unavailable"; reason: "missing_data" | "invalid_data" | "limit_exceeded" }
+  | { status: "not_applicable"; reason: "zero_denominator" }
+  | { status: "available"; value: number; numerator: number; denominator: number; unit: "percent" | "seconds" };
+export type CoreMetrics = {
+  registrationRate: MetricValue;
+  attendanceRate: MetricValue;
+  completionRate: MetricValue;
+  averageViewingSeconds: MetricValue;
+  postCompletionOrderRate: MetricValue;
+  unattributedRegistrations: number | null;
+  provisionalConversions: boolean | null;
+};
+
+const missing = (): MetricValue => ({ status: "unavailable", reason: "missing_data" });
+const invalid = (): MetricValue => ({ status: "unavailable", reason: "invalid_data" });
+const timestamp = (value: number) => Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000;
+const id = (value: string) => typeof value === "string" && value.length > 0;
+const scopeValid = (scope: MetricScope) => scope && id(scope.vendorId) && id(scope.liveId) && id(scope.contentVersionId) && (scope.mode === "live" || scope.mode === "replay");
+const sameScope = (a: MetricScope, b: MetricScope) => scopeValid(a) && a.vendorId === b.vendorId && a.liveId === b.liveId && a.contentVersionId === b.contentVersionId && a.mode === b.mode;
+
+function ratio(numerator: number, denominator: number, unit: "percent" | "seconds" = "percent"): MetricValue {
+  if (!denominator) return { status: "not_applicable", reason: "zero_denominator" };
+  const value = numerator / denominator * (unit === "percent" ? 100 : 1);
+  return Number.isFinite(value) ? { status: "available", value, numerator, denominator, unit } : invalid();
+}
+
+/** Union actual exposure time across sessions/devices. Never fill gaps. */
+function unionLength(intervals: readonly (readonly [number, number])[]): number {
+  let end = 0;
+  let total = 0;
+  for (const [start, nextEnd] of [...intervals].sort((a, b) => a[0] - b[0])) {
+    total += Math.max(0, nextEnd - Math.max(end, start));
+    end = Math.max(end, nextEnd);
+  }
+  return total;
+}
+
+class InvalidMetricFacts extends Error {}
+const requireFact = (condition: unknown) => { if (!condition) throw new InvalidMetricFacts(); };
+type Cohort = Map<string, RegistrationFact>;
+
+function validateScopeAndWindow(input: CoreMetricsInput) {
+  requireFact(input && scopeValid(input.scope) && timestamp(input.startMs) && timestamp(input.endMs) && input.startMs < input.endMs);
+  // Fail closed on mixed scopes; silently dropping rows would change denominators.
+  for (const rows of [input.visits, input.registrations, input.viewing, input.completions, input.orders]) {
+    requireFact(rows === null || (Array.isArray(rows) && Array.from(rows).every((row) => row && sameScope(row.scope, input.scope))));
+  }
+}
+
+function buildCohort(input: CoreMetricsInput): Cohort {
+  const registrations: Cohort = new Map();
+  for (const row of input.registrations!) {
+    requireFact(id(row.personId) && timestamp(row.verifiedAtMs) && (row.browserId === null || id(row.browserId)));
+    const previous = registrations.get(row.personId);
+    requireFact(!previous || (previous.verifiedAtMs === row.verifiedAtMs && previous.browserId === row.browserId));
+    registrations.set(row.personId, row);
+  }
+  return new Map([...registrations].filter(([, row]) => row.verifiedAtMs >= input.startMs && row.verifiedAtMs < input.endMs));
+}
+
+function registrationMetrics(input: CoreMetricsInput, cohort: Cohort, result: CoreMetrics) {
+  if (input.visits === null) return;
+  const visits = new Map<string, number>();
+  for (const row of input.visits) {
+    requireFact(id(row.browserId) && timestamp(row.visitedAtMs));
+    if (row.visitedAtMs >= input.startMs && row.visitedAtMs < input.endMs) visits.set(row.browserId, Math.min(visits.get(row.browserId) ?? Infinity, row.visitedAtMs));
+  }
+  const converted = new Set<string>();
+  let unattributed = 0;
+  for (const row of cohort.values()) {
+    const visit = row.browserId === null ? undefined : visits.get(row.browserId);
+    if (visit !== undefined && row.verifiedAtMs >= visit) converted.add(row.browserId!);
+    else unattributed++;
+  }
+  result.registrationRate = ratio(converted.size, visits.size);
+  result.unattributedRegistrations = unattributed;
+}
+
+function collectSegments(input: CoreMetricsInput, cohort: Cohort): Map<string, ViewingFact[]> {
+  const segments = new Map<string, ViewingFact[]>();
+  const seen = new Map<string, Set<string>>();
+  for (const row of input.viewing!) {
+    requireFact(id(row.personId) && timestamp(row.wallStartMs) && timestamp(row.wallEndMs) && row.wallEndMs > row.wallStartMs);
+    requireFact(Number.isSafeInteger(row.mediaStartMs) && Number.isSafeInteger(row.mediaEndMs) && row.mediaStartMs >= 0 && row.mediaEndMs > row.mediaStartMs);
+    if (input.durationMs !== null && input.durationMs > 0) requireFact(row.mediaEndMs <= input.durationMs);
+    const registration = cohort.get(row.personId);
+    if (!registration || row.wallEndMs <= registration.verifiedAtMs || row.wallStartMs >= input.endMs) continue;
+    const key = `${row.wallStartMs}:${row.wallEndMs}:${row.mediaStartMs}:${row.mediaEndMs}`;
+    const personSeen = seen.get(row.personId) ?? new Set<string>();
+    if (personSeen.has(key)) continue;
+    personSeen.add(key);
+    seen.set(row.personId, personSeen);
+    const rows = segments.get(row.personId) ?? [];
+    rows.push(row);
+    segments.set(row.personId, rows);
+  }
+  return segments;
+}
+
+function viewingMetrics(input: CoreMetricsInput, cohort: Cohort, result: CoreMetrics): Map<string, number> {
+  const segments = collectSegments(input, cohort);
+  const completed = new Map<string, number>();
+  let completionLimit = [...segments.values()].reduce((count, rows) => count + rows.length, 0) > MAX_REPORT_COMPLETION_SEGMENTS;
+  let wallMs = 0;
+  for (const [person, rows] of segments) {
+    const verifiedAt = cohort.get(person)!.verifiedAtMs;
+    wallMs += unionLength(rows.map((row) => [Math.max(row.wallStartMs, verifiedAt, input.startMs), Math.min(row.wallEndMs, input.endMs)] as const));
+    if (input.durationMs === null || completionLimit) continue;
+    const completion = firstCompletionTime(input.durationMs, rows, { startMs: Math.max(verifiedAt, input.startMs), endMs: input.endMs - 1 });
+    if (completion.status === "unavailable" && completion.reason === "limit_exceeded") {
+      completionLimit = true;
+      continue;
+    }
+    requireFact(completion.status === "available");
+    if (completion.status === "available" && completion.firstCompletedAtMs !== null) completed.set(person, completion.firstCompletedAtMs);
+  }
+  result.attendanceRate = ratio(segments.size, cohort.size);
+  result.averageViewingSeconds = ratio(wallMs / 1000, segments.size, "seconds");
+  result.completionRate = input.durationMs === null ? missing() : completionLimit ? { status: "unavailable", reason: "limit_exceeded" } : ratio(completed.size, segments.size);
+  return completed;
+}
+
+function orderMetrics(input: CoreMetricsInput, cohort: Cohort, completed: Map<string, number>, result: CoreMetrics) {
+  if (result.completionRate.status === "unavailable") {
+    result.postCompletionOrderRate = { ...result.completionRate };
+    return;
+  }
+  if (input.completions === null || input.orders === null || input.durationMs === null) return;
+  const firstCompletion = new Map<string, number>();
+  for (const row of input.completions) {
+    requireFact(id(row.personId) && timestamp(row.firstCompletedAtMs));
+    const previous = firstCompletion.get(row.personId);
+    requireFact(previous === undefined || previous === row.firstCompletedAtMs);
+    firstCompletion.set(row.personId, row.firstCompletedAtMs);
+  }
+  for (const row of input.orders) requireFact(id(row.personId) && timestamp(row.establishedAtMs) && typeof row.cancelled === "boolean");
+  // Reconcile durable first-crossing facts with independently derived viewing
+  // evidence. [] is known-empty, so a contradiction is invalid, not missing.
+  for (const [person, derivedAt] of completed) {
+    requireFact(firstCompletion.get(person) === derivedAt);
+  }
+  for (const [person, at] of firstCompletion) {
+    if (!cohort.has(person) || at >= input.endMs) continue;
+    requireFact(at >= cohort.get(person)!.verifiedAtMs && completed.get(person) === at);
+  }
+  const ordered = new Set<string>();
+  for (const row of input.orders) {
+    if (!completed.has(row.personId) || row.establishedAtMs >= input.endMs) continue;
+    const eligibility = evaluatePostCompletionOrder(firstCompletion.get(row.personId)!, row);
+    if (eligibility.status === "available" && eligibility.qualifies) ordered.add(row.personId);
+  }
+  result.postCompletionOrderRate = ratio(ordered.size, completed.size);
+  // The last millisecond of the inclusive seven-day window must be observed.
+  result.provisionalConversions = [...completed.keys()].some((person) => input.endMs <= firstCompletion.get(person)! + POST_COMPLETION_ORDER_WINDOW_MS);
+}
+
+export function calculateCoreMetrics(input: CoreMetricsInput): CoreMetrics {
+  const result: CoreMetrics = {
+    registrationRate: missing(), attendanceRate: missing(), completionRate: missing(),
+    averageViewingSeconds: missing(), postCompletionOrderRate: missing(),
+    unattributedRegistrations: null, provisionalConversions: null,
+  };
+  try {
+    validateScopeAndWindow(input);
+    if (input.registrations === null) return result;
+    const cohort = buildCohort(input);
+    registrationMetrics(input, cohort, result);
+    if (input.viewing === null) return result;
+    requireFact(input.durationMs === null || (Number.isSafeInteger(input.durationMs) && input.durationMs > 0));
+    const completed = viewingMetrics(input, cohort, result);
+    orderMetrics(input, cohort, completed, result);
+    return result;
+  } catch (error) {
+    if (!(error instanceof InvalidMetricFacts)) throw error;
+    return { registrationRate: invalid(), attendanceRate: invalid(), completionRate: invalid(), averageViewingSeconds: invalid(), postCompletionOrderRate: invalid(), unattributedRegistrations: null, provisionalConversions: null };
+  }
+}
+
+
+export type CompletionProjectionInput = Pick<CoreMetricsInput, "scope" | "startMs" | "endMs" | "durationMs" | "registrations" | "viewing">;
+export type CompletionProjection = { status: "available"; cohortCount: number; rows: CompletionFact[] }
+  | { status: "unavailable"; reason: "missing_data" | "invalid_data" | "limit_exceeded" };
+
+/** Worker-only projection candidate. Availability is not durable provenance:
+ * the writer must atomically persist rows plus manifest against the unchanged
+ * source revision before any report adapter can use these completion facts.
+ */
+export function calculateCompletionProjection(value: CompletionProjectionInput): CompletionProjection {
+  const input: CoreMetricsInput = { ...value, visits: null, completions: null, orders: null };
+  try {
+    validateScopeAndWindow(input);
+    if (input.registrations === null || input.viewing === null || input.durationMs === null)
+      return { status: "unavailable", reason: "missing_data" };
+    requireFact(Number.isSafeInteger(input.durationMs) && input.durationMs > 0);
+    const cohort = buildCohort(input);
+    const result: CoreMetrics = { registrationRate: missing(), attendanceRate: missing(), completionRate: missing(),
+      averageViewingSeconds: missing(), postCompletionOrderRate: missing(), unattributedRegistrations: null, provisionalConversions: null };
+    const completed = viewingMetrics(input, cohort, result);
+    if (result.completionRate.status === "unavailable") return result.completionRate;
+    return { status: "available", cohortCount: cohort.size,
+      rows: [...completed].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([personId, firstCompletedAtMs]) => ({ scope: input.scope, personId, firstCompletedAtMs })) };
+  } catch (error) {
+    if (!(error instanceof InvalidMetricFacts)) throw error;
+    return { status: "unavailable", reason: "invalid_data" };
+  }
+}
+
+
+FILE src/lib/live-viewing-evidence.ts
+import { COMPLETION_PERCENT } from "./live-metric-contract";
+
+/** These are bounded exposure samples, not proof of human attention. A caller
+ * must reset on seek, buffering, pause, source/version changes and rate changes.
+ * Monotonic elapsed time is later anchored to server time by ingestion.
+ */
+export type PlaybackSample = Readonly<{
+  elapsedMs: number; mediaMs: number; rate: number; playing: boolean;
+}>;
+export type PlaybackSegment = Readonly<{
+  wallStartMs: number; wallEndMs: number; mediaStartMs: number; mediaEndMs: number;
+}>;
+export const MAX_PLAYBACK_SAMPLE_GAP_MS = 5000;
+export const MAX_COMPLETION_SEGMENTS = 10000;
+
+function validSample(sample: PlaybackSample): boolean {
+  return !!sample && Number.isSafeInteger(sample.elapsedMs) && sample.elapsedMs >= 0
+    && Number.isSafeInteger(sample.mediaMs) && sample.mediaMs >= 0
+    && Number.isFinite(sample.rate) && sample.rate >= 0.25 && sample.rate <= 4
+    && typeof sample.playing === "boolean";
+}
+
+/** A discontinuity returns no interval. Do not connect endpoints across gaps.
+ * Integer millisecond samples allow one millisecond of quantization error.
+ * This check bounds accidental seek jumps; the server still validates batches.
+ */
+export function playbackSegment(previous: PlaybackSample | null, current: PlaybackSample): PlaybackSegment | null {
+  if (!previous || !validSample(previous) || !validSample(current) || !previous.playing || !current.playing || previous.rate !== current.rate) return null;
+  const elapsed = current.elapsedMs - previous.elapsedMs;
+  const media = current.mediaMs - previous.mediaMs;
+  if (elapsed <= 0 || elapsed > MAX_PLAYBACK_SAMPLE_GAP_MS || media <= 0 || Math.abs(media - elapsed * current.rate) > 1) return null;
+  return { wallStartMs: previous.elapsedMs, wallEndMs: current.elapsedMs, mediaStartMs: previous.mediaMs, mediaEndMs: current.mediaMs };
+}
+
+/** Derive the earliest integer millisecond at which unique coverage reached
+ * 90%. Segments must be validated constant-rate exposure for one person/version.
+ * Sorting by arrival order is incorrect for delayed and overlapping devices;
+ * instead use a monotone coverage predicate over playback time.
+ */
+export function firstCompletionTime(durationMs: number | null, segments: readonly PlaybackSegment[] | null, window: Readonly<{ startMs: number; endMs: number }> = { startMs: 0, endMs: 8_640_000_000_000_000 }):
+  | { status: "unavailable"; reason: "missing_data" | "invalid_data" | "limit_exceeded" }
+  | { status: "available"; firstCompletedAtMs: number | null } {
+  if (durationMs === null || segments === null) return { status: "unavailable", reason: "missing_data" };
+  if (!Array.isArray(segments) || !Number.isSafeInteger(durationMs) || durationMs <= 0) return { status: "unavailable", reason: "invalid_data" };
+  if (![window.startMs, window.endMs].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000) || window.startMs > window.endMs) return { status: "unavailable", reason: "invalid_data" };
+  if (segments.length > MAX_COMPLETION_SEGMENTS) return { status: "unavailable", reason: "limit_exceeded" };
+  if (Array.from(segments).some((row) => !validSegment(row, durationMs))) return { status: "unavailable", reason: "invalid_data" };
+  if (segments.length === 0) return { status: "available", firstCompletedAtMs: null };
+  let low = Infinity;
+  let high = 0;
+  for (const row of segments) {
+    low = Math.min(low, row.wallStartMs);
+    high = Math.max(high, row.wallEndMs);
+  }
+  low = Math.max(low, window.startMs);
+  high = Math.min(high, window.endMs);
+  const prepared = prepareSegments(segments, window.startMs);
+  if (!prepared) return { status: "unavailable", reason: "limit_exceeded" };
+  if (low > high || !completedAt(durationMs, prepared, high)) return { status: "available", firstCompletedAtMs: null };
+  // At most 53 iterations for safe integer time. No per-millisecond scan and
+  // no invented first-completion timestamp from receipt/arrival order.
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (completedAt(durationMs, prepared, middle)) high = middle;
+    else low = middle + 1;
+  }
+  return { status: "available", firstCompletedAtMs: low };
+}
+
+function validSegment(row: PlaybackSegment, durationMs: number): boolean {
+  return !!row && [row.wallStartMs, row.wallEndMs, row.mediaStartMs, row.mediaEndMs].every((value) => Number.isSafeInteger(value) && value >= 0)
+    && row.wallEndMs <= 8_640_000_000_000_000 && row.wallEndMs > row.wallStartMs
+    && row.mediaEndMs > row.mediaStartMs && row.mediaEndMs <= durationMs;
+}
+
+function gcd(a: bigint, b: bigint): bigint {
+  while (b !== BigInt(0)) { const next = a % b; a = b; b = next; }
+  return a;
+}
+type PreparedSegment = { row: PlaybackSegment; start: bigint; base: bigint; rate: bigint; eligibleAtMs: number };
+type PreparedHistory = { scale: bigint; segments: PreparedSegment[] };
+const MAX_RATIONAL_SCALE = BigInt(1) << BigInt(8192);
+
+function prepareSegments(segments: readonly PlaybackSegment[], eligibleAtMs: number): PreparedHistory | null {
+  const eligible = segments.filter((row) => row.wallEndMs > eligibleAtMs);
+  // One common exact scale avoids huge repeated fraction reductions inside
+  // binary search. Bound its size before allocating scaled per-segment values.
+  let scale = BigInt(1);
+  for (const row of eligible) {
+    const duration = BigInt(row.wallEndMs - row.wallStartMs);
+    scale = scale / gcd(scale, duration) * duration;
+    if (scale > MAX_RATIONAL_SCALE) return null;
+  }
+  const prepared = eligible.map((row) => {
+    const base = BigInt(row.mediaStartMs) * scale;
+    const rate = BigInt(row.mediaEndMs - row.mediaStartMs) * (scale / BigInt(row.wallEndMs - row.wallStartMs));
+    const at = Math.max(row.wallStartMs, eligibleAtMs);
+    return { row, base, rate, eligibleAtMs: at, start: base + rate * BigInt(at - row.wallStartMs) };
+  }).sort((a, b) => a.start < b.start ? -1 : a.start > b.start ? 1 : 0);
+  return { scale, segments: prepared };
+}
+
+/** Preserve original slopes and exact coverage. The fixed denominator is
+ * shared by every interval, so union and threshold tests use integers only.
+ * Sort eligible starts once and stop summing once the threshold is reached.
+ */
+function completedAt(durationMs: number, history: PreparedHistory, atMs: number): boolean {
+  let end = BigInt(0);
+  let covered = BigInt(0);
+  const threshold = BigInt(durationMs) * BigInt(COMPLETION_PERCENT) * history.scale;
+  for (const prepared of history.segments) {
+    if (prepared.eligibleAtMs >= atMs) continue;
+    const intervalEnd = prepared.base + prepared.rate * BigInt(Math.min(prepared.row.wallEndMs, atMs) - prepared.row.wallStartMs);
+    const start = prepared.start > end ? prepared.start : end;
+    if (intervalEnd > start) {
+      covered += intervalEnd - start;
+      end = intervalEnd;
+      if (covered * BigInt(100) >= threshold) return true;
+    }
+  }
+  return false;
+}
+
+
+FILE scripts/wp20-completion-publish-probe.mjs
+import assert from "node:assert/strict";
+
+/** Real SQL guard checks inside the caller's rollback-only synthetic fixture. */
+export async function verifyCompletionPublish(tx, lease, revision, verifiedAt) {
+  const facts=[{personId:"source-matrix-registration",firstCompletedAtMs:+verifiedAt+1}];
+  const publish=async (rows=facts, count=1, worker=lease.workerId, source=revision)=>{
+    const [result]=await tx.$queryRawUnsafe('SELECT public.wp20_metric_completion_publish($1,$2,$3,$4,$5,$6::bigint,$7::integer,$8::jsonb) AS changed',lease.vendorId,lease.liveId,lease.versionId,lease.reportId,worker,source,count,JSON.stringify(rows));
+    return result.changed;
+  };
+  const rowCount=async()=>Number((await tx.$queryRawUnsafe('SELECT count(*) AS n FROM "LiveMetricCompletionProjection" WHERE "reportId"=$1',lease.reportId))[0].n);
+  assert.equal(await publish(facts,1,"wrong-worker"),0);
+  assert.equal(await publish(facts,1,lease.workerId,revision+BigInt(1)),0);
+  assert.equal(await rowCount(),0);
+  const rejected=async action=>{
+    await tx.$executeRawUnsafe("SAVEPOINT completion_guard_probe");
+    let code=null;
+    try {await action();}catch(error){code=error?.meta?.code??null;}
+    await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT completion_guard_probe");
+    await tx.$executeRawUnsafe("RELEASE SAVEPOINT completion_guard_probe");
+    assert.equal(code,"23514");
+  };
+  await rejected(()=>publish([{...facts[0],personId:"foreign-registration"}]));
+  await rejected(()=>publish([{...facts[0],firstCompletedAtMs:+verifiedAt-1}]));
+  await rejected(()=>publish([{...facts[0],firstCompletedAtMs:+verifiedAt+0.5}]));
+  await rejected(()=>publish([{...facts[0],extra:true}]));
+  await rejected(()=>publish(facts,2));
+  assert.equal(await rowCount(),0);
+  assert.equal(await publish(),1);
+  assert.equal(await publish(),1);
+  assert.equal(await rowCount(),1);
+  await rejected(()=>publish([{...facts[0],firstCompletedAtMs:+verifiedAt+2}]));
+  const [stored]=await tx.$queryRawUnsafe('SELECT rows FROM "LiveMetricCompletionProjection" WHERE "reportId"=$1',lease.reportId);
+  assert.deepEqual(stored.rows,facts);
+  // Use the real claim API and database clock; never bypass the report guard.
+  await tx.$executeRawUnsafe("SAVEPOINT completion_expiry_probe");
+  const expiredId = `${lease.reportId}-expiry`;
+  const [created] = await tx.$queryRawUnsafe(`SELECT public.wp20_metric_report_create(
+    $1,$2,$3,$4,"windowStartAt" + interval '1 millisecond',"windowEndAt","inputRevision","expiresAt") AS changed
+    FROM "LiveMetricReport" WHERE id=$5`,lease.vendorId,lease.liveId,lease.versionId,expiredId,lease.reportId);
+  assert.equal(created.changed,1);
+  const claim = async (worker, milliseconds) => (await tx.$queryRawUnsafe(
+    `SELECT public.wp20_metric_report_claim($1,$2,$3,$4,$5,clock_timestamp()+$6::integer*interval '1 millisecond') AS changed`,
+    lease.vendorId,lease.liveId,lease.versionId,expiredId,worker,milliseconds))[0].changed;
+  const publishExpired = async worker => (await tx.$queryRawUnsafe(
+    'SELECT public.wp20_metric_completion_publish($1,$2,$3,$4,$5,$6::bigint,1,$7::jsonb) AS changed',
+    lease.vendorId,lease.liveId,lease.versionId,expiredId,worker,revision,JSON.stringify(facts)))[0].changed;
+  assert.equal(await claim("expired-worker",100),1);
+  await tx.$executeRawUnsafe("DO $$ BEGIN PERFORM pg_sleep(0.15); END $$");
+  assert.equal(await publishExpired("expired-worker"),0);
+  assert.equal(Number((await tx.$queryRawUnsafe('SELECT count(*) AS n FROM "LiveMetricCompletionProjection" WHERE "reportId"=$1',expiredId))[0].n),0);
+  assert.equal(await claim("replacement-worker",60000),1);
+  assert.equal(await publishExpired("expired-worker"),0);
+  assert.equal(await publishExpired("replacement-worker"),1);
+  await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT completion_expiry_probe");
+  await tx.$executeRawUnsafe("RELEASE SAVEPOINT completion_expiry_probe");
+  for(const role of ["anon","authenticated","service_role"]){
+    const [rights]=await tx.$queryRawUnsafe(`SELECT has_function_privilege($1,'public.wp20_metric_completion_publish(text,text,text,text,text,bigint,integer,jsonb)','EXECUTE') AS allowed`,role);
+    assert.equal(rights.allowed,false);
+  }
+}
+

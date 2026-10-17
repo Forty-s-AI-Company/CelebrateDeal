@@ -1,0 +1,55 @@
+{
+  "status": "SCOPED_REVIEW_COMPLETED_FULL_WP_NOT_READY",
+  "firstReview": {
+    "receipt": "playback-intake-review.json",
+    "blocker": 0,
+    "major": 0,
+    "minor": 4,
+    "nit": 1
+  },
+  "guardReview": {
+    "receipt": "playback-intake-guard-review.json",
+    "status": "REVIEW_COMPLETED",
+    "observed": {
+      "effort": "unknown",
+      "source": "cli_terminal_model_usage",
+      "model": "claude-opus-5-5"
+    },
+    "sourceHashMatch": true,
+    "blocker": 0,
+    "major": 0,
+    "minor": 1
+  },
+  "dispositions": [
+    {
+      "area": "session update bounds and identity",
+      "result": "FIXED_AND_REREVIEWED",
+      "evidence": "playback-intake-db.json"
+    },
+    {
+      "area": "column ACL assertion",
+      "result": "FIXED_AND_REREVIEWED",
+      "evidence": "playback-intake-db.json"
+    },
+    {
+      "area": "conditional session timezone finding",
+      "result": "REJECTED_WITH_EVIDENCE",
+      "reason": "Actual catalog anchorAt/expiresAt are timestamp(3) with time zone; Tokyo and Los Angeles exact-bound updates pass, +1ms updates reject 23514. The conditional timestamp-without-timezone premise does not hold.",
+      "evidence": "playback-intake-db.json:timestamptzCatalogAndNonUtcBoundUpdates"
+    },
+    {
+      "area": "legacy NULL intake, epochs and before-start playback",
+      "result": "KNOWN_INCOMPLETE_PRODUCER_CONTRACT"
+    },
+    {
+      "area": "hot-row load and deployed owner role",
+      "result": "NOT_VERIFIED"
+    },
+    {
+      "area": "rare expiry error mapping NIT",
+      "result": "DEFERRED_GENERIC_503_FAIL_CLOSED"
+    }
+  ],
+  "unreviewedScope": "Full client/helper/harness source and full WP; reported DB receipts are not harness review.",
+  "acceptance": "NOT_READY; original synchronized20 failure and full functional scope remain"
+}

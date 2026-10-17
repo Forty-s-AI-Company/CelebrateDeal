@@ -3,7 +3,7 @@ import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { admitLiveViewer, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
 import { getDb } from "@/lib/db";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 const LiveAdmissionPayload = z.object({
   vendorId: z.string().min(1).max(128),
@@ -20,8 +20,10 @@ function errorResponse(error: LiveQuotaAdmissionError) {
   return NextResponse.json({ error: "Playback temporarily unavailable" }, { status: 429 });
 }
 
+const ReleasePayload = LiveAdmissionPayload.extend({ lease: z.object({ id: z.string().min(1).max(128), expiresAtMs: z.number().int().min(0).max(8_640_000_000_000_000) }).strict().optional() });
+
 async function readPayload(request: Request) {
-  const parsed = LiveAdmissionPayload.safeParse(await readJsonBody(request));
+  const parsed = (request.method === "DELETE" ? ReleasePayload : LiveAdmissionPayload).safeParse(await readJsonBody(request));
   return parsed.success ? parsed.data : null;
 }
 
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
       ...payload,
       token: liveViewerTokenFromRequest(request),
     });
-    const response = NextResponse.json({ ok: true });
+    const response = NextResponse.json({ ok: true, lease: result.lease });
     response.cookies.set("celebratedeal_live_viewer", result.token, liveViewerCookieOptions(request));
     return response;
   } catch (error) {
@@ -52,6 +54,10 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
+
+  // 釋放入口獨立計數，不能讓 DELETE flood 消耗 admission 的額度。
+  const limited = await checkRateLimit(request, "live-admission-release", 120, 60_000);
+  if (limited) return limited;
 
   const payload = await readPayload(request);
   if (!payload) return NextResponse.json({ error: "Invalid admission request" }, { status: 400 });

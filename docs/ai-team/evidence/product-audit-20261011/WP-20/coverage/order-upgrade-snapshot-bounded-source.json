@@ -1,0 +1,12 @@
+{
+  "files": {
+    "scripts/wp20-order-upgrade-snapshot-disposable.mjs": "db336356338b4631ce1e9b98e21073342309aaeb6d36c59579b4884b11049647",
+    "prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql": "8863aec09dedc16d24b774e3a2ae2d99823070fe530862045816c405921b4a75"
+  },
+  "status": "PARTIAL_VALIDATION",
+  "db": "order-upgrade-snapshot-117-bounded-db.json",
+  "load": "NOT_RUN",
+  "literalPopulatedMigrateDeploy": "NOT_RUN",
+  "forcedRls": "NOT_RUN",
+  "review": "Latest bounds/count changes pending review"
+}

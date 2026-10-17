@@ -6,7 +6,7 @@ vi.mock("@/lib/db",()=>({getDb:()=>runtime.database}));
 vi.mock("next/headers",()=>({headers:async()=>new Headers(),cookies:async()=>({get:(key:string)=>runtime.cookies.has(key)?{value:runtime.cookies.get(key)}:undefined,set:(key:string,value:string)=>runtime.cookies.set(key,value),delete:(key:string)=>runtime.cookies.delete(key)})}));
 vi.mock("next/navigation",()=>({redirect:(path:string)=>{throw new Error(`redirect:${path}`);}}));
 vi.mock("@/lib/csrf",()=>({assertServerActionSecurity:async()=>undefined}));
-vi.mock("@/lib/rate-limit",()=>({checkRateLimit:async()=>null}));
+vi.mock("@/lib/trusted-entry-rate-limit",()=>({checkRateLimit:async()=>null}));
 vi.mock("@/lib/app-url",async(importOriginal)=>({...await importOriginal<typeof import("@/lib/app-url")>(),getCanonicalAppUrl:()=>"http://127.0.0.1:31027"}));
 import { registerAction } from "./registration-actions";
 import { loginAction, logoutAction } from "./auth-security-actions";

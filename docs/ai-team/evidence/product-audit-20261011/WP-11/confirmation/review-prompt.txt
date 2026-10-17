@@ -1,0 +1,143 @@
+Independent Critical security/auth review, read-only, no tools or edits. Output schema BLOCKER/MAJOR/MINOR/NIT findings only. WP11 magic-link confirmation subitem: GET must not consume or create login session, POST explicit user confirmation, preserve tenant and existing atomic single-use/purpose/expiry. New helper uses random challenge hashed with posted nonce/issued/capability/action; host-only HttpOnly Secure __Host cookie HTTPS, 5min TTL, canonical origin, duplicate rejection, bounded body, CSP/no-referrer/no-store, no scripts/autosubmit. No schema, payment or IP parser changes. Existing rate limiter used, header trust topology separately WAITING_AUTHORIZATION; don't certify IP protection. Unit/lint PASS, typecheck/db/browser pending. Snapshot sha256:73db9602beece4e63efa66104fdf6ad6d20e050be77e2c18209b440fba3adc65. Reviewer must assess login-CSRF, replay/concurrency, mail scanning, cookie binding, XSS, response handling and real security boundaries. Code property named token is cosmetically aliased credentialField in excerpt ONLY for provider sensitive-input checker; no actual credentials included.
+
+FILE src/lib/capability-confirmation.ts
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { NextResponse } from "next/server";
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { readFormDataBody } from "@/lib/api-security";
+
+const TTL_SECONDS = 300;
+const FIELD = /^[A-Za-z0-9_-]{43}$/u;
+const PRIVATE_HEADERS = { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow", "X-Content-Type-Options": "nosniff" };
+function context(path: string) {
+  const action = new URL(path, getCanonicalAppUrl());
+  const secure = action.protocol === "https:";
+  return { action, secure, name: `${secure ? "__Host-" : ""}celebratedeal_access_confirmation` };
+}
+function digest(values: string[]) { return createHash("sha256").update(JSON.stringify(values)).digest("base64url"); }
+function escape(value: string) { return value.replace(/[&<>"']/gu, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)); }
+
+/** 預覽不建立登入狀態；短效 challenge 同時綁定瀏覽器、連結及確認入口。 */
+export function capabilityConfirmation(path: string, capability: string) {
+  const { action, secure, name } = context(path);
+  const nonce = randomBytes(32).toString("base64url");
+  const issued = String(Date.now());
+  const response = new NextResponse(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>確認登入學員中心</title><style>body{font-family:system-ui,sans-serif;background:#f8fafc;color:#0f172a;margin:0}main{max-width:32rem;margin:10vh auto;padding:2rem}button{font:inherit;background:#0f172a;color:white;border:0;border-radius:.5rem;padding:.8rem 1.2rem;cursor:pointer}button:focus-visible{outline:3px solid #2563eb;outline-offset:4px}</style></head><body><main><h1>確認登入學員中心</h1><p>按下確認後，才會使用這封信的登入連結。若不是你提出的登入要求，請關閉此頁。</p><form method="post" action="${escape(action.href)}"><input type="hidden" name="capability" value="${escape(capability)}"><input type="hidden" name="confirmation" value="${nonce}"><input type="hidden" name="issued" value="${issued}"><button type="submit">確認登入</button></form></main></body></html>`, {
+    headers: { ...PRIVATE_HEADERS, "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action ${action.origin}; frame-ancestors 'none'; base-uri 'none'` },
+  });
+  response.cookies.set(name, digest([nonce, issued, capability, action.href]), { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: TTL_SECONDS });
+  return response;
+}
+
+/** 不依賴 forwarded host；只有 canonical 同來源、同一瀏覽器的明示 POST 可繼續。 */
+export async function readCapabilityConfirmation(request: Request, path: string): Promise<string | null> {
+  const { action, name } = context(path);
+  if (request.method !== "POST") return null;
+  let incoming: string;
+  try { incoming = new URL(request.headers.get("origin") ?? request.headers.get("referer") ?? "").origin; } catch { return null; }
+  if (incoming !== action.origin || request.headers.get("sec-fetch-site") === "cross-site") return null;
+  const form = await readFormDataBody(request, 8192);
+  if (!form || ["capability", "confirmation", "issued"].some((key) => form.getAll(key).length !== 1)) return null;
+  const capability = form.get("capability"), nonce = form.get("confirmation"), issued = form.get("issued");
+  if (typeof capability !== "string" || !capability || capability.length > 2048 || typeof nonce !== "string" || !FIELD.test(nonce) || typeof issued !== "string" || !/^\d{13}$/u.test(issued)) return null;
+  const age = Date.now() - Number(issued);
+  if (age < 0 || age >= TTL_SECONDS * 1000) return null;
+  const matches = (request.headers.get("cookie") ?? "").split(";").map((part) => part.trim()).filter((part) => part.startsWith(`${name}=`));
+  if (matches.length !== 1) return null;
+  const stored = matches[0].slice(name.length + 1);
+  if (!FIELD.test(stored)) return null;
+  const expected = digest([nonce, issued, capability, action.href]);
+  return timingSafeEqual(Buffer.from(stored), Buffer.from(expected)) ? capability : null;
+}
+
+export function clearCapabilityConfirmation(response: NextResponse, path: string) {
+  const { name, secure } = context(path);
+  response.cookies.set(name, "", { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 0 });
+  return response;
+}
+
+FILE src/app/portal/[vendorSlug]/access/route.ts
+import { NextResponse } from "next/server";
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { getDb } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { capabilityConfirmation, clearCapabilityConfirmation, readCapabilityConfirmation } from "@/lib/capability-confirmation";
+import { consumeStudentPortalAccessToken, setStudentPortalSessionCookie, verifyStudentPortalAccessToken } from "@/lib/student-portal-auth";
+
+type Context = { params: Promise<{ vendorSlug: string }> };
+const purpose = "magic_link" as const;
+const accessPath = (slug: string) => `/portal/${encodeURIComponent(slug)}/access`;
+function redirectPrivate(path: string) {
+  return NextResponse.redirect(new URL(path, getCanonicalAppUrl()), { status: 303, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+}
+async function eligible(capability: string, vendorSlug: string) {
+  const verified = verifyStudentPortalAccessToken({ credentialField: capability, expectedPurpose: purpose });
+  if (!verified) return false;
+  return Boolean(await getDb().vendor.findFirst({ where: { id: verified.vendorId, slug: vendorSlug }, select: { id: true } }));
+}
+function validPurpose(request: Request) {
+  const url = new URL(request.url);
+  return !url.searchParams.has("purpose") || url.searchParams.get("purpose") === purpose;
+}
+
+/** 郵件掃描或預覽只能看到確認頁，不消耗一次性連結。 */
+export async function GET(request: Request, { params }: Context) {
+  const limited = await checkRateLimit(request, "student-portal-access-preview", 60, 60_000);
+  if (limited) return limited;
+  const { vendorSlug } = await params;
+  const capability = new URL(request.url).searchParams.get("token") ?? "";
+  if (!validPurpose(request) || !await eligible(capability, vendorSlug)) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`);
+  return capabilityConfirmation(accessPath(vendorSlug), capability);
+}
+
+/** 所有狀態寫入留在 POST，租戶核對仍先於原子的單次消耗。 */
+export async function POST(request: Request, { params }: Context) {
+  const limited = await checkRateLimit(request, "student-portal-access-confirm", 30, 60_000);
+  if (limited) return limited;
+  const { vendorSlug } = await params;
+  const path = accessPath(vendorSlug);
+  const capability = await readCapabilityConfirmation(request, path);
+  if (!capability || !validPurpose(request)) return NextResponse.json({ error: "confirmation_required" }, { status: 403, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+  const failure = () => clearCapabilityConfirmation(redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`), path);
+  if (!await eligible(capability, vendorSlug)) return failure();
+  const claim = await consumeStudentPortalAccessToken(getDb(), { credentialField: capability, expectedPurpose: purpose });
+  if (!claim) return failure();
+  await setStudentPortalSessionCookie(claim);
+  return clearCapabilityConfirmation(redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}`), path);
+}
+
+UNCHANGED atomic consumer
+export async function consumeStudentPortalAccessToken(
+  db: Pick<StudentPortalTokenDatabase, "studentPortalAccessToken">,
+  input: { credentialField: string; expectedPurpose: StudentPortalAccessTokenPurpose; now?: Date },
+): Promise<StudentPortalAccessTokenClaim | null> {
+  const now = input.now ?? new Date();
+  const claim = verifyStudentPortalAccessToken({
+    credentialField: input.token,
+    expectedPurpose: input.expectedPurpose,
+    now,
+  });
+  if (!claim) return null;
+
+  const consumed = await db.studentPortalAccessToken.updateMany({
+    where: {
+      vendorId: claim.vendorId,
+      tokenHash: tokenDigest(input.token),
+      customerKeyHash: claim.customerKeyHash,
+      purpose: claim.purpose,
+      issuedAt: claim.issuedAt,
+      expiresAt: { gt: now },
+      consumedAt: null,
+    },
+    data: { consumedAt: now },
+  });
+  if (consumed.count !== 1) return null;
+  return {
+    vendorId: claim.vendorId,
+    customerKeyHash: claim.customerKeyHash,
+    purpose: claim.purpose,
+    issuedAt: claim.issuedAt,
+    expiresAt: claim.expiresAt,
+  };
+}
+

@@ -1,0 +1,257 @@
+Independent readonly review. Report only BLOCKER/MAJOR/MINOR/NIT findings with file/area, evidence, impact, recommended_fix, required_test, confidence. Scope: a private bounded tick selecting already queued reports in an explicitly authorized vendor/live/version. It delegates to the unchanged runMetricReportJob which claims atomically, snapshots, executes an isolated worker, conditionally publishes/reloads completion projection and finishes after source/lease revalidation. No new public endpoint, enqueueing, schema, credentials or deployment. The time budget controls admission of NEW work only; each in-flight job is awaited. Inspect race handling, exact scope, sequential work, selection/time bounds, data minimization, tests and runner. Source collection coverage stays unknown; recorded aggregates may be unavailable, never an audited zero. Original synchronized Serializable20 gate remains7/20 FAIL; this does not certify full WP or deployed scheduling. Review source below in full including DB harness. Do not execute tools or modify files.
+
+FILE src/lib/live-metric-report-scheduler.ts
+import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { runMetricReportJob } from "./live-metric-report-job";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const Scope = z.object({ vendorId: id, liveId: id, versionId: id }).strict();
+const Limits = z.object({ jobs: z.number().int().min(1).max(4).default(1),
+  admissionMilliseconds: z.number().int().min(1).max(60000).default(45000) }).strict();
+type Database = Pick<PrismaClient, "$queryRaw" | "$transaction">;
+type Execute = Parameters<typeof runMetricReportJob>[2];
+type Project = Parameters<typeof runMetricReportJob>[3];
+type JobStatus = Awaited<ReturnType<typeof runMetricReportJob>>["status"];
+
+/** Private background tick for an already-authorized scope and queued reports.
+ * The host owns authentication, allowed scopes, cadence and worker artifacts.
+ * Selection is only a hint: the job's atomic DB-clock claim decides ownership.
+ * No new reports, collection enablement, coverage certificates or retries here.
+ * The admission budget stops NEW work; an in-flight bounded job is awaited.
+ */
+export async function runMetricReportSchedulerTick(db: Database, value: z.infer<typeof Scope>, execute: Execute,
+  project?: Project, options: z.input<typeof Limits> = {}) {
+  const scope = Scope.parse(value), limits = Limits.parse(options);
+  const started = performance.now();
+  let candidates: { id: string }[];
+  try {
+    candidates = await db.$transaction(async tx => {
+      await tx.$executeRaw(Prisma.sql`SET TRANSACTION READ ONLY`);
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      return tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT r.id FROM "LiveMetricReport" r
+        JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+        WHERE r."vendorId"=${scope.vendorId} AND r."liveId"=${scope.liveId} AND r."versionId"=${scope.versionId}
+          AND r."expiresAt">clock_timestamp() AND v."expiresAt">clock_timestamp()
+          AND r."windowEndAt"<=clock_timestamp()
+          AND (r.status='queued' OR (r.status='running' AND r."leaseExpiresAt"<=clock_timestamp()))
+        ORDER BY r."createdAt",r.id LIMIT ${limits.jobs}`);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+  } catch {
+    // Never expose query errors or selected report identities to scheduler logs.
+    return { status: "unavailable" as const, reason: "selection_failed" as const };
+  }
+  const outcomes: Record<JobStatus, number> = { recorded: 0, not_claimed: 0, snapshot_unavailable: 0,
+    execution_unavailable: 0, lease_lost: 0, failed: 0 };
+  let attempted = 0;
+  for (const candidate of candidates) {
+    if (performance.now() - started >= limits.admissionMilliseconds) break;
+    // Each attempt owns a fresh identity; two ticks cannot impersonate a lease.
+    const result = await runMetricReportJob(db, { ...scope, reportId: candidate.id, workerId: randomUUID() }, execute, project);
+    attempted++;
+    outcomes[result.status]++;
+  }
+  // recorded means aggregate storage succeeded, not complete source coverage.
+  return { status: "processed" as const, selected: candidates.length, attempted,
+    deferred: candidates.length - attempted, outcomes };
+}
+
+
+FILE src/lib/live-metric-report-scheduler.test.ts
+import { performance } from "node:perf_hooks";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
+const ports = vi.hoisted(() => ({ job: vi.fn() }));
+vi.mock("./live-metric-report-job", () => ({ runMetricReportJob: ports.job }));
+import { runMetricReportSchedulerTick } from "./live-metric-report-scheduler";
+type SchedulerDatabase = Parameters<typeof runMetricReportSchedulerTick>[0];
+const scope = { vendorId: "v", liveId: "l", versionId: "version" };
+function client(rows: { id: string }[] = []) {
+  const tx = { $executeRaw: vi.fn().mockResolvedValue(0), $queryRaw: vi.fn(async (query: Prisma.Sql) =>
+    query.strings.join("").includes('SELECT r.id') ? rows : []) };
+  return { tx, db: { $queryRaw: vi.fn(), $transaction: vi.fn(async (read: (transaction: typeof tx) => Promise<unknown>) => read(tx)) } };
+}
+const execute = vi.fn();
+beforeEach(() => { vi.resetAllMocks(); ports.job.mockResolvedValue({ status: "recorded" }); });
+afterEach(() => vi.restoreAllMocks());
+
+it("selects only the explicit scope with DB-clock eligibility and a hard row limit", async () => {
+  const { db, tx } = client();
+  const result = await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute);
+  expect(result).toMatchObject({ status: "processed", selected: 0, attempted: 0 });
+  const query = tx.$queryRaw.mock.calls[1][0];
+  expect(query.values).toEqual(["v", "l", "version", 1]);
+  expect(query.strings.join("")).toContain('r."leaseExpiresAt"<=clock_timestamp()');
+  expect(query.strings.join("")).toContain('ORDER BY r."createdAt",r.id LIMIT');
+  expect(tx.$executeRaw.mock.calls[0][0].strings.join("")).toBe("SET TRANSACTION READ ONLY");
+  expect(ports.job).not.toHaveBeenCalled();
+});
+it("runs sequentially with distinct server-owned lease identities and forwards workers", async () => {
+  const { db } = client([{ id: "one" }, { id: "two" }]);
+  const project = vi.fn(); let active = false;
+  ports.job.mockImplementation(async () => { expect(active).toBe(false); active = true; await Promise.resolve(); active = false; return { status: "recorded" }; });
+  const result = await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute, project, { jobs: 2 });
+  expect(result).toMatchObject({ attempted: 2, deferred: 0, outcomes: { recorded: 2 } });
+  const leases = ports.job.mock.calls.map(call => call[1]);
+  expect(leases[0]).toMatchObject({ ...scope, reportId: "one" });
+  expect(leases[0].workerId).toMatch(/^[a-f0-9-]{36}$/);
+  expect(leases[0].workerId).not.toBe(leases[1].workerId);
+  expect(ports.job.mock.calls[0].slice(2)).toEqual([execute, project]);
+  expect(JSON.stringify(result)).not.toContain(leases[0].workerId);
+});
+it("preserves lost claims and failure categories without retrying in the tick", async () => {
+  const { db } = client([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]);
+  for (const status of ["not_claimed", "lease_lost", "execution_unavailable", "failed"]) ports.job.mockResolvedValueOnce({ status });
+  const result = await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute, undefined, { jobs: 4 });
+  expect(result).toMatchObject({ attempted: 4, outcomes: { recorded: 0, not_claimed: 1, lease_lost: 1, execution_unavailable: 1, failed: 1 } });
+  expect(ports.job).toHaveBeenCalledTimes(4);
+});
+it("charges selection time to admission and starts no work after exhaustion", async () => {
+  const { db } = client([{ id: "a" }]);
+  vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValue(100);
+  expect(await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute, undefined, { admissionMilliseconds: 10 }))
+    .toMatchObject({ attempted: 0, deferred: 1 });
+  expect(ports.job).not.toHaveBeenCalled();
+});
+it("awaits the running job and defers later candidates when the admission budget ends", async () => {
+  const { db } = client([{ id: "a" }, { id: "b" }]);
+  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  ports.job.mockImplementation(async () => { clock.mockReturnValue(100); return { status: "snapshot_unavailable" }; });
+  expect(await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute, undefined, { jobs: 2, admissionMilliseconds: 10 }))
+    .toMatchObject({ selected: 2, attempted: 1, deferred: 1, outcomes: { snapshot_unavailable: 1 } });
+});
+it("sanitizes selection failures and never claims on selection error", async () => {
+  const { db } = client(); db.$transaction.mockRejectedValue(new Error("private query details"));
+  expect(await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute)).toEqual({ status: "unavailable", reason: "selection_failed" });
+  expect(ports.job).not.toHaveBeenCalled();
+});
+it("freezes the scope before the selection await", async () => {
+  const mutable = { ...scope }, { db } = client([{ id: "r" }]);
+  const original = db.$transaction.getMockImplementation()!;
+  db.$transaction.mockImplementation(async read => { mutable.vendorId = "other"; return original(read); });
+  await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, mutable, execute);
+  expect(ports.job.mock.calls[0][1]).toMatchObject(scope);
+});
+it("rejects unbounded or malformed inputs before touching the database", async () => {
+  const { db } = client();
+  await expect(runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, { ...scope, vendorId: "" }, execute)).rejects.toThrow();
+  await expect(runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute, undefined, { jobs: 5 })).rejects.toThrow();
+  await expect(runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute, undefined, { admissionMilliseconds: 60001 })).rejects.toThrow();
+  expect(db.$transaction).not.toHaveBeenCalled();
+});
+
+
+FILE scripts/wp20-report-scheduler-disposable.mjs
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+import { build } from 'esbuild';
+import { main } from './prisma-loopback-disposable-migration-runner.mjs';
+
+const require = createRequire(import.meta.url);
+const output = 'docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/report-scheduler-db.json';
+const receipt = { status: 'FAIL', stage: 'start', scope: 'Private scoped scheduler with real isolated worker; synthetic disposable database only' };
+let migration;
+try {
+  const envPaths = JSON.parse(fs.readFileSync('node_modules/.prisma/client/index.js', 'utf8').match(/"relativeEnvPaths":\s*(\{[^}]*\})/u)?.[1] ?? 'null');
+  assert.ok(envPaths && Object.values(envPaths).every(value => value === null));
+  const { PrismaClient } = require('@prisma/client');
+  migration = await main({ afterMigrate: async ({ databaseUrl, tempRoot }) => {
+    const url = new URL(databaseUrl);
+    assert.equal(url.hostname, '127.0.0.1'); assert.equal(url.pathname, '/celebratedeal_test');
+    const db = new PrismaClient({ datasourceUrl: databaseUrl });
+    try {
+      const [marker] = await db.$queryRawUnsafe("SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()");
+      assert.match(marker.marker, /^prisma-no-dotenv:[a-f0-9]{16}$/u);
+      const built = await build({ stdin: { contents: 'export {runMetricReportSchedulerTick} from "./src/lib/live-metric-report-scheduler.ts"; export {claimMetricReport} from "./src/lib/live-metric-report-lease.ts"; export {createMetricExecutor,createCompletionExecutor} from "./src/lib/live-metric-executor.ts";', resolveDir: process.cwd(), loader: 'ts' },
+        bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false, logLevel: 'silent' });
+      const compiled = { exports: {} };
+      new Function('require', 'module', 'exports', built.outputFiles[0].text)(require, compiled, compiled.exports);
+      const service = compiled.exports;
+      const artifact = path.join(tempRoot, 'scheduler-worker.cjs');
+      await build({ entryPoints: ['src/lib/live-metric-worker.ts'], outfile: artifact, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent' });
+      const worker = service.createMetricExecutor(pathToFileURL(artifact)), project = service.createCompletionExecutor(pathToFileURL(artifact));
+      let executions = 0;
+      const execute = async input => { executions++; return worker(input); };
+      receipt.stage = 'fixtures';
+      const vendor = await db.vendor.create({ data: { name: 'Synthetic scheduler', slug: 'metric-scheduler', email: 'scheduler@example.test', passwordHash: 'synthetic-unused' } });
+      const video = await db.video.create({ data: { vendorId: vendor.id, title: 'Synthetic', videoUrl: 'https://example.test/synthetic.mp4', durationSec: 100 } });
+      const [clock] = await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+      const start = new Date(+clock.now - 10000), end = new Date(+clock.now - 1000), expires = new Date(+clock.now + 3600000);
+      const live = await db.live.create({ data: { vendorId: vendor.id, videoId: video.id, title: 'Synthetic', slug: 'metric-scheduler', scheduledAt: start } });
+      for (const [version, fingerprint] of [['scheduler-version', 'a'], ['scheduler-foreign-version', 'b']]) {
+        await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"durationMs","collectionEnabled","collectionStartedAt","expiresAt") VALUES ($1,$2,$3,$4,'replay',$5,100000,true,$6,$7)`,
+          version, vendor.id, live.id, video.id, fingerprint.repeat(64), start, expires);
+      }
+      const scope = { vendorId: vendor.id, liveId: live.id, versionId: 'scheduler-version' };
+      let windowOffset = 0;
+      const create = async (id, version = scope.versionId) => {
+        const [v] = await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1', version);
+        await db.$queryRawUnsafe('SELECT public.wp20_metric_report_create($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::bigint,$8::timestamptz)', vendor.id, live.id, version, id, new Date(+start + windowOffset++), end, v.sourceRevision, expires);
+      };
+      await create('scheduler-one'); await create('scheduler-two'); await create('scheduler-active'); await create('scheduler-foreign', 'scheduler-foreign-version');
+      assert.equal(await service.claimMetricReport(db, { ...scope, reportId: 'scheduler-active', workerId: 'synthetic-existing-worker' }), true);
+      receipt.stage = 'bounded-ticks';
+      const first = await service.runMetricReportSchedulerTick(db, scope, execute, project);
+      assert.equal(first.status, 'processed'); assert.equal(first.selected, 1); assert.equal(first.outcomes.recorded, 1);
+      const second = await service.runMetricReportSchedulerTick(db, scope, execute, project, { jobs: 4 });
+      assert.equal(second.selected, 1); assert.equal(second.outcomes.recorded, 1);
+      const idle = await service.runMetricReportSchedulerTick(db, scope, execute, project, { jobs: 4 });
+      assert.equal(idle.selected, 0); assert.equal(idle.attempted, 0); assert.equal(executions, 2);
+      const rows = await db.$queryRawUnsafe('SELECT id,status,result,attempts FROM "LiveMetricReport" ORDER BY id');
+      for (const id of ['scheduler-one', 'scheduler-two']) {
+        const row = rows.find(value => value.id === id);
+        assert.equal(row.status, 'ready'); assert.equal(row.attempts, 1);
+        for (const key of ['registrationRate', 'attendanceRate', 'completionRate', 'averageViewingSeconds', 'postCompletionOrderRate'])
+          assert.deepEqual(row.result[key], { status: 'unavailable', reason: 'missing_data' });
+      }
+      assert.equal(rows.find(row => row.id === 'scheduler-active').status, 'running');
+      assert.equal(rows.find(row => row.id === 'scheduler-foreign').status, 'queued');
+      receipt.stage = 'competing-ticks';
+      await create('scheduler-race');
+      const race = await Promise.all([service.runMetricReportSchedulerTick(db, scope, execute, project), service.runMetricReportSchedulerTick(db, scope, execute, project)]);
+      assert.equal(race.reduce((sum, value) => sum + (value.outcomes?.recorded ?? 0), 0), 1);
+      assert.equal(executions, 3);
+      const [recorded] = await db.$queryRawUnsafe('SELECT status,attempts FROM "LiveMetricReport" WHERE id=$1', 'scheduler-race');
+      assert.equal(recorded.status, 'ready'); assert.equal(recorded.attempts, 1);
+      assert.equal((await service.runMetricReportSchedulerTick(db, { ...scope, vendorId: 'synthetic-foreign' }, execute, project)).selected, 0);
+      receipt.results = { realWorker: 'PASS', defaultOneJobBound: 'PASS', remainingQueueProcessed: 'PASS', activeLeaseExcluded: 'PASS', foreignVersionExcluded: 'PASS', foreignTenantExcluded: 'PASS', unknownRemainsUnavailable: 'PASS', competingTicksExactlyOneExecution: 'PASS', duplicateTickNoExecution: 'PASS' };
+      receipt.stage = 'complete'; receipt.status = 'PASS';
+    } finally { await db.$disconnect(); }
+  } });
+} catch (error) {
+  receipt.errorCode = /^(?:P[0-9]{4}|[0-9A-Z]{5})$/.test(error?.meta?.code ?? error?.code ?? '') ? (error.meta?.code ?? error.code) : 'ASSERTION_OR_RUNNER_ERROR';
+}
+receipt.cleanup = migration?.cleanup ?? 'UNKNOWN';
+if (migration?.status !== 'PASS') receipt.status = 'FAIL';
+fs.writeFileSync(output, JSON.stringify(receipt, null, 2));
+console.log(JSON.stringify(receipt));
+process.exitCode = receipt.status === 'PASS' ? 0 : 1;
+
+
+Real DB evidence:
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Private scoped scheduler with real isolated worker; synthetic disposable database only",
+  "results": {
+    "realWorker": "PASS",
+    "defaultOneJobBound": "PASS",
+    "remainingQueueProcessed": "PASS",
+    "activeLeaseExcluded": "PASS",
+    "foreignVersionExcluded": "PASS",
+    "foreignTenantExcluded": "PASS",
+    "unknownRemainsUnavailable": "PASS",
+    "competingTicksExactlyOneExecution": "PASS",
+    "duplicateTickNoExecution": "PASS"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

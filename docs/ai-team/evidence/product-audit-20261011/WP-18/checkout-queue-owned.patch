@@ -1,0 +1,497 @@
+--- /dev/null
++++ b/src/lib/checkout-followup-queue.ts
+@@ -0,0 +1,152 @@
++import { createHash } from "node:crypto";
++import { Prisma, type PrismaClient } from "@prisma/client";
++import { z } from "zod";
++import { CommerceOrderPiiValidationError, revealCommerceOrderPii } from "@/lib/commerce-order-pii";
++import { createEmailUnsubscribeUrl, protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
++import { captureOperationalError } from "@/lib/monitoring";
++import {
++  CHECKOUT_FOLLOWUP_TRIGGER, CHECKOUT_FOLLOWUP_DELAY_MS, CHECKOUT_FOLLOWUP_WINDOW_MS,
++  checkoutFollowupDeliveryKey, checkoutFollowupDeliveryId, isCurrentCheckoutFollowupDelivery,
++} from "@/lib/checkout-followup";
++
++type QueueDb = Pick<PrismaClient, "$queryRaw" | "$transaction" | "automationExecutionLog">;
++type Pair = { vendorId: string; orderId: string; eventId: string; ruleId: string; ruleVersion: number };
++const RETRY_MS = 5 * 60_000;
++
++/** Recover delayed source facts using the existing job/outbox/ledger. Exclude
++ * completed pairs before LIMIT, so repeated runs advance beyond the first batch.
++ * Failed pairs cool down independently; no customer data is selected here. */
++export async function processDueCheckoutFollowups(db: QueueDb, options: { limit?: number; now?: Date } = {}) {
++  const limit = z.number().int().min(1).max(100).parse(options.limit ?? 50);
++  const now = z.date().parse(options.now ?? new Date());
++  const matureBefore = new Date(now.getTime() - CHECKOUT_FOLLOWUP_DELAY_MS);
++  const oldest = new Date(now.getTime() - CHECKOUT_FOLLOWUP_WINDOW_MS);
++  const retryBefore = new Date(now.getTime() - RETRY_MS);
++  const pairs = await db.$queryRaw<Pair[]>(Prisma.sql`
++    SELECT e."vendorId", e."orderId", e.id AS "eventId", r.id AS "ruleId", r.version AS "ruleVersion"
++    FROM "CommerceOrderEvent" e
++    JOIN "CommerceOrder" o ON o."vendorId" = e."vendorId" AND o.id = e."orderId"
++    JOIN "PaymentTransaction" p ON p."vendorId" = o."vendorId" AND p.id = o."primaryPaymentTransactionId"
++    JOIN LATERAL (
++      SELECT r.* FROM "AutomationRule" r WHERE r."vendorId" = e."vendorId"
++        AND r.trigger = 'checkout_incomplete' AND r."isActive" = true AND r."funnelPageId" IS NULL
++        AND r."createdAt" <= e."createdAt" AND r."updatedAt" <= e."createdAt" AND r.version BETWEEN 1 AND 2147483647
++        AND r.condition = '{"type":"order_pending_payment"}'::jsonb
++        AND r.actions = '[{"type":"send_email_notification","template":"checkout_followup"}]'::jsonb
++        AND r.id ~ '^[A-Za-z0-9_-]{1,128}$'
++        AND length('wp18-checkout-v1:' || e."orderId" || ':' || r.id || ':' || r.version::text) <= 256
++      ORDER BY r."createdAt", r.id LIMIT 1
++    ) r ON true
++    LEFT JOIN "AutomationExecutionLog" attempt ON attempt."vendorId" = e."vendorId"
++      AND attempt."idempotencyKey" = 'wp18-checkout-v1:' || e."orderId" || ':' || r.id || ':' || r.version::text
++    WHERE e."eventType" = 'checkout_incomplete_candidate' AND e."actorType" = 'system'
++      AND e."dedupKey" = 'checkout-followup-candidate:v1'
++      AND e."createdAt" <= (${matureBefore.toISOString()}::timestamptz AT TIME ZONE 'UTC')
++      AND e."createdAt" >= (${oldest.toISOString()}::timestamptz AT TIME ZONE 'UTC')
++      AND o.status = 'pending_payment' AND o."paidAt" IS NULL
++      AND o."paidAmountCents" = 0 AND o."refundedAmountCents" = 0 AND o."totalAmountCents" > 0 AND p.status = 'pending'
++      AND e."vendorId" ~ '^[A-Za-z0-9_-]{1,128}$' AND e."orderId" ~ '^[A-Za-z0-9_-]{1,128}$'
++      AND NOT EXISTS (SELECT 1 FROM "EmailDelivery" d WHERE d."vendorId" = e."vendorId"
++        AND d.id = 'wp18-checkout-' || encode(sha256(convert_to(e."vendorId" || chr(10) || e."orderId", 'UTF8')), 'hex'))
++      AND NOT EXISTS (SELECT 1 FROM "AutomationExecutionLog" l WHERE l."vendorId" = e."vendorId"
++        AND l."idempotencyKey" = 'wp18-checkout-v1:' || e."orderId" || ':' || r.id || ':' || r.version::text
++        AND (l.status IN ('completed', 'skipped') OR l."startedAt" > (${retryBefore.toISOString()}::timestamptz AT TIME ZONE 'UTC')))
++    ORDER BY attempt."startedAt" NULLS FIRST, e."createdAt", e.id, r.id LIMIT ${limit}
++  `);
++  const results: Array<{ status: string }> = [];
++  for (const pair of pairs) {
++    // A DB row is still untrusted input for the existing Email transport limit.
++    let key: string;
++    try { key = checkoutFollowupDeliveryKey(pairReference(pair)); }
++    catch { results.push({ status: "invalid_snapshot" }); continue; }
++    try {
++      const result = await db.$transaction(async tx => {
++        // Only this source event is locked. Concurrent workers skip it; the
++        // durable unique outbox key also protects replay after a lost response.
++        const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
++          SELECT id FROM "CommerceOrderEvent" WHERE id = ${pair.eventId}
++            AND "vendorId" = ${pair.vendorId} AND "orderId" = ${pair.orderId}
++          FOR UPDATE SKIP LOCKED
++        `);
++        if (locked.length !== 1) return "claimed_elsewhere";
++        const id = checkoutFollowupDeliveryId({ vendorId: pair.vendorId, orderId: pair.orderId });
++        const priorDelivery = await tx.emailDelivery.findUnique({
++          where: { id },
++          select: { id: true },
++        });
++        if (priorDelivery) return "duplicate";
++        const previous = await tx.automationExecutionLog.findUnique({
++          where: { vendorId_idempotencyKey: { vendorId: pair.vendorId, idempotencyKey: key } },
++          select: { status: true, startedAt: true },
++        });
++        if (previous && (previous.status === "completed" || previous.status === "skipped"
++          || previous.startedAt > retryBefore)) return "duplicate";
++        const order = await tx.commerceOrder.findFirst({
++          where: { id: pair.orderId, vendorId: pair.vendorId }, select: { buyerEncryptedEnvelope: true },
++        });
++        const markSuperseded = (errorCode = "source_superseded") => tx.automationExecutionLog.upsert({
++          where: { vendorId_idempotencyKey: { vendorId: pair.vendorId, idempotencyKey: key } },
++          create: { ...logIdentity(pair, key), status: "skipped", conditionMatched: false, startedAt: now, completedAt: now, errorCode },
++          update: { status: "skipped", conditionMatched: false, completedAt: now, errorCode },
++        });
++        if (!order) { await markSuperseded(); return "superseded"; }
++        let pii;
++        try { pii = revealCommerceOrderPii({ buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: null },
++          { vendorId: pair.vendorId, orderId: pair.orderId }); }
++        catch (error) {
++          if (!(error instanceof CommerceOrderPiiValidationError)) throw error;
++          await markSuperseded("invalid_recipient"); return "superseded";
++        }
++        const payload = protectEmailDeliveryPayload({ recipientEmail: pii.buyer.email,
++          subject: "您的結帳尚未完成",
++          body: `您有一筆仍待付款的訂單。如需繼續，請回到原結帳頁確認目前狀態與付款方式；若不再需要，可忽略此提醒。請勿因本通知重複建立訂單。\n\n取消訂閱：${createEmailUnsubscribeUrl(id)}`,
++        }, { vendorId: pair.vendorId, deliveryId: id });
++        if (!await isCurrentCheckoutFollowupDelivery({ vendorId: pair.vendorId, trigger: CHECKOUT_FOLLOWUP_TRIGGER,
++          idempotencyKey: key, recipientHash: payload.recipientHash }, tx, now)) {
++          await markSuperseded(); return "superseded";
++        }
++        await tx.emailDelivery.create({ data: { id, vendorId: pair.vendorId,
++          sourceTemplateId: "automation_checkout_followup_v1", trigger: CHECKOUT_FOLLOWUP_TRIGGER,
++          ...payload, idempotencyKey: key, status: "queued", nextAttemptAt: now } });
++        // Queue and execution receipt commit together. A failed transaction
++        // cannot report completed without its encrypted outbox row.
++        const completed = { status: "completed", conditionMatched: true, completedAt: now,
++          errorCode: null, actionResults: [{ type: "send_email_notification", status: "queued", template: "checkout_followup" }] };
++        await tx.automationExecutionLog.upsert({
++          where: { vendorId_idempotencyKey: { vendorId: pair.vendorId, idempotencyKey: key } },
++          create: { ...logIdentity(pair, key), ...completed, startedAt: now }, update: completed,
++        });
++        return "queued";
++      });
++      results.push({ status: result });
++    } catch (error) {
++      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
++        results.push({ status: "duplicate" }); continue;
++      }
++      // Persist only a fixed failure code and opaque identities. Cooldown lets
++      // other candidates advance even if one encrypted source is unreadable.
++      try { captureOperationalError(new Error("Checkout follow-up materialization unavailable"),
++        { source: "checkout_followup", operation: "materialize", status: "failed" }); }
++      catch { /* Diagnostic failure cannot authorize a delivery. */ }
++      try {
++        await db.automationExecutionLog.upsert({
++        where: { vendorId_idempotencyKey: { vendorId: pair.vendorId, idempotencyKey: key } },
++        create: { ...logIdentity(pair, key), status: "failed", startedAt: now, errorCode: "checkout_materialization_failed" }, update: {},
++        });
++        await db.automationExecutionLog.updateMany({
++        where: { vendorId: pair.vendorId, idempotencyKey: key, status: "failed" },
++        data: { startedAt: now, errorCode: "checkout_materialization_failed" },
++        });
++      } catch { /* A failed failure receipt must not discard later pairs. */ }
++      results.push({ status: "failed" });
++    }
++  }
++  return results;
++}
++
++function pairReference(pair: Pair) { return { orderId: pair.orderId, ruleId: pair.ruleId, ruleVersion: pair.ruleVersion }; }
++function logIdentity(pair: Pair, key: string) {
++  return { vendorId: pair.vendorId, ruleId: pair.ruleId, idempotencyKey: key, eventId: pair.eventId,
++    trigger: "checkout_incomplete", subjectType: "buyer_order",
++    subjectKeyHash: createHash("sha256").update(`${pair.vendorId}\n${pair.orderId}`).digest("base64url") };
++}
+--- /dev/null
++++ b/src/lib/checkout-followup-queue.test.ts
+@@ -0,0 +1,113 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { Prisma } from "@prisma/client";
++import { protectCommerceOrderPii } from "./commerce-order-pii";
++import { revealEmailDeliveryPayload } from "./email-delivery-pii";
++const monitor = vi.hoisted(() => ({ capture: vi.fn() }));
++vi.mock("@/lib/monitoring", () => ({ captureOperationalError: monitor.capture }));
++import { checkoutFollowupDeliveryId } from "./checkout-followup";
++import { encryptSensitiveValue } from "./sensitive-data";
++import { processDueCheckoutFollowups } from "./checkout-followup-queue";
++
++const now = new Date("2026-10-16T04:00:00.000Z");
++const pair = { vendorId: "vendor-1", orderId: "order-1", eventId: "event-1", ruleId: "rule-1", ruleVersion: 2 };
++function database() {
++  const pii = protectCommerceOrderPii({ buyer: { name: "Synthetic", email: "buyer@example.test" }, shipping: null }, pair);
++  const tx = {
++    $queryRaw: vi.fn().mockResolvedValue([{ id: pair.eventId }]),
++    commerceOrder: { findFirst: vi.fn().mockResolvedValue({ id: pair.orderId, buyerEncryptedEnvelope: pii.buyerEncrypted }) },
++    commerceOrderEvent: { findUnique: vi.fn().mockResolvedValue({ eventType: "checkout_incomplete_candidate", actorType: "system", createdAt: new Date(+now - 60*60_000) }) },
++    automationRule: { findFirst: vi.fn().mockResolvedValue({ createdAt: new Date(+now-2*60*60_000), updatedAt: new Date(+now-2*60*60_000), condition: { type: "order_pending_payment" }, actions: [{ type: "send_email_notification", template: "checkout_followup" }] }) },
++    automationExecutionLog: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn().mockResolvedValue({ id: "log-1" }) },
++    emailDelivery: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "delivery-1" }) },
++  };
++  const db = {
++    $queryRaw: vi.fn().mockResolvedValue([pair]),
++    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
++    automationExecutionLog: { upsert: vi.fn().mockResolvedValue({ id: "log-1" }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
++  };
++  return { db, tx };
++}
++beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("CSRF_SECRET", "wp18-owned-unit-synthetic-encryption-key-20261016"); vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test"); });
++afterEach(() => vi.unstubAllEnvs());
++
++describe("bounded delayed checkout materialization", () => {
++  it("writes a guarded encrypted outbox and completion receipt in one transaction", async () => {
++    const { db, tx } = database();
++    await expect(processDueCheckoutFollowups(db as never, { now })).resolves.toEqual([{ status: "queued" }]);
++    const data = tx.emailDelivery.create.mock.calls[0][0].data;
++    expect(data).toMatchObject({ vendorId: pair.vendorId, trigger: "checkout_followup", idempotencyKey: "wp18-checkout-v1:order-1:rule-1:2", status: "queued", nextAttemptAt: now });
++    expect(revealEmailDeliveryPayload(data.payloadEncryptedEnvelope, { vendorId: pair.vendorId, deliveryId: data.id }).recipientEmail).toBe("buyer@example.test");
++    expect(revealEmailDeliveryPayload(data.payloadEncryptedEnvelope, { vendorId: pair.vendorId, deliveryId: data.id }).body).toContain("https://app.example.test/unsubscribe?");
++    expect(JSON.stringify(tx.emailDelivery.create.mock.calls)).not.toContain("buyer@example.test");
++    expect(tx.automationExecutionLog.upsert.mock.calls[0][0].create).toMatchObject({ vendorId: pair.vendorId, eventId: pair.eventId, ruleId: pair.ruleId, status: "completed", conditionMatched: true });
++    expect(db.automationExecutionLog.upsert).not.toHaveBeenCalled();
++  });
++  it("excludes already handled pairs before LIMIT and uses fixed maturity, retention and retry windows", async () => {
++    const { db } = database(); await processDueCheckoutFollowups(db as never, { now, limit: 7 });
++    const sql = db.$queryRaw.mock.calls[0][0] as Prisma.Sql;
++    expect(sql.sql.indexOf('NOT EXISTS')).toBeLessThan(sql.sql.lastIndexOf('LIMIT'));
++    expect(sql.sql).toContain('"EmailDelivery"'); expect(sql.sql).toContain('"AutomationExecutionLog"');
++    expect(sql.sql).toContain('r."createdAt" <= e."createdAt"');
++    expect(sql.values).toContain(new Date(+now - 30*60_000).toISOString()); expect(sql.values).toContain(new Date(+now - 7*86_400_000).toISOString());
++    expect(sql.values).toContain(new Date(+now-5*60_000).toISOString()); expect(sql.values.at(-1)).toBe(7);
++  });
++  it.each([0, -1, 101, 1.5, NaN])("rejects unbounded invocation limit %s before database access", async limit => {
++    const { db } = database(); await expect(processDueCheckoutFollowups(db as never, { limit })).rejects.toThrow(); expect(db.$queryRaw).not.toHaveBeenCalled();
++  });
++  it("skips a source locked by another worker", async () => {
++    const { db, tx } = database(); tx.$queryRaw.mockResolvedValue([]);
++    await expect(processDueCheckoutFollowups(db as never, { now })).resolves.toEqual([{ status: "claimed_elsewhere" }]);
++    expect(tx.emailDelivery.create).not.toHaveBeenCalled();
++  });
++  it.each(["completed", "skipped", "running", "failed"])("skips a terminal or recent %s claim on recheck", async status => {
++    const { db, tx } = database(); tx.automationExecutionLog.findUnique.mockResolvedValue({ status, startedAt: now });
++    await expect(processDueCheckoutFollowups(db as never, { now })).resolves.toEqual([{ status: "duplicate" }]); expect(tx.emailDelivery.create).not.toHaveBeenCalled();
++  });
++  it.each(["running", "failed"])("recovers stale %s claims with the same durable delivery reference", async status => {
++    const { db, tx } = database(); tx.automationExecutionLog.findUnique.mockResolvedValue({ status, startedAt: new Date(+now-6*60_000) });
++    await expect(processDueCheckoutFollowups(db as never, { now })).resolves.toEqual([{ status: "queued" }]);
++    expect(tx.automationExecutionLog.upsert.mock.calls[0][0].update.status).toBe("completed");
++  });
++  it("does not queue when payment/rule eligibility changes after candidate selection", async () => {
++    const { db, tx } = database(); tx.commerceOrder.findFirst.mockResolvedValueOnce({ id: pair.orderId, buyerEncryptedEnvelope: protectCommerceOrderPii({ buyer: { name: "Synthetic", email: "buyer@example.test" }, shipping: null }, pair).buyerEncrypted }).mockResolvedValueOnce(null);
++    await expect(processDueCheckoutFollowups(db as never, { now })).resolves.toEqual([{ status: "superseded" }]); expect(tx.emailDelivery.create).not.toHaveBeenCalled();
++  });
++  it("records only fixed failure codes, cools down poison candidates and continues later pairs", async () => {
++    const { db, tx } = database(); db.$queryRaw.mockResolvedValue([pair, { ...pair, eventId: "event-2" }]);
++    tx.commerceOrder.findFirst.mockRejectedValueOnce(new Error("synthetic private source"));
++    await expect(processDueCheckoutFollowups(db as never, { now })).resolves.toEqual([{ status: "failed" }, { status: "queued" }]);
++    expect(JSON.stringify(db.automationExecutionLog.upsert.mock.calls)).not.toContain("private");
++    expect(db.automationExecutionLog.updateMany.mock.calls[0][0].where.status).toBe("failed");
++    expect(monitor.capture.mock.calls[0][0].message).toBe("Checkout follow-up materialization unavailable");
++  });
++  it("does not report completed when the transactional receipt write fails", async () => {
++    const { db, tx } = database(); tx.automationExecutionLog.upsert.mockRejectedValue(new Error("receipt unavailable"));
++    await expect(processDueCheckoutFollowups(db as never, { now })).resolves.toEqual([{ status: "failed" }]);
++    expect(db.automationExecutionLog.upsert.mock.calls[0][0].create.status).toBe("failed");
++    // Actual transaction rollback is verified against disposable PostgreSQL.
++  });
++  it("fails closed on the top-level database query without creating any rows", async () => {
++    const { db } = database(); db.$queryRaw.mockRejectedValue(new Error("offline"));
++    await expect(processDueCheckoutFollowups(db as never, { now })).rejects.toThrow("offline"); expect(db.$transaction).not.toHaveBeenCalled();
++  });
++});
++
++it('refuses a second reminder across different rules and versions under the source lock',async()=>{
++ const {db,tx}=database();tx.emailDelivery.findUnique.mockResolvedValue({id:'old-other-rule-delivery'});
++ await expect(processDueCheckoutFollowups(db as never,{now})).resolves.toEqual([{status:'duplicate'}]);
++ expect(tx.emailDelivery.create).not.toHaveBeenCalled();expect(tx.emailDelivery.findUnique).toHaveBeenCalledWith({where:{id:checkoutFollowupDeliveryId({vendorId:pair.vendorId,orderId:pair.orderId})},select:{id:true}});
++});
++it('marks a persistently superseded pair skipped instead of consuming every batch',async()=>{
++ const {db,tx}=database();tx.automationRule.findFirst.mockResolvedValue(null);
++ await expect(processDueCheckoutFollowups(db as never,{now})).resolves.toEqual([{status:'superseded'}]);
++ expect(tx.automationExecutionLog.upsert.mock.calls[0][0].create.status).toBe('skipped');expect(tx.emailDelivery.create).not.toHaveBeenCalled();
++});
++
++it('continues later pairs and reports the fixed diagnostic if the failure receipt also fails',async()=>{
++ const {db,tx}=database();db.$queryRaw.mockResolvedValue([pair,{...pair,eventId:'event-2'}]);tx.commerceOrder.findFirst.mockRejectedValueOnce(new Error('synthetic DB outage'));db.automationExecutionLog.upsert.mockRejectedValueOnce(new Error('failure ledger unavailable'));
++ await expect(processDueCheckoutFollowups(db as never,{now})).resolves.toEqual([{status:'failed'},{status:'queued'}]);expect(monitor.capture).toHaveBeenCalledOnce();
++});
++it('permanently skips decrypted but schema-invalid buyer data without retry diagnostics',async()=>{
++ const {db,tx}=database();tx.commerceOrder.findFirst.mockResolvedValue({id:pair.orderId,buyerEncryptedEnvelope:encryptSensitiveValue(JSON.stringify({name:'Synthetic'}),'commerce-order-buyer:vendor-1:order-1')});
++ await expect(processDueCheckoutFollowups(db as never,{now})).resolves.toEqual([{status:'superseded'}]);expect(tx.automationExecutionLog.upsert.mock.calls[0][0].create).toMatchObject({status:'skipped',errorCode:'invalid_recipient'});expect(monitor.capture).not.toHaveBeenCalled();expect(tx.emailDelivery.create).not.toHaveBeenCalled();
++});
+--- a/src/lib/checkout-followup.ts
++++ b/src/lib/checkout-followup.ts
+@@ -3,6 +3,7 @@
+ import type { Prisma, PrismaClient } from "@prisma/client";
+ import { z } from "zod";
+ import { captureOperationalError } from "@/lib/monitoring";
++import { createHash } from "node:crypto";
+ 
+ const Identity = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u);
+ const Scope = z.object({ vendorId: Identity, orderId: Identity }).strict();
+@@ -12,6 +13,8 @@
+ const CANDIDATE_TYPE = "checkout_incomplete_candidate";
+ const DELIVERY_PREFIX = "wp18-checkout-v1";
+ export const CHECKOUT_FOLLOWUP_TRIGGER = "checkout_followup";
++export const CHECKOUT_FOLLOWUP_DELAY_MS = 30 * 60_000;
++export const CHECKOUT_FOLLOWUP_WINDOW_MS = 7 * 86_400_000;
+ type CandidateDb = Pick<PrismaClient, "commerceOrder" | "commerceOrderEvent">;
+ type GuardDb = Partial<Pick<Prisma.TransactionClient, "commerceOrder" | "commerceOrderEvent" | "automationRule">>;
+ 
+@@ -58,6 +61,13 @@
+   return key;
+ }
+ 
++/** Stable across rules/versions. Existing outbox PK enforces one reminder per
++ * order without a schema/index change or wildcard prefix scans. */
++export function checkoutFollowupDeliveryId(value: z.infer<typeof Scope>) {
++  const scope = Scope.parse(value);
++  return `wp18-checkout-${createHash("sha256").update(`${scope.vendorId}\n${scope.orderId}`).digest("hex")}`;
++}
++
+ function deliveryReference(key: string | undefined) {
+   if (!key || key.length > 256) return null;
+   const parts = key.split(":");
+@@ -80,6 +90,7 @@
+  * propagate; they must not silently turn into either a send or permanent drop. */
+ export async function isCurrentCheckoutFollowupDelivery(
+   delivery: { vendorId: string; trigger: string; idempotencyKey?: string; recipientHash?: string }, db: GuardDb,
++  now = new Date(),
+ ) {
+   if (delivery.trigger !== CHECKOUT_FOLLOWUP_TRIGGER) return true;
+   const ref = deliveryReference(delivery.idempotencyKey);
+@@ -89,12 +100,19 @@
+   const [order, event, rule] = await Promise.all([
+     db.commerceOrder.findFirst({ where: pendingOrderWhere(scope), select: { id: true, buyerEncryptedEnvelope: true } }),
+     db.commerceOrderEvent.findUnique({ where: { vendorId_orderId_dedupKey: { ...scope, dedupKey: CANDIDATE_KEY } },
+-      select: { eventType: true, actorType: true } }),
++      select: { eventType: true, actorType: true, createdAt: true } }),
+     db.automationRule.findFirst({ where: { id: ref.ruleId, vendorId: delivery.vendorId, version: ref.ruleVersion,
+-      trigger: "checkout_incomplete", isActive: true, funnelPageId: null }, select: { condition: true, actions: true } }),
++      trigger: "checkout_incomplete", isActive: true, funnelPageId: null }, select: { condition: true, actions: true, createdAt: true, updatedAt: true } }),
+   ]);
+   if (!order || event?.eventType !== CANDIDATE_TYPE || event.actorType !== "system"
+     || !rule || !checkoutEmailRule(rule.condition, rule.actions)) return false;
++  // Recheck the observation's original age at send time too. New rules must
++  // not retroactively turn old checkouts into a marketing recipient list.
++  if (!Number.isFinite(now.getTime()) || !(event.createdAt instanceof Date) || !(rule.createdAt instanceof Date) || !(rule.updatedAt instanceof Date)
++    || !Number.isFinite(event.createdAt.getTime()) || !Number.isFinite(rule.createdAt.getTime())
++    || event.createdAt.getTime() > now.getTime() - CHECKOUT_FOLLOWUP_DELAY_MS
++    || event.createdAt.getTime() < now.getTime() - CHECKOUT_FOLLOWUP_WINDOW_MS
++    || !Number.isFinite(rule.updatedAt.getTime()) || rule.createdAt > event.createdAt || rule.updatedAt > event.createdAt) return false;
+   // Use the existing scoped encryption and HMAC helpers; never log buyer
+   // contact details or introduce another recipient/PII persistence format.
+   try {
+--- a/src/lib/checkout-followup.test.ts
++++ b/src/lib/checkout-followup.test.ts
+@@ -9,8 +9,8 @@
+ import { createEmailRecipientHash } from "./email-delivery-pii";
+ const scope = { vendorId: "vendor-1", orderId: "order-1" };
+ const ref = { orderId: "order-1", ruleId: "rule-1", ruleVersion: 2 };
+-const event = { id: "event-1", eventType: "checkout_incomplete_candidate", actorType: "system" };
+-const rule = { condition: { type: "order_pending_payment" },
++const event = { id: "event-1", eventType: "checkout_incomplete_candidate", actorType: "system", createdAt: new Date(Date.now()-60*60_000) };
++const rule = { createdAt: new Date(Date.now()-2*60*60_000), updatedAt: new Date(Date.now()-2*60*60_000), condition: { type: "order_pending_payment" },
+   actions: [{ type: "send_email_notification", template: "checkout_followup" }] };
+ function database() {
+   const pii=protectCommerceOrderPii({buyer:{name:"Synthetic",email:"buyer@example.test"},shipping:null},{vendorId:scope.vendorId,orderId:scope.orderId});
+@@ -59,7 +59,7 @@
+   it("rechecks order/payment, original candidate, active rule and exact version within the same tenant", async () => {
+     const db = database(); await expect(isCurrentCheckoutFollowupDelivery(delivery(), db as never)).resolves.toBe(true);
+     expect(db.commerceOrder.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: scope.orderId, vendorId: scope.vendorId, status: "pending_payment", paidAmountCents: 0 }) }));
+-    expect(db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: ref.ruleId, vendorId: scope.vendorId, version: 2, trigger: "checkout_incomplete", isActive: true, funnelPageId: null }, select: { condition: true, actions: true } });
++    expect(db.automationRule.findFirst).toHaveBeenCalledWith({ where: { id: ref.ruleId, vendorId: scope.vendorId, version: 2, trigger: "checkout_incomplete", isActive: true, funnelPageId: null }, select: { condition: true, actions: true, createdAt: true, updatedAt: true } });
+   });
+   it.each(["order", "event", "rule"])("refuses when the current %s is no longer eligible", async missing => {
+     const db = database();
+@@ -125,3 +125,18 @@
+  monitoring.capture.mockImplementationOnce(()=>{throw new Error('monitor unavailable')});
+  await expect(isCurrentCheckoutFollowupDelivery(delivery(),db as never)).resolves.toBe(false);
+ });
++
++
++it.each([0, 29*60_000, 7*86_400_000+1])('rejects an observation outside the delayed follow-up window (%s)',async age=>{
++ const db=database();db.commerceOrderEvent.findUnique.mockResolvedValue({...event,createdAt:new Date(Date.now()-age)});
++ await expect(isCurrentCheckoutFollowupDelivery(delivery(),db as never)).resolves.toBe(false);
++});
++it('does not retroactively target checkouts that preceded the rule',async()=>{
++ const db=database();db.automationRule.findFirst.mockResolvedValue({...rule,createdAt:new Date()});
++ await expect(isCurrentCheckoutFollowupDelivery(delivery(),db as never)).resolves.toBe(false);
++});
++
++it('rejects a configuration activated or edited after the checkout observation',async()=>{
++ const db=database();db.automationRule.findFirst.mockResolvedValue({...rule,updatedAt:new Date()});
++ await expect(isCurrentCheckoutFollowupDelivery(delivery(),db as never)).resolves.toBe(false);
++});
+--- a/src/lib/email-delivery.ts
++++ b/src/lib/email-delivery.ts
+@@ -1019,7 +1019,7 @@
+     && await isCurrentPostLiveFollowupDelivery(delivery, now, database)
+     && await isCurrentFormVerificationDelivery(delivery, now, database)
+     && await isCurrentStudentPortalDelivery(delivery, now, database)
+-    && await isCurrentCheckoutFollowupDelivery(delivery, database);
++    && await isCurrentCheckoutFollowupDelivery(delivery, database, now);
+ }
+ 
+ function reportDeliveryFailure(error: unknown, operation: string, status: string) {
+--- a/src/lib/email-delivery.test.ts
++++ b/src/lib/email-delivery.test.ts
+@@ -84,8 +84,8 @@
+   vi.stubEnv("CSRF_SECRET", "g7-07-email-delivery-test-secret-longer-than-32-bytes");
+   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+   mocks.db.commerceOrder.findFirst.mockResolvedValue({ id: "order-1", buyerEncryptedEnvelope: protectCommerceOrderPii({buyer:{name:"Synthetic",email:"lead@example.test"},shipping:null},{vendorId:"vendor-1",orderId:"order-1"}).buyerEncrypted });
+-  mocks.db.commerceOrderEvent.findUnique.mockResolvedValue({ eventType: "checkout_incomplete_candidate", actorType: "system" });
+-  mocks.db.automationRule.findFirst.mockResolvedValue({ condition: { type: "order_pending_payment" }, actions: [{ type: "send_email_notification", template: "checkout_followup" }] });
++  mocks.db.commerceOrderEvent.findUnique.mockResolvedValue({ eventType: "checkout_incomplete_candidate", actorType: "system", createdAt: new Date(Date.now()-60*60_000) });
++  mocks.db.automationRule.findFirst.mockResolvedValue({ createdAt: new Date(Date.now()-2*60*60_000), updatedAt: new Date(Date.now()-2*60*60_000), condition: { type: "order_pending_payment" }, actions: [{ type: "send_email_notification", template: "checkout_followup" }] });
+   mocks.db.emailSuppression.findUnique.mockResolvedValue(null);
+   mocks.db.blacklist.findFirst.mockResolvedValue(null);
+   mocks.db.liveNotificationRule.count.mockResolvedValue(0);
+--- a/src/app/api/jobs/email-deliveries/route.ts
++++ b/src/app/api/jobs/email-deliveries/route.ts
+@@ -9,6 +9,8 @@
+ import { captureOperationalError } from "@/lib/monitoring";
+ import { materializeLineNotifications } from "@/lib/line-notification-materializer";
+ import { processDueLineDeliveries } from "@/lib/line-notification";
++import { getDb } from "@/lib/db";
++import { processDueCheckoutFollowups } from "@/lib/checkout-followup-queue";
+ 
+ const SAFE_STATUSES = new Set([
+   "sent",
+@@ -51,6 +53,14 @@
+     const dueLiveNotifications = await processDueLiveNotifications({ includeFuture: false, writeBudget: 100 });
+     const followups = await processDuePostLiveFollowups();
+     const reconciliations = await processLiveReminderReconciliationJobs();
++    let checkoutFollowups: Array<{ status: string }>;
++    try { checkoutFollowups = await processDueCheckoutFollowups(getDb()); }
++    catch {
++      checkoutFollowups = [{ status: "failed" }];
++      try { captureOperationalError(new Error("Checkout follow-up job unavailable"),
++        { source: "email_delivery_job", operation: "checkout_followup", status: "failed" }); }
++      catch { /* A failed new materializer must not block existing deliveries. */ }
++    }
+     const results = await processDueEmailDeliveries();
+     const lineMaterialized = await materializeLineNotifications();
+     const lineResults = await processDueLineDeliveries();
+@@ -88,6 +98,11 @@
+         status: SAFE_RECONCILIATION_STATUSES.has(result.status) ? result.status : "unknown",
+       })),
+       processed: results.length,
++      checkoutFollowups: checkoutFollowups.length,
++      checkoutFollowupResults: checkoutFollowups.slice(0, 20).map(result => ({
++        status: SAFE_STATUSES.has(result.status) || new Set(["queued", "duplicate", "invalid_snapshot"]).has(result.status)
++          ? result.status : "unknown",
++      })),
+       results: results.slice(0, 20).map((result) => ({
+         status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
+       })),
+--- a/src/app/api/jobs/email-deliveries/route.test.ts
++++ b/src/app/api/jobs/email-deliveries/route.test.ts
+@@ -2,6 +2,7 @@
+ 
+ const mocks = vi.hoisted(() => ({
+   processDueEmailDeliveries: vi.fn(),
++  processDueCheckoutFollowups: vi.fn(),
+   processDuePostLiveFollowups: vi.fn(),
+   processLiveReminderReconciliationJobs: vi.fn(),
+   processDueLiveNotifications: vi.fn(),
+@@ -26,6 +27,9 @@
+ vi.mock("@/lib/line-notification-materializer", () => ({ materializeLineNotifications: mocks.materializeLineNotifications }));
+ vi.mock("@/lib/line-notification", () => ({ processDueLineDeliveries: mocks.processDueLineDeliveries }));
+ 
++vi.mock("@/lib/checkout-followup-queue", () => ({ processDueCheckoutFollowups: mocks.processDueCheckoutFollowups }));
++vi.mock("@/lib/db", () => ({ getDb: () => ({ syntheticDatabase: true }) }));
++
+ import { GET, POST } from "./route";
+ 
+ beforeEach(() => {
+@@ -35,6 +39,7 @@
+   mocks.processLiveReminderReconciliationJobs.mockResolvedValue([]);
+   mocks.processDuePostLiveFollowups.mockResolvedValue([]);
+   mocks.processDueEmailDeliveries.mockResolvedValue([]);
++  mocks.processDueCheckoutFollowups.mockResolvedValue([]);
+   mocks.processDueLiveNotifications.mockResolvedValue([]);
+   mocks.processLegacyReminderCutovers.mockResolvedValue([]);
+   mocks.materializeLineNotifications.mockResolvedValue([]);
+@@ -101,6 +106,8 @@
+       reconciled: 2,
+       reconciliationResults: [{ status: "completed" }, { status: "unknown" }],
+       processed: 2,
++      checkoutFollowups: 0,
++      checkoutFollowupResults: [],
+       results: [{ status: "sent" }, { status: "unknown" }],
+       lineMaterialized: 0,
+       lineProcessed: 0,
+@@ -177,3 +184,22 @@
+     expect(mocks.processDueEmailDeliveries).not.toHaveBeenCalled();
+   });
+ });
++
++
++it('authenticates before checkout materialization and queues before dispatch',async()=>{
++ const response=await POST(request('g7-07-job-secret'));expect(response.status).toBe(200);
++ expect(mocks.processDueCheckoutFollowups).toHaveBeenCalledOnce();
++ expect(mocks.processDueCheckoutFollowups.mock.invocationCallOrder[0]).toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]);
++ mocks.processDueCheckoutFollowups.mockClear();await POST(request('invalid'));expect(mocks.processDueCheckoutFollowups).not.toHaveBeenCalled();
++});
++it('keeps existing email dispatch working when checkout materialization fails',async()=>{
++ mocks.processDueCheckoutFollowups.mockRejectedValue(new Error('synthetic private database details'));
++ const response=await POST(request('g7-07-job-secret'));const body=await response.json();expect(response.status).toBe(200);
++ expect(body.checkoutFollowupResults).toEqual([{status:'failed'}]);expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
++ expect(JSON.stringify(body)).not.toContain('private');expect(mocks.captureOperationalError.mock.calls[0][0].message).toBe('Checkout follow-up job unavailable');
++});
++it('returns bounded checkout statuses without source or buyer identities',async()=>{
++ mocks.processDueCheckoutFollowups.mockResolvedValue(Array.from({length:25},(_,i)=>({status:i===0?'queued':'private-value',orderId:'private-order',email:'buyer@example.test'})));
++ const body=await (await POST(request('g7-07-job-secret'))).json();expect(body.checkoutFollowups).toBe(25);expect(body.checkoutFollowupResults).toHaveLength(20);
++ expect(body.checkoutFollowupResults[0]).toEqual({status:'queued'});expect(body.checkoutFollowupResults[1]).toEqual({status:'unknown'});expect(JSON.stringify(body)).not.toContain('private');
++});

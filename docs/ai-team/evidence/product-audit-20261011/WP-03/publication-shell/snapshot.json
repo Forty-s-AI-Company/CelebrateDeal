@@ -1,0 +1,9 @@
+{
+  "revision": "sha256:187a651ae5530c1b49aa5dd9f0e1c70c5a9afdec8b2a996138a3b4a297d25aea",
+  "files": [
+    "src/components/public-policy.tsx",
+    "src/components/public-policy.test.tsx",
+    "src/app/policies/[slug]/page.test.tsx",
+    "src/lib/public-policy-content.ts"
+  ]
+}

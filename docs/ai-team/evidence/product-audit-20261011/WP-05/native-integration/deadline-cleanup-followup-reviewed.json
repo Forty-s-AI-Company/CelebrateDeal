@@ -1,0 +1,172 @@
+{
+  "completed": false,
+  "finalModel": "claude-sonnet-5-5",
+  "accepted": false,
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "model": "claude-sonnet-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "medium",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "review": {
+    "summary": "The corrected cleanup resolves the two prior MINORs: the form.id access is guarded, funnelVisit is deleted explicitly before landingPage, and the counts are assigned before the assertion. The delete order looks FK-safe for the relationships visible in this snippet (funnelSubmission → funnelVisit → landingPage, publishedVersionId nulled before version delete, formSubmission before registrationForm). The count list has the expected ten entries. No BLOCKER or MAJOR found. Two residual MINOR robustness gaps remain; neither affects the normal passing path. Test success is not certified by this review.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "cleanup finally block (supplied snippet)",
+        "area": "First statement of the inner try: `if(browser)await browser.close();`",
+        "issue": "DB cleanup is coupled to browser.close() in the same try block with no isolation, so a rejected browser.close() skips all DB deletions and the zero-count verification.",
+        "evidence": "browser.close() is the first awaited call inside the single try. Any throw jumps straight to the catch, which only sets report.cleanupError and exitCode. The retryDraft/vendor/form deletes and the count check never run.",
+        "impact": "A crashed or already-closed browser, or a close timeout, would leave the synthetic vendor and its dependent rows in the database. The report would show only a browser error as cleanupError, which masks the DB residue.",
+        "recommended_fix": "Wrap browser.close() in its own try/catch that records e.g. report.browserCloseError, then run DB cleanup unconditionally. Alternatively, run the DB cleanup first and close the browser last.",
+        "required_test": "Synthetic fault injection: make browser.close() throw after vendor creation. Expect exit code 1, a recorded browser-close error, cleanup DB counts all zero, and cleanup=true or an explicit partial status.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "cleanup finally block (supplied snippet)",
+        "area": "Form-bound deletes and counts guarded by `form`; Promise.resolve(0) fallbacks",
+        "issue": "When `form` is unset but a form row exists for the vendor (e.g. created via the app/browser flow, or a failure between creation and assignment), the form-bound counts are hard-coded to 0, and the formSubmission/retryDraft deletes are skipped.",
+        "evidence": "formSubmission and retryDraft counts use `form?...:Promise.resolve(0)`, and the formSubmission delete is `if(form)`. Only registrationForm is deleted and counted by vendorId. Only one form id is tracked.",
+        "impact": "Orphaned formSubmission or retryDraft rows can be missed. The vacuous 0 would let `counts.every(c===0)` pass if the schema has no FK or cascade, and an FK restrict would fail the registrationForm delete instead. Any additional forms created for the vendor are not covered by the single-form id. The all-zero check is therefore weaker than it appears in that state.",
+        "recommended_fix": "Before deleting, read all form ids with `registrationForm.findMany({where:{vendorId},select:{id:true}})`. Use `formId:{in:ids}` for the retryDraft/formSubmission deletes and counts, so the verification does not depend on the `form` variable.",
+        "required_test": "Synthetic: create the vendor and a registrationForm (plus a formSubmission and retryDraft) without assigning the `form` variable, then force failure. Expect all ten counts to be zero by actual query, not by fallback.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-sonnet-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "claude_cli_discovery_status": "SUCCESS"
+}

@@ -1,0 +1,13 @@
+{
+  "revision": "sha256:984b8b95e42c7516e6984a5a238f8fb1ef43303fe0c5ade5f90cd5703bdf156e",
+  "files": [
+    "scripts/wp20-metric-persistence-disposable.mjs",
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql"
+  ],
+  "writers": 20,
+  "attempts": 2,
+  "barrier": "all first Serializable snapshots aligned; 24 disposable client connections",
+  "expectation": "all 20 commit; source delta20; concurrent report lifecycle succeeds",
+  "scope": "synthetic order transactions mirroring webhook retry budget, not complete payment webhook end-to-end"
+}

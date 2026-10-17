@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Owned disposable source-fence upgrade reproduction; no report completeness claim",
+  "versionBumped": true,
+  "oldSnapshotWriteAborted": true,
+  "writeCode": "P2034",
+  "destinationRevisionIncreased": false,
+  "rlsFilteredTouchRejected": true,
+  "rlsFailureRollback": true,
+  "incompleteTouchRejected": true,
+  "incompleteTouchRollback": true,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

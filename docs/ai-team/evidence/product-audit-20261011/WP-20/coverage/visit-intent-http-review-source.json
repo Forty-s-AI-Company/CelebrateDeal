@@ -1,0 +1,8 @@
+{
+  "scope": "visit-intent-http",
+  "promptCharacters": 11481,
+  "files": {
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "a17e8931a0e715d36030fc50803f619883b94bc5ff2d619c2e9379059a6752b3",
+    "src/lib/live-metric-visit-client.ts": "93fa3136896242b6c98535c21ea1477b8f31dc7c02ab8b8f0c900e63b68e4da0"
+  }
+}

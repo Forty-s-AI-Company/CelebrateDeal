@@ -1,0 +1,22 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "lineage": [
+    "review-cli.json",
+    "review-final-cli.json"
+  ],
+  "scope_files": [
+    "src/lib/capability-confirmation.ts",
+    "src/lib/capability-confirmation.test.ts",
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts"
+  ],
+  "limitations": "One nonblocking MINOR: simultaneous previews share challenge; stale confirmation can invalidate newer preview, requires reopening link. No credential consumed on failure. Reviewer did not run tests. WP11 voucher/IP/rate-limit topology excluded."
+}

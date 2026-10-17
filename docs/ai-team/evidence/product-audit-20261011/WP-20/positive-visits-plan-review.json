@@ -1,0 +1,226 @@
+{
+  "agy_discovery_process_status": "SUCCESS",
+  "review": {
+    "summary": "Pre-scope review of the WP20 positive VISITS design. No code has been shown, so nothing is approved, and an empty or short findings list does not mean tests or a release would pass. The flow is narrow: one migration (130), the existing gateway, seal, reconciliation, coverage reader, one private service, and existing test suites. It stays within the authorized M1/M2 collection. A fixed, owned synthetic run plus a real gateway closure is enough for local acceptance of the visits metric, but only if the claim stays limited to \"fixed isolated synthetic window, gateway-attested universe\". It cannot back a production or global-history claim, and this scope should not try to. As drafted, the source universe is still not proven, for one specific reason. The closure receipt attests only frames that were durably admitted. It does not attest: (a) that admitted frames match the manifest's planned request counts per route; (b) that no request was refused before durable admission; (c) which exact frame set the closure covers. Without these, a run where requests were dropped can still reconcile as fully matched, and frames admitted between closure and seal are not bound to the closure. Smaller fixes: lock ordering between closure and seal; fail closed when the 10k query bound is exceeded; key the reader on run/seal identity rather than timestamps; only cascade deletes may bypass the new DELETE freeze; and confirm that the app role cannot set the disposable marker. If viewing is one of the five acceptance metrics, this scope cannot close five-metric acceptance, because viewing positives stay rejected. Raise that as a separate scope proposal, not a defect here. The migration and permission changes still need an independent deep review once code exists.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "ingress-gateway.ts",
+        "area": "closure/start receipt computation",
+        "issue": "The closure receipt does not attest that admitted frames equal the manifest's planned request set, or that no request attempt was refused before durable admission.",
+        "evidence": "The proposal says the receipt is produced after close/drain with 'no pending or failed admissions/settlements'. Pending and failed are states of admitted frames only. Requests refused before a frame is written (manifest mismatch, HMAC/auth failure, overload, a route that was never hit) leave no durable frame. Reconciliation then checks one-to-one only over the frames that exist.",
+        "impact": "Requests lost on the synthetic driver side or refused by the gateway shrink both sides of the reconciliation equally. The run reports allmatched, no orphans, no loss, so visits coverage is published over an incomplete universe. This is the exact attestation that is still missing for source-universe completeness.",
+        "recommended_fix": "In the existing gateway, keep a durable per-run ledger of request attempts that were refused before admission. Compute the receipt from durable state, not in-memory counters. It must include per-manifest-route admitted counts and the refused count. Closure fails unless the refused count is 0 and the admitted count per route equals the manifest's fixed planned count. Bind the receipt to the run id and the manifest digest, and sign it with the gateway HMAC.",
+        "required_test": "Using the existing disposable runner: (1) drop one planned synthetic request on the client side; (2) send one request that does not match the manifest; (3) send one request that fails the HMAC check. Each case must produce no closure receipt (or a failed one), and publishVisitCoverage must return unavailable.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MAJOR",
+        "file": "ingress-gateway.ts / ingress-seal.ts",
+        "area": "closure→seal ordering and frame-set binding",
+        "issue": "The closure receipt is not bound to the exact frame set that gets sealed, and the run is not durably closed to new admissions between closure and seal.",
+        "evidence": "The seal freezes page/intake (and under 130, intent/fact) INSERTs. The closure receipt is a separate artifact. Nothing in the design says the seal requires an existing receipt, compares the frame set against it, or that the run stops accepting admissions once closure is issued.",
+        "impact": "A frame admitted after the receipt but before the seal gets sealed without being covered by the closure. Alternatively, a seal taken before drain freezes a partial set. Either way the receipt and the sealed contents describe different universes.",
+        "recommended_fix": "Closure durably marks the run closed, under the same versionSH->runSH lock. Admission rejects any run marked closed. The receipt records the final frame sequence and a digest of the ordered frame ids. The seal must require that receipt and recompute the frame digest and max sequence under the lock. The DB guard and publishVisitCoverage both compare receipt digest = sealed frame digest.",
+        "required_test": "(1) Try to admit a frame after closure: it must be rejected. (2) Try to seal without a receipt: it must be rejected. (3) Tamper with the receipt digest or sequence: publish and the DB guard both reject.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MAJOR",
+        "file": "migration 130 (DB guard)",
+        "area": "bounded queries <=10k",
+        "issue": "The design does not say what happens when the run window exceeds the 10k query bound.",
+        "evidence": "The proposal states 'boundedqueries<=10k' for the guard's independent checks. If a check uses LIMIT and then tests set membership or counts, rows past the limit are never examined.",
+        "impact": "The guard could pass a positive visits proof for a run it did not fully check, which is a false positive in the independent safety layer.",
+        "recommended_fix": "Before checking, count the rows in the run (or probe with LIMIT 10001). If the count exceeds the bound, raise an exception and reject. Never evaluate a truncated set. Apply the same fail-closed bound in publishVisitCoverage.",
+        "required_test": "In the disposable PG, build a run fixture just over the bound. Both the guard and the service must reject. A run exactly at the bound must still be accepted.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "ingress-seal.ts / migration 130",
+        "area": "intent/fact DELETE freeze vs parent cascade",
+        "issue": "The rule that separates a cascade delete from a direct delete is not stated.",
+        "evidence": "The design says to 'freeze visitintent/fact INSERT and DELETE after seal' and to 'preserveparentcascade'. A plain BEFORE DELETE trigger blocks both kinds of delete. A pg_trigger_depth()>0 check also passes deletes made by other triggers.",
+        "impact": "Either version deletion breaks, or a direct delete that goes through another trigger path gets past the freeze.",
+        "recommended_fix": "Allow a delete on a sealed intent/fact only when the owning version row no longer exists in the current statement (the RI cascade has already removed the parent). Reject every other delete. Keep the same lock order. Make the stored visits-coverage proof FK-cascade from the run/version so no stale proof row is left behind.",
+        "required_test": "(1) A direct DELETE of a sealed intent/fact is rejected. (2) Deleting the version cascades cleanly and removes the proof row. (3) A DELETE made from another trigger context while the parent still exists is rejected.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "coverage-reader.ts",
+        "area": "exact run window lookup",
+        "issue": "The reader's 'exactrunwindow' must be keyed on run id, seal id, and revision, not on timestamp ranges.",
+        "evidence": "The proposal uses 'window' wording throughout. Visit rows may carry client- or producer-supplied timestamps.",
+        "impact": "A time-range match could pick up rows from another run or miss rows from this run, so the reader's view diverges from the reconciled digest.",
+        "recommended_fix": "The reader selects the proof by (run_id, seal_id, sourceRevision) and recomputes the same-RR reconciled digest over rows bound by run id. Timestamps are display metadata only.",
+        "required_test": "Use two overlapping synthetic runs in the existing unit suite. The reader accepts only the proof whose run id matches and returns unavailable for a time-overlap mismatch.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "migration 130",
+        "area": "guard function privileges / disposable marker",
+        "issue": "The design does not confirm that the app role cannot write the owner disposable marker or alter the guard.",
+        "evidence": "The DB guard is the only thing preventing positive visits outside the owned disposable PG. The proposal states it checks the 'ownerdisposablemarker', but not who can write that marker.",
+        "impact": "If the application role can insert the marker, a non-disposable database could mark itself and accept positive visits proofs.",
+        "recommended_fix": "Give ownership of the marker table and guard function to the migration owner. Revoke INSERT/UPDATE/DELETE on the marker from the app role. If the guard function is SECURITY DEFINER, set search_path to a fixed value. Extend the existing 125 function rather than replacing it with a weaker version, and keep viewing positives rejected.",
+        "required_test": "Permission test as the app role: writing the marker fails, and a positive visits insert without the marker fails. Viewing positives are still rejected after 130.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "accepted": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "exitCode": 3
+    },
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "completed": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration",
+        "permission"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 8000,
+      "expected_duration": 0,
+      "code_surface_area": 10,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  }
+}

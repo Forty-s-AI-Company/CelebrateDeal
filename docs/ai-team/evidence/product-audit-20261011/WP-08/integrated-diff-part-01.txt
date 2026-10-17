@@ -1,0 +1,232 @@
+--- src/app/(app)/affiliates/commissions/page.tsx (before)
++++ src/app/(app)/affiliates/commissions/page.tsx
+@@ -52,5 +52,5 @@
+     <>
+       <PageHeader
+-        title="聯盟分潤"
++        title="佣金結算"
+         description="依活動、商品與推廣碼追蹤佣金，並與平台交易服務費分開列帳。"
+       />
+
+--- src/app/(app)/affiliates/page.tsx (before)
++++ src/app/(app)/affiliates/page.tsx
+@@ -29,5 +29,5 @@
+     <>
+       <PageHeader
+-        title="聯盟夥伴"
++        title="推廣夥伴"
+         description="管理推廣碼、來源渠道、點擊與轉換成效。"
+         action={
+
+--- src/app/(app)/billing/course-payouts/page.tsx (before)
++++ src/app/(app)/billing/course-payouts/page.tsx
+@@ -30,5 +30,5 @@
+     <>
+       <PageHeader
+-        title="課程 F/G 分潤"
++        title="課程分潤"
+         description="檢視課程分潤的 gross、net reference、應付金額、退款／dispute ledger 與人工出款結果。此頁為商家唯讀對帳，不會執行付款。"
+       />
+
+--- src/app/(app)/billing/payment-methods/page.tsx (before)
++++ src/app/(app)/billing/payment-methods/page.tsx
+@@ -123,5 +123,5 @@
+     <>
+       <PageHeader
+-        title="付款方式設定"
++        title="付款方式"
+         description="管理平台方案與 Stream 用量需要的付款方式驗證狀態；CelebrateDeal 只保留 provider opaque reference，不接觸卡號。"
+       />
+
+--- src/app/(app)/blacklists/page.tsx (before)
++++ src/app/(app)/blacklists/page.tsx
+@@ -33,5 +33,5 @@
+   return (
+     <>
+-      <PageHeader title="黑名單管理" description="管理互動風險與無效名單來源，可搜尋、記錄原因並解除封鎖。" />
++      <PageHeader title="封鎖名單" description="管理互動風險與無效名單來源，可搜尋、記錄原因並解除封鎖。" />
+       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
+         <Card>
+
+--- src/app/(app)/consultations/page.tsx (before)
++++ src/app/(app)/consultations/page.tsx
+@@ -46,5 +46,5 @@
+   return (
+     <>
+-      <PageHeader title="諮詢預約工作台" description="設定可預約時段、掌握即將到來的諮詢；停用不會刪除既有預約紀錄。" />
++      <PageHeader title="諮詢預約" description="設定可預約時段、掌握即將到來的諮詢；停用不會刪除既有預約紀錄。" />
+       <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
+       {!scope.isAggregate ? (
+
+--- src/app/(app)/dashboard/dashboard-details-loading.tsx (before)
++++ src/app/(app)/dashboard/dashboard-details-loading.tsx
+@@ -1,5 +1,5 @@
+ export default function DashboardDetailsLoading() {
+   return (
+-    <div data-dashboard-scope="details-shell" role="status" aria-busy="true" aria-live="polite" aria-label="正在載入 Dashboard 明細" className="grid gap-6">
++    <div data-dashboard-scope="details-shell" role="status" aria-busy="true" aria-live="polite" aria-label="正在載入營運總覽明細" className="grid gap-6">
+       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+         <div className="h-72 animate-pulse motion-reduce:animate-none rounded-xl border border-slate-200 bg-white" />
+
+--- src/app/(app)/dashboard/dashboard-kpis-loading.test.tsx (before)
++++ src/app/(app)/dashboard/dashboard-kpis-loading.test.tsx
+@@ -8,5 +8,5 @@
+     expect(html).toContain('data-dashboard-scope="kpis-shell"');
+     expect(html).toContain('aria-busy="true"');
+-    expect(html).toContain("正在載入 Dashboard KPI");
++    expect(html).toContain("正在載入營運總覽關鍵指標");
+   });
+ });
+
+--- src/app/(app)/dashboard/dashboard-kpis-loading.tsx (before)
++++ src/app/(app)/dashboard/dashboard-kpis-loading.tsx
+@@ -1,5 +1,5 @@
+ export default function DashboardKpisLoading() {
+   return (
+-    <section data-dashboard-scope="kpis-shell" aria-busy="true" aria-live="polite" aria-label="正在載入 Dashboard KPI" className="grid gap-6">
++    <section data-dashboard-scope="kpis-shell" aria-busy="true" aria-live="polite" aria-label="正在載入營運總覽關鍵指標" className="grid gap-6">
+       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" aria-hidden="true">
+         {Array.from({ length: 10 }, (_, index) => (
+
+--- src/app/(app)/dashboard/loading.tsx (before)
++++ src/app/(app)/dashboard/loading.tsx
+@@ -6,5 +6,5 @@
+         <p className="mt-2 text-sm text-slate-500">正在整理報名、觀看、訂單與 Email 寄送狀態。</p>
+       </div>
+-      <span role="status" className="sr-only">正在載入 Dashboard，請稍候。</span>
++      <span role="status" className="sr-only">正在載入營運總覽，請稍候。</span>
+       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" aria-hidden="true">
+         {Array.from({ length: 10 }, (_, index) => (
+
+--- src/app/(app)/dashboard/page.tsx (before)
++++ src/app/(app)/dashboard/page.tsx
+@@ -39,10 +39,10 @@
+     <>
+       <PageHeader
+-        title="Dashboard"
++        title="營運總覽"
+         description="Cloudflare-first 直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。"
+         action={isManager ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
+       />
+ 
+-      <section data-dashboard-region="kpis" aria-label="Dashboard KPI 區域">
++      <section data-dashboard-region="kpis" aria-label="營運總覽關鍵指標 區域">
+         <Suspense fallback={<DashboardKpisLoading />}>
+           <DashboardKpis vendorId={vendor.id} diagnosticFailureScope={diagnosticFailureScope} />
+@@ -50,5 +50,5 @@
+       </section>
+ 
+-      <section data-dashboard-region="details" aria-label="Dashboard 明細區域">
++      <section data-dashboard-region="details" aria-label="營運總覽明細區域">
+         <DashboardDetailsClient diagnosticDelayMs={diagnosticDelayMs} />
+       </section>
+
+--- src/app/(app)/forms/page.tsx (before)
++++ src/app/(app)/forms/page.tsx
+@@ -78,5 +78,5 @@
+   return (
+     <>
+-      <PageHeader title="報名表管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink>} />
++      <PageHeader title="報名管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink>} />
+       <Card className="mb-5">
+         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
+
+--- src/app/(app)/interaction-scripts/page.tsx (before)
++++ src/app/(app)/interaction-scripts/page.tsx
+@@ -36,5 +36,5 @@
+   return (
+     <>
+-      <PageHeader title="留言組" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增留言組</ButtonLink>} />
++      <PageHeader title="互動腳本" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增互動腳本</ButtonLink>} />
+       {params.error === "invalid_event" ? (
+         <p role="alert" className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+@@ -49,9 +49,9 @@
+       {params.error === "missing_script" ? (
+         <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+-          這份留言組已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
++          這份互動腳本已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
+         </p>
+       ) : null}
+       {scripts.length === 0 ? (
+-        <EmptyState title="還沒有留言組" description="建立留言組後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增留言組</ButtonLink>} />
++        <EmptyState title="還沒有互動腳本" description="建立互動腳本後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增互動腳本</ButtonLink>} />
+       ) : (
+         <Card>
+
+--- src/app/(app)/landing-pages/page.tsx (before)
++++ src/app/(app)/landing-pages/page.tsx
+@@ -10,10 +10,10 @@
+ 
+   return <>
+-    <PageHeader title="Funnels" description="建立銷售、名單蒐集與自訂流程，集中管理每個全畫面頁面。" action={!scope.isAggregate ? <ButtonLink href="/landing-pages/new">建立 Funnel</ButtonLink> : undefined} />
++    <PageHeader title="一頁式網站" description="建立銷售、名單蒐集與自訂流程，集中管理每個全畫面頁面。" action={!scope.isAggregate ? <ButtonLink href="/landing-pages/new">建立一頁式網站</ButtonLink> : undefined} />
+     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+       <p className="text-sm text-slate-500">{scope.projectName ?? (scope.isAggregate ? "全部專案總覽（唯讀）" : "目前工作區")}</p>
+       <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500"><span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">全部 {pages.length}</span><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700">已發布 {publishedCount}</span></div>
+     </div>
+-    {pages.length ? <FunnelList pages={pages} readOnly={scope.isAggregate} /> : <Card className="border-dashed border-slate-300 bg-slate-50/60"><div className="mx-auto max-w-md py-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl text-blue-700">✦</div><h2 className="mt-4 text-lg font-bold text-slate-950">開始建立第一個 Funnel</h2><p className="mt-2 text-sm leading-6 text-slate-500">選擇銷售、名單蒐集或自訂用途，再進入中文版全畫面編輯器。</p>{!scope.isAggregate ? <div className="mt-5"><ButtonLink href="/landing-pages/new">建立 Funnel</ButtonLink></div> : null}</div></Card>}
++    {pages.length ? <FunnelList pages={pages} readOnly={scope.isAggregate} /> : <Card className="border-dashed border-slate-300 bg-slate-50/60"><div className="mx-auto max-w-md py-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl text-blue-700">✦</div><h2 className="mt-4 text-lg font-bold text-slate-950">開始建立第一個一頁式網站</h2><p className="mt-2 text-sm leading-6 text-slate-500">選擇銷售、名單蒐集或自訂用途，再進入中文版全畫面編輯器。</p>{!scope.isAggregate ? <div className="mt-5"><ButtonLink href="/landing-pages/new">建立一頁式網站</ButtonLink></div> : null}</div></Card>}
+   </>;
+ }
+
+--- src/app/(app)/lives/page.tsx (before)
++++ src/app/(app)/lives/page.tsx
+@@ -15,5 +15,5 @@
+   return (
+     <>
+-      <PageHeader title="直播間管理" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
++      <PageHeader title="直播間" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
+       {lives.length === 0 ? (
+         <EmptyState title="還沒有直播間" description="用 stepper 建立第一場直播，把影片、商品與報名表串起來。" action={<ButtonLink href="/lives/new" tone="cta">建立直播</ButtonLink>} />
+
+--- src/app/(app)/messages/deliveries/page.tsx (before)
++++ src/app/(app)/messages/deliveries/page.tsx
+@@ -23,5 +23,5 @@
+     <>
+       <PageHeader
+-        title="Email 寄送營運"
++        title="寄送管理"
+         description="安全查找、篩選並處理寄送失敗；收件資訊維持遮罩，重新排程也不會直接呼叫外部寄信服務。"
+         action={<ButtonLink href="/messages/templates" tone="secondary">管理訊息模板</ButtonLink>}
+
+--- src/app/(app)/onboarding/page.tsx (before)
++++ src/app/(app)/onboarding/page.tsx
+@@ -79,5 +79,5 @@
+     <>
+       <PageHeader
+-        title="商家上線導引"
++        title="上線導引"
+         description="依真實商店設定自動保存進度；完成一項設定後回到這裡即可接著做，不需要重複填表。"
+         action={progress.nextStep ? (
+
+--- src/app/(app)/products/page.tsx (before)
++++ src/app/(app)/products/page.tsx
+@@ -44,5 +44,5 @@
+   return (
+     <>
+-      <PageHeader title="商品管理" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href="/products/new"><Plus size={16} />新增商品</ButtonLink>} />
++      <PageHeader title="商品" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href="/products/new"><Plus size={16} />新增商品</ButtonLink>} />
+       {updated === "created" || updated === "saved" ? <p role="status" className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">商品已{updated === "created" ? "建立為草稿" : "儲存"}。</p> : null}
+       <Card className="mb-5">
+
+--- src/app/(app)/settings/automations/page.tsx (before)
++++ src/app/(app)/settings/automations/page.tsx
+@@ -27,5 +27,5 @@
+   ]);
+   return <>
+-    <PageHeader title="自動化工作室" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
++    <PageHeader title="自動化" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
+     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">自動化規則已更新。</p> : null}
+     {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{params.dryRun === "would_dispatch" ? "條件符合，正式事件會執行動作。" : params.dryRun === "would_skip" ? "條件未符合，正式事件會略過。" : "規則無效。"}</p> : null}
+
+--- src/app/(app)/settings/features/page.tsx (before)
++++ src/app/(app)/settings/features/page.tsx
+@@ -1 +1 @@
+-import { VendorFeatureManagement } from "@/components/vendor-feature-management"; import { PageHeader } from "@/components/ui"; import { requireVendorManagerContext } from "@/lib/auth"; import { getCsrfToken } from "@/lib/csrf"; import { normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";  export default async function VendorFeaturesPage() {   const [{ vendor }, csrfToken] = await Promise.all([requireVendorManagerContext(), getCsrfToken()]);   return (     <>       <PageHeader title="功能模組管理" description="只留下目前需要的工作區入口；停用功能不會刪除任何歷史資料。" />       <VendorFeatureManagement initialModules={normalizeVendorFeatureModules(vendor.enabledFeatureModules)} csrfToken={csrfToken} />     </>   ); }+import { VendorFeatureManagement } from "@/components/vendor-feature-management"; import { PageHeader } from "@/components/ui"; import { requireVendorManagerContext } from "@/lib/auth"; import { getCsrfToken } from "@/lib/csrf"; import { normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";  export default async function VendorFeaturesPage() {   const [{ vendor }, csrfToken] = await Promise.all([requireVendorManagerContext(), getCsrfToken()]);   return (     <>       <PageHeader title="功能模組" description="只留下目前需要的工作區入口；停用功能不會刪除任何歷史資料。" />       <VendorFeatureManagement initialModules={normalizeVendorFeatureModules(vendor.enabledFeatureModules)} csrfToken={csrfToken} />     </>   ); }
+--- src/app/(app)/settings/security/page.tsx (before)
++++ src/app/(app)/settings/security/page.tsx
+@@ -116,5 +116,5 @@
+   return (
+     <>
+-      <PageHeader title="安全設定" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">管理團隊與上下線</ButtonLink> : undefined} />
++      <PageHeader title="安全性" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">管理團隊與上下線</ButtonLink> : undefined} />

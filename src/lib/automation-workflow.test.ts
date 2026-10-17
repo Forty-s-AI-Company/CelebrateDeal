@@ -16,7 +16,7 @@ vi.mock("@/lib/line-notification", () => ({
   stableLineIdempotencyKey: mocks.stableLineIdempotencyKey,
 }));
 
-import { AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationConditionMatches, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationRuleReady, automationTriggerReady, automationConditionMatches, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -60,7 +60,7 @@ describe("smart automation workflow engine", () => {
   });
 
   it("materializes all four recipes and evaluates dry-runs without side effects", () => {
-    expect(AUTOMATION_RECIPES).toHaveLength(4);
+    expect(AUTOMATION_RECIPES).toHaveLength(7);
     expect(materializeAutomationRecipe("high_intent_chaser", "product-1")).toMatchObject({ trigger: "webinar_attended_duration_gte" });
     expect(materializeAutomationRecipe("vip_auto_tiering", "product-1")).toMatchObject({ condition: { amountCents: 3_000_000 } });
     expect(materializeAutomationRecipe("consultation_confirmer")).toMatchObject({ trigger: "consultation_booked" });
@@ -334,4 +334,93 @@ describe("smart automation workflow engine", () => {
     })).resolves.toEqual([]);
     expect(db.paymentTransaction.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
   });
+});
+
+describe('WP18 follow-up draft recipes',()=>{
+ it.each(['followup_no_show','followup_completed_no_order','followup_checkout_incomplete'])('materializes %s inactive without a product or incentive',id=>{
+  const recipe=materializeAutomationRecipe(id);expect(recipe).not.toBeNull();expect(recipe?.isActive).toBe(false);
+  expect(recipe?.actions).toHaveLength(1);expect(recipe?.actions[0].type).toBe('send_email_notification');
+ });
+ it('keeps existing recipes active and their identities intact',()=>{
+  for(const id of ['high_intent_chaser','consultation_confirmer','vip_auto_tiering','no_show_reactivation']){
+   expect(AUTOMATION_RECIPES.some(r=>r.id===id)).toBe(true);
+   expect(materializeAutomationRecipe(id,'product-1')?.isActive).toBe(true);expect(automationRuleReady(materializeAutomationRecipe(id,'product-1')!)).toBe(true);
+  }
+ });
+ it('requires actual completion and explicitly no order; duration or no payment is not enough',()=>{
+  const recipe=materializeAutomationRecipe('followup_completed_no_order')!;
+  const completed={...event,trigger:'viewer_completed' as const,subjectType:'buyer_registration' as const,liveId:'live-1',watchCompleted:true,hasOrdered:false};
+  expect(automationConditionMatches(recipe.condition,completed)).toBe(true);
+  for(const variant of [{...completed,watchCompleted:false},{...completed,watchCompleted:undefined,watchSecondsTotal:99999},{...completed,hasOrdered:true,hasPurchased:false},{...completed,hasOrdered:undefined},{...completed,liveId:undefined},{...completed,trigger:'viewer_watch_progress' as const}]){
+   expect(automationConditionMatches(recipe.condition,variant)).toBe(false);
+  }
+ });
+ it('requires a still pending order and excludes paid/cancelled/refunded/unknown states',()=>{
+  const recipe=materializeAutomationRecipe('followup_checkout_incomplete')!;
+  expect(automationConditionMatches(recipe.condition,{...event,trigger:'checkout_incomplete',orderStatus:'pending_payment'})).toBe(true);
+  for(const orderStatus of ['paid','cancelled','refunded','failed',undefined])expect(automationConditionMatches(recipe.condition,{...event,trigger:'checkout_incomplete',orderStatus})).toBe(false);
+  expect(automationConditionMatches(recipe.condition,{...event,trigger:'checkout_incomplete',orderStatus:'pending_payment',subjectType:'buyer_registration'})).toBe(false);
+ });
+ it.each(['viewer_completed','checkout_incomplete'] as const)('blocks %s before reading rules or creating any outbox',async trigger=>{
+  const db={automationRule:{findMany:vi.fn()},emailDelivery:{create:vi.fn()},automationExecutionLog:{create:vi.fn()}};
+  expect(automationTriggerReady(trigger)).toBe(true);
+  await expect(dispatchAutomationEvent(db as never,{...event,trigger})).resolves.toEqual([{ruleId:'__scope__',status:'trusted_source_required'}]);
+  expect(db.automationRule.findMany).not.toHaveBeenCalled();expect(db.emailDelivery.create).not.toHaveBeenCalled();expect(db.automationExecutionLog.create).not.toHaveBeenCalled();
+  expect(dryRunAutomationRule({condition:{type:'always'},actions:[{type:'add_customer_tag',tag:'x'}]},{...event,trigger}).status).toBe('trigger_not_ready');
+ });
+});
+
+it.each(['checkout_followup','completed_followup'])('does not send a stored %s email even when paired with an active payment trigger',async template=>{
+ const rule={id:'mismatched',condition:{type:'always'},actions:[{type:'send_email_notification',template}]};
+ const db={automationRule:{findMany:vi.fn().mockResolvedValue([rule])},automationExecutionLog:{create:vi.fn()},emailDelivery:{create:vi.fn()}};
+ expect(automationRuleReady({trigger:'payment_paid',...rule})).toBe(false);
+ await expect(dispatchAutomationEvent(db as never,event)).resolves.toEqual([{ruleId:'mismatched',status:'trigger_not_ready'}]);
+ expect(db.automationExecutionLog.create).not.toHaveBeenCalled();expect(db.emailDelivery.create).not.toHaveBeenCalled();
+ expect(dryRunAutomationRule(rule,event).status).toBe('trigger_not_ready');
+});
+it.each(['completed_and_not_ordered','order_pending_payment'])('does not mark mismatched %s condition ready on an existing trigger',type=>{
+ expect(automationRuleReady({trigger:'form_no_show',condition:{type},actions:[{type:'add_customer_tag',tag:'test'}]})).toBe(false);
+});
+
+describe('WP18 producer-only readiness',()=>{
+ it.each(['followup_completed_no_order','followup_checkout_incomplete'])('allows exact %s configuration, never alternate conditions/actions/scopes',id=>{
+  const recipe=materializeAutomationRecipe(id)!;expect(automationRuleReady(recipe)).toBe(true);
+  for(const variant of [{...recipe,condition:{type:'always'}},{...recipe,actions:[{type:'add_customer_tag',tag:'x'}]},{...recipe,actions:[...recipe.actions,{type:'line_push',message:'x'}]},{...recipe,funnelPageId:'page-1'}])expect(automationRuleReady(variant)).toBe(false);
+  const dry=dryRunAutomationRule(recipe,{...event,trigger:recipe.trigger,watchCompleted:true,hasOrdered:false,orderStatus:'pending_payment',liveId:'live-1'});
+  expect(dry).toEqual({status:'trusted_source_required',conditionMatched:false,actionTypes:[]});
+ });
+ it.each(['viewer_completed','checkout_incomplete'] as const)('ignores forged source booleans for %s without touching DB or outbox',async trigger=>{
+  const db={automationRule:{findMany:vi.fn()},emailDelivery:{create:vi.fn()},automationExecutionLog:{create:vi.fn()}};
+  await expect(dispatchAutomationEvent(db as never,{...event,trigger,watchCompleted:true,hasOrdered:false,orderStatus:'pending_payment',liveId:'live-1'})).resolves.toEqual([{ruleId:'__scope__',status:'trusted_source_required'}]);
+  expect(db.automationRule.findMany).not.toHaveBeenCalled();expect(db.emailDelivery.create).not.toHaveBeenCalled();expect(db.automationExecutionLog.create).not.toHaveBeenCalled();
+ });
+});
+
+it('records missing opt-out configuration as retryable failure, then queues once after configuration returns',async()=>{
+ vi.stubEnv('CSRF_SECRET','wp18-owned-no-show-unsubscribe-fixture-key-20261016');vi.stubEnv('NEXT_PUBLIC_APP_URL','');
+ try{
+ const recipe=materializeAutomationRecipe('followup_no_show')!;
+ const db={automationRule:{findMany:vi.fn().mockResolvedValue([{id:'no-show-rule',version:1,condition:recipe.condition,actions:recipe.actions}])},automationExecutionLog:{create:vi.fn().mockResolvedValue({id:'no-show-log'}),update:vi.fn(),findUnique:vi.fn().mockResolvedValue({id:'no-show-log',status:'failed'}),updateMany:vi.fn().mockResolvedValue({count:1})},emailDelivery:{create:vi.fn()}};
+ const input={...event,trigger:'form_no_show' as const,subjectType:'buyer_registration' as const,subjectId:'synthetic-submission',recipientEmail:'no-show@example.test',webinarUrl:'https://app.example.test/live/synthetic'};
+ await expect(dispatchAutomationEvent(db as never,input)).resolves.toEqual([{ruleId:'no-show-rule',status:'failed'}]);
+ expect(db.emailDelivery.create).not.toHaveBeenCalled();
+ expect(db.automationExecutionLog.update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({status:'failed',errorCode:'action_failed'})}));
+ vi.stubEnv('NEXT_PUBLIC_APP_URL','https://app.example.test');
+ db.automationExecutionLog.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Synthetic existing execution',{code:'P2002',clientVersion:'test'}));
+ await expect(dispatchAutomationEvent(db as never,input)).resolves.toEqual([{ruleId:'no-show-rule',status:'completed'}]);
+ expect(db.emailDelivery.create).toHaveBeenCalledTimes(1);
+ }finally{vi.unstubAllEnvs()}
+});
+
+it('adds a signed unsubscribe link to the new no-show recipe without persisting plaintext recipient',async()=>{
+ vi.stubEnv('CSRF_SECRET','wp18-owned-no-show-unsubscribe-fixture-key-20261016');vi.stubEnv('NEXT_PUBLIC_APP_URL','https://app.example.test');
+ try{
+ const recipe=materializeAutomationRecipe('followup_no_show')!;
+ const db={automationRule:{findMany:vi.fn().mockResolvedValue([{id:'no-show-rule',version:1,condition:recipe.condition,actions:recipe.actions}])},automationExecutionLog:{create:vi.fn().mockResolvedValue({id:'no-show-log'}),update:vi.fn()},emailDelivery:{create:vi.fn()}};
+ await expect(dispatchAutomationEvent(db as never,{...event,trigger:'form_no_show',subjectType:'buyer_registration',subjectId:'synthetic-submission',recipientEmail:'no-show@example.test',webinarUrl:'https://app.example.test/live/synthetic'})).resolves.toEqual([{ruleId:'no-show-rule',status:'completed'}]);
+ const data=db.emailDelivery.create.mock.calls[0][0].data;
+ const {revealEmailDeliveryPayload,verifyEmailUnsubscribeToken}=await import('@/lib/email-delivery-pii');
+ const payload=revealEmailDeliveryPayload(data.payloadEncryptedEnvelope,{vendorId:event.vendorId,deliveryId:data.id});const link=payload.body.match(/取消訂閱：(\S+)/u)?.[1];if(!link)throw new Error('Signed unsubscribe link missing');
+ expect(verifyEmailUnsubscribeToken(new URL(link).searchParams.get('token')??'')).toBe(data.id);expect(JSON.stringify(data).includes('no-show@example.test')).toBe(false);
+ }finally{vi.unstubAllEnvs()}
 });

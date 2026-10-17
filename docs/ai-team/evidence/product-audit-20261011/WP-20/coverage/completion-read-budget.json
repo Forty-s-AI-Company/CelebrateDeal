@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-10-14T19:55:46.026023+00:00",
+  "sourceHashes": {
+    "src/lib/live-metric-completion-store.ts": "5d4bf8fd0b612b10fea5cdbf64e7bd7ba86da11ff7bbb1a4772653deb2854e01",
+    "src/lib/live-metric-completion-store.test.ts": "c388c68d6ae60d4c555973d71e3337a8d8b8610010dbf87d585fe17efb948cf7",
+    "src/lib/live-metric-report-snapshot.ts": "47834ffc7b34143e42c6450bd0cea6083f2cbc41cd3e2231ddc6633826121ffc"
+  },
+  "unit": {
+    "status": "PASS",
+    "files": 3,
+    "tests": 25,
+    "exitCode": 0
+  },
+  "lint": "PASS before final query-slot accounting comment/change",
+  "dbIntegration": "NOT_RUN for revised two-query reader",
+  "review": "PENDING"
+}

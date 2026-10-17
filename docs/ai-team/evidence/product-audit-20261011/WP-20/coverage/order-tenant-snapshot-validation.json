@@ -1,0 +1,11 @@
+{
+  "files": {
+    "src/lib/live-metric-order-source-audit.test.ts": "171a6db986e3ebb00f13d6f0759c9ae354e8ed183a464be617e42c5cc8f6b64c",
+    "scripts/wp20-order-source-audit-probe.mjs": "8bd35ab1b1738c7842d0584f543723609c68daea7c3c865756d6de252a3a2d36"
+  },
+  "database": "PASS",
+  "typecheck": "PASS",
+  "unitTests": 5,
+  "lint": "PASS",
+  "review": "2 MAJOR, 3 MINOR, 1 NIT; NOT_READY"
+}

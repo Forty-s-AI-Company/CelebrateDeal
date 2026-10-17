@@ -1,5 +1,6 @@
+import { materializeMetricRegistration } from "./live-metric-registration-capture";
 import { createHash } from "node:crypto";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
 
 export type FormSubmissionVerificationResult =
@@ -71,7 +72,8 @@ export async function verifyFormSubmission(
   const verifiedToken = verifyFormSubmissionVerificationToken(token, now);
   if (!verifiedToken) return { status: "invalid" };
 
-  return db.$transaction(async (tx) => {
+  let metricIdentity: { vendorId: string; liveId: string; submissionId: string } | null = null;
+  const result = await db.$transaction(async (tx) => {
     const submission = await tx.formSubmission.findUnique({
       where: { id: verifiedToken.submissionId },
       select: {
@@ -136,6 +138,11 @@ export async function verifyFormSubmission(
     ) {
       return { status: "invalid" as const };
     }
+    // Scope comes only from the validated persisted submission. The projection
+    // below runs only after token validation succeeds and this transaction commits.
+    metricIdentity = submission.liveId
+      ? { vendorId: submission.form.vendorId, liveId: submission.liveId, submissionId: submission.id }
+      : null;
     if (submission.verificationStatus === "VERIFIED") {
       return matchesCurrentVerificationClaim(submission, verifiedToken, now)
         ? {
@@ -148,19 +155,17 @@ export async function verifyFormSubmission(
       return { status: "invalid" as const };
     }
 
-    const claimed = await tx.formSubmission.updateMany({
-      where: {
-        id: submission.id,
-        verificationStatus: "UNVERIFIED",
-        verificationVersion: verifiedToken.version,
-        verificationExpiresAt: submission.verificationExpiresAt,
-      },
-      data: {
-        verificationStatus: "VERIFIED",
-        verifiedAt: now,
-      },
-    });
-    if (claimed.count !== 1) {
+    // Authentication still uses the supplied verification clock above. The
+    // persisted event time uses the same DB clock as capture/viewing evidence,
+    // so application clock skew cannot reverse their recorded ordering.
+    // Keep the exact conditional claim and Serializable transaction unchanged.
+    const claimedCount = await tx.$executeRaw(Prisma.sql`
+      UPDATE "FormSubmission" SET "verificationStatus"='VERIFIED',
+        "verifiedAt"=date_trunc('milliseconds',clock_timestamp()) AT TIME ZONE 'UTC'
+      WHERE id=${submission.id} AND "verificationStatus"='UNVERIFIED'
+        AND "verificationVersion"=${verifiedToken.version}
+        AND "verificationExpiresAt"=(${submission.verificationExpiresAt}::timestamptz AT TIME ZONE 'UTC')`);
+    if (claimedCount !== 1) {
       const current = await tx.formSubmission.findUnique({
         where: { id: submission.id },
         select: {
@@ -231,4 +236,16 @@ export async function verifyFormSubmission(
       } : null,
     };
   }, { isolationLevel: "Serializable" });
+  if (result.status !== "invalid" && metricIdentity) {
+    try {
+      // Separate bounded ReadCommitted transaction; no current browser identity
+      // is used. Repeated verification can replay a previously failed projection.
+      await materializeMetricRegistration(db, metricIdentity);
+    } catch {
+      // Verification is already committed. Preserve its success; the durable
+      // capture remains the reconciliation source, and coverage stays unknown.
+      // Never log SQL, a verification credential, or a customer identity here.
+    }
+  }
+  return result;
 }

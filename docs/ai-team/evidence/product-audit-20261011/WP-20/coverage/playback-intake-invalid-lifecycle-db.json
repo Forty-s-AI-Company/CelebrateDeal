@@ -1,0 +1,13 @@
+{
+  "status": "FAIL",
+  "stage": "fixtures",
+  "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+  "checks": {},
+  "errorType": "AssertionError",
+  "differingKeys": null,
+  "errorCode": "ASSERTION_OR_SERVICE_ERROR",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

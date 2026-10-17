@@ -1,0 +1,196 @@
+{
+  "review": {
+    "summary": "I reviewed only the two files you supplied and used no tools. Several parts hold up: the keyset pagination (ordering and the strict `>` cursor), the shared row/page/time budgets, the fail-closed handling of limits, and the intake revision sum, which can only match if every intake row in scope is visible. Running everything in one read-only repeatable-read transaction keeps the revision function and the row reads on the same snapshot. I found 3 issues: 1 MAJOR and 2 MINOR. The MAJOR one is that the revision check proves intake rows are visible, but not the joined Session, Registration, Live and Form rows. If row-level security hides those, the audit quietly gives wrong outcome counts and still reports success. Of the two MINOR issues, one is about classification (quota-lost and out-of-window intakes are counted as pending or missing sessions). The other is that the digest includes results that depend on the audit time without recording that time. The known fullWP blockers are not re-reported. An empty or short findings list doesn't mean tests or release have passed.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-metric-playback-intake-audit.ts",
+        "area": "inspectPlaybackIntakes SQL LEFT JOINs (LiveMetricSession, LiveMetricRegistration, Live, FormSubmission, RegistrationForm) and classifyPlaybackIntake",
+        "issue": "The private revision check only proves that intake rows are visible. The joined rows that decide the classification can be hidden by row-level security without the audit noticing.",
+        "evidence": "The revision is computed only from LiveMetricPlaybackIntake columns (count, lossAt, renewalCount). The session is attached with a LEFT JOIN, so a hidden session gives sessionId=null, which is classified as pending_session or missing_session. A hidden Registration, Live, FormSubmission or RegistrationForm gives identityCurrent=false or verifiedAt=null, which is classified as identity_mismatch. Either way the result still has status 'enumerated'. In the viewing audit, the session enumeration is also never compared with context.viewingRevision or issuedCount.",
+        "impact": "If the role can see intakes but row-level security filters sessions or identity rows, the audit reports a clean 'enumerated' result with the wrong outcome counts (open or closed sessions show up as missing or pending sessions, or as identity mismatches). This is the same kind of silently wrong result the intake revision was meant to prevent, just one join further along.",
+        "recommended_fix": "Have the private SECURITY DEFINER function also return a joined-visibility revision. For example, return the count of intakes that have a bound session plus the count with a resolvable registration and identity chain, computed in the same snapshot. Return intake_source_not_visible when the visible joined counts don't match. Alternatively, run the classification joins inside the definer function and return only aggregates.",
+        "required_test": "Use a NOLOGIN role where intake rows are visible but LiveMetricSession (and separately FormSubmission/RegistrationForm) is filtered by row-level security. The audit must return unavailable and must not return shifted outcome counts. Also test that the fully visible role still matches.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-playback-intake-audit.ts",
+        "area": "classifyPlaybackIntake ordering; quotaLosses accounting",
+        "issue": "Intakes that suffered a quota loss, and intakes that expired before the window started, are counted under the window's pending_session or missing_session outcomes.",
+        "evidence": "lossAt is never checked during classification. The supplied synthetic run shows this: 64 intakes = 61 pending + 2 open + 1 closed, so the one quota-loss intake was counted as a pending session. Because the audit covers every intake in the version, an intake with issuedAt and expiresAt both before startAt and no session is still counted as missing_session for this window.",
+        "impact": "An intake that lost its quota will never get a session, so counting it as pending is wrong. Intakes from before the window inflate the missing_session count for the window being audited. Anyone reconciling outcome counts against the window would draw the wrong conclusions.",
+        "recommended_fix": "Add separate outcomes, for example quota_lost (checked before the session and expiry branches, or reported alongside them) and pre_window_expired (expiresAt <= startAt with no session). Alternatively, document that the outcomes cover the whole version and not just the window.",
+        "required_test": "Unit test classifyPlaybackIntake with (a) lossAt set, no session and an unexpired lease, and (b) an intake that expired before startAt with no session. Assert the dedicated outcomes, and assert that the outcome totals still equal count.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-playback-intake-audit.ts",
+        "area": "final digest.update([...revision, epochStartedAt, outcomes, quotaLosses, earliestLossAt])",
+        "issue": "The digest includes the outcome counts, which depend on asOf, but does not include asOf itself.",
+        "evidence": "pending_session versus missing_session is decided by expiresAt > context.asOf, and asOf comes from clock_timestamp(). asOf is not hashed in either the intake digest or the viewing digest.",
+        "impact": "Two audits of the same rows (same revision) can produce different digests just because a pending lease expired between the two runs. Comparing digests then looks like the data changed when it didn't, so the digest is not a deterministic function of the inputs it records.",
+        "recommended_fix": "Either hash asOf (or a classification cutoff that is bound to the window) together with the outcomes, or split the digest into a source digest (the rows plus the revision) and a separate classification digest that includes asOf.",
+        "required_test": "Run two audits on the same data, one before and one after a pending intake's expiresAt. Assert that the source digest stays the same and that any difference in the classification digest can be explained by the asOf value that was bound into it.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "reviewed": true,
+  "accepted": false,
+  "attempts": [
+    {
+      "exitCode": -1,
+      "model": "claude-opus-5-5-high",
+      "status": "IDLE_TIMEOUT",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false,
+  "execution_provider": "claude_cli",
+  "agy_discovery_process_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "migration",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 20000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "finalModel": "claude-opus-5-5"
+}

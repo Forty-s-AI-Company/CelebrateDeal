@@ -1,0 +1,9 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "public-presentation-lint",
+  "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+  "status": "PASS",
+  "exit_code": 0,
+  "source_receipt": "desktop_exec_chunk060ce5"
+}

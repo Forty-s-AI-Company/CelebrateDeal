@@ -1,0 +1,45 @@
+{
+  "status": "FAIL",
+  "stage": "run-creation-race",
+  "checks": {
+    "catalogConfirmsBindingAfterAllCanonicalBeforeInsertGuards": "PASS",
+    "runOwnedPageAndPlaybackCannotBypassFrameRequirement": "PASS",
+    "databaseRejectsWrongKindEvenWhenTrustedCallerClaimsAnotherKind": "PASS",
+    "realHttpGatewaySignsAndBindsActualRegistrationViewerAndAuthorizedPlaybackServices": "PASS",
+    "clientMarkerOverwrittenAndPrivateResponseMarkerNotReturned": "PASS",
+    "validGatewayOriginPassesCanonicalUpstreamSameOriginChecks": "PASS",
+    "playbackQueryCannotSelectForeignScope": "PASS",
+    "signedFrameDoesNotReplaceCanonicalPlaybackAuthorization": "PASS",
+    "unansweredManualFrameRemainsUnknownAfterSignedSourcesAndStop": "PASS",
+    "frameSingleUseAndBothSourceBindingsImmutable": "PASS",
+    "allThreeActualSourcesMatchTheSameTenantLiveVersionRun": "PASS",
+    "disabledCollectionBindingReturnsContextRaceWithoutChangingViewerAuthorization": "PASS"
+  },
+  "sourceHashes": {
+    "prisma/schema.prisma": "504ebc9b3776a4804918c80e1701a2bd3fe6466f9cbd2ea189c32135add694a7",
+    "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql": "4be3576e6b9431f10a743328939332704d15dce94ba6a3a43d0cec30f79beb67",
+    "src/lib/live-metric-ingress-proof.ts": "0f705bd92ad4317506f2341c7722bcbacc03110f80043723b5893f46ead8165a",
+    "src/lib/live-metric-ingress-gateway.ts": "5e1b43be9eabe9908c9210a67ca23f497235a0138e9db3db8eb6afb09481d0a8",
+    "src/lib/live-metric-visit-page.ts": "57cb20038b7552ed616c2ef57e904eff599daa7bbb69375766b56bbad81e2b6e",
+    "src/lib/live-metric-registration-page.ts": "cdc90bde00a361485a10e0080161debd1ecc8f05dbf7330029ffe64d10e50fba",
+    "src/lib/live-metric-playback-intake.ts": "7b5f1949ba5dac7a31e1c8b0ea013717790b8cf9267e985913c692da663b40c1",
+    "scripts/wp20-ingress-binding-disposable.mjs": "aa6836750d3e856605115778a28a8f01fb92b188fbfabbf2d75638aadeb6e63b"
+  },
+  "innerFailure": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "sqlState": null,
+    "assertionLine": 128
+  },
+  "migrationCount": 128,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "error": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "sqlState": null,
+    "assertionLine": 140
+  }
+}

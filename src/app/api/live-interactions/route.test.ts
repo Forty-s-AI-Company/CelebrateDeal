@@ -42,10 +42,10 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({
 }) }));
 vi.mock("@/lib/live-quota-admission", async (original) => ({
   ...await original<typeof import("@/lib/live-quota-admission")>(),
-  liveViewerTokenFromRequest: () => "A".repeat(43),
+  liveViewerTokenFromRequest: (request: Request) => request.headers.get("x-synthetic-viewer") ?? "A".repeat(43),
   hasActiveLiveViewerSession: mocks.activeViewer,
 }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 vi.mock("@/lib/form-submission-chat-session", () => ({
   FORM_SUBMISSION_CHAT_SESSION_COOKIE: "celebratedeal_form_submission_chat_session",
   verifyFormSubmissionChatSessionToken: mocks.verifyRegistrationSession,
@@ -87,6 +87,53 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.unstubAllEnvs());
+
+it("supports 32 shared-IP scripted viewers plus GET polling while retaining the mutation limit", async () => {
+  const trusted = await import("@/lib/trusted-entry-rate-limit");
+  const real = await vi.importActual<typeof import("@/lib/trusted-entry-rate-limit")>("@/lib/trusted-entry-rate-limit");
+  const { resetInMemoryRateLimitForTests } = await import("@/lib/rate-limit");
+  vi.stubEnv("ENTRY_CLIENT_IP_TRUST_MODE", "runtime");
+  vi.stubEnv("ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE", "node");
+  vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+  vi.mocked(trusted.checkRateLimit).mockImplementation(real.checkRateLimit);
+  resetInMemoryRateLimitForTests();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const start = Date.now();
+  mocks.findManualRuns.mockResolvedValue([]);
+  mocks.findEvent.mockResolvedValue({
+    id: "event-1", eventType: "poll", triggerSec: 0, title: "Synthetic", productId: null,
+    metadata: { question: "Synthetic", options: ["A", "B"], durationSec: 120 },
+    script: { lives: [{ streamMode: "live", scheduledAt: new Date(start - 1000), status: "live",
+      startedAt: new Date(start - 1000), endedAt: null, replayAvailableUntil: null, replayEnabled: true, video: { durationSec: 3600 } }] },
+  });
+  function trustedRequest(viewer: number, body?: Record<string, unknown>) {
+    const value = body ? request(body) : new Request("https://app.example.test/api/live-interactions?vendorId=vendor-1&liveId=live-1");
+    value.headers.set("x-synthetic-viewer", String(viewer).padStart(43, "A"));
+    value.headers.set("cf-connecting-ip", `198.51.100.${viewer + 1}`);
+    Object.defineProperty(value, "ip", { value: "192.0.2.200" });
+    return value;
+  }
+  try {
+    for (let tick = 0; tick < 30; tick++) {
+      vi.setSystemTime(start + tick * 2000);
+      const statuses = await Promise.all(Array.from({ length: 32 }, async (_, viewer) => [
+        (await POST(trustedRequest(viewer, { action: "open", vendorId: "vendor-1", liveId: "live-1", eventId: "event-1" }))).status,
+        (await GET(trustedRequest(viewer))).status,
+      ]));
+      expect(statuses.every(([post, get]) => post === 200 && get === 200)).toBe(true);
+    }
+    expect(new Set(mocks.activeViewer.mock.calls.map(([, input]) => input.token)).size).toBe(32);
+    for (let index = 0; index < 60; index++) {
+      const response = await POST(trustedRequest(0, { action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "Synthetic" }));
+      expect(response.status).toBe(201);
+    }
+    const limited = await POST(trustedRequest(0, { action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "Synthetic" }));
+    expect(limited.status).toBe(429);
+    expect(mocks.createQuestion).toHaveBeenCalledTimes(60);
+  } finally {
+    vi.useRealTimers(); resetInMemoryRateLimitForTests(); vi.mocked(trusted.checkRateLimit).mockImplementation(async () => null);
+  }
+});
 
 describe("live interaction public contract", () => {
   it("returns a retryable conflict when concurrent questions cannot serialize", async () => {

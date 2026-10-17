@@ -1,0 +1,28 @@
+請使用繁體中文撰寫所有summary及finding文字；JSON欄位名稱與severity保留原格式。測試範圍請稱為「使用合成邊界的元件測試，完整登入端到端流程未執行」，避免將測試範圍描述成帳號登入狀態。本次仍需如實報告所有問題。
+Final WP08 acceptance evidence followup, not the whole20WP. Source revision sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988. No tools; assess closures from supplied exact evidence/qualified reviews. Prior whole-WP review found Puck coverage MAJOR and dashboard/shell MINOR. Puck scoped followup closes MAJOR; exact persisted script compares both entire files against explicit efb8b7e9 and proves only6display strings changed, records hashes. Block registerVariants body subsequently reviewed: ids from id/variant, third label arg only display. Dashboard/goal picker/webinar settings complete source and team title reviewed no BLOCKER/MAJOR. Final copy fixes supplied below. Funnel list/gallery complete source reviewed no BLOCKER/MAJOR. All79tests/lint/typecheck/terminology,52editor component states and4actual shell/dashboard-loading a11y states now TERMINAL PASS on this exact revision, source hashes unchanged. 使用合成邊界的元件測試，完整登入端到端流程未執行; WP08 requires targeted+a11y. Canonical gate still not run.
+{
+  "src/components/landing-pages/funnel-goal-picker.tsx": {
+    "自訂 一頁式網站": "自訂一頁式網站",
+    "建立新的 一頁式網站": "建立新的一頁式網站",
+    "一頁式網站 網址": "一頁式網站網址",
+    "Funnel 初始資料": "一頁式網站初始資料",
+    "連線中斷，一頁式網站尚未建立": "建立失敗，一頁式網站尚未建立",
+    "自動化線上講座 目前仍在開發中，完成編輯、排程與播放流程後會開放建立。": "此類型目前尚未開放建立。",
+    "pending ? \"建立中…\" : \"儲存\"": "pending ? \"建立中…\" : \"建立\""
+  },
+  "src/app/(app)/dashboard/page.tsx": {
+    "Cloudflare-first 直播導購營運總覽": "直播導購營運總覽"
+  },
+  "src/components/landing-pages/funnel-webinar-settings.tsx": {
+    "選擇既有活動與報名表，並在活動工作室 確認來源影片。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。": "設定線上講座時區、開始與結束時間，以及重播截止時間。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。"
+  }
+}
+Qualified latest review summaries:
+puck-block-reviewed.json
+The supplied transformation proof closes the specific MAJOR (missing Puck/block key preservation evidence) for the Puck config. All four replaced strings are display-only: category titles under the unchanged keys basic/layout/conversion, and the Countdown `label`. Component names (Heading…CTA) and the Countdown field keys, select option values and defaultProps are unchanged in the excerpt. The block-library evidence is acceptable but has two small residual gaps. The third argument to `registerVariants` is not shown, so its role (display only vs. id/persistence/search) is unproven. The block-library baseline (git HEAD) differs from the Puck baseline (a pre-WP08 copy), and the proof is a self-reported script result rather than a retained artifact. Neither gap is a BLOCKER or MAJOR. This is a targeted review only and is not a whole-WP certification; canonical acceptance is NOT_RUN.
+dashboard-copy-reviewed.json
+This is a scoped copy review of the WP08 dashboard, goal-picker, webinar-settings, team-performance title excerpt and block-label files. It does not certify the whole WP or any test or release result. Data and API keys are unchanged: the goal ids (audience/sell/custom/webinar), the FormData keys, the webinar draft keys and the template ids. The page titles (營運總覽, 成效分析) and the block labels read correctly. There are no BLOCKER or MAJOR defects. The main issues are leftovers from replacing the English term "Funnel": stray spaces before or after 一頁式網站 and other Chinese terms, and one untranslated "Funnel" in an error message. Other issues: English technical jargon in the dashboard description, the create button labelled 儲存 (Save), a hardcoded and unreachable "in development" notice, and webinar copy that mentions controls this section doesn't have. One scope proposal: calling a multi-page flow 一頁式網站 ("one-page website") may be the wrong term.
+final-coverage-reviewed.json
+No BLOCKER or MAJOR found in the supplied funnel-list and gallery-picker source or in the final copy-only replacements. The replacements are internally coherent. The prior coverage findings are plausibly closed per the supplied dispositions, though I cannot independently verify them from this text alone. The only remaining items are a copy-consistency NIT, a possible hydration-timezone MINOR, a modal-focus MINOR, and a low-confidence status-badge MINOR. None requires re-review of the whole scope. The only gate coverage still needed is the declared in-progress browser reruns (AppShell/DashboardLoading 4 states, editor 52 states) completing PASS on the final sha. This is not a whole-20WP certification, and the webinar-settings replacement copy could not be checked against its component source because that source was not supplied.
+
+Disposition: list status union exactly draft|published in landing-page-service.ts77, no missing state. Optional step names only theoretical external caller; actual two callers pass both or neither. Name parser enforces string. Residual cosmetic spacing and punctuation NIT, preexisting date timezone and gallery focus MINOR retained for WP15 UI work; no WP08 business/permission mutations. All prior BLOCKER/MAJOR closures accepted by scoped reviewers. Provide explicit remaining blockers if any; do not invent delivery certificate.

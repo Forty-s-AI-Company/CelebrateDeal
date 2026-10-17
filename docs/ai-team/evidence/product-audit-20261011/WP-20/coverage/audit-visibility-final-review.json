@@ -1,0 +1,174 @@
+{
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "concurrency",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "agy_discovery_process_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "review": {
+    "summary": "I reviewed only the three supplied files. I found no BLOCKER or MAJOR defect in that scope.\n\nWhat I checked in the code:\n- **Same-object overlap:** the WeakSet check and add both run before the first await. The overlap rejection is thrown outside the try block, so it never deletes another caller's entry.\n- **Aliased facades:** a second facade on the same transaction is rejected using the backend PID plus the transaction start time. That key is always removed in the finally block. The shared registry (via `Symbol.for`) also covers separate bundle copies of the module.\n- **Settings check:** the code requires a primary server and repeatable-read isolation. After `set_config` it confirms row security is off, the timeout is the expected value, and the backend and transaction are unchanged.\n- **Autocommit:** an autocommit (non-transaction) client fails the check, because each statement gets a new transaction start time and the local `set_config` does not carry over.\n- **Timeout:** the tighter value is kept (`min(original, 5000)`, with 0 treated as 5000). The epoch text is timezone-independent.\n- **Restore failures:** after a successful read, a failed restore is rethrown. After a failed read, an aborted-transaction (25P02) restore error is swallowed so the original error comes through. Any other restore error raises an AggregateError that holds both errors, with the original as `cause`.\n- **Visits audit gap:** a known audit gap still short-circuits to `not_read` / `known_audit_gap` with unavailable coverage.\n\nI report one MINOR, low-confidence issue. The original settings are captured before this call's transaction key is registered. That could only matter under unusual out-of-order promise resolution between aliased facades.\n\nNot certified: the `readSources`/classifier body, `readMetricReportContext`, the SQL revision functions and whether they are SECURITY DEFINER, schema/RLS policies/grants, callers, tests, the harness and deployment. No test results were provided or claimed. The open items you listed are still open: the public quota/lock MAJOR, form failure, least-privilege deployment, full end-to-end/load tests and the positive producer.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-read-visibility.ts",
+        "area": "withMetricReadVisibility: settings snapshot before activeTransactions registration; readWithSettings finally restore",
+        "issue": "The 'original' row_security/statement_timeout snapshot is read before this call's transaction key is registered, and nothing checks the settings after the restore. If an aliased facade's snapshot SELECT runs while another alias has row_security='off', and its continuation only runs after that alias's finally has removed the key, the second call treats 'off'/5000ms as the original. It then 'restores' row_security=off for the rest of the transaction.",
+        "evidence": "The key check `activeTransactions.has(candidate)` runs only after the awaited snapshot query, and the snapshot values (`settings.rowSecurity`, `settings.statementTimeout`) are later used as restore targets. Nothing compares the post-restore values with a snapshot taken under exclusivity, or checks that the snapshot was not taken while another guard was active on the same backend/transaction.",
+        "impact": "In this unlikely interleaving, later non-metric reads in the same transaction would run with row_security off, contradicting the 'restore both settings' guarantee. The risk is limited: roles subject to RLS would get 42501 errors rather than silently bypassing policies, and the window depends on out-of-order promise resolution between aliased facades (Prisma and pg normally resolve in order). That is why confidence is low.",
+        "recommended_fix": "Make the snapshot authoritative once exclusivity is held. Either re-read the settings after `activeTransactions.add(key)` and reject if they differ from the first snapshot, or reject a snapshot whose row_security is 'off' and whose timeout equals the guard's capped value while any guard is active on the same backend PID. Optionally re-read the settings after a successful restore and throw if they don't match.",
+        "required_test": "Real-fixture test with two aliased facades on one interactive RR transaction, using a deferred/out-of-order resolution shim so alias B's snapshot is taken during alias A's active window and B resumes after A's finally. Assert that B either rejects or that row_security and statement_timeout end at their true pre-guard values.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "claude_cli_discovery_status": "SUCCESS"
+}

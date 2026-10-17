@@ -1,0 +1,26 @@
+{
+  "exit_code": 1,
+  "status": null,
+  "reason": null,
+  "deployment": {
+    "id": null,
+    "url": null,
+    "readyState": null,
+    "target": null
+  },
+  "diagnostic_tokens": [
+    "cli",
+    "error",
+    "option",
+    "only",
+    "with",
+    "use"
+  ],
+  "output_sizes": [
+    0,
+    155
+  ],
+  "raw_logs_persisted": false,
+  "alias_changes": false,
+  "platform_project_id_manually_set": false
+}

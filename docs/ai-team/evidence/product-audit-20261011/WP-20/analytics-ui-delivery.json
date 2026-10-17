@@ -1,0 +1,49 @@
+{
+  "status": "IN_PROGRESS",
+  "wholeWp": "NOT_READY",
+  "ownerPolicy": "No underlying wiring/validation framework expansion; Claude before/after every WP",
+  "productFiles": [
+    "src/app/(app)/lives/[id]/analytics/page.tsx",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx"
+  ],
+  "sourceHashes": {
+    "src/app/(app)/lives/[id]/analytics/page.tsx": "08c07875736c1c4363f8b5fff285ebcd15c5d3633ec31b5309f567ae9935c4b7",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx": "258dffa6bc8db558df51accf93d3252728c77eee8ceee2f35d707bd8c7787c0c"
+  },
+  "result": "Analytics page consumes existing current ready report; per-card availability/zero/invalid states, queued/failed/stale, current video+tenant/project, no metric recomputation",
+  "validation": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 81
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "claude": {
+    "pre": "../delivery-focus-scope-followup-20261015.json",
+    "post": "analytics-ui-review.json",
+    "final": "analytics-ui-close-review.json",
+    "observed": {
+      "model": "claude-opus-5-5",
+      "source": "cli_terminal_model_usage",
+      "effort": "unknown"
+    },
+    "provider": "claude_cli",
+    "findings": []
+  },
+  "notVerified": [
+    "Full five-metric nonzero DB collection/coverage pipeline",
+    "Preview browser/E2E/remote CI",
+    "D2-D6 held dependent WPs"
+  ],
+  "noNewInfrastructure": true,
+  "originalDirtyWorktreeMutated": false,
+  "commitPushDeploy": false
+}

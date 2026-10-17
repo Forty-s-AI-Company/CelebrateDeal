@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "checks": {
+    "delayRetentionPaymentAndBatchAdvance": "PASS",
+    "multipleMatchingRulesSingleReminderPerOrder": "PASS",
+    "protectedPayloadAndExistingUnsubscribeLink": "PASS",
+    "actualDispatcherRejectsPaidCancelledUnsubscribed": "PASS",
+    "actualDispatcherSingleSyntheticTransportAttempt": "PASS",
+    "actualDispatcherRejectsChangedRuleVersion": "PASS",
+    "changedRuleVersionCannotQueueSecondReminder": "PASS",
+    "concurrentWorkersSingleOutboxAndReceipt": "PASS",
+    "transactionRollbackAndDelayedReplayRecovery": "PASS",
+    "failedCandidateCooldownDoesNotStarveLaterPair": "PASS",
+    "untriedCandidatePrecedesExpiredPoisonCooldown": "PASS",
+    "incompatibleScopedAndRetroactiveRulesRejected": "PASS",
+    "nonUtcMaturityRetentionAndFailureCooldown": "PASS",
+    "lateActivationCannotTargetEarlierCheckout": "PASS",
+    "orderPrefixIsLiteralIncludingUnderscore": "PASS",
+    "permanentlyInvalidRecipientSkippedOnce": "PASS"
+  },
+  "scope": "Actual existing checkout candidate -> delayed SQL materializer -> encrypted outbox/atomic execution ledger -> actual Email dispatcher on owned disposable PostgreSQL; network Email transport deliberately stubbed, not provider delivery.",
+  "monitoringTransport": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "remoteCI": "NOT_RUN",
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "scope": "Projection revision/no-truncate and precise error mapping only",
+  "model": "claude-opus-5-5",
+  "snapshotMatches": true,
+  "blockingFindings": 0,
+  "minor": 2,
+  "nit": 2,
+  "overallAcceptance": "NOT_READY",
+  "remaining": "Other earlier review findings, producers, scheduler, original Serializable gate"
+}

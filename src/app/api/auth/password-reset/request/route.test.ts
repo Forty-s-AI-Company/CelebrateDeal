@@ -5,7 +5,7 @@ const { checkRateLimit, schedulePasswordResetLink } = vi.hoisted(() => ({
   schedulePasswordResetLink: vi.fn(),
 }));
 
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit }));
 vi.mock("@/lib/password-reset", () => ({ schedulePasswordResetLink }));
 
 import { POST } from "@/app/api/auth/password-reset/request/route";

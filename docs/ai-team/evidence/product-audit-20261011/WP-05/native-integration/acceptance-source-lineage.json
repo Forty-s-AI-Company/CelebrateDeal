@@ -1,0 +1,185 @@
+[
+  {
+    "file": "src/components/registration-retry-boundary.tsx",
+    "review_scope": "current-integration-part2-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [
+      "attribution-repair-review-prompt.txt"
+    ],
+    "current_sha256": "70f9cc19a7d9a6211944bd30b8ce162fdd33516b9da20682ce09ef513bcc1838",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/components/registration-retry-context.tsx",
+    "review_scope": "current-integration-part2-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [
+      "attribution-repair-review-prompt.txt"
+    ],
+    "current_sha256": "458f13efb75a8c07d427bad7b6964b4c4a7242a3ca4516682a0e8d8a77f807be",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/components/registration-closed-feedback.tsx",
+    "review_scope": "current-integration-part2-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "src/components/registration-deadline-outcome.tsx",
+    "review_scope": "current-integration-part2-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "src/app/lp/[slug]/page.tsx",
+    "review_scope": "current-integration-part2-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [],
+    "current_sha256": "7a79883f9ed7e93a2aa6ce198ea13eee03c438ca8202b0e9f064a13f0cc1c262",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/app/lp/[slug]/[stepPath]/page.tsx",
+    "review_scope": "current-integration-part2-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [],
+    "current_sha256": "57901b694727dd7325b0bb795f064f5cb110c9865ce36c557fbbe601a82de4e1",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/app/api/form-submissions/route.ts",
+    "review_scope": "current-integration-part2-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "src/lib/registration-form-retry.ts",
+    "review_scope": "current-security-part1-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [],
+    "current_sha256": "9022d6e3aaf64734e933ec2e20ab567a0e1231e981c07dd2cab8077b0cc9759f",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/lib/registration-form-retry-response.ts",
+    "review_scope": "current-security-part1-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [],
+    "current_sha256": "269987d5da8538e01071ad225ad8a3eeae7f4ae06af5ff8a7f233865d8812ee1",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/lib/registration-submission-receipt.ts",
+    "review_scope": "current-security-part1-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "src/lib/registration-form-fields.ts",
+    "review_scope": "current-security-part1-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+    "review_scope": "current-security-part1-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "src/components/lead-form.tsx",
+    "review_scope": "current-ui-part3-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [],
+    "current_sha256": "50332caf4dc88054e6e9ea8ee8876609cbb45a81bb8ac987e3f5d8745f0b3160",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/components/registration-submission-feedback.tsx",
+    "review_scope": "current-ui-part3-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "src/app/form/[slug]/page.tsx",
+    "review_scope": "current-ui-part3-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [
+      "attribution-followup-prompt.txt"
+    ],
+    "current_sha256": "1254a9c62e71202931e0e8f2f611885909a3be73757b792a3638c648ce5d2f90",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/app/p/[slug]/page.tsx",
+    "review_scope": "current-ui-part3-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [],
+    "current_sha256": "67f4713a78d34f52e912a2e5171ff77d41e0d564e1abff68d1595a528f4711b9",
+    "repair_reviews": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "review_scope": "current-ui-part4-scope.json",
+    "unchanged": true
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "review_scope": "current-ui-part4-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [
+      "final-contract-review-prompt.txt"
+    ],
+    "current_sha256": "86c2857458ea4f43cc0551629cbd4b3c3dd0a899f73c05f11e8fc83d33c1052b",
+    "repair_reviews": [
+      "final-contract-reviewed.json",
+      "final-contract-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  },
+  {
+    "file": "src/lib/registration-submission-client.ts",
+    "review_scope": "current-ui-part4-scope.json",
+    "unchanged": false,
+    "full_current_source_prompts": [
+      "final-contract-followup-prompt.txt",
+      "final-contract-review-prompt.txt"
+    ],
+    "current_sha256": "90bda0e6f84987e4a656511695a9852a1abfb4cfec6fca52b5f3c25960cd3a7c",
+    "repair_reviews": [
+      "final-contract-reviewed.json",
+      "final-contract-followup-reviewed.json"
+    ],
+    "coverage_note": "Full source or changed-line excerpt reviewed; unchanged portions inherited from hashed prior part. Do not describe excerpts as full files."
+  }
+]

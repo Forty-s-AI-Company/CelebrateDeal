@@ -8,7 +8,7 @@ import { createFormSubmissionVerificationToken } from "@/lib/form-submission-ver
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
 
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 // 只驗證註冊身分與資料庫狀態，不排程或寄送郵件。
 vi.mock("@/lib/commerce-order-email", () => ({ ensureCommerceOrderPaidDelivery: vi.fn() }));
 vi.mock("@/lib/taiwan-electronic-invoice", () => ({ reconcileElectronicInvoiceAfterPayment: vi.fn() }));

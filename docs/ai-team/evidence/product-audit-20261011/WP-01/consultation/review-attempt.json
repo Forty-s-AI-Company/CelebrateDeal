@@ -1,0 +1,178 @@
+{
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:543c6a938b42e35fb198538883bdb88cd12da24974946ae5a6d9011ff55be1a7",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/app/actions/sales-workspace-actions.ts",
+      "src/app/actions/sales-workspace-actions.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/actions/sales-workspace-actions.test.ts",
+      "src/app/actions/sales-workspace-actions.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "review": {
+    "summary": "The change looks correct for its stated scope. The module update is scoped to the vendor and runs inside the existing project transactions. The NOT-has/push pattern is idempotent, and Postgres rechecks the WHERE clause under concurrent updates, so a duplicate module entry is unlikely. The vendor ID from the session overrides the one in the form, and the guard tests show no writes when a guard rejects. I found two minor issues. First, the diff adds the layout refresh only to onboarding, and no test proves the create path refreshes the layout. Second, the update quietly does nothing when the module array is NULL, and no database test covers that case. The mocked tests can't prove rollback; you already noted that database and browser checks are still pending. No findings returned does not mean tests or release are approved.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/app/actions/sales-workspace-actions.ts",
+        "area": "createSalesProjectAction, after $transaction (no layout revalidation in diff)",
+        "issue": "The task says both paths refresh the layout after commit. The diff adds revalidatePath(\"/\", \"layout\") only to completePersonalizedOnboardingAction. createSalesProjectAction gets no new call. The test suite only shows that revalidate is not called when the update fails. No test shows createSalesProjectAction calling it with (\"/\", \"layout\") on success.",
+        "evidence": "The diff adds `revalidatePath(\"/\", \"layout\");` only in the onboarding hunk. The createSalesProjectAction hunk only adds the enableConsultationForProject call. The test 'appends only the missing module…' never checks mocks.revalidate.",
+        "impact": "If the existing create action refreshes only a specific page, the navigation layout can stay stale after a consultation project is created. The consultation entry would then not show until the next full reload, even though the module was saved.",
+        "recommended_fix": "Make sure createSalesProjectAction calls revalidatePath(\"/\", \"layout\") after the transaction commits, at least when primaryFlow is consultation. If an existing call already covers the layout, document that and add a test for it.",
+        "required_test": "In the consultation createSalesProjectAction success test, assert that mocks.revalidate was called with (\"/\", \"layout\") after the transaction resolves.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/actions/sales-workspace-actions.ts",
+        "area": "enableConsultationForProject (updateMany where NOT has)",
+        "issue": "When enabledFeatureModules is NULL, `NOT (col @> ARRAY['consultation_booking'])` evaluates to NULL, not true. The row is then skipped and the update succeeds with count 0. The result is never checked, so nothing reports the failure. Separately, if the feature system treats an empty or NULL list as 'use defaults', adding one module would turn that into an explicit list with only consultation in it.",
+        "evidence": "`where: { id: vendorId, NOT: { enabledFeatureModules: { has: \"consultation_booking\" } } }`. The returned `{ count }` is ignored. The tests mock updateMany to return `{ count: 1 }` and never touch real array semantics.",
+        "impact": "Vendors whose rows predate the column or a schema default could create a consultation project and never get the navigation entry, with no error shown. Or their navigation could be cut down to a single module, depending on how empty or NULL is read.",
+        "recommended_fix": "Check that the column is NOT NULL with @default([]), or add an `OR: [{ enabledFeatureModules: { isEmpty: true } }, …]` / null-handling branch. Confirm how empty or NULL lists are read by the navigation code. If the update must have an effect, log or assert on its count.",
+        "required_test": "Add a database integration test with vendor rows whose enabledFeatureModules is NULL, empty, contains other modules, or already contains consultation_booking. After the consultation project is created, assert there is exactly one consultation_booking entry and the other modules are kept. Also run two creations at the same time and assert there is still no duplicate.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "completed": false,
+  "finalModel": "claude-opus-5-5"
+}

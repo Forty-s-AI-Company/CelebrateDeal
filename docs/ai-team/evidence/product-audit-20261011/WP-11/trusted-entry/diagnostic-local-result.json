@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "cases": 10,
+  "scope": "diagnostic gating and boolean-only contract; not platform overwrite proof"
+}

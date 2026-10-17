@@ -1,0 +1,17 @@
+{
+  "revision": "sha256:8aed7955278d44dd7e69675f1a2e6f4db57c929ae4f86ed6690a583fb415ef71",
+  "files": [
+    "src/lib/live-metric-ingestion.ts",
+    "src/lib/live-metric-ingestion.test.ts",
+    "src/lib/live-metric-close.ts",
+    "src/lib/live-metric-close.test.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.test.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/close/route.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/close/route.test.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs",
+    "src/lib/live-metric-version.ts",
+    "src/lib/live-metric-session.ts",
+    "src/lib/live-runtime-state.ts"
+  ]
+}

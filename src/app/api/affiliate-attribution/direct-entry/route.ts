@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSameOriginRequest } from "@/lib/api-security";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import {
   ATTRIBUTION_COOKIE,
   attributionCookieOptions,

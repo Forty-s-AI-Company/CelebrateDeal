@@ -1,0 +1,7 @@
+{
+  "http_status": 200,
+  "native_configured": true,
+  "configuration_ready": true,
+  "topology_probe_required": true,
+  "shape_valid": true
+}

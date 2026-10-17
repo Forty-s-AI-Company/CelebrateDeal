@@ -1,0 +1,229 @@
+{
+  "reviews": {
+    "binding": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5"
+      },
+      "sourceHashesMatch": false,
+      "suppliedRanges": {},
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-page.ts",
+          "area": "issueMetricVisitPage signature and INSERT source selection (expectedForm?: ...; ${form?'registration':'viewer'})",
+          "issue": "If a caller omits the optional expectedForm argument, the page is permanently stored as a positive 'viewer' row instead of a neutral 'unknown' one.",
+          "evidence": "`const form=expectedForm===undefined?null:...` then INSERT uses `${form?'registration':'viewer'}`. The existing whole-row guard makes sourceKind immutable once written. The reviewed scope does not include the callers.",
+          "impact": "A registration-page caller that is missed, or added later, and forgets the argument writes registration renders as 'viewer' rows. They are silently and permanently left out of the registration denominator, which is the error the task says must never happen. Because the rows are immutable, this cannot be fixed afterwards.",
+          "recommended_fix": "Make the source a required discriminated union, e.g. `{kind:'viewer'} | {kind:'registration', formId}`, with no default. The compiler then forces every caller to declare the kind. Alternatively, store 'unknown' when no kind is supplied.",
+          "required_test": "Type-level or compile test showing a call without an explicit source fails to compile. Disposable-DB probe confirming viewer and registration call sites store the expected sourceKind/sourceFormId.",
+          "confidence": 0.55
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-page.ts",
+          "area": "Quota-full branch (ORDER BY \"issuedAt\",\"eventId\" LIMIT 1 FOR UPDATE; UPDATE ... SET \"lossAt\")",
+          "issue": "The permanent loss marker goes on the oldest page in the version, whatever its sourceKind. A registration render dropped at the 10,000-page limit can therefore be recorded only on a viewer or unknown row.",
+          "evidence": "The gap-row selection does not filter by sourceKind, and the 10,000-page limit is counted across all kinds. The described registration reader joins only pages with sourceKind='registration' and a non-null sourceFormId.",
+          "impact": "A registration-only reader or future completeness proof would not see that registration renders were dropped, so the denominator could be undercounted with no visible gap. The current Migration125 fail-closed guard prevents positive coverage claims today, so the risk is latent.",
+          "recommended_fix": "Treat any non-null lossAt in a version as a gap for every source-specific report, documented and enforced in the reader. Alternatively, record loss per source in an additive way without changing existing rows.",
+          "required_test": "Disposable probe: fill a version with viewer pages up to the limit, then issue a registration page. Assert it returns null and that the registration report or proof path flags the version-level loss instead of reporting a clean denominator.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "prisma/migrations/20261016140000_live_metric_registration_visit_source/migration.sql",
+          "area": "ALTER TABLE ... (ACCESS EXCLUSIVE on LiveMetricVisitPage) followed by UPDATE public.\"LiveMetricVersion\" SET \"sourceRevision\"=...",
+          "issue": "The migration locks the page table and then the version rows. The issuer and page guard lock in the opposite order: version row (FOR SHARE) first, then insert into the page table.",
+          "evidence": "In the issuer, resolveMetricVisitContext or the existing guard share-locks the LiveMetricVersion row before the INSERT needs a ROW EXCLUSIVE lock on LiveMetricVisitPage. The migration holds ACCESS EXCLUSIVE on LiveMetricVisitPage and then needs a row lock on every LiveMetricVersion row, which conflicts with FOR SHARE.",
+          "impact": "If issuers are running during the migration, it can deadlock or hit the 5s lock_timeout. Everything rolls back atomically, so nothing is corrupted, but the deploy may fail and need retries, and some issuers may get PERSISTENCE_UNAVAILABLE errors.",
+          "recommended_fix": "Do the sourceRevision UPDATE (version row locks) before the ALTER TABLE so the order matches the issuer. Alternatively, take an explicit table lock on LiveMetricVersion before the page table, or run the migration in a quiesced window.",
+          "required_test": "Disposable-DB concurrency probe: hold an issuer transaction after it has the version FOR SHARE lock, run the migration, and assert it either completes after the issuer commits or fails cleanly within lock_timeout without a deadlock.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "NIT",
+          "file": "prisma/migrations/20261016140000_live_metric_registration_visit_source/migration.sql",
+          "area": "wp20_metric_visit_page_source_guard: LEFT JOIN SalesProject without a lock; error code 23514",
+          "issue": "If the project is unpublished between the issuer's own form check and the INSERT, the trigger raises 23514. The issuer turns that into a thrown PERSISTENCE_UNAVAILABLE error instead of the null 'collection unavailable' result.",
+          "evidence": "The issuer does not lock the SalesProject row, and under READ COMMITTED each statement sees a fresh snapshot. The catch block returns null only for SCOPE_UNAVAILABLE, LIFETIME_UNAVAILABLE, the expired-page error, and P2090, so 23514 is rethrown.",
+          "impact": "A narrow race makes a registration page render fail instead of rendering without tracking. This fails safe (nothing is mislabeled or lost silently) and the publication race is explicitly not certified, so the impact is availability only.",
+          "recommended_fix": "Optionally lock the SalesProject row with KEY SHARE/SHARE in both the issuer and the trigger, or document that this error during an unpublish race is expected.",
+          "required_test": "Disposable probe: interleave an unpublish between the issuer's check and the INSERT, and assert the documented outcome (error or null) with no page row committed.",
+          "confidence": 0.4
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 3,
+        "NIT": 1
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "fallbackEvents": []
+    },
+    "binding-followup": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashesMatch": true,
+      "suppliedRanges": {},
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-page.ts",
+          "area": "issueMetricVisitPage quota branch (gap SELECT ... ORDER BY \"issuedAt\",\"eventId\" LIMIT 1 FOR UPDATE / UPDATE lossAt)",
+          "issue": "The 10000-per-version quota and its permanent loss marker cover all source kinds together, but the new registration reader counts only sourceKind='registration' rows. The loss marker goes on the oldest row of any kind, so when registration pages go untracked it usually lands on an unknown or viewer row. A reader or future proof that only looks at registration-source rows would never see that loss.",
+          "evidence": "The gap row is picked without any sourceKind filter. The task says the registration reader joins pages with 'source registration/form nonnull', which drops unknown and viewer rows. Viewer and unknown renders use up the same per-version count as registration renders.",
+          "impact": "Hidden right now, because the Migration125 guard still fails closed and there is no positive proof. But any later source-scoped completeness or zero proof that checks loss only on registration rows would treat a registration denominator that hit the quota as complete.",
+          "recommended_fix": "Treat loss as a version-level property: any source-scoped completeness check must look for lossAt on any row of the version, whatever its sourceKind. Alternatively, record loss separately per source in a later authorized change. Write this invariant down next to the reader.",
+          "required_test": "Disposable probe: fill a version to 10000 rows, mostly unknown/viewer, then issue one more registration page. Check that the call returns null, that lossAt is set on a non-registration row, and that the registration reader or coverage guard still fails closed for that version and does not report a known count.",
+          "confidence": 0.55
+        },
+        {
+          "severity": "NIT",
+          "file": "prisma/migrations/20261016140000_live_metric_registration_visit_source/migration.sql",
+          "area": "wp20_metric_visit_page_source_guard: SalesProject recheck vs. src/lib/live-metric-visit-page.ts catch block",
+          "issue": "The project row is not locked. If the project is unpublished between the issuer's pre-check and the trigger's recheck, the trigger raises SQLSTATE 23514. The issuer turns that into a thrown PERSISTENCE_UNAVAILABLE error, while the same condition found by the pre-check returns null and the page renders normally.",
+          "evidence": "The TS pre-check throws MetricVisitorError('SCOPE_UNAVAILABLE'), which is caught and returns null. In the trigger path, P2010 with meta.code '23514' matches none of the caught cases and becomes PERSISTENCE_UNAVAILABLE. Only Live and RegistrationForm are locked FOR SHARE, so the project is the only input that can change between the two checks.",
+          "impact": "In a rare race, a registration page request fails while its project is being unpublished. No fact is fabricated or lost, so integrity is fine. This is only an inconsistent availability result.",
+          "recommended_fix": "Optional: map this specific trigger rejection (a distinct SQLSTATE or message) to null, as the pre-check does. Or leave it failing loudly and document that as intended. Keep every other unexpected failure propagating.",
+          "required_test": "Two disposable sessions: hold the issuer after its pre-check, unpublish the project in the other session, then resume. Assert the documented result (null or PERSISTENCE_UNAVAILABLE) and that no registration page row is committed.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-visit-page.ts",
+          "area": "INSERT sourceKind expression ${form?'registration':source?'viewer':'unknown'}",
+          "issue": "As the task says, viewer pages pass no expectedSource, so new viewer renders are stored as 'unknown', the same as legacy rows. The 'viewer' kind and the {kind:'viewer'} gate are never written by current callers.",
+          "evidence": "expectedSource===undefined gives source=null, which stores 'unknown'. Only an explicit {kind:'viewer'} stores 'viewer'.",
+          "impact": "The registration denominator is unaffected, since unknown is excluded. But new viewer facts can't be told apart from history, and a probe expecting a 'viewer' tag from the viewer page would not see one.",
+          "recommended_fix": "No change needed in this scope. Optionally, have the viewer page pass {kind:'viewer'} in a later authorized change, and make the probe's expectations match the 'none for viewer' contract.",
+          "required_test": "Probe: issue a page from the viewer page and confirm sourceKind='unknown' and sourceFormId IS NULL, and that the registration reader excludes it.",
+          "confidence": 0.4
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 2
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "fallbackEvents": []
+    },
+    "reader": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5"
+      },
+      "sourceHashesMatch": true,
+      "suppliedRanges": {
+        "src/lib/live-metric-report-reader.ts": "1-185 inclusive; remaining unrelated reader bodies omitted"
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-report-reader.ts",
+          "area": "readMetricVisitPage SQL: JOIN \"LiveMetricVisitPage\" p / JOIN \"LiveMetricVisitIntent\" i",
+          "issue": "The reader uses inner joins rather than semi-joins and has no explicit 'prepared' check on the intent. As a result, whether each visit appears once, and whether unprepared intents are left out, depends on schema uniqueness and intent state that the supplied text doesn't show.",
+          "evidence": "The page is joined on (vendorId, liveId, versionId, eventId) and the intent on (vendorId, liveId, versionId, eventId, visitorId). Neither join has DISTINCT or EXISTS. The intent join filters only on identity columns, with no prepared-state or prepared-time predicate. Yet the task says the reader joins a 'prepared intent' and excludes 'unprepared internal facts'.",
+          "impact": "If either key isn't unique, the same visit row v.id can come back more than once, and duplicates that straddle a page boundary are silently dropped by the (visitedAt, id) cursor. Browser deduplication hides this for distinct-browser counts, but any count of visit facts would be wrong. If intent rows can exist with a visitorId before they are prepared, unprepared facts could get into the registration denominator.",
+          "recommended_fix": "Replace the two inner joins with EXISTS (...) semi-joins so each visit row is emitted exactly once. In the intent EXISTS, add the explicit predicate that marks an intent as prepared, using whatever column the schema has for it. Alternatively, show the unique constraints on the page and intent keys, and that intent visitorId is only set when the intent is prepared.",
+          "required_test": "Disposable probe: (a) try to insert a second page or intent row for the same key, and either show it is rejected or show the reader still returns each v.id exactly once across page sizes 1 and 500. (b) Create an intent that was issued but not prepared, whose visitorId would match a visit, and assert that visit is left out.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-report-reader.ts",
+          "area": "readMetricVisitPage page predicate vs readMetricOrderPage Live.formId join",
+          "issue": "Scope proposal, not a defect in the authorized task: the denominator accepts registration pages for any non-null sourceFormId, while the order reader is tied to the current Live.formId. Their form scopes can differ if the form changes during a report window.",
+          "evidence": "The visit reader checks only p.\"sourceFormId\" IS NOT NULL. The order reader joins \"Live\" l with l.\"formId\"=f.\"formId\", which uses the current form. The registration cohort reader isn't in the supplied text, so its form scope can't be checked.",
+          "impact": "If the form changes mid-window, browsers that visited pages for form A stay in the denominator while numerator facts tied to the current form B are counted. This could bias rates. It is already covered by the remaining fail-closed source-proof work, so it shouldn't be treated as a new blocker here.",
+          "recommended_fix": "In the planned source reconciliation and proof work, define one consistent form-scope rule for the numerator and denominator: either per historical sourceFormId, or as an explicit union with the form change exposed. Don't relabel history with the current form.",
+          "required_test": "Probe where Live.formId changes inside a report window: check that the report stays unavailable under the Migration125 guard, or, once proof exists, that numerator and denominator use the same documented form scope.",
+          "confidence": 0.35
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 2,
+        "NIT": 0
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "fallbackEvents": []
+    }
+  },
+  "wholeWp": "NOT_READY",
+  "fixed": [
+    "No explicit source defaults to unknown; viewer page explicitly chooses viewer",
+    "Migration version UPDATE precedes page ALTER TABLE"
+  ],
+  "verifiedContext": {
+    "joinCardinality": "Actual disposable duplicate page/intent insert each rejected23505; both primary keys exactscope/event. Intent has non-null server preparedAt, created during prepare; no separate issued/unprepared row state.",
+    "viewerCaller": "Followup prompt stale phrase none for viewer caused a NIT. Actual viewer page explicitly passes kind viewer; exact argument unit assertion and real DB source tagging PASS. Reviewer receipt retained unchanged."
+  },
+  "unresolved": [
+    {
+      "severity": "MAJOR",
+      "issue": "Public SSR can exhaust lifetime quota and contend for same-scope locks.",
+      "status": "OPEN"
+    },
+    {
+      "severity": "MINOR",
+      "issue": "Loss marker can be on viewer/unknown. Every positive/zero source proof must inspect ALL version loss markers, not only registration rows.",
+      "status": "OPEN_LATENT_POSITIVE_COVERAGE_DISABLED"
+    },
+    {
+      "severity": "MINOR",
+      "issue": "Numerator/denominator historical form scope requires reconciliation when Live.formId changes.",
+      "status": "OPEN_POSITIVE_COVERAGE_DISABLED"
+    },
+    {
+      "severity": "NIT",
+      "issue": "Project unpublish race can surface PERSISTENCE_UNAVAILABLE; transaction rolls back.",
+      "status": "DOCUMENTED_NOT_FULLY_TESTED"
+    }
+  ]
+}

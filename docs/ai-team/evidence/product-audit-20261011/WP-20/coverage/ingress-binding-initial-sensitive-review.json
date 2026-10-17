@@ -1,0 +1,17 @@
+{
+  "reviewed": false,
+  "normalized_status": "BLOCKED_SENSITIVE_INPUT",
+  "status": "BLOCKED_SENSITIVE_INPUT",
+  "verification": {
+    "status": "BLOCKED_SENSITIVE_INPUT",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "completed": false,
+  "observed": {
+    "effort": "unknown",
+    "source": "not_reported",
+    "model": "unknown"
+  },
+  "attempts": []
+}

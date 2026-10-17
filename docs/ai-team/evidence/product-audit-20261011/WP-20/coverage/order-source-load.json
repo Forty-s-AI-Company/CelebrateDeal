@@ -1,0 +1,314 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "orders": 100000,
+  "ledgerEvents": 1000000,
+  "constraintsAndTriggersEnabled": true,
+  "setupMs": 80035,
+  "auditMs": 1176,
+  "auditStatus": "enumerated",
+  "contextReads": 1,
+  "pages": 200,
+  "plans": [
+    {
+      "planningMs": 0.863,
+      "executionMs": 0.949,
+      "plan": {
+        "node": "Limit",
+        "rows": 501,
+        "loops": 1,
+        "totalMs": 0.677,
+        "sharedHits": 29,
+        "children": [
+          {
+            "node": "Nested Loop",
+            "rows": 501,
+            "loops": 1,
+            "totalMs": 0.622,
+            "sharedHits": 29,
+            "children": [
+              {
+                "node": "Nested Loop",
+                "rows": 501,
+                "loops": 1,
+                "totalMs": 0.521,
+                "sharedHits": 27,
+                "children": [
+                  {
+                    "node": "Nested Loop",
+                    "rows": 501,
+                    "loops": 1,
+                    "totalMs": 0.411,
+                    "sharedHits": 25,
+                    "children": [
+                      {
+                        "node": "Nested Loop",
+                        "rows": 501,
+                        "loops": 1,
+                        "totalMs": 0.312,
+                        "sharedHits": 23,
+                        "children": [
+                          {
+                            "node": "Index Scan",
+                            "index": "CommerceOrder_pkey",
+                            "rows": 501,
+                            "loops": 1,
+                            "totalMs": 0.192,
+                            "sharedHits": 21,
+                            "children": []
+                          },
+                          {
+                            "node": "Materialize",
+                            "rows": 0,
+                            "loops": 501,
+                            "totalMs": 0,
+                            "sharedHits": 2,
+                            "children": [
+                              {
+                                "node": "Nested Loop",
+                                "rows": 0,
+                                "loops": 1,
+                                "totalMs": 0.023,
+                                "sharedHits": 2,
+                                "children": [
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "PaymentTransaction_vendorId_id_key",
+                                    "rows": 0,
+                                    "loops": 1,
+                                    "totalMs": 0.022,
+                                    "sharedHits": 2,
+                                    "children": []
+                                  },
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "FormSubmission_pkey",
+                                    "rows": 0,
+                                    "loops": 0,
+                                    "totalMs": 0,
+                                    "sharedHits": 0,
+                                    "children": []
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "node": "Materialize",
+                        "rows": 0,
+                        "loops": 501,
+                        "totalMs": 0,
+                        "sharedHits": 2,
+                        "children": [
+                          {
+                            "node": "Index Only Scan",
+                            "index": "RegistrationForm_vendorId_id_key",
+                            "rows": 0,
+                            "loops": 1,
+                            "totalMs": 0.011,
+                            "sharedHits": 2,
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "node": "Materialize",
+                    "rows": 1,
+                    "loops": 501,
+                    "totalMs": 0,
+                    "sharedHits": 2,
+                    "children": [
+                      {
+                        "node": "Index Scan",
+                        "index": "Live_vendorId_projectId_status_idx",
+                        "rows": 1,
+                        "loops": 1,
+                        "totalMs": 0.012,
+                        "sharedHits": 2,
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "node": "Materialize",
+                "rows": 0,
+                "loops": 501,
+                "totalMs": 0,
+                "sharedHits": 2,
+                "children": [
+                  {
+                    "node": "Index Scan",
+                    "index": "LiveMetricRegistration_scope_submission_key",
+                    "rows": 0,
+                    "loops": 1,
+                    "totalMs": 0.009,
+                    "sharedHits": 2,
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "planningMs": 1.513,
+      "executionMs": 1.645,
+      "plan": {
+        "node": "Limit",
+        "rows": 500,
+        "loops": 1,
+        "totalMs": 1.254,
+        "sharedHits": 29,
+        "children": [
+          {
+            "node": "Nested Loop",
+            "rows": 500,
+            "loops": 1,
+            "totalMs": 1.182,
+            "sharedHits": 29,
+            "children": [
+              {
+                "node": "Nested Loop",
+                "rows": 500,
+                "loops": 1,
+                "totalMs": 1.006,
+                "sharedHits": 27,
+                "children": [
+                  {
+                    "node": "Nested Loop",
+                    "rows": 500,
+                    "loops": 1,
+                    "totalMs": 0.829,
+                    "sharedHits": 25,
+                    "children": [
+                      {
+                        "node": "Nested Loop",
+                        "rows": 500,
+                        "loops": 1,
+                        "totalMs": 0.655,
+                        "sharedHits": 23,
+                        "children": [
+                          {
+                            "node": "Index Scan",
+                            "index": "CommerceOrder_pkey",
+                            "rows": 500,
+                            "loops": 1,
+                            "totalMs": 0.485,
+                            "sharedHits": 21,
+                            "children": []
+                          },
+                          {
+                            "node": "Materialize",
+                            "rows": 0,
+                            "loops": 500,
+                            "totalMs": 0,
+                            "sharedHits": 2,
+                            "children": [
+                              {
+                                "node": "Nested Loop",
+                                "rows": 0,
+                                "loops": 1,
+                                "totalMs": 0.022,
+                                "sharedHits": 2,
+                                "children": [
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "PaymentTransaction_vendorId_id_key",
+                                    "rows": 0,
+                                    "loops": 1,
+                                    "totalMs": 0.02,
+                                    "sharedHits": 2,
+                                    "children": []
+                                  },
+                                  {
+                                    "node": "Index Scan",
+                                    "index": "FormSubmission_pkey",
+                                    "rows": 0,
+                                    "loops": 0,
+                                    "totalMs": 0,
+                                    "sharedHits": 0,
+                                    "children": []
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "node": "Materialize",
+                        "rows": 0,
+                        "loops": 500,
+                        "totalMs": 0,
+                        "sharedHits": 2,
+                        "children": [
+                          {
+                            "node": "Index Only Scan",
+                            "index": "RegistrationForm_vendorId_id_key",
+                            "rows": 0,
+                            "loops": 1,
+                            "totalMs": 0.043,
+                            "sharedHits": 2,
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "node": "Materialize",
+                    "rows": 1,
+                    "loops": 500,
+                    "totalMs": 0,
+                    "sharedHits": 2,
+                    "children": [
+                      {
+                        "node": "Index Scan",
+                        "index": "Live_vendorId_projectId_status_idx",
+                        "rows": 1,
+                        "loops": 1,
+                        "totalMs": 0.024,
+                        "sharedHits": 2,
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "node": "Materialize",
+                "rows": 0,
+                "loops": 500,
+                "totalMs": 0,
+                "sharedHits": 2,
+                "children": [
+                  {
+                    "node": "Index Scan",
+                    "index": "LiveMetricRegistration_scope_submission_key",
+                    "rows": 0,
+                    "loops": 1,
+                    "totalMs": 0.017,
+                    "sharedHits": 2,
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

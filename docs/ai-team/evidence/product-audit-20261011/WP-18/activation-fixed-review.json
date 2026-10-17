@@ -1,0 +1,185 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false,
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "accepted": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "review": {
+    "summary": "I reviewed only the WP18 follow-up changes in the supplied text: the recipe readiness gate, the voucher product guard, the trusted-producer toggle with its compare-and-swap check and narrowed audit-after snapshot, the badge for active rules that can no longer run, and the unsubscribe link added to the new no_show_followup email. I found no BLOCKER or MAJOR regression.\n\n- **Activation:** recipe creation now requires both `recipe.isActive` and `automationRuleReady`. Custom rules are still stopped from using trusted-producer triggers. Turning a rule on requires it to be ready, but an active rule that is no longer ready can still be turned off.\n- **Toggle and audit:** the compare-and-swap matches on vendor, id, active flag, version and updatedAt, and raises the version only on reactivation. The audit-after record holds only id, active flag and version, and the version value is correct.\n- **Email scope:** the custom-rule email list does not include no_show_followup, and only that template gets the signed link. The unsubscribe token is placed in the body before encryption, so the plaintext token is not stored.\n\nThere are two MINOR findings. First, a missing public app URL setting makes the no-show action fail with an error instead of returning a status. Second, the evidence only shows that unsubscribing cancels one queued email, not that the address is blocked from later no-show emails. Your 59 tests and 13 Postgres checks are taken as reported. HTTP, browser and real email delivery were not run, and an empty or short findings list does not mean the release is cleared.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "automation email action executor (send_email_notification branch)",
+        "area": "no_show_followup body construction: createEmailUnsubscribeUrl(id) call before the try/emailDelivery.create",
+        "issue": "The new unsubscribe-link step can throw an error (missing NEXT_PUBLIC_APP_URL, bad URL scheme, or a delivery id that fails the SAFE_ID check), and nothing inside the action catches it. Every other failure in this branch returns a status object, such as recipient_not_linked or duplicate.",
+        "evidence": "createEmailUnsubscribeUrl throws 'Public application URL is not configured.' when the env var is missing. The call sits inside the protectEmailDeliveryPayload argument, outside the try/catch, which only handles unique-key conflicts. Only the no_show_followup template takes this path.",
+        "impact": "If the setting is missing in an environment, every no-show follow-up run fails partway through. Earlier actions in the same rule (such as a LINE message or voucher) may already have run, and the run may be retried over and over or dropped, depending on the caller's error handling. Other templates are not affected.",
+        "recommended_fix": "Check that the public URL is configured when the no-show rule is turned on, or at startup. Alternatively, catch the error in this branch and return an explicit status such as { status: 'unsubscribe_unavailable' } without queueing the email. Never queue the email without the opt-out link.",
+        "required_test": "Unit/PG test: with NEXT_PUBLIC_APP_URL unset, run a no_show_followup execution. Assert that no emailDelivery row is created, that a clear status or retry-safe outcome is recorded, and that replaying with the setting restored queues exactly one email.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "automation email action executor / unsubscribe handler",
+        "area": "no_show_followup opt-out semantics (token bound to a single deliveryId)",
+        "issue": "The token is signed over a single deliveryId, and the reported proof only shows that the handler 'cancels queue' for that delivery. The supplied text has no evidence that an unsubscribe also blocks future no_show_followup emails to the same recipient. The email action queues without checking for a previous opt-out.",
+        "evidence": "unsubscribeSignature signs `${TOKEN_VERSION}.${deliveryId}` only. The send_email_notification branch creates emailDelivery with status 'queued' and does not check for a suppression record. The task summary says the unsubscribe handler 'cancels queue' and says nothing about suppressing later emails.",
+        "impact": "If the handler only cancels the delivery the link belongs to (which has usually already been sent by the time the recipient clicks), a recipient who unsubscribes still gets the next no-show follow-up. That would leave the WP18 opt-out requirement only nominally met.",
+        "recommended_fix": "Confirm that the existing unsubscribe handler records a recipient- or vendor-level opt-out, and that either queueing or the send-time check honors it for automation no_show_followup emails. If it already does, add a test that proves it. Add no new infrastructure.",
+        "required_test": "PG test: queue a no_show_followup, unsubscribe through the real handler using its token, then trigger a second no-show event for the same recipient. Assert that the second email is not sent: either it is never queued, or it is suppressed or cancelled at send time.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "payment",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 14034,
+      "expected_duration": 0,
+      "code_surface_area": 6,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper"
+    },
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli"
+    }
+  ]
+}

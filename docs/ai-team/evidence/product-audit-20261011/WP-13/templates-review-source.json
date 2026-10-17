@@ -1,0 +1,12 @@
+{
+  "sourceHashes": {
+    "src/lib/line-webinar-template.ts": "ca4300abc197ee844398b3febe8ab0fd2fabac240a7bf8407ec01a9ccb2b61a1",
+    "src/lib/line-notification.ts": "7330f1e68d748d50cec1fc90b5f1068046e1c37753cdb5e05632582c3bfa6ccb",
+    "src/lib/line-notification-materializer.ts": "5f0590211795914cd97a4fdd9ee8a0f2c7f64240fcaf1cb9cbe76d229354efb4",
+    "src/lib/line-live-started.ts": "423cdb17a4bcd0d4fce4ab09ef29b47732f4789eb52aad49bf63b1af7befc2c7",
+    "src/lib/message-template.ts": "35aa03ead9660478d5998477afc017c22faff2cf98a1d00bdf24d73bd0ad7c73",
+    "src/components/message-template-form-client.tsx": "6f205713ac008c01d9050861e675ee9977415ac25c3ae57a158b52b8f0d2d95e"
+  },
+  "contextChars": 41492,
+  "scope": "Full6productmodules; one existing type-only argument name normalized; no executable redaction or fixture credentials."
+}

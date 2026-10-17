@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "port": 50559,
+  "scope": "Direct Next webpack build with the same explicit synthetic loopback environment; existing disposable runner. No real credentials inherited or external upload.",
+  "exitCode": 0,
+  "diagnostics": [
+    "├ ○ /registration-error"
+  ],
+  "stackFrames": [],
+  "phaseMarkers": [
+    "Compiled successfully",
+    "Creating an optimized",
+    "TypeScript",
+    "Generating static",
+    "Collecting page"
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrations": 131
+}

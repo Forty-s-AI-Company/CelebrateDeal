@@ -208,7 +208,7 @@ vi.mock("@/lib/password-reset", () => ({
   sendPasswordResetLink: mocks.sendPasswordResetLink,
 }));
 vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
   generateRecoveryCodes: mocks.generateRecoveryCodes,

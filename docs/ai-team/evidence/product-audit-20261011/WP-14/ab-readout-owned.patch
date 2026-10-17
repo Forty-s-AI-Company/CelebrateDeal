@@ -1,0 +1,140 @@
+--- a/src/lib/funnel-operations-service.ts
++++ b/src/lib/funnel-operations-service.ts
+@@ -118,23 +118,29 @@
+   const source = { vendorId: page.vendorId, pageId: page.id };
+   const [visits, submissions, leadRows, orders] = await Promise.all([
+     database.funnelVisit.findMany({ where: { ...source, createdAt: period(stats.days, now) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: REPORT_LIMIT + 1, select: { id: true, stepId: true, logicalStepId: true, visitorId: true, createdAt: true, experimentId: true, arm: true } }),
+-    database.funnelSubmission.findMany({ where: { ...source, createdAt: period(stats.days, now), submission: { form: { vendorId: page.vendorId, projectId: page.projectId } } }, take: REPORT_LIMIT + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, stepId: true, visit: { select: { logicalStepId: true, experimentId: true, arm: true } } } }),
++    database.funnelSubmission.findMany({ where: { ...source, createdAt: period(stats.days, now), submission: { form: { vendorId: page.vendorId, projectId: page.projectId } } }, take: REPORT_LIMIT + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, stepId: true, submission: { select: { verificationStatus: true } }, visit: { select: { logicalStepId: true, experimentId: true, arm: true } } } }),
+     database.funnelSubmission.findMany({ where: { ...source, ...(leads.stepId ? { stepId: leads.stepId } : {}), createdAt: period(leads.days, now), submission: { form: { vendorId: page.vendorId, projectId: page.projectId } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 101, select: { id: true, stepId: true, submissionId: true, createdAt: true, submission: { select: { verificationStatus: true } } } }),
+     database.commerceOrder.findMany({ where: { vendorId: page.vendorId, projectId: page.projectId, isTestOrder: false, paidAt: period(sales.days, now), paidAmountCents: { gt: 0 }, primaryPaymentTransaction: { is: { vendorId: page.vendorId, metadata: { path: ["funnel", "pageId"], equals: page.id }, ...(sales.stepId ? { AND: [{ metadata: { path: ["funnel", "stepId"], equals: sales.stepId } }] } : {}) } } }, orderBy: [{ paidAt: "desc" }, { id: "desc" }], take: 101, select: { id: true, orderNumber: true, status: true, currency: true, paidAmountCents: true, refundedAmountCents: true, paidAt: true, primaryPaymentTransaction: { select: { id: true, status: true, metadata: true } } } }),
+   ]);
+   const variant = operations.experiment?.variantStepId;
+   const steps = state.flow.steps.filter((step) => !step.isSystem && step.id !== variant);
+   const aggregate = aggregateFunnelVisits(steps, visits.slice(0, REPORT_LIMIT).map((visit) => ({ ...visit, stepId: visit.logicalStepId })), submissions.slice(0, REPORT_LIMIT).map((submission) => ({ stepId: submission.visit?.logicalStepId ?? submission.stepId })));
+-  const experimentRows = new Map<string, { id: string; arm: string; pageViews: number; submissions: number }>();
++  const experimentRows = new Map<string, { id: string; arm: string; pageViews: number; submissions: number; verifiedSubmissions: number }>();
+   for (const visit of visits.slice(0, REPORT_LIMIT)) {
+     if (!visit.experimentId || !visit.arm) continue;
+     const key = `${visit.experimentId}:${visit.arm}`;
+-    const row = experimentRows.get(key) ?? { id: visit.experimentId, arm: visit.arm, pageViews: 0, submissions: 0 };
++    const row = experimentRows.get(key) ?? { id: visit.experimentId, arm: visit.arm, pageViews: 0, submissions: 0, verifiedSubmissions: 0 };
+     row.pageViews += 1; experimentRows.set(key, row);
+   }
+   for (const submission of submissions.slice(0, REPORT_LIMIT)) {
+-    const row = experimentRows.get(`${submission.visit?.experimentId}:${submission.visit?.arm}`);
+-    if (row) row.submissions += 1;
++    const { experimentId, arm } = submission.visit ?? {};
++    if (!experimentId || !arm) continue;
++    const key = `${experimentId}:${arm}`;
++    // 報名時間在範圍內即可列入；其歸因瀏覽可能早於本次時間窗。
++    const row = experimentRows.get(key) ?? { id: experimentId, arm, pageViews: 0, submissions: 0, verifiedSubmissions: 0 };
++    row.submissions += 1;
++    if (submission.submission.verificationStatus === "VERIFIED") row.verifiedSubmissions += 1;
++    experimentRows.set(key, row);
+   }
+   const experiments = [...experimentRows.values()];
+   return {
+--- a/src/lib/funnel-operations-service.test.ts
++++ b/src/lib/funnel-operations-service.test.ts
+@@ -62,6 +62,41 @@
+  });
+ });
+ describe("trusted report queries",()=>{
++ it("counts current confirmations separately for each attributed experiment arm",async()=>{
++  mocks.visits.mockResolvedValue([
++   {id:"v1",stepId:"control",logicalStepId:"registration",visitorId:"visitor1",createdAt:new Date(),experimentId:"exp1",arm:"control"},
++   {id:"v2",stepId:"control",logicalStepId:"registration",visitorId:"visitor1",createdAt:new Date(),experimentId:"exp1",arm:"control"},
++  ]);
++  const attributed=(id:string,experimentId:string|null,arm:string|null,status:string)=>({id,stepId:"registration",visit:{logicalStepId:"registration",experimentId,arm},submission:{verificationStatus:status}});
++  mocks.submissions.mockResolvedValueOnce([
++   attributed("s1","exp1","control","VERIFIED"),attributed("s2","exp1","control","UNVERIFIED"),
++   attributed("s3","exp1","variant","UNVERIFIED"),attributed("s4","older-exp","variant","VERIFIED"),
++   attributed("unattributed",null,null,"VERIFIED"),
++  ]).mockResolvedValueOnce([]);
++  const now=new Date("2026-10-16T00:00:00Z");
++  const result=await loadFunnelReports("page1",now);
++  expect(result.experiments).toEqual([
++   {id:"exp1",arm:"control",pageViews:2,submissions:2,verifiedSubmissions:1},
++   {id:"exp1",arm:"variant",pageViews:0,submissions:1,verifiedSubmissions:0},
++   {id:"older-exp",arm:"variant",pageViews:0,submissions:1,verifiedSubmissions:1},
++  ]);
++  const query=mocks.submissions.mock.calls[0]![0];
++  expect(query.where.createdAt.lte).toEqual(now);
++  expect(query.select.submission).toEqual({select:{verificationStatus:true}});
++  expect(JSON.stringify(query.select)).not.toMatch(/email|phone|answers|name/);
++  expect(result.statsTruncated).toBe(false);
++  expect(mocks.update).not.toHaveBeenCalled();
++ });
++ it("keeps both counts within the existing report cap and signals partial data",async()=>{
++  const row={id:"synthetic",stepId:"registration",visit:{logicalStepId:"registration",experimentId:"exp1",arm:"variant"},submission:{verificationStatus:"VERIFIED"}};
++  mocks.submissions.mockResolvedValueOnce(Array.from({length:10001},(_,index)=>({...row,id:`s${index}`}))).mockResolvedValueOnce([]);
++  const result=await loadFunnelReports("page1");
++  expect(result.experiments).toEqual([{id:"exp1",arm:"variant",pageViews:0,submissions:10000,verifiedSubmissions:10000}]);
++  expect(result.statsTruncated).toBe(true);
++ });
++ it("returns no experiment data for an empty report",async()=>{
++  expect((await loadFunnelReports("page1")).experiments).toEqual([]);
++ });
+  it("loads editor and reports from one tenant-checked page snapshot",async()=>{
+   const result=await loadFunnelOperationsBundle("page1");
+   expect(result.editor.pageId).toBe("page1");
+--- a/src/components/landing-pages/funnel-operations-panel.tsx
++++ b/src/components/landing-pages/funnel-operations-panel.tsx
+@@ -8,6 +8,7 @@
+ import { landingPageAction } from "@/app/actions/landing-page-actions";
+ import { readFunnelOperations, updateFunnelOperations } from "@/app/actions/funnel-operations-actions";
+ import { FunnelAutomationSettings } from "@/components/landing-pages/funnel-automation-settings";
++import { FunnelExperimentReport } from "./funnel-experiment-report";
+ import { FunnelTemplateGalleryPicker } from "@/components/landing-pages/funnel-template-gallery-picker";
+ import { type FunnelOperations, type FunnelExperiment } from "@/lib/funnel-operations";
+ import type { FunnelOperationsEditor, FunnelReports } from "@/lib/funnel-operations-service";
+@@ -329,7 +330,7 @@
+ function StatsReport({ reports }: { reports: FunnelReports }) {
+   return <div className="overflow-auto"><p className="mb-3 text-sm">瀏覽次數為伺服器公開頁交付紀錄，包含重新整理；步驟轉換為同一匿名訪客依序到達下一步，非成交。未取得匿名識別的瀏覽不計入。</p>{reports.statsTruncated ? <p role="alert">已達 10,000 筆上限，以下為部分資料，請縮短日期範圍。</p> : null}
+     <table className="w-full text-left text-sm"><thead><tr>{["步驟", "瀏覽次數", "訪客", "報名次數", "步驟轉換", "流失人數"].map((label) => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{reports.stats.map((row) => <tr key={row.stepId} className="border-t"><td className="p-2">{row.name}</td><td>{row.pageViews}</td><td>{row.visitors}</td><td>{row.submissions}</td><td>{row.conversionRate === null ? "—" : `${(row.conversionRate * 100).toFixed(1)}% (${row.conversions})`}</td><td>{row.dropOff ?? "—"}</td></tr>)}</tbody></table>
+-    <div className="mt-4">{reports.experiments.map((row) => <p key={`${row.id}-${row.arm}`} className="text-sm">實驗 {row.id} · {row.arm === "control" || row.arm === "variant" ? experimentArmLabels[row.arm] : "未知組別"} · 瀏覽次數 {row.pageViews} · 報名次數 {row.submissions}</p>)}</div>
++    <FunnelExperimentReport rows={reports.experiments} />
+     <details className="mt-4"><summary>檢視來源事件編號（前 20 筆）</summary>{reports.sources.map((source) => <p key={source.id} className="break-all font-mono text-xs">{source.id} · {source.stepId} · {source.createdAt}</p>)}</details>
+   </div>;
+ }
+--- /dev/null
++++ b/src/components/landing-pages/funnel-experiment-report.tsx
+@@ -0,0 +1,14 @@
++import type { FunnelReports } from "@/lib/funnel-operations-service";
++import { experimentArmLabels } from "./funnel-display-labels";
++
++/** 僅呈現既有歸因紀錄，不據此自動選定勝出組別或變更驗證資格。 */
++export function FunnelExperimentReport({ rows }: { rows: FunnelReports["experiments"] }) {
++  return <section aria-label="A/B 二次確認統計" className="mt-4 space-y-2 text-sm">
++    <h3 className="font-semibold">A/B 二次確認統計</h3>
++    <p>以下涵蓋整個網站的實驗，沿用已儲存的最近天數，不受步驟篩選影響。瀏覽依瀏覽時間、報名依報名時間計入；瀏覽包含重新整理。</p>
++    <p>已確認筆數是這段期間報名者目前的 Email 確認狀態，可能包含期間結束後的確認；不是期間內完成確認的人數。資料上限與上方統計相同。這些筆數不代表到場、觀看或轉換提升。</p>
++    {rows.length ? rows.map((row) => <p key={`${row.id}-${row.arm}`} className="break-all">
++      實驗 {row.id} · {row.arm === "control" || row.arm === "variant" ? experimentArmLabels[row.arm] : "未知組別"} · 瀏覽次數 {row.pageViews} · 報名筆數 {row.submissions} · 目前已確認筆數 {row.verifiedSubmissions}
++    </p>) : <p>此範圍尚無可歸因至實驗的紀錄。</p>}
++  </section>;
++}
+--- /dev/null
++++ b/src/components/landing-pages/funnel-experiment-report.test.tsx
+@@ -0,0 +1,20 @@
++import { renderToStaticMarkup } from "react-dom/server";
++import { describe, expect, it } from "vitest";
++import { FunnelExperimentReport } from "./funnel-experiment-report";
++
++describe("A/B confirmation readout", () => {
++  it("shows both arms, current status counts and explicit cohort limitations", () => {
++    const html = renderToStaticMarkup(<FunnelExperimentReport rows={[
++      { id: "synthetic", arm: "control", pageViews: 8, submissions: 3, verifiedSubmissions: 2 },
++      { id: "synthetic", arm: "variant", pageViews: 0, submissions: 1, verifiedSubmissions: 0 },
++    ]} />);
++    for (const text of ["對照", "測試", "目前已確認筆數 2", "目前已確認筆數 0", "不受步驟篩選影響", "期間結束後的確認", "不代表到場"]) expect(html).toContain(text);
++    expect(html).not.toContain("%");
++    expect(html).not.toContain("勝出");
++  });
++  it("distinguishes no attributed data from zero confirmations", () => {
++    const html = renderToStaticMarkup(<FunnelExperimentReport rows={[]} />);
++    expect(html).toContain("尚無可歸因至實驗的紀錄");
++    expect(html).not.toContain("目前已確認筆數 0");
++  });
++});

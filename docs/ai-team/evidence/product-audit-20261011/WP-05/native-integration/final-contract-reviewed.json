@@ -1,0 +1,173 @@
+{
+  "accepted": false,
+  "execution_provider": "claude_cli",
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "Two small findings, no blockers or majors. Transport: a 2xx counts as success only when it is application/json with exactly {ok:true, verificationRequired:true}. Followed redirects, HTML, malformed JSON, 204 and wrong-shape JSON all become an empty 503. Non-2xx responses pass through unchanged for existing .ok/.status callers, and the original body stays readable. Webinar form: keeps the native first POST, blocks duplicates with a ref, uses flushSync to show pending before navigation, disables only the unnamed button so all fields are still sent, and resets pending on pageshow. Findings: (1) MINOR: if the user cancels the native navigation, the form stays locked in 'sending' until reload, because nothing resets pending; (2) NIT: the real browser redirect path (a manual-mode redirect arriving as status 0) has no test. Not checked: the server code wasn't supplied, so I can't confirm the API redirects native form posts instead of returning raw JSON. No PASS claim: the browser test result is still pending.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+        "area": "WebinarRegistrationForm onSubmit / pageshow reset effect (~lines 66-80)",
+        "issue": "The form stays locked in 'sending' if the native navigation is cancelled without leaving the page.",
+        "evidence": "onSubmit sets inFlight.current = true and pending = true. The only reset is the pageshow listener, which fires only when the page is shown again (initial load or back/forward-cache restore). If the user presses Stop/Esc, or the navigation is aborted while the document stays loaded, pageshow never fires. The button stays disabled, and inFlight blocks every later onSubmit through its early return.",
+        "impact": "The user cannot resubmit until a full reload. This is the 'cannot submit at all' failure mode the retry flow is meant to avoid. It is rare but leaves a dead end.",
+        "recommended_fix": "Add a fallback reset, for example a timer started on submit (around 15-30s) that clears inFlight and pending if the page is still loaded, cancelled on pagehide. Alternatively, reset when the form receives input or focus after a reasonable delay. Keep pageshow as the main reset.",
+        "required_test": "Browser test: submit with a POST that never resolves, simulate a cancelled navigation (or advance fake timers past the fallback), and assert the button is enabled again, the fields keep their values, and a second submit dispatches exactly one more POST.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/registration-submission-client.test.ts",
+        "area": "redirect rejection tests (end of file)",
+        "issue": "Only the followed-redirect case (redirected === true) is tested. The path browsers actually take with redirect: 'manual' is not tested.",
+        "evidence": "With redirect: 'manual', browsers return type 'opaqueredirect' with status 0 and ok false. postRegistrationSubmission returns it through `if (!response.ok) return response;`, and callers then get formSubmissionErrorMessage(0), the generic HTTP message. The existing test only sets redirected=true on a 200 JSON response, which is not what browsers do in manual mode.",
+        "impact": "There is no runtime defect today: status 0 is rejected and gets the neutral message. But a later change to the !ok early return, or to how callers treat status 0, could quietly let redirects count as success or show the network-failure message.",
+        "recommended_fix": "Add a test that mocks fetch with a response-like object { ok: false, status: 0, type: 'opaqueredirect', redirected: false, headers: new Headers() }, since status 0 can't be built with new Response. Assert that ok is false, the status is not 2xx, and formSubmissionErrorMessage(status) does not mention the network. Optionally map status 0 to 503 explicitly so callers get a consistent result.",
+        "required_test": "Unit test for the opaque-redirect response described above, plus a check of the resulting caller message.",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "reviewed": true,
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  }
+}

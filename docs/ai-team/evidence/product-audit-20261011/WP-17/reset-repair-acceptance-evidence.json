@@ -1,0 +1,111 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\reset-repair-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "reset-unit",
+      "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "reset-repair-unit.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\reset-unit-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "reset-browser",
+      "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "browser.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\reset-browser-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "reset-build-and-typecheck",
+      "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "build.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\reset-build-and-typecheck-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "reset-lint",
+      "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "desktop-exec-session36717",
+      "warnings": 1,
+      "reason": "Existing full navigation lint warning retained, no rule disabled; actual session36717 exited0.",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\reset-lint-receipt.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+    "status": "PASS",
+    "independent": true,
+    "role": "senior_review",
+    "model": "claude-sonnet-5-5",
+    "observed_model": "claude-sonnet-5-5",
+    "observed_effort": "unknown",
+    "provider_receipt": "reset-repair-review.json",
+    "scope": "Three full current repair/test files; previous product reviews preserved for byte-unchanged backend/page.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\reset-repair-review-qualification.json"
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "tests/e2e/wp17-quick-webinar.spec.ts",
+      "area": "Locators `quick.getByRole(\"combobox\", { name: \"選擇影片\", exact: true })`, used throughout both tests",
+      "issue": "The exact role/name locator replaces `getByLabel` on the claim that it avoids option text. That claim has not been run against the full browser suite. Accessible-name computation for a `<label>`-wrapped `<select>` can include the embedded control's selected option text, depending on the engine.",
+      "evidence": "The `<select>` sits inside a `<label>` whose text is '選擇影片', and its options include '請選擇已就緒且有長度的影片' and the video titles. The user states the full browser rerun is pending, so `exact: true` on the role name has only been justified by reasoning.",
+      "impact": "If the computed name is not exactly '選擇影片', every combobox locator times out. The failure would be a false negative in the test, not a product defect. It would be most confusing after the selection changes the select's value.",
+      "recommended_fix": "Confirm in the pending full browser run. If it is flaky, match the role with a regex anchored on the label prefix, for example `name: /^選擇影片/`, or give the select an explicit `aria-label`.",
+      "required_test": "Run both WP17 e2e tests in Chromium. Check that the combobox locator resolves in the initial, selected, disabled and completed states.",
+      "confidence": 0.3,
+      "disposition": "resolved",
+      "disposition_evidence": "browser.json: exact role/name passed in initial, selected and completed disabled states across both actual Chromium cases.",
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "reset-browser",
+          "revision": "sha256:f4a43e6e7a7e9bf8828f7237841c180fe54c3478c556ed4fccdf71c4163c3370",
+          "status": "PASS",
+          "exit_code": 0,
+          "source_receipt": "browser.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\reset-browser-receipt.json"
+        }
+      ]
+    },
+    {
+      "severity": "NIT",
+      "file": "src/components/quick-webinar-form.test.tsx",
+      "area": "Test 'preserves the selected video through the native reset…'",
+      "issue": "The unit test dispatches a manual `reset` event and calls `form.reset()` itself. It does not exercise React's real action-completion reset path. It also does not cover the error path, where the user's inputs are now preserved because the reset is cancelled.",
+      "evidence": "The test calls `form.dispatchEvent(reset)` and then `form.reset()` directly. The mocked `createQuickWebinarAction` is never invoked through `<form action>`.",
+      "impact": "A future React or happy-dom change to how action forms reset would be caught only by the slow e2e. The unit test still protects the `onReset` handler, which is the only product change.",
+      "recommended_fix": "Keep the comment that e2e covers the real sequence. Optionally add a one-line assertion that the `onReset` handler also preserves the title and datetime values.",
+      "required_test": "After the dispatch and conditional reset, assert that the datetime and title inputs keep their entered values as well as the select.",
+      "confidence": 0.35,
+      "disposition": "unresolved",
+      "disposition_evidence": "Unit does not exercise real action path; actual browser E2E does. Optional additional title assertion retained as NIT."
+    }
+  ]
+}

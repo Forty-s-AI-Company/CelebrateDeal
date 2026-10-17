@@ -1,0 +1,28 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+  "status": "PASS",
+  "independent": true,
+  "role": "senior_review",
+  "model": "claude-sonnet-5-5",
+  "observed_model": "claude-sonnet-5-5",
+  "observed_effort": "unknown",
+  "provider_receipts": [
+    "calendar-review.json",
+    "calendar-fixed-review.json",
+    "calendar-hydration-review.json"
+  ],
+  "coverage": "All6current product files byte-exact through combined immutable reviews: three full new/UI modules, readiness quick form and two additive DTO exact diffs. Nine of ten product/test paths also have exact reviewer hashes; extra existing parent SSR test assertion is a stronger validation-only addition executed by unit suite. Queries/access/token/gate rules unchanged.",
+  "covered_current_paths": [
+    "src/components/landing-page-workspace.tsx",
+    "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "src/components/quick-webinar-form.test.tsx",
+    "src/components/quick-webinar-form.tsx",
+    "src/components/webinar-calendar-download.tsx",
+    "src/lib/landing-page-service.ts",
+    "src/lib/webinar-calendar.test.ts",
+    "src/lib/webinar-calendar.ts",
+    "tests/e2e/wp17-quick-webinar.spec.ts"
+  ]
+}

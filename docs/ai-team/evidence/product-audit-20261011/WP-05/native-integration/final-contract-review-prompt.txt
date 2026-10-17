@@ -1,0 +1,239 @@
+Read-only focused review. No tools or edits. Return concrete BLOCKER/MAJOR/MINOR/NIT with file/line and evidence, or findings empty. Scope: JS transport must accept only application/json {ok:true,verificationRequired:true}, reject redirects/HTML/malformed success while returning Response for existing caller .ok/.status contract. Existing API submissionResponse always returns that JSON success contract. Webinar retains native first POST, must paint pending state and prevent duplicate submissions without disabling serialized fields; browser pageshow resets pending. No schema/auth/publish gate changes. Review safety, regressions, performance and maintainability. Browser pending-lock test initially timed out despite hydration; now flushSync paints before native navigation. Latest browser result is pending, no PASS claim. Do not request native LINE/login expansion, that WP is deferred. Full source follows.
+
+FILE src/lib/registration-submission-client.ts
+/** Shared browser transport: keep attribution payloads intact and never expose server errors. */
+export async function postRegistrationSubmission(body: Record<string, unknown>): Promise<Response> {
+  const response = await fetch("/api/form-submissions", {
+    method: "POST",
+    redirect: "manual",
+    headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) return response;
+  // 只接受 API 明確回覆；代理錯誤頁或重新導向不能冒充報名成功。
+  try {
+    if (!response.redirected && /^application\/json(?:\s*;|$)/iu.test(response.headers.get("content-type") ?? "")) {
+      const result: unknown = await response.clone().json();
+      if (result && typeof result === "object" && "ok" in result && result.ok === true && "verificationRequired" in result && result.verificationRequired === true) return response;
+    }
+  } catch { /* 回應格式不符時保留欄位，不向使用者顯示伺服器內容。 */ }
+  return new Response(null, { status: 503 });
+}
+
+export function formSubmissionErrorMessage(status?: number) {
+  if (status === 400) return "請確認必填欄位與資料格式後再送出。";
+  if (status === 403) return "這次送出未通過安全檢查，請重新整理頁面後再試。";
+  if (status === 429) return "送出次數太頻繁，請稍候一分鐘再試。";
+  if (status === 404 || status === 503) return "這張表單目前無法接收資料，請稍後再試。";
+  // 已收到 HTTP 回應時，不把伺服器拒絕或故障誤指為網路問題。
+  if (status !== undefined) return "資料暫時無法送出；內容仍保留，請稍後再試。";
+  return "送出失敗；內容仍保留，請檢查網路後再試。";
+}
+
+export const FORM_SUBMISSION_VERIFICATION_MESSAGE = "請到 Email 開啟確認連結；完成確認後才會列入正式名單。";
+
+FILE src/lib/registration-submission-client.test.ts
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { formSubmissionErrorMessage, postRegistrationSubmission } from "./registration-submission-client";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("public registration client contract", () => {
+  it("posts to the fixed local API and preserves tenant-scoped provenance and optional attribution", async () => {
+    const response = Response.json({ ok: true, verificationRequired: true });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    const body = { formId: "synthetic-form", landingPageId: "synthetic-page", funnelStepId: "opt_in", liveId: null, payload: { name: "Synthetic", email: "synthetic@example.invalid" }, referralCode: "synthetic-ref" };
+    expect(await postRegistrationSubmission(body)).toBe(response);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/form-submissions");
+    expect(options.method).toBe("POST");
+    expect(options.redirect).toBe("manual");
+    expect(options.headers).toEqual({ "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" });
+    expect(JSON.parse(options.body)).toEqual(body);
+  });
+
+  it.each([400, 403, 404, 429, 503])("leaves HTTP %i available to both form callers without displaying server details", async (status) => {
+    const response = new Response("synthetic internal diagnostic must not be shown", { status });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    const result = await postRegistrationSubmission({ formId: "synthetic-form", payload: {} });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(status);
+    expect(formSubmissionErrorMessage(status)).not.toContain("internal");
+    expect(formSubmissionErrorMessage(status)).toMatch(/請/);
+  });
+
+  it("propagates network failure so the caller can unlock retry without clearing inputs", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("synthetic network failure")));
+    await expect(postRegistrationSubmission({ payload: {} })).rejects.toThrow(TypeError);
+    expect(formSubmissionErrorMessage()).toContain("內容仍保留");
+  });
+
+  it("distinguishes security rejection from validation, rate and availability failures", () => {
+    expect(formSubmissionErrorMessage(400)).toContain("資料格式");
+    expect(formSubmissionErrorMessage(403)).toContain("安全檢查");
+    expect(formSubmissionErrorMessage(429)).toContain("一分鐘");
+    expect(formSubmissionErrorMessage(404)).toContain("無法接收");
+    expect(formSubmissionErrorMessage(503)).toContain("無法接收");
+  });
+});
+
+// Server responses must not be presented as failed network connections.
+describe("HTTP and network error guidance", () => {
+  it.each([409, 422, 500, 502, 504])("keeps HTTP %i neutral and preserves retry guidance", (status) => {
+    expect(formSubmissionErrorMessage(status)).not.toContain("網路");
+    expect(formSubmissionErrorMessage(status)).toContain("內容仍保留");
+    expect(formSubmissionErrorMessage(status)).toContain("稍後再試");
+  });
+  it("reserves connection advice for fetch failures without an HTTP status", () => {
+    expect(formSubmissionErrorMessage()).toContain("檢查網路");
+  });
+});
+
+it.each([
+  () => new Response("<h1>Proxy error</h1>", { headers: { "Content-Type": "text/html" } }),
+  () => Response.json({ ok: false, verificationRequired: true }),
+  () => Response.json({ ok: true, verificationRequired: false }),
+  () => Response.json(null),
+  () => new Response("broken", { headers: { "Content-Type": "application/json" } }),
+  () => new Response(null, { status: 204 }),
+])("does not treat an unrelated 2xx response as accepted registration", async (makeResponse) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeResponse()));
+  const response = await postRegistrationSubmission({ formId: "synthetic" });
+  expect(response.ok).toBe(false);
+  expect(response.status).toBe(503);
+  expect(await response.text()).toBe("");
+});
+it("rejects a followed redirect even with an otherwise valid body", async () => {
+  const redirected = Response.json({ ok: true, verificationRequired: true });
+  Object.defineProperty(redirected, "redirected", { value: true });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(redirected));
+  expect((await postRegistrationSubmission({})).status).toBe(503);
+});
+it("keeps the original accepted response body readable by callers", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ok: true, verificationRequired: true })));
+  const response = await postRegistrationSubmission({});
+  expect(await response.json()).toEqual({ ok: true, verificationRequired: true });
+});
+
+FILE src/components/landing-pages/funnel-webinar-experience.tsx
+"use client";
+import { useRegistrationRetry } from "@/components/registration-retry-context";
+import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+
+import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
+import { getFunnelWebinarState } from "@/lib/funnel-webinar";
+import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
+import type { FunnelStepPages } from "@/lib/funnel-step-pages";
+
+export type WebinarExperienceResource = {
+  live: { id: string; slug: string; videoId: string; videoTitle: string };
+  form: { id: string; fields: Array<{ key: string; label: string; type?: string; required?: boolean }>; submitLabel: string; successMessage: string };
+};
+
+function funnelSourceFields(source: { landingPageId: string; stepId: string } | undefined) {
+  return { landingPageId: source?.landingPageId ?? "", stepId: source?.stepId ?? "" };
+}
+
+/** Preview and public pages share the same document and state rendering path. */
+export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport, funnelSource }: {
+  state: FunnelStepPages; stepId: string; slug: string; resource?: WebinarExperienceResource;
+  preview?: boolean; viewport?: "desktop" | "mobile"; funnelSource?: { landingPageId: string; stepId: string };
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  const step = state.flow.steps.find((item) => item.id === stepId);
+  const page = state.pages[stepId];
+  if (!step || !page) return <p role="alert">找不到 Webinar 頁面。</p>;
+  // Legacy or tampered published snapshots must not bypass the Live admission
+  // boundary through the general-purpose video's raw URL renderer.
+  if (step.type === "webinar_broadcast_page" && hasDirectWebinarVideo(state)) return <p role="alert" className="rounded-xl border border-amber-200 p-4">播放頁含有直接影片節點。請在編輯器移除該節點，並於頁面設定綁定活動與授權來源影片。</p>;
+  const status = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id }, now);
+  const thankYou = state.flow.steps.find((item) => item.type === "webinar_thank_you_page");
+  const broadcast = state.flow.steps.find((item) => item.type === "webinar_broadcast_page");
+  const path = (value: string) => `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(value)}`;
+  const ready = resource && status.status !== "missing" && status.status !== "expired";
+  const start = state.flow.webinar?.startsAt;
+  const source = funnelSourceFields(funnelSource);
+  return <div className="mx-auto w-full max-w-5xl p-4" data-webinar-state={status.status}>
+    <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} />
+    {!step.isSystem ? <section className="mt-5 rounded-xl border border-slate-200 p-5">
+      <p role={status.status === "missing" ? "alert" : "status"}>{status.message}</p>
+      {start ? <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: state.flow.webinar?.timezone }).format(new Date(start))}</time> · {state.flow.webinar?.timezone}</p> : null}
+      {step.type === "webinar_registration_page" && ready && thankYou ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
+      {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
+      {step.type === "webinar_broadcast_page" && ready && (status.status === "live" || status.status === "replay") ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
+      {status.status === "missing" ? <p className="mt-2 text-sm">{preview ? "請開啟頁面設定，選擇報名表、活動與可播放來源影片，並補齊排程後儲存。" : "活動設定尚未完成，請聯絡活動主辦方確認資源與排程。"}</p> : null}
+    </section> : null}
+  </div>;
+}
+
+function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
+  resource: WebinarExperienceResource; source: ReturnType<typeof funnelSourceFields>; redirectTo: string; preview: boolean;
+}) {
+  const retry = useRegistrationRetry(resource.form.id);
+  const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
+  useEffect(() => {
+    // 從瀏覽器歷史快取返回時，允許使用者重新送出。
+    const reset = () => { inFlight.current = false; setPending(false); };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (preview || inFlight.current) { event.preventDefault(); return; }
+    inFlight.current = true;
+    // 在原生導頁開始前繪製等待狀態，避免更新被延後到離開頁面之後。
+    flushSync(() => setPending(true));
+    // 首次提交保留原生POST；不停用欄位，以免瀏覽器序列化時漏值。
+  }
+  return <form method="post" action="/api/form-submissions" className="mt-4 grid gap-3" aria-busy={pending} onSubmit={onSubmit}>
+        {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
+        <input type="hidden" name="formId" value={resource.form.id} />
+        <input type="hidden" name="liveId" value={resource.live.id} />
+        <input type="hidden" name="landingPageId" value={source.landingPageId} />
+        <input type="hidden" name="funnelStepId" value={source.stepId} />
+        <input type="hidden" name="redirectTo" value={redirectTo} />
+        {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
+        <RegistrationSubmissionFeedback pending={pending} errorMessage={retry?.message ?? ""} />
+        <button disabled={preview || pending} aria-busy={pending} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : pending ? "送出中..." : resource.form.submitLabel}</button>
+        <p className="text-sm text-slate-600">送出後請至 Email 完成確認，才會列入正式名單。</p>
+      </form>;
+}
+
+FILE src/components/registration-submission-feedback.tsx
+"use client";
+
+import { useEffect, useRef } from "react";
+
+/** Keep live regions mounted and restore keyboard position after a failed submit. */
+export function RegistrationSubmissionFeedback({ pending, errorMessage = "", successMessage = "", focusSuccess = false }: {
+  pending: boolean;
+  errorMessage?: string;
+  successMessage?: string;
+  focusSuccess?: boolean;
+}) {
+  const successRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (focusSuccess && successMessage && !pending && !errorMessage) successRef.current?.focus();
+  }, [focusSuccess, successMessage, pending, errorMessage]);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const alert = errorRef.current;
+    if (!errorMessage || pending || !alert) return;
+    const active = alert.ownerDocument.activeElement;
+    const form = alert.closest("form");
+    // 不搶走使用者等待期間移往其他欄位或連結的焦點。
+    const lostFocus = !active || active === alert.ownerDocument.body || active === alert;
+    const onSubmit = active instanceof HTMLButtonElement && active.type === "submit" && active.form === form;
+    if (lostFocus || onSubmit) alert.focus();
+  }, [errorMessage, pending]);
+
+  return <>
+    <p ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" className={`text-sm text-red-700 ${pending || !errorMessage ? "sr-only" : ""}`}>{pending ? "" : errorMessage}</p>
+    <p ref={successRef} tabIndex={focusSuccess ? -1 : undefined} role="status" aria-live="polite" aria-atomic="true" className={pending || !successMessage || errorMessage ? "sr-only" : "text-sm text-emerald-700"}>{pending ? "正在送出，請勿重複操作。" : errorMessage ? "" : successMessage}</p>
+  </>;
+}

@@ -1,0 +1,41 @@
+{
+  "at": "2026-10-15T21:28:55.767191+00:00",
+  "userAuthorization": "2026-10-16 user: temporarily skip pending item and move to next",
+  "requested_team": "ai-team-pro",
+  "ownership": "root sole writer; independent worktree",
+  "files": [
+    "src/lib/automation-workflow.ts",
+    "src/lib/automation-workflow.test.ts",
+    "src/app/actions/automation-actions.ts",
+    "src/app/actions/automation-actions.test.ts",
+    "src/app/(app)/settings/automations/page.tsx",
+    "src/app/(app)/settings/automations/page.test.tsx"
+  ],
+  "beforeHashes": {
+    "src/lib/automation-workflow.ts": "ae94cf23e4afd8d64fa1387322fbcc535e52827aafd6c1ac5ab8887e9e02d8bb",
+    "src/lib/automation-workflow.test.ts": "5c4d5f76c45f3e25febd4c375899ed99fcae792114ca9c183f5ec83dc61a5875",
+    "src/app/actions/automation-actions.ts": "f01a3509b59e60ac551ab52c6dae1805ec8afe8a2765b4544daac003a8c39cbe",
+    "src/app/actions/automation-actions.test.ts": "98072c3d93c97ba3b084068acaecca7ac336535476fee8be7b4043d8c52044cb",
+    "src/app/(app)/settings/automations/page.tsx": "76b0a218c78eae29e9346753e73a377059aaebec4d76d039e547d036ab0ce925",
+    "src/app/(app)/settings/automations/page.test.tsx": "bcb3c8b3d08640528267f2a4083026944fc790a42586412cd27af73d78b1c924"
+  },
+  "scope": "Only original WP18 recipe/UI/creation increment; preserve full WP18 objective; unavailable trigger drafts cannot be activated",
+  "excluded": [
+    "checkout/payment pricing or idempotency",
+    "schema/migrations",
+    "scheduler/production/external sends",
+    "new shared router or validation framework"
+  ],
+  "fullWp18": "IN_PROGRESS",
+  "remaining": [
+    "trusted checkout-incomplete producer",
+    "actual completed-viewer producer",
+    "pending-to-paid send-time suppression",
+    "fixed Sandbox integration and whole WP18 qualified acceptance"
+  ],
+  "limits": {
+    "max_parallel": 1,
+    "max_agent_depth": 1,
+    "automatic_spawn": false
+  }
+}

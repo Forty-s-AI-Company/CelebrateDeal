@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "command": [
+    "node",
+    "node_modules/eslint/bin/eslint.js",
+    "src/lib/live-metric-delivery.ts",
+    "src/lib/live-metric-delivery.test.ts"
+  ]
+}

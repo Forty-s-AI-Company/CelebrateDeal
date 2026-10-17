@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-16T05:33:12.001911+00:00",
+  "whole_wp_status": "BLOCKED",
+  "revision": "sha256:d980a258e9342e086ee014d2222a6eb269acba1f8fda056835d833313ee37838",
+  "current_unit_passed": 262,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "critical_review": "Retained qualified Opus current-source composition; actual historical model observed,effortunknown",
+  "provider_delivery": "NOT_RUN; original plan permits enqueue where LINE Sandbox unavailable",
+  "remaining_required_dependency": "WP04-prerequisite",
+  "unverified_not_claimed": [
+    "Actual playback attendance for existing no-show emitter",
+    "External Email/LINE provider delivery",
+    "Remote CI",
+    "Legacy noncanonical email data",
+    "Deployed scheduler/heartbeat/fixedSandbox receipts"
+  ],
+  "historical_integrations": "4PASS disposablePG receipts retained; no rerun and no fabricated current provider evidence",
+  "new_product_changes": 0,
+  "new_model_calls": 0,
+  "findings_retained": 6
+}

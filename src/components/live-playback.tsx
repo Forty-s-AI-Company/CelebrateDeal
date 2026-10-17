@@ -10,6 +10,9 @@ import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/comp
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { LivePurchaseBroadcastPanel } from "@/components/live-purchase-broadcast-panel";
 import { LiveViewerPrivateChat } from "@/components/live-viewer-private-chat";
+import { admissionReleaseRegistry } from "@/lib/live-metric-release";
+import { createPlaybackMetricController } from "@/lib/live-metric-playback-controller";
+import { metricPlaybackReceipt, type MetricPlaybackReceipt } from "@/lib/live-metric-playback-receipt";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -143,7 +146,7 @@ type CheckoutResponse = {
 
 type LiveAdmissionStatus = "checking" | "admitted" | "blocked";
 
-export type LivePlaybackSource = {
+export type LivePlaybackSource = Partial<MetricPlaybackReceipt> & {
   playbackUrl: string;
   playbackStartSeconds: number;
   protocol?: "whep";
@@ -194,13 +197,15 @@ function createDirectPlaybackSource(videoUrl: string | null | undefined): LivePl
 function projectPlaybackSource(payload: unknown, runtimeState: LiveRuntimeState): LivePlaybackSource | null {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
   const rawPlaybackUrl = (payload as { playbackUrl?: unknown }).playbackUrl;
+  const metric = metricPlaybackReceipt(payload) ?? {};
   if ((payload as { protocol?: unknown }).protocol === "whep") {
     if (typeof rawPlaybackUrl !== "string" || !rawPlaybackUrl.startsWith("/api/live-media?")) return null;
-    return { playbackUrl: rawPlaybackUrl, playbackStartSeconds: 0, protocol: "whep" };
+    return { playbackUrl: rawPlaybackUrl, playbackStartSeconds: 0, protocol: "whep", ...metric };
   }
   const playbackUrl = typeof rawPlaybackUrl === "string" ? parseSafeExternalHttpUrl(rawPlaybackUrl) : null;
   if (!playbackUrl) return null;
   return {
+    ...metric,
     playbackUrl,
     playbackStartSeconds: runtimeState === "replay"
       ? 0
@@ -322,13 +327,16 @@ export function useLiveAdmission({
   liveId,
   admissionRequired,
   refreshKey,
+  beforeRelease,
 }: {
   vendorId: string;
   liveId: string;
   admissionRequired: boolean;
   refreshKey: number;
+  beforeRelease?: () => Promise<void>;
 }): LiveAdmissionStatus {
   const scope = JSON.stringify([vendorId, liveId, refreshKey]);
+  const leaseRef = useRef<{ scope: string; lease: { id: string; expiresAtMs: number } } | null>(null);
   const [admission, setAdmission] = useState<{ scope: string; status: LiveAdmissionStatus }>(() => ({
     scope, status: admissionRequired ? "checking" : "admitted",
   }));
@@ -352,6 +360,13 @@ export function useLiveAdmission({
           body: JSON.stringify({ vendorId, liveId }),
           signal: controller.signal,
         });
+        if (!disposed && response.ok) {
+          // Lease metadata is not an authentication credential. Missing metadata
+          // leaves release to expiry; playback admission still succeeds.
+          const body = typeof response.json === "function" ? await response.json().catch(() => null) : null;
+          const lease = body?.lease;
+          if (!disposed && typeof lease?.id === "string" && Number.isSafeInteger(lease?.expiresAtMs)) leaseRef.current = { scope: JSON.stringify([vendorId, liveId]), lease };
+        }
         if (!disposed) setAdmission({ scope, status: response.ok ? "admitted" : "blocked" });
       } catch {
         if (!disposed) setAdmission({ scope, status: "blocked" });
@@ -372,15 +387,19 @@ export function useLiveAdmission({
 
   useEffect(() => {
     if (!admissionRequired) return;
+    const releaseOwnedAdmission = admissionReleaseRegistry.acquire(JSON.stringify([vendorId, liveId]));
     return () => {
-      void fetch("/api/live-admission", {
+      const savedLease = leaseRef.current?.scope === JSON.stringify([vendorId, liveId]) ? leaseRef.current.lease : undefined;
+      const release = () => fetch("/api/live-admission", {
         method: "DELETE",
         headers: clientHeaders,
-        body: JSON.stringify({ vendorId, liveId }),
+        body: JSON.stringify({ vendorId, liveId, lease: savedLease }),
         keepalive: true,
-      }).catch(() => undefined);
+      }).then(() => undefined).catch(() => undefined);
+      // Preserve access for the bounded close attempt; never block navigation.
+      void releaseOwnedAdmission(beforeRelease ?? (() => Promise.resolve()), release);
     };
-  }, [admissionRequired, liveId, vendorId]);
+  }, [admissionRequired, beforeRelease, liveId, vendorId]);
 
   // Do not publish an old admission during a scope change or explicit renewal,
   // even for the render before the effect cleans up the previous request.
@@ -1537,6 +1556,30 @@ function interactionControlsObscured(panel: PlaybackPanel, isCheckoutOverlay: bo
   return panel !== "chat" || isCheckoutOverlay || navigationPending;
 }
 
+type MetricCollectorEntry = { scope: string; collector: ReturnType<typeof createPlaybackMetricController> };
+function usePlaybackMetrics({ videoRef, metricCollectorRef, live, admissionStatus, admissionRefreshKey, isPlayableRuntime, metricScope, playableUrl, runtimeState, playableSource }: {
+  videoRef: RefObject<HTMLVideoElement | null>; metricCollectorRef: RefObject<MetricCollectorEntry | null>;
+  live: { id: string; vendorId: string; admissionRequired?: boolean }; admissionStatus: LiveAdmissionStatus;
+  admissionRefreshKey: number; isPlayableRuntime: boolean; metricScope: string;
+  playableUrl: string | null; runtimeState: LiveRuntimeState; playableSource: LivePlaybackSource | null;
+}) {
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isPlayableRuntime || admissionStatus !== "admitted" || !playableSource || !live.admissionRequired) return;
+    const collector = createPlaybackMetricController({ vendorId: live.vendorId, liveId: live.id }, playableSource, video, () => performance.now());
+    const entry = { scope: metricScope, collector };
+    metricCollectorRef.current = entry;
+    void collector.tick();
+    const interval = window.setInterval(() => { void collector.tick(); }, 5000);
+    return () => {
+      window.clearInterval(interval);
+      void collector.finish().finally(() => {
+        if (metricCollectorRef.current === entry) metricCollectorRef.current = null;
+      });
+    };
+  }, [admissionStatus, admissionRefreshKey, isPlayableRuntime, live.admissionRequired, live.id, live.vendorId, metricScope, playableUrl, runtimeState, playableSource, metricCollectorRef, videoRef]);
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
@@ -1560,6 +1603,13 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     serverNow: live.serverNow,
     onRefresh: refreshWaitingRoom,
   });
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const metricCollectorRef = useRef<MetricCollectorEntry | null>(null);
+  const metricScope = JSON.stringify([live.vendorId, live.id]);
+  const finishMetrics = useMemo(() => async () => {
+    const current = metricCollectorRef.current;
+    if (current?.scope === metricScope) await current.collector.finish();
+  }, [metricScope]);
   // Public pages opt into admission-required SSR; direct component fixtures can
   // keep the admitted default while testing the rest of the playback contract.
   const admissionStatus = useLiveAdmission({
@@ -1567,6 +1617,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     liveId: live.id,
     admissionRequired: isPlayableRuntime && live.admissionRequired === true,
     refreshKey: admissionRefreshKey,
+    beforeRelease: finishMetrics,
   });
   const visibleAdmissionStatus: LiveAdmissionStatus = isPlayableRuntime ? admissionStatus : "admitted";
   const visiblePlaybackSource = useLivePlaybackSource({
@@ -1582,7 +1633,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     admissionStatus,
     hasPlayableSource: Boolean(playableSource),
   });
-  const videoRef = useRef<HTMLVideoElement>(null);
+  usePlaybackMetrics({ videoRef, metricCollectorRef, live, admissionStatus, admissionRefreshKey, isPlayableRuntime, metricScope, playableUrl, runtimeState, playableSource });
   const seekSourceIdentityRef = useRef<string | null>(null);
   const seekAppliedRef = useRef(false);
   const previousPlaybackUrlRef = useRef<string | null>(null);

@@ -1,0 +1,7 @@
+{
+  "scenario": "unenrolled synthetic platform administrator",
+  "requestedPath": "/admin/billing/dashboard",
+  "finalPath": "/admin/billing/dashboard",
+  "factorCreated": false,
+  "observedAccess": "ALLOWED_BEFORE_FIX"
+}

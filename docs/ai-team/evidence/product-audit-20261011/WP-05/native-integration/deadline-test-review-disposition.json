@@ -1,0 +1,13 @@
+{
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "major": "Added HTTP200, successful destination before closure, preserved query and specific configured thank-you content assertions. Custom thank-you does not render receipt text by design; claim limited to configured destination availability.",
+  "minor_no_resubmit": "Renamed noSubmitControls; server write-block contract is covered separately by funnel-runtime unit tests, not claimed by this E2E.",
+  "minor_unknown_query": "Added status200, both retry-message absence assertions and no input/form/submit controls.",
+  "minor_cleanup": "Explicit dependent fixture deletes and zero counts for 10 affected tables. Verification fields live on FormSubmission.",
+  "nit_mail": "Renamed noSentDeliveryObserved; runner uses allowlisted environment with synthetic secrets only, no provider credentials or external mail worker.",
+  "status": "FIXED_PENDING_VERIFICATION"
+}

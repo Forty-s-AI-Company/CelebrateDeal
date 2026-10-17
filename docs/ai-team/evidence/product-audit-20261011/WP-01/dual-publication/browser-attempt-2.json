@@ -1,0 +1,7 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "restored": true,
+  "stage": "publish",
+  "errorType": "AssertionError"
+}

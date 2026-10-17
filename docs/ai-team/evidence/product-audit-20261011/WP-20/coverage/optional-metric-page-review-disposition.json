@@ -1,0 +1,7 @@
+{
+  "originalMinor": "Missing safe operational signal",
+  "fix": "Constant event/code only; exact one-event unit checks and actual Next classified two events for two observed DB source failures",
+  "remainingNit": "Bound/unbound duplicate issuer call retained; existing call arity tests preserved, no functional divergence",
+  "existingMajor": "Only typed source-persistence exception scenario verified; all resource/lock/quota and full availability concerns remain",
+  "historicalSnapshots": "Before-signal DB/validation kept; only current matching hashes used"
+}

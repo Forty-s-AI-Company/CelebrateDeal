@@ -1,0 +1,17 @@
+{
+  "files": [
+    "src/app/(app)/messages/templates/page.tsx",
+    "src/app/(app)/messages/templates/new/page.tsx",
+    "src/app/(app)/messages/templates/[id]/edit/page.tsx",
+    "docs/launch/wp19-notification-channels-20261016.md",
+    "src/app/(app)/messages/templates/page.test.tsx"
+  ],
+  "sourceHashes": {
+    "src/app/(app)/messages/templates/page.tsx": "ba5326c71391bebe97cb10b0a6f92bcb671e1b0ac4ac3cf1d4ecc5b9073746e9",
+    "src/app/(app)/messages/templates/new/page.tsx": "cc886d38d8388cd51a58cf77df4925371ac29bbb0dda5f54d51739bf3b3f9212",
+    "src/app/(app)/messages/templates/[id]/edit/page.tsx": "e9d92218884487ad1b044f0702bd02d64dae1bf971628c1b3d85917f4f725c3b",
+    "docs/launch/wp19-notification-channels-20261016.md": "8d0670aca77bb9899ac79497153e024bab3b6480f5988b127e179ad966b7ea9f",
+    "src/app/(app)/messages/templates/page.test.tsx": "552d7319425383721d045cee3bf612d42004212809ecff52f484c52acd112bcf"
+  },
+  "revision": "sha256:1d0210443a26e42be9b81339142d86d657de521b4ac710e434cb77e070a2c1a1"
+}

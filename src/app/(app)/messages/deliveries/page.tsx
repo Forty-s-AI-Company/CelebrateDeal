@@ -22,7 +22,7 @@ export default async function MessageDeliveriesPage() {
   return (
     <>
       <PageHeader
-        title="Email 寄送營運"
+        title="寄送管理"
         description="安全查找、篩選並處理寄送失敗；收件資訊維持遮罩，重新排程也不會直接呼叫外部寄信服務。"
         action={<ButtonLink href="/messages/templates" tone="secondary">管理訊息模板</ButtonLink>}
       />

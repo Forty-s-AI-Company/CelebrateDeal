@@ -1,0 +1,9 @@
+# Durable coverage audit storage (in progress)
+
+LiveMetricCoverageAudit stores scoped [startAt,endAt) covered/gap facts for visits, registrations, viewing and orders. Mode comes from the immutable version. An auditDigest references sanitized audit evidence; the digest is not proof of completeness by itself. Only a trusted internal reconciliation producer may certify covered ranges, after establishing durable intake/delivery and loss accounting. No producer, activation, backfill, or public write API has been added yet.
+
+DB guards require current structural revision, ReadCommitted writes, bounded past range within version lifetime, no pre-collection covered history, immutable rows and parent-only deletion. Each inserted audit invalidates intersecting reports under the same version lock. API roles including service_role have no table/function privileges; RLS defaults deny. No production retention decision is implied.
+
+Reader must load ranges and gaps with facts in the same RepeatableRead transaction. Covered ranges from obsolete source revisions are not valid; historical gaps remain decisive even after revision changes. Existing visit-loss facts must be merged rather than replaced. An empty audit table is unknown, not complete. Enabling collection, row counts, successful requests or drained reconciliation alone cannot certify coverage.
+
+Remaining: real collector lifecycle/intake audit producer, outage/disabled-period gap persistence, same-snapshot reader integration, privilege/cascade/report-invalidation targeted tests, schema validation and independent Migration review. DB146/migrations101/cleanup and scoped runner lint are recorded separately. Current tests cover valid covered/gap storage, tenant/revision/time/kind constraints, update/delete/truncate rejection. No full WP acceptance.

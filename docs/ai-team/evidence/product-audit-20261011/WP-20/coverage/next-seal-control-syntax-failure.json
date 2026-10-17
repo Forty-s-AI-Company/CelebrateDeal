@@ -1,0 +1,8 @@
+{
+  "status": "FAIL",
+  "stage": "module_parse_before_runner",
+  "category": "DuplicateIdentifier",
+  "name": "allowed",
+  "change": "Rename private source-predicate helper sourceAllowed; preserve pre-existing mirror extension allowlist",
+  "databaseOrBrowserStarted": false
+}

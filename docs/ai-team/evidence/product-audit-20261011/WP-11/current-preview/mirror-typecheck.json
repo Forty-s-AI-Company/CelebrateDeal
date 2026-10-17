@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "exit_code": 0,
+  "command": "tsc -p .ai-team/tmp/wp11-current-preview/tsconfig.json --noEmit --incremental false",
+  "scope": "complete deployment mirror after39rootconfig copies",
+  "assertions_weakened": false
+}

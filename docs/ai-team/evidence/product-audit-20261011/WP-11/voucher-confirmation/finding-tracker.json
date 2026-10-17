@@ -1,0 +1,79 @@
+{
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/capability-confirmation.ts",
+      "area": "capabilityConfirmation cookie digest / readCapabilityConfirmationDetails (digest([nonce, issued, capability, action.href]))",
+      "issue": "The challenge cookie is an unkeyed SHA-256 of values that all appear in the form. Anyone who knows capability, nonce and issued can build a valid cookie, so the 'browser binding' only proves possession of the nonce. Now that a replayed confirmed body returns the live checkout bearer (exchanged:false), the captured body works as a bearer credential from any client for up to 5 minutes.",
+      "evidence": "digest() is createHash('sha256') with no server key. readCapabilityConfirmationDetails only compares the cookie against digest(form values). exchangeAutomationVoucher's retry() returns { bearer } whenever HMAC(oldHash, nonce, issued) matches the current claimTokenHash. Before this fix, replaying the body after the exchange always failed.",
+      "impact": "Small new exposure window. Anything that records POST bodies (a WAF or proxy that logs bodies, a diagnostic capture, or a shared browser's form-resubmit history) can recover the unused discount bearer within 5 minutes of issue, without the original browser. The 'other browser fails' test passes only because the other browser didn't know the nonce, not because of a real browser binding.",
+      "recommended_fix": "Key the cookie value with an existing purpose-separated HMAC key (e.g. deriveSensitiveDataKey('capability-confirmation-cookie-v1')), or store a random cookie-only secret and include it in the exchange HMAC input. Then reconstructing the bearer requires the HttpOnly cookie as well as the form body. If you accept the current risk instead, document that the form body is bearer-equivalent and confirm nothing in the infrastructure logs bodies on this path.",
+      "required_test": "In a fresh browser context with no cookies, compute a cookie from a captured (capability, nonce, issued) body, attach it, and POST after a successful exchange. With the fix this must return 403/410 and set no AUTOMATION_VOUCHER_COOKIE. The same-browser resubmit must still return 303 with the same bearer.",
+      "confidence": 0.6,
+      "disposition": "confirmed",
+      "follow_up": "Retained explicitly for full WP11 follow-up; not marked resolved."
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/app/api/automation/vouchers/redeem/route.ts",
+      "area": "unavailable() recovery text; recovery route predicates (customerKeyHash, redeemedAt, currency equality, studentPortalVoucherFieldsReady, studentPortalVoucherProductWhere)",
+      "issue": "The only recovery path after the single AUTOMATION_VOUCHER_COOKIE is overwritten (voucher B exchanged after A, a device change, or a retry after 5 minutes) is the student portal reissue. That route adds conditions the email-link exchange and checkout don't check: a portal session whose customerKeyHash matches, redeemedAt null, matching currency, the portal product filter and studentPortalVoucherFieldsReady. A voucher that redeems through the email link but fails any of these has no self-service recovery once its link hash has rotated.",
+      "evidence": "exchangeAutomationVoucher rotates claimTokenHash, so GET with the old link returns 410. The recovery route's where/findFirst includes predicates absent from previewAutomationVoucher. The browser test of the recovery path covered only a portal-eligible voucher.",
+      "impact": "A limited set of vouchers (e.g. products with checkout fields the portal doesn't support, or customers without a matching portal identity) can still become unreachable after another voucher or device overwrites the cookie. The unavailable page sends those users to the merchant. This is not a regression of the fixed MAJOR, which covered lost responses and is now resolved within the 5-minute window.",
+      "recommended_fix": "Scope proposal, not a defect in this task: either keep email-link vouchers portal-eligible, or let a voucher cookie hold more than one bearer. Otherwise, accept and document that merchant support is the recovery path for portal-ineligible vouchers.",
+      "required_test": "With a voucher whose product fails studentPortalVoucherFieldsReady but passes checkout: exchange A, then exchange B, and confirm whether A can be recovered. The expected behavior should be documented.",
+      "confidence": 0.4,
+      "disposition": "confirmed",
+      "follow_up": "Retained explicitly for full WP11 follow-up; not marked resolved."
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/automation-voucher-exchange.ts",
+      "area": "exchangeAutomationVoucher (random bearer + updateMany rotation); src/app/api/automation/vouchers/redeem/route.ts POST cookie set",
+      "issue": "The single-use swap is not idempotent and has no recovery path. If the browser never stores the new bearer cookie, the grant can no longer be used.",
+      "evidence": "`bearer = randomBytes(32)` and only `hashInteractionBearer(bearer)` is saved. The plaintext bearer exists only in the Set-Cookie of the 303 response. A retry with the same email link and the same still-valid challenge fails at preview/CAS, because the old hash is gone, and returns 410. The confirmation page CSP (`default-src 'none'`) allows no script, so double submit can't be blocked on the page. `AUTOMATION_VOUCHER_COOKIE` is a single cookie name, so exchanging voucher B overwrites voucher A's rotated bearer. Before this change the email link could always restore A; now it can't.",
+      "impact": "Common cases leave the customer's discount stuck: double-clicking \u78ba\u8a8d\u4e26\u524d\u5f80\u7d50\u5e33 (the browser drops the first response and the second POST gets 410 'used or expired'), a dropped connection after commit, private-mode or cleared cookies, confirming on one device and paying on another, or redeeming a second voucher. The grant stays unused but unreachable until it expires. This is customer and vendor harm and support load, not a security bypass.",
+      "recommended_fix": "Make retries from the same browser challenge idempotent without bringing back link replay. Derive the bearer as HMAC(server secret, grantId || old claimTokenHash || challenge nonce) instead of using pure randomness. On POST, if the CAS count is 0 but the challenge is valid, recompute the bearer and accept it only if the grant's current claimTokenHash equals hash(derived bearer), `usedOrderId` is null and the grant hasn't expired; then re-issue the cookie. A different browser or a later replay has a different or missing challenge nonce, so it still fails. If a stuck grant is an accepted product trade-off, document it and give vendors a re-issue path. Separately, consider keying the voucher cookie per grant or vendor/product so one exchange can't silently strand another.",
+      "required_test": "DB test: two sequential POSTs with the same challenge cookie and form, where the first response is discarded. The second must return 303 with a bearer that resolveEligibleAutomationVoucherClaim accepts (eligible100 discount). A POST of the same email link from a different challenge/browser must still fail, and the 12-way concurrency test must still have exactly one CAS winner. Browser test (Chromium/Firefox): double-clicking confirm ends on checkout with the discount applied. Exchanging voucher B after voucher A must leave A recoverable, or the documented behaviour must be verified.",
+      "confidence": 0.65,
+      "disposition": "resolved",
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "db-boundaries",
+          "revision": "sha256:edc55d9b8da48c24a3c08e62d800b4b559b603dbf29da3b670d5b5d603f4b613",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 4.125,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\voucher-confirmation\\final-checks\\db-boundaries.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "voucher-chromium",
+          "revision": "sha256:edc55d9b8da48c24a3c08e62d800b4b559b603dbf29da3b670d5b5d603f4b613",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 6.547,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\voucher-confirmation\\final-checks\\voucher-chromium.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "voucher-firefox",
+          "revision": "sha256:edc55d9b8da48c24a3c08e62d800b4b559b603dbf29da3b670d5b5d603f4b613",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 9.219,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\voucher-confirmation\\final-checks\\voucher-firefox.json"
+        }
+      ],
+      "resolution_note": "Independent follow-up explicitly closed the lost-response MAJOR; same-challenge retry and authenticated portal reissue verified."
+    }
+  ],
+  "initial_review": "review-cli.json",
+  "final_review": "review-final-cli.json",
+  "scope_status": "Subitem accepted by canonical severity gate, full WP11 remains IN_PROGRESS",
+  "next_security_followup": "Use purpose-separated keyed HMAC for confirmation cookie; add captured-body/forged-cookie rejection while preserving idempotent retry; independent review required."
+}

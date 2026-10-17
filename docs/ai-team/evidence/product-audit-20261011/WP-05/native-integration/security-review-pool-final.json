@@ -1,0 +1,24 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "scope_detail": "Supplied exact storage/response/boundary/context/fields/migration source and route excerpts. UI excluded. Reviewer did not run tests. Global cap saturation and non-full contention remain documented risks.",
+  "lineage": [
+    "security-review-pool-cli.json"
+  ],
+  "scope_files": [
+    "src/lib/registration-form-retry.ts",
+    "src/lib/registration-form-retry-response.ts",
+    "src/components/registration-retry-boundary.tsx",
+    "src/components/registration-retry-context.tsx",
+    "src/lib/registration-form-fields.ts",
+    "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+    "src/app/api/form-submissions/route.ts"
+  ]
+}

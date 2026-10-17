@@ -1,0 +1,207 @@
+{
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "review": {
+    "summary": "I reviewed only the supplied migration, the new helper live-metric-ingress-source.ts, and the two caller diffs. The new private predicate is mostly consistent with the stated design: it rejects non-primary or non-read-committed sessions and locks version, then run, then frame. Legacy no-run requests are accepted only with a null frame. Run-owned rows must name a frame with the same tenant, live, version, run and kind. Each source table has its own unique index for one-use, and frame kind prevents reuse across tables. The trigger-order check and function permission checks are sound as written. One likely blocker: neither caller diff writes the new ingressFrameId column on INSERT. Three smaller issues: reused frames throw an error instead of returning null; the deferred FK can block frame or run deletes that aren't part of a version cascade; and the app calls an owner-only function directly. I did not review or certify the omitted proof/auth/runtime code, the credential lines, the Prisma schema text, the tests, or any Production, coverage, source-universe, epoch, seal or full acceptance (fullWP) claim. No findings here does not mean tests or release passed.",
+    "findings": [
+      {
+        "severity": "BLOCKER",
+        "file": "src/lib/live-metric-visit-page.ts; src/lib/live-metric-playback-intake.ts",
+        "area": "Source INSERT statements after the canBindMetricIngressSource call (not present in supplied hunks)",
+        "issue": "Neither caller diff changes the source INSERT to write the new ingressFrameId column. The helper checks binding.frameId, but the BEFORE INSERT trigger checks NEW.\"ingressFrameId\". The column is new in this migration, so the earlier code cannot already be writing it.",
+        "evidence": "The visit-page diff contains only hunks @@ -4,7 +4,8 @@ (imports) and @@ -39,7 +40,7 @@ (the check). The playback diff contains only the import hunk and @@ -45,7 +46,7 @@ (the check). Neither touches the INSERT. The migration uses ADD COLUMN \"ingressFrameId\", so the column did not exist before. wp20_metric_ingress_source_allowed returns false when a run exists and frame_key is NULL, which makes the trigger raise 23514.",
+        "impact": "If the diff is complete, every write for a version that has a run passes the TS precheck and then fails in the trigger with 23514. That is the persistence error the repair was meant to remove, now on the valid bound path. Bound writes would never succeed, and one-use would never be enforced because no frame id is ever stored.",
+        "recommended_fix": "In both writers, set ingressFrameId = binding.frameId on the INSERT when a run exists, and leave it NULL for legacy no-run writes. Use the same frame id that was passed to canBindMetricIngressSource. If the INSERT change exists outside the supplied hunks, provide that exact hunk for review.",
+        "required_test": "Use a disposable real database with a run-owned version. Send a valid bound viewer, registration and playback request and check that each source row is stored with the matching ingressFrameId. Repeat for a no-run legacy version and check the row is stored with ingressFrameId NULL.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-source.ts",
+        "area": "canBindMetricIngressSource / wp20_metric_ingress_source_allowed predicate (no consumption check)",
+        "issue": "The predicate never checks whether the frame has already been used. A replayed or concurrent request with a valid, already-used binding passes the precheck, then hits the ingressFrameId unique index and gets an exception instead of the documented null result.",
+        "evidence": "The predicate takes FOR SHARE locks and checks only run, scope and route; it does not look at existing VisitPage or PlaybackIntake rows. One-use is enforced only by the unique indexes. The helper comment says missing, stale and wrong-kind bindings have a defined no-source outcome, not an exception.",
+        "impact": "Retries or duplicate HMAC-valid frames cause a 23505 exception and roll back the whole transaction instead of a quiet no-write. This brings back the error-mapping inconsistency the repair was meant to remove, now for reused frames.",
+        "recommended_fix": "Add a NOT EXISTS check on both source tables to the predicate for the precheck path. Also map 23505 on the ingressFrameId unique indexes to the same null result in both writers, because the precheck alone cannot close the race.",
+        "required_test": "In a disposable database, bind the same frame twice in sequence and from two concurrent transactions. Expect exactly one stored row, a null result for the other request, and no unhandled 23505.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql",
+        "area": "LiveMetricVisitPage_ingressFrame_fkey / LiveMetricPlaybackIntake_ingressFrame_fkey (ON DELETE NO ACTION DEFERRABLE)",
+        "issue": "The deferred NO ACTION FK was designed for the version cascade. Any other delete of a frame, such as an expiry or retention sweep or a cascade from deleting a run, will fail at COMMIT once the frame is bound to a source row.",
+        "evidence": "Frames have expiresAt NOT NULL. The FK is NO ACTION, and the migration comment considers only the canonical version cascade, which also removes the source row.",
+        "impact": "If any job deletes expired frames or runs separately from their version, the whole transaction fails at commit for bound frames. A batch sweep could then stop removing anything.",
+        "recommended_fix": "List every delete path for LiveMetricIngressFrame and LiveMetricIngressRun. Either confirm that only the version cascade deletes frames, or make those paths skip bound frames or handle the bound sources explicitly.",
+        "required_test": "In a disposable database, delete a version that has a bound frame and expect success. Delete a bound frame directly, and delete its run if the schema allows it, and assert the documented behavior: either rejected by design or handled.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-source.ts",
+        "area": "tx.$queryRaw SELECT public.wp20_metric_ingress_source_allowed(...)",
+        "issue": "The app role calls the predicate directly, but the migration revokes it from PUBLIC and the API roles and then fails if any role other than the function owner has a grant. This only works if Prisma connects as the migration owner or a superuser.",
+        "evidence": "There are REVOKE ALL statements, and the aclexplode check raises an exception when a.grantee<>p.proowner. The helper issues a direct SELECT of the function from the Prisma transaction.",
+        "impact": "If the runtime database role differs from the migration owner, every precheck fails with permission denied (42501), which surfaces as an unhandled error on all ingress source writes.",
+        "recommended_fix": "Document and test that the runtime role is the function owner, or grant EXECUTE only to the named runtime role and update the ACL check to allow it.",
+        "required_test": "In a disposable database, run the precheck as the actual runtime role from configuration and expect it to succeed. Run it as anon, authenticated and service_role and expect permission denied.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "exitCode": 3,
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "execution_provider": "claude_cli",
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED"
+}

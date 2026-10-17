@@ -1,0 +1,24 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:4d009327a115180d36ad401894471de1aa6f59adf58a03c2a81aeb094e26dc44",
+  "targeted": 77,
+  "lint": "PASS",
+  "typecheck": "PASS",
+  "terminology-snapshot": "PASS",
+  "payment_source": [
+    "src/lib/funnel-operations-service.ts:149",
+    "src/lib/payment-webhooks.ts:1007",
+    "src/lib/payment-webhook-invariants.ts:106"
+  ],
+  "changes": [
+    "Payment display map tied to existing PaymentWebhookEventType; dispute statuses labeled; expiry wording consistent",
+    "Writer resolvePaymentStatus results checked with synthetic unit inputs",
+    "Webinar visible terminology unified; Hero labels localized; keys unchanged"
+  ],
+  "remaining": [
+    "final independent integrated review",
+    "canonical acceptance"
+  ],
+  "snapshot_note": "Earlier revision mismatch retained; current per-file hashes verified unchanged after static checks.",
+  "a11y": "PASS"
+}

@@ -1,0 +1,87 @@
+{
+  "at": "2026-10-16T04:34:39.282423+00:00",
+  "subtask_status": "READY",
+  "whole_wp03": "IN_PROGRESS",
+  "formal_publication": "WAITING_AUTHORIZATION_EXTERNAL_FACTS",
+  "source_revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+  "changed_files": [
+    "src/components/public-policy.tsx",
+    "src/components/public-policy.test.tsx",
+    "src/lib/public-policy-content.ts",
+    "src/app/policies/page.tsx",
+    "src/app/policies/page.test.tsx",
+    "src/app/policies/[slug]/page.tsx",
+    "src/app/policies/[slug]/page.test.tsx",
+    "src/app/support/page.tsx",
+    "src/app/support/page.test.tsx",
+    "tests/e2e/wp03-public-presentation.spec.ts"
+  ],
+  "actual_results": [
+    "Five policy/support public views remove internal approval/priority/response-target jargon; existing help paths retained.",
+    "Unapproved working paragraphs no longer rendered; original draft registry literal and generated draft3 text preserved, no operator/contact/date invented.",
+    "Shared footer labels are customer-facing; legacy limited-access notice function and unrelated callers unchanged.",
+    "Unknown inherited policy names rejected using own-key lookup and documented dynamicParams=false route setting; actual HTTP404.",
+    "Effective date uses neutral unknown announcement wording; internal status strings cannot publish a version."
+  ],
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "tests": 14,
+      "receipt": "public-presentation-final-unit.json"
+    },
+    "typecheck": {
+      "status": "PASS",
+      "session": 74944
+    },
+    "lint": {
+      "status": "PASS",
+      "warnings": 0,
+      "chunk": "060ce5"
+    },
+    "browser": {
+      "status": "PASS",
+      "cases": 6,
+      "known_routes": 5,
+      "unknown_http404_paths": 3,
+      "mode": "Actual Next dev, loopback only",
+      "receipt": "public-presentation-browser.json"
+    },
+    "axe": {
+      "status": "PASS",
+      "scans": 10,
+      "serious_critical": 0,
+      "widths": [
+        1280,
+        390
+      ]
+    },
+    "data_preservation": "PASS",
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS",
+      "migrations": 131
+    },
+    "production_mode_build": "NOT_RUN",
+    "preview_staging_deployment": "NOT_RUN",
+    "formal_content_approval": "WAITING_AUTHORIZATION"
+  },
+  "review": {
+    "observed_models": [
+      "claude-sonnet-5-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-5-5"
+    ],
+    "effort": "unknown",
+    "blocker_major": 0,
+    "remaining_nit": 1,
+    "remaining_nit_detail": "Installed-version notFound error-message assertion could change on framework upgrade; current unit and realHTTP404 pass."
+  },
+  "unfinished": [
+    "Real operator and contact facts",
+    "Applicable formal version/effective date and processing/settlement/retention facts",
+    "Formal policy content publication; user-authorized draft3 retained for later completion"
+  ],
+  "safety": "Independent worktree, no original dirty checkout change, only local synthetic disposable PostgreSQL and static public-page HTTP. No formal payment/customer data, secret, production, push or deploy.",
+  "rollback": "public-presentation-owned.patch only; original working text remains intact.",
+  "verification_limit": "No production-mode build/release claim. UI cleanup is not completion of WP03 or legal approval; other public guide/access bodies were not changed or certified."
+}

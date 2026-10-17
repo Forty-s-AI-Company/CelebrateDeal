@@ -1,0 +1,9 @@
+{
+  "scope": "visit-page-data-final",
+  "promptCharacters": 19933,
+  "files": {
+    "src/lib/live-metric-visit-collection.ts": "be532e83befda4bcf2dd1db44be7922ff900fee8bf4c61beee739158b1cca740",
+    "prisma/migrations/20261016120000_live_metric_visit_page/migration.sql": "9305969ff2e518e979c9353bc5b4e8fd5559bd296e550710d11b2ea279768cf0",
+    "src/lib/live-metric-visit-page.ts": "8b7a150409953ce0d81ebb2bdb92cec56ec7d75989c5e408b0d3a5a59e4526ea"
+  }
+}

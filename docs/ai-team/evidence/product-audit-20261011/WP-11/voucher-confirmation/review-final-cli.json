@@ -1,0 +1,191 @@
+{
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "finalModel": "claude-opus-5-5",
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "review": {
+    "summary": "I'm closing the prior MAJOR (a lost or duplicated response could leave the voucher discount unreachable). The fix works from the supplied code. The swapped-in bearer is now an HMAC of the unique old link hash, the browser nonce and the issued time, using an existing purpose-separated server key. If the original response is lost, re-sending the same confirmed body rebuilds the same bearer. The CAS fails, then `retry()` looks the voucher up by the hash of that rebuilt bearer and returns it with exchanged:false while the voucher is unused and unexpired. The route keeps the 5-minute challenge cookie so the cookie check still passes on resubmit. A different challenge produces a different HMAC, so it can't recover a voucher someone else already exchanged, and the first CAS can still succeed only once. The CAS conditions, order/payment logic and schema are unchanged, and no secret is exposed. I found no new BLOCKER or MAJOR defect. I have two MINOR points. (1) The challenge cookie is a plain unkeyed hash of the form values, so it proves possession of the nonce, not a specific browser. Because retry now returns the live bearer, anyone holding a captured confirmed form body can replay it from any client within 5 minutes and get that bearer. (2) Recovery through the student portal has stricter conditions than the email link, so some vouchers may have no recovery path after a voucher cookie is overwritten. This is a residual risk or scope note, not a regression. I did not run any tests; the passing results come from the caller. IP trust topology is still deferred and not certified.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/capability-confirmation.ts",
+        "area": "capabilityConfirmation cookie digest / readCapabilityConfirmationDetails (digest([nonce, issued, capability, action.href]))",
+        "issue": "The challenge cookie is an unkeyed SHA-256 of values that all appear in the form. Anyone who knows capability, nonce and issued can build a valid cookie, so the 'browser binding' only proves possession of the nonce. Now that a replayed confirmed body returns the live checkout bearer (exchanged:false), the captured body works as a bearer credential from any client for up to 5 minutes.",
+        "evidence": "digest() is createHash('sha256') with no server key. readCapabilityConfirmationDetails only compares the cookie against digest(form values). exchangeAutomationVoucher's retry() returns { bearer } whenever HMAC(oldHash, nonce, issued) matches the current claimTokenHash. Before this fix, replaying the body after the exchange always failed.",
+        "impact": "Small new exposure window. Anything that records POST bodies (a WAF or proxy that logs bodies, a diagnostic capture, or a shared browser's form-resubmit history) can recover the unused discount bearer within 5 minutes of issue, without the original browser. The 'other browser fails' test passes only because the other browser didn't know the nonce, not because of a real browser binding.",
+        "recommended_fix": "Key the cookie value with an existing purpose-separated HMAC key (e.g. deriveSensitiveDataKey('capability-confirmation-cookie-v1')), or store a random cookie-only secret and include it in the exchange HMAC input. Then reconstructing the bearer requires the HttpOnly cookie as well as the form body. If you accept the current risk instead, document that the form body is bearer-equivalent and confirm nothing in the infrastructure logs bodies on this path.",
+        "required_test": "In a fresh browser context with no cookies, compute a cookie from a captured (capability, nonce, issued) body, attach it, and POST after a successful exchange. With the fix this must return 403/410 and set no AUTOMATION_VOUCHER_COOKIE. The same-browser resubmit must still return 303 with the same bearer.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/automation/vouchers/redeem/route.ts",
+        "area": "unavailable() recovery text; recovery route predicates (customerKeyHash, redeemedAt, currency equality, studentPortalVoucherFieldsReady, studentPortalVoucherProductWhere)",
+        "issue": "The only recovery path after the single AUTOMATION_VOUCHER_COOKIE is overwritten (voucher B exchanged after A, a device change, or a retry after 5 minutes) is the student portal reissue. That route adds conditions the email-link exchange and checkout don't check: a portal session whose customerKeyHash matches, redeemedAt null, matching currency, the portal product filter and studentPortalVoucherFieldsReady. A voucher that redeems through the email link but fails any of these has no self-service recovery once its link hash has rotated.",
+        "evidence": "exchangeAutomationVoucher rotates claimTokenHash, so GET with the old link returns 410. The recovery route's where/findFirst includes predicates absent from previewAutomationVoucher. The browser test of the recovery path covered only a portal-eligible voucher.",
+        "impact": "A limited set of vouchers (e.g. products with checkout fields the portal doesn't support, or customers without a matching portal identity) can still become unreachable after another voucher or device overwrites the cookie. The unavailable page sends those users to the merchant. This is not a regression of the fixed MAJOR, which covered lost responses and is now resolved within the 5-minute window.",
+        "recommended_fix": "Scope proposal, not a defect in this task: either keep email-link vouchers portal-eligible, or let a voucher cookie hold more than one bearer. Otherwise, accept and document that merchant support is the recovery path for portal-ineligible vouchers.",
+        "required_test": "With a voucher whose product fails studentPortalVoucherFieldsReady but passes checkout: exchange A, then exchange B, and confirm whether A can be recovered. The expected behavior should be documented.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli"
+    }
+  ],
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "accepted": false,
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:edc55d9b8da48c24a3c08e62d800b4b559b603dbf29da3b670d5b5d603f4b613",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/lib/capability-confirmation.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/lib/automation-voucher-exchange.ts",
+      "src/lib/automation-voucher-exchange.db.test.ts",
+      "src/app/api/automation/vouchers/redeem/route.ts",
+      "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "src/app/api/automation/vouchers/redeem/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/lib/automation-voucher-exchange.db.test.ts",
+      "src/lib/automation-voucher-exchange.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/lib/capability-confirmation.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "completed": false
+}

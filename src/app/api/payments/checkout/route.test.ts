@@ -31,6 +31,8 @@ const checkoutReadiness = vi.fn();
 const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }));
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
 const affiliatePolicyMocks = vi.hoisted(() => ({ freezeMerchantAffiliateCheckout: vi.fn(), MerchantAffiliatePolicyConflict: class MerchantAffiliatePolicyConflict extends Error {}, MerchantAffiliatePolicyDenied: class MerchantAffiliatePolicyDenied extends Error {} }));
+const followupMocks = vi.hoisted(() => ({ record: vi.fn().mockResolvedValue({ status: "recorded" }) }));
+vi.mock("@/lib/checkout-followup", () => ({ tryRecordCheckoutFollowupCandidate: followupMocks.record }));
 const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
 const funnelMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
 const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn(), resolveEligibleVoucherClaim: vi.fn(), consumeLive: vi.fn() }));
@@ -1446,4 +1448,21 @@ describe("checkout provider failures", () => {
       data: { status: "failed" },
     });
   });
+});
+
+describe('WP18 checkout candidate emission',()=>{
+ it('records only the server-owned order after a usable checkout is established',async()=>{
+  const response=await POST(checkoutRequest());expect(response.status).toBe(200);
+  expect(followupMocks.record).toHaveBeenCalledWith(db,{vendorId:'vendor-1',orderId:'order-1'});
+  expect(followupMocks.record.mock.invocationCallOrder[0]).toBeGreaterThan(buyerSupportMocks.issueBuyerSupportGrant.mock.invocationCallOrder[0]);
+ });
+ it('does not fail or reprice checkout when best-effort candidate recording reports failure',async()=>{
+  followupMocks.record.mockResolvedValueOnce({status:'failed'});const response=await POST(checkoutRequest());expect(response.status).toBe(200);
+  expect(db.paymentTransaction.create).toHaveBeenCalledTimes(1);
+  expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({grossAmountCents:1200})}));
+ });
+ it('does not emit a candidate when creating the provider checkout fails',async()=>{
+  createCheckoutSession.mockRejectedValueOnce(new Error('synthetic provider failure'));
+  const response=await POST(checkoutRequest());expect(response.status).toBe(502);expect(followupMocks.record).not.toHaveBeenCalled();
+ });
 });

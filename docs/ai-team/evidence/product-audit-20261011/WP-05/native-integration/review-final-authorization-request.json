@@ -1,0 +1,59 @@
+{
+  "status": "AUTHORIZED",
+  "requested_additional_provider_calls": 2,
+  "prior_batch_calls": 4,
+  "prior_authorized_extension_calls": 2,
+  "prior_extension_remaining": 0,
+  "snapshot_revision": "sha256:84adebec22219bf698d6a1ebcf27dda1c945f7e1eb2556afb7362a8485e32637",
+  "scope": [
+    {
+      "review": "independent security integration",
+      "files": [
+        "src/lib/registration-submission-receipt.ts",
+        "src/components/registration-retry-boundary.tsx",
+        "src/app/api/form-submissions/route.ts"
+      ],
+      "baseline_evidence": "security-review-pool-cli.json; unchanged storage source must be verified before reuse"
+    },
+    {
+      "review": "independent UI remediation",
+      "files": [
+        "src/components/registration-retry-context.tsx",
+        "src/components/lead-form.tsx",
+        "src/components/registration-submission-feedback.tsx",
+        "src/app/lp/[slug]/[stepPath]/page.tsx",
+        "src/app/loading.test.tsx",
+        "src/app/page.tsx"
+      ],
+      "dispositions": "ui-findings-disposition.json; include full loading boundary change set"
+    }
+  ],
+  "automatic_dispatch": false,
+  "models": "router determines; no fixed implementation model",
+  "requires_all_deterministic_checks_before_dispatch": true,
+  "no_response_is_not_approval": true,
+  "authorization": "Human user: 核准追加2次複審",
+  "authorized_extension_calls": 2,
+  "extension_calls_started": 2,
+  "additional_provider_calls_remaining": 0,
+  "actual_dispatches": [
+    {
+      "scope": "security",
+      "provider": "agy_wrapper",
+      "status": "IDLE_TIMEOUT"
+    },
+    {
+      "scope": "security fallback",
+      "provider": "claude_cli",
+      "status": "REVIEW_COMPLETED",
+      "observed_model": "claude-opus-5-5"
+    }
+  ],
+  "local_rejected_inputs": [
+    {
+      "scope": "UI",
+      "status": "BLOCKED_SENSITIVE_INPUT",
+      "provider_attempts": 0
+    }
+  ]
+}

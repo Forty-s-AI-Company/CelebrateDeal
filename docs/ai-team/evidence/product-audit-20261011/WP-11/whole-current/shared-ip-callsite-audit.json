@@ -1,0 +1,309 @@
+{
+  "original_requirement": "F-18 common clientIp trust / WP11 unified IP parsing; four-entry-only fix is insufficient for whole WP11",
+  "source_report": "C:/Users/eden/Downloads/AI/CelebrateDeal/docs/reviews/2026-10-11-product-audit-consolidated.md lines66,121 (read-only)",
+  "counts": {
+    "PAYMENT_BEHAVIOR_EXCLUDED": 4,
+    "PROVIDER_STATUS_ONLY": 1,
+    "RAW_SOURCE_REQUIRES_REMEDIATION": 26,
+    "TRUSTED_ENTRY_ADAPTER": 1,
+    "VERIFIED_IDENTITY_ADAPTER_REVIEW": 4
+  },
+  "callers": [
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "b322a8601225b3d33b9865899b253368c48abbebf3f0382853a05ee5c1905714",
+      "call_lines": [
+        73,
+        83,
+        180,
+        232,
+        288
+      ]
+    },
+    {
+      "path": "src/app/actions/buyer-support-actions.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "db8e699bf56aca0a75087fefdb5bb10f8c25b5b1c033a3c7ad3400bf3bb717f9",
+      "call_lines": [
+        60,
+        61
+      ]
+    },
+    {
+      "path": "src/app/actions/consultation-actions.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "0d179e2e4461dc70fc4b988793fa627f3073a554c35ef8025aeadfd3e014b050",
+      "call_lines": [
+        544
+      ]
+    },
+    {
+      "path": "src/app/actions/registration-actions.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "21403d997e9de5ca572c211e3e83c40cf5418b77bbe8b2386ae4890b642a1509",
+      "call_lines": [
+        34
+      ]
+    },
+    {
+      "path": "src/app/actions/student-portal-actions.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "3b5814c640e3adf652314a777a283128dc0c5a9ce9b54b97740a9cca1e37b1c2",
+      "call_lines": [
+        57,
+        70
+      ]
+    },
+    {
+      "path": "src/app/actions/vendor-member-actions.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "f26df354670b17e9adcdaff632421622542a2a605a04c050ca316b485334c6ce",
+      "call_lines": [
+        54,
+        160
+      ]
+    },
+    {
+      "path": "src/app/api/admin/preflight/route.ts",
+      "classification": "PROVIDER_STATUS_ONLY",
+      "source_sha256": "c9c868632ccd99854018a4849768a491729850ecc268c85f570f027816320088",
+      "call_lines": []
+    },
+    {
+      "path": "src/app/api/affiliate-attribution/direct-entry/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "06a94f5d4548213b7080348c2fa57c2119b1f2558f7590e9356b6ce84f33bc84",
+      "call_lines": [
+        19
+      ]
+    },
+    {
+      "path": "src/app/api/affiliate-clicks/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "df26068ff14a0453765adac17d12339e9d5d0ba8d9e6b1369d2426d7b8a7f281",
+      "call_lines": [
+        114
+      ]
+    },
+    {
+      "path": "src/app/api/analytics/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "914ad278e53f1228ebc1a235ddef40303d1486b3e9f72ce3da6ce7761a771d53",
+      "call_lines": [
+        57
+      ]
+    },
+    {
+      "path": "src/app/api/auth/line/callback/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "c9c5be4aa236422ba82bff40478066043542965bdf2eaf1d7cc2dc74e2b53ac7",
+      "call_lines": [
+        15
+      ]
+    },
+    {
+      "path": "src/app/api/auth/line/start/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "a9d65d70d2140fab3e6aaedb96716be4af7c3d4abdd4ece6b9dd9de88f35463c",
+      "call_lines": [
+        31
+      ]
+    },
+    {
+      "path": "src/app/api/auth/password-reset/confirm/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "3d5446c91563b3a4afd5befc1342c2466d050d6299bc6119873b9afab3d7070f",
+      "call_lines": [
+        16
+      ]
+    },
+    {
+      "path": "src/app/api/auth/password-reset/request/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "6a2b4de8f6a7bd7778262a23a64f8ed45422dd72e6bc2b24f8d5ec10551ff787",
+      "call_lines": [
+        16
+      ]
+    },
+    {
+      "path": "src/app/api/checkout/upsell/route.ts",
+      "classification": "PAYMENT_BEHAVIOR_EXCLUDED",
+      "source_sha256": "e2060e9730c67e9c7b72b4b16616fd358521c9a831b754702b7c12393207f41d",
+      "call_lines": [
+        21
+      ]
+    },
+    {
+      "path": "src/app/api/form-submissions/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "20eac4e68ee5d7a5fdf60b34915e6b95094c79e0f265977a8268a0a3436558b3",
+      "call_lines": [
+        396
+      ]
+    },
+    {
+      "path": "src/app/api/form-submissions/verify/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "7f3bd20a2308c4298685d71d9e4b91259b68329d51fad08209aea94990076a7f",
+      "call_lines": [
+        50
+      ]
+    },
+    {
+      "path": "src/app/api/live-chat/instructor/route.ts",
+      "classification": "VERIFIED_IDENTITY_ADAPTER_REVIEW",
+      "source_sha256": "31a247ba287049924a4616318c2b3ca77c02b19ed658c3df45963eda4f0c2eec",
+      "call_lines": [
+        27
+      ]
+    },
+    {
+      "path": "src/app/api/live-chat/messages/route.ts",
+      "classification": "VERIFIED_IDENTITY_ADAPTER_REVIEW",
+      "source_sha256": "9954f063cd21f3b5a39d8fa23ae663c7396b2edbbb34216025f163e36ce75a73",
+      "call_lines": [
+        72
+      ]
+    },
+    {
+      "path": "src/app/api/live-chat/private/route.ts",
+      "classification": "VERIFIED_IDENTITY_ADAPTER_REVIEW",
+      "source_sha256": "49aa57bec366f762b116a8366e5b159346f0a10128ca7eb8e312587e8c06e6c6",
+      "call_lines": [
+        22
+      ]
+    },
+    {
+      "path": "src/app/api/live-danmaku/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "c33500819abf1fe722bd94c05da862fe53fe8bb55f1b3b4f4fcb992ce292f07c",
+      "call_lines": [
+        15
+      ]
+    },
+    {
+      "path": "src/app/api/live-danmaku/scripted/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "54932678489e1fb1d9ba27df2a89f068a0a1bcdce6286d61cffa49540c29c516",
+      "call_lines": [
+        11
+      ]
+    },
+    {
+      "path": "src/app/api/live-interactions/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "69b3c54744056908f4b6d61532b31a88c86d6cb98ffbc65e33e72dc353b316b9",
+      "call_lines": [
+        394
+      ]
+    },
+    {
+      "path": "src/app/api/live-interactions/cards/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "f7f2378a28ed894447f0f8f6395905d0f620f0cf29d7462e2ebabd04c39a7085",
+      "call_lines": [
+        13
+      ]
+    },
+    {
+      "path": "src/app/api/live-media/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "805233e7de1c938bda12c14ac48eb11838ac5072e8c5f8b5ed37a233e457108b",
+      "call_lines": [
+        33
+      ]
+    },
+    {
+      "path": "src/app/api/live-playback-source/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "a6b5b58f071d55ade65b714c5d78f96152b2f4bad42a6ee6c3601b15a9dc5da8",
+      "call_lines": [
+        25
+      ]
+    },
+    {
+      "path": "src/app/api/live-presenter/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "dfb7c72cab25053745dc54fc1e8bc1c1eb83bc7e711509410b87e7f5b8d2378f",
+      "call_lines": [
+        15
+      ]
+    },
+    {
+      "path": "src/app/api/live-purchase-broadcasts/route.ts",
+      "classification": "VERIFIED_IDENTITY_ADAPTER_REVIEW",
+      "source_sha256": "587cfd9c02c3bd0a07e0de0edcf024e64d4d5f0d8daf376343b81acd690f6595",
+      "call_lines": [
+        24
+      ]
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.ts",
+      "classification": "PAYMENT_BEHAVIOR_EXCLUDED",
+      "source_sha256": "a34e1394afd8938796a26536268aeec24dea129acd19a1b8f6eb773354b33fe2",
+      "call_lines": [
+        713
+      ]
+    },
+    {
+      "path": "src/app/api/payments/checkout/admission/route.ts",
+      "classification": "PAYMENT_BEHAVIOR_EXCLUDED",
+      "source_sha256": "05a98bea6a26140b8114c76154d97e5c71e5300756d8d24f05f9fd32cc5f4d4e",
+      "call_lines": [
+        24
+      ]
+    },
+    {
+      "path": "src/app/api/payments/checkout/recovery/route.ts",
+      "classification": "PAYMENT_BEHAVIOR_EXCLUDED",
+      "source_sha256": "59060fabc9b4189f86911571f1f1f1d1fd27b494dad302befbbcf94059b19384",
+      "call_lines": [
+        110
+      ]
+    },
+    {
+      "path": "src/app/api/security/csp-report/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "d9821de67e497e4d5fba72bd017ff490741eca210e891ca1023f30feaf8c9ab1",
+      "call_lines": [
+        8
+      ]
+    },
+    {
+      "path": "src/app/api/stream-usage/route.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "baab2fa35d1c458bf4b8fc0a86bcc81ee25030f34e0982661ad5f20bc7ba2b95",
+      "call_lines": [
+        49
+      ]
+    },
+    {
+      "path": "src/lib/mfa-recovery-regeneration.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "a226e1a05b1b1b2175a53e45bfe5927144d908f149ac7e09d7b05bdd9f5e7d3f",
+      "call_lines": [
+        53
+      ]
+    },
+    {
+      "path": "src/lib/registration-form-retry-response.ts",
+      "classification": "RAW_SOURCE_REQUIRES_REMEDIATION",
+      "source_sha256": "269987d5da8538e01071ad225ad8a3eeae7f4ae06af5ff8a7f233865d8812ee1",
+      "call_lines": [
+        46
+      ]
+    },
+    {
+      "path": "src/lib/trusted-entry-rate-limit.ts",
+      "classification": "TRUSTED_ENTRY_ADAPTER",
+      "source_sha256": "47b2bef0c6102921b62f723b64d57b14d7b967a5d468ac31e908fd9581b7f0b4",
+      "call_lines": [
+        53
+      ]
+    }
+  ],
+  "next_scope": "Migrate unverified nonpayment API and server-action source limits to verified identity; preserve recipient/subject limits and already-normalized callers; payment behavior unchanged",
+  "whole_wp_status": "IN_PROGRESS_SCOPE_GAP",
+  "review_status": "TRUNCATED_REVIEW_NOT_ACCEPTED"
+}

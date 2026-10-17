@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "linkedPayments": 100000,
+  "scope": "Synthetic117 touch cost and bounded competing writer; not Production scale certification or producer completeness",
+  "setupMs": 110740,
+  "tableLockObserved": true,
+  "writerWaitMs": 163,
+  "migrationMs": 5674,
+  "lockHoldUpperBoundMs": 5674,
+  "sqlExitCode": 0,
+  "sqlStatementTimeout": false,
+  "walBytes": 89350336,
+  "allRowsMvccChanged": true,
+  "allPaymentFieldsUnchanged": true,
+  "sourceEventDeltaZero": true,
+  "versionBumped": true,
+  "triggerQueuePeakMemory": "NOT_MEASURED",
+  "productionScale": "UNKNOWN_NOT_ACCESSED",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

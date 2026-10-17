@@ -1,0 +1,16 @@
+{
+  "status": "VALID_FINDINGS",
+  "counts": {
+    "BLOCKER": 1,
+    "MAJOR": 4,
+    "MINOR": 2,
+    "NIT": 1
+  },
+  "acceptance": "NOT_READY",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "process_status": "HOST_PERMISSION_BLOCKED",
+  "classification_note": "HOST_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL",
+  "qualification": "Adapter verified success terminal, zero tool calls/denials; HOST_PERMISSION_BLOCKED was text classifier false positive, not approval rejection.",
+  "disputed_claim": "Single paired run cannot establish quantified regression. The failed enabled gate remains independently verified; preserve original finding unchanged."
+}

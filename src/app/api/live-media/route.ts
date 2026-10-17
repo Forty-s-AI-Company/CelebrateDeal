@@ -2,7 +2,7 @@ import { z } from "zod";
 import { getCurrentAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { hasActiveLiveViewerSession, hashLiveViewerToken, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { mediaOrigin, mediaPath, startMediaSession, stopMediaSession } from "@/lib/live-media-provider";

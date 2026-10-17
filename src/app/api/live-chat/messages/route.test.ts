@@ -227,3 +227,14 @@ describe("live chat route", () => {
     expect(JSON.stringify(payload)).not.toContain("private-db-detail");
   });
 });
+
+
+it("rejects unknown read identity before limiter and database", async () => {
+  mocks.getRequestClientIp.mockReturnValue(null);
+  const response = await GET(request("/api/live-chat/messages?vendorId=v1&liveId=l1"));
+  expect(response.status).toBe(503);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+  expect(mocks.getDb).not.toHaveBeenCalled();
+  expect(mocks.listViewerChatMessages).not.toHaveBeenCalled();
+});

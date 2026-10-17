@@ -1,0 +1,12 @@
+{
+  "initial_failure": "Overbroad whole-page button assertion included unrelated AnnouncementCenter launcher outside main.",
+  "observed_control": {
+    "tag": "BUTTON",
+    "type": "button",
+    "label": "開啟最新消息",
+    "inMain": false
+  },
+  "correction": "Retain global no-form/no-named-input/no-submit-button assertions and require no buttons in deadline main. No product code changed; no assertion for registration submission removed.",
+  "redirect_success_contract": "Real native success follows configured thank-you target. With closed behavior it shows verified closed receipt; with redirect behavior the designated target must remain viewable per existing runtime contract. Assertions now distinguish those branches rather than expecting closure at an explicitly viewable target.",
+  "matrix_isolation": "Combined engines issued more than existing 10 POST/min limit from one loopback client (route.ts). Run each engine in an isolated owned Next process, 8 POST per matrix. Limits/assertions remain unchanged; this matrix verifies deadline behavior, rate-limit behavior is separately covered."
+}

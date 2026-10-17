@@ -1,0 +1,47 @@
+{
+  "scope": "Synthetic arithmetic only; same exact rational reference before optimization; no DB or network",
+  "measurements": [
+    {
+      "name": "sequential_jitter",
+      "segments": 10000,
+      "before_ms": 131,
+      "after_ms": 54,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 8996490
+      }
+    },
+    {
+      "name": "simultaneous_disjoint_jitter",
+      "segments": 10000,
+      "before_ms": 19013,
+      "after_ms": 19730,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": false,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 897
+      }
+    },
+    {
+      "name": "partially_overlapping_jitter",
+      "segments": 10000,
+      "before_ms": 18543,
+      "after_ms": 18155,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": false,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 530
+      }
+    }
+  ],
+  "random_cases": 200,
+  "mismatches": 0,
+  "status": "FAIL"
+}

@@ -1,0 +1,7 @@
+{
+  "cause": "Unconfirmed internal Next length exception; one frozen-source cache-isolated retry",
+  "destination": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\.next\\cache\\webpack-before-wp14-6643c0deb63d4363b2a30fde565105ec",
+  "action": "Archive generated webpack cache in owned worktree, no deletion",
+  "production": "NOT_ACCESSED",
+  "source": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\.next\\cache\\webpack"
+}

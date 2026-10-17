@@ -1,0 +1,10 @@
+{
+  "clientScope": "Full collector/clock/delivery/transport",
+  "promptCharacters": 17194,
+  "files": {
+    "src/lib/live-metric-session.ts": "df008ac87d65607cc115d94186d396a21d84f67358466f31d3124ea44d6113b4",
+    "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql": "09870ab15d12c60aa333ef8d3b72edd16f554a091e75b29d07030215ce142ed6"
+  },
+  "reviewScope": "server",
+  "serverScope": "Full120 SQL plus session lease-helper/final-decision excerpts"
+}

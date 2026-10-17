@@ -1,0 +1,95 @@
+Read-only critical security re-review of the exact changed lines supplied below, plus unchanged active filter/transaction wrapper and focused concurrency test excerpt. Do not modify or call tools. Return findings BLOCKER/MAJOR/MINOR/NIT with file,area,issue,evidence,impact,recommended_fix,required_test,confidence. Full source/test package was locally blocked before dispatch; this is a minimal scope packet and does not certify omitted code. No actual credentials or production data. Previously no B/M,2MINOR and1NIT: concurrency overlap not proved; expired/new and no-partial-update tests missing; capacity check duplicated. Current revision fixes all3: shared helper; DB tests assert unchanged expiry/no replacement session response on rejected renewal; two real capacity queries wait at a barrier AFTER reading zero, then both allowed to write in real PostgreSQL transactions. Expired/expired and expired/new each yield one success, one viewer_limit_reached and>=3 reads (retry) and activecount1. Six DB tests, unit, lint passed. Date only mocked. Prior bug expired renewal at filled cap returned200; now429. Active renewal keeps slot, expired renewal may reclaim free slot. Same Serializable transaction surrounds count/update/create, existing lifecycle/payment/credit/runtime guards unchanged. IP topology and wholeWP11 remain out of scope.
+--- before/src/lib/live-quota-admission.ts
++++ after/src/lib/live-quota-admission.ts
+@@ -41,0 +42 @@
++  expiresAt: Date;
+@@ -128,0 +130,5 @@
++}
++
++async function assertViewerCapacity(tx: Prisma.TransactionClient, input: AdmissionInput, maximum: number, now: Date) {
++  const active = await tx.liveViewerSession.count({ where: activeSessionWhere(input.vendorId, input.liveId, now) });
++  if (active >= maximum) throw new LiveQuotaAdmissionError("viewer_limit_reached");
+@@ -219 +225 @@
+-        select: { id: true, vendorId: true, liveId: true },
++        select: { id: true, vendorId: true, liveId: true, expiresAt: true },
+@@ -223,0 +230,4 @@
++    // 過期租約已釋放名額，恢復前須在同一Serializable交易重新檢查容量。
++    if (existing.expiresAt <= now) {
++      await assertViewerCapacity(tx, input, policy.maxConcurrentViewers, now);
++    }
+@@ -232,6 +242 @@
+-  const activeSessions = await tx.liveViewerSession.count({
+-    where: activeSessionWhere(input.vendorId, input.liveId, now),
+-  });
+-  if (activeSessions >= policy.maxConcurrentViewers) {
+-    throw new LiveQuotaAdmissionError("viewer_limit_reached");
+-  }
++  await assertViewerCapacity(tx, input, policy.maxConcurrentViewers, now);
+
+ACTIVE FILTER
+function activeSessionWhere(vendorId: string, liveId: string, now: Date, tokenHash?: string) {
+  return {
+    vendorId,
+    liveId,
+    expiresAt: { gt: now },
+    ...(tokenHash ? { tokenHash: { not: tokenHash } } : {}),
+  };
+}
+
+
+TRANSACTION WRAPPER
+export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
+  const now = input.now ?? new Date();
+  const transactionInput = { ...input, now };
+
+  // This write must commit independently. If quota or payment admission later
+  // fails, the natural VOD completion marker must remain durable.
+  await reconcileLiveRuntimeState(db, {
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    now,
+  });
+
+  for (let attempt = 1; attempt <= LIVE_ADMISSION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      // Every retry starts a fresh Serializable transaction and re-reads the
+      // live plus all quota state through the transaction callback.
+      return await db.$transaction(
+        (tx) => admitWithinTransaction(tx, transactionInput),
+        { isolationLevel: "Serializable" },
+      );
+    } catch (error) {
+      if (!isPrismaCode(error, "P2034")) throw error;
+      if (attempt === LIVE_ADMISSION_MAX_ATTEMPTS) {
+        throw new LiveQuotaAdmissionError("admission_busy");
+      }
+      // Immediate Serializable retries tend to collide with the same competing
+      // transaction again. This bounded jitter clears that conflict window.
+      await sleep(liveAdmissionRetryDelayMs(
+        attempt,
+        randomInt(0, LIVE_ADMISSION_RETRY_JITTER_MS + 1),
+      ));
+    }
+  }
+
+  throw new LiveQuotaAdmissionError("admission_busy");
+}
+
+
+TEST BARRIER EXACT EXCERPT
+ let reads = 0; let release = () => {};
+ const barrier = new Promise<void>(resolve => { release = resolve; });
+ // 真實count完成後才放行寫入，確保兩筆交易都讀到尚有空位。
+ const client = db.$extends({ query: { liveViewerSession: { async count({ args, query }) {
+  const count = await query(args); reads++;
+  if (reads <= 2) { expect(count).toBe(0); if (reads === 2) release(); await barrier; }
+  return count;
+ } } } }) as unknown as PrismaClient;
+
+TEST ASSERTIONS EXACT EXCERPT
+ expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+ const denied = results.find(result => result.status === "rejected");
+ expect(denied?.status === "rejected" && denied.reason.code).toBe("viewer_limit_reached");
+ expect(reads).toBeGreaterThanOrEqual(3);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});

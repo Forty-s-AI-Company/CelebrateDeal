@@ -36,6 +36,7 @@ export default async function OnboardingPage() {
         scopeType: "VENDOR",
         membershipId: null,
         status: "verified",
+        verifiedAt: { not: null, lte: now },
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
     }),
@@ -78,7 +79,7 @@ export default async function OnboardingPage() {
   return (
     <>
       <PageHeader
-        title="商家上線導引"
+        title="上線導引"
         description="依真實商店設定自動保存進度；完成一項設定後回到這裡即可接著做，不需要重複填表。"
         action={progress.nextStep ? (
           <ButtonLink href={progress.nextStep.href} tone="cta">繼續：{progress.nextStep.actionLabel}</ButtonLink>

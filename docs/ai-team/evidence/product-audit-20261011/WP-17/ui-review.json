@@ -1,0 +1,210 @@
+{
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "execution_provider": "claude_cli",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "agy_discovery_process_status": "SUCCESS",
+  "review": {
+    "summary": "I reviewed only the supplied fast-entry UI component. Keeping the requestId in useState correctly survives RSC revalidation, and the controlled inputs, pending and disabled handling, and draft/missing-item feedback look sound. There is one MAJOR issue: the requestId never changes after a create finishes, so the same mounted form cannot reliably create a second, different webinar. Its exact effect depends on the server's idempotency rules, which were outside the supplied scope. There are also two MINOR browser-dependent issues (React 19 form reset and dynamically mounted live regions) and one NIT. No findings block the server boundary already reviewed. The browser check is still pending, and an empty or short findings list does not certify release.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "Quick webinar form component (supplied excerpt)",
+        "area": "const [submissionId] = useState(requestId); hidden input name=\"requestId\"",
+        "issue": "The idempotency key stays the same for as long as the component is mounted, even after the server returns a final success or draft result. The fields stay editable and the button is enabled again, so a user can pick a different video or time and submit again with the old requestId.",
+        "evidence": "useState(requestId) is never updated. Nothing resets or rotates it based on state.status, and no key on the component ties it to a created webinar. The comment says this is intended to survive revalidatePath, but revalidation is also the only thing that sends a fresh requestId, and that fresh value is deliberately ignored.",
+        "impact": "A second, intentionally different create in the same session either quietly replays the first result (the user thinks a new webinar was made and the links point to the old one) or gets an idempotency-mismatch error. Which one happens depends on the server's payload-matching rules. Either way the 'one webinar goes live' flow cannot be repeated without a full page reload.",
+        "recommended_fix": "Keep the id during in-flight and retry submissions, but rotate it after a terminal result. For example, keep the id in state and replace it with crypto.randomUUID() or the latest server-provided requestId when state.status turns to success or draft, then reset the controlled fields. Another option is to key the form component on the created webinar id. If replaying the same id is intended, make the UI clear about it, for example by switching to a 'created' view with the inputs locked.",
+        "required_test": "Unit and browser test: submit A and get success. Change the video and time and submit again. Assert that the second request carries a different requestId and creates a separate webinar. Also assert that a double submit or a retry before any terminal result still reuses the original id.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "Quick webinar form component (supplied excerpt)",
+        "area": "<form action={action}> with a controlled <select name=\"videoId\"> and controlled inputs",
+        "issue": "With a function form action, React 19 automatically resets the form after the action finishes. Controlled <select> elements have had reported problems where the DOM shows the placeholder option after this reset while React state still holds the old value.",
+        "evidence": "The form uses action={action} from useActionState, and the select is controlled with value={videoId}. Nothing restores the DOM after the reset. Unit tests in jsdom do not exercise native form reset in a real browser.",
+        "impact": "After a draft or error result, the select can look empty while state still has a video, or the reverse. A resubmit may then send a value the user cannot see, or fail the 'required' check in a confusing way.",
+        "recommended_fix": "In the pending browser check, confirm the select keeps its value after both error and draft results. If it does not, use the onSubmit plus startTransition(() => action(formData)) pattern to avoid automatic reset, or re-sync with key or defaultValue.",
+        "required_test": "Browser test: choose a video and submit to get a draft or error result. Check that the visible select option and the submitted value both still match the chosen video.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "Quick webinar form component (supplied excerpt)",
+        "area": "{state.message ? <div role={...alert|status}> ... </div> : null}",
+        "issue": "The live region is mounted together with its content, and its role changes between alert and status. Screen readers often do not announce live regions that are inserted already containing text.",
+        "evidence": "The whole container with role=\"status\" is rendered only when state.message is truthy, so no empty live region exists before the message arrives.",
+        "impact": "Screen-reader users may not hear the draft, missing-item or success feedback after submitting.",
+        "recommended_fix": "Always render an empty status container (for example role=\"status\" aria-live=\"polite\") and only fill in its content later. Errors can go in a separate container that is always present, or focus can be moved to the result heading.",
+        "required_test": "Browser check with a screen reader (NVDA or VoiceOver): submit and confirm the result message is announced for success, draft and error.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "Quick webinar form component (supplied excerpt)",
+        "area": "state.missing.map(item => <li key={item.label}>",
+        "issue": "The list uses the display label as the React key, so two missing items with the same label would get duplicate keys.",
+        "evidence": "key={item.label}",
+        "impact": "Only a React warning and possible list-reconciliation glitches, and only if the server ever returns duplicate labels.",
+        "recommended_fix": "Use a stable code or the href as the key, or combine label with index.",
+        "required_test": "Unit test that renders two missing items and checks there are no key warnings.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "payment",
+        "ui_only"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "ux_ui"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/components/quick-webinar-form.tsx",
+        "src/app/(app)/lives/new/page.tsx"
+      ],
+      "context_size": 5000,
+      "expected_duration": 10,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/(app)/lives/new/page.tsx",
+      "src/components/quick-webinar-form.tsx"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "status": "REVIEW_COMPLETED"
+}

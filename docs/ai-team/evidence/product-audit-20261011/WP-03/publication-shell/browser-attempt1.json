@@ -1,0 +1,5 @@
+{
+  "status": "FAIL",
+  "scope": "Static SSR semantic accessibility only; production CSS and running Next server NOT_RUN",
+  "pages": []
+}

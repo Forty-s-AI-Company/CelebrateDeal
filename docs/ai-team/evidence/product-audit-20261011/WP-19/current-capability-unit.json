@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "wp19-current-unit", "revision": "sha256:5ef747d868f50ad9a1fb766f265d721358063f4e6dedcfdfd4f876a19d7f776e", "status": "FAIL", "exit_code": 1, "duration_seconds": 0.032}

@@ -1,0 +1,33 @@
+--- a/.ai-team/reports/wp09-browser-check.mjs
++++ b/.ai-team/reports/wp09-browser-check.mjs
+@@ -10,10 +10,15 @@
+ }
+ const executable=chromium.executablePath();
+ if(!fs.existsSync(executable))throw new Error('isolated-browser-unavailable');
++const buildMetaPath='docs/ai-team/evidence/product-audit-20261011/WP-14/ab-build.json';
++const buildMeta=JSON.parse(fs.readFileSync(buildMetaPath,'utf8'));
++if(buildMeta.status!=='PASS'||!Number.isInteger(buildMeta.port)||buildMeta.port<1024||buildMeta.port>65535)throw new Error('wp09-current-build-not-ready');
++const productFiles=['src/lib/funnel-template-gallery.ts','src/components/landing-pages/funnel-webinar-experience.tsx'];
++if(productFiles.some(file=>fs.statSync(file).mtimeMs>fs.statSync(buildMetaPath).mtimeMs))throw new Error('wp09-renderer-build-stale');
+ const server=net.createServer();
+-await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(55503,'127.0.0.1',resolve)});
++await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(buildMeta.port,'127.0.0.1',resolve)});
+ const port=server.address().port;await new Promise(resolve=>server.close(resolve));
+-const receipt={status:'NOT_RUN',scope:'Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic demo checkout. No cookies/tokens/traces/raw logs persisted; no provider delivery.',tests:[],cleanup:null};
++const receipt={status:'NOT_RUN',scope:'Owned loopback HTTP/browser, real disposable PostgreSQL, six synthetic template apply/publish/registration journeys using current gallery and renderer; reuses latest successful build only for these unchanged dependencies. No cookies/tokens/traces/raw logs persisted; no provider delivery.',tests:[],cleanup:null};
+ const result=await main({afterMigrate:async({databaseUrl,environment})=>{
+  const env={...environment,DATABASE_URL:databaseUrl,DIRECT_URL:databaseUrl,E2E_PORT:String(port),E2E_BASE_URL:`http://127.0.0.1:${port}`,PLAYWRIGHT_EXECUTABLE_PATH:executable,E2E_SMOKE_TEST_EMAIL:'wp09-smoke@example.test',PAYMENT_PROVIDER:'demo',ENTRY_CLIENT_IP_TRUST_MODE:'trusted-proxy',ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE:'vercel',ENTRY_CLIENT_IP_INGRESS_SECRET:'wp09-owned-loopback-ingress-proof-20261016'};
+  const child=spawn(process.execPath,['node_modules/@playwright/test/cli.js','test','--config=.ai-team/reports/wp09-browser.config.ts','tests/e2e/wp09-sales-templates.spec.ts','--project=chromium','--trace=off','--retries=0','--reporter=json'],{env,stdio:['ignore','pipe','pipe'],windowsHide:true});
+@@ -23,10 +28,10 @@
+  try {const report=JSON.parse(out);const visit=s=>{for(const x of s.specs??[])for(const t of x.tests??[])receipt.tests.push({title:x.title,status:t.status,results:t.results.map(r=>({status:r.status,error:(r.error?.message??'').replace(/\x1b\[[0-9;]*m/g,'').split('\n').filter(l=>!/(?:token|cookie|secret|password|postgresql|https?:\/\/)/i.test(l)).slice(0,12).join('\n')}))});for(const c of s.suites??[])visit(c)};visit(report);receipt.stats=report.stats;receipt.errors=(report.errors??[]).map(e=>(e.message??'').split('\n').filter(l=>!/(?:token|cookie|secret|password|postgresql|https?:\/\/)/i.test(l)).slice(0,10).join('\n'));}
+  catch{receipt.reportParse='FAILED';receipt.buildFailureMarkers=['Failed to compile','Type error','Timed out waiting','Could not find','Error:'].filter(x=>err.includes(x)||out.includes(x));receipt.sanitizedDiagnostics=(out+'\n'+err).split('\n').map(l=>l.replace(/\x1b\[[0-9;]*m/g,'')).filter(l=>/(?:Error:|error:|could not|Cannot find|ENOENT|No tests|failed|Timed out)/i.test(l)&& !/(?:token|cookie|secret|password|postgresql|https?:\/\/)/i.test(l)).slice(0,6).map(l=>l.slice(0,400));}
+  receipt.status=code===0?'PASS':'FAIL';receipt.exitCode=code;
+- fs.writeFileSync('docs/ai-team/evidence/product-audit-20261011/WP-09/browser.json',JSON.stringify(receipt,null,2)+'\n');
++ fs.writeFileSync('docs/ai-team/evidence/product-audit-20261011/WP-09/renderer-regression-browser.json',JSON.stringify(receipt,null,2)+'\n');
+  if(code!==0)throw new Error('wp09-browser-gate-failed');
+ }});
+ receipt.cleanup=result.cleanup;receipt.migrations=result.migrationNames.length;
+ if(result.status!=='PASS')receipt.status='FAIL';
+-fs.writeFileSync('docs/ai-team/evidence/product-audit-20261011/WP-09/browser.json',JSON.stringify(receipt,null,2)+'\n');
++fs.writeFileSync('docs/ai-team/evidence/product-audit-20261011/WP-09/renderer-regression-browser.json',JSON.stringify(receipt,null,2)+'\n');
+ console.log(JSON.stringify(receipt));

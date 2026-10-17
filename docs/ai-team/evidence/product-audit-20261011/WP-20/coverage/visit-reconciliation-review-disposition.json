@@ -1,0 +1,231 @@
+{
+  "reviews": {
+    "initial": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage"
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "sourceHashesMatch": false,
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-reconciliation.ts",
+          "area": "intent loop: `matched=factsByEvent.get(intent.eventId)?.some(fact=>fact.visitorId===intent.visitorId)` and the missing intent/page timing checks",
+          "issue": "An intent counts as answered by any fact with the same event and visitor, whatever its timestamps. Timing checks (fact before preparation, fact before page issue, preparation before page issue) only run in the fact loop, and only for facts inside the window. If a fact has impossible timing and falls outside the window, it silently closes the intent.",
+          "evidence": "The fact loop flags `fact.visitedAt<intent.preparedAt || intent.preparedAt<page.issuedAt || fact.visitedAt<page.issuedAt` only after `if(!inWindow(fact.visitedAt))continue`. The intent loop does no such check: any matching visitor clears the pending gap. The brief says registration facts need the exact page, the prepared visitor and valid timing. Facts are unique per scope/visitor/event, so an invalid fact means a valid acknowledgement can never arrive.",
+          "impact": "A preparation that is permanently unresolved shows as resolved in every later window. Coverage drops from evidence_gap to unknown_history, and pendingRegistrationIntents is undercounted. There is no false positive, because coverage is never complete, but definite negative evidence is lost from the summary and reason.",
+          "recommended_fix": "In the intent loop, count a match only if it passes the same checks as a valid registration fact: same visitor, fact.visitedAt >= intent.preparedAt, intent.preparedAt >= page.issuedAt, and fact.visitedAt >= page.issuedAt. If a match exists but fails these checks, increment invalidRegistrationChronology (or a new counter) and set hasGap, whether or not the fact is inside the window.",
+          "required_test": "Unit tests: (a) intent prepared inside [S,T), fact for the same visitor with visitedAt before preparedAt and before S: expect evidence_gap and a timing counter. (b) intent preparedAt earlier than page.issuedAt with a matched fact outside the window: expect evidence_gap. (c) a valid match outside the window still closes the intent and is not counted inside the window.",
+          "confidence": 0.7
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-reconciliation.ts",
+          "area": "`set_config('row_security','off',true),set_config('statement_timeout','5000',true)`",
+          "issue": "Both settings last until the caller's transaction ends, not just for this function. The brief says this is the same RR transaction used for report facts and loadMetricViewingSnapshot. Any later query in it runs with row_security=off, and a stricter timeout the caller set earlier is replaced by 5000 ms.",
+          "evidence": "set_config with is_local=true is scoped to the transaction. Nothing saves and restores current_setting('statement_timeout') or row_security. readMetricCoverage then runs the audit query in the same tx, and other report reads may follow.",
+          "impact": "Report queries that run later in the transaction behave differently depending on whether visits coverage was read first. A role subject to row-level security (RLS) now gets 42501 errors instead of filtered results, and a caller's tighter timeout can be loosened. This affects availability and predictability; it does not leak data.",
+          "recommended_fix": "Save current_setting('statement_timeout') and current_setting('row_security') first, then restore them with set_config(...,true) in a finally block. Use the shorter of the existing and desired timeout. Otherwise, document that the caller must apply these settings itself before its first statement.",
+          "required_test": "Inside an RR transaction, SET LOCAL statement_timeout='1000', call the reconciler, then check that current_setting('statement_timeout') is '1000' and row_security is back to its previous value. Also check that a later fact query by an RLS role behaves as it did before.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-coverage-reader.ts",
+          "area": "`if(sources?.status==='unavailable')return sources;`",
+          "issue": "For visits, any unavailable result from the source scan (limit_exceeded, or a window ending after asOf, labelled lease_or_scope_unavailable) returns before the audit query runs. Known gap rows in the audit table are never read, so negative evidence that was already recorded is replaced by a generic unavailable status.",
+          "evidence": "The early return happens before the LiveMetricCoverageAudit query. The brief says an audit gap or a source gap must block completion, and gaps must always survive. A window that extends past asOf also gets the reason lease_or_scope_unavailable even though the lease is valid.",
+          "impact": "Large versions (more than 10000 rows) and in-progress windows can no longer report known visit gaps from the audit table. Callers get a misleading reason and can't tell a lease or scope failure from a size limit or a window that hasn't closed yet.",
+          "recommended_fix": "Run the audit query whether or not the sources are available. If the sources are unavailable but audit gaps exist, return the gap evidence, with the source status attached as a non-positive sourceReconciliation. Use a separate reason, such as window_not_closed, when endAt > asOf.",
+          "required_test": "Visits window with an audit gap row and more than 10000 pages: the result keeps the gap and is never complete. Window ending after the DB clock: the reason is window_not_closed, not lease_or_scope_unavailable.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-visit-reconciliation.ts",
+          "area": "intent loop: `if(page.sourceKind!=='registration')continue;`",
+          "issue": "Intents whose page is viewer or unknown are skipped without being counted, unlike orphan intents and orphan facts, which get their own counters.",
+          "evidence": "The summary has orphanIntents but no counter for intents on non-registration pages.",
+          "impact": "The summary is less useful for checking source data. This does not affect coverage.",
+          "recommended_fix": "Add a nonRegistrationIntents counter, or say in a comment why these intents are expected and safe to ignore.",
+          "required_test": "Unit test: an intent on a viewer page appears in the new counter and does not change the coverage reason.",
+          "confidence": 0.5
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 3,
+        "NIT": 1
+      },
+      "fallbackEvents": []
+    },
+    "-followup": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "sourceHashesMatch": false,
+      "findings": [
+        {
+          "severity": "MAJOR",
+          "file": "src/lib/live-metric-visit-reconciliation.ts",
+          "area": "readSources context query (clock_timestamp()::timestamptz(3) AS \"asOf\") and the `scope.endAt>context.asOf` window_not_closed check; asOf-based expiry checks in classifyPage/classifyIntent",
+          "issue": "asOf is wall-clock time when the context statement runs. It is not the repeatable-read snapshot time. The caller has already run readMetricReportContext in the same transaction, so the snapshot was taken earlier. The window_not_closed check (and the expired vs pending lease split) therefore compares endAt with a time later than what the snapshot can see.",
+          "evidence": "In a repeatable-read transaction the snapshot is fixed at the first statement, which is readMetricReportContext. clock_timestamp() keeps moving after that. Rows committed between the snapshot and asOf can have issuedAt, lossAt, preparedAt or visitedAt earlier than endAt, but they are not visible. Casting to timestamptz(3) also rounds to the nearest millisecond, not down.",
+          "impact": "Suppose a window ends after the snapshot but before asOf. It is reported as status 'available' while loss markers, unacknowledged registration pages, pending intents and facts from that interval are missing. hasGap can then be false, and coverage says reason 'unknown_history' instead of 'evidence_gap'. Known negative evidence is hidden and the counts are too low. Visits are still never reported complete, so this is not a false positive.",
+          "recommended_fix": "Base the window-closed decision on a time no later than the snapshot. For example, require endAt <= transaction_timestamp() (now()), ideally minus a margin for writer transactions in flight, or use a snapshot time captured by the report context. Use that same value for the expired/pending lease classification. Keep clock_timestamp() only as the upper bound for checking whether row times are plausible. Truncate instead of rounding when lowering precision.",
+          "required_test": "Disposable loopback DB: open the repeatable-read report transaction and take the snapshot. In another session, commit a loss marker or a registration page with no intent at a time before endAt. Wait until clock_timestamp() passes endAt, then reconcile. Expected result: window_not_closed, or an evidence_gap. It must not be unknown_history with no gap.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-coverage-reader.ts",
+          "area": "readMetricCoverage: reconcileMetricVisitSources is called before the audit-row query",
+          "issue": "Only the 'unavailable' source result keeps audit gaps. Source failures that throw do not: the 5000 ms statement timeout, row-validation errors such as 'Invalid visit page source', and the non-unique key check. These abort the call, or the whole transaction, before any audit gap rows are read.",
+          "evidence": "`const sources=kind==='visits'?await reconcileMetricVisitSources(...)` runs before `tx.$queryRaw<AuditRow[]>`. withSourceSettings rethrows read errors. A PostgreSQL timeout aborts the transaction, so the audit query that follows cannot run.",
+          "impact": "Nothing is wrongly certified, because the failure is closed. But a recorded audit gap is not reported whenever the source scan times out or hits bad data. That only partly delivers the stated fix of reading audit gaps despite source problems.",
+          "recommended_fix": "Run the audit-gap query first and keep its result. Then run the source reconciliation, or catch errors raised by validation (not SQL errors) and turn them into an unavailable result that still carries the audit evidence_gap. A SQL timeout still aborts the transaction, so read audit rows before any source statement that might time out.",
+          "required_test": "Visits kind with a known audit gap row: (a) seed a malformed page, for example a registration page with a null sourceFormId; (b) force a source statement timeout. Check that the audit gap is visible or kept, or record that it is lost by design.",
+          "confidence": 0.55
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-visit-reconciliation.ts",
+          "area": "readSources factsByEvent grouping; classifyIntent `.find(...)`; classifyFact registrationFactsInWindow++",
+          "issue": "Pages and intents must have unique keys, but facts are only grouped by eventId and are not checked for duplicates. Two facts with the same eventId and visitorId both increase registrationFactsInWindow. classifyIntent closes the intent using whichever matching fact sorts first by UUID, which is effectively arbitrary.",
+          "evidence": "`factsByEvent` collects arrays per event and no uniqueness error is raised. classifyFact counts each fact separately, and `find` returns the first match in `ORDER BY id` order.",
+          "impact": "If the schema does not enforce one fact per event, duplicate deliveries inflate the visit count without being flagged. Whether an intent closes, or is marked as invalid chronology, can then depend on UUID ordering.",
+          "recommended_fix": "Treat more than one fact per event (or per event and visitor) as a key violation and throw, or count duplicates in a separate counter that marks a gap. Alternatively, document and test a unique DB constraint on the fact's eventId within its scope.",
+          "required_test": "Seed two in-window facts with the same eventId and visitorId, one with valid chronology and one with invalid chronology, under both UUID orderings. Assert that the result fails closed or reports a gap, and that the count is not doubled.",
+          "confidence": 0.4
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-visit-reconciliation.ts",
+          "area": "classifyPage validation guard",
+          "issue": "Page validation does not check lossAt against issuedAt. A row with lossAt earlier than issuedAt is accepted and treated as a valid loss marker.",
+          "evidence": "The guard checks issuedAt<expiresAt, issuedAt<=asOf, lossAt<=asOf and form/kind consistency, but nothing about lossAt versus issuedAt.",
+          "impact": "A corrupt or incorrectly backfilled loss timestamp could move loss poisoning into earlier windows without being reported as an invalid source. Loss still counts as a gap, so the error leans conservative.",
+          "recommended_fix": "Add `page.lossAt!==null&&page.lossAt<page.issuedAt` to the invalid-source guard.",
+          "required_test": "A page with lossAt earlier than issuedAt should throw 'Invalid visit page source'.",
+          "confidence": 0.4
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-coverage-reader.ts",
+          "area": "Audit SQL orders branch: the a.\"orderRevision\" and a.\"orderTenantRevision\" predicates",
+          "issue": "orderRevision and orderTenantRevision are compared with the exact same expression, wp20_metric_order_window_revision(...). This may be a copy-paste error: a tenant-level revision probably needs its own function, or should not depend on the window.",
+          "evidence": "Both predicates use `(CASE WHEN ... THEN revisions.orders ELSE public.wp20_metric_order_window_revision(a.\"vendorId\",a.\"startAt\",a.\"endAt\") END)`.",
+          "impact": "If the tenant revision is supposed to track changes outside the window, positive order coverage may not be invalidated when that state changes. Without the schema or function definitions I cannot confirm this. It is outside the visit focus.",
+          "recommended_fix": "Check what the orderTenantRevision column is meant to hold. If it is a separate revision, compare it with the matching function (for example a tenant-scoped revision), or explain in a comment why the two are equal.",
+          "required_test": "Change order state that should bump only the tenant revision and confirm that a previously covered orders audit stops being accepted.",
+          "confidence": 0.3
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 1,
+        "MINOR": 3,
+        "NIT": 1
+      },
+      "fallbackEvents": []
+    },
+    "-final": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "sourceHashesMatch": true,
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-coverage-reader.ts",
+          "area": "readMetricCoverage audit SQL (LiveMetricCoverageAudit read before reconcileMetricVisitSources)",
+          "issue": "The audit read runs under the caller's row_security setting. The source reconciliation, by contrast, forces row_security=off precisely so that a filtering RLS policy cannot make a source look silently empty. A policy on LiveMetricCoverageAudit could hide 'gap' rows the same way.",
+          "evidence": "In the visit reconciliation file, withSourceSettings explains that 'With RLS on, a SELECT grant plus a filtering policy could look like an audited empty source' and forces failure with set_config('row_security','off'). The reader's audit query has no such protection, yet it relies on gap rows to set auditGap. The docstring says 'known gaps remain evidence of loss'.",
+          "impact": "For visits, a hidden gap only turns an evidence_gap result into unknown_history (still not positive), so impact is limited there. For registrations/orders, if a policy hid gap rows but showed covered rows, a negative audit result could be lost. This depends on deployed RLS/roles, which this review cannot verify. Raised as a hardening/scope proposal.",
+          "recommended_fix": "Either run the audit read inside the same row_security=off/restore wrapper (fail closed if RLS applies), or document and enforce in schema/migration checks that LiveMetricCoverageAudit has no RLS policies for the report role.",
+          "required_test": "DB test: enable RLS on LiveMetricCoverageAudit with a policy that hides status='gap' rows for the report role. Assert that readMetricCoverage fails closed (errors) or still reports the gap, rather than returning unknown or covered.",
+          "confidence": 0.35
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "fallbackEvents": []
+    }
+  },
+  "wholeWp": "NOT_READY",
+  "fixed": [
+    "Invalid out-of-window chronology cannot close intent; duplicate fact keys rejected",
+    "Save/restore RLS and timeout, preserve stricter deadline/original SQL error",
+    "Transaction-start lower bound closes window; wall clock only validates plausibility",
+    "Audit gap first; explicit not_read source instead of losing negative evidence to SQL failure",
+    "Loss timestamp before issue rejected; non-registration intent counter"
+  ],
+  "orderRevisionContext": "Existing20261016020000 order-window binding intentionally sets both compatibility revisions from the same window revision in create/claim/finish. Unchanged; no inferred new tenant contract or claim of rerun full order tests.",
+  "remainingReviewProposal": "MINOR: enforce audit RLS visibility for final report role; current source guard does not certify audit-role configuration.",
+  "failures": {
+    "complexity": "Retained failure; split classifiers, threshold unchanged",
+    "rlsFixture": "Retained failure; fixture incorrectly counted other synthetic versions, now exactversion",
+    "baseline": {
+      "status": "UNEXPLAINED_PRIOR_FAILURE_NOT_CLAIMED_FIXED",
+      "stage": "baseline-report",
+      "sameProductSnapshot": true,
+      "currentFullRun": "PASS; fixed-code diagnostic categories added, no reproduction/root-cause proof"
+    }
+  },
+  "wholeWpUnfinished": [
+    "Public quota exhaustion/lock availability MAJOR and metrics failure affecting form",
+    "Audit RLS visibility/deployed least-privilege role",
+    "Full source epoch/URL closure/historical form scope",
+    "Atomic writer fence and typed positive coverage proof",
+    "Runtime and full five-metric E2E/load/soak"
+  ]
+}

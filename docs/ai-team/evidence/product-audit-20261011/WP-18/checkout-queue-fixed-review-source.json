@@ -1,0 +1,14 @@
+{
+  "sourceHashes": {
+    "src/lib/checkout-followup-queue.ts": "939cb8bf7948b1f072e3c671fc6d04b877bd6a2d3a2c48d90e899a525097c2d4",
+    "src/lib/checkout-followup-queue.test.ts": "0aa9a52a5f917c5a0d2b6f343faf5c6662b816913f2849b27497e2f5082b05fb",
+    "src/lib/checkout-followup.ts": "c49d23b1736b83bf1071231509fb2219120e2229cd8b236971201e2694610ea7",
+    "src/lib/checkout-followup.test.ts": "c1ea460ccaf13591e83718be5b3228c35c21a919c1b0cea2d27aac6def2f6e32",
+    "src/lib/email-delivery.ts": "341282406f2ddd6a249a6a0bb82a1edcd37a50ae1f8ac52237cf999da5c3f1be",
+    "src/lib/email-delivery.test.ts": "7ae2b9353d3d7e07c60d96973975eb41586b117eda51efc6f77d4a5d4e7ad5a9",
+    "src/app/api/jobs/email-deliveries/route.ts": "f8cb8411f6b95437801a8bbd818f998e95bf7c5de7d9d50ac9c8ed58810dd60a",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "3780d1cd60219ff0cb739ef84ae90912b1a0c3fecca28d2a4e69af681c924f94"
+  },
+  "contextChars": 17109,
+  "supplied": "Full queue and guard; unchanged candidate recording omitted, integration exact summary; wholeWP18 not ready"
+}

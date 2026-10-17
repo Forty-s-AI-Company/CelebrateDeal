@@ -1,0 +1,23 @@
+{
+  "status": "FAIL",
+  "stage": "ledger-parent-cleanup",
+  "scope": "Persistent viewing issuance/mutation ledger with private inspection; no positive coverage",
+  "sameScopeRegistrationFk": "VALIDATED_NOT_DEFERRABLE",
+  "results": {
+    "sessionCount": 3,
+    "intervalCount": 2,
+    "openVisible": true,
+    "emptyClosedVisible": true,
+    "pageSizeIndependentDigest": true,
+    "repeatableReadSnapshot": true,
+    "freshSnapshotSeesClose": true,
+    "revocationVisible": true,
+    "partialBudgetDiscarded": true,
+    "foreignScopeDenied": true,
+    "coverage": "unknown"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

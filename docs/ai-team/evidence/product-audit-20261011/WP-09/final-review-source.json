@@ -1,0 +1,10 @@
+{
+  "sourceHashes": {
+    "src/lib/funnel-template-gallery.ts": "9089d29903badf9e62186e980b0d1c3ec636cead2ffb63ca7c0f66dc0bd3e2fa",
+    "src/lib/funnel-template-gallery.test.ts": "8cf6b05ce2d319e384559a2f83aca109e186e2a9c223dda66c531587bb204547",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "903586f6b0be7cb9c55d0b4208886dbe820f2762a6c845f81d41be0d8d713980",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx": "42bdd170ab53b58e38e8cc87cf7cf761202f170eaaba21fe73ad7491de80d817"
+  },
+  "contextChars": 5899,
+  "scope": "Webinar new signup anchor and existing native form staticid; prior unchanged lead/filter review applies"
+}

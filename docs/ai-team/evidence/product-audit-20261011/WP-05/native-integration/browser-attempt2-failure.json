@@ -1,0 +1,9 @@
+{
+  "checks": [],
+  "status": "FAIL",
+  "cleanup": false,
+  "currentStep": "error-return",
+  "failedStage": "chromium:no-js",
+  "errorType": "TimeoutError",
+  "cleanupError": "PrismaClientValidationError"
+}

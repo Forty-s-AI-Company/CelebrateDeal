@@ -1,0 +1,323 @@
+{
+  "exit_code": 1,
+  "error_count": 299,
+  "source_error_count": 0,
+  "files": [
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-01/consultation/browser-smoke.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-01/dual-publication/browser-smoke.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-01/dual-publication/parser-invariants.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-01/dual-publication/semantic-browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-01/form-submit/browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-01/no-project/browser-smoke.cjs",
+      "errors": 3,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 3
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/accessible-feedback/browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/client-submission/browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-attribution.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-deadline-reviewed-version.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-deadline.cjs",
+      "errors": 10,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 10
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-loading.cjs",
+      "errors": 3,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 3
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-lp-feedback.cjs",
+      "errors": 8,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 8
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-lp-js.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-lp.cjs",
+      "errors": 8,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 8
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-partner.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-result-proof.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-retry-after.cjs",
+      "errors": 4,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 4
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-status.cjs",
+      "errors": 4,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 4
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-success-focus.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-ui-feedback.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-webinar-js.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-webinar-pending.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-webinar.cjs",
+      "errors": 8,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 8
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/component-browser.cjs",
+      "errors": 5,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 5
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/home-http.cjs",
+      "errors": 2,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 2
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-06/navigation-smoke.cjs",
+      "errors": 3,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 3
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-06/role-feature-attempt2.cjs",
+      "errors": 4,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 4
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-06/role-feature-smoke.cjs",
+      "errors": 4,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 4
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-08/inventory-visible.cjs",
+      "errors": 3,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 3
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-08/localize-visible.cjs",
+      "errors": 4,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 4
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-08/run-component-browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-08/run-shell-browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-10/admin-mfa-smoke.cjs",
+      "errors": 7,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 7
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-11/confirmation/browser-firefox.cjs",
+      "errors": 8,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 8
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-11/confirmation/browser.cjs",
+      "errors": 8,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 8
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-11/security-followup/browser.cjs",
+      "errors": 10,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 10
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-11/security-followup/limit-probe.cjs",
+      "errors": 3,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 3
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-11/voucher-confirmation/browser.cjs",
+      "errors": 10,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 10
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-15/run-component-browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-15/run-dashboard-browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-15/run-operations-shell.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-15/run-shell-browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    },
+    {
+      "path": "docs/ai-team/evidence/product-audit-20261011/WP-15/run-switcher-browser.cjs",
+      "errors": 9,
+      "rules": {
+        "@typescript-eslint/no-require-imports": 9
+      }
+    }
+  ],
+  "raw_logs_persisted": false
+}

@@ -1,0 +1,8 @@
+{
+  "initial_timeout": "Form.noValidate is transient and resets on native reload; set it before each deliberate invalid-contact submission. Browser validity rules remain unchanged.",
+  "firefox_false_positive": {
+    "console_type": "timeStamp",
+    "message": "Hydrated",
+    "correction": "Count hydration text only in console warning/error or pageerror, not performance timestamps. All original payload and hydration mismatch assertions remain."
+  }
+}

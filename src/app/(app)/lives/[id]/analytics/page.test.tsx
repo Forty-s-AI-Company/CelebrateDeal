@@ -1,3 +1,4 @@
+import {metricVideoFingerprint} from '@/lib/live-metric-version';
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,7 +20,11 @@ const mocks = vi.hoisted(() => ({
   liveQuestionGroupBy: vi.fn(),
   liveQuestionFindMany: vi.fn(),
   queryRaw: vi.fn(),
+  metricCandidateQuery: vi.fn(),
+  readReadyReport: vi.fn(),
 }));
+
+vi.mock("@/lib/live-metric-report-reader",()=>({readMetricReadyReport:mocks.readReadyReport}));
 
 vi.mock("@/lib/auth", () => ({
   requireVendorManager: mocks.requireVendor,
@@ -47,7 +52,12 @@ vi.mock("@/lib/db", () => ({
       findMany: mocks.liveQuestionFindMany,
     },
     emailDelivery: { groupBy: mocks.emailDeliveryGroupBy },
-    $queryRaw: mocks.queryRaw,
+    $queryRaw: async (query:{strings:readonly string[]}) => {
+      if (query.strings.join('').includes('FROM "LiveMetricReport" r')) {
+        const row=await mocks.metricCandidateQuery(query);return row?[row]:[];
+      }
+      return mocks.queryRaw(query);
+    },
   }),
 }));
 
@@ -80,7 +90,9 @@ const verifiedAnalyticsSessions = [
 ];
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+  mocks.metricCandidateQuery.mockResolvedValue(null);
+  mocks.readReadyReport.mockResolvedValue({status:"unavailable",reason:"report_not_current"});
   mocks.requireVendor.mockResolvedValue({ id: "vendor-current" });
   mocks.requireVendorManagerContext.mockResolvedValue({
     auth: { user: { id: "user-current" } },
@@ -225,4 +237,151 @@ describe("/lives/[id]/analytics route", () => {
     expect(html).toContain("目前沒有推廣夥伴歸因資料。");
     expect(html).not.toContain("summer-partner");
   });
+});
+
+it.each(["existing activity", "no activity"])("keeps unsupported core metrics unavailable with %s", async (scenario) => {
+  if (scenario === "no activity") {
+    mocks.analyticsFindMany.mockReset().mockResolvedValue([]);
+    mocks.formSubmissionCount.mockReset().mockResolvedValue(0);
+  }
+  const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
+  const section = html.split('<section class="mb-6" aria-labelledby="core-metric-availability-title">')[1]?.split('<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">')[0];
+  expect(section).toBeDefined();
+  for (const label of ["報名率", "到場率", "完看率", "平均觀看時長", "看完下單率"]) expect(section).toContain(label);
+  expect(section?.match(/尚不可計算/g)).toHaveLength(5);
+  // Rule thresholds are descriptions, never calculated metric values.
+  const metricValues = [...(section?.matchAll(/<p class="mt-2 font-medium text-slate-700">(.*?)<\/p>/g) ?? [])].map((match) => match[1]);
+  expect(metricValues).toEqual(Array(5).fill("尚不可計算"));
+  const rule = section?.match(/<p[^>]*data-metric-rule="approved"[^>]*>(.*?)<\/p>/)?.[1];
+  expect(rule).toContain("同一位觀眾在同一影片版本實際看過的不重複區間達 90% 才算完看");
+  expect(rule).toContain("該觀眾首次完看後 7 天內成立且未取消的訂單，不等同已付款");
+  const valuesAndReasons = section?.replace(/<p[^>]*data-metric-rule="approved"[^>]*>.*?<\/p>/, "");
+  expect(valuesAndReasons).not.toMatch(/\d+(?:\.\d+)?(?:%| 秒)/);
+  expect(section).not.toContain("完看標準與");
+  expect(section).not.toContain("不重複訪客數");
+  expect(section).not.toContain("完成觀看與同一位觀眾");
+  expect(section).toContain("目前影片尚無可用報表");
+});
+
+
+const metricVideo={id:'video-current',vendorId:'vendor-current',sourceType:'url',videoUrl:'https://example.test/video.mp4',durationSec:100,cloudflareStreamUid:null,cloudflareLiveInputUid:null,cloudflarePlaybackId:null};
+const metricCandidate={id:'report-current',versionId:'version-current',status:'ready',windowStartAt:new Date('2026-10-14T00:00:00Z'),windowEndAt:new Date('2026-10-14T01:00:00Z'),version:{mode:'live'}};
+const knownMetric=(value:number,numerator:number,denominator:number,unit='percent')=>({status:'available',value,numerator,denominator,unit});
+const metricResult={registrationRate:knownMetric(40,4,10),attendanceRate:knownMetric(60,3,5),completionRate:knownMetric(100*2/3,2,3),averageViewingSeconds:knownMetric(250/3,250,3,'seconds'),postCompletionOrderRate:knownMetric(50,1,2),unattributedRegistrations:0,provisionalConversions:true};
+function withMetricReport(status='ready',result:unknown=metricResult){mocks.liveFindFirst.mockResolvedValue({...live,video:metricVideo});mocks.metricCandidateQuery.mockResolvedValue({...metricCandidate,status});mocks.readReadyReport.mockResolvedValue({status:'available',result});}
+function coreSection(html:string){return html.split('<section class="mb-6" aria-labelledby="core-metric-availability-title">')[1]?.split('<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">')[0]??'';}
+it('formats each existing ready aggregate without recalculating metrics',async()=>{
+ withMetricReport();const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ for(const text of ['40%','60%','66.67%','83.33 秒','50%','下單觀察期尚未結束','直播報表期間：2026-10-14T00:00:00.000Z 至 2026-10-14T01:00:00.000Z（UTC）','未歸因報名：0 人'])expect(html).toContain(text);
+ expect(mocks.readReadyReport).toHaveBeenCalledWith(expect.anything(),{vendorId:'vendor-current',liveId:live.id,versionId:metricCandidate.versionId,reportId:metricCandidate.id});
+ expect(mocks.metricCandidateQuery).toHaveBeenCalledOnce();
+});
+it('keeps unsupported per-metric data unavailable even in a ready report',async()=>{
+ withMetricReport('ready',{...metricResult,registrationRate:{status:'unavailable',reason:'missing_data'},averageViewingSeconds:{status:'unavailable',reason:'missing_data'}});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html.match(/尚不可計算/g)).toHaveLength(2);expect(html).not.toContain('40%');expect(html).not.toContain('83.33 秒');expect(html).toContain('60%');expect(html).toContain('不重複訪客數');
+});
+it.each(['queued','running','failed','stale'])('shows newest %s state without reading older results',async status=>{
+ withMetricReport(status);const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html.match(/尚不可計算/g)).toHaveLength(5);expect(html).toContain(`data-core-report-state="${status}"`);expect(mocks.readReadyReport).not.toHaveBeenCalled();expect(mocks.metricCandidateQuery).toHaveBeenCalledOnce();for(const reason of ['不重複訪客數','同一報名者與到場紀錄','實際觀看區間與首次完看','有效觀看時間與重複觀看','完成觀看與同一位觀眾'])expect(html).not.toContain(reason);
+});
+it('never displays a ready row rejected by the existing expiry/revision reader',async()=>{
+ withMetricReport();mocks.readReadyReport.mockResolvedValue({status:'unavailable',reason:'report_not_current'});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html.match(/尚不可計算/g)).toHaveLength(5);expect(html).toContain('data-core-report-state="stale"');expect(mocks.metricCandidateQuery).toHaveBeenCalledOnce();
+});
+it('does not query reports without a current video',async()=>{
+ mocks.liveFindFirst.mockResolvedValue({...live,video:null});const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html.match(/尚不可計算/g)).toHaveLength(5);expect(mocks.metricCandidateQuery).not.toHaveBeenCalled();expect(mocks.readReadyReport).not.toHaveBeenCalled();
+});
+it('shows zero denominators and invalid numbers without NaN, Infinity or fake zero',async()=>{
+ withMetricReport('ready',{...metricResult,registrationRate:{status:'not_applicable',reason:'zero_denominator'},attendanceRate:knownMetric(Infinity,1,0),completionRate:knownMetric(NaN,1,2)});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html).toContain('不適用');expect(html.match(/尚不可計算/g)).toHaveLength(2);expect(html).not.toContain('NaN');expect(html).not.toContain('Infinity');
+});
+it('does not read private reports when the authorized live lookup rejects scope',async()=>{
+ mocks.liveFindFirst.mockResolvedValue(null);await expect(LiveAnalyticsPage({params:Promise.resolve({id:'foreign-live'})})).rejects.toThrow();expect(mocks.metricCandidateQuery).not.toHaveBeenCalled();expect(mocks.readReadyReport).not.toHaveBeenCalled();
+});
+
+it('binds the candidate to the session tenant, authorized live and exact existing content fingerprint',async()=>{
+ withMetricReport();await LiveAnalyticsPage({params:Promise.resolve({id:live.id})});
+ expect(mocks.metricCandidateQuery.mock.calls[0][0].values).toEqual(['vendor-current',live.id,metricVideo.id,metricVideoFingerprint(metricVideo)]);
+ expect(mocks.metricCandidateQuery.mock.calls[0][0].strings.join('')).toContain('ORDER BY r."createdAt" DESC,r.id DESC LIMIT 1');
+});
+it('does not start report reads when manager authorization rejects',async()=>{
+ mocks.requireVendorManagerContext.mockRejectedValueOnce(new Error('not authorized'));
+ await expect(LiveAnalyticsPage({params:Promise.resolve({id:live.id})})).rejects.toThrow('not authorized');expect(mocks.metricCandidateQuery).not.toHaveBeenCalled();expect(mocks.readReadyReport).not.toHaveBeenCalled();
+});
+it('treats an empty ready reader outcome as stale instead of showing the candidate result',async()=>{
+ withMetricReport();mocks.readReadyReport.mockResolvedValue(null);const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html.match(/尚不可計算/g)).toHaveLength(5);expect(html).toContain('data-core-report-state="stale"');
+});
+
+it.each(['candidate','ready'])('propagates unexpected %s read failures without a false empty state',async boundary=>{
+ withMetricReport();const failure=new Error('synthetic read failure');
+ if(boundary==='candidate')mocks.metricCandidateQuery.mockRejectedValue(failure);else mocks.readReadyReport.mockRejectedValue(failure);
+ await expect(LiveAnalyticsPage({params:Promise.resolve({id:live.id})})).rejects.toBe(failure);
+});
+it.each([
+ knownMetric(40,4,10,'seconds'),knownMetric(101,4,10),knownMetric(-1,4,10),knownMetric(40,11,10),{status:'available',value:40,denominator:10,unit:'percent'},
+])('does not display a malformed available metric',async metric=>{
+ withMetricReport('ready',{...metricResult,registrationRate:metric});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html).toMatch(/報名率<\/h3><p[^>]*>尚不可計算<\/p>/);expect(html).toContain('報表資料尚待確認。');
+});
+
+it.each([undefined,{status:'unavailable',reason:'other'},{status:'bogus'}])('does not guess a source cause for malformed ready metric states',async metric=>{
+ withMetricReport('ready',{...metricResult,registrationRate:metric});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html).toMatch(/報名率<\/h3><p[^>]*>尚不可計算<\/p>/);expect(html).toContain('報表資料尚待確認。');expect(html).not.toContain('不重複訪客數');
+});
+
+it('lists unattributed registrations separately without altering the ready registration rate',async()=>{
+ withMetricReport('ready',{...metricResult,unattributedRegistrations:1});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html).toContain('未歸因報名：1 人');expect(html).toContain('未計入報名率分子');expect(html).toContain('40%');
+});
+it.each([undefined,-1,NaN,1.5,'1'])('does not invent unattributed counts from invalid data (%s)',async count=>{
+ withMetricReport('ready',{...metricResult,unattributedRegistrations:count});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html).not.toContain('未歸因報名：');
+});
+
+it('labels the same exact UTC report window as replay for replay versions',async()=>{
+ withMetricReport();mocks.metricCandidateQuery.mockResolvedValue({...metricCandidate,version:{mode:'replay'}});
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id})})));
+ expect(html).toContain('回放報表期間：2026-10-14T00:00:00.000Z 至 2026-10-14T01:00:00.000Z（UTC）');
+});
+
+it('queries only the explicitly chosen UTC window and mode within the authorized scope',async()=>{
+ withMetricReport();
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id}),searchParams:Promise.resolve({start:'2026-10-14T00:00:00',end:'2026-10-14T01:00:00',mode:'replay'})})));
+ const query=mocks.metricCandidateQuery.mock.calls[0][0];
+ expect(query.values).toEqual(expect.arrayContaining(['vendor-current',live.id,new Date('2026-10-14T00:00:00Z'),new Date('2026-10-14T01:00:00Z'),'replay']));
+ expect(html).toContain('method="get"');expect(html).toContain('開始時間前已報名者不納入');expect(html).toContain('並非跨裝置人數');
+});
+it.each([
+ {start:'2026-10-14T01:00:00',end:'2026-10-14T00:00:00',mode:'live'},
+ {start:'2026-02-30T00:00:00',end:'2026-03-02T00:00:00',mode:'live'},
+ {start:['2026-10-14T00:00:00'],end:'2026-10-14T01:00:00',mode:'live'},
+ {start:'2026-10-14T00:00:00',mode:'live'},
+ {start:'2026-10-14T00:00:00',end:'2026-10-14T01:00:00',mode:'other'},
+])('rejects invalid window selection without falling back to another report (%j)',async search=>{
+ withMetricReport();
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id}),searchParams:Promise.resolve(search)})));
+ expect(html).toContain('請選取有效的 UTC');expect(html).toContain('所選期間無效，未查詢報表。');expect(html).not.toContain('最新報表已失效');expect(mocks.metricCandidateQuery).not.toHaveBeenCalled();expect(mocks.readReadyReport).not.toHaveBeenCalled();expect(html).not.toContain('40%');
+});
+it('does not substitute an older or differently timed report when the selected window has no report',async()=>{
+ withMetricReport();mocks.metricCandidateQuery.mockResolvedValue(null);
+ const html=coreSection(renderToStaticMarkup(await LiveAnalyticsPage({params:Promise.resolve({id:live.id}),searchParams:Promise.resolve({start:'2026-10-14T00:00:00',end:'2026-10-14T01:00:00',mode:'live'})})));
+ expect(mocks.metricCandidateQuery).toHaveBeenCalledOnce();expect(mocks.readReadyReport).not.toHaveBeenCalled();expect(html).not.toContain('40%');expect(html).toContain('所選期間尚無可用報表。');expect(html).not.toContain('目前影片尚無可用報表。');
+});
+
+it.each([
+ ['2026-10-14T00:00','2026-10-14T01:00'],
+ ['2026-10-14T00:00:00.1','2026-10-14T01:00:00.123'],
+])('preserves normalized browser UTC input precision (%s)',async(start,end)=>{
+ withMetricReport();
+ await LiveAnalyticsPage({params:Promise.resolve({id:live.id}),searchParams:Promise.resolve({start,end,mode:'live'})});
+ expect(mocks.metricCandidateQuery.mock.calls[0][0].values).toEqual(expect.arrayContaining([new Date(start+'Z'),new Date(end+'Z')]));
 });

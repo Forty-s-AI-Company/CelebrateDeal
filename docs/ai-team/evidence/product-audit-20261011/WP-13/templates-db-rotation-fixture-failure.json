@@ -1,0 +1,28 @@
+{
+  "status": "FAIL",
+  "scope": "Actual original LINE materializer, encrypted outbox and worker on owned disposable PostgreSQL. Provider is existing offline MockLineMessagingClient; no external delivery or public registration/auth flow claimed.",
+  "checks": {
+    "configuredConfirmationAndReminderUseOwnedTemplates": "PASS",
+    "newBindingSelectedAheadOf150ObservedIdentities": "PASS",
+    "unverifiedRegistrationNeverQueued": "PASS",
+    "materializerReplayKeepsExactlyOnePerEvent": "PASS",
+    "authoredCopyTraversesEncryptedOutboxToOfflineProvider": "PASS",
+    "foreignTenantTemplateNotConsumed": "PASS",
+    "deactivationStopsAlreadyQueuedReminder": "PASS",
+    "inactiveChoiceDoesNotFallBackToFixedCopy": "PASS",
+    "sendTimeRegistrationRecheckPreventsStaleConfirmation": "PASS",
+    "replacementStopsStaleQueuedCopyWithoutBackfill": "PASS",
+    "activationDoesNotBackfillAlreadyObservedBinding": "PASS"
+  },
+  "failure": {
+    "step": "materialize",
+    "kind": "PrismaClientKnownRequestError",
+    "code": "P2025",
+    "argument": null
+  },
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "review": "closed-feedback-reviewed.json",
+  "findings": [
+    {
+      "id": "ordering",
+      "status": "FIXED_PENDING_REVIEW",
+      "evidence": "Both public routes build retry boundary after runtime unavailable gate; root legacy path builds only after published page load."
+    },
+    {
+      "id": "branch_tests",
+      "status": "FIXED_PENDING_REVIEW",
+      "evidence": "Page tests root/step x closed/redirect; helper tests recognized/missing/unknown/array query,encoded destination,normal closed/render."
+    },
+    {
+      "id": "nonstring_answers",
+      "status": "CHECK_CONTRACT",
+      "evidence": "Draft storage validates Answers schema; do not broaden accepted draft data solely from low-confidence candidate."
+    }
+  ],
+  "latest_validation": "checks-closed-feedback-ordered unit/lint/typecheck PASS",
+  "failures_preserved": [
+    "initial complexity lint",
+    "extraction lost discriminated union narrowing typecheck"
+  ],
+  "obsolete_receipt_note": "Initial typecheck overlapped source extraction; not used for acceptance. Only final ordered snapshot checks apply.",
+  "not_verified": [
+    "realDB draft read with expired page",
+    "actual browser/noJS readonly view",
+    "latest independent repair review"
+  ]
+}

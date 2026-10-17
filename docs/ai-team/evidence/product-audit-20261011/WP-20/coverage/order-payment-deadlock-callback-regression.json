@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 18,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual signed callback handler and retry service, disposable DB and synthetic digital orders; direct Request invocation, no remote provider",
+  "callbackStatuses": {
+    "200": 2,
+    "500": 18
+  },
+  "persistedFailures": 18,
+  "counts": {
+    "payments": 20,
+    "orders": 20,
+    "entitlements": 20
+  }
+}

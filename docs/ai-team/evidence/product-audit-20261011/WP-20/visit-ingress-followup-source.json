@@ -1,0 +1,8 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-visit-reconciliation.ts": "db39ff0eace26525efbbddd3aaf9b99dbfdcd9703ad454e69d5bed4d4b06f466",
+    "src/lib/live-metric-visit-reconciliation.test.ts": "fb34df1b5bb8c38b607ca48f4a1f17fa9560b12c479cf9f401f2372e9d1e1d1c"
+  },
+  "supplied": "changed no-run classifier, overlap/per-kind classification and new isolated tests; max count constraint rebuttal",
+  "promptChars": 5514
+}

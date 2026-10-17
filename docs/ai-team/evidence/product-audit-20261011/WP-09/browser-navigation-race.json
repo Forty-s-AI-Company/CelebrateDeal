@@ -1,0 +1,31 @@
+{
+  "status": "FAIL",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic demo checkout. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "six sales/course templates apply through owner UI, publish and collect synthetic leads; desktop/mobile axe",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Call log:\n"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "stats": {
+    "startTime": "2026-10-15T23:57:47.342Z",
+    "duration": 18353.057,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 131
+}

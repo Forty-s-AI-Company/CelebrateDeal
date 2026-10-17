@@ -1,0 +1,14 @@
+{
+  "promptCharacters": 19994,
+  "suppliedRanges": {
+    "src/lib/live-metric-playback-intake.ts": "Full file except credential declaration lines 11; omitted lines not independently reviewed",
+    "prisma/schema.prisma": "Description of new binding fields/relations only; full schema not supplied"
+  },
+  "files": {
+    "src/lib/live-metric-visit-page.ts": "57cb20038b7552ed616c2ef57e904eff599daa7bbb69375766b56bbad81e2b6e",
+    "prisma/schema.prisma": "504ebc9b3776a4804918c80e1701a2bd3fe6466f9cbd2ea189c32135add694a7",
+    "src/lib/live-metric-playback-intake.ts": "7b5f1949ba5dac7a31e1c8b0ea013717790b8cf9267e985913c692da663b40c1",
+    "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql": "4be3576e6b9431f10a743328939332704d15dce94ba6a3a43d0cec30f79beb67"
+  },
+  "schemaSupplied": true
+}

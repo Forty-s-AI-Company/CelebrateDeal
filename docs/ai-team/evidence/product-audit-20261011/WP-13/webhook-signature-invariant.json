@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "scope": "Exact raw-body read/size/signature/decryption block equal to pre-WP13 source; existing account status guard deliberately broadened only for signed consent withdrawal.",
+  "sha256": "2f8f74a64897500e55d46fd150651f58725e8c26e41e4fa4ee8da6935044b8bc"
+}

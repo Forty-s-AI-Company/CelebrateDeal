@@ -1,0 +1,1 @@
+{"revision": "sha256:73cb914c5b5414de40bc880ee4ad62f261bbc0e9e8fb3bffe563b33ee0e61c66", "files": ["src/lib/live-metric-report-reader.ts", "src/lib/live-metric-report-snapshot.ts", "src/lib/live-metric-report-snapshot.test.ts", "scripts/wp20-metric-persistence-disposable.mjs"]}

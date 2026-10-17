@@ -1,0 +1,8 @@
+{
+  "status": "error",
+  "code": "ERR_WORKER_OUT_OF_MEMORY",
+  "elapsedMs": 4846,
+  "rows": 950000,
+  "heapMb": 256,
+  "scope": "fixed synthetic 50000 cohort; no raw errors or payload logging"
+}

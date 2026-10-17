@@ -1,0 +1,26 @@
+{
+  "src/lib/checkout-followup.ts": {
+    "beforeSha256": "e16f8a06341869603e4d0a0284df2bd3ab059e9476b666fa16c672d9cd5f43e6",
+    "afterSha256": "871d52ab9b84e33755ec4640df5f722a0bef351bbb671a985f19024426fda921",
+    "normalizedSha256": "819e89e6dcf933256b8e9d6eea5d8cc1d16360f757d340894fd6cdd972a6d017",
+    "onlyLineEndingsChanged": true
+  },
+  "src/lib/email-delivery.ts": {
+    "beforeSha256": "341282406f2ddd6a249a6a0bb82a1edcd37a50ae1f8ac52237cf999da5c3f1be",
+    "afterSha256": "adc69927c1ddf83b9400ef3179d10a95c618fcc44867e419082477176f232752",
+    "normalizedSha256": "adc69927c1ddf83b9400ef3179d10a95c618fcc44867e419082477176f232752",
+    "onlyLineEndingsChanged": true
+  },
+  "src/lib/email-delivery.test.ts": {
+    "beforeSha256": "7ae2b9353d3d7e07c60d96973975eb41586b117eda51efc6f77d4a5d4e7ad5a9",
+    "afterSha256": "701100fedf8dbc7758a8d72bd65cb64322d8170e383d97117484efa6b5239702",
+    "normalizedSha256": "701100fedf8dbc7758a8d72bd65cb64322d8170e383d97117484efa6b5239702",
+    "onlyLineEndingsChanged": true
+  },
+  "src/app/api/jobs/email-deliveries/route.test.ts": {
+    "beforeSha256": "3780d1cd60219ff0cb739ef84ae90912b1a0c3fecca28d2a4e69af681c924f94",
+    "afterSha256": "f66999f0d4f16b6a91c1f0e1bc7204fa1102750dec54ff2cd1b2e8fa585efe34",
+    "normalizedSha256": "f66999f0d4f16b6a91c1f0e1bc7204fa1102750dec54ff2cd1b2e8fa585efe34",
+    "onlyLineEndingsChanged": true
+  }
+}

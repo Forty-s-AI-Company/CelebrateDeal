@@ -1,0 +1,17 @@
+{
+  "unit_session": 40444,
+  "unit_exit": 0,
+  "unit_chunk": "1e5a4f",
+  "unit_passed": 65,
+  "typecheck_session": 42651,
+  "typecheck_exit": 0,
+  "typecheck_chunk": "8bf218",
+  "lint_session": 58473,
+  "lint_exit": 0,
+  "lint_chunk": "8928a9",
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "disposable_pg": "NOT_RUN",
+  "provider_integration": "NOT_RUN",
+  "production": "NOT_AUTHORIZED"
+}

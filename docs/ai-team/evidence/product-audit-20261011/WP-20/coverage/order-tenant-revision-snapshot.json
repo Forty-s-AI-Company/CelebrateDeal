@@ -1,0 +1,17 @@
+{
+  "files": {
+    "prisma/migrations/20261015210000_live_metric_order_tenant_revision/migration.sql": "f5d76318a3f8abfb1f1403d156803e6d0af985ff216b81ae532be4bfa58a9d35",
+    "prisma/schema.prisma": "f6e0e7dfef3f602cb4ed941c4fb0ec26415cea78c97e52d1a5deacdaf25c0603",
+    "src/lib/live-metric-order-audit.ts": "23db06269ea317033d6c2b5eed8e2829fd548aa02bc34ca08e26b153d2b295d9",
+    "src/lib/live-metric-order-source-audit.ts": "e62e307253b2f6d7c947c3c57d5141ca656e3c3fd87fd174de1568650b1f6d9b",
+    "src/lib/live-metric-order-source-audit.test.ts": "59254b0e4911a7a95e2b64361dc2a06df59f7e692e08e0ab0f9ddbfc20b682f0",
+    "scripts/wp20-order-source-audit-probe.mjs": "736aec544fd0b44be5907b2917f2dfadbf5ab74792a01fe6933a420ef957352d"
+  },
+  "database": "PASS",
+  "schema": "PASS",
+  "lint": "PASS",
+  "unitTests": 5,
+  "fullTypecheck": "NOT_RUN",
+  "independentReview": "NOT_RUN",
+  "newLedgerACLRuntimeTests": "NOT_RUN"
+}

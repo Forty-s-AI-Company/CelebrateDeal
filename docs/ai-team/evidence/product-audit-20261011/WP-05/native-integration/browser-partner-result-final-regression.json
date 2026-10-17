@@ -1,0 +1,47 @@
+{
+  "checks": [
+    {
+      "engine": "chromium",
+      "javascript": false,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "chromium",
+      "javascript": true,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "firefox",
+      "javascript": false,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "firefox",
+      "javascript": true,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    }
+  ],
+  "status": "PASS",
+  "cleanup": true,
+  "currentStep": "success",
+  "__registrationReturnPathPresent": true,
+  "originMatches": true,
+  "lastSubmissionStatus": 200,
+  "axeFindings": []
+}

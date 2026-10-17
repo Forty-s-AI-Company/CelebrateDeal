@@ -1,0 +1,57 @@
+[
+  {
+    "file": "src/components/landing-pages/funnel-display-labels.ts",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/0.txt",
+    "sha256": "d901ad55b2ec9412508944992064f227f9f675d1eba09878a2fe653a55354255"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/1.txt",
+    "sha256": "86f0f6317fd8e6e2e65d5b88f44dd48d17c2e17284ce292c9c824c37ce9af969"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/2.txt",
+    "sha256": "9ded1e2a73ae058287b2bc659a3c903b1e4c2f88cbf174a4a2924bc0082639da"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/3.txt",
+    "sha256": "aaa8528331a533c73b8b9e1f38c2e47bc4fd45b53ebe2615ff0597797e483954"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/4.txt",
+    "sha256": "9491fa164dbc67268a2f22fe4978a21e6df64168882b28079b1c7e7301a7916f"
+  },
+  {
+    "file": "src/components/team-performance-dashboard.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/5.txt",
+    "sha256": "db8db64d06e259f9744e8ded755b654e4d23f94aac64ea1c07609bef51c06e61"
+  },
+  {
+    "file": "src/components/app-shell.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/6.txt",
+    "sha256": "5e0c46b9ac0e97853cbe1348b7ace2ae8f99ea0b795b71247ba761d7808403f5"
+  },
+  {
+    "file": "src/app/(app)/orders/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/7.txt",
+    "sha256": "9ca8bcaccee68793004658314c478ab9a4402679b2c134c740716000e299178a"
+  },
+  {
+    "file": "src/app/(app)/support-cases/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/8.txt",
+    "sha256": "e8d5ac7683e4ec0857742274a846867b32e51d7427ce9e462b8b154a290b513a"
+  },
+  {
+    "file": "src/app/(app)/messages/deliveries/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/9.txt",
+    "sha256": "4c288cef9e672917f2d960177d8c0afa8ac458bdeff5b5aa17df459dc8aba196"
+  },
+  {
+    "file": "src/app/(app)/settings/tracking/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before-batch2/10.txt",
+    "sha256": "872d33e44a4ccf398d4dc0b6d69c6fb67266b7f0de7b708f6111f009e4bb868d"
+  }
+]

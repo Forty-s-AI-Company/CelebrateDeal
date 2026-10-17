@@ -1,0 +1,420 @@
+Independent Critical Migration/Permission/Payment review of new tenant-wide append-only order revision and bounded read-only source audit. No tools/no modifications. Return findings JSON; severity MUST be exactly BLOCKER, MAJOR, MINOR, NIT. Max 6 concise findings. Scope: tenant revision trigger, immutable/private ledger ACL, source enumeration/classification, bounded RR wrapper. Existing scoped order ledger is dependency. Tests 109 migrations/disposable PostgreSQL PASS;20 matched, missing projections/attribution retained, other purpose/live classified; 3 API roles denied table/sequence/function; immutable UPDATE DELETE TRUNCATE23514; least-privilege worker count correct; two connections prove RR old result/revision stable while new snapshot sees metadata removal and new tenant revision. Unit budgets/cursor/revision tests PASS. No completeness certificate publisher yet: all return coverage unknown. Report binding to tenant revision not implemented; this is known next work, do not falsely approve whole Goal or treat absent next step as newly discovered local defect. Original synchronized Serializable payment gate remains FAIL independent of these changes; 20 actual retry recovery passes. Check triggers avoid shared counters/deadlocks, tenant/source changes fence relevant query inputs, SQL scoping/PII exposure, invalid mutable scope, errors and realistic load. Missing dependency questions must be labeled as such, not asserted as absent guards.
+
+FILE prisma/migrations/20261015210000_live_metric_order_tenant_revision/migration.sql
+1: -- Fence the complete tenant order inventory, including unattributed sources.
+2: -- Append-only events avoid a shared counter lock in payment transactions.
+3: CREATE TABLE public."LiveMetricOrderTenantSource" (
+4:  id BIGSERIAL PRIMARY KEY,
+5:  "vendorId" TEXT NOT NULL REFERENCES public."Vendor"(id) ON DELETE CASCADE ON UPDATE NO ACTION
+6: );
+7: CREATE INDEX "LiveMetricOrderTenantSource_vendor_idx" ON public."LiveMetricOrderTenantSource"("vendorId");
+8: CREATE FUNCTION public.wp20_metric_order_tenant_changed() RETURNS trigger
+9: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+10: DECLARE old_vendor TEXT; new_vendor TEXT; target TEXT;
+11: BEGIN
+12:  IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+13:   RAISE EXCEPTION 'invalid tenant order source relation' USING ERRCODE='23514';
+14:  END IF;
+15:  IF TG_OP='UPDATE' THEN
+16:   IF TG_TABLE_NAME='CommerceOrder' THEN
+17:    IF (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status)
+18:     IS NOT DISTINCT FROM (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status) THEN RETURN NULL; END IF;
+19:   ELSE
+20:    IF (NEW."vendorId",NEW.metadata) IS NOT DISTINCT FROM (OLD."vendorId",OLD.metadata) THEN RETURN NULL; END IF;
+21:   END IF;
+22:  END IF;
+23:  IF TG_OP<>'INSERT' THEN old_vendor:=OLD."vendorId"; END IF;
+24:  IF TG_OP<>'DELETE' THEN new_vendor:=NEW."vendorId"; END IF;
+25:  FOR target IN SELECT DISTINCT value FROM unnest(ARRAY[old_vendor,new_vendor]) value WHERE value IS NOT NULL ORDER BY value LOOP
+26:   INSERT INTO public."LiveMetricOrderTenantSource"("vendorId") SELECT id FROM public."Vendor" WHERE id=target;
+27:  END LOOP;
+28:  RETURN NULL;
+29: END $$;
+30: CREATE TRIGGER "CommerceOrder_metric_tenant_revision" AFTER INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+31:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_tenant_changed();
+32: CREATE TRIGGER "PaymentTransaction_metric_tenant_revision" AFTER INSERT OR UPDATE OR DELETE ON public."PaymentTransaction"
+33:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_tenant_changed();
+34: CREATE FUNCTION public.wp20_metric_order_tenant_revision(vendor_id TEXT) RETURNS BIGINT
+35: LANGUAGE sql STABLE STRICT SECURITY DEFINER SET search_path=pg_catalog SET row_security=off AS $$
+36:  SELECT count(*) FROM public."LiveMetricOrderTenantSource" WHERE "vendorId"=vendor_id
+37: $$;
+38: CREATE TRIGGER "LiveMetricOrderTenantSource_immutable" BEFORE UPDATE OR DELETE ON public."LiveMetricOrderTenantSource"
+39:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_immutable();
+40: CREATE TRIGGER "LiveMetricOrderTenantSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricOrderTenantSource"
+41:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+42: CREATE TRIGGER "CommerceOrder_metric_no_truncate" BEFORE TRUNCATE ON public."CommerceOrder"
+43:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+44: CREATE TRIGGER "PaymentTransaction_metric_no_truncate" BEFORE TRUNCATE ON public."PaymentTransaction"
+45:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+46: ALTER TABLE public."LiveMetricOrderTenantSource" ENABLE ROW LEVEL SECURITY;
+47: REVOKE ALL ON TABLE public."LiveMetricOrderTenantSource" FROM PUBLIC;
+48: REVOKE ALL ON SEQUENCE public."LiveMetricOrderTenantSource_id_seq" FROM PUBLIC;
+49: REVOKE ALL ON FUNCTION public.wp20_metric_order_tenant_changed(),public.wp20_metric_order_tenant_revision(text) FROM PUBLIC;
+50: DO $$ DECLARE api_role TEXT; BEGIN
+51:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+52:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+53:    EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricOrderTenantSource" FROM %I',api_role);
+54:    EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricOrderTenantSource_id_seq" FROM %I',api_role);
+55:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_tenant_changed(),public.wp20_metric_order_tenant_revision(text) FROM %I',api_role);
+56:   END IF;
+57:  END LOOP;
+58: END $$;
+
+FILE prisma/migrations/20261015140000_live_metric_order_source/migration.sql
+1: -- Append-only merchant/live change events avoid a shared payment-path update.
+2: -- COUNT of immutable scoped events is the report input revision; sequence values
+3: -- are never used as commit watermarks because transactions can commit out of order.
+4: -- Do not update LiveMetricVersion or reports from Serializable payment writes.
+5: CREATE TABLE public."LiveMetricOrderSource" (
+6:  id BIGSERIAL PRIMARY KEY,
+7:  "vendorId" TEXT NOT NULL REFERENCES public."Vendor"(id) ON DELETE CASCADE ON UPDATE CASCADE,
+8:  "liveId" TEXT NOT NULL
+9: );
+10: CREATE INDEX "LiveMetricOrderSource_scope_idx" ON public."LiveMetricOrderSource" ("vendorId","liveId");
+11: 
+12: CREATE FUNCTION public.wp20_metric_order_source_changed() RETURNS trigger
+13: -- Invoked only as a row trigger; no caller-supplied SQL or privileged output.
+14: -- The commerce writer keeps its existing privileges; metric tables remain private.
+15: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+16: DECLARE candidates JSONB:='[]'::jsonb; fact JSONB; payment JSONB; scope RECORD;
+17: BEGIN
+18:  IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+19:   RAISE EXCEPTION 'invalid metric source trigger relation' USING ERRCODE='23514';
+20:  END IF;
+21:  IF TG_OP='UPDATE' THEN
+22:   IF TG_TABLE_NAME='CommerceOrder' THEN
+23:    IF
+24:    (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status='draft',NEW.status='cancelled')
+25:    IS NOT DISTINCT FROM
+26:    (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status='draft',OLD.status='cancelled')
+27:    THEN RETURN NULL; END IF;
+28:   ELSE
+29:    IF
+30:    (NEW."vendorId",NEW.metadata->>'formSubmissionId',NEW.metadata->>'sourceLiveId',NEW.metadata->>'billingPurpose')
+31:    IS NOT DISTINCT FROM
+32:    (OLD."vendorId",OLD.metadata->>'formSubmissionId',OLD.metadata->>'sourceLiveId',OLD.metadata->>'billingPurpose')
+33:    THEN RETURN NULL; END IF;
+34:   END IF;
+35:  END IF;
+36:  -- Keep both old and new attribution. Payment changes invalidate their scopes
+37:  -- even before an order exists, covering concurrent order creation.
+38:  FOR fact IN SELECT value FROM jsonb_array_elements(
+39:    (CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END) ||
+40:    (CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END)) LOOP
+41:   IF TG_TABLE_NAME='CommerceOrder' THEN
+42:    IF fact->>'status'='draft' THEN CONTINUE; END IF;
+43:    SELECT p.metadata INTO payment FROM public."PaymentTransaction" p
+44:     WHERE p.id=fact->>'primaryPaymentTransactionId' AND p."vendorId"=fact->>'vendorId';
+45:   ELSE payment:=fact->'metadata';
+46:   END IF;
+47:   IF payment->>'billingPurpose'='buyer_order' AND coalesce(payment->>'sourceLiveId','')<>''
+48:      AND coalesce(payment->>'formSubmissionId','')<>'' THEN
+49:    candidates:=candidates || jsonb_build_array(jsonb_build_object('vendorId',fact->>'vendorId','liveId',payment->>'sourceLiveId'));
+50:   END IF;
+51:  END LOOP;
+52:  -- Stable old/new scope ordering. No customer metadata is persisted here.
+53:  FOR scope IN SELECT DISTINCT value->>'vendorId' AS vendor_id,value->>'liveId' AS live_id
+54:    FROM jsonb_array_elements(candidates) ORDER BY vendor_id,live_id LOOP
+55:   INSERT INTO public."LiveMetricOrderSource" ("vendorId","liveId")
+56:    SELECT "vendorId",id FROM public."Live" WHERE id=scope.live_id AND "vendorId"=scope.vendor_id;
+57:  END LOOP;
+58:  RETURN NULL;
+59: END $$;
+60: CREATE TRIGGER "CommerceOrder_metric_source" AFTER INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+61:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_changed();
+62: CREATE TRIGGER "PaymentTransaction_metric_source" AFTER INSERT OR UPDATE OR DELETE ON public."PaymentTransaction"
+63:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_changed();
+64: ALTER TABLE public."LiveMetricOrderSource" ENABLE ROW LEVEL SECURITY;
+65: REVOKE ALL ON TABLE public."LiveMetricOrderSource" FROM PUBLIC;
+66: REVOKE ALL ON FUNCTION public.wp20_metric_order_source_changed() FROM PUBLIC;
+67: DO $$ DECLARE api_role TEXT; BEGIN
+68:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+69:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+70:    EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricOrderSource" FROM %I',api_role);
+71:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_source_changed() FROM %I',api_role);
+72:   END IF;
+73:  END LOOP;
+74: END $$;
+75: 
+76: -- Removing events would allow an old COUNT revision to become current again.
+77: CREATE FUNCTION public.wp20_metric_order_source_immutable() RETURNS trigger
+78: LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+79: BEGIN
+80:  IF TG_OP='DELETE' AND NOT EXISTS(SELECT 1 FROM public."Vendor" WHERE id=OLD."vendorId") THEN RETURN OLD; END IF;
+81:  RAISE EXCEPTION 'metric order events are immutable' USING ERRCODE='23514';
+82: END $$;
+83: CREATE TRIGGER "LiveMetricOrderSource_immutable" BEFORE UPDATE OR DELETE ON public."LiveMetricOrderSource"
+84:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_immutable();
+85: CREATE TRIGGER "LiveMetricOrderSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricOrderSource"
+86:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+87: REVOKE ALL ON FUNCTION public.wp20_metric_order_source_immutable() FROM PUBLIC;
+88: REVOKE ALL ON SEQUENCE public."LiveMetricOrderSource_id_seq" FROM PUBLIC;
+89: 
+90: -- Private backend capability: callers still authorize vendor/live scope.
+91: -- A caller-side RLS policy must never turn real events into a false zero count.
+92: -- No table rows or customer fields leave this function. Explicit EXECUTE grants
+93: -- belong only to trusted backend workers, never public/authenticated API roles.
+94: CREATE FUNCTION public.wp20_metric_order_revision(vendor_id TEXT,live_id TEXT) RETURNS BIGINT
+95: LANGUAGE sql STABLE STRICT SECURITY DEFINER
+96: SET search_path=pg_catalog SET row_security=off AS $$
+97:  SELECT count(*) FROM public."LiveMetricOrderSource" WHERE "vendorId"=vendor_id AND "liveId"=live_id
+98: $$;
+99: REVOKE ALL ON FUNCTION public.wp20_metric_order_revision(text,text) FROM PUBLIC;
+100: 
+101: -- Default privileges may grant named API roles independently of PUBLIC.
+102: DO $$ DECLARE api_role TEXT; BEGIN
+103:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+104:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+105:    EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricOrderSource_id_seq" FROM %I',api_role);
+106:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_source_immutable() FROM %I',api_role);
+107:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_revision(text,text) FROM %I',api_role);
+108:   END IF;
+109:  END LOOP;
+110: END $$;
+
+FILE src/lib/live-metric-order-audit.ts
+1: import { Prisma } from "@prisma/client";
+2: import { z } from "zod";
+3: const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+4: const Request = z.object({ vendorId: id, liveId: id, versionId: id, startAt: z.date(), endAt: z.date(),
+5:   afterId: id.nullable(), take: z.number().int().min(1).max(500) }).strict()
+6:   .refine(value => value.startAt < value.endAt, "Invalid order audit window");
+7: type Outcome = "missing_payment" | "missing_attribution" | "other_purpose" | "other_live" |
+8:   "invalid_source" | "outside_cohort" | "missing_registration" | "identity_mismatch" | "matched";
+9: /** Enumerate ALL established tenant orders in the interval, not just successful
+10:  * attribution joins. Internal IDs/classifications only; never a coverage certificate.
+11:  * Tenant revision includes unattributed orders. Callers must still complete the
+12:  * full audit and recheck all revisions before any separate proof publication.
+13:  */
+14: export async function readMetricOrderAuditPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+15:   value: z.infer<typeof Request>) {
+16:   const input = Request.parse(value);
+17:   const [settings] = await tx.$queryRaw<{ isolation: string; readOnly: string }[]>(Prisma.sql`
+18:     SELECT current_setting('transaction_isolation') AS isolation,current_setting('transaction_read_only') AS "readOnly"`);
+19:   if (settings?.isolation !== "repeatable read" || settings.readOnly !== "on") throw new Error("Order audit requires read-only repeatable-read");
+20:   const [context] = await tx.$queryRaw<{ sourceRevision: bigint; orderRevision: bigint; tenantRevision: bigint; registrationRevision: bigint }[]>(Prisma.sql`
+21:     SELECT v."sourceRevision",public.wp20_metric_order_tenant_revision(v."vendorId") AS "tenantRevision",public.wp20_metric_order_revision(v."vendorId",v."liveId") AS "orderRevision",
+22:       public.wp20_metric_registration_revision(v."vendorId",v."liveId") AS "registrationRevision"
+23:     FROM "LiveMetricVersion" v JOIN "Live" l ON l.id=v."liveId" AND l."vendorId"=v."vendorId"
+24:     WHERE v.id=${input.versionId} AND v."vendorId"=${input.vendorId} AND v."liveId"=${input.liveId}
+25:       AND v."collectionStartedAt"<=${input.startAt} AND v."expiresAt">=${input.endAt} AND ${input.endAt}<=clock_timestamp()`);
+26:   if (!context) return { status: "unavailable" as const, reason: "scope_or_window_unavailable" as const };
+27:   const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND o.id>${input.afterId}`;
+28:   const rows = await tx.$queryRaw<{ orderId: string; outcome: Outcome }[]>(Prisma.sql`
+29:     SELECT o.id AS "orderId",CASE
+30:       WHEN p.id IS NULL THEN 'missing_payment'
+31:       WHEN coalesce(p.metadata->>'billingPurpose','')='' THEN 'missing_attribution'
+32:       WHEN p.metadata->>'billingPurpose'<>'buyer_order' THEN 'other_purpose'
+33:       WHEN coalesce(p.metadata->>'sourceLiveId','')='' OR coalesce(p.metadata->>'formSubmissionId','')='' THEN 'missing_attribution'
+34:       WHEN p.metadata->>'sourceLiveId'<>${input.liveId} THEN 'other_live'
+35:       WHEN s.id IS NULL OR s."liveId" IS DISTINCT FROM ${input.liveId} OR s."verificationStatus"<>'VERIFIED'
+36:         OR f."vendorId" IS DISTINCT FROM ${input.vendorId} OR l."formId" IS DISTINCT FROM s."formId" OR s."verifiedAt" IS NULL THEN 'invalid_source'
+37:       WHEN s."verifiedAt"<(${input.startAt}::timestamptz AT TIME ZONE 'UTC')
+38:         OR s."verifiedAt">=(${input.endAt}::timestamptz AT TIME ZONE 'UTC') THEN 'outside_cohort'
+39:       WHEN g.id IS NULL THEN 'missing_registration'
+40:       WHEN g."verifiedAt" IS DISTINCT FROM (s."verifiedAt" AT TIME ZONE 'UTC') THEN 'identity_mismatch'
+41:       ELSE 'matched' END AS outcome
+42:     FROM "CommerceOrder" o
+43:     LEFT JOIN "PaymentTransaction" p ON p.id=o."primaryPaymentTransactionId" AND p."vendorId"=o."vendorId"
+44:     LEFT JOIN "FormSubmission" s ON s.id=p.metadata->>'formSubmissionId'
+45:     LEFT JOIN "RegistrationForm" f ON f.id=s."formId" AND f."vendorId"=o."vendorId"
+46:     LEFT JOIN "Live" l ON l.id=${input.liveId} AND l."vendorId"=o."vendorId"
+47:     LEFT JOIN "LiveMetricRegistration" g ON g."submissionId"=s.id AND g."vendorId"=o."vendorId"
+48:       AND g."liveId"=${input.liveId} AND g."versionId"=${input.versionId}
+49:     WHERE o."vendorId"=${input.vendorId} AND o.status<>'draft'
+50:       AND o."createdAt">=(${input.startAt}::timestamptz AT TIME ZONE 'UTC')
+51:       AND o."createdAt"<(${input.endAt}::timestamptz AT TIME ZONE 'UTC') ${cursor}
+52:     ORDER BY o.id LIMIT ${input.take + 1}`);
+53:   const page = rows.slice(0, input.take);
+54:   return { status: "available" as const, ...context, coverage: "unknown" as const,
+55:     rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.orderId ?? input.afterId };
+56: }
+
+FILE src/lib/live-metric-order-source-audit.ts
+1: import { createHash } from "node:crypto";
+2: import { performance } from "node:perf_hooks";
+3: import { Prisma, type PrismaClient } from "@prisma/client";
+4: import { readMetricOrderAuditPage } from "./live-metric-order-audit";
+5: type Scope = Omit<Parameters<typeof readMetricOrderAuditPage>[1], "afterId" | "take">;
+6: /** Internal enumeration only. Tenant and scoped revisions describe this snapshot;
+7:  * even a fully matched result is NOT permission to publish coverage without
+8:  * a separate writer that revalidates these revisions.
+9:  */
+10: export async function auditMetricOrderSources(db: Pick<PrismaClient, "$transaction">, value: Scope,
+11:   limits = { rows: 1_000_000, pages: 2000 }) {
+12:   if (!Number.isSafeInteger(limits.rows) || limits.rows < 1 || limits.rows > 1_000_000
+13:     || !Number.isSafeInteger(limits.pages) || limits.pages < 1 || limits.pages > 2000) throw new Error("Invalid order audit limits");
+14:   const scope = { vendorId: value.vendorId, liveId: value.liveId, versionId: value.versionId,
+15:     startAt: new Date(value.startAt), endAt: new Date(value.endAt) };
+16:   return db.$transaction(async tx => {
+17:     await tx.$executeRaw(Prisma.sql`SET TRANSACTION READ ONLY`);
+18:     await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','2000',true)`);
+19:     const started = performance.now();
+20:     const digest = createHash("sha256").update(JSON.stringify({ format: "order-source-audit-v1", ...scope }));
+21:     const outcomes = { missing_payment: 0, missing_attribution: 0, other_purpose: 0, other_live: 0,
+22:       invalid_source: 0, outside_cohort: 0, missing_registration: 0, identity_mismatch: 0, matched: 0 };
+23:     let count = 0, cursor: string | null = null, revisions: string | undefined;
+24:     for (let index = 0; index < limits.pages; index++) {
+25:       // Each page has three statements; reserve 6s plus transaction overhead.
+26:       if (performance.now() - started >= 20000) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+27:       const page = await readMetricOrderAuditPage(tx, { ...scope, afterId: cursor, take: 500 });
+28:       if (page.status !== "available") return page;
+29:       const current = JSON.stringify([page.sourceRevision.toString(), page.orderRevision.toString(), page.registrationRevision.toString(), page.tenantRevision.toString()]);
+30:       if (revisions !== undefined && current !== revisions) throw new Error("Order audit snapshot revision changed");
+31:       revisions = current;
+32:       count += page.rows.length;
+33:       if (count > limits.rows) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+34:       for (const row of page.rows) {
+35:         outcomes[row.outcome]++;
+36:         digest.update(JSON.stringify([row.orderId, row.outcome]) + "\n");
+37:       }
+38:       if (!page.hasMore) return { status: "enumerated" as const, coverage: "unknown" as const,
+39:         count, outcomes, sourceRevision: page.sourceRevision, orderRevision: page.orderRevision,
+40:         registrationRevision: page.registrationRevision, tenantRevision: page.tenantRevision, digest: digest.update(current).digest("hex") };
+41:       if (page.rows.length === 0 || page.nextId === null || page.nextId === cursor) throw new Error("Order audit cursor did not advance");
+42:       cursor = page.nextId;
+43:     }
+44:     return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+45:   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000, maxWait: 5000 });
+46: }
+
+FILE scripts/wp20-order-tenant-ledger-probe.mjs
+1: import assert from 'node:assert/strict';
+2: /** Owned disposable database only. Destructive probes always roll back. */
+3: export async function verifyOrderTenantLedger(db,vendorId) {
+4:  for(const role of ['anon','authenticated','service_role']) {
+5:   const [rights]=await db.$queryRawUnsafe(`SELECT
+6:    has_table_privilege($1,'public."LiveMetricOrderTenantSource"','SELECT,INSERT,UPDATE,DELETE,TRUNCATE') AS table_access,
+7:    has_sequence_privilege($1,'public."LiveMetricOrderTenantSource_id_seq"','USAGE,SELECT,UPDATE') AS sequence_access,
+8:    has_function_privilege($1,'public.wp20_metric_order_tenant_revision(text)','EXECUTE') AS revision_access,
+9:    has_function_privilege($1,'public.wp20_metric_order_tenant_changed()','EXECUTE') AS trigger_access`,role);
+10:   assert.deepEqual(rights,{table_access:false,sequence_access:false,revision_access:false,trigger_access:false});
+11:  }
+12:  const [before]=await db.$queryRawUnsafe('SELECT public.wp20_metric_order_tenant_revision($1) AS revision',vendorId);
+13:  assert.ok(before.revision>0n);
+14:  for(const sql of [
+15:   'UPDATE "LiveMetricOrderTenantSource" SET "vendorId"="vendorId" WHERE "vendorId"=$1',
+16:   'DELETE FROM "LiveMetricOrderTenantSource" WHERE "vendorId"=$1',
+17:   'TRUNCATE "LiveMetricOrderTenantSource" RESTART IDENTITY CASCADE',
+18:  ]) {
+19:   let state=null;
+20:   await assert.rejects(db.$transaction(async tx=>{
+21:    await tx.$executeRawUnsafe('SAVEPOINT tenant_ledger_probe');
+22:    try {await tx.$executeRawUnsafe(sql,...(sql.includes('$1')?[vendorId]:[]));}
+23:    catch(error){state=error?.meta?.code;}
+24:    await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT tenant_ledger_probe');
+25:    throw new Error('tenant-ledger-probe-rollback');
+26:   }),{message:'tenant-ledger-probe-rollback'});
+27:   assert.equal(state,'23514');
+28:  }
+29:  const [after]=await db.$queryRawUnsafe('SELECT public.wp20_metric_order_tenant_revision($1) AS revision',vendorId);
+30:  assert.equal(after.revision,before.revision);
+31:  // Grant only the private counting capability to a disposable worker role;
+32:  // it must see the real count without direct table access or RLS false zero.
+33:  await assert.rejects(db.$transaction(async tx=>{
+34:   await tx.$executeRawUnsafe('CREATE ROLE wp20_tenant_revision_probe NOLOGIN');
+35:   await tx.$executeRawUnsafe('GRANT USAGE ON SCHEMA public TO wp20_tenant_revision_probe');
+36:   await tx.$executeRawUnsafe('GRANT EXECUTE ON FUNCTION public.wp20_metric_order_tenant_revision(text) TO wp20_tenant_revision_probe');
+37:   await tx.$executeRawUnsafe('SET LOCAL ROLE wp20_tenant_revision_probe');
+38:   const [rights]=await tx.$queryRawUnsafe(`SELECT has_table_privilege(current_user,'public."LiveMetricOrderTenantSource"','SELECT,INSERT,UPDATE,DELETE,TRUNCATE') AS direct`);
+39:   assert.equal(rights.direct,false);
+40:   const [actual]=await tx.$queryRawUnsafe('SELECT public.wp20_metric_order_tenant_revision($1) AS revision',vendorId);
+41:   assert.equal(actual.revision,before.revision);
+42:   throw new Error('tenant-worker-probe-rollback');
+43:  }),{message:'tenant-worker-probe-rollback'});
+44:  return {status:'PASS',apiRolesDenied:3,immutableUpdate:'PASS',immutableDelete:'PASS',truncateRejected:'PASS',leastPrivilegeCount:'PASS'};
+45: }
+
+FILE scripts/wp20-order-source-audit-probe.mjs
+1: import { verifyOrderTenantLedger } from "./wp20-order-tenant-ledger-probe.mjs";
+2: import assert from 'node:assert/strict';
+3: export async function verifyOrderSourceAudit(db,service,{vendor,live,video}) {
+4:  const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+5:  const start=new Date(+clock.now-3600000),end=clock.now,versionId='order-audit-version';
+6:  await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ($1,$2,$3,$4,'live',$5,true,$6,$7)`,versionId,vendor.id,live.id,video.id,'f'.repeat(64),start,new Date(+clock.now+3600000));
+7:  const request={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:end,afterId:null,take:10};
+8:  const read=callback=>db.$transaction(async tx=>{await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');return callback(tx);},{isolationLevel:'RepeatableRead',timeout:15000});
+9:  try {
+10:   for(const isolationLevel of ['ReadCommitted','RepeatableRead']) {
+11:    await assert.rejects(db.$transaction(tx=>service.readMetricOrderAuditPage(tx,request),{isolationLevel}),
+12:     {message:'Order audit requires read-only repeatable-read'});
+13:   }
+14:   await read(async tx=>{
+15:    const first=await service.readMetricOrderAuditPage(tx,request);
+16:    assert.equal(first.status,'available');assert.equal(first.coverage,'unknown');assert.equal(first.rows.length,10);assert.equal(first.hasMore,true);
+17:    const second=await service.readMetricOrderAuditPage(tx,{...request,afterId:first.nextId});
+18:    assert.equal(second.rows.length,10);assert.equal(second.hasMore,false);
+19:    assert.equal(new Set([...first.rows,...second.rows].map(row=>row.orderId)).size,20);
+20:    assert.ok([...first.rows,...second.rows].every(row=>row.outcome==='missing_registration'));
+21:    assert.deepEqual(await service.readMetricOrderAuditPage(tx,{...request,vendorId:'foreign-vendor'}),{status:'unavailable',reason:'scope_or_window_unavailable'});
+22:   });
+23:   // The attribution metadata is synthetic and restored even when assertions fail.
+24:   const payment=await db.paymentTransaction.findFirstOrThrow({where:{vendorId:vendor.id,orderNumber:'WP20-RETRY-0'},select:{id:true,metadata:true}});
+25:   try {
+26:    await db.paymentTransaction.update({where:{id:payment.id},data:{metadata:{billingPurpose:'buyer_order'}}});
+27:    await read(async tx=>{
+28:     const page=await service.readMetricOrderAuditPage(tx,{...request,take:500});
+29:     assert.equal(page.rows.length,20);
+30:     assert.equal(page.rows.filter(row=>row.outcome==='missing_attribution').length,1);
+31:     assert.equal(page.rows.filter(row=>row.outcome==='missing_registration').length,19);
+32:     assert.equal(page.coverage,'unknown');
+33:    });
+34:    const revision=async()=> (await db.$queryRawUnsafe('SELECT public.wp20_metric_order_revision($1,$2) AS scoped,public.wp20_metric_order_tenant_revision($1) AS tenant',vendor.id,live.id))[0];
+35:    const beforeUnattributed=await revision();
+36:    await db.paymentTransaction.update({where:{id:payment.id},data:{metadata:{}}});
+37:    const afterUnattributed=await revision();
+38:    assert.equal(afterUnattributed.scoped,beforeUnattributed.scoped);
+39:    assert.ok(afterUnattributed.tenant>beforeUnattributed.tenant);
+40:   } finally {await db.paymentTransaction.update({where:{id:payment.id},data:{metadata:payment.metadata}});}
+41:   const source=await db.formSubmission.findUniqueOrThrow({where:{id:payment.metadata.formSubmissionId},select:{id:true,verifiedAt:true}});
+42:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistration" (id,"vendorId","liveId","versionId","submissionId","verifiedAt") VALUES ('order-audit-registration',$1,$2,$3,$4,$5)`,vendor.id,live.id,versionId,source.id,source.verifiedAt);
+43:   await read(async tx=>{
+44:    const page=await service.readMetricOrderAuditPage(tx,{...request,take:500});
+45:    assert.equal(page.rows.length,20);assert.ok(page.rows.every(row=>row.outcome==='matched'));
+46:    assert.equal(page.coverage,'unknown');
+47:   });
+48:   const auditScope={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:end};
+49:   const summary=await service.auditMetricOrderSources(db,auditScope);
+50:   assert.equal(summary.status,'enumerated');assert.equal(summary.count,20);assert.equal(summary.outcomes.matched,20);
+51:   assert.equal(summary.coverage,'unknown');assert.equal('rows' in summary,false);
+52:   assert.equal((await service.auditMetricOrderSources(db,auditScope)).digest,summary.digest);
+53:   assert.deepEqual(await service.auditMetricOrderSources(db,auditScope,{rows:19,pages:2}),{status:'unavailable',reason:'limit_exceeded'});
+54:   try {
+55:    for(const [metadata,outcome] of [
+56:     [{...payment.metadata,billingPurpose:'subscription'},'other_purpose'],
+57:     [{...payment.metadata,sourceLiveId:'another-synthetic-live'},'other_live'],
+58:    ]) {
+59:     await db.paymentTransaction.update({where:{id:payment.id},data:{metadata}});
+60:     await read(async tx=>{
+61:      const page=await service.readMetricOrderAuditPage(tx,{...request,take:500});
+62:      assert.equal(page.rows.length,20);
+63:      assert.equal(page.rows.filter(row=>row.outcome===outcome).length,1);
+64:      assert.equal(page.rows.filter(row=>row.outcome==='matched').length,19);
+65:     });
+66:    }
+67:   } finally {await db.paymentTransaction.update({where:{id:payment.id},data:{metadata:payment.metadata}});}
+68:   try {
+69:    let observedRevision;
+70:    await read(async tx=>{
+71:     const before=await service.readMetricOrderAuditPage(tx,{...request,take:500});
+72:     observedRevision=before.tenantRevision;
+73:     assert.equal(before.rows.filter(row=>row.outcome==='matched').length,20);
+74:     // A separate committed connection changes attribution while RR stays open.
+75:     await db.paymentTransaction.update({where:{id:payment.id},data:{metadata:{}}});
+76:     const same=await service.readMetricOrderAuditPage(tx,{...request,take:500});
+77:     assert.equal(same.tenantRevision,observedRevision);
+78:     assert.deepEqual(same.rows,before.rows);
+79:     const [current]=await db.$queryRawUnsafe('SELECT public.wp20_metric_order_tenant_revision($1) AS revision',vendor.id);
+80:     assert.ok(current.revision>observedRevision);
+81:    });
+82:    await read(async tx=>{
+83:     const next=await service.readMetricOrderAuditPage(tx,{...request,take:500});
+84:     assert.ok(next.tenantRevision>observedRevision);
+85:     assert.equal(next.rows.filter(row=>row.outcome==='missing_attribution').length,1);
+86:     assert.equal(next.rows.filter(row=>row.outcome==='matched').length,19);
+87:    });
+88:   } finally {await db.paymentTransaction.update({where:{id:payment.id},data:{metadata:payment.metadata}});}
+89:   const tenantLedgerProtection=await verifyOrderTenantLedger(db,vendor.id);
+90:   return {status:'PASS',tenantLedgerProtection,matchedOrders:20,boundedEnumeration:'PASS',unattributedTenantRevision:'PASS',stableDigest:'PASS',tenantSnapshotConcurrency:'PASS',overflowRejected:'PASS',readOnlyRequired:true,exclusionsVisible:true,sourceOrders:20,missingProjectionsVisible:true,missingAttributionVisible:true,foreignScopeRejected:true,pagination:'PASS',coverage:'unknown'};
+91:  } finally {await db.$executeRawUnsafe('DELETE FROM "LiveMetricVersion" WHERE id=$1',versionId);}
+92: }

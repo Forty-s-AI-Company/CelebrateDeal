@@ -1,0 +1,23 @@
+{
+  "source_files": [
+    {
+      "path": "scripts/prisma-loopback-disposable-migration-runner.mjs",
+      "sha256": "64297162cc2ac41dd4af4acd88a053a8b9d80776be2498177b0946e54341ea3d"
+    },
+    {
+      "path": "scripts/prisma-loopback-disposable-migration-runner.test.mjs",
+      "sha256": "5477c9d705684ce34b0abcd02aa684d599610ff5256910a49a9b7bc70d7c2566"
+    },
+    {
+      "path": "scripts/prisma-migrate-status-diagnostic.mjs",
+      "sha256": "6aa38aa2adec855c5776713de49ec3d8e679363ce5d9adf1f92d73b23ff47f20"
+    },
+    {
+      "path": "scripts/prisma-migrate-status-diagnostic.test.mjs",
+      "sha256": "664c73d3f1dd13f0bab4bb36ca440cf6f6df4b4bd491830c39423c443841bbab"
+    }
+  ],
+  "product_source_modified": false,
+  "database_schema_modified": false,
+  "ownership": "root only, independent worktree"
+}

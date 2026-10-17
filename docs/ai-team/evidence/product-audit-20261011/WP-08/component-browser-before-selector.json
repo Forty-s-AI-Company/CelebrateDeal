@@ -1,0 +1,9 @@
+{
+  "status": "FAIL",
+  "scope": "Real client components and app CSS, synthetic server-action/report adapters; not authenticated full-app E2E",
+  "checks": [],
+  "cleanup": true,
+  "stage": "chromium:step",
+  "errorType": "AssertionError",
+  "errorSummary": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n+   '不設定動作',\n+   '開啟網址',\n+   '顯示彈出視窗',\n+   '送出表單',\n+   '前往下一個步驟',\n+   '下載檔案',\n    '請選擇',\n    '報名頁',\n    '感謝頁'\n  ]\n"
+}

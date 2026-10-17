@@ -1,0 +1,7 @@
+# 截止導向與重試契約核對
+
+原UI審查將experiment/progression列為redirect例子；實際decidePublicFunnelRuntime的實驗指派回傳render，requested/renderedStepId分開。唯一redirect源於resolveFunnelDeadline的截止導向。
+
+新增測試覆蓋closed與redirect兩種截止行為；resolveTrustedFunnelSubmission對原opt_in及可瀏覽opt_in_thank_you皆回null，沒有進一步查訪問紀錄。既有邊界測試亦確認截止前render、截止當下closed/redirect及目標可瀏覽。unit/lint PASS，皆為合成依賴unit，不冒稱DB/E2E。
+
+剩餘真實問題：截止後原頁會先讀草稿再redirect，讀取結果不會呈現。不能將來源綁定改成任意目標或恢復報名來修UX。下一步在原頁提供截止與重試結果（必要時唯讀保留值）及既定目的地連結，保留發布/截止/表單驗證條件，再獨立審查。尚未實作此UI，不標finding resolved。

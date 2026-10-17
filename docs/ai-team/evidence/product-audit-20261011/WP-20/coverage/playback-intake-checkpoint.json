@@ -1,0 +1,122 @@
+{
+  "status": "IN_PROGRESS",
+  "wholeWp": "NOT_READY",
+  "wholeGoalCompletedWp": 8,
+  "wholeGoalTotalWp": 20,
+  "completedWp": [
+    "WP-01",
+    "WP-05",
+    "WP-06",
+    "WP-07",
+    "WP-08",
+    "WP-10",
+    "WP-11",
+    "WP-15"
+  ],
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "engineeringResolved": {
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "engineeringObserved": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "unit": {
+    "status": "PASS",
+    "exitCode": 0,
+    "testsPassed": 174
+  },
+  "lint": {
+    "status": "PASS",
+    "exitCode": 0
+  },
+  "typecheck": {
+    "status": "PASS",
+    "exitCode": 0,
+    "diagnostics": []
+  },
+  "database": {
+    "status": "PASS",
+    "stage": "complete",
+    "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+    "checks": {
+      "unconfiguredPlaybackPreserved": "PASS",
+      "committedBeforeSourceAndLostReplyRetained": "PASS",
+      "canonicalSessionBindingIdempotentAndBounded": "PASS",
+      "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+      "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+      "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+      "boundSessionUpdatesCannotChangeIdentityAnchorOrExceedIntake": "PASS",
+      "timestamptzCatalogAndNonUtcBoundUpdates": "PASS",
+      "intakeEpochLossAndSessionBindingImmutable": "PASS",
+      "unexpectedColumnGrantRejectedAndProbeRoleCleaned": "PASS",
+      "admissionDeletionRetainsIntakeVersionCascadeCleans": "PASS"
+    },
+    "browser": {
+      "sessionRequests": 1,
+      "intervals": 9,
+      "terminal": true,
+      "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+      "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    }
+  },
+  "validationReuse": "174-unit/lint/typecheck terminal receipts retained; subsequent changes only SQL/harness/review documentation. New SQL and harness rerun on owned disposable DB.",
+  "review": {
+    "status": "REVIEW_COMPLETED",
+    "observed": {
+      "effort": "unknown",
+      "model": "claude-opus-5-5",
+      "source": "cli_terminal_model_usage"
+    },
+    "scope": "Full119 SQL/service except one-line Input declaration; new session binding excerpt. Other code/tests/harness not supplied.",
+    "currentMigration": {
+      "followupStatus": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5"
+      },
+      "sourceHashMatch": true
+    }
+  },
+  "notVerified": [
+    "continuous TTL renewal",
+    "in-place verification recovery",
+    "signed Next HTTP browser authorization",
+    "live captureStream/WHEP sampling",
+    "viewing/visits positive coverage producer and fences",
+    "populated upgrade and concurrent load",
+    "deployed runtime role",
+    "scheduler host/cadence/queue integration",
+    "full WP same-snapshot acceptance",
+    "remote GitHub Actions"
+  ],
+  "knownFailedGate": {
+    "originalSynchronized20Serializable": {
+      "successes": 7,
+      "failures": 13,
+      "rerun": false
+    }
+  },
+  "ownership": {
+    "writer": "root",
+    "automaticSpawn": false,
+    "maxParallel": 1,
+    "maxDepth": 1
+  },
+  "git": {
+    "workspace": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "mode": "independent detached worktree",
+    "promotion": "NOT_REQUESTED"
+  },
+  "production": "NOT_AUTHORIZED",
+  "nextAction": "Implement bounded gapless same-intake/session renewal before old expiry; persist a revision for every extension; preserve immutable identity/anchor and reject expired resurrection. Then bind intake closure to viewing producer and scheduler."
+}

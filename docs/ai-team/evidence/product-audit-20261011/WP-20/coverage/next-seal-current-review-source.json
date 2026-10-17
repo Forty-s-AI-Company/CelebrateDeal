@@ -1,0 +1,11 @@
+{
+  "promptCharacters": 17793,
+  "suppliedRanges": {
+    "scripts/wp20-next-runtime-probe.mjs": "Lines 167-225 only; source seal and finally"
+  },
+  "files": {
+    "src/lib/live-metric-ingress-seal.ts": "9ac448f0f1b2c5479975616e0479a6f7fa3f421efedd420f47637c91664385d2",
+    "scripts/wp20-next-runtime-disposable.mjs": "1bdcdf202f8333db253e03c0cd044e20b8e2a8db3e3e9c15270444d3101b9c32",
+    "scripts/wp20-next-runtime-probe.mjs": "77d5d69c8ec552a690c93ce17aa7e911c498330ce047ac68bc9235233237baab"
+  }
+}

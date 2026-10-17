@@ -1,0 +1,228 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "migration",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "ux_ui",
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/components/app-shell.tsx",
+        "src/app/(app)/dashboard/dashboard-kpis.tsx",
+        "src/app/(app)/layout.tsx",
+        "src/app/actions/registration-actions.ts",
+        "src/app/actions/sales-workspace-actions.ts",
+        "src/app/(app)/billing/plans/page.tsx",
+        "src/components/landing-pages/funnel-operations-panel.tsx"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/(app)/billing/plans/page.tsx",
+      "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "src/app/(app)/layout.tsx",
+      "src/app/actions/registration-actions.ts",
+      "src/app/actions/sales-workspace-actions.ts",
+      "src/components/app-shell.tsx",
+      "src/components/landing-pages/funnel-operations-panel.tsx"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "WP15 範圍內的 diff 已審查完畢。發現 1 項 MAJOR、3 項 MINOR、1 項 NIT。最主要的問題是：AppShell 中唯一一處 OnboardingTaskPanel 現在包在 lg:hidden 裡，桌面版（lg 以上）似乎會完全看不到上線任務面板。偏好值的處理大致符合規格：新建偏好時預設為 true（收合），既有已存的 false 不做遷移，line 163 讓 ...data 寫在預設值之後，所以使用者明確設定的值仍會優先。KPI 的原生 details 會保留全部零值指標，funnel 操作鈕已達 44px 觸控尺寸。不過還有幾點需要注意：KPI 判斷是否有活動時只看 number 型別的值，可能遺漏以字串呈現的 KPI；方案價格的 TWD 前綴可能與 formatCurrency 本身的貨幣符號重複；預設值 true 寫死在多個寫入點，維護上較容易出錯。目前的測試結果只有合成元件測試；Operations 52 狀態瀏覽器測試、目前的 typecheck 和完整登入 E2E 都還沒執行，所以不能據此認定整個 WP 可以交付。findings 為空也不代表測試或發布已通過。",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/components/app-shell.tsx",
+        "area": "@@ -303 刪除 / @@ +313-316 新增 lg:hidden 包裝",
+        "issue": "OnboardingTaskPanel 從原本的位置（line 303）移除後，只在 <div className=\"lg:hidden\"> 內重新渲染，桌面版（≥lg）不再顯示上線任務面板。",
+        "evidence": "diff 刪除了 line 303 原本唯一的 <OnboardingTaskPanel …/>，新增的唯一一處渲染被 className=\"lg:hidden\" 包住。diff 中看不到其他桌面版的渲染點，新增的註解也只講行動版。",
+        "impact": "非平台管理員在桌面版會完全看不到商家/專案上線任務與其收合控制，等於上線引導功能在桌面版消失。WP15 原本只打算改預設收合狀態與行動版排版，這是超出範圍的功能回歸。",
+        "recommended_fix": "把原本的渲染保留在桌面版適用的位置（例如加上 hidden lg:block，或維持原位置），行動版另外放在 lg:hidden 區塊；也可以只渲染一次，改用 CSS 調整排列順序。請確認同一時間只有一個實例可互動，以免收合狀態不同步。",
+        "required_test": "AppShell 元件/瀏覽器測試：在 lg（≥1024px）和行動版視窗下，非平台管理員都能看到恰好一個可見的 OnboardingTaskPanel；平台管理員兩種視窗下都看不到。",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/app-shell.tsx",
+        "area": "@@ +313 註解與 lg:hidden 包裝",
+        "issue": "註解說「Keep expanded guidance scrollable so it cannot cover the mobile workspace」，但包裝的 div 只有 lg:hidden，沒有任何 max-height 或 overflow 設定，實際上不會讓面板變成可捲動。",
+        "evidence": "<div className=\"lg:hidden\"> 沒有 max-h-* 或 overflow-auto 之類的類別，OnboardingTaskPanel 本身在 diff 中也沒有修改。",
+        "impact": "如果面板展開後很長，或面板是 fixed/sticky 定位，行動版工作區仍可能被遮住或被推到很下面，註解描述的保證並不存在，會誤導之後維護的人。",
+        "recommended_fix": "如果確實需要限制高度，就在包裝或面板展開區加上 max-h-[…] overflow-y-auto；如果靠一般文件流就足夠，就把註解改成正確的描述。",
+        "required_test": "行動版（例如 375×667）合成瀏覽器狀態：展開面板且任務很多時，主要工作區的第一個可互動元素仍然可見或可捲動到，而且不會被面板遮住。",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+        "area": "@@ +106-110 hasActivity 判斷",
+        "issue": "hasActivity 只把 typeof value === \"number\" 的非零 KPI 算成有活動。如果有 KPI 的值是格式化字串（例如金額或百分比），就算有實際數據也會被當成無活動。另外 NaN 會被誤判為有活動。",
+        "evidence": "kpis.some((kpi) => typeof kpi.value === \"number\" && kpi.value !== 0)：字串值永遠回傳 false。NaN !== 0 結果為 true。",
+        "impact": "如果 funnel 全為 0，但營收之類的字串 KPI 有值，所有指標都會被收進 details 裡，摘要文字還寫著「尚無活動資料」，等於向商家顯示錯誤的狀態訊息。",
+        "recommended_fix": "改用原始數值欄位判斷（例如 kpi.rawValue），或明確處理 string/number 兩種型別；可以用 Number.isFinite 排除 NaN。如果 KPI 型別保證全部是 number，請在型別上加上限制並補上測試。",
+        "required_test": "KPI 單元測試涵蓋三種情況：(a) 字串型 KPI 非零但其餘全為 0 時應直接顯示指標；(b) 全部為 0 時應顯示 details；(c) 值為 NaN 時的行為符合預期。",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/billing/plans/page.tsx",
+        "area": "@@ +17-20 formatPlanCurrency",
+        "issue": "「TWD ${formatCurrency(cents)}」是在既有格式化結果前面直接加前綴。如果 formatCurrency 已經輸出貨幣符號（$ 或 NT$），會變成「TWD $990」或「TWD NT$990」這種重複標示。",
+        "evidence": "註解寫明是要「disambiguate the dollar symbol」，代表 formatCurrency 原本就會輸出 $ 符號，前綴加上去之後符號並沒有被移除。",
+        "impact": "價格顯示多出一個貨幣符號，視覺上冗餘，螢幕報讀器會念成「TWD dollar 990」，而且跟帳單頁其他沒加前綴的金額不一致，可能讓商家搞不清楚幣別。",
+        "recommended_fix": "改用 Intl.NumberFormat 的 currencyDisplay: \"code\"（輸出例如 TWD 990），或在 formatCurrency 增加選項輸出不含符號的數字再加上 TWD，並保持現有的四捨五入規則。",
+        "required_test": "單元測試鎖定 formatPlanCurrency(99000) 的精確輸出字串（不含重複的貨幣符號），並在 18 項 billing 測試中加入對方案頁實際渲染文字的斷言。",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/actions/sales-workspace-actions.ts",
+        "area": "@@ 33/79/100/163 及 registration-actions.ts @@ 45",
+        "issue": "新偏好預設值 taskPanelCollapsed: true 在 5 個 create 路徑分別寫死，資料庫 schema 預設值（推測仍是 false）沒有同步。",
+        "evidence": "每個 upsert/create 都手動加上 taskPanelCollapsed: true；diff 中沒有修改 schema 或抽出共用常數。",
+        "impact": "將來新增的 create 路徑、seed 或測試工廠很容易漏掉這個欄位，就會產生預設 false 的新偏好，與規格不一致。",
+        "recommended_fix": "抽出共用常數或 helper（例如 defaultOnboardingPreferenceCreate）。schema 預設值是否改成 true 請另外提出範圍提案（本任務限定只改主要寫入點）。",
+        "required_test": "偏好測試新增一項：列舉所有 userOnboardingPreference create/upsert 路徑，確認新建時 taskPanelCollapsed 都是 true，而且既有的 false 不會被覆蓋。",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "reviewed": true,
+  "completed": false,
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  }
+}

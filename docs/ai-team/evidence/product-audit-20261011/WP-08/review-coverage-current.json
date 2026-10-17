@@ -1,0 +1,210 @@
+{
+  "revision": "sha256:4ec2f4aeba9747f45ace9f63008ea4d931158ad3a6e1590ab01a157087c79b7b",
+  "files": [
+    {
+      "file": "src/app/(app)/affiliates/commissions/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/affiliates/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/billing/course-payouts/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/billing/payment-methods/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/blacklists/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/consultations/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-loading.test.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-loading.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis-loading.test.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis-loading.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/app/(app)/dashboard/loading.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/forms/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/interaction-scripts/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/landing-pages/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/lives/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/messages/deliveries/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/onboarding/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/orders/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/products/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/settings/automations/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/settings/features/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/settings/security/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/settings/team/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/settings/tracking/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/support-cases/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/team-templates/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/app/(app)/videos/page.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/components/__snapshots__/app-shell.test.ts.snap",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/app-shell.test.ts",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/app-shell.tsx",
+      "coverage": "navigation excerpt review; omissions require explicit followup"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap",
+      "coverage": "helper followup reviewed"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-display-labels.test.ts",
+      "coverage": "helper followup reviewed"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-display-labels.ts",
+      "coverage": "helper followup reviewed"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+      "coverage": "full source and repair reviewed"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-list.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.test.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "coverage": "report excerpt review running; other sections pending"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-page-editor.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-popup-preview.test.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-popup-preview.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-template-gallery-picker.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/landing-pages/workspace-editor.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/components/team-performance-dashboard.tsx",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    },
+    {
+      "file": "src/lib/funnel-block-library.ts",
+      "coverage": "requires final coverage audit; prior batch1 review available"
+    }
+  ],
+  "note": "Coverage inventory, not an acceptance receipt. Pending does not imply code defect."
+}

@@ -1,0 +1,59 @@
+{
+  "revision": "sha256:f232a4fdee800192ab45c3f865947b309759a4f777bec62f48fa4bf8c4965ef5",
+  "requirements": [
+    {
+      "requirement": "Chinese visible workspace/dashboard terminology",
+      "evidence": [
+        "funnel-display-labels.ts",
+        "visible-remaining-batch3.json",
+        "report-terms-summary.json"
+      ],
+      "status": "IMPLEMENTED; final dynamic inventory consolidation pending"
+    },
+    {
+      "requirement": "Navigation labels match destination titles",
+      "evidence": [
+        "src/components/app-shell.test.ts",
+        "checks-report-terms/targeted.json"
+      ],
+      "status": "PASS_TESTED owner nav; other roles covered by separate existing access assertions"
+    },
+    {
+      "requirement": "Preserve data/API identifiers",
+      "evidence": [
+        "funnel-display-labels.test.ts",
+        "component-browser-result.json",
+        "reports-safe-reviewed.json"
+      ],
+      "status": "PASS_SCOPED; final integration review pending"
+    },
+    {
+      "requirement": "Terminology snapshot",
+      "evidence": [
+        "checks-report-terms/terminology-snapshot.json"
+      ],
+      "status": "PASS"
+    },
+    {
+      "requirement": "Accessibility",
+      "evidence": [
+        "checks-report-terms/a11y.json"
+      ],
+      "status": "PASS52 component states only; not full-app E2E"
+    },
+    {
+      "requirement": "Independent review",
+      "evidence": [
+        "option-collision-reviewed.json",
+        "stale-target-reviewed.json",
+        "reports-safe-reviewed.json"
+      ],
+      "status": "PARTIAL; editor integration running and aggregate coverage pending"
+    },
+    {
+      "requirement": "Canonical acceptance gate",
+      "evidence": [],
+      "status": "NOT_RUN"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "lint",
+  "revision": "sha256:b6b968942d23d310ddcd14d0b21421be37451080f4c5da545cce8fd2c7c15358",
+  "status": "PASS",
+  "exit_code": 0,
+  "details": "Scoped ESLint completed successfully for changed source, test, and browser-check files"
+}

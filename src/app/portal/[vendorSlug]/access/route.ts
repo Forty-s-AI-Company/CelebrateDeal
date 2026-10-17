@@ -1,33 +1,49 @@
 import { NextResponse } from "next/server";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
-import {
-  consumeStudentPortalAccessToken,
-  setStudentPortalSessionCookie,
-  verifyStudentPortalAccessToken,
-} from "@/lib/student-portal-auth";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { capabilityConfirmation, clearCapabilityConfirmation, isCapabilityConfirmationOrigin, readCapabilityConfirmation } from "@/lib/capability-confirmation";
+import { consumeStudentPortalAccessToken, setStudentPortalSessionCookie, verifyStudentPortalAccessToken } from "@/lib/student-portal-auth";
 
-export async function GET(request: Request, { params }: { params: Promise<{ vendorSlug: string }> }) {
-  const { vendorSlug } = await params;
+type Context = { params: Promise<{ vendorSlug: string }> };
+const purpose = "magic_link" as const;
+const accessPath = (slug: string) => `/portal/${encodeURIComponent(slug)}/access`;
+function redirectPrivate(path: string) {
+  return NextResponse.redirect(new URL(path, getCanonicalAppUrl()), { status: 303, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+}
+async function eligible(capability: string, vendorSlug: string) {
+  const verified = verifyStudentPortalAccessToken({ token: capability, expectedPurpose: purpose });
+  if (!verified) return null;
+  return getDb().vendor.findFirst({ where: { id: verified.vendorId, slug: vendorSlug }, select: { id: true, name: true } });
+}
+function validPurpose(request: Request) {
   const url = new URL(request.url);
-  const token = url.searchParams.get("token") ?? "";
-  // Only mailbox-delivered capabilities may create an account-wide session.
-  const purpose = "magic_link" as const;
-  const redirectPrivate = (path: string) => {
-    const response = NextResponse.redirect(new URL(path, getCanonicalAppUrl()), 303);
-    response.headers.set("Cache-Control", "private, no-store");
-    response.headers.set("Referrer-Policy", "no-referrer");
-    return response;
-  };
-  if (url.searchParams.has("purpose") && url.searchParams.get("purpose") !== "magic_link") {
-    return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`);
-  }
-  const verified = verifyStudentPortalAccessToken({ token, expectedPurpose: purpose });
-  if (!verified) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`);
-  const vendor = await getDb().vendor.findFirst({ where: { id: verified.vendorId, slug: vendorSlug }, select: { id: true } });
-  if (!vendor) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=unauthorized`);
-  const claim = await consumeStudentPortalAccessToken(getDb(), { token, expectedPurpose: purpose });
-  if (!claim) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`);
+  return !url.searchParams.has("purpose") || url.searchParams.get("purpose") === purpose;
+}
+
+/** 郵件掃描或預覽只能看到確認頁，不消耗一次性連結。 */
+export async function GET(request: Request, { params }: Context) {
+  const limited = await checkRateLimit(request, "student-portal-access-preview", 60, 60_000);
+  if (limited) return limited;
+  const { vendorSlug } = await params;
+  const capability = new URL(request.url).searchParams.get("token") ?? "";
+  const vendor = validPurpose(request) ? await eligible(capability, vendorSlug) : null;
+  if (!vendor) return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`);
+  return capabilityConfirmation(accessPath(vendorSlug), capability, vendor.name);
+}
+
+/** 所有狀態寫入留在 POST，租戶核對仍先於原子的單次消耗。 */
+export async function POST(request: Request, { params }: Context) {
+  const limited = await checkRateLimit(request, "student-portal-access-confirm", 30, 60_000);
+  if (limited) return limited;
+  const { vendorSlug } = await params;
+  const path = accessPath(vendorSlug);
+  if (!isCapabilityConfirmationOrigin(request, path)) return NextResponse.json({ error: "confirmation_required" }, { status: 403, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+  const failure = () => clearCapabilityConfirmation(redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}/login?error=invalid_or_expired`), path);
+  const capability = await readCapabilityConfirmation(request, path);
+  if (!capability || !validPurpose(request) || !await eligible(capability, vendorSlug)) return failure();
+  const claim = await consumeStudentPortalAccessToken(getDb(), { token: capability, expectedPurpose: purpose });
+  if (!claim) return failure();
   await setStudentPortalSessionCookie(claim);
-  return redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}`);
+  return clearCapabilityConfirmation(redirectPrivate(`/portal/${encodeURIComponent(vendorSlug)}`), path);
 }

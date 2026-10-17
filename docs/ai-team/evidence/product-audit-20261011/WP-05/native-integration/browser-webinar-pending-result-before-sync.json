@@ -1,0 +1,8 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "cleanup": true,
+  "step": "pending-ui",
+  "stage": "chromium:root",
+  "errorType": "TimeoutError"
+}

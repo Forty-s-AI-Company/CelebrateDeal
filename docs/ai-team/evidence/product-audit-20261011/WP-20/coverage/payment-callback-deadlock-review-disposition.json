@@ -1,0 +1,44 @@
+{
+  "status": "NO_MAJOR_IN_REVIEWED_PATH",
+  "observed_model": "claude-opus-5-5",
+  "previousCallbackMajor": "Reviewer confirms resolved for this signed-POST affiliate path",
+  "severityCounts": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 4,
+    "NIT": 1
+  },
+  "items": [
+    {
+      "index": 1,
+      "severity": "MINOR",
+      "area": "test determinism",
+      "status": "OPEN"
+    },
+    {
+      "index": 2,
+      "severity": "MINOR",
+      "area": "retry exhaustion",
+      "status": "OPEN"
+    },
+    {
+      "index": 3,
+      "severity": "MINOR",
+      "area": "retry scope",
+      "status": "OPEN"
+    },
+    {
+      "index": 4,
+      "severity": "MINOR",
+      "area": "effect cardinality",
+      "status": "OPEN"
+    },
+    {
+      "index": 5,
+      "severity": "NIT",
+      "area": "classifier tests",
+      "status": "DEPENDENCY_ALREADY_TESTED_NOT_REVIEW_CLOSED"
+    }
+  ],
+  "note": "Overall WP remains incomplete; original synchronized20 FAIL7/20"
+}

@@ -1,0 +1,16 @@
+{
+  "main_preview": {
+    "id": "dpl_E9wbsvtxx8ChBjZnUifufjgs93dC",
+    "target": "preview",
+    "readyState": "READY"
+  },
+  "staging_alias": {
+    "id": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+    "target": "preview",
+    "readyState": "READY"
+  },
+  "removed_diagnostic": {
+    "exit": 1,
+    "not_found": false
+  }
+}

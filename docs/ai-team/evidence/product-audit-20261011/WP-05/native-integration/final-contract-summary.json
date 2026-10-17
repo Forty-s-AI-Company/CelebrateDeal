@@ -1,0 +1,65 @@
+{
+  "scope": "WP05 explicit JS success contract and native webinar pending lock",
+  "status": "VALIDATED_SCOPED_CHANGES_WHOLE_WP_GATE_PENDING",
+  "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+  "review_count_policy": "User authorizes unlimited review iterations in this conversation; no review-count approval blocker. Unchanged failed roots require diagnosis or fallback, not blind retries.",
+  "product_files": [
+    "src/lib/registration-submission-client.ts",
+    "src/lib/registration-submission-client.test.ts",
+    "src/components/landing-pages/funnel-webinar-experience.tsx"
+  ],
+  "source_hashes": {
+    "src/lib/registration-submission-client.ts": "90bda0e6f84987e4a656511695a9852a1abfb4cfec6fca52b5f3c25960cd3a7c",
+    "src/lib/registration-submission-client.test.ts": "4d611510285dfcd12751689d9eda972206e7ab0565a281a612e38eb1dd1c7b09",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "86c2857458ea4f43cc0551629cbd4b3c3dd0a899f73c05f11e8fc83d33c1052b"
+  },
+  "validation": {
+    "unit": 215,
+    "postgresql": 7,
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "submission_invariant": "PASS",
+    "browser_webinar_pending": {
+      "status": "PASS",
+      "cases": 4,
+      "report": "browser-webinar-pending-result.json",
+      "execution": "run_check PASS; checks-final-contract/webinar-pending.json",
+      "source_note": "Matches final snapshot; 1 POST after error303, 2 total after later intentional success."
+    },
+    "browser_regressions": [
+      "checks-final-contract/browser-ui-feedback.json",
+      "checks-final-contract/browser-lp-js.json",
+      "checks-final-contract/browser-webinar.json"
+    ]
+  },
+  "initial_failures": [
+    "Pending-lock initial TimeoutError before hydration guard. Hydration guard and flushSync alone did not eliminate timeout.",
+    "Playwright locator evaluation waits on in-progress native navigation; preinstalled event observer avoids that wait.",
+    "Nested requestSubmit in original submit dispatch is browser-suppressed. Next-task requestSubmit invokes handler; prevented event and one POST verified."
+  ],
+  "remaining": [
+    "Manual native navigation cancellation may retain pending until reload (accepted non-blocking MINOR; cancellation recovery not browser-tested).",
+    "Whole WP05 consolidated acceptance gate remains pending; WP08 stays locked."
+  ],
+  "safety": {
+    "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "base": "efb8b7e9a737ea30ea691870318d85bf74830331",
+    "original_worktree_modified": false,
+    "push": false,
+    "deployment": false,
+    "data": "fixed local disposable PostgreSQL and synthetic fixtures only"
+  },
+  "review": {
+    "provider": "claude_cli",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "blocker": 0,
+    "major": 0,
+    "minor": "Native manual cancellation remains documented/accepted; no auto-unlock timer.",
+    "nit": "Opaque redirect unit test and post-navigation request count assertions added; affected checks PASS.",
+    "evidence": [
+      "final-contract-reviewed.json",
+      "final-contract-followup-reviewed.json"
+    ]
+  }
+}

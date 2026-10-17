@@ -1,0 +1,20 @@
+{
+  "scope": "LOCAL_INACTIVE_NATIVE_MODE_ONLY",
+  "status": "READY",
+  "revision": "sha256:9f742df82910060b7a4eebeb89003de388105d583cdb38455e25907ee64b88c9",
+  "tests": 107,
+  "lint": "PASS",
+  "typecheck": "PASS",
+  "review": "NO_BLOCKER_MAJOR_MINOR_ONE_NIT",
+  "remote_enabled": false,
+  "remote_second_egress": "NOT_VERIFIED",
+  "live_shared_limiter": "NOT_VERIFIED",
+  "deployment_changed": false,
+  "production_changed": false,
+  "changed_files": [
+    "src/lib/trusted-entry-rate-limit.ts",
+    "src/lib/trusted-entry-rate-limit.native.test.ts",
+    "src/lib/trusted-entry-rate-limit.native-provider.test.ts"
+  ],
+  "next": "Bounded disposable Vercel Sandbox second egress and isolated durable limiter validation; no additional user permission needed"
+}

@@ -1,0 +1,32 @@
+{
+  "files": [
+    "src/app/(app)/messages/templates/page.tsx",
+    "src/app/(app)/messages/templates/new/page.tsx",
+    "src/app/(app)/messages/templates/[id]/edit/page.tsx",
+    "docs/launch/wp19-notification-channels-20261016.md",
+    "src/app/(app)/messages/templates/page.test.tsx",
+    "tests/e2e/wp14-ab-readout.spec.ts",
+    ".ai-team/reports/wp14-ab-browser-check.mjs",
+    ".ai-team/reports/wp14-ab-build-check.mjs"
+  ],
+  "affected_dependencies": [
+    "src/lib/message-template.ts",
+    "src/components/message-template-form-client.tsx",
+    "src/lib/funnel-operations-service.ts",
+    "src/components/landing-pages/funnel-experiment-report.tsx"
+  ],
+  "sourceHashes": {
+    "src/app/(app)/messages/templates/page.tsx": "ba5326c71391bebe97cb10b0a6f92bcb671e1b0ac4ac3cf1d4ecc5b9073746e9",
+    "src/app/(app)/messages/templates/new/page.tsx": "cc886d38d8388cd51a58cf77df4925371ac29bbb0dda5f54d51739bf3b3f9212",
+    "src/app/(app)/messages/templates/[id]/edit/page.tsx": "e9d92218884487ad1b044f0702bd02d64dae1bf971628c1b3d85917f4f725c3b",
+    "docs/launch/wp19-notification-channels-20261016.md": "8d0670aca77bb9899ac79497153e024bab3b6480f5988b127e179ad966b7ea9f",
+    "src/app/(app)/messages/templates/page.test.tsx": "552d7319425383721d045cee3bf612d42004212809ecff52f484c52acd112bcf",
+    "tests/e2e/wp14-ab-readout.spec.ts": "8e8db34e896815ab2b37f583e362cf158a2d80469bc9b9243bb9cdea8109472f",
+    ".ai-team/reports/wp14-ab-browser-check.mjs": "9c3b3669f7e30730e7712335e90a61f4ff66ef6e3bfd9bded0142f3c2a84e74f",
+    ".ai-team/reports/wp14-ab-build-check.mjs": "0bb030b9d1de1a195cb77e5fd9ee954012f982a844e5d9a430159bc0fab09d2c",
+    "src/lib/message-template.ts": "259f55586012e3d01852fbcf254b04a76955fa8af6d7c815e375d6c932e45aeb",
+    "src/components/message-template-form-client.tsx": "e76d43ad74825de23a18ad015ada45af8de17a99079f075ca838dbeb63bf8ef4",
+    "src/lib/funnel-operations-service.ts": "3cfa45d7e23ab9b016956468f3e3721121a95d2bd28675fdcb615af1f7fe7630",
+    "src/components/landing-pages/funnel-experiment-report.tsx": "8e4a04a59987da312395149ba60a5841b2894c83a3b061512d351887bec391ec"
+  }
+}

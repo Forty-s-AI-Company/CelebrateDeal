@@ -1,0 +1,13 @@
+{
+  "status": "FAIL",
+  "stage": "source-invalidation-matrix",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "errorCode": "P2010"
+}

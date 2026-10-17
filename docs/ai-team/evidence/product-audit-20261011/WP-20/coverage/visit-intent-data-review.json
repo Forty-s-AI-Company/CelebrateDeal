@@ -1,0 +1,195 @@
+{
+  "review": {
+    "summary": "I reviewed only the three supplied files: the migration, the intent helper and the collection composition. I did not run any tests or look at the omitted helpers, the HTTP routes, the visit schema or deployed state. The migration's immutability, lock order, check that the transaction is read committed, server timestamp overwrite, foreign key and cascade semantics, and ACL fail-closed checks look consistent with the stated design. The public collect path checks for the same-scope visitor/event intent before the visit is recorded, inside the same transaction. I found three issues. The most important is a MAJOR one that depends on code I couldn't see: the intent check lowercases the eventId, but the raw eventId is passed to recordMetricVisit. If that helper or the visit table doesn't normalise case too, one intent could allow two counted visits. The other two are MINOR: the public prepare function silently falls back to the uncovered legacy path when no event is given, and a malformed eventId at prepare escapes the sanitised error handling. An empty or short findings list does not certify the full work package (WP20), the omitted helpers, or release readiness.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-metric-visit-collection.ts",
+        "area": "Event schema (line ~11) and collectMetricVisit requireMetricVisitIntent/recordMetricVisit calls",
+        "issue": "Two different forms of the eventId are used. The intent check lowercases it, but the visit is recorded with the raw value. Because of this, the same intent can match uppercase and lowercase spellings of one event.",
+        "evidence": "The collection Event schema is z.string().uuid() with no transform, and Zod's uuid check accepts uppercase. requireMetricVisitIntent re-parses the value through Input, whose eventId transform lowercases it, so 'ABC…' and 'abc…' both find the single lowercase intent row. recordMetricVisit(bound, …, request.data) is then given the original, un-normalised eventId. If the omitted recordMetricVisit or the visit table removes duplicates by eventId case-sensitively and has no lowercase CHECK, both spellings are recorded as separate visits under one intent.",
+        "impact": "A client or replayer could double-count one logical visit by changing the eventId's case. That breaks the stated rule of one intent for at most one counted visit. How serious this is depends on the omitted record helper or visit schema, which I could not see.",
+        "recommended_fix": "Lowercase the eventId once in the collection Event schema with .transform(v => v.toLowerCase()), or reject non-lowercase values with a regex. Pass that same normalised value to prepareMetricVisitIntent, requireMetricVisitIntent and recordMetricVisit. Optionally add a lowercase CHECK on the visit table's eventId to match the intent table.",
+        "required_test": "On a disposable DB, prepare with a lowercase eventId, then collect it as lowercase and again with the same UUID in uppercase (and mixed case) using the same proof. Assert exactly 1 visit row and that the second collect returns the existing receipt.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-collection.ts",
+        "area": "prepareMetricVisit: `event === undefined ? null : Event.parse(event)`",
+        "issue": "The new eventId-required protocol and the internal legacy prepare share one exported function. If no event is passed, it silently takes the legacy path, which records no intent.",
+        "evidence": "When event is undefined, request is null and prepareMetricVisitIntent is skipped. collect has a public wrapper, collectPreparedMetricVisit, that forces requirePreparation=true, but prepare has no matching public wrapper that requires an event. An HTTP route passing body.eventId from a body without that field would therefore get a 200 response with no intent. I don't have the route, so I can't confirm whether it guards this.",
+        "impact": "A route bug, or a client that leaves out the eventId, would get a successful prepare. Its later collect would then fail with 503 because no intent exists. The prepare itself would not show that the browser wasn't covered by the protocol. This does not cause double counting, but it hides an unprotected path behind the public boundary.",
+        "recommended_fix": "Add an exported preparePreparedMetricVisit (or similarly named public prepare) that requires a non-undefined event and calls the shared function with it. Restrict the event-optional variant to explicit internal or legacy callers.",
+        "required_test": "Unit test: calling the public prepare entry without an eventId is rejected (SCOPE_UNAVAILABLE) and creates no visitor or intent rows. The route test sends a body without eventId and gets a 4xx.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-collection.ts",
+        "area": "prepareMetricVisit: Event.parse called before the try/catch",
+        "issue": "A malformed eventId at prepare throws a raw ZodError instead of a sanitised MetricVisitorError. The collect path, by contrast, maps the same failure to SCOPE_UNAVAILABLE.",
+        "evidence": "In prepare, `const request = event === undefined ? null : Event.parse(event);` sits outside the try. In collect, the same check uses Event.safeParse and throws MetricVisitorError('SCOPE_UNAVAILABLE').",
+        "impact": "The HTTP boundary's error mapping could turn this into a 500 response, or log or expose Zod issue details, including the rejected input. This would bypass the sanitised error contract for the new protocol.",
+        "recommended_fix": "Use Event.safeParse and throw MetricVisitorError('SCOPE_UNAVAILABLE') on failure, matching collectMetricVisit.",
+        "required_test": "Unit test: prepareMetricVisit with eventId 'not-a-uuid', with null, and with extra keys rejects with MetricVisitorError SCOPE_UNAVAILABLE, and no transaction is opened.",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "completed": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "finalModel": "claude-opus-5-5",
+  "normalized_status": "REVIEW_COMPLETED"
+}

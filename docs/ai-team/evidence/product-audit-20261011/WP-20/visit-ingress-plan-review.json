@@ -1,0 +1,226 @@
+{
+  "claude_cli_discovery_status": "SUCCESS",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "completed": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "reviewed": true,
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "attempts": [
+    {
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "review": {
+    "summary": "I reviewed only the supplied design text. I did not read any files or run any tests. The two-file scope works for a reader that only reports status and never certifies coverage, with one condition: per-frame playback intake matching needs an intake-to-frame binding that the design doesn't establish. If that binding isn't there, keep the scope as it is and downgrade playback frames to unknown. Do not add a migration. I found 3 MAJOR and 3 MINOR issues. None is a BLOCKER.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "confidence": 0.75,
+        "file": "src/lib/live-metric-visit-reconciliation.ts",
+        "area": "readSources playback intake classification",
+        "issue": "An intake count total can't show which successful playback frame is missing its intake.",
+        "evidence": "The design allows an intake count aggregate. It also asks for per-frame classification of a successful frame with no expected intake, plus detection of duplicate and mismatched sources. Only pages are said to carry a nullable ingressFrameId. Intakes have no stated frame binding.",
+        "impact": "Two errors can cancel out in the totals: a missing intake for one frame and an extra or legacy intake for another. Playback could then look reconciled, or be blamed on the wrong frame. This is the 'two files insufficient' case the task says to flag.",
+        "recommended_fix": "If intakes already have a frame binding, use it for per-frame matching. If they don't, mark playback frames as aggregate-only or unknown and never treat them as matched. Do not add a migration or widen the scope.",
+        "required_test": "Use 2 successful playback frames, 1 intake missing for one frame, and 1 unbound extra intake. The reader must not report playback as matched for either frame."
+      },
+      {
+        "severity": "MAJOR",
+        "confidence": 0.65,
+        "file": "src/lib/live-metric-visit-reconciliation.ts",
+        "area": "ingress run lookup",
+        "issue": "The phrase 'query existing single LiveMetricIngressRun' could be built with LIMIT 1 or findFirst. That would silently pick one run when several match.",
+        "evidence": "The design doesn't say what happens when zero runs or more than one run match the same vendor/live/version.",
+        "impact": "The reader could pick the wrong run and seal, then compare frames and pages against the wrong counts and give a misleading classification.",
+        "recommended_fix": "Fetch with a limit of 2. Treat 0 rows as missing and more than 1 as ambiguous, and never certify in either case.",
+        "required_test": "Feed 2 runs with the same scope. The result must be ambiguous/incomplete and the reader must not pick either run."
+      },
+      {
+        "severity": "MAJOR",
+        "confidence": 0.7,
+        "file": "src/lib/live-metric-visit-reconciliation.ts",
+        "area": "frame/page enumeration limits",
+        "issue": "The design doesn't say that getting 10001 rows back means the set is truncated. It also doesn't say whether the pages query uses the same limit.",
+        "evidence": "Frames are fetched with limit10001. The rule that 'incomplete source sets never certify' isn't tied to hitting that limit, and the pages query limit isn't stated.",
+        "impact": "With a truncated frame or page set, real pages look orphaned or real frames look like they're missing pages. That produces false mismatch counts that a later producer might trust.",
+        "recommended_fix": "If either query returns more than 10000 rows, mark the source set truncated/incomplete and skip per-frame classification. Apply the same limit and overflow rule to the pages query.",
+        "required_test": "Mock 10001 frames, and separately 10001 pages. Each case must return truncated/incomplete, not mismatch counts."
+      },
+      {
+        "severity": "MINOR",
+        "confidence": 0.6,
+        "file": "src/lib/live-metric-visit-reconciliation.ts",
+        "area": "seal join validation",
+        "issue": "The LEFT JOIN to the seal doesn't check that the seal belongs to this run's vendor/live/version, or that the sealed time comes after the last frame.",
+        "evidence": "The design checks chronology in general but doesn't list a seal-binding check or a seal-after-frames check.",
+        "impact": "A seal attached to the wrong run, or written too early, could be treated as authoritative.",
+        "recommended_fix": "Check that the seal's binding fields match the run and that the sealed time is at or after the newest frame. Otherwise classify as mismatched/incomplete.",
+        "required_test": "Add fixtures for a seal with a mismatched binding and a seal timestamp earlier than the last frame. Both must be non-certifying."
+      },
+      {
+        "severity": "MINOR",
+        "confidence": 0.55,
+        "file": "src/lib/live-metric-visit-reconciliation.ts",
+        "area": "route-kind mapping",
+        "issue": "The design doesn't say how frames with an unknown or new route value are handled.",
+        "evidence": "Only form, landing, landing_step, viewer and playback are mapped to expected source kinds.",
+        "impact": "Frames with unmapped routes could be skipped silently, so the counts would look complete when they aren't.",
+        "recommended_fix": "Treat route as a closed set. Any other value becomes wrong-kind/unknown and counts against completeness.",
+        "required_test": "A successful frame with an unknown route must make the result non-certifying and appear in the summary."
+      },
+      {
+        "severity": "MINOR",
+        "confidence": 0.5,
+        "file": "src/lib/live-metric-visit-reconciliation.ts",
+        "area": "sourceDigest and snapshot isolation",
+        "issue": "Adding frame and seal inputs changes existing sourceDigest values. Also, unit tests with mocks can't show that all queries, including the intake count, run in the same REPEATABLE READ transaction.",
+        "evidence": "The design binds frame/seal inputs into the existing sourceDigest and relies only on the existing targeted unit tests.",
+        "impact": "Any consumer that compares digests could see silent drift. If one query runs outside the transaction, its snapshot won't match the others.",
+        "recommended_fix": "Version the digest input or document the change. Run every new query through the same transaction client already used by readSources. Hash any IDs before putting them in the digest so raw IDs never appear in output.",
+        "required_test": "Check that every query, including the intake count, uses the transaction client. Check that the output has no raw IDs, paths or headers. Check that the digest changes when any frame or seal field changes."
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 5000,
+      "expected_duration": 0,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "finalModel": "claude-opus-5-5"
+}

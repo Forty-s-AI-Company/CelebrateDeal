@@ -1,0 +1,39 @@
+{
+  "status": "IN_PROGRESS",
+  "authorization": "AUTHORIZED_NONPRODUCTION_FULL_M1_M2",
+  "scope": "Pure five-metric read model and playback/temporal evidence helpers",
+  "revision": "sha256:d05bafe6befcff276e64a06398fc151008a870916c52e853b1100e2ac63b2226",
+  "acceptance": {
+    "status": "BLOCKED",
+    "blockers": [
+      "finding_unresolved"
+    ],
+    "revision": "sha256:d05bafe6befcff276e64a06398fc151008a870916c52e853b1100e2ac63b2226"
+  },
+  "tests": {
+    "numTotalTests": 112,
+    "numPassedTests": 112,
+    "numFailedTests": 0,
+    "numPendingTests": 0
+  },
+  "checks": {
+    "targeted": "PASS",
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "performance": "PASS"
+  },
+  "review_open": {
+    "MAJOR": 1,
+    "MINOR": 2
+  },
+  "remaining": [
+    "Resolve aggregate CPU cost with bounded/background materialized calculation; no synchronous request path currently calls these new modules",
+    "M2 identity/content version/first-party visitor records, additive persistence and verified bounded API ingestion",
+    "Playback wiring, reporting adapter/UI, disposable DB/browser tests and scoped deep review for Auth/Permission/Migration"
+  ],
+  "whole_wp_complete": false,
+  "global_lint": "Prior FAIL remains; not rerun or waived",
+  "remote_ci": "NOT_RUN",
+  "production": "NOT_AUTHORIZED",
+  "environment_authorization_blocker": false
+}

@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "attempt": 0,
+      "modulesPreserved": true,
+      "singleConsultationModule": true,
+      "sidebarEntry": true,
+      "consultationHttpStatus": 200
+    },
+    {
+      "attempt": 1,
+      "modulesPreserved": true,
+      "singleConsultationModule": true,
+      "sidebarEntry": true,
+      "consultationHttpStatus": 200
+    }
+  ],
+  "restored": true,
+  "stage": "consultation-response"
+}

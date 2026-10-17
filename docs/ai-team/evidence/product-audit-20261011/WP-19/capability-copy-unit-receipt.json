@@ -1,0 +1,9 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "capability-copy-unit",
+  "revision": "sha256:1d0210443a26e42be9b81339142d86d657de521b4ac710e434cb77e070a2c1a1",
+  "status": "PASS",
+  "exit_code": 0,
+  "source_receipt": "capability-copy-unit.json"
+}

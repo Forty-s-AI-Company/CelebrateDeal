@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "validate": "PASS",
+  "diff": "PASS",
+  "cleanup": "PASS",
+  "database_connection": "NONE"
+}

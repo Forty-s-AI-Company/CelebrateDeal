@@ -1,0 +1,25 @@
+{
+  "original_blacklist_race": {
+    "disposition": "resolved",
+    "evidence": "repeat authorization after all locks; real two-connection blacklist commit rejects with zero rows; current HTTP test maps rejection to 403"
+  },
+  "current_review_findings": [
+    {
+      "index": 0,
+      "disposition": "rejected_with_reason",
+      "reason": "resolveVerifiedPrivateChatViewer calls read-only helpers and can throw access_denied, blocked, keyword_blocked only. transaction_conflict belongs to unrelated chat write functions; generic DB exceptions fall through route 500."
+    },
+    {
+      "index": 1,
+      "disposition": "rejected_with_reason",
+      "reason": "Inspected full canonical helper chain: hasActiveLiveViewerSession findUnique; verified submission findFirst; blacklist findMany. No writes, explicit locks or advisory locks. Revalidation does not introduce lock-order acquisition."
+    },
+    {
+      "index": 2,
+      "disposition": "rejected_with_reason",
+      "reason": "Actual schema intentionally mixes legacy timestamp-without-time-zone admission/verifiedAt with metric timestamptz(3). Conversion to UTC is required only for legacy columns; homogenizing comparisons would be incorrect. Existing persistence tests exercise UTC and Asia/Taipei."
+    }
+  ],
+  "review_observed_model": "claude-opus-5-5",
+  "acceptance": "NOT_READY; full WP integration remains"
+}

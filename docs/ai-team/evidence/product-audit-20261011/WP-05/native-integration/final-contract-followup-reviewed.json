@@ -1,0 +1,172 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "attempts": [
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false,
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "finalModel": "claude-opus-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR issues in this follow-up, and no new production regression, since the production code is unchanged. The new opaque-redirect unit test is correct: a status-0 response with type opaqueredirect has ok=false, so it is returned unchanged and gets the neutral \"內容仍保留\" message with no \"網路\" text. It shows that status 0 is not treated as a network failure. It goes through the same ok=false branch as the 4xx responses, which is acceptable. The browser harness's duplicate-submit check is sound. React's handler runs before the document-level submit listener, so flushSync has already applied the pending state when the observer runs. The deferred requestSubmit runs in a later task, while the gated POST keeps the document alive. The duplicate listener on the form queues a microtask, and because requestSubmit is called from script, that microtask only runs after the whole dispatch, including React's preventDefault. That makes defaultPrevented a real signal. The record microtask is queued afterwards, so it sees the final value. requestSubmit() without a submitter also bypasses the disabled button, so it really tests the inFlight ref guard rather than just the disabled attribute. The disposition of the cancellation MINOR is reasonable. Don't unlock the form on a timer, because the original POST may already have succeeded. The server's 303 redirect and the pageshow handler cover the normal navigation outcomes, and a reload recovers from a manual cancel. It stays open as an accepted, documented, non-blocking risk. Two small items remain (below). This does not certify release readiness or acceptance of the whole work package (WP).",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+        "area": "WebinarRegistrationForm onSubmit / pageshow reset",
+        "issue": "Still open and accepted: if the user presses native Stop or Esc during the POST, the form stays pending (button disabled, 請勿重複操作 message) until the page is reloaded.",
+        "evidence": "inFlight and pending are only reset on pageshow. Cancelling a navigation fires no pageshow and no response comes back, so nothing resets them.",
+        "impact": "A user who cancels has to reload to retry. Their input is not lost, and a duplicate submission is avoided. Unlocking on a timer would add duplicate-registration risk, so the documented trade-off is reasonable.",
+        "recommended_fix": "No change needed for this task. Keep it documented. If it is revisited later, consider a passive hint after a long wait (for example, suggest reloading) rather than unlocking the form automatically.",
+        "required_test": "None for this task. If it changes later, add a browser test that aborts the gated POST and checks the guidance shown.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "NIT",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-05/native-integration/browser-webinar-pending.cjs",
+        "area": "pending-ui assertions: postCount check",
+        "issue": "assert.equal(postCount,1) runs right after the in-page observation, before the gate is released. It is never checked again after the 303 retry navigation finishes.",
+        "evidence": "A second request would reach the context.route handler asynchronously, so it could arrive after this assertion. The success step later adds more POSTs without separating them from the error-path count.",
+        "impact": "Very low. duplicatePrevented already proves the second submit was cancelled. The request-count evidence is just weaker than it is described.",
+        "recommended_fix": "After waitForURL('**registrationRetry=400') succeeds, check postCount===1 again before starting the success step. Optionally clear the 20s race timers so the process exits promptly.",
+        "required_test": "Re-run the Chromium and Firefox root/step matrix and confirm that postCount is 1 after the retry redirect and 2 after the success submit.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "claude_cli_discovery_status": "SUCCESS"
+}

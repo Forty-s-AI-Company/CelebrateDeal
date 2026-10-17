@@ -1,0 +1,1 @@
+{"writer": "root", "files": ["src/lib/live-metric-report-reader.ts", "src/lib/live-metric-report-snapshot.ts", "src/lib/live-metric-report-snapshot.test.ts", "scripts/wp20-metric-persistence-disposable.mjs"], "depth": 0, "automatic_spawn": false}

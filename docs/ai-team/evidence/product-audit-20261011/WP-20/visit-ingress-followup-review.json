@@ -1,0 +1,170 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "accepted": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "review": {
+    "summary": "Follow-up review of the supplied changes only: the no-run orphan branch, the registration overlap classifier, the playback expectation change and the new tests. All four MINOR fixes and the NIT fix are in place and I found no BLOCKER or MAJOR issues. (1) With no run, every frame-bound page counts as an orphan and sets hasGap. (2) The overlap check (admittedAt < endAt AND settledAt??clockAt >= startAt) correctly catches registration requests admitted before the window that can still lose an in-window source, and correctly excludes requests that ended before the window, which the new tests cover. (3) Viewer/playback pending, failed, interrupted or missing frames still increment the counters but no longer set the registration visit gap, and the open-run unknown_history test can tell the two outcomes apart. (4) The wrong-kind check stays a global structural check outside the classifier. I accept the countermax rebuttal: values over 10k break the existing migration129 CHECK, so rejecting them is correct. One MINOR remains: the wrong-kind test doesn't show that wrong-kind alone causes evidence_gap. Caveats: tsc has not been rerun yet, the fixture fix for the real DB check is described but its code isn't shown, the mapping from status 'available' to sourceIngress.state 'no_run' isn't shown, and full five-metric readiness stays NOT_READY. An empty or minor-only findings list doesn't certify tests or release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "reconcileMetricVisitSources test file (existing test file in the supplied scope; name not provided)",
+        "area": "New test 'reports wrong-kind bindings as structural contradictions outside the report window'",
+        "issue": "This test asserts evidence_gap and wrongKindSources:1, but unlike the isolated orphan test it doesn't assert that the other gap causes are absent (sealCountMismatch:false, orphanSources:0, missingSources:0). It uses the base sealed `run` fixture as-is, so the frame/page/playback seal counts may not match this one-frame, one-viewer-page dataset. If they don't, evidence_gap could come from a seal-count mismatch instead of the global wrong-kind check.",
+        "evidence": "database([wrong],[],[],context,[run],[outside]) with an unmodified `run` (counts not set for this dataset). The expectation lists only coverage.reason and wrongKindSources. In contrast, the orphan test sets pageCount:0 and checks missingSources:0 and sealCountMismatch:false.",
+        "impact": "The test may pass even if the wrong-kind check were removed from the global gap calculation, so the NIT/MINOR fix 'wrong kind remains global structural check' isn't proven in isolation.",
+        "recommended_fix": "Set the run seal counts explicitly to match the fixture (for example frameCount:1, pageCount:1, playbackCount:0, sealedAt >= 3600). Then add sealCountMismatch:false, orphanSources:0 and missingSources:0 to the toMatchObject expectation.",
+        "required_test": "Rerun the wrong-kind test with the explicit isolation assertions. Optionally, temporarily disable the wrong-kind contribution to hasGap and confirm the test then fails.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 6000,
+      "expected_duration": 0,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ],
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "completed": false
+}

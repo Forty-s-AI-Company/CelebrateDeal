@@ -1,0 +1,81 @@
+{
+  "status": "CHECKS_PASSED_NOT_ACCEPTED",
+  "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "a11y",
+      "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 54.188
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "dashboard-a11y",
+      "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 28.891
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "first-viewport",
+      "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 17.11
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.594
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "shell-a11y",
+      "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 30.938
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "targeted",
+      "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.859
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.531
+    }
+  ],
+  "targeted_count": 78,
+  "browser_states": 92,
+  "review_lineage": [
+    "initial-reviewed.json",
+    "followup-reviewed.json",
+    "mobile-reviewed.json"
+  ],
+  "remaining": [
+    "switcher interaction and occlusion proof",
+    "final qualified cumulative review",
+    "canonical acceptance"
+  ]
+}

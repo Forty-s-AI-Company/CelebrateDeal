@@ -1,0 +1,18 @@
+[
+  {
+    "path": "src/app/api/checkout/upsell/route.ts",
+    "unchanged": true
+  },
+  {
+    "path": "src/app/api/payments/checkout/route.ts",
+    "unchanged": true
+  },
+  {
+    "path": "src/app/api/payments/checkout/admission/route.ts",
+    "unchanged": true
+  },
+  {
+    "path": "src/app/api/payments/checkout/recovery/route.ts",
+    "unchanged": true
+  }
+]

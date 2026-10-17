@@ -1,0 +1,13 @@
+{
+  "files": {
+    "src/lib/live-metric-report-scheduler.ts": "2b54e338e2cc0600f3180a16be02fed37fcbb36167bf9b128b721c9b8432c5dc",
+    "src/lib/live-metric-report-scheduler.test.ts": "60e9ecd46e1d5f69a4924a6b0d9cb356e28adefcffe7c1ada05df2c818e65535",
+    "scripts/wp20-report-scheduler-disposable.mjs": "3006407caa3a4cf667934056b300d91267fa1dd6b10bc70c65da27f2996b439a"
+  },
+  "reviewScopeFiles": [
+    "src/lib/live-metric-report-scheduler.ts",
+    "src/lib/live-metric-report-scheduler.test.ts",
+    "scripts/wp20-report-scheduler-disposable.mjs"
+  ],
+  "promptCharacters": 18701
+}

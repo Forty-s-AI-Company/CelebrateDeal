@@ -1,0 +1,245 @@
+Read-only independent followup review. No tools or edits. Return findings with severity BLOCKER/MAJOR/MINOR/NIT,file,area,issue,evidence,impact,recommended_fix,required_test,confidence. Snapshot sha256:8f7c141a11e8d71b84802b03b0ae1f9960ec7618cacd458d9ce1ec13ee6c3778. Prior MINOR1 fixed: boundary now after unavailable gate. Prior MINOR2 branch tests added. Prior NIT nonstring answers contradicted by storage Zod string-only schema below; do not expand data contract. Unit/lint PASS; actual DB/browser blocked by Docker Desktop inability to start. Only scoped repairs review, not release certification.
+
+FILE src/components/registration-closed-feedback.tsx
+"use client";
+
+import { useRegistrationRetry } from "@/components/registration-retry-context";
+import { FORM_SUBMISSION_VERIFICATION_MESSAGE } from "@/lib/registration-submission-client";
+
+/** 截止頁只提供原來源綁定的結果及唯讀草稿，不提供任何送出入口。 */
+export function RegistrationClosedFeedback({ formId, fields = [], destination }: {
+  formId?: string;
+  fields?: Array<{ key: string; label: string }>;
+  destination?: string;
+}) {
+  const retry = useRegistrationRetry(formId ?? "");
+  return <main className="mx-auto grid max-w-2xl gap-4 px-6 py-16">
+    <h1 className="text-2xl font-bold">此活動已截止</h1>
+    <p>目前無法再次送出報名。</p>
+    {retry?.submitted ? <p role="status">{FORM_SUBMISSION_VERIFICATION_MESSAGE}</p>
+      : <p role="alert">{retry?.draft ? "先前送出未完成。以下保留當時填寫的內容，僅供查看。" : "無法確認先前的送出結果，也沒有可恢復的填寫內容。若您已報名，請查看確認信。"}</p>}
+    {!retry?.submitted && retry?.draft ? <div className="grid gap-3">
+      {fields.filter((field) => Object.hasOwn(retry.draft!.answers, field.key)).map((field) => <label key={field.key} className="grid gap-1 text-sm">
+        {field.label}<input readOnly value={retry.draft!.answers[field.key]} className="min-h-11 rounded border bg-slate-50 px-3" />
+      </label>)}
+    </div> : null}
+    {destination ? <a href={destination} className="underline">前往活動指定頁面</a> : null}
+  </main>;
+}
+
+FILE src/components/registration-deadline-outcome.tsx
+import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
+import type { FunnelRuntimeDecision } from "@/lib/funnel-runtime";
+import { RegistrationClosedFeedback } from "./registration-closed-feedback";
+import { hasRegistrationFeedbackQuery } from "./registration-retry-boundary";
+
+/** 截止規則先決定可用性；只有結果查詢才留在原來源提供唯讀內容。 */
+export function registrationDeadlineOutcome({ decision, query, form, slug, withRetry }: {
+  decision: FunnelRuntimeDecision;
+  query: { registrationRetry?: string; submitted?: string };
+  form?: { id: string; fields: Array<{ key: string; label: string }> };
+  slug: string;
+  withRetry: (children: ReactNode) => ReactNode;
+}) {
+  if (decision.status !== "closed" && decision.status !== "redirect") return null;
+  const destination = decision.status === "redirect" ? `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(decision.path)}` : undefined;
+  if (hasRegistrationFeedbackQuery(query)) return withRetry(<RegistrationClosedFeedback formId={form?.id} fields={form?.fields} destination={destination} />);
+  if (destination) redirect(destination);
+  return <main className="mx-auto max-w-2xl px-6 py-24 text-center"><h1 className="text-2xl font-black text-slate-950">此活動已截止</h1><p className="mt-3 text-slate-600">目前不再接受新的瀏覽或送出資料。</p></main>;
+}
+
+FILE src/components/registration-deadline-outcome.test.tsx
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, expect, it, vi } from "vitest";
+const redirect = vi.hoisted(() => vi.fn((path: string) => { throw new Error(path); }));
+vi.mock("next/navigation", () => ({ redirect }));
+import { registrationDeadlineOutcome } from "./registration-deadline-outcome";
+afterEach(() => vi.clearAllMocks());
+const withRetry = vi.fn((child) => child);
+it.each([undefined,"500",["429"]])("preserves redirect for unrecognised query %s", (value) => {
+ expect(() => registrationDeadlineOutcome({decision:{status:"redirect",path:"thanks/#"},query:{registrationRetry:value as string},slug:"sample/?",withRetry})).toThrow('/lp/sample%2F%3F/thanks%2F%23');
+ expect(withRetry).not.toHaveBeenCalled();
+});
+it.each(["429","unavailable"])("renders readonly outcome for recognised query %s", (registrationRetry) => {
+ const result=registrationDeadlineOutcome({decision:{status:"redirect",path:"thanks/#"},query:{registrationRetry},slug:"sample/?",withRetry});
+ expect(renderToStaticMarkup(result)).toContain('href="/lp/sample%2F%3F/thanks%2F%23"');expect(redirect).not.toHaveBeenCalled();expect(withRetry).toHaveBeenCalledOnce();
+});
+it("leaves closed and open normal views unchanged", () => {
+ expect(renderToStaticMarkup(registrationDeadlineOutcome({decision:{status:"closed"},query:{},slug:"sample",withRetry}))).toContain("此活動已截止");
+ expect(registrationDeadlineOutcome({decision:{status:"render",requestedStepId:"one",renderedStepId:"one",experiment:null},query:{registrationRetry:"429"},slug:"sample",withRetry})).toBeNull();
+ expect(withRetry).not.toHaveBeenCalled();expect(redirect).not.toHaveBeenCalled();
+});
+
+FILE src/components/registration-retry-boundary.tsx
+import { registrationResultCookieName, verifyRegistrationResult } from "@/lib/registration-submission-receipt";
+import { cookies, headers } from "next/headers";
+import type { ReactNode } from "react";
+import { getDb } from "@/lib/db";
+import { readRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName } from "@/lib/registration-form-retry";
+import { RegistrationRetryProvider } from "@/components/registration-retry-context";
+
+/** 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。 */
+export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted }: {
+  formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string;
+}) {
+  const failed = typeof retry === "string" && ["400", "403", "404", "429", "503", "unavailable"].includes(retry);
+  let draft = null;
+  if (failed && retry !== "unavailable" && formId) {
+    const jar = await cookies();
+    const host = (await headers()).get("host") ?? "";
+    const capability = jar.get(registrationRetryCookieName(registrationRetrySecureCookies(host)))?.value;
+    try { draft = await readRegistrationRetryDraft(getDb(), { capability, formId, sourcePath }); } catch { /* 明示未保留，不送出敏感診斷。 */ }
+  }
+  const verifiedSubmission = await verifiedRegistrationSubmission(formId, sourcePath, submitted);
+  return function RetryBoundary(children: ReactNode) {
+    return <RegistrationRetryProvider value={{ formId, sourcePath, draft, failed, submitted: verifiedSubmission }}>{children}</RegistrationRetryProvider>;
+  };
+}
+
+
+/** 共用驗證，避免個別入口直接信任網址上的成功旗標。 */
+export async function verifiedRegistrationSubmission(formId: string | undefined, sourcePath: string, submitted?: string) {
+  if (submitted !== "verification_required" || !formId) return false;
+  const jar = await cookies();
+  const secure = registrationRetrySecureCookies((await headers()).get("host") ?? "");
+  return verifyRegistrationResult(jar.get(registrationResultCookieName(secure))?.value, formId, sourcePath);
+}
+
+/** 網址只決定是否呈現結果頁；成功與欄位仍須通過原來源綁定驗證。 */
+export function hasRegistrationFeedbackQuery(query: { registrationRetry?: string; submitted?: string }) {
+  return ["400", "403", "404", "429", "503", "unavailable"].includes(query.registrationRetry ?? "") || query.submitted === "verification_required";
+}
+
+FILE src/app/lp/[slug]/page.test.tsx
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+const mocks = vi.hoisted(() => ({ load: vi.fn(), runtime: vi.fn(), recordVisit: vi.fn(), readDraft: vi.fn(), verifyResult: vi.fn() }));
+vi.mock("@/lib/registration-form-retry", async (original) => ({ ...await original<typeof import("@/lib/registration-form-retry")>(), readRegistrationRetryDraft: mocks.readDraft }));
+vi.mock("@/lib/registration-submission-receipt", async (original) => ({ ...await original<typeof import("@/lib/registration-submission-receipt")>(), verifyRegistrationResult: mocks.verifyResult }));
+vi.mock("@/lib/landing-page-service", () => ({ loadPublicLandingPage: mocks.load }));
+vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ get: () => ({ value: "visitor-12345678901234567890" }) })) }));
+vi.mock("@/lib/funnel-runtime", () => ({
+  FUNNEL_VISITOR_COOKIE: "celebratedeal_funnel_visitor",
+  resolveFunnelVisitorId: vi.fn((value) => value),
+  resolvePublicFunnelRuntime: mocks.runtime,
+  recordPublicFunnelVisit: mocks.recordVisit,
+}));
+vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); } }));
+vi.mock("@/components/landing-pages/landing-page-renderer", () => ({ LandingPageRenderer: ({ content }: { content: { data: { root: { props: { title: string } } } } }) => <main>{content.data.root.props.title}</main> }));
+vi.mock("@/components/landing-pages/funnel-webinar-experience", async () => {
+  const { useRegistrationRetry } = await import("@/components/registration-retry-context");
+  return { FunnelWebinarExperience: function WebinarProbe({ stepId, resource }: { stepId: string; resource?: { form: { id: string } } }) {
+    const retry = useRegistrationRetry(resource?.form.id ?? "");
+    return <main data-resource={Boolean(resource)} data-return-path={retry?.sourcePath ?? ""}>{stepId}</main>;
+  } };
+});
+import { createFunnelFlow } from "@/lib/funnel-flow";
+import { createFunnelStepPages } from "@/lib/funnel-step-pages";
+import PublicStepPage from "./[stepPath]/page";
+import PublicPage, { generateMetadata } from "./page";
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.runtime.mockImplementation(async ({ pageId, requestedStepId }) => ({
+    page: { id: pageId, vendorId: "vendor-1", operations: null },
+    decision: { status: "render", requestedStepId, renderedStepId: requestedStepId, experiment: null },
+  }));
+});
+describe("published landing route", () => {
+  it("renders only the published snapshot and its SEO metadata", async () => {
+    mocks.load.mockResolvedValue({ id: "page1", content: { schemaVersion: 1, data: { root: { props: { title: "已發布標題", description: "活動說明", shareImage: "https://cdn.example.test/share.png" } }, content: [] } }, context: { forms: [] } });
+    const params = Promise.resolve({ slug: "webinar" });
+    expect(renderToStaticMarkup(await PublicPage({ params }))).toContain("已發布標題");
+    expect(await generateMetadata({ params })).toMatchObject({ title: "已發布標題", description: "活動說明", openGraph: { images: ["https://cdn.example.test/share.png"] } });
+    expect(mocks.load).toHaveBeenCalledWith("webinar");
+  });
+  it("does not expose unavailable pages or index their metadata", async () => {
+    mocks.load.mockResolvedValue(null);
+    const params = Promise.resolve({ slug: "draft" });
+    await expect(PublicPage({ params })).rejects.toThrow("NOT_FOUND");
+    expect(await generateMetadata({ params })).toMatchObject({ robots: { index: false, follow: false } });
+  });
+});
+
+
+it("routes a published Webinar to the registration and broadcast experiences", async () => {
+  const content = createFunnelStepPages(createFunnelFlow({ id: "webinar", name: "Webinar", goal: "webinar", domain: "webinar" })!)!;
+  mocks.load.mockResolvedValue({ id: "page1", slug: "webinar", content, context: { forms: [] } });
+  expect(renderToStaticMarkup(await PublicPage({ params: Promise.resolve({ slug: "webinar" }) }))).toContain("webinar_registration");
+  expect(renderToStaticMarkup(await PublicStepPage({ params: Promise.resolve({ slug: "webinar", stepPath: "broadcast" }) }))).toContain("webinar_broadcast");
+  await expect(PublicStepPage({ params: Promise.resolve({ slug: "webinar", stepPath: "foreign" }) })).rejects.toThrow("NOT_FOUND");
+});
+
+
+it("binds webinar retry to its rendered form even when a different generic form exists", async () => {
+  const content = createFunnelStepPages(createFunnelFlow({ id: "webinar", name: "Webinar", goal: "webinar", domain: "webinar" })!)!;
+  mocks.load.mockResolvedValue({ id: "page1", slug: "webinar", content, context: { forms: [] }, submissionForm: { id: "generic-form" }, webinar: { form: { id: "webinar-form" } } });
+  const root = renderToStaticMarkup(await PublicPage({ params: Promise.resolve({ slug: "webinar" }) }));
+  expect(root).toContain('data-return-path="/lp/webinar"');
+  const step = renderToStaticMarkup(await PublicStepPage({ params: Promise.resolve({ slug: "webinar", stepPath: "broadcast" }) }));
+  expect(step).toContain('data-return-path="/lp/webinar/broadcast"');
+});
+
+
+it("uses the canonical published slug for a mixed-case incoming step URL", async () => {
+  const content = createFunnelStepPages(createFunnelFlow({ id: "webinar", name: "Webinar", goal: "webinar", domain: "webinar" })!)!;
+  mocks.load.mockResolvedValue({ id:"page1",slug:"webinar",content,context:{forms:[]},webinar:{form:{id:"webinar-form"}} });
+  const html = renderToStaticMarkup(await PublicStepPage({params:Promise.resolve({slug:"Webinar",stepPath:"broadcast"})}));
+  expect(html).toContain('data-return-path="/lp/webinar/broadcast"');
+  expect(html).not.toContain('/lp/Webinar/');
+});
+
+it.each(["closed", "redirect"] as const)("keeps a readonly result on both expired entrances for %s", async (status) => {
+ const content = createFunnelStepPages(createFunnelFlow({id:"webinar",name:"Webinar",goal:"webinar",domain:"webinar"})!)!;
+ mocks.load.mockResolvedValue({id:"page1",slug:"webinar",content,context:{forms:[]},webinar:{form:{id:"webinar-form",fields:[{key:"email",label:"Email"}]}}});
+ mocks.runtime.mockResolvedValue({page:{id:"page1",vendorId:"vendor-1"},decision:{status,path:"thank-you"}});
+ const query=Promise.resolve({registrationRetry:"unavailable"});
+ const views=[await PublicPage({params:Promise.resolve({slug:"webinar"}),searchParams:query}),await PublicStepPage({params:Promise.resolve({slug:"webinar",stepPath:"broadcast"}),searchParams:query})];
+ for(const view of views){const html=renderToStaticMarkup(view);expect(html).toContain("此活動已截止");expect(html).toContain("無法確認先前的送出結果");expect(html).not.toContain("<form");if(status==="redirect")expect(html).toContain('/lp/webinar/thank-you');}
+ expect(mocks.recordVisit).not.toHaveBeenCalled();
+});
+
+it.each([null, {decision:{status:"unavailable"}}])("checks runtime availability before reading any retry evidence", async (runtime) => {
+ const content=createFunnelStepPages(createFunnelFlow({id:"webinar",name:"Webinar",goal:"webinar",domain:"webinar"})!)!;
+ mocks.load.mockResolvedValue({id:"page1",slug:"webinar",content,context:{forms:[]},webinar:{form:{id:"webinar-form",fields:[]}}});
+ mocks.runtime.mockResolvedValue(runtime);
+ const searchParams=Promise.resolve({registrationRetry:"429",submitted:"verification_required"});
+ await expect(PublicPage({params:Promise.resolve({slug:"webinar"}),searchParams})).rejects.toThrow("NOT_FOUND");
+ await expect(PublicStepPage({params:Promise.resolve({slug:"webinar",stepPath:"broadcast"}),searchParams})).rejects.toThrow("NOT_FOUND");
+ expect(mocks.readDraft).not.toHaveBeenCalled();expect(mocks.verifyResult).not.toHaveBeenCalled();
+});
+
+Public integration excerpt src/app/lp/[slug]/page.tsx
+  if (!page) return { title: "頁面不存在", robots: { index: false, follow: false } };
+  const query = await searchParams ?? {};
+  if (!page) notFound();
+  const buildRetryBoundary = () => registrationRetryBoundary({ formId: isFunnelStepPages(page.content) && page.content.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}`, retry: query.registrationRetry, submitted: query.submitted });
+    const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: requestedStep.id, visitorId });
+    if (!runtime || runtime.decision.status === "unavailable") notFound();
+    const withRetry = await buildRetryBoundary();
+    if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: page.content.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry });
+    const decision = runtime.decision;
+    if (!document) notFound();
+  const withRetry = await buildRetryBoundary();
+Public integration excerpt src/app/lp/[slug]/[stepPath]/page.tsx
+  if (!document) return { title: "頁面不存在", robots: { index: false, follow: false } };
+  if (!document) notFound();
+  if (!page || !steps || !step || step.isSystem) notFound();
+  const query = await searchParams ?? {};
+  const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: step.id, visitorId });
+  if (!runtime || runtime.decision.status === "unavailable") notFound();
+  const withRetry = await registrationRetryBoundary({ formId: steps.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}/${step.path}`, retry: query.registrationRetry, submitted: query.submitted });
+  if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: steps.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry });
+  const decision = runtime.decision;
+Storage schema contract
+const Answers = z.record(z.string().regex(REGISTRATION_FORM_FIELD_KEY), z.string().max(2_000))
+  .refine((value) => Object.keys(value).length <= 32 && Object.keys(value).every((key) => !REGISTRATION_FORM_RESERVED_FIELDS.has(key)));
+const Draft = z.object({
+  formId: z.string().min(1).max(128),
+  sourcePath: z.string().max(2_048),
+  answers: Answers,
+  liveId: z.string().max(128).nullable(),
+  status: z.union([z.literal(400), z.literal(403), z.literal(404), z.literal(429), z.literal(503)]),
+}).strict();
+export type RegistrationRetryDraft = z.infer<typeof Draft>;
+

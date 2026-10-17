@@ -1,0 +1,180 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/lib/trusted-entry-rate-limit.ts"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "critical",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/lib/trusted-entry-rate-limit.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "reviewed": true,
+  "review": {
+    "summary": "This is a preliminary review of the supplied WP11 entry-wrapper excerpt only. It is not acceptance and does not approve deployment. The wrapper's logic looks sound. It only trusts a proxy when both the trust mode and the deployment source are set explicitly and match. A mismatched or missing setting falls back to 'none', which blocks requests (503, no-store) instead of guessing a client IP. When an IP is resolved, the identity passed to the legacy limiter is rebuilt from that validated IP, and payment callers stay on the legacy limiter. I found no confirmed blocker or major defect in the visible code. Two parts can't be checked from the excerpt: the redacted credential-reference line and the resolver internals. Both affect whether this is secure or available in practice, so I've raised them as minor findings with tests to add. Not run or not verifiable here: database and browser regression, how the four entry routes call this wrapper, and how the resolver compares the proof. Passing results (Tests60, HTTP242, lint/typecheck) don't show these paths are covered. Scope proposal, not a defect in this task: decide whether IPv6 clients should be rate-limited per /64 block rather than per full address, so one client can't rotate addresses to avoid limits.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "entry rate-limit wrapper (WP11)",
+        "area": "entryIpTrustConfig, proxy-mode branch (redacted credential-reference line)",
+        "issue": "The visible code doesn't check that ENTRY_CLIENT_IP_INGRESS_SECRET is set (non-empty) before returning 'cloudflare' or 'trusted-proxy' mode. Whether a missing or empty secret is safe depends entirely on how the redacted line and the resolver handle it.",
+        "evidence": "The branch is chosen only on ENTRY_CLIENT_IP_TRUST_MODE and ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE. The redacted line is described as passing the process-injected secret to the resolver, and no empty or undefined check is visible. The resolver's proof comparison was not supplied.",
+        "impact": "Suppose the secret is missing and the resolver compares proof against undefined or '' loosely, or treats a missing secret as 'no proof required'. Then an attacker could send an empty or missing proof header and have a spoofed forwarding IP accepted. That would let them get around per-IP rate limits on the four entry routes. If the resolver already rejects a missing secret, there is no exploitable defect.",
+        "recommended_fix": "In entryIpTrustConfig, return the 'none' config when the secret is undefined, empty, or below a minimum length, even if mode and source match. Alternatively, confirm and document that getRequestClientIp rejects proxy configs with an empty secret, using a constant-time comparison.",
+        "required_test": "Unit tests: for both cloudflare/cloudflare and trusted-proxy/vercel with the secret unset and with it set to '', (a) entryIpTrustConfig returns none or the resolver returns null, and (b) checkRateLimit returns 503 even when the request has an empty or missing proof header and a spoofed cf-connecting-ip or x-forwarded-for.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "entry rate-limit wrapper (WP11)",
+        "area": "checkRateLimit signature (request: Request) + runtime/node mode",
+        "issue": "In runtime/node mode the resolver reportedly reads only request.ip. The wrapper's parameter is typed as the standard Request, which has no ip property. Newer Next.js versions also removed NextRequest.ip on the Node runtime. In that case the IP is always missing and every request gets a 503.",
+        "evidence": "The parameter type is Request, not NextRequest. The task statement says 'runtime mode only reads request.ip'. The !ip branch always returns 503.",
+        "impact": "Availability only, because the failure blocks requests rather than allowing them. With ENTRY_CLIENT_IP_TRUST_MODE=runtime, all four entry routes could return 503 on every request, with no log to show it's a configuration or framework problem.",
+        "recommended_fix": "Check that the Next.js version and runtime in use actually set request.ip for these routes. If they don't, get the socket address another supported way, or disallow runtime mode in this deployment. Consider logging once when the 'none' fallback or a missing IP happens.",
+        "required_test": "An integration test on the real Node runtime (not a mocked request object) with mode runtime/node, asserting a non-503 response and that the limiter key uses the socket IP. Also a test that a mismatched mode/source returns 503 and emits a diagnostic.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ]
+}

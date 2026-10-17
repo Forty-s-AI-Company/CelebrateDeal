@@ -1,0 +1,44 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { formSubmissionErrorMessage, postRegistrationSubmission } from "./registration-submission-client";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("public registration client contract", () => {
+  it("posts to the fixed local API and preserves tenant-scoped provenance and optional attribution", async () => {
+    const response = new Response("", { status: 200 });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    const body = { formId: "synthetic-form", landingPageId: "synthetic-page", funnelStepId: "opt_in", liveId: null, payload: { name: "Synthetic", email: "synthetic@example.invalid" }, referralCode: "synthetic-ref" };
+    expect(await postRegistrationSubmission(body)).toBe(response);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/form-submissions");
+    expect(options.method).toBe("POST");
+    expect(options.headers).toEqual({ "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" });
+    expect(JSON.parse(options.body)).toEqual(body);
+  });
+
+  it.each([400, 403, 404, 429, 503])("leaves HTTP %i available to both form callers without displaying server details", async (status) => {
+    const response = new Response("synthetic internal diagnostic must not be shown", { status });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    const result = await postRegistrationSubmission({ formId: "synthetic-form", payload: {} });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(status);
+    expect(formSubmissionErrorMessage(status)).not.toContain("internal");
+    expect(formSubmissionErrorMessage(status)).toMatch(/請/);
+  });
+
+  it("propagates network failure so the caller can unlock retry without clearing inputs", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("synthetic network failure")));
+    await expect(postRegistrationSubmission({ payload: {} })).rejects.toThrow(TypeError);
+    expect(formSubmissionErrorMessage()).toContain("內容仍保留");
+  });
+
+  it("distinguishes security rejection from validation, rate and availability failures", () => {
+    expect(formSubmissionErrorMessage(400)).toContain("資料格式");
+    expect(formSubmissionErrorMessage(403)).toContain("安全檢查");
+    expect(formSubmissionErrorMessage(429)).toContain("一分鐘");
+    expect(formSubmissionErrorMessage(404)).toContain("無法接收");
+    expect(formSubmissionErrorMessage(503)).toContain("無法接收");
+  });
+});

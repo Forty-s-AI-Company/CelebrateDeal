@@ -1,0 +1,840 @@
+{
+  "status": "CANDIDATE_INVENTORY_NOT_COMPLETE_AUDIT",
+  "items": [
+    {
+      "file": "src/app/(app)/affiliates/[id]/access/page.tsx",
+      "line": 14,
+      "candidate": "vendorMemberId:true,revision:true,active:true,"
+    },
+    {
+      "file": "src/app/(app)/affiliates/[id]/access/page.tsx",
+      "line": 34,
+      "candidate": "<CsrfField/><input type=\"hidden\" name=\"affiliateId\" value={id}/><input type=\"hidden\" name=\"expectedRevision\" value={affiliate.portalAccess?.revision??0}/>"
+    },
+    {
+      "file": "src/app/(app)/affiliates/[id]/remuneration/page.tsx",
+      "line": 7,
+      "candidate": "import { getAffiliateRemunerationDashboard } from \"@/lib/affiliate-remuneration-dashboard\";"
+    },
+    {
+      "file": "src/app/(app)/affiliates/[id]/remuneration/page.tsx",
+      "line": 15,
+      "candidate": "const current = await getAffiliateRemunerationDashboard(getDb(), { userId: auth.user.id }, { vendorId: vendor.id, affiliateId }, \"manager\", query.cursor);"
+    },
+    {
+      "file": "src/app/(app)/affiliates/[id]/remuneration/page.tsx",
+      "line": 22,
+      "candidate": "<dl className=\"my-4 grid grid-cols-2 gap-2\"><dt>資料版本</dt><dd>{profile.revision}</dd><dt>收款人分類</dt><dd>{{ resident_individual: \"境內居住個人\", nonresident_individual: \"非境內居住個人\", domestic_invoice_business: \"境內開立發票事業\" }[profile.recipientType] ?? \"未知分類\"}</dd><dt>健保適用</dt><dd>{{ subject_execution_business: \"適用執行業務補充保費\", documented_exemption: \"有證明的免扣取資格\", not_insured: \"非健保保險對象\", not_applicable_business: \"事業不適用\" }[profile.nhiTreatment] ?? \"未知分類\"}</dd><dt>免扣取證"
+    },
+    {
+      "file": "src/app/(app)/affiliates/[id]/remuneration/page.tsx",
+      "line": 24,
+      "candidate": "{profile.approvedRevision === profile.revision ? <p role=\"status\">此版本已核准。</p> : <form action={approveAffiliatePayeeProfileAction} className=\"mt-4 space-y-3\"><input type=\"hidden\" name={CSRF_FIELD_NAME} value={csrf} /><input type=\"hidden\" name=\"affiliateId\" value={affiliateId} /><input type=\"hidden\" name=\"expectedRevision\" value={profile.revision} /><label className=\"flex min-h-11 items-center gap-2\"><input name=\"reviewConfirmed\" type=\"checkbox\" re"
+    },
+    {
+      "file": "src/app/(app)/affiliates/commissions/page.tsx",
+      "line": 43,
+      "candidate": "orderBy: { revision: \"desc\" },"
+    },
+    {
+      "file": "src/app/(app)/affiliates/payout-policy/page.tsx",
+      "line": 11,
+      "candidate": "const current = await getDb().merchantAffiliatePayoutPolicy.findUnique({ where: { vendorId: vendor.id }, select: { revision: true, bankFeeCents: true, enabled: true } });"
+    },
+    {
+      "file": "src/app/(app)/affiliates/payout-policy/page.tsx",
+      "line": 16,
+      "candidate": "<p className=\"mb-4\">{current ? `目前版本：${current.revision}，${current.enabled ? \"已啟用\" : \"已停用\"}` : \"尚未設定，暫不接受提領報價與匯出。\"}</p>"
+    },
+    {
+      "file": "src/app/(app)/affiliates/payout-policy/page.tsx",
+      "line": 19,
+      "candidate": "<input type=\"hidden\" name=\"expectedRevision\" value={current?.revision ?? 0} />"
+    },
+    {
+      "file": "src/app/(app)/affiliates/policy/page.tsx",
+      "line": 29,
+      "candidate": "<MerchantAffiliatePolicyForm initial={current.policy?.terms ?? null} revision={current.revision} products={products} csrfToken={await getCsrfToken()} csrfFieldName={CSRF_FIELD_NAME} />"
+    },
+    {
+      "file": "src/app/(app)/billing/usage/page.tsx",
+      "line": 108,
+      "candidate": "<Badge tone={alert.severity === \"CRITICAL\" ? \"orange\" : \"blue\"}>{alert.type}</Badge>"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 4,
+      "candidate": "import type { DashboardMeasurementSnapshot } from \"@/lib/dashboard-read-model\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 5,
+      "candidate": "import type { DashboardDetailsData, DashboardDetailsLoadResult } from \"./dashboard-details\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 6,
+      "candidate": "import DashboardDetailsLoading from \"./dashboard-details-loading\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 7,
+      "candidate": "import DashboardDetailsContent from \"./dashboard-details-view\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 9,
+      "candidate": "type SerializedDashboardDetailsData = Omit<DashboardDetailsData, \"now\" | \"recentLives\" | \"upcomingLives\"> & {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 11,
+      "candidate": "recentLives: Array<Omit<DashboardDetailsData[\"recentLives\"][number], \"scheduledAt\"> & { scheduledAt: string }>;"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 12,
+      "candidate": "upcomingLives: Array<Omit<DashboardDetailsData[\"upcomingLives\"][number], \"scheduledAt\"> & { scheduledAt: string }>;"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 14,
+      "candidate": "type DashboardDetailsResponse = { data: SerializedDashboardDetailsData | null; measurement: DashboardMeasurementSnapshot };"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 16,
+      "candidate": "function reviveDashboardDetails(payload: DashboardDetailsResponse): DashboardDetailsLoadResult {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 29,
+      "candidate": "function DashboardDetailsError() {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 31,
+      "candidate": "Dashboard 明細暫時無法載入，KPI 與其他操作不受影響。請稍後重新整理。"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 36,
+      "candidate": "export default function DashboardDetailsClient({ diagnosticDelayMs }: { diagnosticDelayMs: number }) {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 37,
+      "candidate": "const [result, setResult] = useState<DashboardDetailsLoadResult | null>(null);"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 42,
+      "candidate": "const query = diagnosticDelayMs > 0 ? `?e2eDashboardDetailsDelayMs=${diagnosticDelayMs}` : \"\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 47,
+      "candidate": "return reviveDashboardDetails(await response.json() as DashboardDetailsResponse);"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 56,
+      "candidate": "if (!result && !failed) return <DashboardDetailsLoading />;"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-client.tsx",
+      "line": 61,
+      "candidate": "{result?.data ? <DashboardDetailsContent data={result.data} /> : <DashboardDetailsError />}"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-loading.tsx",
+      "line": 1,
+      "candidate": "export default function DashboardDetailsLoading() {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-loading.tsx",
+      "line": 3,
+      "candidate": "<div data-dashboard-scope=\"details-shell\" role=\"status\" aria-busy=\"true\" aria-live=\"polite\" aria-label=\"正在載入 Dashboard 明細\" className=\"grid gap-6\">"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-view.tsx",
+      "line": 6,
+      "candidate": "import type { DashboardDetailsData } from \"./dashboard-details\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details-view.tsx",
+      "line": 8,
+      "candidate": "export default function DashboardDetailsContent({ data }: { data: DashboardDetailsData }) {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 1,
+      "candidate": "import { dashboardChecklistForRole, isDashboardManagerRole } from \"@/lib/dashboard-checklist\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 4,
+      "candidate": "createDashboardMeasurement,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 5,
+      "candidate": "readDashboardLiveSubmissionCounts,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 6,
+      "candidate": "type DashboardMeasurementSnapshot,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 16,
+      "candidate": "async function applyDashboardDetailsDiagnosticDelay(delayMs: number) {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 24,
+      "candidate": "export type DashboardDetailsProps = {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 32,
+      "candidate": "export type DashboardDetailsData = {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 43,
+      "candidate": "export type DashboardDetailsLoadResult = {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 44,
+      "candidate": "data: DashboardDetailsData | null;"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 45,
+      "candidate": "measurement: DashboardMeasurementSnapshot;"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 48,
+      "candidate": "export async function loadDashboardDetails({"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 54,
+      "candidate": "}: DashboardDetailsProps): Promise<DashboardDetailsLoadResult> {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 56,
+      "candidate": "const measurement = createDashboardMeasurement();"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 60,
+      "candidate": "await applyDashboardDetailsDiagnosticDelay(diagnosticDelayMs ?? 0);"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 82,
+      "candidate": "() => readDashboardLiveSubmissionCounts(db, vendorId, recentLives.map((live) => live.id)),"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-details.tsx",
+      "line": 111,
+      "candidate": "const isManager = isDashboardManagerRole(memberRole);"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis-loading.tsx",
+      "line": 1,
+      "candidate": "export default function DashboardKpisLoading() {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis-loading.tsx",
+      "line": 3,
+      "candidate": "<section data-dashboard-scope=\"kpis-shell\" aria-busy=\"true\" aria-live=\"polite\" aria-label=\"正在載入 Dashboard KPI\" className=\"grid gap-6\">"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 5,
+      "candidate": "createDashboardMeasurement,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 7,
+      "candidate": "emitDashboardMeasurement,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 8,
+      "candidate": "readDashboardAnalyticsCounts,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 9,
+      "candidate": "readDashboardEmailCounts,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 10,
+      "candidate": "readDashboardRegistrationCounts,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 18,
+      "candidate": "type DashboardKpiData = {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 31,
+      "candidate": "type DashboardKpiLoadResult = {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 32,
+      "candidate": "data: DashboardKpiData | null;"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 33,
+      "candidate": "measurement: ReturnType<typeof createDashboardMeasurement>;"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 36,
+      "candidate": "async function loadDashboardKpis(vendorId: string, diagnosticFailureScope: string | null): Promise<DashboardKpiLoadResult> {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 38,
+      "candidate": "const measurement = createDashboardMeasurement();"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 44,
+      "candidate": "measurement.measure(\"registration.grouped-count\", () => readDashboardRegistrationCounts(db, vendorId, sevenDaysAgo)),"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 50,
+      "candidate": "measurement.measure(\"analytics.aggregate\", () => readDashboardAnalyticsCounts(db, vendorId, sevenDaysAgo)),"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 52,
+      "candidate": "measurement.measure(\"email.grouped-count\", () => readDashboardEmailCounts(db, vendorId, sevenDaysAgo)),"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 81,
+      "candidate": "function DashboardMetricError() {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 84,
+      "candidate": "Dashboard KPI 暫時無法載入，明細資料不會因此重新送出。請稍後重新整理。"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 89,
+      "candidate": "function DashboardKpiContent({ data }: { data: DashboardKpiData }) {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 138,
+      "candidate": "export default async function DashboardKpis({ vendorId, diagnosticFailureScope = null }: { vendorId: string; diagnosticFailureScope?: string | null }) {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 139,
+      "candidate": "const result = await loadDashboardKpis(vendorId, diagnosticFailureScope);"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 141,
+      "candidate": "emitDashboardMeasurement(\"kpis\", measurement);"
+    },
+    {
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "line": 144,
+      "candidate": "{result.data ? <DashboardKpiContent data={result.data} /> : <DashboardMetricError />}"
+    },
+    {
+      "file": "src/app/(app)/dashboard/error.tsx",
+      "line": 3,
+      "candidate": "export default function DashboardError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/loading.tsx",
+      "line": 1,
+      "candidate": "export default function DashboardLoading() {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/loading.tsx",
+      "line": 8,
+      "candidate": "<span role=\"status\" className=\"sr-only\">正在載入 Dashboard，請稍候。</span>"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 7,
+      "candidate": "import DashboardDetailsClient from \"./dashboard-details-client\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 8,
+      "candidate": "import { parseDashboardDetailsDiagnosticDelay } from \"./dashboard-details-diagnostic\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 9,
+      "candidate": "import DashboardKpis from \"./dashboard-kpis\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 10,
+      "candidate": "import DashboardKpisLoading from \"./dashboard-kpis-loading\";"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 12,
+      "candidate": "function parseDashboardDiagnosticFailureScope(value: string | undefined) {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 17,
+      "candidate": "export default async function DashboardPage({ searchParams }: {"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 19,
+      "candidate": "e2eDashboardDetailsDelayMs?: string | string[];"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 20,
+      "candidate": "e2eDashboardFailScope?: string | string[];"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 31,
+      "candidate": "const diagnosticDelayMs = parseDashboardDetailsDiagnosticDelay("
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 32,
+      "candidate": "Array.isArray(query?.e2eDashboardDetailsDelayMs) ? query.e2eDashboardDetailsDelayMs[0] : query?.e2eDashboardDetailsDelayMs,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 34,
+      "candidate": "const diagnosticFailureScope = parseDashboardDiagnosticFailureScope("
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 35,
+      "candidate": "Array.isArray(query?.e2eDashboardFailScope) ? query.e2eDashboardFailScope[0] : query?.e2eDashboardFailScope,"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 41,
+      "candidate": "title=\"Dashboard\""
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 46,
+      "candidate": "<section data-dashboard-region=\"kpis\" aria-label=\"Dashboard KPI 區域\">"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 47,
+      "candidate": "<Suspense fallback={<DashboardKpisLoading />}>"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 48,
+      "candidate": "<DashboardKpis vendorId={vendor.id} diagnosticFailureScope={diagnosticFailureScope} />"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 52,
+      "candidate": "<section data-dashboard-region=\"details\" aria-label=\"Dashboard 明細區域\">"
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "line": 53,
+      "candidate": "<DashboardDetailsClient diagnosticDelayMs={diagnosticDelayMs} />"
+    },
+    {
+      "file": "src/app/(app)/interaction-scripts/page.tsx",
+      "line": 38,
+      "candidate": "<PageHeader title=\"留言組\" description=\"管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。\" action={<ButtonLink href=\"/interaction-scripts/new\"><Plus size={16} />新增留言組</ButtonLink>} />"
+    },
+    {
+      "file": "src/app/(app)/interaction-scripts/page.tsx",
+      "line": 51,
+      "candidate": "這份留言組已不存在或不屬於目前商店，清單已重新整理，請重新選擇。"
+    },
+    {
+      "file": "src/app/(app)/interaction-scripts/page.tsx",
+      "line": 55,
+      "candidate": "<EmptyState title=\"還沒有留言組\" description=\"建立留言組後，可綁定到直播間並依影片秒數自動觸發。\" action={<ButtonLink href=\"/interaction-scripts/new\">新增留言組</ButtonLink>} />"
+    },
+    {
+      "file": "src/app/(app)/landing-pages/[id]/page.tsx",
+      "line": 33,
+      "candidate": "return <LandingPageWorkspace initialPublication={publication} key={`${page.id}-${query.step ?? \"default\"}`} returnHref={returnHref} commerceProducts={data.commerceProducts} page={{ id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision, content, formId: page.formId, liveId: page.liveId, versions: page.versions.map(({ version }) => ({ version })) }} webinarResources={data.webinarResources} forms={data.forms} li"
+    },
+    {
+      "file": "src/app/(app)/landing-pages/page.tsx",
+      "line": 12,
+      "candidate": "<PageHeader title=\"Funnels\" description=\"建立銷售、名單蒐集與自訂流程，集中管理每個全畫面頁面。\" action={!scope.isAggregate ? <ButtonLink href=\"/landing-pages/new\">建立 Funnel</ButtonLink> : undefined} />"
+    },
+    {
+      "file": "src/app/(app)/lives/[id]/edit/page.tsx",
+      "line": 220,
+      "candidate": "select: { id: true, revision: true, payload: true, updatedAt: true },"
+    },
+    {
+      "file": "src/app/(app)/lives/[id]/edit/page.tsx",
+      "line": 292,
+      "candidate": "revision: savedDraft.revision,"
+    },
+    {
+      "file": "src/app/(app)/lives/new/page.tsx",
+      "line": 127,
+      "candidate": "select: { id: true, revision: true, payload: true, updatedAt: true },"
+    },
+    {
+      "file": "src/app/(app)/lives/new/page.tsx",
+      "line": 149,
+      "candidate": "? { id: savedDraft.id, revision: savedDraft.revision, payload: parsedDraft.data, updatedAt: savedDraft.updatedAt.toISOString() }"
+    },
+    {
+      "file": "src/app/(app)/orders/[id]/page.tsx",
+      "line": 78,
+      "candidate": "<PageHeader title={`訂單 ${order.orderNumber}`} description=\"查看付款、買家資料、履約與退款事件；所有動作都有防重送與 revision 衝突保護。\" />"
+    },
+    {
+      "file": "src/app/(app)/products/[id]/community/page.tsx",
+      "line": 19,
+      "candidate": "const posts = await getDb().courseCommunityPost.findMany({ where: { ...where, ...(anchor ? { OR: [{ createdAt: { lt: anchor.createdAt } }, { createdAt: anchor.createdAt, id: { lt: anchor.id } }] } : {}) }, orderBy: [{ createdAt: \"desc\" }, { id: \"desc\" }], take: 21, select: { id: true, revision: true, authorName: true, body: true, isPinned: true, isAnnouncement: true, hiddenAt: true } });"
+    },
+    {
+      "file": "src/app/(app)/products/[id]/community/page.tsx",
+      "line": 24,
+      "candidate": "<CsrfField /><input type=\"hidden\" name=\"productId\" value={id} /><input type=\"hidden\" name=\"postId\" value={post.id} /><input type=\"hidden\" name=\"expectedRevision\" value={post.revision} />"
+    },
+    {
+      "file": "src/app/(app)/products/[id]/lessons/page.tsx",
+      "line": 24,
+      "candidate": "<CsrfField /><input type=\"hidden\" name=\"productId\" value={id} /><input type=\"hidden\" name=\"revision\" value={product.revision} />"
+    },
+    {
+      "file": "src/app/(app)/settings/line/page.tsx",
+      "line": 31,
+      "candidate": "select: { id: true, revision: true, menu: true },"
+    },
+    {
+      "file": "src/app/(app)/settings/line/page.tsx",
+      "line": 63,
+      "candidate": "existing={draft && parsedMenu?.success ? { id: draft.id, revision: draft.revision, menu: parsedMenu.data } : null}"
+    },
+    {
+      "file": "src/app/(app)/support-cases/[id]/page.tsx",
+      "line": 291,
+      "candidate": "<input type=\"hidden\" name=\"revision\" value={supportCase.revision} />"
+    },
+    {
+      "file": "src/app/(app)/support-cases/[id]/page.tsx",
+      "line": 305,
+      "candidate": "<input type=\"hidden\" name=\"revision\" value={supportCase.revision} />"
+    },
+    {
+      "file": "src/app/(app)/support-cases/[id]/page.tsx",
+      "line": 319,
+      "candidate": "<input type=\"hidden\" name=\"revision\" value={supportCase.revision} />"
+    },
+    {
+      "file": "src/app/(app)/support-cases/[id]/page.tsx",
+      "line": 337,
+      "candidate": "<input type=\"hidden\" name=\"revision\" value={supportCase.revision} />"
+    },
+    {
+      "file": "src/app/(app)/support-cases/[id]/page.tsx",
+      "line": 361,
+      "candidate": "<input type=\"hidden\" name=\"revision\" value={supportCase.revision} />"
+    },
+    {
+      "file": "src/app/(app)/team-performance/page.tsx",
+      "line": 2,
+      "candidate": "import { TeamPerformanceDashboard } from \"@/components/team-performance-dashboard\";"
+    },
+    {
+      "file": "src/app/(app)/team-performance/page.tsx",
+      "line": 38,
+      "candidate": "return <TeamPerformanceDashboard report={report} teams={memberships.map((membership) => ({ id: membership.teamId, name: membership.team.name }))} selected={selected} />;"
+    },
+    {
+      "file": "src/components/app-shell.tsx",
+      "line": 19,
+      "candidate": "{ href: \"/dashboard\", label: \"Dashboard\", icon: Gauge },"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 72,
+      "candidate": "revision: page?.revision ?? 1, valid: Boolean(page?.content ?? true),"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 91,
+      "candidate": "const [revision, setRevision] = useState(initial.revision);"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 103,
+      "candidate": "const revisionRef = useRef(initial.revision);"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 131,
+      "candidate": "data.set(\"revision\", String(revisionRef.current));"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 141,
+      "candidate": "if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 170,
+      "candidate": "setMessage(\"儲存完成後會返回原本的 Configuration。\");"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 185,
+      "candidate": "<button type=\"button\" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? \"返回 Configuration\" : \"返回\"}</button>"
+    },
+    {
+      "file": "src/components/landing-page-workspace.tsx",
+      "line": 236,
+      "candidate": "<div className={preview ? \"hidden\" : \"overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm\"}><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={updateContent} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(contentRef.current)) updateContent(n"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+      "line": 78,
+      "candidate": "<select className={control} disabled={disabled} value={action.type} onChange={(event) => set(\"type\", event.currentTarget.value as FunnelNodeAction[\"type\"])}>{actionTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+      "line": 98,
+      "candidate": "return <section data-funnel-element-inspector data-node-type={node.type} className=\"grid gap-4\">"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+      "line": 36,
+      "candidate": "data.set(\"revision\", \"1\");"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 27,
+      "candidate": "const tabs = [\"Configuration\", \"Automation Rules\", \"A/B test\", \"Stats\", \"Leads\", \"Sales\", \"Deadline settings\"] as const;"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 47,
+      "candidate": "// splitting its state across sibling owners would make revision conflicts harder to guard."
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 57,
+      "candidate": "const [tab, setTab] = useState<Tab>(\"Configuration\");"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 70,
+      "candidate": "const revisionRef = useRef(initial.revision);"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 125,
+      "candidate": "setContent(result.state); setDirty(false); setTab(\"Configuration\"); setChangeTemplate(false);"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 134,
+      "candidate": "data.set(\"revision\", String(revisionRef.current)); data.set(\"name\", editor.name); data.set(\"slug\", editor.slug);"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 140,
+      "candidate": "if (result.status === \"success\" && result.revision) {"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 141,
+      "candidate": "revisionRef.current = result.revision;"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 142,
+      "candidate": "setEditor((value) => ({ ...value, revision: result.revision!, content: next, steps: editableSteps(next) }));"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 154,
+      "candidate": "revisionRef.current = loaded.revision;"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 164,
+      "candidate": "// stale success while this revision is still in flight."
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 169,
+      "candidate": "data.set(\"settings\", JSON.stringify({ pageId: editor.pageId, revision: revisionRef.current, name: editor.name, slug: editor.slug, currency: editor.currency, operations: editor.operations }));"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 173,
+      "candidate": "revisionRef.current = result.revision;"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 174,
+      "candidate": "setEditor((value) => ({ ...value, revision: result.revision, content: { ...content, flow: { ...content.flow, name: value.name, domain: value.slug, currency: value.currency } } }));"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 215,
+      "candidate": "setAddOpen(false); setTab(\"Configuration\");"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 222,
+      "candidate": "<div className=\"min-w-0\"><p className=\"text-xs font-semibold text-slate-500\"><Link href=\"/landing-pages\" className=\"hover:text-blue-700\">Funnels</Link> <span aria-hidden>›</span> {editor.name}</p><h1 className=\"mt-1 truncate text-2xl font-bold text-slate-950\">{editor.name}</h1><p className=\"mt-1 text-sm text-slate-500\">{content.flow.goal} · revision {editor.revision}</p></div>"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 228,
+      "candidate": "<div className=\"flex items-start gap-2 px-4 py-4\"><button type=\"button\" onClick={() => selectStep(step.id)} className=\"min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500\"><strong className=\"block truncate text-sm text-slate-900\">{step.name}</strong><span className=\"mt-1 block text-xs text-slate-500\">{step.isSystem ? \"Funnel 停用時顯示\" : step.type}</span></button>{!step.isSystem ? <div c"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 233,
+      "candidate": "<nav aria-label=\"Funnel 次要分頁\" className=\"flex min-w-max border-b border-slate-200 px-4\">{tabs.map((item) => <button type=\"button\" key={item} disabled={item !== \"Configuration\" && secondaryDisabled} aria-pressed={tab === item} className={`cursor-pointer border-b-2 px-4 py-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:text-slate-300 ${tab === item ? \"border-sky-500 text-slate-950\" : \"border-transparent text-slate-50"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 235,
+      "candidate": "{tab === \"Configuration\" ? <ConfigurationPanel active={active} content={content} editor={editor} templates={templates} selectedTemplateId={effectiveSelectedTemplateId} needsTemplate={needsTemplate} changeTemplate={changeTemplate} disabled={pending} setContent={(next) => { setContent(next); setDirty(true); }} setSelectedTemplateId={setSelectedTemplateId} setChangeTemplate={setChangeTemplate} onBlur={saveActiveMetadata} onApply={applyTemplate} navi"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 236,
+      "candidate": "{tab === \"Automation Rules\" ? <FunnelAutomationSettings pageId={editor.pageId} csrfName={csrfName} csrfToken={csrfToken} /> : null}"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 237,
+      "candidate": "{tab !== \"Configuration\" && tab !== \"Automation Rules\" ? <fieldset disabled={pending} className=\"space-y-4\"><legend className=\"mb-4 text-lg font-bold\">{tab}</legend>{tab === \"A/B test\" ? <ExperimentSettings value={editor.operations.experiment} steps={editor.steps} onChange={(experiment) => operations({ ...editor.operations, experiment })} /> : null}{tab === \"Deadline settings\" ? <DeadlineSettings value={editor.operations.deadline} steps={editor.s"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 243,
+      "candidate": "{addOpen ? <AddStepDialog goal={content.flow.goal} name={newStepName} path={newStepPath} type={newStepType} source={newStepSource} templateId={effectiveNewTemplateId} templates={newTemplates} disabled={pending} onName={setNewStepName} onPath={setNewStepPath} onType={setNewStepType} onSource={setNewStepSource} onTemplate={setNewTemplateId} onClose={() => setAddOpen(false)} onSave={addStep} /> : null}"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 247,
+      "candidate": "function ConfigurationPanel({ active, content, editor, templates, selectedTemplateId, needsTemplate, changeTemplate, disabled, setContent, setSelectedTemplateId, setChangeTemplate, onBlur, onApply, navigate }: { active: ReturnType<typeof getActiveFunnelStepPage>; content: FunnelStepPages; editor: FunnelOperationsEditor; templates: ReturnType<typeof listFunnelTemplateGallery>; selectedTemplateId: string; needsTemplate: boolean; changeTemplate: boo"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 249,
+      "candidate": "if (needsTemplate || changeTemplate) return <div><div className=\"mb-5\"><p className=\"text-xs font-bold uppercase tracking-wider text-sky-600\">Configuration</p><h2 className=\"mt-1 text-xl font-bold\">為「{active.step.name}」選擇模板</h2><p className=\"mt-2 text-sm text-slate-500\">模板已依 {content.flow.goal} 與 {active.step.type} 過濾。完整預覽後再套用。</p></div>{templates.length ? <FunnelTemplateGalleryPicker templates={templates} selectedId={selectedTemplateId} disabled"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 252,
+      "candidate": "return <div><div className=\"mb-6\"><p className=\"text-xs font-bold uppercase tracking-wider text-sky-600\">Configuration</p><h2 className=\"mt-1 text-xl font-bold text-slate-950\">{active.step.name}</h2></div><div className=\"grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]\"><div className=\"space-y-5\"><label className=\"grid gap-1.5 text-sm font-semibold text-slate-700\">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 319,
+      "candidate": "<div className=\"flex flex-wrap gap-3\"><label className=\"grid gap-1 text-sm\">報表步驟<select className={control} value={filter.stepId} onChange={(event) => change({ stepId: event.target.value })}><option value=\"\">全部步驟</option>{editor.steps.map((step) => <option key={step.id} value={step.id}>{step.name}</option>)}</select></label><label className=\"grid gap-1 text-sm\">最近天數<input className={control} type=\"number\" min={1} max={90} value={filter.days} onCh"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 326,
+      "candidate": "<table className=\"w-full text-left text-sm\"><thead><tr>{[\"Step\", \"Page view\", \"訪客\", \"Submission\", \"Step conversion\", \"Drop-off\"].map((label) => <th key={label} className=\"p-2\">{label}</th>)}</tr></thead><tbody>{reports.stats.map((row) => <tr key={row.stepId} className=\"border-t\"><td className=\"p-2\">{row.name}</td><td>{row.pageViews}</td><td>{row.visitors}</td><td>{row.submissions}</td><td>{row.conversionRate === null ? \"—\" : `${(row.conversionRat"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 328,
+      "candidate": "<details className=\"mt-4\"><summary>檢視來源事件 ID（前 20 筆）</summary>{reports.sources.map((source) => <p key={source.id} className=\"break-all font-mono text-xs\">{source.id} · {source.stepId} · {source.createdAt}</p>)}</details>"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 332,
+      "candidate": "return <div className=\"overflow-auto\"><p className=\"mb-3 text-sm\">只列出伺服器驗證 Funnel 來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。</p>{reports.leadsTruncated ? <p role=\"alert\">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className=\"w-full text-left text-sm\"><thead><tr>{[\"Funnel\", \"Step\", \"時間\", \"Submission ID\", \"驗證狀態\"].map((label) => <th className=\"p-2\" key={label}>{label}</th>)}</tr></thead><tbody>{reports.leads.map((row) => <tr className=\"border-t\" key={row.id}><td "
+    },
+    {
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "line": 335,
+      "candidate": "return <div className=\"overflow-auto\"><p className=\"mb-3 text-sm\">來源為 CommerceOrder／PaymentTransaction 的已付款 projection，排除測試訂單；退款另列，不將不同幣別相加。</p>{reports.salesTruncated ? <p role=\"alert\">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className=\"w-full text-left text-sm\"><thead><tr>{[\"Order\", \"Step\", \"付款時間\", \"Currency\", \"已付／退款（分）\", \"Order／Payment 狀態\", \"Payment ID\"].map((label) => <th className=\"p-2\" key={label}>{label}</th>)}</tr></thead><tbody>{reports."
+    },
+    {
+      "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "line": 333,
+      "candidate": "{submission.form.fields.map((field) => <label key={field.key} className=\"block space-y-1\"><span className=\"text-sm font-medium text-slate-700\">{field.label}{field.required ? \" *\" : \"\"}</span><input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? \"\"} type={field.type} required={field.required} disabled={status === \"submitting\" || status === \"success\"} autoComplete={field.key === \"email\" ? \"email\" : field.key === \"name\" ? \"name\" "
+    },
+    {
+      "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "line": 343,
+      "candidate": "return <div {...attributes} draggable={editor && Boolean(onMoveNode)} onDragStart={onMoveNode ? (event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = \"move\"; event.dataTransfer.setData(\"application/x-celebratedeal-funnel-node\", node.id); } : undefined} onDragOver={onMoveNode ? (event) => { if (event.dataTransfer.types.includes(\"application/x-celebratedeal-funnel-node\")) { event.preventDefault(); event.stopPropagation(); event.d"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "line": 359,
+      "candidate": "return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== \"editor\"} />{renderChildren()}</>);"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "line": 471,
+      "candidate": "return <div data-funnel-capability={node.type} className=\"rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600\"><p className=\"font-semibold text-slate-800\">{LABELS[node.type]}：目前無法在此預覽</p><p className=\"mt-1\">{message}</p>{children ? <div className=\"mt-3\">{children}</div> : null}</div>;"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-page-editor.tsx",
+      "line": 220,
+      "candidate": "const visiblePalette = palette.filter((item) => `${item.label} ${item.type}`.toLocaleLowerCase(\"zh-TW\").includes(elementQuery.trim().toLocaleLowerCase(\"zh-TW\")));"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-page-editor.tsx",
+      "line": 240,
+      "candidate": "{panel === \"elements\" ? <div className=\"grid gap-2\"><input aria-label=\"搜尋 Elements\" value={elementQuery} onChange={(event) => setElementQuery(event.currentTarget.value)} placeholder=\"搜尋元件\" className={control} /><div className=\"grid grid-cols-2 gap-2\">{visiblePalette.map((item) => <PaletteButton key={item.type} item={item} disabled={disabled} onAdd={add} />)}</div>{!visiblePalette.length ? <p className=\"py-6 text-center text-sm text-slate-500\">找不到"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-survey.tsx",
+      "line": 27,
+      "candidate": "return <form onSubmit={submit} className=\"space-y-3\"><fieldset disabled={status === \"submitting\" || status === \"success\"}><legend className=\"font-medium\">{question}{required || allowedField.required ? \" *\" : \"\"}</legend>{options.map((option, index) => <label key={`${nodeId}-option-${index}`} className=\"mt-2 flex items-center gap-2\"><input required={(required || allowedField.required) && !multiple} type={multiple ? \"checkbox\" : \"radio\"} name={fiel"
+    },
+    {
+      "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "line": 78,
+      "candidate": "<input type=\"hidden\" name=\"funnelStepId\" value={source.stepId} />"
+    },
+    {
+      "file": "src/components/landing-pages/workspace-editor.tsx",
+      "line": 18,
+      "candidate": "/** Persistence revision is a concurrency token, not a React session key."
+    },
+    {
+      "file": "src/components/landing-pages/workspace-editor.tsx",
+      "line": 24,
+      "candidate": "pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void | boolean; onValidityChange: (valid: boolean) => void;"
+    }
+  ]
+}

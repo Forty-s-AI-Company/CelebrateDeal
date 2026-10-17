@@ -1,0 +1,25 @@
+{
+  "files": [
+    "src/lib/checkout-followup-queue.ts",
+    "src/lib/checkout-followup-queue.test.ts",
+    "src/lib/checkout-followup.ts",
+    "src/lib/checkout-followup.test.ts",
+    "src/lib/email-delivery.ts",
+    "src/lib/email-delivery.test.ts",
+    "src/app/api/jobs/email-deliveries/route.ts",
+    "src/app/api/jobs/email-deliveries/route.test.ts"
+  ],
+  "owner": "root sole writer; external review read-only sequential",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "resolved_implementation": "gpt-6.1-sol/xhigh router advisory; root observed unknown",
+  "risk_categories": [
+    "payment"
+  ],
+  "base": "efb8b7e9a737ea30ea691870318d85bf74830331",
+  "environment": "independent worktree only; owned loopback disposable DB; synthetic data",
+  "schema_changes": false,
+  "external_writes": "NONE; no SMTP/LINE/SMS/production/push/deployment",
+  "remaining": "trusted completed viewer source; activation once source paths accepted; LINE enqueue/Sandbox and checkoutHTTP E2E/axe; wholeWP18 gate NOT_RUN",
+  "rollback": "Review reverse hunks in checkout-queue-owned.patch against queue-before/*.before; do not discard other WP edits; no external data to roll back"
+}

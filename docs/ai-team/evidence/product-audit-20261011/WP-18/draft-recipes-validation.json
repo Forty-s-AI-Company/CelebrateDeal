@@ -1,0 +1,90 @@
+{
+  "at": "2026-10-15T21:36:59.667330+00:00",
+  "status": "IN_PROGRESS",
+  "wholeWp18": "NOT_READY",
+  "increment": "Original3one-click followup recipes, created inactive; pending event paths cannot activate/send",
+  "sourceHashes": {
+    "src/lib/automation-workflow.ts": "33385901a8f0ff50abe4d7aead5dd7988412e13e86cd0b6ee37c5566bd37d11e",
+    "src/lib/automation-workflow.test.ts": "a1d94e12589c12c3408d455678d239dc57d88e14e39db3d43b10d3bb98336929",
+    "src/app/actions/automation-actions.ts": "d0704fcc76e8d264decaea0b08e48c6317af0d43c2423c8df4d66e39ba056e2d",
+    "src/app/actions/automation-actions.test.ts": "ffb70698c108a729e561e402a972fb9bad496710dac9d6fabf54b16c3c4c4a92",
+    "src/app/(app)/settings/automations/page.tsx": "14a0d43f0992d2b6bef116ed1e4a3f10098cb977fb69642c601e509c3611bebd",
+    "src/app/(app)/settings/automations/page.test.tsx": "74aa672f958d0c28d0e651ab415d0d8bb8cb2e619128c1ea39a2fadc3dcca860"
+  },
+  "reviewedCodeHashesMatch": true,
+  "reviewedTestDelta": "Only added supported-existing-rule activation regression after snapshot; product code unchanged",
+  "targetedTests": {
+    "status": "PASS",
+    "exitCode": 0,
+    "tests": 53,
+    "files": 5
+  },
+  "scopedLint": "PASS",
+  "typecheck": "PASS",
+  "currentFinalAdditiveTestChecks": {
+    "status": "PASS",
+    "exitCode": 0,
+    "source": "terminal session76939",
+    "scope": "one added regression test lint plus complete current tsc"
+  },
+  "review": {
+    "raw": "draft-recipes-fixed-review.json",
+    "status": "REVIEW_COMPLETED",
+    "provider": "claude_cli",
+    "observedModel": "claude-opus-5-5",
+    "observedEffort": "unknown",
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 0,
+    "NIT": 1
+  },
+  "findingsDisposition": [
+    {
+      "severity": "MAJOR",
+      "disposition": "resolved",
+      "raw": "draft-recipes-review.json",
+      "reason": "rule/template/condition readiness enforced at activation, custom creation, dryrun and pre-claim dispatch; crafted form template injection already blocked by4template whitelist, while raw stored-rule mismatch is now covered",
+      "validation": "53targeted tests/current source"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "reason": "Mismatched draft conditions cannot create active rules or activate stored rules; no silent active mismatch",
+      "validation": "readiness tests/current source"
+    },
+    {
+      "severity": "NIT",
+      "disposition": "confirmed",
+      "reason": "Keep existing trigger_not_ready caller status for compatibility; user copy refers to whole draft recipe, not merely trigger. Diagnostic separation not required for behavior."
+    }
+  ],
+  "notRun": {
+    "database": "NOT_RUN",
+    "browserE2E": "NOT_RUN",
+    "remoteCI": "NOT_RUN",
+    "sandboxDelivery": "NOT_RUN",
+    "fullAcceptanceGate": "NOT_RUN"
+  },
+  "remaining": [
+    "trusted completed-viewer event producer",
+    "checkout incomplete event with bounded time and replay semantics",
+    "send-time current pending/paid/cancelled eligibility",
+    "Sandbox dedup/unsubscribe/delivery and originalWP04 dependency",
+    "wholeWP18 qualified acceptance"
+  ],
+  "safety": {
+    "checkoutPaymentSchemaUntouched": true,
+    "noExternalSends": true,
+    "noPushDeploy": true,
+    "originalDirtyTreeUntouched": true
+  },
+  "rollback": "Reverse only draft-recipes-owned.patch after checking current ownership; before snapshots retain earlier WP changes, no reset/restore/clean",
+  "ci": "Existing .github/workflows/ci.yml has push/pull_request and Lint/Unit checks; no workflow changes or remoteCI claim",
+  "safetyReview": {
+    "security": "Owner/CSRF/vendor gates preserved; draft triggers, conditions and templates blocked before claim/outbox. Raw stored mismatch regression covered.",
+    "performance": "Only constant-size rule parsing; existing toggle read selects condition/actions, no extra DB roundtrip.",
+    "readability": "Readiness check centralized beside trigger readiness; existing caller status retained.",
+    "maintainability": "3new drafts additive; old4recipes kept; event producers/send-time checks explicitly remain unfinished."
+  },
+  "backupSuffix": ".before"
+}

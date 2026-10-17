@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-16T03:17:15.555269+00:00",
+  "status": "PASS",
+  "scope": "WP17 product+unit source byte-equal to last implementation validation; only E2E locator/wait and existing task-local build input changed. No Auth, publication, Payment, schema, media or reminder implementation edits.",
+  "sourceHashes": {
+    "src/app/actions/sales-workspace-actions.ts": "046ec76d0a50a4a6c8bc5b9be2ac6b6675ad7a1586cce782e454bb4ef79a4053",
+    "src/app/(app)/lives/new/page.tsx": "c9b19d595784d310d3dfb54b0d550010ab574c7de2997767e65ceb5f33c18c3a",
+    "src/lib/sales-project-publication.ts": "ece7265c8c20c9bf53e7dad0a5a694ad11a45b3505e4bd14d8ae9d5f49c7d567",
+    "src/lib/sales-project-publication.test.ts": "740f799751e3ef58ba2cf7730e9f0faf5d7f87fb0195de8174599a0c8938e4c7",
+    "src/lib/quick-webinar.ts": "172ad94a4c4a415f9b51fd35d31e3c7348a7c77d6d77d74ba70108f5b2ead4a4",
+    "src/lib/quick-webinar.test.ts": "b336061dc29d4ce8cb3d0d6eb07653ca0a3e912a0aec6bfc9df864c536537b90",
+    "src/app/actions/quick-webinar-actions.ts": "7426202d270ea9ed10f858262a0d8c63708bc1cd114b4ec554fbeeef128e0ddf",
+    "src/app/actions/quick-webinar-actions.test.ts": "a64642900de025ac0833d302b9e1fc6d2eaa394a9b0656a224d3c381ee4ceed5",
+    "src/components/quick-webinar-form.tsx": "901fc2ed24603d4a879577ee404d38c6ae256d1ea6c682a1ac5e773cab3ea9ae",
+    "src/components/quick-webinar-form.test.tsx": "af9146a835849bf11f36283fb78f0745d39bd019c2ee97aa14a81f87d6eafdf2"
+  },
+  "currentE2EHash": "a288792ed39ff6f5b51c6cf52ae16258967d504f7a7cd579235520ab9229c0c7",
+  "build": "../WP-13/rich-menu-build.json",
+  "buildOriginPort": 63999
+}

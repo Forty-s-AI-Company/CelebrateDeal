@@ -1,0 +1,17 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+  "status": "PASS",
+  "independent": true,
+  "role": "senior_review",
+  "model": "claude-sonnet-5-5",
+  "observed_model": "claude-sonnet-5-5",
+  "raw_receipts": [
+    "final-review.json",
+    "../WP-14/calendar-review.json"
+  ],
+  "scope_coverage": "Immutable galleryoriginalfinalSonnet + currentrenderer calendarSonnet; exact source hashes verified, not treating old renderer snapshot as current.",
+  "wholeWpReady": false,
+  "observed_effort": "unknown"
+}

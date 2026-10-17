@@ -1,0 +1,39 @@
+{
+  "status": "IN_PROGRESS",
+  "owner": "main only",
+  "dependencies": [
+    "WP08 READY"
+  ],
+  "scope": [
+    "dashboard UI",
+    "app-shell mobile navigation",
+    "operations panel UI only"
+  ],
+  "acceptance": [
+    "new merchant primary action/form accessible in first mobile viewport",
+    "onboarding task cards collapsed by default",
+    "keyboard focus and target sizing",
+    "desktop/mobile axe zero serious",
+    "plan currency explicitly TWD"
+  ],
+  "invariants": [
+    "no query changes",
+    "no roles/permission changes",
+    "no Production/push/deploy",
+    "isolated worktree only"
+  ],
+  "next": "Read F13/F14 audit details, inspect current UI evidence, resolve owned-file scope before implementing",
+  "carried_review_items": [
+    "gallery modal keyboard focus should be evaluated under explicitly bounded WP15 UI scope; file is outside primary3paths, verify allowed scope before editing",
+    "date timezone display preexisting MINOR retained; do not silently expand WP15 into business analytics"
+  ],
+  "implementation_model": "router decides; not preselected",
+  "bounded_supporting_scope": {
+    "src/app/(app)/billing/plans/page.tsx": "WP15 explicit TWD acceptance only: prefix existing formatted amounts; no prices, checkout, query, billing gates changed",
+    "src/app/(app)/billing/plans/page.test.tsx": "Render assertion for explicit currency; existing mocks only",
+    "src/components/app-shell.tsx": "WP15 UI preference initialization only; no schema, guards, queries or business logic changes; preserve existing preference on updates",
+    "src/app/(app)/layout.tsx": "WP15 UI preference initialization only; no schema, guards, queries or business logic changes; preserve existing preference on updates",
+    "src/app/actions/registration-actions.ts": "WP15 UI preference initialization only; no schema, guards, queries or business logic changes; preserve existing preference on updates",
+    "src/app/actions/sales-workspace-actions.ts": "WP15 UI preference initialization only; no schema, guards, queries or business logic changes; preserve existing preference on updates"
+  }
+}

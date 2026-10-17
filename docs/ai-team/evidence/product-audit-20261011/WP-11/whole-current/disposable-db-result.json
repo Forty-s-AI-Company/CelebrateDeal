@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "tests": {
+    "status": "PASS",
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "failure": {
+    "category": "none",
+    "errorCode": null,
+    "rootCauseConfirmed": false
+  }
+}

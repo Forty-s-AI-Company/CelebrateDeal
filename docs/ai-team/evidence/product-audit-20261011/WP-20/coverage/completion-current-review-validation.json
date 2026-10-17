@@ -1,0 +1,11 @@
+{
+  "status": "PARSED",
+  "findings": {
+    "BLOCKER": 0,
+    "MAJOR": 2,
+    "MINOR": 1,
+    "NIT": 3
+  },
+  "acceptance": "NOT_READY",
+  "scope": "completion changes reviewed; full Goal not complete"
+}

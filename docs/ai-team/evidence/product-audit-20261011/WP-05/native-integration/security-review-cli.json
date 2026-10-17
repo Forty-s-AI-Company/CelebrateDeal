@@ -1,0 +1,257 @@
+{
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the supplied sources for security and migration issues. I found no BLOCKER. The core storage design looks sound: drafts are encrypted (AES-256-GCM, purpose-derived key); the lookup hash, form ID, source path and expiry are bound inside the ciphertext; and the 256-bit capability token is stored only as a SHA-256 hash. The cookie is HttpOnly and SameSite=Strict. The return path is limited to a strict allowlist, so it can't be used as an open redirect. If the key or database is missing, nothing falls back to plaintext. The migration only adds a new table. I found 1 MAJOR and 4 MINOR issues: (1) the draft-write limit doesn't cap total storage, and drafts are saved without checking that the form exists; (2) the cookie name is worked out differently when writing and reading; (3) an oversized or malformed native body bypasses the bounded 303 error handling; (4) the canonical-origin check now gates all native submissions, not just draft storage; (5) repeated field names (such as checkbox groups) silently drop the whole draft. An empty or short findings list does not certify WP05. Test and release acceptance still need separate evidence.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/registration-form-retry-response.ts",
+        "area": "registrationRetryResponse: draft-write rate limit and save call",
+        "issue": "The only cap on draft storage is a per-requester limit of 10 per minute. Drafts are written for any formId and sourcePath taken from the request body, even when processSubmission returned 404 (form missing or unpublished), 403 or 429. Nothing checks that the form exists or that the answer keys belong to its schema, and there is no global cap on draft rows or bytes.",
+        "evidence": "checkRateLimit(request, \"registration-retry-draft\", 10, 60_000) is the only gate. saveRegistrationRetryDraft receives formId: String(data.get(\"formId\")) without looking up the form. MAX_PAYLOAD_BYTES is 400_000, so each envelope can reach about 533k base64 characters. TTL is 10 minutes and purge only runs when other requests arrive.",
+        "impact": "An unauthenticated client with an allowed Origin header can keep about 100 live drafts of up to about 0.5 MB each per rate-limit key, roughly 50 MB. Across many IPs, or if the limiter key can be spoofed (for example via forwarded headers), this can fill database storage on the shared Postgres instance. No user session is needed and the target form doesn't have to exist.",
+        "recommended_fix": "Save a draft only after the form resolves to a published, accessible form, and keep only the keys defined in that form's schema. Lower the size cap to the real form-schema bound. Add a global cap on draft rows or bytes (refuse to save and return \"unavailable\" when exceeded). Confirm the rate-limit key cannot be spoofed.",
+        "required_test": "Integration test: native POSTs with a nonexistent formId, and with keys not in the schema, create no RegistrationFormRetryDraft row. A burst above the global cap returns registrationRetry=unavailable and adds no rows. Spoofing X-Forwarded-For does not get around the draft-write limit.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/registration-retry-boundary.tsx",
+        "area": "registrationRetryBoundary cookie name selection vs existingDraft()",
+        "issue": "The writer and reader decide the cookie name differently. The writer picks the __Host- (secure) name when NEXT_PUBLIC_APP_URL (or request.url) uses https. The reader picks it unless NODE_ENV is development and the Host header is localhost.",
+        "evidence": "In the response file: secure = new URL(registrationRetryOrigin(request)).protocol === \"https:\". In the boundary: registrationRetryCookieName(!localDevelopment), where localDevelopment depends on NODE_ENV and the Host header.",
+        "impact": "In any non-development environment served over http (for example `next start` E2E on http://localhost or http staging), and in development with an https public URL, the draft is encrypted and the cookie is set, but the page looks up the other cookie name. Refill silently fails and the user is wrongly told nothing was kept. Current browser tests may only pass because they run in development.",
+        "recommended_fix": "Have both the write and read sides call one shared helper that derives secure (and the cookie name) from the same canonical origin. Do not use NODE_ENV or the Host header.",
+        "required_test": "Run the JS-off 400 refill browser test against a production build (`next start`) with an http NEXT_PUBLIC_APP_URL, and against an https configuration. In both, the refilled values appear.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MINOR",
+        "file": "NEW POST WRAPPER (registration submission route)",
+        "area": "POST: readFormDataBody(request, 1_000_000) call",
+        "issue": "readFormDataBody runs outside the try/catch. If the body is over the limit, malformed, or has a bad multipart boundary, the error escapes. The native client gets an unhandled 500 instead of the bounded 303 redirect to a public path.",
+        "evidence": "`const formData = await readFormDataBody(request, 1_000_000);` comes before `try { response = await processSubmission(request, formData); } catch {...}`.",
+        "impact": "JS-off users get a raw framework error page with no retry message or error state, which breaks the stated rule that native errors 303 to a bounded public path. It may also log stack traces for unauthenticated input.",
+        "recommended_fix": "Wrap the body read in a try/catch. On failure, call registrationRetryResponse(request, null, 400 or 413→400), which redirects to the source or error path without saving fields.",
+        "required_test": "Route test: a native POST with a body over 1 MB, and one with a corrupt multipart body, each return 303 with Cache-Control: no-store and create no draft row.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "NEW POST WRAPPER (registration submission route)",
+        "area": "POST: trustedNativeRetryRequest gate before processSubmission",
+        "issue": "The canonical-origin check now blocks every native submission, including valid ones. The approved scope only puts it in front of storing encrypted drafts. Any native POST whose Origin header doesn't exactly match NEXT_PUBLIC_APP_URL's origin now goes to /registration-error and is never processed.",
+        "evidence": "`if (!trustedNativeRetryRequest(request)) return NextResponse.redirect(new URL(\"/registration-error\", ...))` runs before processSubmission. trustedNativeRetryRequest requires an exact match on origin.",
+        "impact": "Native submissions that used to succeed can now fail. This includes alternate hostnames (www vs apex, preview or custom domains), a missing or misconfigured NEXT_PUBLIC_APP_URL behind a TLS proxy, and browsers that send Origin: null (for example under Referrer-Policy: no-referrer). This changes native behaviour beyond what the task describes, and tests that use only the canonical host won't catch it.",
+        "recommended_fix": "Either have the origin gate only control whether a draft is saved (untrusted origins still go through the original processSubmission flow, with no draft written), or explicitly record and approve this native CSRF hardening as a scope change, with a check at deploy time that NEXT_PUBLIC_APP_URL matches the served origins.",
+        "required_test": "Route test: a native valid submission with Origin set to an alternate allowed host, or Origin: null, behaves as the approved contract says (processed without a draft, or explicitly rejected according to the approved scope decision).",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-form-retry-response.ts",
+        "area": "registrationRetryResponse: answers collection loop (Object.hasOwn duplicate check)",
+        "issue": "Any repeated non-reserved field name makes the whole submission invalid for draft storage. Native checkbox groups and multi-selects send the same name more than once.",
+        "evidence": "`if (typeof value !== \"string\" || Object.hasOwn(answers, key)) { valid = false; break; }`. Answers is a record mapping each key to a single string.",
+        "impact": "For forms with multi-value fields, every native validation error produces registrationRetry=unavailable and nothing is refilled, even though the user filled in other fields correctly. Refill fails silently for that whole class of forms.",
+        "recommended_fix": "Either support multi-value fields (store string[] per key, matching how processSubmission serializes them) or explicitly document that only single-value fields are supported, and limit the browser tests accordingly.",
+        "required_test": "Browser test with JS off: a form with a checkbox group plus a text field, submitted with a validation error, refills the text field (and the checkbox state, if supported) instead of showing the 'not retained' message.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "completed": false,
+  "attempts": [
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "reviewed": true,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:92818023d3973be2a435fc5f6bd746e87f1843d8395be03d4abee5319d8c12b7",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+      "prisma/schema.prisma",
+      "src/app/api/form-submissions/route.test.ts",
+      "src/app/api/form-submissions/route.ts",
+      "src/app/form/[slug]/page.tsx",
+      "src/app/loading.test.tsx",
+      "src/app/lp/[slug]/[stepPath]/page.tsx",
+      "src/app/lp/[slug]/page.tsx",
+      "src/app/p/[slug]/loading-shell.tsx",
+      "src/app/p/[slug]/page.tsx",
+      "src/app/registration-error/page.tsx",
+      "src/app/root-loading.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "src/components/lead-form.tsx",
+      "src/components/registration-retry-boundary.tsx",
+      "src/components/registration-retry-context.test.tsx",
+      "src/components/registration-retry-context.tsx",
+      "src/lib/registration-form-fields.ts",
+      "src/lib/registration-form-retry-response.test.ts",
+      "src/lib/registration-form-retry-response.ts",
+      "src/lib/registration-form-retry.db.test.ts",
+      "src/lib/registration-form-retry.test.ts",
+      "src/lib/registration-form-retry.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+      "prisma/schema.prisma",
+      "src/app/api/form-submissions/route.test.ts",
+      "src/app/api/form-submissions/route.ts",
+      "src/app/form/[slug]/page.tsx",
+      "src/app/loading.test.tsx",
+      "src/app/lp/[slug]/[stepPath]/page.tsx",
+      "src/app/lp/[slug]/page.tsx",
+      "src/app/p/[slug]/loading-shell.tsx",
+      "src/app/p/[slug]/page.tsx",
+      "src/app/registration-error/page.tsx",
+      "src/app/root-loading.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "src/components/lead-form.tsx",
+      "src/components/registration-retry-boundary.tsx",
+      "src/components/registration-retry-context.test.tsx",
+      "src/components/registration-retry-context.tsx",
+      "src/lib/registration-form-fields.ts",
+      "src/lib/registration-form-retry-response.test.ts",
+      "src/lib/registration-form-retry-response.ts",
+      "src/lib/registration-form-retry.db.test.ts",
+      "src/lib/registration-form-retry.test.ts",
+      "src/lib/registration-form-retry.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

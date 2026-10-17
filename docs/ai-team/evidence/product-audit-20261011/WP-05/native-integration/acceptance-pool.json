@@ -1,0 +1,18 @@
+{
+  "status": "BLOCKED",
+  "blockers": [
+    "final_reviewer_not_qualified",
+    "independent_review_unverified",
+    "required_check_unverified:all-public-entry-browser",
+    "required_check_unverified:browser",
+    "required_check_unverified:browser-lp-js",
+    "required_check_unverified:browser-lp-native",
+    "required_check_unverified:browser-partner",
+    "required_check_unverified:browser-status",
+    "required_check_unverified:browser-webinar-js",
+    "required_check_unverified:browser-webinar-native",
+    "required_check_unverified:submission-invariant",
+    "required_check_unverified:unit"
+  ],
+  "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c"
+}

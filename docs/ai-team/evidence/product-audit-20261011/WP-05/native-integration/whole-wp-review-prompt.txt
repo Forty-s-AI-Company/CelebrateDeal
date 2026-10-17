@@ -1,0 +1,274 @@
+Read-only final WP05 integration/security acceptance review. No tools/edits. Only concrete BLOCKER/MAJOR/MINOR/NIT or findings empty. Review requirement evidence and current storage code; compose prior qualified independent code reviews using verified source lineage below. This is integration of those reviews, not a claim you reread omitted files. Full WP05 requires native400/403/404/429/503 safe303back with fields, three forms sharedfeedback/aria-live, unchanged API/email confirmation, no PIIquery/log,503resubmit no duplicate. Additive encrypted draft migration authorized; no Production. Core submission invariant PASS. Current snapshot sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f. Current215unit7DB,lint,tsc,invariant PASS.16browsercases PASS; remaining native lp/partner/status matrix ongoing, gate must wait. Historical unaffected deadline8 and attribution8 tests scoped separately. Source hashes audited; changed portions explicitly reviewed in amendments. Remaining manual Stop/Esc pending until reload accepted nonblocking MINOR by prior review; no timer unlock due duplicate risk. Raw/encoded path MINOR: normal authored slug/step normalize ASCII; deliberately tampered legacy whitespace step can fail safe retry path validation, documented boundary, no blanket Unicode support claim. Previous false findings (native redirect fallback, optional empty IDs, server-fixed redirects) rejected with code evidence. Native attribution/SSR MAJOR repaired and qualified review confirmed; recent transport/pending amendments reviewed with no blockers. All model observations from actual CLI terminal, effort unknown. Do not infer full GOAL completion or deploy approval.
+
+REQUIREMENTS
+[
+  {
+    "id": "R1",
+    "requirement": "Native 400/403/404/429/503 safe303 back to source, preserve fields",
+    "proof": [
+      "registration-form-retry-response.test.ts parameterized statuses",
+      "browser status403/404/429 and all 3 renderer400 native cases",
+      "route.db.test.ts queue503 stores draft and resubmits"
+    ]
+  },
+  {
+    "id": "R2",
+    "requirement": "Three forms share pending/error/success and aria-live/alert semantics",
+    "proof": [
+      "registration-submission-feedback shared component",
+      "unit215 current snapshot",
+      "browser-ui-feedback/lp-js/webinar-pending and native equivalents; axe0 serious/critical in form scenarios"
+    ]
+  },
+  {
+    "id": "R3",
+    "requirement": "Preserve API client contract and email-confirmation rules",
+    "proof": [
+      "verify-core.py unchanged core invariant",
+      "JSON success asserts ok true and verificationRequired true",
+      "API route unit and DB idempotency tests; no email sent in synthetic E2E"
+    ]
+  },
+  {
+    "id": "R4",
+    "requirement": "No PII in URL/log; safe encrypted short-lived form/path-bound retry",
+    "proof": [
+      "critical security part1 exact hashes unchanged except reviewed optional attribution amendment",
+      "registration-form-retry unit/DB tests: TTL,cap,wrong path/form,storage fail closed",
+      "nativeURL only opaque status and HttpOnly draft capability; stored encrypted envelope"
+    ]
+  },
+  {
+    "id": "R5",
+    "requirement": "503 resubmit must not create duplicate record",
+    "proof": [
+      "Current PostgreSQL test fails queue once, count1 after503 and afterlater success, draft cleared; concurrent duplicate count1"
+    ]
+  },
+  {
+    "id": "R6",
+    "requirement": "Public E2E, targeted, a11y and additive migration verification",
+    "proof": [
+      "215unit7DB,lint,tsc,invariant current PASS",
+      "Current27 browser cases; historical unaffected deadline8/attribution8 separately scoped",
+      "WP07 disposable migration baseline and current retry DB tests"
+    ]
+  },
+  {
+    "id": "R7",
+    "requirement": "Isolation/no Production/push/deploy",
+    "proof": [
+      "Independent worktree base efb8b7e9",
+      "Owned loopback31026/disposable64506 synthetic fixtures; runners refuse env files and suppress raw logs",
+      "No external send or deploy runner invoked"
+    ]
+  }
+]
+SOURCE REVIEW LINEAGE
+[{"file": "src/components/registration-retry-boundary.tsx", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/components/registration-retry-context.tsx", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/components/registration-closed-feedback.tsx", "unchanged_from": "current-integration-part2-scope.json", "amendment_reviews": []}, {"file": "src/components/registration-deadline-outcome.tsx", "unchanged_from": "current-integration-part2-scope.json", "amendment_reviews": []}, {"file": "src/app/lp/[slug]/page.tsx", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/app/lp/[slug]/[stepPath]/page.tsx", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/app/api/form-submissions/route.ts", "unchanged_from": "current-integration-part2-scope.json", "amendment_reviews": []}, {"file": "src/lib/registration-form-retry.ts", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/lib/registration-form-retry-response.ts", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/lib/registration-submission-receipt.ts", "unchanged_from": "current-security-part1-scope.json", "amendment_reviews": []}, {"file": "src/lib/registration-form-fields.ts", "unchanged_from": "current-security-part1-scope.json", "amendment_reviews": []}, {"file": "prisma/migrations/20261011_registration_form_retry_draft/migration.sql", "unchanged_from": "current-security-part1-scope.json", "amendment_reviews": []}, {"file": "src/components/lead-form.tsx", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/components/registration-submission-feedback.tsx", "unchanged_from": "current-ui-part3-scope.json", "amendment_reviews": []}, {"file": "src/app/form/[slug]/page.tsx", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/app/p/[slug]/page.tsx", "unchanged_from": null, "amendment_reviews": ["attribution-repair-reviewed.json", "attribution-followup-reviewed.json"]}, {"file": "src/components/landing-pages/funnel-page-document-renderer.tsx", "unchanged_from": "current-ui-part4-scope.json", "amendment_reviews": []}, {"file": "src/components/landing-pages/funnel-webinar-experience.tsx", "unchanged_from": null, "amendment_reviews": ["final-contract-reviewed.json", "final-contract-followup-reviewed.json"]}, {"file": "src/lib/registration-submission-client.ts", "unchanged_from": null, "amendment_reviews": ["final-contract-reviewed.json", "final-contract-followup-reviewed.json"]}]
+EXACT CURRENT src/lib/registration-form-retry.ts
+import { RegistrationAttributionSchema } from "@/lib/registration-attribution";
+import { createHash, randomBytes } from "node:crypto";
+import type { PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+import { REGISTRATION_FORM_FIELD_KEY, REGISTRATION_FORM_RESERVED_FIELDS } from "@/lib/registration-form-fields";
+
+export const REGISTRATION_RETRY_TTL_MS = 10 * 60_000;
+// 所有worker共用交易鎖與實體列上限；不依賴IP或程序內記憶體。
+export const REGISTRATION_RETRY_MAX_ROWS = 128;
+export function registrationRetrySecureCookies(host: string) {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    try { return new URL(process.env.NEXT_PUBLIC_APP_URL).protocol === "https:"; }
+    catch { return true; }
+  }
+  return !(process.env.NODE_ENV === "development" && /^(localhost|127\.0\.0\.1)(:\d+)?$/u.test(host));
+}
+export function registrationRetryCookieName(secure: boolean) {
+  return secure ? "__Host-celebratedeal_registration_retry" : "celebratedeal_registration_retry";
+}
+const PURPOSE = "registration-form-retry-v1";
+// 包含32×2000字元全部轉為JSON unicode escapes的最壞情形及metadata。
+const MAX_PAYLOAD_BYTES = 400_000;
+const MAX_ENVELOPE_CHARS = 4 * Math.ceil(MAX_PAYLOAD_BYTES / 3) + 64;
+const capabilityPattern = /^[A-Za-z0-9_-]{43}$/u;
+type DraftDatabase = Pick<PrismaClient, "registrationFormRetryDraft">;
+const Answers = z.record(z.string().regex(REGISTRATION_FORM_FIELD_KEY), z.string().max(2_000))
+  .refine((value) => Object.keys(value).length <= 32 && Object.keys(value).every((key) => !REGISTRATION_FORM_RESERVED_FIELDS.has(key)));
+const Draft = z.object({
+  formId: z.string().min(1).max(128),
+  sourcePath: z.string().max(2_048),
+  answers: Answers,
+  attribution: RegistrationAttributionSchema.optional(),
+  liveId: z.string().max(128).nullable(),
+  status: z.union([z.literal(400), z.literal(403), z.literal(404), z.literal(429), z.literal(503)]),
+}).strict();
+export type RegistrationRetryDraft = z.infer<typeof Draft>;
+
+// 僅接受公開報名入口的純路徑，不將查詢字串或外部網址寫入草稿。
+export function registrationRetrySourcePath(value: string): string | null {
+  if (value.length > 2_048 || !/^\/(?:form|p|lp)\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?$/u.test(value)) return null;
+  return value;
+}
+function lookupHash(capability: string) {
+  return createHash("sha256").update(capability).digest("hex");
+}
+export function registrationRetryCookieOptions(secure: boolean) {
+  return { httpOnly: true, secure, sameSite: "strict" as const, path: "/", maxAge: REGISTRATION_RETRY_TTL_MS / 1000 };
+}
+
+/** 限量回收過期密文；沒有請求時不保證物理刪除時間。 */
+export async function purgeExpiredRegistrationRetryDrafts(db: DraftDatabase, now = new Date()) {
+  const expired = await db.registrationFormRetryDraft.findMany({
+    where: { expiresAt: { lte: now } }, orderBy: { expiresAt: "asc" }, take: 100, select: { idHash: true },
+  });
+  if (!expired.length) return 0;
+  const deleted = await db.registrationFormRetryDraft.deleteMany({
+    where: { idHash: { in: expired.map((entry) => entry.idHash) }, expiresAt: { lte: now } },
+  });
+  return deleted.count;
+}
+
+/** 呼叫端先完成來源檢查；本函式不記錄原始欄位、識別值或密文。 */
+export async function saveRegistrationRetryDraft(db: DraftDatabase & Pick<PrismaClient, "$transaction">, input: RegistrationRetryDraft, now = new Date()): Promise<string | null> {
+  const parsed = Draft.safeParse(input);
+  if (!parsed.success || !registrationRetrySourcePath(parsed.data.sourcePath) || !Number.isFinite(now.getTime())) return null;
+  const expiresAt = new Date(now.getTime() + REGISTRATION_RETRY_TTL_MS);
+  const capability = randomBytes(32).toString("base64url");
+  const idHash = lookupHash(capability);
+  const serialized = JSON.stringify({ ...parsed.data, idHash, expiresAt: expiresAt.toISOString() });
+  if (Buffer.byteLength(serialized, "utf8") > MAX_PAYLOAD_BYTES) return null;
+  try {
+    // 滿額時先拒絕，避免無法儲存的請求排隊占用交易連線。
+    // 此檢查僅作快速拒絕；真正的容量上限仍由鎖內檢查保證。
+    if (await db.registrationFormRetryDraft.count({ where: { expiresAt: { gt: now } } }) >= REGISTRATION_RETRY_MAX_ROWS) return null;
+    // lookup、來源、表單與到期時間同時包入驗證密文，防止密文被搬到其他列。
+    const encryptedPayload = encryptSensitiveValue(serialized, PURPOSE);
+    if (encryptedPayload.length > MAX_ENVELOPE_CHARS) return null;
+    return await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(1760313600, 5)`;
+      await purgeExpiredRegistrationRetryDrafts(tx, now);
+      if (await tx.registrationFormRetryDraft.count() >= REGISTRATION_RETRY_MAX_ROWS) return null;
+      await tx.registrationFormRetryDraft.create({ data: {
+        idHash, encryptedPayload, sourcePath: parsed.data.sourcePath, formId: parsed.data.formId, expiresAt,
+      } });
+      return capability;
+    // 鎖等待結束後必須看見前一筆commit，不依賴部署端的預設隔離層級。
+    }, { isolationLevel: "ReadCommitted" });
+  } catch {
+    // 缺少加密設定或資料庫不可用時，絕不退回明文／URL儲存。
+    return null;
+  }
+}
+
+export async function readRegistrationRetryDraft(db: DraftDatabase, input: {
+  capability: string | undefined; formId: string; sourcePath: string;
+}, now = new Date()): Promise<RegistrationRetryDraft | null> {
+  if (!input.capability || !capabilityPattern.test(input.capability) || !registrationRetrySourcePath(input.sourcePath) || !Number.isFinite(now.getTime())) return null;
+  try {
+    await purgeExpiredRegistrationRetryDrafts(db, now);
+    const idHash = lookupHash(input.capability);
+    const stored = await db.registrationFormRetryDraft.findUnique({ where: { idHash } });
+    if (!stored || stored.formId !== input.formId || stored.sourcePath !== input.sourcePath) return null;
+    if (stored.expiresAt <= now) {
+      await db.registrationFormRetryDraft.deleteMany({ where: { idHash, expiresAt: { lte: now } } });
+      return null;
+    }
+    if (stored.encryptedPayload.length > MAX_ENVELOPE_CHARS) return null;
+    const envelope = z.object({ idHash: z.string(), expiresAt: z.string(), ...Draft.shape }).strict()
+      .safeParse(JSON.parse(decryptSensitiveValue(stored.encryptedPayload, PURPOSE)));
+    if (!envelope.success) return null;
+    const value = envelope.data;
+    if (value.idHash !== idHash || value.formId !== input.formId || value.sourcePath !== input.sourcePath || value.expiresAt !== stored.expiresAt.toISOString()) return null;
+    // 僅回傳回填資料；能力識別與內部lookup不會傳給Client Component。
+    return { formId: value.formId, sourcePath: value.sourcePath, answers: value.answers, liveId: value.liveId, status: value.status, ...(value.attribution ? { attribution: value.attribution } : {}) };
+  } catch {
+    return null;
+  }
+}
+
+/** 成功提交後由呼叫端刪除草稿並清除cookie；不存在的識別值可安全重試。 */
+export async function deleteRegistrationRetryDraft(db: DraftDatabase, capability: string | undefined): Promise<boolean> {
+  if (!capability || !capabilityPattern.test(capability)) return false;
+  try {
+    await db.registrationFormRetryDraft.deleteMany({ where: { idHash: lookupHash(capability) } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+EXACT CURRENT src/lib/registration-form-retry-response.ts
+import { registrationAttribution } from "@/lib/registration-attribution";
+import { NextResponse } from "next/server";
+import { getDb } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { parseRegistrationFormFields, REGISTRATION_FORM_RESERVED_FIELDS } from "@/lib/registration-form-fields";
+import { deleteRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName, registrationRetryCookieOptions, registrationRetrySourcePath, saveRegistrationRetryDraft } from "@/lib/registration-form-retry";
+
+export function registrationRetryOrigin(request: Request) {
+  // 使用部署者設定的公開origin，不取用可偽造的forwarded host。
+  try { return new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin; }
+  catch { return new URL(request.url).origin; }
+}
+export function trustedNativeRetryRequest(request: Request) {
+  // 草稿保存不接受Referer替代Origin，也不信任forwarded host。
+  return request.headers.get("origin") === registrationRetryOrigin(request);
+}
+function existingDraft(request: Request) {
+  const secure = registrationRetrySecureCookies(new URL(request.url).host);
+  const name = registrationRetryCookieName(secure);
+  const value = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
+  return { secure, name, value };
+}
+export async function clearRegistrationRetry(request: Request, response: NextResponse) {
+  const { secure, name, value } = existingDraft(request);
+  if (!value) return;
+  try { await deleteRegistrationRetryDraft(getDb(), value); } catch { /* DB初始化失敗也不得影響已完成提交。 */ }
+  response.cookies.set(name, "", { ...registrationRetryCookieOptions(secure), maxAge: 0 });
+}
+async function eligibleDraftFields(formId: string) {
+  if (!formId || formId.length > 128) return null;
+  const db = getDb();
+  const form = await db.registrationForm.findUnique({ where: { id: formId }, select: { isActive: true, fields: true, projectId: true, vendorId: true } });
+  if (!form?.isActive) return null;
+  if (form.projectId && !await db.salesProject.findFirst({ where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } }, select: { id: true } })) return null;
+  const fields = parseRegistrationFormFields(form.fields);
+  return fields.success ? new Set(fields.data.map((field) => field.key)) : null;
+}
+export async function registrationRetryResponse(request: Request, data: FormData | null, status: number) {
+  const sourcePath = typeof data?.get("__registrationReturnPath") === "string" ? registrationRetrySourcePath(String(data.get("__registrationReturnPath"))) : null;
+  if (!trustedNativeRetryRequest(request) || !sourcePath) return NextResponse.redirect(new URL("/registration-error", registrationRetryOrigin(request)), { status: 303, headers: { "Cache-Control": "no-store" } });
+  const target = new URL(sourcePath, registrationRetryOrigin(request));
+  const errorStatus = ([400, 403, 404, 429, 503].includes(status) ? status : 503) as 400 | 403 | 404 | 429 | 503;
+  let saved: string | null = null;
+  try {
+    // 另設草稿寫入額度，避免主提交被限流後仍可無限新增密文。
+    const limited = await checkRateLimit(request, "registration-retry-draft", 10, 60_000);
+    if (!limited && data) {
+      const allowed = await eligibleDraftFields(String(data.get("formId") ?? ""));
+      const answers: Record<string, string> = {};
+      let valid = Boolean(allowed);
+      for (const [key, value] of data.entries()) {
+        if (REGISTRATION_FORM_RESERVED_FIELDS.has(key)) continue;
+        if (!allowed?.has(key) || typeof value !== "string" || Object.hasOwn(answers, key)) { valid = false; break; }
+        Object.defineProperty(answers, key, { value, enumerable: true });
+      }
+      if (valid) saved = await saveRegistrationRetryDraft(getDb(), {
+        formId: String(data.get("formId") ?? ""), sourcePath, answers,
+        attribution: registrationAttribution({ ref: typeof data.get("referralCode") === "string" ? String(data.get("referralCode")) : undefined, share: typeof data.get("shareCode") === "string" ? String(data.get("shareCode")) : undefined, lp: typeof data.get("landingPageId") === "string" ? String(data.get("landingPageId")) : undefined }),
+        liveId: typeof data.get("liveId") === "string" ? String(data.get("liveId")) : null, status: errorStatus,
+      });
+    }
+  } catch { /* 無草稿時明示未保留，不輸出欄位或密文。 */ }
+  target.searchParams.set("registrationRetry", saved ? String(errorStatus) : "unavailable");
+  const response = NextResponse.redirect(target, { status: 303, headers: { "Cache-Control": "no-store" } });
+  if (saved) {
+    const previous = existingDraft(request);
+    try { await deleteRegistrationRetryDraft(getDb(), previous.value); } catch { /* 舊草稿仍受TTL限制。 */ }
+    response.cookies.set(previous.name, saved, registrationRetryCookieOptions(previous.secure));
+  } else {
+    await clearRegistrationRetry(request, response);
+  }
+  return response;
+}

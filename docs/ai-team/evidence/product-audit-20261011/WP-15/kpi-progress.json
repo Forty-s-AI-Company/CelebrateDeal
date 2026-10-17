@@ -1,0 +1,30 @@
+{
+  "status": "IN_PROGRESS",
+  "changed_files": [
+    "src\\app\\(app)\\dashboard\\dashboard-kpis.tsx",
+    "src/app/(app)/dashboard/dashboard-kpis.test.tsx",
+    "src/components/app-shell.tsx"
+  ],
+  "result": "Zero activity KPI group collapsed using native details; metrics retained; active metrics two-column mobile layout; duplicate labels removed; mobile task panel moved out of sticky header into scrollable main",
+  "checks": {
+    "eslint": "PASS",
+    "existing_targeted_test": "PASS 1 test",
+    "query_loader_exact_comparison": "PASS",
+    "new_behavior_browser_a11y": "NOT_RUN",
+    "whole_wp_acceptance": "NOT_RUN",
+    "typecheck_previous_kpi_snapshot": "PASS exit 0; app-shell subsequent edit not included",
+    "targeted_kpi_tests": "PASS 3 tests: active, empty, failure",
+    "shell_keyboard_a11y": "PASS 4 states Chromium/Firefox desktop/mobile; synthetic fixture; not full login E2E",
+    "eslint_shell_and_test": "PASS"
+  },
+  "remaining": [
+    "browser zero/nonzero/failure tests",
+    "task panel preference default",
+    "mobile shell",
+    "currency TWD",
+    "independent review and canonical acceptance"
+  ],
+  "router": "route-entry.json; selected sol; provider discovery required before final review; observed implementation model unknown",
+  "ownership": "main only; isolated worktree; no push/deploy",
+  "rollback": "Reverse only WP15 diff against dashboard-kpis-before.txt; preserve prior WP08 changes"
+}

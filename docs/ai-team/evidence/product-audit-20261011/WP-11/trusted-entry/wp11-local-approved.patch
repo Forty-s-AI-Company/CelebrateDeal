@@ -1,0 +1,237 @@
+--- /dev/null
++++ b/src/lib/trusted-entry-rate-limit.ts
+@@ -0,0 +1,33 @@
++import { NextResponse } from "next/server";
++import { checkRateLimit as checkLegacyRateLimit } from "./rate-limit";
++import { getRequestClientIp, type ClientIpTrustConfig } from "./request-client-ip";
++import { rateLimitRequestWithIdentity } from "./live-chat-request-security";
++
++/** Entry trust is explicit; a storage/WAF provider never selects a proxy. */
++export function entryIpTrustConfig(env: NodeJS.ProcessEnv = process.env): ClientIpTrustConfig {
++  const trustMode = env.ENTRY_CLIENT_IP_TRUST_MODE;
++  const deploymentSource = env.ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE;
++  if (trustMode === "runtime" && deploymentSource === "node") {
++    return { trustMode, deploymentSource };
++  }
++  if ((trustMode === "cloudflare" && deploymentSource === "cloudflare")
++    || (trustMode === "trusted-proxy" && deploymentSource === "vercel")) {
++    return { trustMode, deploymentSource, ingressSecret: env.ENTRY_CLIENT_IP_INGRESS_SECRET };
++  }
++  return { trustMode: "none", deploymentSource: "none" };
++}
++
++/** Only WP11 callers opt in. Keep the original body untouched for redemption. */
++export async function checkRateLimit(
++  request: Request, key: string, limit: number, windowMs: number,
++  config: ClientIpTrustConfig = entryIpTrustConfig(),
++) {
++  const ip = getRequestClientIp(request, config);
++  if (!ip) {
++    return NextResponse.json({ error: "Request source unavailable" }, {
++      status: 503,
++      headers: { "Retry-After": "30", "Cache-Control": "no-store" },
++    });
++  }
++  return checkLegacyRateLimit(rateLimitRequestWithIdentity(request, ip), key, limit, windowMs);
++}
+--- /dev/null
++++ b/src/lib/trusted-entry-rate-limit.test.ts
+@@ -0,0 +1,62 @@
++import { afterEach, beforeEach, expect, it, vi } from "vitest";
++import { checkRateLimit, entryIpTrustConfig } from "./trusted-entry-rate-limit";
++import { resetInMemoryRateLimitForTests } from "./rate-limit";
++import type { ClientIpTrustConfig } from "./request-client-ip";
++
++const proof = "synthetic-entry-ingress-proof-only-0000000000";
++const cloudflare: ClientIpTrustConfig = { trustMode: "cloudflare", deploymentSource: "cloudflare", ingressSecret: proof };
++it.each(["cloudflare", "trusted-proxy"] as const)("fails closed for every missing or malformed %s credential configuration", async mode => {
++  for (const credential of [undefined, "", "short", " padded-proof-000000000000000000000000 "]) {
++    const config = entryIpTrustConfig({
++      NODE_ENV: "test",
++      ENTRY_CLIENT_IP_TRUST_MODE: mode,
++      ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE: mode === "cloudflare" ? "cloudflare" : "vercel",
++      ENTRY_CLIENT_IP_INGRESS_SECRET: credential,
++    } as NodeJS.ProcessEnv);
++    for (const supplied of [undefined, "", credential]) {
++      const headers = new Headers({ "cf-connecting-ip": "198.51.100.1", "x-real-ip": "198.51.100.1" });
++      if (supplied !== undefined) headers.set("x-celebratedeal-live-chat-ingress", supplied);
++      expect((await checkRateLimit(new Request("http://localhost/entry", { headers }), "entry", 1, 60000, config))?.status).toBe(503);
++    }
++  }
++});
++it("validates the entire trusted-proxy forwarding chain", async () => {
++  const config: ClientIpTrustConfig = { trustMode: "trusted-proxy", deploymentSource: "vercel", ingressSecret: proof };
++  const headers = { "x-real-ip": "198.51.100.1", "x-forwarded-for": "198.51.100.1,203.0.113.2", "x-celebratedeal-live-chat-ingress": proof };
++  expect(await checkRateLimit(new Request("http://localhost/entry", { headers }), "entry", 1, 60000, config)).toBeNull();
++  for (const chain of ["203.0.113.9,198.51.100.1", "198.51.100.1,not-an-ip"]) {
++    expect((await checkRateLimit(new Request("http://localhost/entry", { headers: { ...headers, "x-forwarded-for": chain } }), "entry", 1, 60000, config))?.status).toBe(503);
++  }
++});
++beforeEach(() => { vi.stubEnv("RATE_LIMIT_PROVIDER", "memory"); resetInMemoryRateLimitForTests(); });
++afterEach(() => { vi.unstubAllEnvs(); resetInMemoryRateLimitForTests(); });
++
++it.each([{}, { RATE_LIMIT_PROVIDER: "cloudflare_waf" }, { ENTRY_CLIENT_IP_TRUST_MODE: "runtime", ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE: "vercel" }])("does not infer trust from provider or mismatched configuration", env => {
++  expect(entryIpTrustConfig(env as NodeJS.ProcessEnv)).toEqual({ trustMode: "none", deploymentSource: "none" });
++});
++it.each([undefined, "wrong-proof"])("rejects missing or forged proof before calling even an edge-only provider", async value => {
++  vi.stubEnv("RATE_LIMIT_PROVIDER", "cloudflare_waf");
++  const headers = new Headers({ "cf-connecting-ip": "198.51.100.1" });
++  if (value) headers.set("x-celebratedeal-live-chat-ingress", value);
++  const response = await checkRateLimit(new Request("http://localhost/entry", { headers }), "entry", 1, 60000, cloudflare);
++  expect(response?.status).toBe(503);
++});
++it("counts the runtime socket identity despite rotating forged headers and preserves the body", async () => {
++  const config: ClientIpTrustConfig = { trustMode: "runtime", deploymentSource: "node" };
++  for (let index = 0; index < 3; index++) {
++    const request = new Request("http://localhost/entry", { method: "POST", body: "original-body", headers: { "cf-connecting-ip": `198.51.100.${index + 1}`, "x-forwarded-for": `203.0.113.${index + 1}` } });
++    Object.defineProperty(request, "ip", { value: "127.0.0.1" });
++    expect((await checkRateLimit(request, "entry", 2, 60000, config))?.status ?? null).toBe(index === 2 ? 429 : null);
++    expect(await request.text()).toBe("original-body");
++  }
++});
++it("requires a runtime address and does not fall back to headers", async () => {
++  const request = new Request("http://localhost/entry", { headers: { "cf-connecting-ip": "127.0.0.1" } });
++  expect((await checkRateLimit(request, "entry", 1, 60000, { trustMode: "runtime", deploymentSource: "node" }))?.status).toBe(503);
++});
++it("uses verified proxy identity and rejects malformed proxy addresses", async () => {
++  const headers = { "cf-connecting-ip": "198.51.100.1", "x-celebratedeal-live-chat-ingress": proof };
++  expect(await checkRateLimit(new Request("http://localhost/entry", { headers }), "entry", 1, 60000, cloudflare)).toBeNull();
++  expect((await checkRateLimit(new Request("http://localhost/entry", { headers: { ...headers, "x-forwarded-for": "203.0.113.9" } }), "entry", 1, 60000, cloudflare))?.status).toBe(429);
++  expect((await checkRateLimit(new Request("http://localhost/entry", { headers: { ...headers, "cf-connecting-ip": "198.51.100.1,203.0.113.9" } }), "other", 1, 60000, cloudflare))?.status).toBe(503);
++});
+--- a/src/app/portal/[vendorSlug]/access/route.ts
++++ b/src/app/portal/[vendorSlug]/access/route.ts
+@@ -1,7 +1,7 @@
+ import { NextResponse } from "next/server";
+ import { getCanonicalAppUrl } from "@/lib/app-url";
+ import { getDb } from "@/lib/db";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { capabilityConfirmation, clearCapabilityConfirmation, isCapabilityConfirmationOrigin, readCapabilityConfirmation } from "@/lib/capability-confirmation";
+ import { consumeStudentPortalAccessToken, setStudentPortalSessionCookie, verifyStudentPortalAccessToken } from "@/lib/student-portal-auth";
+ 
+--- a/src/app/api/automation/vouchers/redeem/route.ts
++++ b/src/app/api/automation/vouchers/redeem/route.ts
+@@ -2,7 +2,7 @@
+ import { NextResponse } from "next/server";
+ import { AUTOMATION_VOUCHER_COOKIE } from "@/lib/live-interaction";
+ import { getDb } from "@/lib/db";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { capabilityConfirmation, clearCapabilityConfirmation, isCapabilityConfirmationOrigin, readCapabilityConfirmationDetails } from "@/lib/capability-confirmation";
+ import { AUTOMATION_VOUCHER_BEARER, exchangeAutomationVoucher, previewAutomationVoucher } from "@/lib/automation-voucher-exchange";
+ 
+--- a/src/app/r/[code]/route.ts
++++ b/src/app/r/[code]/route.ts
+@@ -1,5 +1,5 @@
+ import { NextResponse } from "next/server";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { getDb } from "@/lib/db";
+ import {
+   PLATFORM_REFERRAL_COOKIE,
+--- a/src/app/api/live-admission/route.ts
++++ b/src/app/api/live-admission/route.ts
+@@ -3,7 +3,7 @@
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+ import { admitLiveViewer, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
+ import { getDb } from "@/lib/db";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const LiveAdmissionPayload = z.object({
+   vendorId: z.string().min(1).max(128),
+--- a/src/app/portal/[vendorSlug]/access/route.test.ts
++++ b/src/app/portal/[vendorSlug]/access/route.test.ts
+@@ -3,7 +3,7 @@
+ vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findFirst: mocks.vendor } }) }));
+ vi.mock("@/lib/student-portal-auth", () => ({ verifyStudentPortalAccessToken: mocks.verify, consumeStudentPortalAccessToken: mocks.consume, setStudentPortalSessionCookie: mocks.setCookie }));
+ vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
+-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limited }));
++vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.limited }));
+ import { GET, POST } from "./route";
+ const context = (vendorSlug = "teacher") => ({ params: Promise.resolve({ vendorSlug }) });
+ const link = "https://app.example.test/portal/teacher/access?token=synthetic";
+--- a/src/app/api/automation/vouchers/redeem/route.test.ts
++++ b/src/app/api/automation/vouchers/redeem/route.test.ts
+@@ -1,7 +1,7 @@
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ const mocks = vi.hoisted(() => ({ findUnique: vi.fn(), updateMany: vi.fn(), limited: vi.fn() }));
+ vi.mock("@/lib/db", () => ({ getDb: () => ({ automationVoucherGrant: { findUnique: mocks.findUnique, updateMany: mocks.updateMany } }) }));
+-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limited }));
++vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.limited }));
+ vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
+ import { GET, POST } from "./route";
+ import { hashInteractionBearer } from "@/lib/live-interaction";
+--- a/src/app/r/[code]/route.test.ts
++++ b/src/app/r/[code]/route.test.ts
+@@ -6,7 +6,7 @@
+   recordPlatformReferralClick: vi.fn(),
+ }));
+ 
+-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limited }));
++vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.limited }));
+ vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+ vi.mock("@/lib/platform-referral", () => ({
+   PLATFORM_REFERRAL_COOKIE: "celebratedeal_platform_referral",
+@@ -66,7 +66,11 @@
+ });
+ it("enforces the actual memory-provider limit before the sixty-first attribution write", async () => {
+   vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+-  const real = await vi.importActual<typeof import("@/lib/rate-limit")>("@/lib/rate-limit"); mocks.limited.mockImplementation(real.checkRateLimit);
++  const real = await vi.importActual<typeof import("@/lib/trusted-entry-rate-limit")>("@/lib/trusted-entry-rate-limit"); mocks.limited.mockImplementation((request, key, limit, windowMs) => {
++    // Synthetic transport supplies the socket address; headers are not trusted.
++    Object.defineProperty(request, "ip", { value: "127.0.0.1" });
++    return real.checkRateLimit(request, key, limit, windowMs, { trustMode: "runtime", deploymentSource: "node" });
++  });
+   mocks.recordPlatformReferralClick.mockResolvedValue({ id: "synthetic-click" });
+   for (let i = 0; i < 60; i++) expect((await GET(new Request("https://app.example.test/r/SYNTHETIC"), { params: Promise.resolve({ code: "SYNTHETIC" }) })).status).toBe(307);
+   const response = await GET(new Request("https://app.example.test/r/SYNTHETIC"), { params: Promise.resolve({ code: "SYNTHETIC" }) });
+--- a/src/app/api/live-admission/route.test.ts
++++ b/src/app/api/live-admission/route.test.ts
+@@ -31,9 +31,9 @@
+ };
+ 
+ vi.mock("@/lib/db", () => ({ getDb: () => db }));
+-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+-
+-import { checkRateLimit } from "@/lib/rate-limit";
++vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
++
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { DELETE, POST } from "@/app/api/live-admission/route";
+ 
+ function request(method: "POST" | "DELETE" = "POST", payload = { vendorId: "vendor-1", liveId: "live-1" }, cookie?: string) {
+@@ -218,7 +218,11 @@
+ });
+ it("enforces the actual memory-provider release limit without changing the admission bucket", async () => {
+   vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+-  const real = await vi.importActual<typeof import("@/lib/rate-limit")>("@/lib/rate-limit"); vi.mocked(checkRateLimit).mockImplementation(real.checkRateLimit);
++  const real = await vi.importActual<typeof import("@/lib/trusted-entry-rate-limit")>("@/lib/trusted-entry-rate-limit"); vi.mocked(checkRateLimit).mockImplementation((request, key, limit, windowMs) => {
++    // Synthetic transport supplies the socket address; headers are not trusted.
++    Object.defineProperty(request, "ip", { value: "127.0.0.1" });
++    return real.checkRateLimit(request, key, limit, windowMs, { trustMode: "runtime", deploymentSource: "node" });
++  });
+   for (let i = 0; i < 120; i++) expect((await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${"A".repeat(43)}`))).status).toBe(200);
+   expect((await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${"A".repeat(43)}`))).status).toBe(429);
+   expect(db.liveViewerSession.deleteMany).toHaveBeenCalledTimes(120);
+--- a/src/app/api/live-admission/route.lease-db.test.ts
++++ b/src/app/api/live-admission/route.lease-db.test.ts
+@@ -12,7 +12,7 @@
+ const db = getDb();
+ const owned: string[] = [];
+ const now = new Date("2026-10-12T08:00:00.000Z");
+-beforeEach(() => { vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test"); vi.stubEnv("RATE_LIMIT_PROVIDER", "memory"); resetInMemoryRateLimitForTests(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); });
++beforeEach(() => { vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test"); vi.stubEnv("RATE_LIMIT_PROVIDER", "memory"); vi.stubEnv("ENTRY_CLIENT_IP_TRUST_MODE", "cloudflare"); vi.stubEnv("ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE", "cloudflare"); vi.stubEnv("ENTRY_CLIENT_IP_INGRESS_SECRET", "synthetic-lease-db-ingress-proof-0000000000"); resetInMemoryRateLimitForTests(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); });
+ afterEach(async () => { vi.useRealTimers(); resetInMemoryRateLimitForTests(); await db.vendor.deleteMany({ where: { id: { in: owned.splice(0) } } }); vi.unstubAllEnvs(); });
+ afterAll(() => db.$disconnect());
+ async function fixture() {
+@@ -25,7 +25,7 @@
+  return { vendorId: vendor.id, liveId: live.id };
+ }
+ function request(method: string, payload: { vendorId: string; liveId: string }, value?: string) {
+- return new Request("https://app.example.test/api/live-admission", { method, headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", "x-forwarded-for": "192.0.2.11", ...(value ? { cookie: `celebratedeal_live_viewer=${value}` } : {}) }, body: JSON.stringify(payload) });
++ return new Request("https://app.example.test/api/live-admission", { method, headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", "cf-connecting-ip": "192.0.2.11", "x-celebratedeal-live-chat-ingress": "synthetic-lease-db-ingress-proof-0000000000", ...(value ? { cookie: `celebratedeal_live_viewer=${value}` } : {}) }, body: JSON.stringify(payload) });
+ }
+ it("rate-limited same-IP release stops counting at exactly the 90-second lease boundary", async () => {
+  const payload = await fixture(); const admitted = await POST(request("POST", payload)); expect(admitted.status).toBe(200);

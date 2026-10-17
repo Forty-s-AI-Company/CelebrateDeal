@@ -1,0 +1,6 @@
+{
+  "authorization": "APPROVED",
+  "source": "user: 核准獨立 Preview 部署；這個session對話 都核准",
+  "scope": "nonproduction development and verification; independent Preview; preserve existing staging alias; synthetic data only",
+  "production": "NOT_AUTHORIZED"
+}

@@ -1,0 +1,166 @@
+{
+  "status": "IMPLEMENTATION_AND_LOCAL_VALIDATION_COMPLETE_PREREQUISITES_PENDING",
+  "scope": "Original WP09:3course/sales lead templates and3webinar-registration templates; old12unchanged; new3webinar use fragment CTA to existing native form staticid; public browser finalrerun pending",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "ownership": {
+    "writer": "root",
+    "reviewers": "read-only sequential",
+    "worktree": "C:/Users/eden/.codex/worktrees/product-audit-goal-plan/CelebrateDeal",
+    "base": "efb8b7e9",
+    "originalDirtyCheckoutTouched": false
+  },
+  "route": "route.json",
+  "model": {
+    "implementationAdvisory": "gpt-6.1-sol/high",
+    "implementationObserved": "unknown",
+    "reviewsObserved": [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-5-5"
+    ],
+    "reviewEffortObserved": "unknown",
+    "ordinaryScope": "UI/template-only; no Critical boundary changed; initial broad review prompt triggered higher router choice, final review ordinarySonnet"
+  },
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "passed": 67,
+      "files": 7,
+      "evidence": "unit.json"
+    },
+    "legacy": {
+      "status": "PASS",
+      "unchanged": 12,
+      "added": 6,
+      "evidence": "legacy-compat.json"
+    },
+    "typecheck": {
+      "status": "PASS",
+      "session": 74894,
+      "priorGeneratedTypeRace": "FAIL retained; no tsconfig/exclude changed"
+    },
+    "lint": {
+      "status": "PASS",
+      "session": 29687,
+      "scope": "5ownedfiles"
+    },
+    "browser": {
+      "status": "PASS",
+      "evidence": "browser.json",
+      "session": 61480,
+      "sixTemplatesAppliedPublishedSubmitted": true,
+      "axeScans": 12,
+      "screenshots": 12,
+      "webinarFragmentTargetsUnique": true,
+      "unverifiedEmailPreserved": true
+    },
+    "remoteCI": "NOT_RUN",
+    "production": "NOT_AUTHORIZED",
+    "canonicalGate": {
+      "status": "BLOCKED",
+      "blockers": [
+        "required_check_unverified:WP17-prerequisite",
+        "required_check_unverified:content-approval"
+      ],
+      "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+      "scope": "Original wholeWP09 gate; technical own checks PASS, originalWP17/content prerequisites not complete"
+    },
+    "build": {
+      "status": "PASS",
+      "evidence": "build.json",
+      "session": 46977,
+      "mode": "direct Next webpack build, synthetic env, owned loopbackDB",
+      "earlierSilentPlaywrightBuildFailures": "retained; exact startup-chain cause not established; no blindrerun or shared wiring fix",
+      "diagnosticsClarification": "registration-error entry is normal route listing, not compilation error"
+    }
+  },
+  "reviews": [
+    "review.json",
+    "fixed-review.json",
+    "final-review.json"
+  ],
+  "reviewDispositions": [
+    {
+      "finding": "audience longpage scope",
+      "disposition": "fixed: new3 onlyopt_in_page; legacy3 retain old step compatibility"
+    },
+    {
+      "finding": "registration variant mismatch",
+      "disposition": "rejected_with_reason",
+      "reason": "Identical unchanged form helper/props to oldwebinar; explicit matching testPASS; actual browser registration pending."
+    },
+    {
+      "finding": "missing required email",
+      "disposition": "rejected_with_reason",
+      "reason": "PublicSubmissionForm renders bound registration fields and required flags; static template inputs preview only. Public required assertions in current browser test pending."
+    },
+    {
+      "finding": "legacy regression lock",
+      "disposition": "retained_nonblocking",
+      "reason": "Exact12prior metadata+fixed-prefix node equality verified against before snapshot; no extra large snapshots/framework required by originalWP09."
+    },
+    {
+      "finding": "lead registration wording",
+      "disposition": "fixed: follow-up contact wording"
+    },
+    {
+      "finding": "preview consent/required markers differ from public form",
+      "severity": "MINOR",
+      "disposition": "retained_nonblocking",
+      "reason": "Unchanged helper presentational contract; actual public consent comes from existing renderer/config, not made weaker. Do not modify common form architecture for WP09."
+    },
+    {
+      "finding": "audience prefix-basedfilter future maintainability",
+      "severity": "NIT",
+      "disposition": "retained_nonblocking"
+    },
+    {
+      "finding": "worksheet fulfillment copy",
+      "severity": "NIT",
+      "disposition": "retained_nonblocking",
+      "reason": "Editable content starter; does not promise automated immediate asset delivery. Owner content review required before actual external publishing."
+    },
+    {
+      "finding": "Webinar generic disabled/unbound form notice despite native form",
+      "disposition": "fixed",
+      "reason": "New3webinar documents link to existing native form; only staticid added to unchanged native form, no field/handler/validation changes. Final scoped Sonnet0B/M1conditionalMINOR; browser asserts target exactly1 and real registration."
+    }
+  ],
+  "sourceHashes": {
+    "src/lib/funnel-template-gallery.ts": "9089d29903badf9e62186e980b0d1c3ec636cead2ffb63ca7c0f66dc0bd3e2fa",
+    "src/lib/funnel-template-gallery.test.ts": "8cf6b05ce2d319e384559a2f83aca109e186e2a9c223dda66c531587bb204547",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "903586f6b0be7cb9c55d0b4208886dbe820f2762a6c845f81d41be0d8d713980",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx": "42bdd170ab53b58e38e8cc87cf7cf761202f170eaaba21fe73ad7491de80d817",
+    "tests/e2e/wp09-sales-templates.spec.ts": "308bc64cd7f54075fe7c7c4cc535ba58b623f37225f5c59ec49ad729c1f41e38"
+  },
+  "next": "WP09 technical work and full local acceptance evidence complete. Continue original WP17 safe local scope; do not re-run passed WP09 checks unless source changes. No repeated operator input question.",
+  "rollback": "Inspect owned.patch then reverse only this increment; before snapshots preserve existing work. Only delete newly owned spec after verifying scope. No reset/clean/restore.",
+  "browserAttemptFailuresRetained": [
+    "browser-first-attempt.json:required-marker selector fixture mismatch",
+    "browser-navigation-race.json:missing wait for client redirect after DBcommit",
+    "browser-native-query-expectation.json:JS flow no submitted query; DB unverified assertion preserved",
+    "browser-webinar-form-assumption.json:wrong assumption nativeWebinar includes checkbox; separate real disabled-generic-form UI issue fixed, original required native fields unchanged"
+  ],
+  "screenshots": [
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/audience-course-consultation-1280.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/audience-course-consultation-390.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/audience-course-lesson-1280.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/audience-course-lesson-390.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/audience-course-workbook-1280.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/audience-course-workbook-390.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/webinar-course-registration-1280.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/webinar-course-registration-390.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/webinar-strategy-registration-1280.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/webinar-strategy-registration-390.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/webinar-workshop-registration-1280.png",
+    "test-results/wp09-sales-templates-six-s-15b08-ic-leads-desktop-mobile-axe-chromium/webinar-workshop-registration-390.png"
+  ],
+  "remaining": {
+    "WP17-prerequisite": "NOT_COMPLETED under originalplan; not silently removed",
+    "content-approval": "WAITING_AUTHORIZATION under originalplan; original generated draft copy reviewed technically only, no external materials",
+    "externalProviderDelivery": "NOT_RUN and not a WP09 delivery claim",
+    "remoteCI": "NOT_RUN",
+    "productionPublishing": "NOT_AUTHORIZED"
+  }
+}

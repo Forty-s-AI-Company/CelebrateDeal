@@ -1,0 +1,264 @@
+{
+  "reviews": {
+    "initial": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "sourceHashesMatch": false,
+      "suppliedRanges": {},
+      "reusedAlgorithm": {},
+      "findings": [
+        {
+          "severity": "MAJOR",
+          "file": "src/lib/live-metric-read-visibility.ts",
+          "area": "withMetricReadVisibility: settings capture, set_config(off) and finally restore (whole function body)",
+          "issue": "Nothing prevents two calls running at the same time on the same transaction. Each call saves the current row_security value and puts it back later at its own await points. If two calls overlap, one call's restore can turn RLS back on while the other call is still reading.",
+          "evidence": "Sequence on one tx: A reads rowSecurity='on' and sets off. B then reads rowSecurity='off', because A already changed it, and sets off. A finishes and restores 'on'. B's read() now runs with row_security=on, so RLS filters rows silently instead of raising 42501. B then 'restores' 'off', which leaves RLS off and the tighter timeout in place for the rest of the transaction. Nothing serializes calls or rejects re-entry, and the read never re-checks current_setting('row_security') before running. readMetricCoverage is a per-kind API, so a caller that fetches several kinds at once (for example Promise.all over registrations/orders/visits) on one tx triggers this.",
+          "impact": "An RLS-filtered audit read can again show only covered rows and hide gap rows. Registration/order coverage would then be reported as complete when it is not, which is exactly the problem this fix targets. Other statements in the same transaction can also run with RLS off and a shortened timeout. Because RLS off fails instead of granting access, this causes spurious failures rather than data exposure. It only happens if a caller runs these reads concurrently. Callers were not supplied.",
+          "recommended_fix": "Serialize use per transaction: keep a WeakMap<tx, state> and reject, or queue, a second call while one is active. On re-entry, reuse the outer call's state instead of saving 'off' as the original value. As extra protection, re-check current_setting('row_security')='off' right before or inside each read statement. Alternatively, document and enforce in the type that callers must never run these reads concurrently on one tx.",
+          "required_test": "Use a synthetic non-owner role subject to RLS, with a policy that shows only covered audit rows, and a real repeatable-read transaction with a valid lease. Run Promise.all([readMetricCoverage(tx,lease,'registrations'), readMetricCoverage(tx,lease,'orders')]). Expect every read to reject with 42501 or a concurrency error, never a completeness result. Afterwards, current_setting('row_security') and statement_timeout must match their original values.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-read-visibility.ts",
+          "area": "isolation/primary check and set_config(...,true) before read()",
+          "issue": "The 'primary repeatable read' check doesn't prove the reads share one transaction. If default_transaction_isolation is repeatable read, a pooled or autocommit client passes the check. set_config with is_local=true is then undone when its own statement ends, so read() runs with row_security still on.",
+          "evidence": "The guard reads current_setting('transaction_isolation') once, in a separate statement. set_config('row_security','off',true) only lasts for the current transaction. The parameter type Pick<Prisma.TransactionClient,'$queryRaw'> also accepts a PrismaClient. Nothing re-checks that row_security is actually 'off' before read() runs. The doc comment forbids pooled clients, but nothing in the code enforces that.",
+          "impact": "If a future or misconfigured caller passes a pooled client on a database with repeatable read as the default, the audit read silently drops RLS-filtered rows, so gaps are hidden and coverage can falsely look complete. The brief says actual callers pass an explicit transaction, but the callers weren't supplied, so this is only extra protection.",
+          "recommended_fix": "After the set_config, run a check that current_setting('row_security')='off' and that statement_timeout has the expected value, and throw if not. Better, make every read statement include that check, so a pooled client or a statement on a different connection fails instead of being silently filtered. Optionally use a branded transaction-facade type so a PrismaClient can't be passed.",
+          "required_test": "Use a synthetic database or role with default_transaction_isolation='repeatable read'. Call readMetricCoverage with the non-transaction PrismaClient and an RLS policy that hides gap rows. Expect a rejection, never a coverage result built from filtered rows.",
+          "confidence": 0.4
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 1,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "fallbackEvents": [],
+      "routeFallbackEvents": [],
+      "discovery": {
+        "agy_discovery_process_status": "SUCCESS",
+        "claude_cli_discovery_status": "SUCCESS"
+      }
+    },
+    "-followup": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashesMatch": false,
+      "suppliedRanges": {
+        "src/lib/live-metric-visit-reconciliation.ts": "Prefix before async function readSources; unchanged algorithm reused, omitted from supplied text"
+      },
+      "reusedAlgorithm": {
+        "normalization": "CRLF to LF only",
+        "marker": "async function readSources",
+        "bodyUnchanged": true,
+        "baselineByteHash": "3e4f0823253af99173028b4abf074557a404c7df2b2eec90e6aad6a69469c30c"
+      },
+      "findings": [
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-read-visibility.ts",
+          "area": "readWithSettings catch/finally (failed flag and restore catch)",
+          "issue": "The code swallows a restore error whenever `failed` is true. That includes JavaScript-only failures, such as the live-settings mismatch or a zod parse error inside read(), where the transaction is not aborted. In that rare case row_security stays off and statement_timeout stays at the capped value for the rest of the caller's transaction. The outer finally still removes the guard key, so a later wrapper call on the same transaction would record 'off' and 5000ms as the original values and restore to them.",
+          "evidence": "`catch(error){failed=true;throw error;}` sets failed for every error type. The finally block's `catch(error){ if(!failed)throw error; }` does not tell an aborted SQL transaction apart from a healthy one.",
+          "impact": "Low. row_security=off does not let a role bypass RLS (a filtered role gets an error instead of rows), so no data leaks. A healthy caller transaction could quietly keep the changed timeout and RLS-error behaviour, and the next wrapper call would inherit them as its baseline. This hurts availability and predictability, not completeness.",
+          "recommended_fix": "Keep the original error, but attach the restore failure to it (for example with AggregateError or a cause field), or mark the transaction client as poisoned so later wrapper calls refuse it until the caller rolls back. Another option is to swallow the restore error only when it is SQLSTATE 25P02 (in failed SQL transaction).",
+          "required_test": "In a synthetic real-fixture transaction: make read() throw a plain JavaScript error and inject a restore failure through a facade whose third $queryRaw call rejects. Check that the original error is still raised, that the restore failure is surfaced or the transaction is marked unusable, and that a later wrapper call on the same transaction cannot record row_security='off' as the original setting.",
+          "confidence": 0.45
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 0,
+        "NIT": 1
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "fallbackEvents": [],
+      "routeFallbackEvents": [],
+      "discovery": {
+        "agy_discovery_process_status": "SUCCESS",
+        "claude_cli_discovery_status": "SUCCESS"
+      }
+    },
+    "-final": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "sourceHashesMatch": false,
+      "suppliedRanges": {
+        "src/lib/live-metric-visit-reconciliation.ts": "Prefix before async function readSources; unchanged algorithm reused, omitted from supplied text"
+      },
+      "reusedAlgorithm": {
+        "marker": "async function readSources",
+        "bodyUnchanged": true,
+        "baselineByteHash": "3e4f0823253af99173028b4abf074557a404c7df2b2eec90e6aad6a69469c30c",
+        "normalization": "CRLF to LF only"
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-read-visibility.ts",
+          "area": "withMetricReadVisibility: settings snapshot before activeTransactions registration; readWithSettings finally restore",
+          "issue": "The 'original' row_security/statement_timeout snapshot is read before this call's transaction key is registered, and nothing checks the settings after the restore. If an aliased facade's snapshot SELECT runs while another alias has row_security='off', and its continuation only runs after that alias's finally has removed the key, the second call treats 'off'/5000ms as the original. It then 'restores' row_security=off for the rest of the transaction.",
+          "evidence": "The key check `activeTransactions.has(candidate)` runs only after the awaited snapshot query, and the snapshot values (`settings.rowSecurity`, `settings.statementTimeout`) are later used as restore targets. Nothing compares the post-restore values with a snapshot taken under exclusivity, or checks that the snapshot was not taken while another guard was active on the same backend/transaction.",
+          "impact": "In this unlikely interleaving, later non-metric reads in the same transaction would run with row_security off, contradicting the 'restore both settings' guarantee. The risk is limited: roles subject to RLS would get 42501 errors rather than silently bypassing policies, and the window depends on out-of-order promise resolution between aliased facades (Prisma and pg normally resolve in order). That is why confidence is low.",
+          "recommended_fix": "Make the snapshot authoritative once exclusivity is held. Either re-read the settings after `activeTransactions.add(key)` and reject if they differ from the first snapshot, or reject a snapshot whose row_security is 'off' and whose timeout equals the guard's capped value while any guard is active on the same backend PID. Optionally re-read the settings after a successful restore and throw if they don't match.",
+          "required_test": "Real-fixture test with two aliased facades on one interactive RR transaction, using a deferred/out-of-order resolution shim so alias B's snapshot is taken during alias A's active window and B resumes after A's finally. Assert that B either rejects or that row_security and statement_timeout end at their true pre-guard values.",
+          "confidence": 0.3
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "fallbackEvents": [],
+      "routeFallbackEvents": [],
+      "discovery": {
+        "agy_discovery_process_status": "SUCCESS",
+        "claude_cli_discovery_status": "SUCCESS"
+      }
+    },
+    "-post-lock": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5"
+      },
+      "sourceHashesMatch": true,
+      "suppliedRanges": {
+        "src/lib/live-metric-visit-reconciliation.ts": "Prefix before async function readSources; unchanged algorithm reused, omitted from supplied text"
+      },
+      "reusedAlgorithm": {
+        "baselineByteHash": "3e4f0823253af99173028b4abf074557a404c7df2b2eec90e6aad6a69469c30c",
+        "bodyUnchanged": true,
+        "marker": "async function readSources",
+        "normalization": "CRLF to LF only"
+      },
+      "findings": [
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-read-visibility.ts",
+          "area": "readWithSettings: live check followed by `return await read()`",
+          "issue": "The guard checks row_security=off and the timeout once, before `read()`, and does not check again afterwards. Other code using the same transaction concurrently (a Prisma interactive transaction runs queued statements one after another) could set row_security back on or change statement_timeout between that check and the read's statements, or between the pages that readSources reads. Coordination between guards does not prevent this.",
+          "evidence": "The LiveSettings query runs once, before `return await read()`. Neither the audit SQL nor the source reads check `current_setting('row_security')`, and nothing re-checks between the read and the restore.",
+          "impact": "This depends on an omitted caller running a concurrent statement on the same transaction that changes row_security. If that happens, an RLS-filtered read could again report coverage as complete while hiding a gap, which is the original bug. Under the stated contract (one explicit transaction used by a single flow) the chance is low.",
+          "recommended_fix": "Optional hardening: after `read()` resolves and before the restore, re-run the LiveSettings check (row_security off, expected timeoutMs, same PID and transaction start) and throw if anything changed. Alternatively, have each guarded SQL statement return current_setting('row_security') and fail if it is not 'off'.",
+          "required_test": "Using a real disposable fixture: during `read()` (for example, between source pages), issue an unguarded `set_config('row_security','on',true)` on the same transaction from a deferred shim. Assert that the guard rejects the result instead of returning the filtered rows, and that the original settings are restored.",
+          "confidence": 0.3
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 0,
+        "NIT": 1
+      },
+      "requested": {
+        "model_key": "opus",
+        "effort": "auto",
+        "speed": "standard"
+      },
+      "resolved": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "speed": "standard",
+        "source": "router_policy"
+      },
+      "fallbackEvents": [],
+      "routeFallbackEvents": [],
+      "discovery": {
+        "agy_discovery_process_status": "SUCCESS",
+        "claude_cli_discovery_status": "SUCCESS"
+      }
+    }
+  },
+  "wholeWp": "NOT_READY",
+  "independentReviewRisk": "Critical Permission",
+  "fixed": [
+    "All audit kinds read under unfiltered visibility guard",
+    "Same-object, aliased-facade and cross-bundle overlap guarded",
+    "Explicit transaction/backend/settings rechecked, autocommit rejected",
+    "Authoritative original settings re-read under transaction exclusivity",
+    "Restore25P02 keeps original error; other restore failure surfaces both via AggregateError"
+  ],
+  "remainingNit": {
+    "status": "ACCEPTED_CALLER_CONTRACT",
+    "issue": "Unguarded concurrent SQL can mutate GUC during callback",
+    "evidence": "Actual loadMetricViewingSnapshot awaits each coverage kind sequentially; caller owns one flow/transaction. No guarantee against arbitrary concurrent SQL/owner mutation."
+  },
+  "reusedAlgorithm": {
+    "baselineByteHash": "3e4f0823253af99173028b4abf074557a404c7df2b2eec90e6aad6a69469c30c",
+    "normalizedBodyHash": "8b8694fe71815919d7c5a2259ca11ae7c958f390e4668dd821a61fb644a1a00d",
+    "unchanged": true
+  },
+  "legacyBug": {
+    "byteHash": "edfdd67d1b3b63d684c9abcf734b97ba0e30200532749cf49cbcf788d37eeefc",
+    "status": "REPRODUCED",
+    "positiveProofs": "Actual empty-source registration/order publishers, synthetic negative gaps"
+  },
+  "unresolvedOldFailures": [
+    "Prior baseline-report Error (unknown cause)",
+    "Initial boundary-report enqueue unavailable; no reason captured then, diagnostic added; not reproduced",
+    "immutability-and-db-clock AssertionError; exact old assertion unknown; line/relative clock diagnostics added; not reproduced"
+  ],
+  "notClaimedFixed": "Earlier intermittent failures remain unexplained despite matching current full PASS",
+  "wholeWpRemaining": [
+    "Public lifetime quota/lock and form-failure MAJOR",
+    "Actual least-privilege deployed runtime",
+    "Typed positive visit/viewing producer with full source epoch/closure and atomic fences",
+    "M1/M2 nonzero five-metric integration/signed HTTP/load/soak"
+  ]
+}

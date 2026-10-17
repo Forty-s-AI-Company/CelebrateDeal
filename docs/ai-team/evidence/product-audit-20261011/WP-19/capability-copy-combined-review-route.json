@@ -1,0 +1,122 @@
+{
+  "status": "planned",
+  "execution": "recommendation_only",
+  "task_id": null,
+  "signals": {
+    "task_type": "review",
+    "complexity": "medium",
+    "risk": "medium",
+    "risk_score": 0,
+    "engineering_profile": "large",
+    "large_workload": true,
+    "risk_categories": [],
+    "important_findings": false,
+    "required_capabilities": [],
+    "task_type_floor": "low",
+    "complexity_requirement": "medium",
+    "risk_requirement": "medium",
+    "size_requirement": "medium",
+    "changed_files": [],
+    "context_size": 18000,
+    "expected_duration": 20,
+    "code_surface_area": 8,
+    "production_impact": "low",
+    "security_impact": "low",
+    "data_integrity_impact": "low"
+  },
+  "task_type": "review",
+  "difficulty": "medium",
+  "requested_team": "ai-team-pro",
+  "team": "ai-team-pro",
+  "escalated": false,
+  "selected_model": "gemini_high",
+  "fallback_events": [],
+  "fallback_chain": [
+    "sol"
+  ],
+  "limits": {
+    "max_agent_depth": 1,
+    "max_parallel_agents": 1,
+    "max_writers": 1,
+    "max_readonly_helpers": 1,
+    "max_dispatches_per_task": 4,
+    "max_attempts_per_model": 1,
+    "max_external_attempts": 2,
+    "automatic_spawn": false
+  },
+  "spawn_count": 0,
+  "review_plan": [
+    {
+      "role": "senior_review",
+      "required": true,
+      "fallback_events": [],
+      "status": "planned",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5-high",
+      "provider": "agy_wrapper",
+      "reasoning_effort": "model-default",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "agy_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    }
+  ],
+  "escalation_reasons": [],
+  "astra_reason": null,
+  "source_revision": "unknown",
+  "snapshot_root": null,
+  "snapshot_files": [],
+  "required_checks": [],
+  "requested": {
+    "model_key": "gemini_high",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown",
+    "source": "not_executed"
+  },
+  "provider_availability": "AVAILABLE",
+  "provider_failure_category": null,
+  "review_scope_files": [],
+  "role": "broad_review",
+  "model_key": "gemini_high",
+  "model": "gemini-3.8-flash-high",
+  "provider": "agy_wrapper",
+  "reasoning_effort": "high",
+  "effort_floor": null,
+  "effort_reason": null,
+  "sandbox_mode": "read-only",
+  "candidate_findings_only": true,
+  "may_spawn": false,
+  "resolved": {
+    "model": "gemini-3.8-flash-high",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "handoff": {
+    "role": "broad_review",
+    "model_key": "gemini_high",
+    "model": "gemini-3.8-flash-high",
+    "provider": "agy_wrapper",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "execution": "agy_readonly",
+    "candidate_findings_only": true,
+    "may_spawn": false
+  },
+  "target": "broad_review",
+  "execution_requirement": {
+    "explicit_model": true,
+    "explicit_effort": true,
+    "verify_observed": true
+  },
+  "self_review": false,
+  "finding_escalation": "senior_review"
+}

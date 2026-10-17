@@ -1,0 +1,7 @@
+{
+  "status": "FAIL_REPRODUCED",
+  "test": "finish arrives after append continuation before pending cleanup",
+  "expectedCloseCalls": 1,
+  "actualCloseCalls": 0,
+  "otherTestsPassed": 9
+}

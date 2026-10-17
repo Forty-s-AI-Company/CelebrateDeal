@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "stage": "expired-renewal",
+  "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+  "checks": {
+    "unconfiguredPlaybackPreserved": "PASS",
+    "committedBeforeSourceAndLostReplyRetained": "PASS",
+    "canonicalSessionBindingIdempotentAndBounded": "PASS",
+    "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+    "sameBrowserIntakeSessionAnchorRenewedAndRevisionAdvanced": "PASS",
+    "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+    "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+    "boundSessionUpdatesCannotChangeIdentityAnchorOrExceedIntake": "PASS",
+    "timestamptzCatalogAndNonUtcBoundUpdates": "PASS",
+    "intakeEpochLossAndSessionBindingImmutable": "PASS",
+    "unexpectedColumnGrantRejectedAndProbeRoleCleaned": "PASS"
+  },
+  "browser": {
+    "sessionRequests": 2,
+    "intervals": 9,
+    "terminal": true,
+    "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+    "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+  },
+  "errorType": "PrismaClientKnownRequestError",
+  "differingKeys": null,
+  "errorCode": "ASSERTION_OR_SERVICE_ERROR",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

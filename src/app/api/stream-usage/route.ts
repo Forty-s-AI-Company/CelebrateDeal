@@ -3,7 +3,7 @@ import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { hasActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import {
   recordStreamUsageLedgerEntry,
   StreamUsageValidationError,

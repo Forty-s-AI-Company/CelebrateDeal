@@ -28,7 +28,7 @@ export default async function AffiliatesPage() {
   return (
     <>
       <PageHeader
-        title="聯盟夥伴"
+        title="推廣夥伴"
         description="管理推廣碼、來源渠道、點擊與轉換成效。"
         action={
           <div className="flex flex-wrap gap-2">

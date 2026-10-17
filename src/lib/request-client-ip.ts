@@ -60,7 +60,7 @@ function firstForwardedIp(value: string) {
   return normalized[0] ?? null;
 }
 
-function hasStrongIngressSecret(value: string | null | undefined) {
+export function hasStrongIngressSecret(value: string | null | undefined) {
   return typeof value === "string"
     && value.length >= LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH
     && value.length <= LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH

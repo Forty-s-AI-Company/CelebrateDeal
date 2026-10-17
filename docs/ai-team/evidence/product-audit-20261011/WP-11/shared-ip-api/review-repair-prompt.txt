@@ -1,0 +1,499 @@
+Critical repair review, scope WP11 nonpayment API current revision sha256:728dc139223f9c34b21f377fc2920a26c450311313d05a248c188776319462a7. Prior Opus MAJOR scriptedPOST 60/min starving32sharedIP viewers fixed: bounded1200/min source preparse gate; separate1200/min open bucket only on strictly parsedactionopen; original60/min sharedwrites/malformed retained. GET1200/min separate. Client now backs off scriptedPOST only, continuesGET, preserveslastscriptedrun; GET429/503 backoffglobal. MINORretryoverflow capped60s. No wholeWP acceptance or deployment. Unchanged18APItrustedimports were independentlyreviewed noBLOCKERMAJOR. Remaining8action/helpers separate unfinishedscope. Review exact cumulative modified interaction source/test excerpts; preserveauth/bodybounds/viewer/session/transaction checks.
+
+--- src/app/api/live-interactions/route.ts before
++++ src/app/api/live-interactions/route.ts
+@@ -15,13 +15,13 @@
+ } from "@/lib/live-interaction";
+ import {
+   hasActiveLiveViewerSession,
+   hashLiveViewerToken,
+   liveViewerTokenFromRequest,
+ } from "@/lib/live-quota-admission";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+ import { decryptSensitiveValue } from "@/lib/sensitive-data";
+ import { normalizeLiveQuestionBody, normalizeLiveQuestionDisplayName } from "@/lib/live-question";
+ import { FLASH_SALE_COOKIE, FlashSaleUnavailableError, resolveFlashSaleQuote, resolveFlashSaleTerms } from "@/lib/live-flash-sale";
+ 
+ const Identifier = z.string().trim().min(1).max(128);
+@@ -211,12 +211,16 @@
+     winnerRevealedAt: run.winnerResponseId ? run.updatedAt.toISOString() : null,
+     prizeName: metadata.kind === "lucky_draw" ? (metadata.prizeName ?? null) : null,
+   };
+ }
+ 
+ export async function GET(request: Request) {
++  // Polling every 2s: 32 viewers behind one IP use at most 992 requests/min
++  // including their initial reads. Keep headroom and a separate read bucket.
++  const limited = await checkRateLimit(request, "live-interactions-read", 1_200, 60_000);
++  if (limited) return limited;
+   const url = new URL(request.url);
+   const vendorId = url.searchParams.get("vendorId") ?? "";
+   const liveId = url.searchParams.get("liveId") ?? "";
+   if (!Identifier.safeParse(vendorId).success || !Identifier.safeParse(liveId).success) {
+     return NextResponse.json({ error: "Invalid interaction scope" }, { status: 400 });
+   }
+@@ -388,15 +392,19 @@
+   return bearer;
+ }
+ 
+ export async function POST(request: Request) {
+   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
+   if (sameOrigin) return sameOrigin;
+-  const limited = await checkRateLimit(request, "live-interactions", 60, 60_000);
++  // Bound parsing first, then separate scripted polling from viewer mutations.
++  const limited = await checkRateLimit(request, "live-interactions-request", 1_200, 60_000);
+   if (limited) return limited;
+   const parsed = RequestBody.safeParse(await readJsonBody(request));
++  const opening = parsed.success && parsed.data.action === "open";
++  const actionLimited = await checkRateLimit(request, opening ? "live-interactions-open" : "live-interactions", opening ? 1_200 : 60, 60_000);
++  if (actionLimited) return actionLimited;
+   if (!parsed.success) return NextResponse.json({ error: "Invalid interaction request" }, { status: 400 });
+   const data = parsed.data;
+   const viewer = await admittedViewer(request, data.vendorId, data.liveId);
+   if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
+ 
+   if (data.action === "ask_question") {
+
+--- src/components/live-advanced-interactions.tsx before
++++ src/components/live-advanced-interactions.tsx
+@@ -39,26 +39,35 @@
+ 
+ function metadata(value: unknown): AdvancedInteractionMetadata | null {
+   if (!value || typeof value !== "object" || Array.isArray(value) || !("kind" in value)) return null;
+   return value as AdvancedInteractionMetadata;
+ }
+ 
++/** Keep server backoff bounded to one minute, without tight retries. */
++export function interactionRetryDelay(response: Response) {
++  if (response.status !== 429 && response.status !== 503) return 2_000;
++  const value = response.headers.get("Retry-After")?.trim() ?? "";
++  const milliseconds = /^\d+$/u.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now();
++  return Number.isFinite(milliseconds) && milliseconds > 0
++    ? Math.min(60_000, Math.max(2_000, milliseconds)) : 30_000;
++}
++
+ class InteractionRequestError extends Error {
+-  constructor(public status: number) {
++  constructor(public status: number, public retryDelay = 2_000) {
+     super(status === 409 ? "這個互動已結束，或你已經參加過了。" : "互動連線暫時忙碌，請再試一次。");
+   }
+ }
+ 
+ async function interactionRequest(body: Record<string, unknown>, signal?: AbortSignal) {
+   const response = await fetch("/api/live-interactions", {
+     method: "POST",
+     signal,
+     headers: { "content-type": "application/json", "x-celebratedeal-client": "web" },
+     body: JSON.stringify(body),
+   });
+-  if (!response.ok) throw new InteractionRequestError(response.status);
++  if (!response.ok) throw new InteractionRequestError(response.status, interactionRetryDelay(response));
+   return await response.json() as { run?: PublicRun | null };
+ }
+ 
+ function WinnerReveal({ run }: { run: PublicRun }) {
+   const isWinner = run.winnerIsViewer;
+   const [isSpinning, setIsSpinning] = useState(() => Boolean(run.winner) && (!run.winnerRevealedAt || Date.now() - Date.parse(run.winnerRevealedAt) < 5_000));
+@@ -149,40 +158,49 @@
+   useEffect(() => {
+     if (!enabled || admissionLost) return;
+     // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
+     const controller = new AbortController();
+     const { signal } = controller;
+     let timer: number;
++    let openRetryAt = 0;
++    let lastScriptedRun: PublicRun | null = null;
+     async function refresh() {
++      let retryDelay = 2_000;
+       try {
+-        let scriptedRun: PublicRun | null = null;
+-        if (scriptedEvent) {
++        let scriptedRun = lastScriptedRun;
++        if (scriptedEvent && Date.now() >= openRetryAt) {
+           try {
+             const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
+             scriptedRun = payload.run ?? null;
++            lastScriptedRun = scriptedRun;
+           } catch (error) {
+             if (error instanceof InteractionRequestError && error.status === 401) {
+               if (!signal.aborted) setAdmissionLost(true);
+               return;
++            }
++            if (error instanceof InteractionRequestError && (error.status === 429 || error.status === 503)) {
++              // Back off this POST only; manual runs and spotlight still refresh.
++              openRetryAt = Date.now() + error.retryDelay;
+             }
+             // 排定事件已結束或暫時失敗，仍讀取手動互動與精選問題。
+           }
+         }
+         if (signal.aborted) return;
+         const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
+         if (signal.aborted) return;
+         if (response.status === 401) { setAdmissionLost(true); return; }
++        retryDelay = interactionRetryDelay(response);
+         if (!response.ok) return;
+         const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
+         if (signal.aborted) return;
+         setRun(scriptedRun ?? payload.runs?.[0] ?? null);
+         setSpotlight(payload.spotlight ?? null);
+       } catch {
+         // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
+       } finally {
+-        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), 2_000);
++        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), retryDelay);
+       }
+     }
+     timer = window.setTimeout(() => void refresh(), 0);
+     return () => {
+       controller.abort();
+       window.clearTimeout(timer);
+
+--- src/app/api/live-interactions/route.test.ts before
++++ src/app/api/live-interactions/route.test.ts
+@@ -39,16 +39,16 @@
+     liveQuestion: { count: mocks.countQuestions, create: mocks.createQuestion },
+     liveInteractionResponse: { count: mocks.countResponses, create: mocks.createResponse },
+   }),
+ }) }));
+ vi.mock("@/lib/live-quota-admission", async (original) => ({
+   ...await original<typeof import("@/lib/live-quota-admission")>(),
+-  liveViewerTokenFromRequest: () => "A".repeat(43),
++  liveViewerTokenFromRequest: (request: Request) => request.headers.get("x-synthetic-viewer") ?? "A".repeat(43),
+   hasActiveLiveViewerSession: mocks.activeViewer,
+ }));
+-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
++vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+ vi.mock("@/lib/form-submission-chat-session", () => ({
+   FORM_SUBMISSION_CHAT_SESSION_COOKIE: "celebratedeal_form_submission_chat_session",
+   verifyFormSubmissionChatSessionToken: mocks.verifyRegistrationSession,
+ }));
+ vi.mock("@/lib/sensitive-data", () => ({ decryptSensitiveValue: vi.fn(() => "CD-WIN-ABCD-1234") }));
+ 
+@@ -85,12 +85,59 @@
+     winnerResponseId: null,
+   });
+ });
+ 
+ afterEach(() => vi.unstubAllEnvs());
+ 
++it("supports 32 shared-IP scripted viewers plus GET polling while retaining the mutation limit", async () => {
++  const trusted = await import("@/lib/trusted-entry-rate-limit");
++  const real = await vi.importActual<typeof import("@/lib/trusted-entry-rate-limit")>("@/lib/trusted-entry-rate-limit");
++  const { resetInMemoryRateLimitForTests } = await import("@/lib/rate-limit");
++  vi.stubEnv("ENTRY_CLIENT_IP_TRUST_MODE", "runtime");
++  vi.stubEnv("ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE", "node");
++  vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
++  vi.mocked(trusted.checkRateLimit).mockImplementation(real.checkRateLimit);
++  resetInMemoryRateLimitForTests();
++  vi.useFakeTimers({ toFake: ["Date"] });
++  const start = Date.now();
++  mocks.findManualRuns.mockResolvedValue([]);
++  mocks.findEvent.mockResolvedValue({
++    id: "event-1", eventType: "poll", triggerSec: 0, title: "Synthetic", productId: null,
++    metadata: { question: "Synthetic", options: ["A", "B"], durationSec: 120 },
++    script: { lives: [{ streamMode: "live", scheduledAt: new Date(start - 1000), status: "live",
++      startedAt: new Date(start - 1000), endedAt: null, replayAvailableUntil: null, replayEnabled: true, video: { durationSec: 3600 } }] },
++  });
++  function trustedRequest(viewer: number, body?: Record<string, unknown>) {
++    const value = body ? request(body) : new Request("https://app.example.test/api/live-interactions?vendorId=vendor-1&liveId=live-1");
++    value.headers.set("x-synthetic-viewer", String(viewer).padStart(43, "A"));
++    value.headers.set("cf-connecting-ip", `198.51.100.${viewer + 1}`);
++    Object.defineProperty(value, "ip", { value: "192.0.2.200" });
++    return value;
++  }
++  try {
++    for (let tick = 0; tick < 30; tick++) {
++      vi.setSystemTime(start + tick * 2000);
++      const statuses = await Promise.all(Array.from({ length: 32 }, async (_, viewer) => [
++        (await POST(trustedRequest(viewer, { action: "open", vendorId: "vendor-1", liveId: "live-1", eventId: "event-1" }))).status,
++        (await GET(trustedRequest(viewer))).status,
++      ]));
++      expect(statuses.every(([post, get]) => post === 200 && get === 200)).toBe(true);
++    }
++    expect(new Set(mocks.activeViewer.mock.calls.map(([, input]) => input.token)).size).toBe(32);
++    for (let index = 0; index < 60; index++) {
++      const response = await POST(trustedRequest(0, { action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "Synthetic" }));
++      expect(response.status).toBe(201);
++    }
++    const limited = await POST(trustedRequest(0, { action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "Synthetic" }));
++    expect(limited.status).toBe(429);
++    expect(mocks.createQuestion).toHaveBeenCalledTimes(60);
++  } finally {
++    vi.useRealTimers(); resetInMemoryRateLimitForTests(); vi.mocked(trusted.checkRateLimit).mockImplementation(async () => null);
++  }
++});
++
+ describe("live interaction public contract", () => {
+   it("returns a retryable conflict when concurrent questions cannot serialize", async () => {
+     mocks.countQuestions.mockRejectedValueOnce({ code: "P2034" });
+     const response = await POST(request({ action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "Question" }));
+     expect(response.status).toBe(409);
+     expect(mocks.createQuestion).not.toHaveBeenCalled();
+
+SOURCE src/lib/nonpayment-entry-rate-limit.test.ts
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetInMemoryRateLimitForTests } from "@/lib/rate-limit";
+
+const sideEffects = vi.hoisted(() => ({ db: vi.fn(() => { throw new Error("Unexpected database access"); }), auth: vi.fn(async () => null) }));
+vi.mock("@/lib/db", () => ({ getDb: sideEffects.db }));
+vi.mock("@/lib/auth", () => ({ getCurrentAuth: sideEffects.auth }));
+
+// Exercise real route -> trusted resolver -> actual memory limiter. No limiter mock.
+const cases = [
+  { path: "api/affiliate-attribution/direct-entry", method: "POST", limit: 60, load: () => import("@/app/api/affiliate-attribution/direct-entry/route") },
+  { path: "api/affiliate-clicks", method: "POST", limit: 60, load: () => import("@/app/api/affiliate-clicks/route") },
+  { path: "api/analytics", method: "POST", limit: 120, load: () => import("@/app/api/analytics/route") },
+  { path: "api/auth/line/callback", method: "GET", limit: 30, load: () => import("@/app/api/auth/line/callback/route") },
+  { path: "api/auth/line/start", method: "POST", limit: 15, load: () => import("@/app/api/auth/line/start/route") },
+  { path: "api/auth/password-reset/confirm", method: "POST", limit: 10, load: () => import("@/app/api/auth/password-reset/confirm/route") },
+  { path: "api/auth/password-reset/request", method: "POST", limit: 5, load: () => import("@/app/api/auth/password-reset/request/route") },
+  { path: "api/form-submissions", method: "POST", limit: 10, load: () => import("@/app/api/form-submissions/route") },
+  { path: "api/form-submissions/verify", method: "POST", limit: 20, load: () => import("@/app/api/form-submissions/verify/route") },
+  { path: "api/live-danmaku", method: "GET", limit: 120, load: () => import("@/app/api/live-danmaku/route") },
+  { path: "api/live-danmaku", method: "POST", limit: 120, load: () => import("@/app/api/live-danmaku/route") },
+  { path: "api/live-danmaku/scripted", method: "GET", limit: 90, load: () => import("@/app/api/live-danmaku/scripted/route") },
+  { path: "api/live-danmaku/scripted", method: "POST", limit: 90, load: () => import("@/app/api/live-danmaku/scripted/route") },
+  { path: "api/live-interactions", method: "GET", limit: 1200, load: () => import("@/app/api/live-interactions/route") },
+  { path: "api/live-interactions", method: "POST", limit: 60, load: () => import("@/app/api/live-interactions/route") },
+  { path: "api/live-interactions/cards", method: "GET", limit: 120, load: () => import("@/app/api/live-interactions/cards/route") },
+  { path: "api/live-interactions/cards", method: "POST", limit: 120, load: () => import("@/app/api/live-interactions/cards/route") },
+  { path: "api/live-media", method: "POST", limit: 90, load: () => import("@/app/api/live-media/route") },
+  { path: "api/live-playback-source", method: "GET", limit: 120, load: () => import("@/app/api/live-playback-source/route") },
+  { path: "api/live-presenter", method: "GET", limit: 60, load: () => import("@/app/api/live-presenter/route") },
+  { path: "api/live-presenter", method: "POST", limit: 60, load: () => import("@/app/api/live-presenter/route") },
+  { path: "api/security/csp-report", method: "POST", limit: 120, load: () => import("@/app/api/security/csp-report/route") },
+  { path: "api/stream-usage", method: "POST", limit: 120, load: () => import("@/app/api/stream-usage/route") },
+] as const;
+
+function request(path: string, method: string, attempt: number, trusted: boolean) {
+  const value = new Request(`https://app.example.test/${path}`, {
+    method,
+    headers: {
+      origin: "https://app.example.test",
+      "x-celebratedeal-client": "web",
+      "content-type": "application/json",
+      "cf-connecting-ip": `203.0.113.${attempt % 250 + 1}`,
+      "x-forwarded-for": `198.51.100.${attempt % 250 + 1}`,
+      "x-real-ip": `192.0.2.${attempt % 250 + 1}`,
+      "x-vercel-forwarded-for": `192.0.2.${attempt % 250 + 1}`,
+    },
+    ...(method === "POST" ? { body: "{}" } : {}),
+  });
+  // An adapter-provided property, never a browser-controlled header.
+  if (trusted) Object.defineProperty(value, "ip", { value: "192.0.2.200" });
+  return value;
+}
+
+beforeEach(() => {
+  vi.stubEnv("NODE_ENV", "test");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+  vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+  vi.stubEnv("ENTRY_CLIENT_IP_TRUST_MODE", "runtime");
+  vi.stubEnv("ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE", "node");
+  resetInMemoryRateLimitForTests();
+  vi.clearAllMocks();
+});
+afterEach(() => { resetInMemoryRateLimitForTests(); vi.unstubAllEnvs(); });
+
+describe.each(cases)("nonpayment source boundary $method $path", ({ path, method, limit, load }) => {
+  it("rejects forged forwarding metadata before auth or database effects", async () => {
+    const route = await load();
+    const handler = (route as Record<string, (r: Request) => Promise<Response>>)[method];
+    const response = await handler(request(path, method, 1, false));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Request source unavailable" });
+    expect(response.headers.get("Retry-After")).toBe("30");
+    expect(sideEffects.db).not.toHaveBeenCalled();
+    expect(sideEffects.auth).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original threshold with trusted identity despite forged header rotation", async () => {
+    const route = await load();
+    const handler = (route as Record<string, (r: Request) => Promise<Response>>)[method];
+    for (let index = 0; index < limit; index++) {
+      const response = await handler(request(path, method, index, true));
+      expect([429, 503]).not.toContain(response.status);
+    }
+    vi.clearAllMocks();
+    const response = await handler(request(path, method, limit, true));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "Too many requests" });
+    expect(Number(response.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(sideEffects.db).not.toHaveBeenCalled();
+    expect(sideEffects.auth).not.toHaveBeenCalled();
+  });
+});
+
+// Capacity contract: 32 independent viewers sharing one trusted source, 2s polling.
+it("allows a minute of 32-viewer polling on one source without exhausting the read bucket", async () => {
+  const { GET } = await import("@/app/api/live-interactions/route");
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    const start = Date.now();
+    for (let tick = 0; tick < 30; tick++) {
+      vi.setSystemTime(start + tick * 2_000);
+      const responses = await Promise.all(Array.from({ length: 32 }, (_, viewer) =>
+        GET(request("api/live-interactions", "GET", viewer, true))));
+      // Invalid synthetic scopes exit after admission limiting, before database work.
+      // 400 proves the source limiter allowed all 32 calls in each polling round.
+      expect(responses.every(response => response.status === 400)).toBe(true);
+    }
+    expect(sideEffects.db).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
+});
+
+SOURCE src/components/live-advanced-interactions.polling.test.tsx
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+
+const hooks = vi.hoisted(() => ({ effects: [] as Array<() => void | (() => void)> }));
+vi.mock("react", async (original) => ({
+  ...await original<typeof import("react")>(),
+  useState: <T,>(value: T | (() => T)) => [typeof value === "function" ? (value as () => T)() : value, vi.fn()],
+  useRef: <T,>(value: T) => ({ current: value }),
+  useMemo: <T,>(factory: () => T) => factory(),
+  useEffect: (effect: () => void | (() => void)) => { hooks.effects.push(effect); },
+}));
+import { interactionRetryDelay, LiveAdvancedInteractions } from "./live-advanced-interactions";
+
+let cleanup: Array<() => void> = [];
+beforeEach(() => {
+  vi.useFakeTimers();
+  hooks.effects = [];
+  vi.stubGlobal("window", { setTimeout, clearTimeout });
+});
+afterEach(() => {
+  cleanup.forEach(fn => fn()); cleanup = [];
+  vi.useRealTimers(); vi.unstubAllGlobals();
+});
+
+function mountPolling(scripted: boolean) {
+  const wrapper = LiveAdvancedInteractions({ vendorId: "synthetic-vendor", liveId: "synthetic-live", enabled: true, currentSeconds: 1,
+    events: scripted ? [{ id: "synthetic-event", eventType: "poll", triggerSec: 0, title: "Synthetic", metadata: { kind: "poll", durationSec: 60 } }] : [],
+  })!;
+  // Execute the actual component effects with a deterministic hook/timer harness.
+  const child = wrapper.props.children as ReactElement<Record<string, unknown>>;
+  (child.type as (props: Record<string, unknown>) => unknown)(child.props);
+  for (const effect of hooks.effects) { const stop = effect(); if (stop) cleanup.push(stop); }
+}
+
+describe("interaction polling backoff", () => {
+  it.each([429, 503])("honors Retry-After for GET %i and cancels on unmount", async (status) => {
+    const fetchMock = vi.fn(async () => new Response(null, { status, headers: { "Retry-After": "60" } }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    cleanup.forEach(fn => fn()); cleanup = [];
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each([429, 503])("backs off scripted POST %i while GET continues", async (status) => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? new Response(null, { status, headers: { "Retry-After": "30" } })
+      : Response.json({ runs: [], spotlight: { id: "synthetic-question", body: "Synthetic", displayName: null } }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(true);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST")).toHaveLength(15);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST")).toHaveLength(16);
+  });
+  it("retains the normal two-second poll after successful responses", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ runs: [], spotlight: null }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(false);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each([null, "garbage", "-1", "0"])("uses a safe fallback for invalid retry value %s", (header) => {
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: header === null ? {} : { "Retry-After": header } }))).toBe(30_000);
+  });
+  it("supports dates and prevents timer overflow or sub-poll retries", () => {
+    vi.setSystemTime(new Date("2026-10-14T00:00:00Z"));
+    expect(interactionRetryDelay(new Response(null, { status: 429, headers: { "Retry-After": "Wed, 14 Oct 2026 00:01:00 GMT" } }))).toBe(60_000);
+    expect(interactionRetryDelay(new Response(null, { status: 429, headers: { "Retry-After": "1" } }))).toBe(2_000);
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: { "Retry-After": "Wed, 14 Oct 2037 00:00:00 GMT" } }))).toBe(60_000);
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: { "Retry-After": "9999999999" } }))).toBe(60_000);
+  });
+});
+
+FULL CURRENT client refresh area
+  const submissionController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    submissionController.current = controller;
+    return () => controller.abort();
+  }, [run?.id, scriptedEvent?.id, admissionLost]);
+
+  useEffect(() => {
+    if (!enabled || admissionLost) return;
+    // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
+    const controller = new AbortController();
+    const { signal } = controller;
+    let timer: number;
+    let openRetryAt = 0;
+    let lastScriptedRun: PublicRun | null = null;
+    async function refresh() {
+      let retryDelay = 2_000;
+      try {
+        let scriptedRun = lastScriptedRun;
+        if (scriptedEvent && Date.now() >= openRetryAt) {
+          try {
+            const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
+            scriptedRun = payload.run ?? null;
+            lastScriptedRun = scriptedRun;
+          } catch (error) {
+            if (error instanceof InteractionRequestError && error.status === 401) {
+              if (!signal.aborted) setAdmissionLost(true);
+              return;
+            }
+            if (error instanceof InteractionRequestError && (error.status === 429 || error.status === 503)) {
+              // Back off this POST only; manual runs and spotlight still refresh.
+              openRetryAt = Date.now() + error.retryDelay;
+            }
+            // 排定事件已結束或暫時失敗，仍讀取手動互動與精選問題。
+          }
+        }
+        if (signal.aborted) return;
+        const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
+        if (signal.aborted) return;
+        if (response.status === 401) { setAdmissionLost(true); return; }
+        retryDelay = interactionRetryDelay(response);
+        if (!response.ok) return;
+        const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
+        if (signal.aborted) return;
+        setRun(scriptedRun ?? payload.runs?.[0] ?? null);
+        setSpotlight(payload.spotlight ?? null);
+      } catch {
+        // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
+      } finally {
+        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), retryDelay);
+      }
+    }
+    timer = window.setTimeout(() => void refresh(), 0);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [enabled, admissionLost, liveId, scriptedEvent, vendorId]);
+
+  useEffect(() => {
+    if (!run) return;
+    const update = () => setRemainingSeconds(Math.max(0, Math.ceil((Date.parse(run.endsAt) - Date.now()) / 1_000)));
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [run]);
+
+  // Reset run-specific input before rendering a different poll.
+  const [selectionRunId, setSelectionRunId] = useState(run?.id);
+  if (selectionRunId !== run?.id) {
+32viewer active-script test executes realPOST+GET at2s intervals for60s, actualtrustedresolver+memorylimiter, distinctsyntheticadmissionidentities, businessDBmocked. Then60questionwrites201 and61st429. Unit tests separately verify32GETload andexactthreshold; no commercialprovider/businessDB certification. Paymentfilesunchanged.

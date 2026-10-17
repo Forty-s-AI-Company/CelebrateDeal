@@ -1,0 +1,9 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "cleanup": true,
+  "step": "expired-draft",
+  "stage": "chromium:root:closed",
+  "errorType": "AssertionError",
+  "errorCode": "ERR_ASSERTION"
+}

@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "source API privileges runner lint", "revision": "sha256:5d9c9c01acfb61a4cab4d460eb82f26ca20c2534006d21f84a6d5dd13b19a957", "status": "PASS", "exit_code": 0, "duration_seconds": 3.578}

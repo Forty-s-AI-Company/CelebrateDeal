@@ -13,7 +13,7 @@ const db = {
 };
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 
 import { POST } from "@/app/api/affiliate-clicks/route";
 

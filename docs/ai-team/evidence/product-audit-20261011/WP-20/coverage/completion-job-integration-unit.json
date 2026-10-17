@@ -1,0 +1,14 @@
+{
+  "files": {
+    "src/lib/live-metric-report-reader.ts": "7612238644fef1d980ace12d8a90af21ea29067a5580ec0a2e19a4eaff4eaf65",
+    "src/lib/live-metric-report-job.ts": "b198cfd4d9627e5545983e43abf7e3f130331f8365ed2400b2f1fdf59b1e8587",
+    "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+    "scripts/wp20-metric-persistence-disposable.mjs": "7644636203df2f687c67865f9d5f3784ba782e350722d152e685bb9b5cd651f6"
+  },
+  "tests": 39,
+  "status": "PASS",
+  "lint": "PASS",
+  "scope": "mocked orchestration and reader/snapshot unit tests",
+  "db_integration": "NOT_RUN",
+  "full_typecheck": "NOT_RUN"
+}

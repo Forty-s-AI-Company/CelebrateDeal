@@ -1,0 +1,37 @@
+{
+  "status": "READY_LOCAL_SUBSCOPE_ONLY",
+  "user_authorization": "approved local WP11 remediation",
+  "targeted": "63/63 PASS",
+  "http": "242 requests PASS: proxy limit429; direct missing proof503",
+  "lint": "PASS",
+  "typecheck": "PASS after NODE_ENV test fixture correction",
+  "protected_payment_schema_limiter_hashes": "UNCHANGED",
+  "review": "Opus current+followup REVIEW_COMPLETED; no BLOCKER/MAJOR; residuals retained",
+  "remaining": [
+    "Actual deployed ingress configuration and environment validation for whole WP11"
+  ],
+  "whole_wp_complete": false,
+  "database_regression": {
+    "status": "PASS",
+    "tests": {
+      "status": "PASS",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "failure": {
+      "category": "none",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "latest_lint": "Modified wrapper and lease tests PASS",
+  "browser": "Chromium/Firefox PASS; current snapshot validation_runner receipt PASS; cleanup PASS",
+  "current_revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+  "same_snapshot_checks": "6/6 PASS"
+}

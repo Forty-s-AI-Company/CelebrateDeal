@@ -1,0 +1,45 @@
+{
+  "status": "IN_PROGRESS",
+  "files": {
+    "src/lib/live-metric-report-scheduler.ts": "55294a3ac29b3757f11a599312e59038dfaf934df29d20495a3d53f85aa94dcd",
+    "src/lib/live-metric-report-scheduler.test.ts": "10e33d645065e824f292871e4b18a0eb7fb084fab230825beaf82f5699a93143",
+    "scripts/wp20-report-scheduler-disposable.mjs": "8785ce7a30c8c8fe61da6883cd9f35d562d8c4fa0ed1b1089357040b9e02b918",
+    "src/lib/live-metric-delivery.ts": "8fab97bc72d0561860a50abffe29e5a776fb95b9c40a767abdb4556c02bd65af",
+    "src/lib/live-metric-delivery.test.ts": "69024a0c0386ee0269ecd2d99a9ca29ad6266df32ca4b0320a656f4534a5db05",
+    "src/lib/live-metric-viewing-source-audit.ts": "0dd10b071ce4a8ef809d17ba4ab06f00b473ca6100ed165b39eb2c2f02133e24",
+    "src/lib/live-metric-viewing-source-audit.test.ts": "9404af2ab16234ac52afac872f9bf24a93f48a3eca7e6a2e45a13a4edb9a2cfc",
+    "scripts/wp20-viewing-audit-disposable.mjs": "1e5deae03fbba59b56eafdd3f305a8153255898b908be8d27f0ddcfdee7ae0cc"
+  },
+  "evidence": [
+    "viewing-source-audit-snapshot.json",
+    "report-scheduler-db.json",
+    "report-scheduler-final-unit.json",
+    "report-scheduler-final-lint.json",
+    "viewing-capacity-loss-final-unit.json",
+    "viewing-capacity-loss-final-lint.json",
+    "viewing-capacity-loss-player-regression.json",
+    "viewing-capacity-loss-review-disposition.json",
+    "scheduler-viewing-final-typecheck.json",
+    "report-scheduler-review-disposition.json"
+  ],
+  "pending": [
+    "source closure/viewing revision and proof",
+    "visits producer",
+    "queue creation/host scheduling/deployed integration",
+    "observed-model-qualified acceptance and current-source review where required",
+    "original synchronized20 gate7/20 FAIL"
+  ],
+  "fullWp": "INCOMPLETE",
+  "originalSerializableGate": "7/20 FAIL unchanged",
+  "environment": "independent worktree; owned disposable synthetic PostgreSQL; no push/deploy",
+  "typecheck": "PASS",
+  "ci": "Existing .github/workflows/ci.yml covers every push and pull_request with lint and test:coverage; remote CI NOT_RUN.",
+  "git": {
+    "workspace": "C:/Users/eden/.codex/worktrees/product-audit-goal-plan/CelebrateDeal",
+    "head": "efb8b7e9a737ea30ea691870318d85bf74830331",
+    "branch": "detached independent worktree",
+    "push": "NOT_REQUESTED",
+    "deployment": "NOT_PERFORMED"
+  },
+  "review": "report-scheduler-review-disposition.json"
+}

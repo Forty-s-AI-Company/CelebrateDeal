@@ -1,0 +1,12 @@
+{
+  "files": [
+    "src/components/public-policy.tsx",
+    "src/components/public-policy.test.tsx",
+    "src/app/policies/[slug]/page.test.tsx"
+  ],
+  "owner": "root",
+  "legal_content": "src/lib/public-policy-content.ts read-only; D5 deferred",
+  "scope": "Technical publication state only; remaining public governance/legal copy untouched",
+  "review": "ordinary Sonnet per router",
+  "automatic_spawn": false
+}

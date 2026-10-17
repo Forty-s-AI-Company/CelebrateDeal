@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; harness/runner owned disposable DB/fresh browser only. Synthetic injected DB/key; rate-limit adapter stubbed explicitly, not production throttle verification.

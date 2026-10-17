@@ -1,0 +1,76 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "engine": "chromium",
+      "entry": "root",
+      "behavior": "closed",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": true,
+      "noSubmitControls": true,
+      "normalDeadlinePreserved": true,
+      "noSentDeliveryObserved": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "root",
+      "behavior": "redirect",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": "configured-target-remains-viewable",
+      "noSubmitControls": true,
+      "normalDeadlinePreserved": true,
+      "noSentDeliveryObserved": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "step",
+      "behavior": "closed",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": true,
+      "noSubmitControls": true,
+      "normalDeadlinePreserved": true,
+      "noSentDeliveryObserved": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "step",
+      "behavior": "redirect",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": "configured-target-remains-viewable",
+      "noSubmitControls": true,
+      "normalDeadlinePreserved": true,
+      "noSentDeliveryObserved": true
+    }
+  ],
+  "cleanup": true,
+  "step": "normal-expiry",
+  "controls": [
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "role": null,
+      "label": "開啟最新消息",
+      "inMain": false
+    }
+  ],
+  "cleanupRowCounts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}

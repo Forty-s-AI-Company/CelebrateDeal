@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "order pipeline typecheck", "revision": "sha256:22dd38fa92d9409e8d56cdb8faaac38aac842f164770e3a3e53673af633c81cb", "status": "PASS", "exit_code": 0, "duration_seconds": 91.219}

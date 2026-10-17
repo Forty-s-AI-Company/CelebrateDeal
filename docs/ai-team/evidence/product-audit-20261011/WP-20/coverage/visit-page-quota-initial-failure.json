@@ -1,0 +1,31 @@
+{
+  "status": "FAIL",
+  "stage": "page-before-browser",
+  "checks": {
+    "preparationAndEightConcurrentRetriesOneUncountedExpectation": "PASS",
+    "foreignScopeIdentityTakeoverAndRollbackRejected": "PASS",
+    "lostResponseRetryDoesNotDuplicateFactsAndUnansweredIntentRemains": "PASS",
+    "lowerUpperMixedUuidOneIntentAndOneActualVisit": "PASS",
+    "immutableExpectationAndVisitorRetentionServerTimestampNonUtc": "PASS",
+    "rlsPrivateAclAndUnprivilegedRoleDenied": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-visit-intent.ts": "fc9811588bff24dbc35e0bc93780922c8934dbba931db1267ec9dbde2307ec01",
+    "src/lib/live-metric-visit-collection.ts": "be532e83befda4bcf2dd1db44be7922ff900fee8bf4c61beee739158b1cca740",
+    "src/lib/live-metric-visit-client.ts": "92550082d35ec058b3e119c27fca8e92e8975e2199b74be72d784d8aff0ae282",
+    "src/lib/live-metric-visit-page.ts": "0db6c4214daa42922e1431a808a18fa9389c70fe9b9e18790c1f8895181c1013",
+    "src/components/live-metric-visit.tsx": "5d2e087aeede42bd3c11880453554c4e79a2e9250c3e6ec457e551ace64edd79",
+    "src/app/(viewer)/live/[slug]/page.tsx": "f70cc5ba8a3a3d3b1603af64ad2a84ac94841cd2070bab5a3f8b0f39eba9603a",
+    "prisma/migrations/20261016120000_live_metric_visit_page/migration.sql": "9305969ff2e518e979c9353bc5b4e8fd5559bd296e550710d11b2ea279768cf0",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "8c0629c4d838688e1f97a6610ec3062cd0abf7dbdc17dc777996989e9b79d45c",
+    "prisma/schema.prisma": "9950d343da0eb83515def9ba43cf7911b4350eac409d491dff702d9c34f76b29",
+    "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": "796bca8ab59add3a0ed8c1bccd2dab1e45e233ade50b8344ec2275dd89d77e82"
+  },
+  "errorType": "MetricVisitorError",
+  "errorCode": "PERSISTENCE_UNAVAILABLE",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 124
+}

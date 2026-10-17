@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "browser-result-proof", "revision": "sha256:8fe02c5b754e1e6ac4af9c0117a8133790dc1efbf0c24a31a98ddf851ff58a90", "status": "FAIL", "exit_code": 1, "duration_seconds": 44.391}

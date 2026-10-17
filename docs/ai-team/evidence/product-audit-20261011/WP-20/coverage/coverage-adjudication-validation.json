@@ -1,0 +1,7 @@
+{
+  "status": "INVALID_FINDING_SEVERITIES",
+  "provider_status": "SUCCESS",
+  "observed_model": "claude-opus-5-5",
+  "reason": "Findings used medium/high/low rather than required BLOCKER/MAJOR/MINOR/NIT; original receipt unchanged; not acceptance evidence.",
+  "usable_analysis": "Summary explains conflicting version locks and unconditional structural revision increments; source/test evidence still required for final adjudication."
+}

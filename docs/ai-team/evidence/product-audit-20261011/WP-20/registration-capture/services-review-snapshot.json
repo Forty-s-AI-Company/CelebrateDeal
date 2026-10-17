@@ -1,0 +1,13 @@
+{
+  "files": [
+    "src/lib/live-metric-registration-capture.ts",
+    "prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql"
+  ],
+  "revision": "sha256:4331c237aff1a5a74b8a3f87b58ee7893f11e82a601116187b5cbbbc226ae559",
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "provider": "claude_cli",
+  "purpose": "independent Auth/Migration review",
+  "dispatchCount": 1,
+  "depth": 0
+}

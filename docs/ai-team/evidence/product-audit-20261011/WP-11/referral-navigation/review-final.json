@@ -1,0 +1,21 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:82b5c340bc097fbc1d42ddf452ba97dec17c1df3c053f2a14b86e80ba8acf81b",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "scope_files": [
+    "src/app/r/[code]/route.ts",
+    "src/app/r/[code]/route.test.ts"
+  ],
+  "lineage": [
+    "review-cli.json",
+    "review-final-cli.json",
+    "review-bounded-cli.json"
+  ],
+  "limitations": "Only referral navigation follow-up reviewed. First review did not read source; next packet was blocked before dispatch; final bounded source review has no BLOCKER/MAJOR. IP trust, external provider config, browser and complete WP11 not certified."
+}

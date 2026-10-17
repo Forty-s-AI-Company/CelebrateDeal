@@ -1,0 +1,18 @@
+{
+  "status": "READY_SUBTASK_ONLY",
+  "whole_wp": "INCOMPLETE",
+  "revision": "sha256:0eb64a757ce97284112940713b59fe381a4228dc0f718f34d894b81a771efa1a",
+  "tests": {
+    "total": 43,
+    "passed": 43,
+    "failed": 0
+  },
+  "initial_review": "INVALID_SCHEMA; severity medium/low not accepted; raw receipt retained",
+  "final_review": "qualified Sonnet;0BLOCKER/MAJOR;nonblocking limitations retained",
+  "not_verified": [
+    "remote CI",
+    "browser screenshot",
+    "five computed metrics"
+  ],
+  "next": "Pending M1/M2 scope answer; data extension proposal available"
+}

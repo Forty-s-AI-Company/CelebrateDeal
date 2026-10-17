@@ -1,0 +1,15 @@
+{
+  "hashes": {
+    "scripts/wp20-completion-load-disposable.mjs": "d5e8f44d418ed55e26bf0d76957d4eacd9deb9b86e108a192ae19deae46733f7",
+    "src/lib/live-metric-completion-store.ts": "0f87d670db74e236a85d49c86faea9673f98648029042d07ecba2b36388cd86d",
+    "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql": "068b58d8c953526d22290da3b384b5f0aa96a5288b7f9c1e9211501ac1aff1c4"
+  },
+  "status": "PASS for50000 valid facts",
+  "lint": "PASS",
+  "limitations": [
+    "No1M fact DB measurement",
+    "No direct lock-hold duration measurement; publish total1568ms",
+    "Synthetic candidates test persistence only, not trusted coverage producer",
+    "Original contention gate and scheduler remain unresolved"
+  ]
+}

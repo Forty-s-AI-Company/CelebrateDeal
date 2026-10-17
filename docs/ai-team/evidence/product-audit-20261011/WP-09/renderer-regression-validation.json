@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-16T05:35:24.157687+00:00",
+  "technical_checks": "PASS",
+  "whole_wp_status": "BLOCKED",
+  "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+  "unit": 37,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "actual_browser_cases": 1,
+  "templates_applied_published_registered": 6,
+  "axe_scans": 12,
+  "screenshots_saved": 12,
+  "manual_screenshot_checks": 2,
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "current_model_calls": 0,
+  "content_authorization": "Existing direct human nonProduction session approval; no legal/provider facts inferred",
+  "required_remaining": "WP17-prerequisite",
+  "new_product_changes": 0,
+  "test_assertions_changed": false,
+  "shared_runner_changes": 0,
+  "old_renderer_snapshot": "Stale due accepted WP14 calendar changes; replaced by current targeted regression proof."
+}

@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "scope": "Actual local Next dev public routes/desktop-mobile axe; disposable PostgreSQL, no account/order/provider operations or secret/session capture. Production-mode build NOT_RUN for this copy/presentation subitem.",
+  "tests": [
+    {
+      "title": "owner adds reusable LINE accounts and selects them independently for two courses",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(locator).toContainText(expected) failed\n\nLocator: getByRole('status')\nExpected substring: \"LINE 綁定已安全儲存\"\nError: strict mode violation: getByRole('status') resolved to 2 elements:\n    1) <span role=\"status\" class=\"sr-only\" aria-live=\"polite\">正在儲存，請勿重複送出。</span> aka getByText('正在儲存，請勿重複送出。')\n    2) <span role=\"status\" class=\"sr-only\" aria-live=\"polite\"></span> aka getByRole('status').filter({ hasText: /^$/ })\n\nCall log:\n  - Expect \"toContainText\" with timeout 30000ms\n  - waiting for getByRole('status')\n"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T12:54:45.369Z",
+    "duration": 84958.689,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 132
+}

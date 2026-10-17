@@ -1,0 +1,460 @@
+Independent Critical migration/tenant-isolation review of durable coverage audit storage and same-snapshot report reader. Return concise structured findings BLOCKER/MAJOR/MINOR/NIT, under 6500 characters, no tools. This is incomplete implementation: NO trusted collector audit producer is wired yet; no production activation; no backfill. A covered row may only come from future independent intake/delivery reconciliation, not from successful writes, collectionEnabled or counts. auditDigest is provenance hash, NOT proof by itself. Assess storage/read safety now and identify concrete integration prerequisites without claiming producer exists. Trusted backend table owner writes; API roles including service_role explicitly revoked. Existing version sourceRevision increments on structural changes and report leases are stale when revision changes. Existing report completion lease checks prevent persisting stale snapshots. Existing loss table records every visit deletion timestamp; snapshot merges this gap evidence. DB149/migrations101 tests currently PASS including actual range union, revision change rejecting old positive certificate, historical gap retention, cross-tenant lease denial, parent cascade, API-role grants then actual revoke block and overlapping report invalidation. Earlier intermittent unrelated session/projection assertion failures remain unexplained, not claimed fixed. Review supplied current code; scoped snapshot, not full WP signoff.
+
+FILE prisma/migrations/20261015120000_live_metric_coverage_audit/migration.sql
+-- Storage for independent collector audits. No backfill and no automatic
+-- certification from collectionEnabled, row counts or successful requests.
+CREATE TABLE public."LiveMetricCoverageAudit" (
+ id TEXT PRIMARY KEY,
+ "vendorId" TEXT NOT NULL, "liveId" TEXT NOT NULL, "versionId" TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK (kind IN ('visits','registrations','viewing','orders')),
+ status TEXT NOT NULL CHECK (status IN ('covered','gap')),
+ "startAt" TIMESTAMPTZ(3) NOT NULL, "endAt" TIMESTAMPTZ(3) NOT NULL,
+ "sourceRevision" BIGINT NOT NULL CHECK ("sourceRevision">=0),
+ "auditDigest" CHAR(64) NOT NULL CHECK ("auditDigest" ~ '^[0-9a-f]{64}$'),
+ "recordedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+ CONSTRAINT "LiveMetricCoverageAudit_range_check" CHECK ("startAt"<"endAt"),
+ CONSTRAINT "LiveMetricCoverageAudit_version_fkey" FOREIGN KEY ("vendorId","liveId","versionId")
+ REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION
+);
+CREATE INDEX "LiveMetricCoverageAudit_scope_range_idx" ON public."LiveMetricCoverageAudit"("vendorId","liveId","versionId",kind,"startAt","endAt");
+CREATE FUNCTION public.wp20_metric_coverage_guard() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+DECLARE v public."LiveMetricVersion"%ROWTYPE;
+BEGIN
+ IF TG_OP='DELETE' THEN
+  IF NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=OLD."versionId") THEN RETURN OLD; END IF;
+  RAISE EXCEPTION 'metric coverage audit requires parent deletion' USING ERRCODE='23514';
+ ELSIF TG_OP='UPDATE' THEN
+  RAISE EXCEPTION 'metric coverage audit is immutable' USING ERRCODE='23514';
+ END IF;
+ IF current_setting('transaction_isolation')<>'read committed' THEN
+  RAISE EXCEPTION 'metric coverage writes require read committed isolation' USING ERRCODE='23514';
+ END IF;
+ SELECT * INTO v FROM public."LiveMetricVersion" WHERE id=NEW."versionId"
+  AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'metric coverage scope unavailable' USING ERRCODE='23514'; END IF;
+ NEW."recordedAt":=date_trunc('milliseconds',clock_timestamp());
+ IF NEW."sourceRevision"<>v."sourceRevision" OR NEW."endAt">NEW."recordedAt"
+  OR NEW."endAt">v."expiresAt" THEN
+  RAISE EXCEPTION 'metric coverage revision or range unavailable' USING ERRCODE='23514';
+ END IF;
+ -- This is a necessary boundary, not proof of uninterrupted collection.
+ IF NEW.status='covered' AND (v."collectionStartedAt" IS NULL OR NEW."startAt"<v."collectionStartedAt") THEN
+  RAISE EXCEPTION 'metric coverage cannot certify pre-collection history' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE FUNCTION public.wp20_metric_coverage_changed() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+BEGIN
+ UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+ WHERE "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" AND "versionId"=NEW."versionId"
+  AND "windowStartAt"<NEW."endAt" AND "windowEndAt">NEW."startAt" AND status<>'stale';
+ RETURN NULL;
+END $$;
+CREATE TRIGGER "LiveMetricCoverageAudit_guard" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricCoverageAudit"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_coverage_guard();
+CREATE TRIGGER "LiveMetricCoverageAudit_changed" AFTER INSERT ON public."LiveMetricCoverageAudit"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_coverage_changed();
+CREATE TRIGGER "LiveMetricCoverageAudit_no_truncate" BEFORE TRUNCATE ON public."LiveMetricCoverageAudit"
+ FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+ALTER TABLE public."LiveMetricCoverageAudit" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."LiveMetricCoverageAudit" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_coverage_guard(),public.wp20_metric_coverage_changed() FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricCoverageAudit" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_coverage_guard(),public.wp20_metric_coverage_changed() FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+FILE src/lib/live-metric-coverage.ts
+import type { MetricScope } from "./live-core-metrics-read-model";
+
+export type MetricEvidenceKind = "visits" | "registrations" | "viewing" | "orders";
+export type MetricCoverageRange = { scope: MetricScope; kind: MetricEvidenceKind; startMs: number; endMs: number };
+export type MetricCoverage = { status: "complete" } | { status: "unavailable";
+  reason: "unknown_history" | "uncovered_window" | "evidence_gap" | "invalid_evidence" | "limit_exceeded" };
+type Input = MetricCoverageRange & { covered: readonly MetricCoverageRange[] | null; gaps: readonly MetricCoverageRange[] | null };
+const timestamp = (n: number) => Number.isSafeInteger(n) && n >= 0 && n <= 8_640_000_000_000_000;
+const scopeValid = (s: MetricScope) => s && [s.vendorId, s.liveId, s.contentVersionId].every(v => typeof v === "string" && v.length > 0 && v.length <= 128)
+  && (s.mode === "live" || s.mode === "replay");
+const rangeValid = (r: MetricCoverageRange) => r && scopeValid(r.scope) && ["visits", "registrations", "viewing", "orders"].includes(r.kind)
+  && timestamp(r.startMs) && timestamp(r.endMs) && r.startMs < r.endMs;
+
+/** Evaluate durable, server-verified coverage evidence, never mere collection
+ * enablement or the presence of rows. The adapter must load covered ranges AND
+ * known losses in the same snapshot as facts. null means that audit is missing;
+ * [] for gaps means an audited empty loss history, not an assumed default.
+ * [S,T) gaps touching a boundary outside the requested window do not invalidate it.
+ */
+export function assessMetricCoverage(input: Input): MetricCoverage {
+  if (!rangeValid(input)) return { status: "unavailable", reason: "invalid_evidence" };
+  if (input.covered === null || input.gaps === null) return { status: "unavailable", reason: "unknown_history" };
+  if (!Array.isArray(input.covered) || !Array.isArray(input.gaps)) return { status: "unavailable", reason: "invalid_evidence" };
+  if (input.covered.length + input.gaps.length > 10000) return { status: "unavailable", reason: "limit_exceeded" };
+  for (const rows of [input.covered, input.gaps]) for (const row of rows) {
+    if (!rangeValid(row) || row.kind !== input.kind || row.scope.vendorId !== input.scope.vendorId
+      || row.scope.liveId !== input.scope.liveId || row.scope.contentVersionId !== input.scope.contentVersionId
+      || row.scope.mode !== input.scope.mode) return { status: "unavailable", reason: "invalid_evidence" };
+  }
+  if (input.gaps.some(row => row.startMs < input.endMs && row.endMs > input.startMs)) return { status: "unavailable", reason: "evidence_gap" };
+  let end = input.startMs;
+  for (const row of [...input.covered].sort((a, b) => a.startMs - b.startMs)) {
+    if (row.endMs <= end) continue;
+    if (row.startMs > end) break;
+    end = row.endMs;
+    if (end >= input.endMs) return { status: "complete" };
+  }
+  return { status: "unavailable", reason: "uncovered_window" };
+}
+
+FILE src/lib/live-metric-coverage-reader.ts
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { assessMetricCoverage } from "./live-metric-coverage";
+import { readMetricReportContext } from "./live-metric-report-reader";
+import type { MetricReportLease } from "./live-metric-report-lease";
+
+const Kind = z.enum(["visits", "registrations", "viewing", "orders"]);
+type AuditRow = { status: "covered" | "gap"; startAt: Date; endAt: Date };
+
+/** Caller supplies the same RepeatableRead transaction used for report facts.
+ * Old positive certificates expire on structural revision changes; known gaps
+ * remain evidence of loss. No audit rows means unknown, never an audited zero.
+ */
+export async function readMetricCoverage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  lease: MetricReportLease, value: z.infer<typeof Kind>) {
+  const kind = Kind.parse(value);
+  const context = await readMetricReportContext(tx, lease);
+  if (context.status !== "available") return context;
+  const rows = await tx.$queryRaw<AuditRow[]>(Prisma.sql`
+    SELECT a.status,a."startAt",a."endAt" FROM "LiveMetricCoverageAudit" a
+    JOIN "LiveMetricVersion" v ON v.id=a."versionId" AND v."vendorId"=a."vendorId" AND v."liveId"=a."liveId"
+    WHERE a."vendorId"=${lease.vendorId} AND a."liveId"=${lease.liveId} AND a."versionId"=${lease.versionId}
+      AND a.kind=${kind} AND (a.status='gap' OR a."sourceRevision"=v."sourceRevision")
+      AND a."startAt"<${context.context.windowEndAt} AND a."endAt">${context.context.windowStartAt}
+    ORDER BY a."startAt",a."endAt",a.id LIMIT 10001`);
+  if (rows.length > 10000) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+  const scope = { vendorId: lease.vendorId, liveId: lease.liveId, contentVersionId: lease.versionId, mode: context.context.mode };
+  const ranges = (status: AuditRow["status"]) => rows.filter(row => row.status === status)
+    .map(row => ({ scope, kind, startMs: row.startAt.getTime(), endMs: row.endAt.getTime() }));
+  return { status: "available" as const, rowCount: rows.length,
+    coverage: assessMetricCoverage({ scope, kind, startMs: context.context.windowStartAt.getTime(),
+      endMs: context.context.windowEndAt.getTime(), covered: rows.length ? ranges("covered") : null,
+      gaps: rows.length ? ranges("gap") : null }) };
+}
+
+FILE src/lib/live-metric-report-snapshot.ts
+import { readMetricCoverage } from "./live-metric-coverage-reader";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { MetricReadBudget, readMetricVisitLossPage, readMetricVisitPage, readMetricReportContext, readMetricRegistrationPage, readMetricSessionPage, readMetricSessionIntervals,
+  type MetricVisitLossRow, type MetricVisitRow, type MetricReportContext, type MetricRegistrationRow, type MetricSessionRow, type MetricIntervalRow } from "./live-metric-report-reader";
+import type { MetricReportLease } from "./live-metric-report-lease";
+import { type MetricCoverage } from "./live-metric-coverage";
+
+export type MetricViewingSnapshot = {
+  context: MetricReportContext;
+  visitCoverage: MetricCoverage;
+  visitLosses: MetricVisitLossRow[];
+  visits: MetricVisitRow[];
+  registrations: MetricRegistrationRow[];
+  sessions: Array<{ registrationId: string; session: MetricSessionRow; intervals: MetricIntervalRow[] }>;
+  deliveryComplete: boolean;
+};
+type FailureReason = "limit_exceeded" | "lease_or_scope_unavailable" | "registration_outside_cohort" | "identity_changed";
+class SnapshotUnavailable extends Error {
+  constructor(readonly reason: FailureReason) { super(reason); }
+}
+
+/** Database I/O only: this does not run the CPU-heavy metric calculation.
+ * All pages share one MVCC snapshot and one work budget. A failed page discards
+ * the entire snapshot, while incomplete delivery remains explicit metadata.
+ */
+export async function loadMetricViewingSnapshot(db: Pick<PrismaClient, "$transaction">, lease: MetricReportLease,
+  budget = new MetricReadBudget()): Promise<{ status: "available"; data: MetricViewingSnapshot } | { status: "unavailable"; reason: FailureReason }> {
+  try {
+    const data = await db.$transaction(async tx => {
+      // This timeout limits each SQL statement; the transaction timeout bounds
+      // all statements together. Neither changes the immutable evidence.
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+      const context = await readMetricReportContext(tx, lease);
+      if (context.status !== "available") throw new SnapshotUnavailable(context.reason);
+      if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+      const audit = await readMetricCoverage(tx, lease, "visits");
+      if (audit.status !== "available") throw new SnapshotUnavailable(audit.reason);
+      if (!budget.retain(audit.rowCount)) throw new SnapshotUnavailable("limit_exceeded");
+      const visitCoverage = audit.coverage;
+      const result: MetricViewingSnapshot = { context: context.context, visitCoverage, visitLosses: [], visits: [], registrations: [], sessions: [], deliveryComplete: true };
+      let afterLoss: Date | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricVisitLossPage(tx, { ...lease, after: afterLoss, take: 500 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        result.visitLosses.push(...page.rows);
+        if (!page.hasMore) break;
+        afterLoss = page.next;
+      }
+      // A proven gap is decisive even while the collection-start audit is unknown.
+      if (result.visitLosses.length) result.visitCoverage = { status: "unavailable", reason: "evidence_gap" };
+      let after: { id: string; visitedAt: Date } | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricVisitPage(tx, { ...lease, after, take: 500 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        result.visits.push(...page.rows);
+        if (!page.hasMore) break;
+        after = page.next;
+      }
+      let afterId: string | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricRegistrationPage(tx, { ...lease, afterId, take: 100 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        for (const registration of page.rows) {
+          if (!registration.identityCurrent) throw new SnapshotUnavailable("identity_changed");
+          result.registrations.push(registration);
+          await appendRegistrationSessions(tx, lease, registration.id, budget, result);
+        }
+        if (!page.hasMore) return result;
+        afterId = page.nextId;
+      }
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000, maxWait: 5000 });
+    return { status: "available", data };
+  } catch (error) {
+    if (error instanceof SnapshotUnavailable) return { status: "unavailable", reason: error.reason };
+    // Infrastructure failures propagate to the job runner. They are never
+    // converted into an empty cohort or a successfully calculated zero.
+    throw error;
+  }
+}
+
+async function appendRegistrationSessions(tx: Prisma.TransactionClient, lease: MetricReportLease, registrationId: string,
+  budget: MetricReadBudget, result: MetricViewingSnapshot) {
+  let afterId: string | null = null;
+  for (;;) {
+    if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+    const page = await readMetricSessionPage(tx, { ...lease, registrationId, afterId, take: 100 });
+    if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+    if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+    for (const session of page.rows) {
+      const intervals = await readMetricSessionIntervals(tx, { ...lease, sessionId: session.id }, budget);
+      if (intervals.status !== "available") throw new SnapshotUnavailable(intervals.reason);
+      if (intervals.registrationId !== registrationId) throw new SnapshotUnavailable("identity_changed");
+      result.sessions.push({ registrationId, session, intervals: intervals.rows });
+      result.deliveryComplete &&= intervals.deliveryComplete;
+    }
+    if (!page.hasMore) return;
+    afterId = page.nextId;
+  }
+}
+
+FILE src/lib/live-metric-report-reader.ts
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import type { MetricReportLease } from "./live-metric-report-lease";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const Request = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id,
+  sessionId: id, afterSequence: z.number().int().min(-1).max(2_147_483_647), take: z.number().int().min(1).max(500) }).strict();
+type ReadRequest = MetricReportLease & { sessionId: string; afterSequence: number; take: number };
+export type MetricIntervalRow = { sequence: number; wallStartAt: Date; wallEndAt: Date; mediaStartMs: number; mediaEndMs: number };
+type SessionState = { isolation: string; registrationId: string; lastSequence: number; complete: boolean; closedAt: Date | null };
+const CohortRequest = Request.omit({ sessionId: true, afterSequence: true }).extend({ afterId: id.nullable() }).strict();
+export type MetricRegistrationRow = { id: string; visitorId: string | null; verifiedAt: Date; identityCurrent: boolean };
+export type MetricSessionRow = { id: string; anchorAt: Date; expiresAt: Date; closedAt: Date | null; complete: boolean; lastSequence: number };
+const SessionPageRequest = CohortRequest.extend({ registrationId: id }).strict();
+const LossRequest = CohortRequest.omit({ afterId: true }).extend({ after: z.date().nullable() }).strict();
+export type MetricVisitLossRow = { visitedAt: Date };
+
+/** The composite key makes timestamps unique within this exact version scope.
+ * Read loss provenance under the same report lease/MVCC snapshot as live facts.
+ */
+export async function readMetricVisitLossPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { after: Date | null; take: number }) {
+  const input = LossRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const cursor = input.after === null ? Prisma.empty : Prisma.sql`AND "visitedAt">${input.after}`;
+  const rows = await tx.$queryRaw<MetricVisitLossRow[]>(Prisma.sql`
+    SELECT "visitedAt" FROM "LiveMetricVisitLoss" WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId}
+      AND "versionId"=${input.versionId} AND "visitedAt">=${report.windowStartAt} AND "visitedAt"<${report.windowEndAt} ${cursor}
+    ORDER BY "visitedAt" LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take, next: page.at(-1)?.visitedAt ?? input.after };
+}
+export type MetricVisitRow = { id: string; visitorId: string; visitedAt: Date };
+type VisitCursor = { id: string; visitedAt: Date };
+const VisitRequest = CohortRequest.omit({ afterId: true }).extend({
+  after: z.object({ id: z.string().uuid(), visitedAt: z.date() }).strict().nullable(),
+}).strict();
+
+/** Preserve individual facts, including repeat visits; browser deduplication
+ * belongs to the metric calculation. No browser hashes leave this reader.
+ */
+export async function readMetricVisitPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { after: VisitCursor | null; take: number }) {
+  const input = VisitRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const cursor = input.after === null ? Prisma.empty : Prisma.sql`AND ("visitedAt",id)>(${input.after.visitedAt},${input.after.id})`;
+  const rows = await tx.$queryRaw<MetricVisitRow[]>(Prisma.sql`
+    SELECT id,"visitorId","visitedAt" FROM "LiveMetricVisit"
+    WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND "visitedAt">=${report.windowStartAt} AND "visitedAt"<${report.windowEndAt} ${cursor}
+    ORDER BY "visitedAt",id LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  const last = page.at(-1);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take,
+    next: last ? { id: last.id, visitedAt: last.visitedAt } : input.after };
+}
+export type MetricReportContext = {
+  windowStartAt: Date; windowEndAt: Date; mode: "live" | "replay";
+  durationMs: number | null; collectionEnabled: boolean; collectionStartedAt: Date | null;
+};
+const LeaseRequest = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id }).strict();
+
+/** Read configuration in the same MVCC snapshot as the facts. Collection start
+ * is provenance only: it does not prove uninterrupted or complete collection.
+ */
+export async function readMetricReportContext(tx: Pick<Prisma.TransactionClient, "$queryRaw">, value: MetricReportLease) {
+  const report = await reportSnapshot(tx, LeaseRequest.parse(value));
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const { windowStartAt, windowEndAt, mode, durationMs, collectionEnabled, collectionStartedAt } = report;
+  return { status: "available" as const, context: { windowStartAt, windowEndAt, mode, durationMs, collectionEnabled, collectionStartedAt } };
+}
+
+/** Enumerate all potentially overlapping sessions, including incomplete ones.
+ * The worker must account for unknown delivery, not filter it into zero views.
+ */
+export async function readMetricSessionPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { registrationId: string; afterId: string | null; take: number }) {
+  const input = SessionPageRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const [registration] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT id FROM "LiveMetricRegistration" WHERE id=${input.registrationId} AND "vendorId"=${input.vendorId}
+      AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND "verifiedAt">=${report.windowStartAt} AND "verifiedAt"<${report.windowEndAt}`);
+  if (!registration) return { status: "unavailable" as const, reason: "registration_outside_cohort" as const };
+  const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND id>${input.afterId}`;
+  const rows = await tx.$queryRaw<MetricSessionRow[]>(Prisma.sql`
+    SELECT id,"anchorAt","expiresAt","closedAt",complete,"lastSequence" FROM "LiveMetricSession"
+    WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND "registrationId"=${input.registrationId} AND "anchorAt"<${report.windowEndAt} AND "expiresAt">${report.windowStartAt} ${cursor}
+    ORDER BY id ASC LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+}
+
+async function reportSnapshot(tx: Pick<Prisma.TransactionClient, "$queryRaw">, input: MetricReportLease) {
+  const [report] = await tx.$queryRaw<(MetricReportContext & { isolation: string })[]>(Prisma.sql`
+    SELECT current_setting('transaction_isolation') AS isolation,r."windowStartAt",r."windowEndAt",
+      v.mode,v."durationMs",v."collectionEnabled",v."collectionStartedAt"
+    FROM "LiveMetricReport" r JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+    WHERE r.id=${input.reportId} AND r."vendorId"=${input.vendorId} AND r."liveId"=${input.liveId} AND r."versionId"=${input.versionId}
+      AND r.status='running' AND r."leaseOwner"=${input.workerId} AND r."leaseExpiresAt">clock_timestamp()
+      AND r."expiresAt">clock_timestamp() AND r."inputRevision"=v."sourceRevision"`);
+  if (report && report.isolation !== "repeatable read") throw new Error("Metric reader requires repeatable-read snapshot");
+  return report ?? null;
+}
+
+/** Enumerate the report's verified-at cohort, not every registration ever seen.
+ * Keep contradicted identity facts visible to the adapter as an invalidation
+ * signal; silently excluding them would change the denominator.
+ */
+export async function readMetricRegistrationPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: MetricReportLease & { afterId: string | null; take: number }) {
+  const input = CohortRequest.parse(value);
+  const report = await reportSnapshot(tx, input);
+  if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND g.id>${input.afterId}`;
+  const rows = await tx.$queryRaw<MetricRegistrationRow[]>(Prisma.sql`
+    SELECT g.id,g."visitorId",g."verifiedAt",
+      coalesce(f."verificationStatus"='VERIFIED' AND f."verifiedAt"=(g."verifiedAt" AT TIME ZONE 'UTC')
+        AND f."liveId"=g."liveId" AND f."formId"=l."formId",false) AS "identityCurrent"
+    FROM "LiveMetricRegistration" g
+    JOIN "Live" l ON l.id=g."liveId" AND l."vendorId"=g."vendorId"
+    LEFT JOIN "FormSubmission" f ON f.id=g."submissionId"
+    WHERE g."vendorId"=${input.vendorId} AND g."liveId"=${input.liveId} AND g."versionId"=${input.versionId}
+      AND g."verifiedAt">=${report.windowStartAt} AND g."verifiedAt"<${report.windowEndAt} ${cursor}
+    ORDER BY g.id ASC LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+}
+
+/** Shared by all sessions in one report, not reset per person/page. These are
+ * work limits, not sampling or truncation rules. The caller must also bound the
+ * database transaction timeout because a budget cannot cancel an active query.
+ */
+export class MetricReadBudget {
+  private rows = 0;
+  private pages = 0;
+  private readonly started: number;
+  constructor(private readonly limits = { rows: 1_000_000, pages: 4000, milliseconds: 30000 }, private readonly now = () => performance.now()) {
+    if (!Number.isSafeInteger(limits.rows) || limits.rows < 1 || limits.rows > 1_000_000
+      || !Number.isSafeInteger(limits.pages) || limits.pages < 1 || limits.pages > 4000
+      || !Number.isSafeInteger(limits.milliseconds) || limits.milliseconds < 1 || limits.milliseconds > 30000) throw new Error("Invalid metric read budget");
+    this.started = now();
+  }
+  active() { const elapsed = this.now() - this.started; return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < this.limits.milliseconds; }
+  nextPage() { if (!this.active() || this.pages >= this.limits.pages) return false; this.pages++; return true; }
+  retain(count: number) {
+    if (!Number.isSafeInteger(count) || count < 0 || !this.active() || count > this.limits.rows - this.rows) return false;
+    this.rows += count; return true;
+  }
+}
+
+export async function readMetricSessionIntervals(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  value: Omit<ReadRequest, "afterSequence" | "take">, budget: MetricReadBudget) {
+  const rows: MetricIntervalRow[] = [];
+  let afterSequence = -1;
+  while (budget.nextPage()) {
+    const page = await readMetricIntervalPage(tx, { ...value, afterSequence, take: 500 });
+    if (page.status !== "available") return page;
+    if (!budget.retain(page.rows.length)) break;
+    rows.push(...page.rows);
+    if (!page.hasMore) return { status: "available" as const, rows, registrationId: page.registrationId, deliveryComplete: page.deliveryComplete };
+    afterSequence = page.nextSequence;
+  }
+  // Do not leak a prefix as if it represented all viewing for this session.
+  return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+}
+
+/** Read one indexed session/sequence page inside the worker's repeatable-read
+ * snapshot. Never use OFFSET or an unbounded cohort query. Claim/finish happen
+ * in separate read-committed transactions, as required by the write guards.
+ */
+export async function readMetricIntervalPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">, value: ReadRequest) {
+  const input = Request.parse(value);
+  const [session] = await tx.$queryRaw<SessionState[]>(Prisma.sql`
+    SELECT current_setting('transaction_isolation') AS isolation, s."registrationId",s."lastSequence",s.complete,s."closedAt"
+    FROM "LiveMetricSession" s
+    JOIN "LiveMetricReport" r ON r."vendorId"=s."vendorId" AND r."liveId"=s."liveId" AND r."versionId"=s."versionId"
+    JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+    WHERE s.id=${input.sessionId} AND s."vendorId"=${input.vendorId} AND s."liveId"=${input.liveId} AND s."versionId"=${input.versionId}
+      AND r.id=${input.reportId} AND r.status='running' AND r."leaseOwner"=${input.workerId}
+      AND r."leaseExpiresAt">clock_timestamp() AND r."expiresAt">clock_timestamp()
+      AND r."inputRevision"=v."sourceRevision"`);
+  if (!session) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+  if (session.isolation !== "repeatable read") throw new Error("Metric reader requires repeatable-read snapshot");
+  if (input.afterSequence > session.lastSequence) throw new Error("Metric cursor exceeds snapshot");
+  const rows = await tx.$queryRaw<MetricIntervalRow[]>(Prisma.sql`
+    SELECT sequence,"wallStartAt","wallEndAt","mediaStartMs","mediaEndMs" FROM "LiveMetricInterval"
+    WHERE "sessionId"=${input.sessionId} AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+      AND sequence>${input.afterSequence} ORDER BY sequence ASC LIMIT ${input.take + 1}`);
+  if (rows.length > input.take + 1 || rows.some((row, index) => row.sequence !== input.afterSequence + index + 1)) throw new Error("Metric interval snapshot is inconsistent");
+  const hasMore = rows.length > input.take;
+  const page = rows.slice(0, input.take);
+  const nextSequence = page.at(-1)?.sequence ?? input.afterSequence;
+  if (!hasMore && nextSequence !== session.lastSequence) throw new Error("Metric interval snapshot is incomplete");
+  return { status: "available" as const, registrationId: session.registrationId, rows: page, nextSequence, hasMore,
+    // Complete pagination and complete delivery are different facts.
+    deliveryComplete: session.complete && session.closedAt !== null };
+}

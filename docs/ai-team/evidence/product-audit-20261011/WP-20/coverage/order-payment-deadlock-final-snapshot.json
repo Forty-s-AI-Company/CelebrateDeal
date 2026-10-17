@@ -1,0 +1,18 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "files": {
+    "src/lib/database-write-conflict.ts": "bf0cd8026c1155489a911381593307b0b867a09a54b82101826a37c92513f299",
+    "src/lib/database-write-conflict.test.ts": "9fa8bf04c03eb24c9c7ed993683597619fff46bf3eaa9c683db3fa66447b5c1a",
+    "src/lib/inventory-conflict-retry.test.ts": "024907f7e7de9dd6d059e4d34437c06533d3585012e800d0cd44ea90ca2841fa",
+    "src/lib/payment-webhook-conflict-retry.test.ts": "2063b22f961edf532130472f74c03c04fc70a8a27fd86040bfd9a30f2d64b6b8",
+    "src/lib/inventory-reservations.ts": "ad622af9e41f1464121372baf03747b886783910d7d8f964a42d367fb005b733",
+    "src/lib/payment-webhooks.ts": "4aed60d2813e26068cc5c3391611235f8c72a48e20bcaf4070a67ea7e8903371",
+    "scripts/wp20-order-payment-deadlock.mjs": "3811c312caaa28f4466af1566111cce2ab9f5caa35059a275cbf5c9fbdfa9db5",
+    "scripts/wp20-order-window-source-probe.mjs": "f073658de49a482fccaed85bf5d3ef52451ae2ad93c845ee4b155caf2f563861",
+    "scripts/wp20-order-coverage-guard-probe.mjs": "a615160103d9b6e0dea8bab09ba049966113a412a422f4716f6c36aad13e2bbf",
+    "scripts/wp20-payment-retry-disposable.mjs": "3c52d526f410d00674524805b0bba158f0365d4299e8c6e54fcf006af96cdb33"
+  },
+  "unit": "order-payment-deadlock-final-unit.json",
+  "db": "order-payment-deadlock-final-db.json",
+  "review": "order-payment-deadlock-review-disposition.json"
+}

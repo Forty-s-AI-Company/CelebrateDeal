@@ -1,0 +1,216 @@
+{
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 7000,
+      "expected_duration": 0,
+      "code_surface_area": 8,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "Overall the scope is acceptable for WP20 viewing with the fixes below. It stays additive: one migration, two nullable BIGINT fields, a new private service, and changes to existing reader and visit-reconciliation code. It adds no new framework, endpoint or provider. Binding the proof to the stored ledger revisions, then rechecking them with SQL eligibility in the reader's same repeatable-read (RR) transaction, is a valid way to prove the result is still current. This holds only if four things are true. (a) The ledgers are append-only, and rows can only be removed by the same version cascade that also deletes the proof, so a count can never drop and come back to an old value (the ABA problem). (b) Each revision counts every change that affects eligibility. (c) The SQL check never depends on the clock. (d) A NULL result can never pass the check. The new post-seal BEFORE guards should stop changes after the seal. The same-snapshot revision recheck covers the remaining race: a write that passed the frontier check before the seal committed but itself committed later. In that case the revision changes, the reader rejects the proof and reports a gap, so it fails closed. The reader should not use the JavaScript classification computed at publish time (asOf). The plan avoids that, as long as the SQL itself requires stored terminal states. I found no blockers. Four findings change the design (two MAJOR, two MINOR) and one is a test-only NIT. I'm not asking for a production rollout, a new source epoch or a planned-attempt ledger. An empty findings list would not mean tests pass or the release is ready.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "migration131 (viewing_proof_ready, 125 guard viewing branch); schema (2 nullable fields)",
+        "area": "New revision columns plus the boolean result of viewing_proof_ready used by the 125 guard and the reader",
+        "issue": "viewingRevision and intakeRevision are nullable. If either is NULL, or a subquery returns no rows, comparisons like `=` return NULL. In PL/pgSQL, `IF NOT viewing_proof_ready(...) THEN RAISE` does not run on NULL, and CHECK constraints accept NULL. So the 125 guard can fail open on a format-2 viewing proof that has a missing revision.",
+        "evidence": "The scope says '... adds ONLY viewingRevision and intakeRevision nullable BIGINT' and 'Recheck same authoritative revision tuple'. It does not say NULL is rejected, and it does not require IS NOT DISTINCT FROM or COALESCE(false).",
+        "impact": "A viewing positive could be accepted when its revision binding is missing. That defeats the current-proof gate the whole design depends on.",
+        "recommended_fix": "Make viewing_proof_ready return COALESCE(<all checks>, false). Compare revisions only after explicit `IS NOT NULL` tests. Add a table CHECK: `ingressProofVersion <> 2 OR metric <> viewing OR (viewingRevision IS NOT NULL AND intakeRevision IS NOT NULL AND registrationRevision IS NOT NULL)`. Have the guard test `IS NOT TRUE` instead of `NOT`.",
+        "required_test": "In the existing disposable runner, insert a format-2 viewing proof with viewingRevision NULL, then with intakeRevision NULL. Both inserts must be rejected by the guard. The reader must report a gap for any legacy row that has NULL revisions.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MAJOR",
+        "file": "migration131 viewing_proof_ready; coverage-reader.ts",
+        "area": "SQL eligibility checks on intake and session terminal states and on time dependence",
+        "issue": "The reader drops the JavaScript classification and trusts the SQL check alone. The SQL list requires sessions to be closed and complete. It does not say it independently requires each intake to have a stored terminal closed_session state with no active or renewable lease and no pending loss. It also does not forbid the clock (now(), clock_timestamp(), TTL against current time). If any part of 'closed' or 'no loss' is derived from expiry, it can change without any row change, so no revision moves and the stale proof would still be accepted.",
+        "evidence": "The JavaScript requirements list 'intake ONLY closed_session/noquotaLoss'. The SQL list covers 'no orphan/unbound/loss/removed sources' and 'sessions closed complete'. The task asks that the reader 'must not rely on stale JS classification asOf where expiry-only classification could change'.",
+        "impact": "Expiry could create a quota loss or change an intake's state after the proof was written. The proof would still pass because no revision changed, so the reader could serve a stale viewing positive.",
+        "recommended_fix": "In viewing_proof_ready, require for every intake a persisted terminal state of closed_session. Require closedAt and the lease end to be at or before the DB seal closeTime. Require no loss rows and no renewal rows after that time. Compare all times against the stored seal or receipt closeTime, never against now().",
+        "required_test": "Use the existing runner to build an intake that is open or has an active lease at seal time, so its classification would change only through expiry. Publishing must fail, and the reader must report a gap without any revision change. Also check that the function text contains no now() or clock_timestamp().",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "migration131 / auditMetricViewingSources revision definition",
+        "area": "intakeRevision ledger coverage",
+        "issue": "intakeRevision counts only inserts, renewals and loss. It does not count other changes to an intake row, such as closing it, rebinding or unbinding it from a session or frame, or removing it. Unlike viewingRevision, it is not defined as counting every whole-row change. A write that passed the frontier check before the seal but committed after the audit could change intake binding or state with no change to the revision tuple.",
+        "evidence": "The scope says 'intakeRevision counts insert+renewals+loss'. For comparison, viewingRevision counts 'all Session whole-row changes / Interval INSERT / removal tombstones'.",
+        "impact": "A race just before the seal could leave intake facts different from the audited ones while the revision tuple still matches. Same-transaction SQL checks narrow this gap but do not close it fully.",
+        "recommended_fix": "Count every INSERT, UPDATE and DELETE on PlaybackIntake in intakeRevision through the existing immutable ledger trigger. Alternatively, show that every other intake column is already blocked by an existing immutability guard, and note it in the migration.",
+        "required_test": "Before the seal, update an intake's state or binding without a renewal or loss. Check that intakeRevision increases and that a proof bound to the old tuple is rejected by the reader.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "migration131 (BEFORE DELETE frontier guard on Interval, Session, PlaybackIntake)",
+        "area": "Cascade bypass inside the reused 130 frontier function",
+        "issue": "The 130 frontier function is now newly attached as a BEFORE DELETE guard on Interval. The version cascade must still work, but direct DELETE after the seal must be blocked. A bypass based on pg_trigger_depth() or a session variable would let other trigger-driven deletes through. The new guard must also not conflict with the existing removal-tombstone ledger insert while a cascade runs, for example through an FK to a version row that is being deleted.",
+        "evidence": "The scope says 'Direct interval DELETE after seal newly blocked ... preserve version cascade'.",
+        "impact": "Either the version cascade breaks (cleanup fails or orphan ledger rows are left), or direct deletes can bypass the guard and change viewing facts after the seal.",
+        "recommended_fix": "Base the bypass on the parent version or run row being absent, the same way the 130 branch does it. Confirm that tombstone ledger rows written during a cascade are deleted with it or skipped, so none are left orphaned.",
+        "required_test": "After the seal: a direct DELETE of an Interval, a Session and a PlaybackIntake must each fail. Deleting the version row must succeed and remove the proof, the sources and the related ledger rows, with no orphans and no FK error.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "privateviewingcoverage.test / migration131",
+        "area": "Scope of the revision counts in SQL compared with auditMetricViewingSources",
+        "issue": "viewing_proof_ready recomputes the revisions with its own SQL, while the existing JavaScript audit returns them. If the two filter the ledger differently (by run window, collection epoch or owner), every proof will fail the check and the result will always be a gap.",
+        "evidence": "The scope says the SQL should 'Recheck same authoritative revision tuple', but the revisions come from the audit.",
+        "impact": "No viewing positive would ever be produced. This fails closed, but it would block the required nonzero 40/60/66.67/83.33s/50 result.",
+        "recommended_fix": "Compute both counts with the same SQL expression, or at least the same ledger predicate.",
+        "required_test": "Positive-path assertion: the stored proof's revisions equal the SQL-computed tuple and the reader accepts it. A single extra ledger row must make the reader reject it.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false,
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ]
+}

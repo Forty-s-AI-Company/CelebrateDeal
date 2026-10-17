@@ -1,0 +1,185 @@
+{
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "review": {
+    "summary": "Read-only review of the supplied migration (20261016160000_live_metric_ingress_source_binding), src/lib/live-metric-ingress-source.ts, the two caller diffs and the two current INSERTs. No BLOCKER or MAJOR found in the supplied scope. Binding is enforced in the database by tenant/live/version/run/route kind. The private SECURITY DEFINER function locks the frame FOR UPDATE and then checks reuse in both source tables, so concurrent use of the same frame is serialised and the second caller returns null. The unique indexes stay as backup. The BEFORE INSERT trigger re-runs the same check, so a raw INSERT cannot bypass it. A run-owned version with no binding, or a wrong-kind or 'unknown' binding, returns FALSE. A no-run version still accepts a null frame id, and nothing is backfilled. The trigger-order check (ROW|BEFORE|INSERT bitmask, C collation, '_guard' < '_ingress_guard', no later before-insert row trigger) is correct. EXECUTE is revoked and the ACL is verified. The deferred NO ACTION composite FK allows the version cascade. Both INSERTs persist the same binding?.frameId ?? null value that the pre-check used. Residual items: the app-side pre-check calls the owner-only function directly, which couples every source write, including legacy no-run writes, to an owner connection; and the read-committed precondition now also applies to legacy no-run inserts. Not reviewed or certified: the omitted proof/auth/header/stop/run-creation code, the Prisma schema, the existing 127 guards and the tests. This is not a fullWP, production, positive-coverage, source-universe, epoch or seal acceptance; the migration 125 gate is untouched by this review.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-source.ts",
+        "area": "canBindMetricIngressSource $queryRaw call; migration REVOKE/ACL DO block",
+        "issue": "The application pre-check calls public.wp20_metric_ingress_source_allowed directly, but the migration revokes EXECUTE from everyone except the function owner and fails if any other grantee exists. The pre-check runs on every source write, including legacy no-run versions with no binding.",
+        "evidence": "canBindMetricIngressSource always runs SELECT public.wp20_metric_ingress_source_allowed(...) after requireMetricIngressSource passes. The migration revokes from PUBLIC, anon, authenticated and service_role, and raises if any grantee other than proowner exists. Before this change, the legacy no-run visit-page and playback paths made no SQL call here.",
+        "impact": "Under any non-owner runtime role, every visit-page and playback write fails with 42501 (an unmapped 500), including legacy no-run writes. That would regress the 'no-run legacy behavior retained' contract. The submission scopes runtime to the owner connection only, so this is a deployment/scope proposal rather than a defect in the authorized synthetic task.",
+        "recommended_fix": "Before any non-owner deployment, choose one: grant EXECUTE on the predicate only to a dedicated app role and update the ACL assertion to allow it; or skip the SQL pre-check when no binding is present and rely on the trigger plus a mapped 23514; or call a separate narrow wrapper.",
+        "required_test": "In a disposable database, run a visit-page and a playback write as an unprivileged app role, (a) with no run and no binding and (b) with a run and a valid binding. Assert the documented outcome: success or a mapped error, never an unmapped permission-denied error.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql",
+        "area": "wp20_metric_ingress_source_allowed: transaction_isolation check before the no-run branch",
+        "issue": "The read-committed/primary precondition is checked before the no-run return, so it now also applies to legacy no-run inserts into LiveMetricVisitPage and LiveMetricPlaybackIntake.",
+        "evidence": "IF current_setting('transaction_isolation')<>'read committed' ... RAISE runs before the run lookup that returns frame_key IS NULL. The trigger calls this for every INSERT.",
+        "impact": "If any existing writer, maintenance job or restore inserts under REPEATABLE READ or SERIALIZABLE, legacy no-run inserts that used to succeed now fail with 23514. This only matters if the existing canonical guards did not already require read committed, which the supplied text does not show.",
+        "recommended_fix": "Confirm that the existing canonical guards already require read committed. If they don't, either document the new precondition or apply the isolation check only after the run lookup finds a run.",
+        "required_test": "In a disposable database, insert a no-run legacy row under REPEATABLE READ and compare the result with the pre-migration baseline.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "completed": false,
+  "execution_provider": "claude_cli",
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

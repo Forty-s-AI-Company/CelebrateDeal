@@ -1,0 +1,370 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "copy",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "billing"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "ux_ui"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [
+        "src/app/(app)/billing/electronic-invoices/page.tsx",
+        "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+        "src/components/checkout-invoice-fields.tsx",
+        "src/components/checkout-invoice-fields.test.tsx"
+      ],
+      "context_size": 6000,
+      "expected_duration": 30,
+      "code_surface_area": 4,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "copy",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "model": "claude-opus-5-5",
+        "required": true,
+        "status": "planned",
+        "source": "claude_cli",
+        "basis": "Actual terminal model verified against canonical critical Claude pattern; no AGY availability inference."
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/app/(app)/billing/electronic-invoices/page.tsx",
+      "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+      "src/components/checkout-invoice-fields.tsx",
+      "src/components/checkout-invoice-fields.test.tsx"
+    ],
+    "required_checks": [
+      "unit",
+      "typecheck",
+      "lint",
+      "preservation"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": null,
+    "review_scope_files": [
+      "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+      "src/app/(app)/billing/electronic-invoices/page.tsx",
+      "src/components/checkout-invoice-fields.test.tsx",
+      "src/components/checkout-invoice-fields.tsx"
+    ],
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "review_status": "AGY_DISCOVERY_REQUIRED",
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+        "name": "unit",
+        "status": "PASS",
+        "exit_code": 0,
+        "details": {
+          "tests": 60,
+          "files": 9,
+          "receipt": "unavailable-fixed-unit.json",
+          "chunk": "a2eb90"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-unit.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+        "name": "typecheck",
+        "status": "PASS",
+        "exit_code": 0,
+        "details": {
+          "session": 59717,
+          "exit": 0,
+          "chunk": "9e299e"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-typecheck.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+        "name": "lint",
+        "status": "PASS",
+        "exit_code": 0,
+        "details": {
+          "initial_all4_chunk": "f0f06a",
+          "fixed2_chunk": "b4cbd9",
+          "exit": 0
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-lint.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+        "name": "preservation",
+        "status": "PASS",
+        "exit_code": 0,
+        "details": {
+          "receipt": "unavailable-preservation.json",
+          "protected_files": 9
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-preservation.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "claude_cli",
+      "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "claude-opus-5-5",
+      "observed_model": "claude-opus-5-5",
+      "observed_effort": "unknown",
+      "receipt": "unavailable-fixed-review.json",
+      "findings": 5,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-review-qualified.json"
+    },
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/checkout-invoice-fields.test.tsx",
+        "area": "Test coverage - interactive states (retained)",
+        "issue": "No test drives the client-side switching (personal/company/donation, carrier member/mobile/citizen_certificate) or the onInput -> invoiceValueFromForm -> setError path. The tests only cover the default static render, the disabled render, and invoiceFieldError called directly.",
+        "evidence": "The tests use renderToStaticMarkup only, so they see the default state (personal + member). invoiceValueFromForm is not exported and is never exercised. There is no check that the unavailable notice stays visible after the type or carrier changes, or that the alert text is filled on invalid input.",
+        "impact": "A regression in the conditional fields, in the FormData mapping, or in the notice's position relative to the switched fields would not be caught. The risk is low because the notice is rendered outside the conditional branches.",
+        "recommended_fix": "Retained per human decision (no framework expansion). If interaction tests are allowed later, add a jsdom/testing-library test that switches type and carrier, types invalid values, and checks the alert text and that the notice is still present.",
+        "required_test": "Interactive test: select company, enter an invalid business ID, and check the business ID error. Select donation and check the donation-code error. Select personal + mobile, enter a lowercase barcode, and check the mobile error. In every state, check that the unavailable notice is present.",
+        "confidence": 0.85,
+        "disposition": "unresolved"
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/checkout-invoice-fields.tsx",
+        "area": "Copy - option labels (retained)",
+        "issue": "The option labels (personal e-invoice, company triplicate invoice, donation invoice, member carrier via checkout email) still describe issuance products. Only the legend and notice were reworded.",
+        "evidence": "The option texts are unchanged from the original. The legend changed from 'electronic invoice' to 'invoice request', and a role=status notice was added above the select.",
+        "impact": "Small chance a buyer infers that an invoice will be issued to the carrier. The adjacent static notice mitigates this.",
+        "recommended_fix": "Optional: reword the options as request types (e.g. 'personal invoice request'), or leave them as they are per the human scope decision.",
+        "required_test": "If reworded, a static render test that checks the new option texts.",
+        "confidence": 0.7,
+        "disposition": "unresolved"
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/checkout-invoice-fields.tsx",
+        "area": "Accessibility - live regions (retained)",
+        "issue": "A static role=status notice is used for text that never changes. The error paragraph combines role=alert (implicitly assertive) with aria-live=polite, which is a mixed signal.",
+        "evidence": "<p role=\"status\"> holds fixed text. <p role=\"alert\" aria-live=\"polite\"> holds the error text. The page.tsx notice also uses role=status on static content.",
+        "impact": "Minor screen-reader noise or inconsistency. No functional or safety effect.",
+        "recommended_fix": "Optional: use a plain <p> (or aria-describedby on the fieldset) for the static notice. Pick either role=alert or aria-live=polite for the error region.",
+        "required_test": "If changed, a static render test that checks the chosen role/aria attributes.",
+        "confidence": 0.65,
+        "disposition": "unresolved"
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+        "area": "Test precision - queued issue-date column",
+        "issue": "In the queued test, the check that the HTML contains the 'not yet issued' text cannot fail, because the new queued badge label contains that same substring. It therefore does not prove the issue-date cell rendered its placeholder. Also, nothing checks that no formatted date appears.",
+        "evidence": "The label 'not yet issued (request recorded only)' starts with the same characters the test checks for. The test checks that the invoice number is absent, but no date string is checked for absence.",
+        "impact": "A regression that rendered an invented issue date would not be caught. The current source is correct (issuedAt null -> placeholder).",
+        "recommended_fix": "Match the issue-date cell directly (e.g. a regex on the closing td with text-slate-500 class containing the placeholder), or check that the formatted fixture date is absent from the HTML.",
+        "required_test": "Queued test: check the placeholder appears in the issue-date cell markup, and check that formatDateTime output for the fixture date is not present.",
+        "confidence": 0.8,
+        "disposition": "unresolved"
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+        "area": "Test naming",
+        "issue": "The queued test title still says 'shows queued requests as pending', which conflicts with Fix1 removing the pending wording from the product.",
+        "evidence": "it(\"shows queued requests as pending with no invented invoice number or issue date\"), while the body checks that the old pending word is absent.",
+        "impact": "Cosmetic only. It could mislead future maintainers about the intended label.",
+        "recommended_fix": "Rename it to something like 'shows queued requests as not issued (request recorded only) with no invented invoice number or issue date'.",
+        "required_test": "None beyond the existing suite passing after the rename.",
+        "confidence": 0.9,
+        "disposition": "unresolved"
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/billing/electronic-invoices/page.tsx",
+        "area": "Status label copy",
+        "issue": "The new label for queued rows means 'pending processing'. That still suggests the system will process and issue the invoice later, but on this branch no fiscal adapter exists and queued rows are never processed.",
+        "evidence": "labels.queued changed from the term for 'queued' to the term for 'pending processing'. The unchanged runElectronicInvoiceJob returns early when input.adapter is missing, and the route always calls it with no adapter, so queued rows never move to another status.",
+        "impact": "Merchants may read queued rows as work in progress that will finish without them. This weakens the unavailable notice and could lead them to skip issuing invoices manually.",
+        "recommended_fix": "Use a neutral label meaning 'not issued (request recorded)' or 'request only'. Change display copy only; keep the stored status value and the tone mapping as they are.",
+        "required_test": "Update the queued-row test in page.test.tsx to expect the new neutral label and to assert the 'pending processing' term is absent.",
+        "confidence": 0.7,
+        "disposition": "resolved",
+        "resolution_evidence": [
+          {
+            "kind": "validation",
+            "source": "validation_runner",
+            "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+            "name": "unit",
+            "status": "PASS",
+            "exit_code": 0,
+            "details": {
+              "tests": 60,
+              "files": 9,
+              "receipt": "unavailable-fixed-unit.json",
+              "chunk": "a2eb90"
+            },
+            "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-unit.json"
+          },
+          {
+            "kind": "validation",
+            "source": "validation_runner",
+            "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+            "name": "preservation",
+            "status": "PASS",
+            "exit_code": 0,
+            "details": {
+              "receipt": "unavailable-preservation.json",
+              "protected_files": 9
+            },
+            "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-preservation.json"
+          }
+        ]
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+        "area": "Test coverage of disclaimer copy",
+        "issue": "The page tests check the banner title and the absence of the old auto-scheduling phrase. They do not check the key disclaimer sentence, and they do not check that the old export label (which meant 'export issuance report CSV') is gone.",
+        "evidence": "The tests assert the banner title, the new export label and the export href, plus not.toContain on the old auto-scheduling phrase only. Nothing asserts the sentence saying payment success, a saved request or an export does not mean an invoice was issued, and nothing asserts the old export label is absent.",
+        "impact": "A later copy edit could weaken or remove the core no-issuance statement, or bring back the issuance-report wording, without any test failing.",
+        "recommended_fix": "In the populated, empty and queued cases, assert the banner body sentence (including the phrase saying these do not mean an invoice was issued). Also assert the old export label and any automatic-issuance wording are absent.",
+        "required_test": "Run page.test.tsx on its own. All four cases must pass with the added positive and negative copy assertions.",
+        "confidence": 0.65,
+        "disposition": "resolved",
+        "resolution_evidence": [
+          {
+            "kind": "validation",
+            "source": "validation_runner",
+            "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+            "name": "unit",
+            "status": "PASS",
+            "exit_code": 0,
+            "details": {
+              "tests": 60,
+              "files": 9,
+              "receipt": "unavailable-fixed-unit.json",
+              "chunk": "a2eb90"
+            },
+            "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-unit.json"
+          },
+          {
+            "kind": "validation",
+            "source": "validation_runner",
+            "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+            "name": "preservation",
+            "status": "PASS",
+            "exit_code": 0,
+            "details": {
+              "receipt": "unavailable-preservation.json",
+              "protected_files": 9
+            },
+            "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-12\\unavailable-check-preservation.json"
+          }
+        ]
+      }
+    ]
+  }
+}

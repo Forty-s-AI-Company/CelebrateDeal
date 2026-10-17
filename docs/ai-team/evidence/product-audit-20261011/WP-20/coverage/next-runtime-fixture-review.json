@@ -1,0 +1,229 @@
+{
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "payment",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 1,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-opus-5-5",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only scripts/wp20-next-runtime-disposable.mjs, without running anything. The probe, the migration runner, the omitted credential lines and the application source were not supplied, so I did not review or certify them. I found no BLOCKER or MAJOR issues in this file. Two things look sound: the database is only written to after the URL is checked for loopback host and the `/celebratedeal_test` name and the database comment matches the marker pattern, and raw SQL uses fixed strings or parameters. There are six MINOR or NIT findings. Most are about whether the evidence file proves what it claims: the source hashes miss two modules that run in this process, runtime output is saved without filtering, the database ownership check is pattern-only, and the Prisma `.env` check reads a fixed file path. The parent process environment is not reduced, and failures are labelled with the wrong stage. Passing tests must actually be run; reading the source cannot show they pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-disposable.mjs",
+        "area": "`paths` array / receipt.sourceHashes vs esbuild stdin bundle",
+        "issue": "The source hashes leave out modules that actually run in this process and produce the result, so a PASS receipt is not tied to all the code that ran.",
+        "evidence": "The bundle imports ./src/lib/live-metric-ingress.ts and ./src/lib/live-metric-version.ts (metricVideoFingerprint, which computes the seeded fingerprint), but neither file is in `paths`. scripts/prisma-loopback-disposable-migration-runner.mjs, which creates and destroys the database, is not hashed either. Hashes are taken only at startup, with no second hash after the run.",
+        "impact": "Someone could change ingress or fingerprint logic, or the runner's safety checks, and the stored PASS would still appear to match the hashed sources. That weakens the evidence chain for WP-20.",
+        "recommended_fix": "Add live-metric-ingress.ts, live-metric-version.ts and the migration runner to `paths`. Better still, hash every input file listed in the esbuild metafile (`metafile:true`) and every file the probe copies into the mirror. Hash again after the run and fail if anything changed.",
+        "required_test": "Change only src/lib/live-metric-version.ts (or the runner) and rerun. Check that the receipt hash changes, or that a mismatch is reported if the file changes during the run.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-disposable.mjs",
+        "area": "receipt.runtime assignment, fs.writeFileSync and console.log",
+        "issue": "Whatever object the probe returns is written as-is to a committed evidence file and printed to stdout. Nothing limits which fields go out.",
+        "evidence": "`receipt.runtime=await verifyNextMetricRuntime({...databaseUrl, environment...})` is then saved with JSON.stringify(receipt) and printed with `runtime:receipt.runtime`. The probe receives the database URL, the environment and the generated proxy proof, CSRF value, keyring and profile, and this file does not inspect its return shape.",
+        "impact": "If the probe ever returns a URL, port, temporary path, generated proof or an error message, it lands in a stored artifact. That breaks the rule against storing env values or raw logs. The values are synthetic, but the rule is still broken.",
+        "recommended_fix": "Copy only an approved set of fields (status, counters, booleans, cleanup flags) out of the runtime result before saving or printing it. Fail if the serialized receipt contains the databaseUrl, any value from `environment`, or `tempRoot`.",
+        "required_test": "Use a stub probe that returns extra fields containing the databaseUrl and the generated proof. Check that the saved JSON and stdout contain neither, and that the run fails or strips them.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-disposable.mjs",
+        "area": "afterMigrate preflight (URL and marker checks)",
+        "issue": "The database ownership check only matches a pattern. It does not compare the marker with the one this run created, and it does not check the port or user.",
+        "evidence": "`assert.match(marker.marker,/^prisma-no-dotenv:[a-f0-9]{16}$/u)` together with the hostname and pathname checks. Any loopback database named celebratedeal_test that carries some earlier marker would pass.",
+        "impact": "If the runner were ever pointed at a leftover or someone else's loopback database with the same name and an old marker, this script would write seed data into it. The runner probably prevents this, but this file does not check for it itself.",
+        "recommended_fix": "Have the runner pass the marker nonce it created (and the port it owns) to afterMigrate, and check for exact equality before any write.",
+        "required_test": "Pre-create a loopback celebratedeal_test database with a different valid-looking marker, feed it to afterMigrate, and check that it is rejected before vendor.create.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-disposable.mjs",
+        "area": "relativeEnvPaths preflight",
+        "issue": "The `.env`-loading guard reads a fixed file path with a regex instead of the client module that require('@prisma/client') actually loads, and it only checks the first match.",
+        "evidence": "`fs.readFileSync('node_modules/.prisma/client/index.js')` with `.match(/\"relativeEnvPaths\":\\s*(\\{[^}]*\\})/u)`. A custom generator output, a different resolution path, or several generated configs (default.js, edge or wasm variants) would not be checked.",
+        "impact": "If the client that gets loaded is not the one checked, the promise that relativeEnvPaths are null before the Prisma constructor runs may not hold. Prisma could then read an ambient .env file.",
+        "recommended_fix": "Resolve the generated client from the resolved @prisma/client directory (require.resolve with paths). Check every relativeEnvPaths occurrence in the files that are actually loaded, or inspect the loaded module's config at runtime before constructing the client.",
+        "required_test": "Generate the client to a non-default output, or add a second config containing non-null relativeEnvPaths. Check that the preflight fails.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-disposable.mjs",
+        "area": "in-process bundle evaluation (`new Function(...)` with the real require)",
+        "issue": "Service code is bundled and run inside the parent process, and that process keeps the operator's full environment. Only child processes get the reduced environment.",
+        "evidence": "`packages:'external'` with tsconfig path aliases still bundles local imports. `new Function('require','module','exports',...)` runs them with this module's require, and nothing checks that the parent's process.env lacks DATABASE_URL or other secrets.",
+        "impact": "If any bundled module creates a default PrismaClient or reads process.env at import, it could see the operator's real DATABASE_URL or credentials and connect to a database that is not disposable. This is not proven, because the sources were not supplied.",
+        "recommended_fix": "At startup, check that process.env has no DATABASE_URL or secret-like keys, or remove them before bundling. Alternatively, run the service in a child process that gets the runner's minimal environment. Also check via the metafile that the bundle does not include a Prisma singleton module.",
+        "required_test": "Run with a decoy DATABASE_URL set in the parent environment (pointing to an unreachable synthetic host). Check that the script aborts before bundling, or that no connection to that URL is attempted.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "NIT",
+        "file": "scripts/wp20-next-runtime-disposable.mjs",
+        "area": "receipt.stage / migration.cleanup handling",
+        "issue": "The stage is never moved on after afterMigrate returns. A failure during migration cleanup is therefore recorded as stage 'runtime', and the runner's `cleanup` result is recorded but never checked.",
+        "evidence": "The last stage set before `main` returns is `receipt.stage='runtime'`. Only `assert.equal(migration.status,'PASS')` is checked, and `receipt.cleanup` is stored without any assertion.",
+        "impact": "Failure reports point at the wrong step, and a PASS depends on the runner's status covering cleanup, which this file does not show.",
+        "recommended_fix": "Set `receipt.stage='cleanup'` after the runtime assertion inside afterMigrate, or right after `main` resolves. Check the specific cleanup fields (database dropped, temp directory removed) before reporting PASS.",
+        "required_test": "Inject a failure into the runner's cleanup step. Check that the receipt shows stage 'cleanup' and status FAIL.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ]
+}

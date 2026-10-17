@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { checkRateLimit } = vi.hoisted(() => ({ checkRateLimit: vi.fn() }));
 
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit }));
 
 import { POST } from "@/app/api/security/csp-report/route";
 

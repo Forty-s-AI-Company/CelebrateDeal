@@ -1,0 +1,15 @@
+{
+  "hashes": {
+    "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql": "068b58d8c953526d22290da3b384b5f0aa96a5288b7f9c1e9211501ac1aff1c4",
+    "prisma/schema.prisma": "c66dfccb423d0de31c63d504c781abed3a35604e762bcd104e99d2cb458fee34",
+    "src/lib/live-metric-completion-store.ts": "0f87d670db74e236a85d49c86faea9673f98648029042d07ecba2b36388cd86d",
+    "src/lib/live-metric-completion-store.test.ts": "65f6e1e333fde5a8cbf9795c5fa7cfd4948ceb6a48e477632ae14d92bd6cb09f",
+    "scripts/wp20-completion-publish-probe.mjs": "7658458f11f711acf5dda3a3dbc713400be46d1d267808cf0937a361962ab73d"
+  },
+  "tests": "18 PASS",
+  "lint": "PASS",
+  "db": "PASS:104 migrations, metadata count matches, tampered count rejected23514,5 source cases,20 payment retries",
+  "largePayloadPerformance": "NOT_RUN",
+  "schemaValidate": "NOT_RUN",
+  "review": "PENDING"
+}

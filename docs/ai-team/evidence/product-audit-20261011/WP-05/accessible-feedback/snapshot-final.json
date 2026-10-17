@@ -1,0 +1,14 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/components/registration-submission-feedback.tsx",
+    "src/components/registration-submission-feedback.test.tsx",
+    "src/components/lead-form.tsx",
+    "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "src/lib/registration-submission-client.ts",
+    "src/lib/registration-submission-client.test.ts",
+    "src/components/lead-form.test.tsx",
+    "src/components/landing-pages/funnel-page-document-renderer.test.tsx"
+  ],
+  "revision": "sha256:90ed3342c70ec54c971ac65c0490de8968246f27e2e798fa1d26c004fb7e4016"
+}

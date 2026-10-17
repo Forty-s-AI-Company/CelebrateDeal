@@ -1,0 +1,19 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "unit": {
+    "status": "PASS",
+    "files": 2,
+    "tests": 11
+  },
+  "schema": "order-window-binding-schema.json",
+  "typecheck": "order-window-binding-typecheck.json",
+  "load": "order-window-coverage-load.json",
+  "review": "PENDING",
+  "files": {
+    "prisma/schema.prisma": "ce65e406fffa559404f2a3bacc4d5b6e0a8c46fc8643a10828708adbb666f111",
+    "src/lib/live-metric-order-revision-snapshot.test.ts": "a0ed4990d6c14c84e9dcdb0e6e978a0519522982b46fa9d7543a419c340f6ffd",
+    "src/lib/live-metric-coverage-reader.ts": "119bc7cfa9f24c1a56b158c874d03a69ffab8409e7fb9599370056431c4eb474",
+    "src/lib/live-metric-coverage-reader.test.ts": "68f20248cf000ba6538e0050115615886940e100bbdeeb4cfc07510b9b6ffdee",
+    "scripts/wp20-order-window-coverage-load-disposable.mjs": "8b24f69861fee61a1de053e68bd1ae1455ec5adbe609909172d1a9409cbb51d8"
+  }
+}

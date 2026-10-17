@@ -1,0 +1,1 @@
+{"root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal", "files": ["src/app/api/live-admission/route.lease-db.test.ts", "src/app/api/live-admission/route.ts", "src/lib/live-quota-admission.ts", "src/lib/rate-limit.ts"], "revision": "sha256:92739c76e3a777d6d079ff5f45a337ee5d6090e4139631dc3ec9d071b221d377"}

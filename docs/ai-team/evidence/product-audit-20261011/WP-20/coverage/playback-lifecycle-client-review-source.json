@@ -1,0 +1,11 @@
+{
+  "omitted": "server two canonical credential-read declarations; client transport/delivery/media/clock and UI hook not supplied",
+  "files": {
+    "src/lib/live-metric-playback-collector.ts": "bc7ad2d699f55fe43cba0620f35c04de1a557ea1af16ee712696a49806223a07",
+    "src/lib/live-metric-collector.ts": "76d26ab4f86dbe663c42f26a0cc3073a108054b4b4246aae1b7042de37239892",
+    "src/lib/live-metric-playback-controller.ts": "4e4f50cacd013b7b9e523c92284b428378f3909604c08d5c0496d17b7fb0350a",
+    "src/lib/live-metric-playback-receipt.ts": "fc9ecd3f1b4f5247ddf5e555862128890f781fee69a8dc834ba2f09bf95a201f"
+  },
+  "promptCharacters": 14217,
+  "scope": "client"
+}

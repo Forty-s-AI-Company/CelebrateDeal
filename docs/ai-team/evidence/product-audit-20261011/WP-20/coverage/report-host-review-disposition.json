@@ -1,0 +1,276 @@
+{
+  "status": "SCOPED_FOLLOWUP_COMPLETE_FULL_WP_NOT_READY",
+  "reviews": {
+    "initial": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "provider": "claude_cli",
+      "sourceHashesMatch": false,
+      "fileHashMatches": {
+        "scripts/run-metric-report-host.mjs": false,
+        "src/lib/live-metric-report-host.ts": false,
+        "src/lib/live-metric-report-scheduler.ts": true,
+        "scripts/build-metric-report-host.mjs": false
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "scripts/run-metric-report-host.mjs",
+          "area": "artifact verification loop before require(hostPath)",
+          "issue": "The real-path and regular-file check covers only six artifacts: the host .cjs plus the five worker-shared files. The host .cjs then loads ten more compiled modules from .metric-worker through relative require, and none of them are checked: live-metric-report-queue, scheduler, job, lease, snapshot, reader, completion-store, coverage-reader, coverage and snapshot-input.",
+          "evidence": "The loop lists ['live-metric-report-host.cjs','live-metric-worker.js','live-metric-executor.js','live-core-metrics-read-model.js','live-viewing-evidence.js','live-metric-contract.js'], while build-metric-report-host.mjs writes all 11 `names` entries to .metric-worker as .js/.cjs files and the host requires them transitively.",
+          "impact": "The claim of 'fixed project build artifacts, canonical path checks' holds for only part of the code the process runs. If one of the unchecked modules is a symlink, junction or non-file entry, it is loaded without being caught. These modules include the queue, claim and lease code that writes to the DB.",
+          "recommended_fix": "Check the same full name list the build emits, preferably from one shared constant or a fixed manifest written by the builder. Also apply the same check to the worker build's outputs that the host loads.",
+          "required_test": "Startup test: replace .metric-worker/live-metric-report-queue.js (and separately live-metric-report-job.js) with a symlink to an identical copy. The launcher must emit only startup_failed and must not connect any job or worker.",
+          "confidence": 0.85
+        },
+        {
+          "severity": "MINOR",
+          "file": "scripts/run-metric-report-host.mjs",
+          "area": "config path validation (extname/basename/lstat/stat/readFileSync)",
+          "issue": "The config checks have three gaps. (a) They never confirm the path is a regular file. (b) They race: lstat, stat and readFileSync are three separate path lookups, and readFileSync reads the whole file no matter what size stat reported. (c) The '.env' prefix test is case-sensitive, but paths on win32 are case-insensitive.",
+          "evidence": "`fs.lstatSync(configPath).isSymbolicLink()||fs.statSync(configPath).size>32768` is followed by `fs.readFileSync(configPath,'utf8')`. There is no isFile() check, no read through a held file descriptor, and no length limit on the read. `path.basename(configPath).startsWith('.env')` accepts '.ENV.json' and '.Env.json'.",
+          "impact": "A FIFO named *.json (stat size 0) makes startup block forever instead of failing closed. A file that is swapped or grows after the stat is read in full, which breaks the 32KiB limit. A dotenv-named config with different casing gets past the stated rejection on Windows. The impact is limited because the config path is OS-owned and local, and errors are sanitized.",
+          "recommended_fix": "Open the file once, using O_NOFOLLOW where the platform supports it. Call fstat on the descriptor and require isFile() and size <= 32768. Read at most 32769 bytes through that descriptor and reject anything over the limit. Compare the basename case-insensitively, for example `/^\\.env/i`.",
+          "required_test": "Unit tests: a FIFO named cfg.json fails fast with startup_failed (POSIX); '.ENV.json' is rejected; a 40KiB file is rejected; a directory named x.json is rejected.",
+          "confidence": 0.7
+        },
+        {
+          "severity": "MINOR",
+          "file": "scripts/build-metric-report-host.mjs",
+          "area": "require allowlist regex over transpiled output",
+          "issue": "The dependency gate scans only for `require(\"literal\")` with double quotes. It misses three cases: single-quoted requires (TS can keep the source's quote style, and direct require calls pass through unchanged), requires with a non-literal or template argument, and other ways of loading code. Separately, every `node:` builtin is allowed, including node:child_process and node:vm.",
+          "evidence": "`result.outputText.matchAll(/require\\(\"([^\"]+)\"\\)/gu)` treats a module as clean when nothing matches. `!match[1].startsWith('node:')` lets any builtin through. The unsupplied sources (queue, job, lease, readers, coverage) go through this same gate.",
+          "impact": "A reviewed source file could pick up a runtime dependency without the build failing, for example a single-quoted import or a node:child_process call. The build would still report 'Metric host build complete' even though the claimed 'explicit reviewed require allowlist' was bypassed.",
+          "recommended_fix": "Walk the TypeScript AST, or the output text, for every `require(` call and every import/export specifier. Reject any argument that isn't a string literal in the allowlist, whatever its quote style. Replace the blanket node: prefix with an explicit list, e.g. node:crypto, node:perf_hooks, node:timers/promises, node:worker_threads and whatever else the reviewed sources actually need.",
+          "required_test": "Build test with a temporary fixture source containing `require('fs')`, `require(name)` and `import('node:child_process')`. The build must throw 'Metric host dependency not allowed' each time and write no outputs.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "scripts/run-metric-report-host.mjs",
+          "area": "stdin/stdout stream lifecycle and finally/$disconnect",
+          "issue": "Four gaps. (1) process.stdin and process.stdout have no 'error' listeners. (2) stdin 'end' (the parent closing the control pipe) does not stop the host. (3) If `db.$disconnect()` rejects inside finally, the rejection escapes the sanitized catch. (4) Signal handlers use `once`, so a second SIGINT ends the process immediately.",
+          "evidence": "Only `process.stdin.on('data',onInput)` is registered. Output is written with console.log and no stdout error handling. The finally block runs `if(db)await db.$disconnect();` at top level with no try/catch. Signals are registered with `process.once('SIGINT',stop)`.",
+          "impact": "If the supervising parent dies, stdout EPIPE or a stdin error becomes an uncaught exception. The process then exits abruptly, without awaiting the active transaction or worker (the DB rollback and lease expiry still recover), and Node prints a raw stack trace, which goes against 'only startup_failed / aggregate output'. If the parent closes stdin without writing a stop line, an orphaned host can keep creating windows and running jobs for up to 10000 cycles with cadence up to 1 hour.",
+          "recommended_fix": "Add 'error' handlers on process.stdin and process.stdout that call stop() and ignore later writes. Treat stdin 'end' or 'close' as a stop request, or document that EOF is ignored on purpose. Wrap `$disconnect` in try/catch so it fails silently with a nonzero exit code. Decide explicitly whether a second signal should force exit, and document that choice.",
+          "required_test": "Child-process tests: (a) close the child's stdin with no stop line, then expect a 'stopped' terminal output once the current work is awaited, or whatever behavior is documented; (b) destroy the stdout pipe mid-cycle, then confirm no raw stack output and that the active transaction finishes before exit; (c) inject a $disconnect rejection, then expect no raw diagnostic.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-report-host.ts",
+          "area": "cycle accounting and terminal status in run()",
+          "issue": "A cycle cut short by an abort or by the admission budget still increments `cycles`, and observe() reports it like a full cycle. If the abort arrives after the final cycle's work is done, the run reports 'stopped' rather than 'completed'.",
+          "evidence": "`cycles++` and observe() run unconditionally once the inner loops break on `!admitted()`. The final status is `signal.aborted ? \"stopped\" : \"completed\"`, which is evaluated after the loop.",
+          "impact": "These are aggregate operator metrics only, but they can overstate how many full cycles ran or understate a clean completion. Committed data is not affected.",
+          "recommended_fix": "Add a `partial`/`interrupted` flag to the per-cycle result, or count partial cycles separately. Report 'completed' when index reached maxCycles, even if the signal aborted afterwards.",
+          "required_test": "Unit test with stubbed enqueue/tick: abort during cycle 1's enqueue loop, then assert the cycle is reported as partial. Abort after the last cycle's observe, then assert the status is 'completed'.",
+          "confidence": 0.6
+        }
+      ],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "IDLE_TIMEOUT",
+          "exitCode": -1
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "-followup": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "provider": "claude_cli",
+      "sourceHashesMatch": false,
+      "fileHashMatches": {
+        "scripts/run-metric-report-host.mjs": false,
+        "scripts/metric-report-host-build-gate.mjs": true,
+        "src/lib/live-metric-report-host.ts": false,
+        "scripts/metric-report-host-runtime.mjs": false,
+        "scripts/metric-report-host-artifacts.mjs": false,
+        "scripts/build-metric-report-host.mjs": false
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "scripts/run-metric-report-host.mjs",
+          "area": "Signal registration (process.on('SIGINT'/'SIGTERM') inside try after host creation; removeListener at start of finally before disconnectMetricHost)",
+          "issue": "Signal handlers are only installed between host creation and the start of the finally block. A SIGINT or SIGTERM during startup (config read, marker query, artifact check) or during the awaited $disconnect falls back to Node's default handler and ends the process immediately.",
+          "evidence": "Stdin end/close/error handlers are registered at module top, but the signal handlers are registered only after createMetricReportHost. The finally block calls process.removeListener('SIGINT'/'SIGTERM', stop) before `await disconnectMetricHost(db)` and before `emit(terminal)`.",
+          "impact": "If a supervisor sends a second Ctrl-C/SIGTERM while the process is disconnecting, or a signal arrives during the startup DB query, the process exits with no terminal event and no clean disconnect. This contradicts the stated contract that repeated signals stay graceful and that a terminal event is always emitted after disconnect. A callers that waits for a terminal line sees an abrupt signal exit instead. The connection is still released by the OS and the database is disposable, so this is not a data-integrity break.",
+          "recommended_fix": "Register process.on('SIGINT'/'SIGTERM', stop) at module top next to the stdin handlers, before the try block. Keep them registered through disconnect and terminal emission, or remove them only after emit(terminal). stop() is already idempotent through AbortController.",
+          "required_test": "Spawn the launcher as a child process, send SIGINT during the startup marker query (for example with a delayed or locked DB), and send SIGINT twice while disconnect is held. Assert exactly one sanitized terminal line, that it comes after disconnect, and a non-signal exit status.",
+          "confidence": 0.7
+        },
+        {
+          "severity": "MINOR",
+          "file": "scripts/build-metric-report-host.mjs",
+          "area": "Output phase: fs.mkdirSync('.metric-worker', recursive) and writeFileSync of each artifact; paired with verifyMetricHostArtifacts in scripts/metric-report-host-runtime.mjs",
+          "issue": "The builder writes into an existing .metric-worker directory without removing leftover entries and without refusing linked targets. The runtime check only confirms the 17 catalog names are canonical regular files; it does not reject other entries in the directory. Bare specifiers allowed by the gate ('zod', '@prisma/client') are resolved by Node from .metric-worker/node_modules first, before the root node_modules.",
+          "evidence": "The builder does mkdirSync(recursive) and then writeFileSync for each artifact, with no cleanup, no lstat check and no exclusive create. verifyMetricHostArtifacts loops only over ARTIFACTS using realpath/lstat; nothing compares readdir('.metric-worker') to ARTIFACTS. ALLOWED_REQUIRES includes 'zod' and '@prisma/client', which compiled artifacts in .metric-worker resolve through normal CommonJS node_modules lookup.",
+          "impact": "A leftover or unexpected .metric-worker/node_modules/zod or @prisma/client would be loaded in place of the reviewed root dependency. That bypasses the claim of fixed worker artifacts and the Prisma envPaths guard, which checks root node_modules/.prisma. Separately, if an artifact path is a symlink, writeFileSync writes through it to a file outside the build directory before the runtime later rejects it. Exposure is limited to someone with local write access to the worktree.",
+          "recommended_fix": "In the builder, after the gate passes, refuse to continue if .metric-worker or any existing entry is a symlink or junction, or not a regular file or directory. Delete leftover entries, or write to a fresh temp directory and rename it into place. In verifyMetricHostArtifacts, also require that the directory is canonical and that fs.readdirSync('.metric-worker') exactly matches the ARTIFACTS set, so extra node_modules or other files cause rejection.",
+          "required_test": "Create .metric-worker/node_modules/zod/index.js and an extra stray file, then assert the runtime rejects the artifacts with startup_failed. Make an artifact path a symlink or junction before building, and assert the build refuses without writing to the link target.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-report-host.ts",
+          "area": "result.partial = !admitted(); completedFinalCycle computation",
+          "issue": "partial is calculated after the work finishes, using only whether the admission time or signal still allows work. A cycle that enqueued every entry and reached jobsPerCycle is still marked partial if the last tick used up the admission budget.",
+          "evidence": "admitted() only checks the abort signal and elapsed time against admissionMilliseconds. No flag records whether either loop actually stopped early through `break`.",
+          "impact": "Per-cycle telemetry over-reports partial cycles. If an abort arrives during the last tick of the final cycle, the run reports stopped even though all bounded work for that cycle was done. Operators get misleading counters, but nothing affects data integrity.",
+          "recommended_fix": "Set partial=true only when an early-exit branch actually runs (admission failed before the next entry or scope was processed while work remained). Do not recompute it from admitted() after the loops.",
+          "required_test": "Use a fake clock or a slow executor where the last allowed tick passes admissionMilliseconds after every entry is processed and jobsPerCycle is reached. Assert partial=false and status completed. Separately assert partial=true when admission ends before the remaining entries or scopes are processed.",
+          "confidence": 0.5
+        }
+      ],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "IDLE_TIMEOUT",
+          "exitCode": -1
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "-final": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "provider": "claude_cli",
+      "sourceHashesMatch": false,
+      "fileHashMatches": {
+        "scripts/run-metric-report-host.mjs": true,
+        "scripts/metric-report-host-build-gate.mjs": true,
+        "src/lib/live-metric-report-host.ts": false,
+        "scripts/metric-report-host-runtime.mjs": false,
+        "scripts/metric-report-host-artifacts.mjs": false,
+        "scripts/build-metric-report-host.mjs": false
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-report-host.ts",
+          "area": "scheduler loop, line `if (tick.deferred > 0 && !admitted()) result.partial = true;`",
+          "issue": "After a tick, the partial flag is set whenever the tick deferred any work and the admission window has closed. It doesn't check why the work was deferred. If the tick used up the remaining jobsPerCycle budget and deferred extra queued jobs only because of that cap, the cycle is still marked partial whenever the admission window happens to close during that final tick. Elsewhere, a cap stop is not partial: the `result.attempted >= config.jobsPerCycle` break never sets it.",
+          "evidence": "The check runs right after `result.attempted += tick.attempted`, and it doesn't test whether `result.attempted < config.jobsPerCycle`. So a deferral caused by the job cap, together with time running out after the final tick, still sets partial. That is the elapsed-time-after-final-tick behaviour the fix says was removed.",
+          "impact": "The partial flag sent to cycle observers is inconsistent: the same cap-limited cycle is reported as complete or partial depending on timing. It also affects completedFinalCycle, so an abort that arrives after such a final cycle is reported as 'stopped' instead of 'completed'. Only reporting is affected; no data or safety.",
+          "recommended_fix": "Set partial after a tick only when the remaining work was skipped because of admission, not the cap. For example: `if (tick.deferred > 0 && result.attempted < config.jobsPerCycle && !admitted())`. Alternatively, have the scheduler tick report a reason for deferral (admission/abort vs cap) and set partial only for admission or abort.",
+          "required_test": "Unit test using a fake clock. jobsPerCycle=1, one scope with 2 queued jobs, and the tick takes longer than the remaining admission time while running the single allowed job. Assert partial=false, and that an abort after the cycle gives status 'completed'. Add a second test where the tick defers because of admission with attempted < jobsPerCycle, and assert partial=true.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "scripts/build-metric-report-host.mjs",
+          "area": "output write loop (`for(const [name,source] of compiled)fs.writeFileSync(...)`) together with scripts/metric-report-host-runtime.mjs verifyMetricHostArtifacts",
+          "issue": "The builder overwrites each artifact in place, one at a time, with a non-atomic writeFileSync. Runtime verification checks only that the entry names match the catalog exactly and that each entry is a regular, unlinked file. It doesn't check contents or confirm that all files come from the same build. A build that fails or is killed partway through can leave truncated files, or a mix of old and new artifacts, that still pass verification.",
+          "evidence": "In verifyMetricHostArtifacts, the non-incomplete path only compares the names from readdir against ARTIFACTS and runs realpath/lstat isFile checks. The builder doesn't use temp-file-plus-rename writes or a manifest or hash.",
+          "impact": "The launcher can load an inconsistent or truncated set of host and worker modules. The usual result is a 'startup_failed' terminal, or incompatible module versions running against the disposable DB. Impact is limited because the build runs in an owned, nonproduction workspace and a rebuild fixes it.",
+          "recommended_fix": "Write each artifact to a temporary name in the same directory, then rename it into place. Write a manifest (artifact name → sha256) last, and have the runtime verify the manifest against the files before calling require. Alternatively, build into a fresh sibling directory and swap it in with an atomic rename.",
+          "required_test": "Builder contract test: simulate a failure after the first artifact is written, then confirm that runtime verification rejects the directory or reports it as incomplete. Runtime test: change one byte in a cataloged artifact and assert that the launcher emits a sanitized 'startup_failed' terminal.",
+          "confidence": 0.4
+        }
+      ],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "INVALID_REVIEW",
+          "exitCode": 0
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "-sealed": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "provider": "claude_cli",
+      "sourceHashesMatch": true,
+      "fileHashMatches": {
+        "scripts/metric-report-host-build-gate.mjs": true,
+        "scripts/build-metric-report-host.mjs": true,
+        "scripts/metric-report-host-runtime.mjs": true,
+        "scripts/metric-report-host-artifacts.mjs": true,
+        "src/lib/live-metric-report-host.ts": true,
+        "scripts/run-metric-report-host.mjs": true
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-report-host.ts",
+          "area": "scheduler loop: admissionMilliseconds passed to runMetricReportSchedulerTick and the following partial check",
+          "issue": "The remaining time passed to the scheduler is rounded down with Math.floor. As a result, the scheduler's admission deadline can end up to about 1 ms before the host's admitted() deadline. The scheduler can then defer work because its time ran out, while the host's immediate admitted() check still returns true. In that case the cycle is not marked partial.",
+          "evidence": "admissionMilliseconds: Math.max(1, Math.floor(config.admissionMilliseconds - (performance.now() - started))). The scheduler's deadline is about t1 + floor(A - (t0 - s)), which can be less than s + A when t1 - t0 is under 1 ms. The check is then `if (tick.deferred > 0 && result.attempted < config.jobsPerCycle && !admitted()) result.partial = true;`. If this is the last scope, completedFinalCycle becomes true even though work was deferred because time ran out.",
+          "impact": "In a rare sub-millisecond window, a final cycle where work was deferred for lack of time can be reported as non-partial or completed. This is the same kind of misreport as the earlier MINOR, just in a narrower timing window. It does not affect data integrity. Whether it can actually happen depends on the omitted scheduler internals.",
+          "recommended_fix": "Use Math.ceil instead of Math.floor, or pass an absolute deadline shared by the host and the scheduler. Alternatively, have the scheduler return a reason for deferral (for example deferredForTime) and set partial whenever that reason is reported and job capacity remains, without re-checking the host clock.",
+          "required_test": "Add a unit test with a fake clock: the scheduler stub reports deferred work because time ran out, at a moment when the host's elapsed time is still just under admissionMilliseconds, with capacity left, on the final scope of the final cycle. The cycle must be reported partial and the run must not report completed.",
+          "confidence": 0.4
+        },
+        {
+          "severity": "NIT",
+          "file": "scripts/metric-report-host-runtime.mjs",
+          "area": "writeMetricHostBuild: unlink seal / write artifacts / write seal",
+          "issue": "The seal ordering is not made durable. Nothing is fsynced: not the unlinked seal, not the directory, not the artifacts before the new seal is written. So the 'seal written last' guarantee only holds if the process crashes, not if the OS crashes or power is lost.",
+          "evidence": "fs.unlinkSync(sealPath); fs.writeFileSync(each artifact); fs.writeFileSync(sealPath, ...). There are no fsyncSync or directory fsync calls.",
+          "impact": "After a power loss on a local machine, a valid-looking new seal could in principle be persisted while artifact data is not. In that case runtime hash checks would still catch most mismatches. The fix claim should say 'process interruption' rather than imply durability against crashes in general. The practical impact for an owned disposable local process is low.",
+          "recommended_fix": "Either write the files with fsync (artifacts, then the directory, then the seal through a temp file + fsync + rename) or clarify in the comment that the guarantee covers process interruption only.",
+          "required_test": "No new test is required beyond the existing interruption contract. If durability is added, add a unit test checking that the seal is written through a temp file and rename after the artifacts are fsynced.",
+          "confidence": 0.5
+        }
+      ],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "INVALID_REVIEW",
+          "exitCode": 0
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    }
+  },
+  "initialArtifactFinding": "Fixed shared complete catalog for builder/runtime; queue/job junction rejection tested.",
+  "initialConfigFinding": "Fixed case-insensitive dotenv guard, regular held descriptor, matching dev/ino and bounded32769-byte read; growth-after-fstat test passes.",
+  "initialBuildFinding": "Fixed AST gate for literals/imports/require aliases and explicit node builtins, all outputs validated before writes; six rejected fixture expressions tested.",
+  "initialLifecycleFinding": "Fixed stdin EOF/close/error and stdout error graceful stop, repeated signals, sanitized disconnect rejection and terminal after cleanup. Actual child EOF/broken-pipe tests and disconnect rejection contract pass.",
+  "initialCycleNit": "Fixed partial flag and completed status when stop follows the final complete cycle; two regressions pass.",
+  "followupFindings": "Preserved first followup 2 MINOR/1 NIT. Signal handlers now cover startup through disconnect/terminal; root SDK resolution uses root package.json. Both pre-build and runtime reject unknown entries/node_modules, linked outputs and nonfiles without deleting them. Partial is set only when remaining work is actually skipped; two budget-boundary regressions pass.",
+  "finalFollowupFindings": "Preserved next 2 MINOR. Cap-exhausted tick no longer marks partial when time also expires; remaining-capacity admission deferral still partial. Build invalidates old seal before output changes and writes all-artifact SHA256 seal last; runtime rejects incomplete/corrupted builds. Interrupted prior-valid build/recovery and byte corruption contracts PASS. Requires sole writer/no concurrent build and execution, not cryptographic authentication against local owner.",
+  "remainingFindingsDisposition": "Latest scoped review has 1 MINOR (conditional sub-millisecond scheduler/host deadline telemetry mismatch) and 1 NIT (no power-loss/fsync durability). Retained for followup, neither changes DB/job safety or authorizes deployment. No assertion of zero findings or full-WP readiness. Build completion claim is process-interruption only; runtime content hashes still reject inconsistent artifacts.",
+  "notCertified": [
+    "actual deployed role/grants/authenticated Preview/staging host",
+    "canonical queue/job/guard/readers/core implementations in this review",
+    "positive coverage/full WP"
+  ]
+}

@@ -1,0 +1,202 @@
+{
+  "status": "IN_PROGRESS",
+  "wholeWp": "NOT_READY",
+  "previousGoalTurn": "PROGRESS",
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "engineeringResolved": {
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "engineeringObserved": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "sourceHashes": {
+        "src/lib/live-metric-report-queue.ts": "2738221865bf56c4e13c3ccb52ab8d3404342906bb48702cf3184ba73d4e6450",
+        "src/lib/live-metric-report-queue.test.ts": "10722e10bfcdbd3fae772186d1c67a587714fdd246f6e667af8be8cefee413d9",
+        "src/lib/live-metric-report-scheduler.test.ts": "10e33d645065e824f292871e4b18a0eb7fb084fab230825beaf82f5699a93143",
+        "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+        "src/lib/live-metric-report-lease.test.ts": "e8ca394c98bb37890976d82555bc4dedfc0f26a35a1a62cd406112bca8de39c6",
+        "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+        "src/lib/live-metric-report-reader.test.ts": "767e2aa6a1a4a18f83e99e7dda286837758cf4e3524880fdfd3a9a01eada06f9",
+        "src/lib/live-metric-coverage-reader.test.ts": "68f20248cf000ba6538e0050115615886940e100bbdeeb4cfc07510b9b6ffdee",
+        "src/lib/live-metric-order-coverage.test.ts": "2ababe347d7025a98720d97eae280185457dafb70b1763afa1934c4c3eb09414",
+        "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656"
+      },
+      "testsPassed": 87
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0,
+      "sourceHashes": {
+        "src/lib/live-metric-report-queue.ts": "2738221865bf56c4e13c3ccb52ab8d3404342906bb48702cf3184ba73d4e6450",
+        "src/lib/live-metric-report-queue.test.ts": "10722e10bfcdbd3fae772186d1c67a587714fdd246f6e667af8be8cefee413d9",
+        "src/lib/live-metric-report-scheduler.test.ts": "10e33d645065e824f292871e4b18a0eb7fb084fab230825beaf82f5699a93143",
+        "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+        "src/lib/live-metric-report-lease.test.ts": "e8ca394c98bb37890976d82555bc4dedfc0f26a35a1a62cd406112bca8de39c6",
+        "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+        "src/lib/live-metric-report-reader.test.ts": "767e2aa6a1a4a18f83e99e7dda286837758cf4e3524880fdfd3a9a01eada06f9",
+        "src/lib/live-metric-coverage-reader.test.ts": "68f20248cf000ba6538e0050115615886940e100bbdeeb4cfc07510b9b6ffdee",
+        "src/lib/live-metric-order-coverage.test.ts": "2ababe347d7025a98720d97eae280185457dafb70b1763afa1934c4c3eb09414",
+        "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656"
+      }
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0,
+      "sourceHashes": {
+        "src/lib/live-metric-report-queue.ts": "2738221865bf56c4e13c3ccb52ab8d3404342906bb48702cf3184ba73d4e6450",
+        "src/lib/live-metric-report-queue.test.ts": "10722e10bfcdbd3fae772186d1c67a587714fdd246f6e667af8be8cefee413d9",
+        "src/lib/live-metric-report-scheduler.test.ts": "10e33d645065e824f292871e4b18a0eb7fb084fab230825beaf82f5699a93143",
+        "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+        "src/lib/live-metric-report-lease.test.ts": "e8ca394c98bb37890976d82555bc4dedfc0f26a35a1a62cd406112bca8de39c6",
+        "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+        "src/lib/live-metric-report-reader.test.ts": "767e2aa6a1a4a18f83e99e7dda286837758cf4e3524880fdfd3a9a01eada06f9",
+        "src/lib/live-metric-coverage-reader.test.ts": "68f20248cf000ba6538e0050115615886940e100bbdeeb4cfc07510b9b6ffdee",
+        "src/lib/live-metric-order-coverage.test.ts": "2ababe347d7025a98720d97eae280185457dafb70b1763afa1934c4c3eb09414",
+        "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656"
+      }
+    },
+    "db": {
+      "status": "PASS",
+      "stage": "complete",
+      "scope": "Private scoped scheduler with real isolated worker; synthetic disposable database only",
+      "results": {
+        "defaultOneJobBound": "PASS",
+        "remainingQueueProcessed": "PASS",
+        "duplicateTickNoExecution": "PASS",
+        "realWorker": "PASS",
+        "unknownRemainsUnavailable": "PASS",
+        "activeLeaseExcluded": "PASS",
+        "foreignVersionExcluded": "PASS",
+        "barrierCompetingTicksExactlyOneExecution": "PASS",
+        "expiredLeaseRecoveredOldFinishRejected": "PASS",
+        "exhaustedHeadTerminalizedNextTickProgresses": "PASS",
+        "futureWindowRejectedByCreateGuard": "PASS",
+        "expiredReportAndVersionExcluded": "PASS",
+        "realForeignTenantMixedScopesExcluded": "PASS",
+        "exactSingleInvokerSignatureRevokedPublicAclAndWindowBody": "PASS",
+        "originalCrossWindowInvalidationReproducedAndRolledBack": "PASS",
+        "differentWindowRevisionsRemainIndependent": "PASS",
+        "concurrentEnqueueCreatesExactlyOneGeneration": "PASS",
+        "changedWindowReplacedWithoutInvalidatingOtherReadyWindow": "PASS",
+        "failedGenerationDoesNotResetAttemptCap": "PASS",
+        "nonUtcFailedAndReadyGenerationParity": "PASS",
+        "foreignFutureAndPreCollectionQueueInputsDenied": "PASS"
+      },
+      "sourceHashes": {
+        "src/lib/live-metric-report-queue.ts": "2738221865bf56c4e13c3ccb52ab8d3404342906bb48702cf3184ba73d4e6450",
+        "prisma/migrations/20261016100000_live_metric_report_queue_window/migration.sql": "aec54f350d6aa63cac1bd731cc4d1b9f5c921cb26f76d1731ac1f64889450d66"
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      },
+      "migrationCount": 122
+    }
+  },
+  "review": {
+    "status": "REVIEW_COMPLETED",
+    "observed": {
+      "model": "claude-opus-5-5",
+      "source": "cli_terminal_model_usage",
+      "effort": "unknown"
+    },
+    "provider": "claude_cli",
+    "sourceHashesMatch": true,
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016100000_live_metric_report_queue_window/migration.sql",
+        "area": "CREATE OR REPLACE FUNCTION public.wp20_metric_report_create(...) and trailing ACL comment",
+        "issue": "The migration only says it preserves invoker rights and the revoked EXECUTE ACL; it never checks. CREATE OR REPLACE replaces a function only when the argument types exactly match the existing one (the TIMESTAMPTZ(3) precision is ignored). If they differ at all, for example input_revision was INTEGER or NUMERIC, or a timestamp was declared differently, Postgres quietly creates a new overload instead. That overload gets the default EXECUTE grant to PUBLIC, and the old function that marks reports stale across all windows stays installed and callable.",
+        "evidence": "The migration contains only CREATE OR REPLACE plus the comment '-- Replacement preserves the existing invoker rights and revoked EXEC ACL.' It has no REVOKE ... FROM PUBLIC, and no DO block that checks pg_proc for a single overload or checks proacl/prosecdef. The producer calls with explicit ::timestamptz/::bigint casts, so either overload would resolve and tests run against 'unchanged SQL' wouldn't notice an extra overload.",
+        "impact": "If the argument types have drifted, any role that can connect could call a privileged report-insert path, and the bug Migration122 is meant to fix would still be reachable through the old overload. This is unconfirmed: the original signature wasn't supplied.",
+        "recommended_fix": "In the same transaction, after the CREATE, add an idempotent `REVOKE ALL ON FUNCTION public.wp20_metric_report_create(TEXT,TEXT,TEXT,TEXT,TIMESTAMPTZ,TIMESTAMPTZ,BIGINT,TIMESTAMPTZ) FROM PUBLIC;`. Then add a DO block that raises an error unless exactly one pg_proc row named wp20_metric_report_create exists in public, its prosecdef is false, and its ACL doesn't give EXECUTE to PUBLIC.",
+        "required_test": "Disposable DB migration test: after applying the migration, assert count(*)=1 from pg_proc where proname='wp20_metric_report_create' and pronamespace='public'::regnamespace, prosecdef=false, and has_function_privilege('public', oid, 'EXECUTE') is false. Also assert the function body contains the same-window predicate.",
+        "confidence": 0.3
+      }
+    ],
+    "attempts": [
+      {
+        "provider": "agy_wrapper",
+        "status": "IDLE_TIMEOUT",
+        "exitCode": -1
+      },
+      {
+        "provider": "claude_cli",
+        "status": "SUCCESS",
+        "exitCode": 0
+      }
+    ],
+    "initialReview": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "findings": [
+        {
+          "severity": "MAJOR",
+          "file": "src/lib/live-metric-report-queue.ts",
+          "area": "version-lock query and existing-report dedup query (window/collection/clock comparisons)",
+          "issue": "The producer compares `windowStartAt`/`windowEndAt`, `collectionStartedAt` and `clock_timestamp()` to bare Prisma Date parameters, with no `::timestamptz` cast and no transaction-local `timezone='UTC'`. `wp20_metric_report_create` does both: it takes TIMESTAMPTZ(3) parameters and runs with `SET timezone='UTC'`. So the producer's checks and the function's checks may disagree about whether two timestamps are equal.",
+          "evidence": "The function header has `SET timezone='UTC'` and the create call uses `${input.startAt}::timestamptz`. But the dedup query uses `r.\"windowStartAt\"=${input.startAt} AND r.\"windowEndAt\"=${input.endAt}` and the version query uses `v.\"collectionStartedAt\"<=${input.startAt}` and `${input.endAt}<=clock_timestamp()`, all without casts. The only `set_config` call sets `statement_timeout`. Casting only in the create call suggests the author knew the parameter type matters.",
+          "impact": "Assume the columns are Prisma's default timestamp(3) without time zone (or the bound parameter type is), and the deployed session time zone is not UTC. Then the dedup query can miss an exact-window row that the function later matches under UTC. If the missed row is a matching failed generation, a new five-attempt generation is created, which breaks the stated rule that failed generations are not silently retried. If the missed row is an active one with the same revisions, the function leaves it alone, the INSERT hits the active unique index, and the call returns `enqueue_failed` every time. The `endAt<=clock_timestamp()` and `collectionStartedAt` checks would also be off by the zone offset. Owner fixtures running on a UTC database would not catch this.",
+          "recommended_fix": "Run `SELECT set_config('timezone','UTC',true)` at the start of the transaction, next to `statement_timeout`. Also cast every Date parameter explicitly (`${input.startAt}::timestamptz`, `${input.endAt}::timestamptz`) in the version and dedup queries, so they use the same comparison rules as `wp20_metric_report_create`. Alternatively, move the dedup and failed-generation check into the UTC-pinned SQL function.",
+          "required_test": "In a disposable DB test, set the session/database timezone to a non-UTC zone such as 'America/New_York' and create a failed generation for an exact window with current revisions. Enqueue the same window again and assert it returns `previous_failure` and inserts no new row. Repeat with a matching ready row and assert `{available, created:false}` with no unique violation.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-report-queue.ts",
+          "area": "outer try/catch around db.$transaction",
+          "issue": "Every error is caught and returned as `enqueue_failed`, with no logging and no error class attached. Lock timeouts, statement timeouts, unique-index violations, guard rejections (23514) and the 'Report enqueue not confirmed' error all look the same to the caller.",
+          "evidence": "`} catch { return { status: \"unavailable\", reason: \"enqueue_failed\" }; }` has no binding and no logging.",
+          "impact": "If the producer's dedup check and the function's stale predicate ever disagree (for example, the timezone mismatch above), the only symptom is an active-window unique violation, and it is silently turned into a generic, retryable-looking 'unavailable'. A real integrity violation can't be told apart from ordinary contention, so it can be retried indefinitely without anyone noticing.",
+          "recommended_fix": "Bind the error and log it in a structured, non-sensitive way, or at least record the SQLSTATE and Prisma error code. Consider returning separate reasons, such as `lock_timeout` vs `integrity_violation`, so the scheduler host can back off on contention and alert on integrity failures.",
+          "required_test": "Unit test with a mocked `$transaction` that throws a unique-violation error (P2010/23505) and then a lock-timeout error (55P03/57014). Assert that the returned reasons or emitted logs differ and that neither leaks credentials or row data.",
+          "confidence": 0.5
+        }
+      ]
+    }
+  },
+  "wholeGoalCompleted": 8,
+  "wholeGoalTotal": 20,
+  "migrationCount": 122,
+  "unverified": [
+    "private queue host authentication/allowed scopes/cadence/deployed integration",
+    "positive viewing and visits source closure/proof/fences/readers",
+    "actual runtime role grants/load/populated upgrade",
+    "signed HTTP/live-WHEP/long soak",
+    "remote GitHub Actions"
+  ],
+  "originalSynchronized20Serializable": {
+    "successes": 7,
+    "failures": 13,
+    "rerun": false,
+    "acceptanceRedefined": false
+  },
+  "ruleCorrection": "7 days is post-completion order eligibility, not a registration-relative viewing window. Existing report window and provisional conversions retained.",
+  "ownership": {
+    "writer": "root",
+    "automaticSpawn": false,
+    "maxParallel": 1,
+    "maxDepth": 1
+  },
+  "git": {
+    "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "mode": "independent detached worktree",
+    "head": "efb8b7e9",
+    "promotion": "NOT_REQUESTED"
+  },
+  "production": "NOT_AUTHORIZED"
+}

@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "checks": [
+    "http_only_hidden",
+    "retained_after_shorter_proof_lifetime",
+    "expired_cookie_removed"
+  ],
+  "cleanup": "PASS"
+}

@@ -1,0 +1,38 @@
+{
+  "status": "BLOCKED",
+  "workPackage": "WP-18",
+  "currentRevision": "sha256:2d3ae7469290819b0dca2bff7235b5653bf35763b180d4afe8b68e7ed10ba99a",
+  "previousAcceptedImplementationRevision": "sha256:d980a258e9342e086ee014d2222a6eb269acba1f8fda056835d833313ee37838",
+  "sourceDrift": {
+    "filesChanged": 1,
+    "file": "src/lib/automation-workflow.ts",
+    "change": "AutomationDb Pick gained salesProject, formSubmission and commerceOrder; exact before/current diff has no runtime statement change.",
+    "currentValidation": "NOT_RUN"
+  },
+  "review": {
+    "status": "REVIEW_COMPLETED",
+    "observedModel": "claude-opus-5-5",
+    "observedEffort": "unknown",
+    "evidence": "wp04-dependency-review-20261016.json",
+    "findings": {
+      "BLOCKER": 1,
+      "MAJOR": 3,
+      "MINOR": 0,
+      "NIT": 0
+    }
+  },
+  "blockers": [
+    "WP-04 remains an explicit canonical prerequisite and cannot be removed by review.",
+    "No fixed-Sandbox deployed scheduler receipt proves delayed dispatch, pending-to-paid suppression, overlapping-run dedupe, timezone and heartbeat.",
+    "Current 18-file revision is newer than the previous whole-WP validation; current-snapshot checks are not rerun while WP-04 remains blocking.",
+    "Rollback rehearsal and explicit price/payment-idempotency/order-history preservation receipt are not present in the cited completion packet."
+  ],
+  "truthfulBoundary": {
+    "implementation": "Prior local implementation evidence exists and is retained.",
+    "enqueue": "Local enqueue and direct job behavior are not provider delivery.",
+    "providerDelivery": "NOT_RUN",
+    "scheduledExecution": "NOT_RUN",
+    "wholeWpCompletion": false
+  },
+  "nextAction": "Do not expand scheduler wiring. Resume WP-18 only after WP-04 has a fixed isolated non-Production scheduler target, or after the owner formally amends the WP-18 contract."
+}

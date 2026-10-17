@@ -1,0 +1,47 @@
+{
+  "status": "source_capabilities_verified",
+  "decisions": [
+    {
+      "route": "/billing/payouts",
+      "label": "批次出款",
+      "proof": "page.tsx lines35,48-49: review, lock, bank batch export, retry; no tax export action on this page"
+    },
+    {
+      "route": "/billing/course-payouts",
+      "label": "課程分潤",
+      "proof": "page.tsx line33: merchant readonly reconciliation; does not execute payment or labor-report approval"
+    },
+    {
+      "route": "/affiliates/commissions",
+      "label": "佣金結算",
+      "proof": "page.tsx lines137-188: monthly payout records and record-payment form after signature/export; retain settlement meaning"
+    },
+    {
+      "route": "/orders",
+      "label": "訂單與履約",
+      "proof": "preserve original destination scope and align sidebar"
+    },
+    {
+      "route": "/support-cases",
+      "label": "客服案件",
+      "proof": "preserve original destination scope (no post-sale-only implication)"
+    },
+    {
+      "route": "/messages/deliveries",
+      "label": "寄送管理",
+      "proof": "delivery operations include controls, not merely a readonly archive"
+    },
+    {
+      "route": "/settings/tracking",
+      "label": "追蹤設定",
+      "proof": "settings context explicit"
+    }
+  ],
+  "not_changed": [
+    "eligibility",
+    "workflow",
+    "money units",
+    "data queries",
+    "D2-D6 policy decisions"
+  ]
+}

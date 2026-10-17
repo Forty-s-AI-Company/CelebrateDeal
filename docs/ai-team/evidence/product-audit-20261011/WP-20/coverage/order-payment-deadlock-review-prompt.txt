@@ -1,0 +1,220 @@
+Independent Critical Payment focused review. Return JSON summary/findings max5, total under5000 chars, severity BLOCKER/MAJOR/MINOR/NIT. Review only supplied source. Focus retry classification and budgets after actual PostgreSQL deadlock surfaced via PrismaClientUnknownRequestError with no SQLSTATE. Prior116 review deadlock lock-order MAJOR remains open. This patch recognizes specific driver deadlock errors and retains payment webhook2 attempts, inventory3 attempts, and existing payment-only P2002. Not claiming elimination of deadlocks. No arbitrary Error is retryable. Nine isolation pairs forced crossed order/payment row locks, one deadlock victim per schedule, actual exported classifier accepted observed error, fresh test transaction succeeds. Real callback/retry regression also passes but does not force a deadlock inside callback. Tests of callback wrapper use getDb throwing to check bounded2 attempts, not full callback transaction recovery. Original synchronized20 SSI gate remains7/20 FAIL, not waived. Review findings limited to changed retry logic/observed deadlock recovery; overall WP not ready.
+
+FILE src/lib/database-write-conflict.ts
+1: import { Prisma } from "@prisma/client";
+2: 
+3: /** Recognize only database serialization/deadlock failures. Callers retain
+4:  * their existing bounded attempt count and must restart the whole transaction.
+5:  */
+6: export function isDatabaseWriteConflict(error: unknown): boolean {
+7:   if (error instanceof Prisma.PrismaClientKnownRequestError) {
+8:     if (error.code === "P2034") return true;
+9:     // Raw queries expose PostgreSQL SQLSTATE rather than Prisma's P2034.
+10:     return error.code === "P2010" && (error.meta?.code === "40001" || error.meta?.code === "40P01");
+11:   }
+12:   // The installed connector can expose a real deadlock as UnknownRequestError.
+13:   // Scope text classification to that driver class; arbitrary application errors,
+14:   // lock timeouts, unique violations and validation failures are not retryable here.
+15:   return error instanceof Prisma.PrismaClientUnknownRequestError
+16:     && /(?:kind:\s*Deadlock\b|\bdeadlock detected\b)/iu.test(error.message);
+17: }
+
+
+FILE src/lib/database-write-conflict.test.ts
+1: import { describe, expect, it } from "vitest";
+2: import { Prisma } from "@prisma/client";
+3: import { isDatabaseWriteConflict } from "./database-write-conflict";
+4: const known = (code: string, state?: string) => new Prisma.PrismaClientKnownRequestError("synthetic", {
+5:   code, clientVersion: "synthetic", meta: state ? { code: state } : undefined,
+6: });
+7: describe("bounded transaction retry classification", () => {
+8:   it("accepts serialization and explicit PostgreSQL raw-query deadlocks", () => {
+9:     for (const error of [known("P2034"), known("P2010", "40001"), known("P2010", "40P01")]) {
+10:       expect(isDatabaseWriteConflict(error)).toBe(true);
+11:     }
+12:   });
+13:   it("accepts the observed unknown-request deadlock representation", () => {
+14:     const error = new Prisma.PrismaClientUnknownRequestError("Error occurred: ERROR: deadlock detected", { clientVersion: "synthetic" });
+15:     expect(isDatabaseWriteConflict(error)).toBe(true);
+16:   });
+17:   it("does not retry unrelated failures or arbitrary application messages", () => {
+18:     for (const error of [known("P2002"), known("P2010", "55P03"), known("P2010", "23514"),
+19:       known("P2028"), new Error("deadlock detected"), { code: "P2034" },
+20:       new Prisma.PrismaClientUnknownRequestError("synthetic unrelated failure", { clientVersion: "synthetic" })]) {
+21:       expect(isDatabaseWriteConflict(error)).toBe(false);
+22:     }
+23:   });
+24: });
+
+
+FILE src/lib/payment-webhook-conflict-retry.test.ts
+1: import { beforeEach, describe, expect, it, vi } from "vitest";
+2: import { Prisma } from "@prisma/client";
+3: const dependencies = vi.hoisted(() => ({ getDb: vi.fn() }));
+4: vi.mock("@/lib/db", () => ({ getDb: dependencies.getDb }));
+5: import { PaymentWebhookPayload, processPaymentWebhook } from "./payment-webhooks";
+6: const payload = PaymentWebhookPayload.parse({ provider: "synthetic", eventId: "synthetic-retry", eventType: "paid", orderNumber: "synthetic-order" });
+7: beforeEach(() => { dependencies.getDb.mockReset(); });
+8: describe("payment webhook bounded conflict retry", () => {
+9:   it("retries the observed driver deadlock once and rethrows after two attempts", async () => {
+10:     const error = new Prisma.PrismaClientUnknownRequestError("ERROR: deadlock detected", { clientVersion: "synthetic" });
+11:     dependencies.getDb.mockImplementation(() => { throw error; });
+12:     await expect(processPaymentWebhook(payload)).rejects.toBe(error);
+13:     expect(dependencies.getDb).toHaveBeenCalledTimes(2);
+14:   });
+15:   it("does not retry arbitrary application failures containing the same text", async () => {
+16:     const error = new Error("deadlock detected");
+17:     dependencies.getDb.mockImplementation(() => { throw error; });
+18:     await expect(processPaymentWebhook(payload)).rejects.toBe(error);
+19:     expect(dependencies.getDb).toHaveBeenCalledTimes(1);
+20:   });
+21:   it("retains the existing uniqueness-conflict retry budget", async () => {
+22:     const error = new Prisma.PrismaClientKnownRequestError("synthetic", { code: "P2002", clientVersion: "synthetic" });
+23:     dependencies.getDb.mockImplementation(() => { throw error; });
+24:     await expect(processPaymentWebhook(payload)).rejects.toBe(error);
+25:     expect(dependencies.getDb).toHaveBeenCalledTimes(2);
+26:   });
+27: });
+
+
+FILE scripts/wp20-order-payment-deadlock.mjs
+1: import fs from 'node:fs';
+2: import assert from 'node:assert/strict';
+3: /** Intentionally crossed row locks. This is evidence, not production retry logic. */
+4: export async function verifyOrderPaymentDeadlock(db,scope,payment,{nextStart,nextEnd},isDatabaseWriteConflict) {
+5:  const [original]=await db.$queryRawUnsafe('SELECT id FROM "CommerceOrder" WHERE "vendorId"=$1 AND "primaryPaymentTransactionId"=$2',scope.vendorId,payment.id);
+6:  assert.ok(original);
+7:  const revision=async(start,end)=>(await db.$queryRawUnsafe('SELECT public.wp20_metric_order_window_revision($1,$2::timestamptz,$3::timestamptz) AS revision',scope.vendorId,start,end))[0].revision;
+8:  const restore=()=>db.$transaction(async tx=>{
+9:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1','outside-window-liveness-order');
+10:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,original.id);
+11:   await tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:payment.metadata}});
+12:  },{timeout:15000});
+13:  const results=[];
+14:  for(const orderIsolation of ['ReadCommitted','RepeatableRead','Serializable']) for(const paymentIsolation of ['ReadCommitted','RepeatableRead','Serializable']) {
+15:   const before=await revision(scope.startAt,scope.endAt),laterBefore=await revision(nextStart,nextEnd);
+16:   let announceOrder,releaseOrder,announcePayment;
+17:   const orderReady=new Promise(resolve=>{announceOrder=resolve;});
+18:   const orderGate=new Promise(resolve=>{releaseOrder=resolve;});
+19:   const paymentReady=new Promise(resolve=>{announcePayment=resolve;});
+20:   const linkDestination=tx=>tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,'outside-window-liveness-order');
+21:   const paymentOperation=async tx=>{
+22:    await tx.$queryRawUnsafe('SELECT id FROM "CommerceOrder" WHERE id=$1 FOR UPDATE','outside-window-liveness-order');
+23:    await tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:{...payment.metadata,syntheticDeadlock:1}}});
+24:   };
+25:   const orderTx=db.$transaction(async tx=>{
+26:    await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+27:    await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1',original.id);
+28:    const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');announceOrder(pid.pid);
+29:    await orderGate;await linkDestination(tx);
+30:   },{isolationLevel:orderIsolation,timeout:15000});orderTx.catch(()=>{});
+31:   let paymentTx;
+32:   try {
+33:    const orderPid=await Promise.race([orderReady,orderTx.then(()=>{throw new Error('order-ended-before-ready');})]);
+34:    paymentTx=db.$transaction(async tx=>{
+35:     await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+36:     await tx.$queryRawUnsafe('SELECT id FROM "CommerceOrder" WHERE id=$1 FOR UPDATE','outside-window-liveness-order');
+37:     const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');announcePayment(pid.pid);
+38:     await tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:{...payment.metadata,syntheticDeadlock:1}}});
+39:    },{isolationLevel:paymentIsolation,timeout:15000});paymentTx.catch(()=>{});
+40:    const paymentPid=await Promise.race([paymentReady,paymentTx.then(()=>{throw new Error('payment-ended-before-ready');})]);
+41:    let blocked=false;
+42:    for(let attempt=0;attempt<60;attempt++) {
+43:     const [state]=await db.$queryRawUnsafe('SELECT $1::integer=ANY(pg_blocking_pids($2::integer)) AS blocked',orderPid,paymentPid);
+44:     if(state.blocked){blocked=true;break;}await db.$queryRawUnsafe('SELECT pg_sleep(0.025)::text');
+45:    }
+46:    assert.equal(blocked,true);releaseOrder();
+47:    const outcomes=await Promise.allSettled([orderTx,paymentTx]);
+48:    assert.equal(outcomes.filter(x=>x.status==='rejected').length,1);
+49:    const loser=outcomes.findIndex(x=>x.status==='rejected');
+50:    const error=outcomes[loser].reason,code=error?.meta?.code??error?.code;
+51:    fs.writeFileSync('docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/order-payment-deadlock-diagnostic.json',JSON.stringify({
+52:     orderIsolation,paymentIsolation,loser,code:/^(?:P[0-9]{4}|[0-9A-Z]{5})$/.test(code??'')?code:'UNKNOWN',
+53:     deadlockMessage:/deadlock detected|40P01/.test(String(error?.message??'')),serializationMessage:/40001|serialization failure/.test(String(error?.message??'')),
+54:     lockTimeoutMessage:/lock timeout|55P03/.test(String(error?.message??'')),type:['PrismaClientKnownRequestError','PrismaClientUnknownRequestError','PrismaClientRustPanicError'].includes(error?.name)?error.name:'OTHER',
+55:    },null,2));
+56:    assert.equal(isDatabaseWriteConflict(error),true,'actual product retry classifier must accept this database conflict');
+57:    if(loser===0)await db.$transaction(async tx=>{
+58:     await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1',original.id);await linkDestination(tx);
+59:    },{isolationLevel:orderIsolation,timeout:15000});
+60:    else await db.$transaction(paymentOperation,{isolationLevel:paymentIsolation,timeout:15000});
+61:    assert.ok(await revision(scope.startAt,scope.endAt)>before);
+62:    assert.ok(await revision(nextStart,nextEnd)>laterBefore);
+63:    const [state]=await db.$queryRawUnsafe(`SELECT o."primaryPaymentTransactionId" AS payment,p.metadata->>'syntheticDeadlock' AS marker
+64:     FROM "CommerceOrder" o JOIN "PaymentTransaction" p ON p.id=o."primaryPaymentTransactionId" AND p."vendorId"=o."vendorId" WHERE o.id=$1`,'outside-window-liveness-order');
+65:    assert.equal(state.payment,payment.id);assert.equal(state.marker,'1');
+66:    const [old]=await db.$queryRawUnsafe('SELECT "primaryPaymentTransactionId" AS payment FROM "CommerceOrder" WHERE id=$1',original.id);assert.equal(old.payment,null);
+67:    results.push({orderIsolation,paymentIsolation,blocked:true,aborted:loser===0?'order':'payment',code:code??'UNKNOWN_DRIVER_DEADLOCK',productClassifierAccepted:true,freshRetry:'PASS',factsAndRevisions:'PASS'});
+68:   } finally {releaseOrder();await Promise.allSettled([orderTx,...(paymentTx?[paymentTx]:[])]);await restore();}
+69:  }
+70:  return {status:'PASS',results,scope:'Forced database deadlock with explicit test retry; does not prove application retry or synchronized20 acceptance'};
+71: }
+
+
+CHANGED CALLER src/lib/inventory-reservations.ts
+1: import { isDatabaseWriteConflict } from "@/lib/database-write-conflict";
+147:   }
+148:   return items;
+149: }
+150: 
+151: function isSerializableConflict(error: unknown) {
+152:   return isDatabaseWriteConflict(error);
+153: }
+154: 
+155: function isUniqueConstraintConflict(error: unknown) {
+156:   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+157: }
+158: 
+159: async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) {
+160:   const db = getDb();
+161:   for (let attempt = 1; attempt <= MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
+162:     try {
+163:       return await db.$transaction(operation, {
+164:         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+165:         // Production intentionally runs with a small serverless connection
+166:         // pool. Concurrent checkout attempts should queue long enough to
+167:         // resolve through the inventory invariant, not fail at pool admission.
+168:         maxWait: 5_000,
+169:         timeout: 10_000,
+170:       });
+171:     } catch (error) {
+172:       if (!isSerializableConflict(error) || attempt === MAX_SERIALIZABLE_ATTEMPTS) throw error;
+173:     }
+174:   }
+175: 
+176:   throw new Error("Serializable inventory transaction attempts exhausted.");
+177: }
+178: 
+
+
+CHANGED CALLER src/lib/payment-webhooks.ts
+1: import { isDatabaseWriteConflict } from "@/lib/database-write-conflict";
+1270:   return { vendor, transaction, commission, refundCommission, platformReferralCommission, platformReferralRefund, platformReferralDispute, platformSubscription, invoicePayment, disputeEntry, courseAllocations, courseRefundAllocations, courseDisputeEntries, commerceOrderRefund };
+1271: }
+1272: 
+1273: function isRetryableCommissionWriteConflict(error: unknown) {
+1274:   return isDatabaseWriteConflict(error)
+1275:     || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002");
+1276: }
+1277: 
+1278: /**
+1279:  * A serializable abort is expected when two callbacks race for the same
+1280:  * business identity. Retry a bounded number of times; the second read/upsert
+1281:  * then returns the existing commission instead of creating another row.
+1282:  */
+1283: export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
+1284:   let lastError: unknown;
+1285:   for (let attempt = 0; attempt < 2; attempt += 1) {
+1286:     try {
+1287:       return await processPaymentWebhookOnce(payload, event, expectedScope);
+1288:     } catch (error) {
+1289:       lastError = error;
+1290:       if (!isRetryableCommissionWriteConflict(error) || attempt === 1) break;
+1291:     }
+1292:   }
+1293:   throw lastError;
+1294: }
+
+
+REAL DB EVIDENCE
+{"status": "PASS", "results": [{"orderIsolation": "ReadCommitted", "paymentIsolation": "ReadCommitted", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "ReadCommitted", "paymentIsolation": "RepeatableRead", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "ReadCommitted", "paymentIsolation": "Serializable", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "RepeatableRead", "paymentIsolation": "ReadCommitted", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "RepeatableRead", "paymentIsolation": "RepeatableRead", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "RepeatableRead", "paymentIsolation": "Serializable", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "Serializable", "paymentIsolation": "ReadCommitted", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "Serializable", "paymentIsolation": "RepeatableRead", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}, {"orderIsolation": "Serializable", "paymentIsolation": "Serializable", "blocked": true, "aborted": "payment", "code": "UNKNOWN_DRIVER_DEADLOCK", "productClassifierAccepted": true, "freshRetry": "PASS", "factsAndRevisions": "PASS"}], "scope": "Forced database deadlock with explicit test retry; does not prove application retry or synchronized20 acceptance"}

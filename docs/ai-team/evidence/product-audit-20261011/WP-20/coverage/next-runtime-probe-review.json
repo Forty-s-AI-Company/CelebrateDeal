@@ -1,0 +1,248 @@
+{
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "exitCode": 3
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "completed": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 1,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "review": {
+    "summary": "I reviewed only the supplied text of scripts/wp20-next-runtime-probe.mjs. The omitted credential lines were not reviewed, and I didn't run anything. I found 1 MAJOR and 7 MINOR issues.\n\nThe MAJOR issue: the test adds the generated proxy proof and a synthetic client IP (cf-connecting-ip) to the page requests it sends through the gateway. Those headers should only go on the auxiliary requests it sends straight to Next. Because of this, passing page requests may reflect the fixture's added trust rather than the gateway's own behaviour, and a gateway that wrongly passes these headers through would go undetected.\n\nThe MINOR issues:\n- Weak checks: the check that disabled collection writes no data, and the hydration check, can pass without proving what their names say.\n- Unchecked update: the update that turns collection on doesn't confirm it changed exactly one row.\n- Timing: a race can make the 'six visit API responses' check fail falsely.\n- Network access: the Next server process itself can still reach external services; only the browser is restricted.\n- Shared folder: the linked node_modules folder may let Next write into the real worktree.\n- Cleanup: the test can fail in ways that lose its receipt, and stopping Next isn't guaranteed to stop all its child processes on non-Windows systems.\n\nNo findings concern the database queries' input handling, the source-copy filter that skips .env files, the random readiness check, or which data ends up in the receipt. This review does not certify that the tests pass, the gateway as a whole, or production.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "context.route handler: headers construction and route.continue for source GETs",
+        "issue": "The generated shared proxy proof (x-celebratedeal-live-chat-ingress) and the synthetic cf-connecting-ip are added to page (source) GETs going to the real gateway, not only to the auxiliary visit/CSP requests sent straight to Next.",
+        "evidence": "headers={...allHeaders,'cf-connecting-ip':'192.0.2.90','x-celebratedeal-live-chat-ingress':edgeProof}; then if(source){await route.continue({headers});return;}. The stated purpose limits injection to the auxiliary proxy routes.",
+        "impact": "The gateway's untrusted client input now carries the trusted secret and a spoofed client IP. If the gateway passes client headers through, Next treats source requests as edge-proven, so a header-spoofing gap in the gateway is hidden and the 'real gateway for source GETs' result depends on trust added by the fixture. The secret also reaches a path it was not meant for.",
+        "recommended_fix": "Continue source requests with the browser's original headers, minus any proof or cf-connecting-ip. Add the proof and synthetic IP only on the visit/CSP route.fetch path.",
+        "required_test": "Run a gateway source GET with a client-supplied fake proof and cf-connecting-ip. Assert the gateway strips or rejects them and that Next does not treat the request as edge-proven. Then rerun the probe with source requests left unmodified and confirm the source rows bind to the run.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "bootstrap phase: count query and checks.bootstrapDisabledCollectionLeavesNoSource",
+        "issue": "The 'disabled collection leaves no source' check can pass without testing anything. Bootstrap uses plain Node fetch, so no browser hydration or visit POST happens. The profile and keyring are also missing, and only LiveMetricVisitPage is counted.",
+        "evidence": "Bootstrap fetches only /form and /live with fetch(), then runs SELECT count(*) FROM LiveMetricVisitPage only. Intent, Visit and IngressFrame tables are not checked.",
+        "impact": "Recording PASS overstates the evidence. Any rows written to other tables during SSR or prepare while collection is disabled would go unnoticed.",
+        "recommended_fix": "Count pages, intents, visits and ingress frames for the version before and after bootstrap. Rename the check to reflect that it only proves server render under a disabled config produces no rows. If a disabled-gate claim is wanted, add a real browser visit attempt while disabled.",
+        "required_test": "With collection disabled, open a browser visit through the full proxy path and assert zero rows in all four tables and a visit-API outcome showing it was rejected or ignored.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "UPDATE LiveMetricVersion SET collectionEnabled=true",
+        "issue": "The number of affected rows is not checked, and the update does not require the version to have been disabled beforehand.",
+        "evidence": "await db.$executeRawUnsafe('UPDATE ... WHERE id=$1 AND vendorId=$2 AND liveId=$3', ...) with no check on the return value and no collectionEnabled=false condition.",
+        "impact": "A scope mismatch, or a version that was already enabled (which would invalidate the bootstrap claim), is not detected directly. It only shows up later as a confusing visit-persistence timeout.",
+        "recommended_fix": "Add AND collectionEnabled=false AND collectionStartedAt IS NULL (or whatever the expected seeded state is) and assert the result equals 1.",
+        "required_test": "Seed the version as already enabled, or with a mismatched vendorId, and assert the probe fails at the enable step with a clear stage.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "checks named ...SsrHydration... and the browser counters",
+        "issue": "Hydration and other client-side failures are counted but never fail the run. pageErrors, consoleClasses (HYDRATION/CSP/CHUNK_LOAD/CONTENT_DECODING), auxiliaryFailures, blockedAuxiliary, blockedExternal and webSocketErrors are recorded but not asserted.",
+        "evidence": "The checks actualNextFormSsrHydrationPrepareAndVisitPersist and actualNextViewerSsrHydrationUsesSameVisitor are set to PASS based only on DOM text and DB counts.",
+        "impact": "The receipt can show hydration PASS while there are hydration mismatches, page errors or CSP violations, which overstates browser-runtime evidence.",
+        "recommended_fix": "Either assert pageErrors==0 and the absence of HYDRATION/CSP/CHUNK_LOAD classes, or rename the checks and report those counters as explicit, non-certified diagnostics.",
+        "required_test": "Inject a synthetic hydration mismatch in a disposable mirror copy and confirm the hydration check reports FAIL.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "waitForVisits(3) followed by assert visitResponses.length===6",
+        "issue": "There is a race between the database commit becoming visible and the proxy recording the response status.",
+        "evidence": "visitResponses.push runs only after route.fetch resolves, but waitForVisits returns as soon as the database shows the committed row, which happens before Next finishes sending its response.",
+        "impact": "The six-response check can fail spuriously (length 5), giving a non-reproducible FAIL that could be mistaken for an application defect.",
+        "recommended_fix": "After waitForVisits, poll until visitResponses.length reaches 6 within a bounded time (or wait for the page's response event) before asserting.",
+        "required_test": "Repeat the probe many times, or add an artificial delay in the proxy path, and confirm the count assertion stays stable.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "launch(): spawned Next dev server; copied sentry.*.config.ts and next.config.ts",
+        "issue": "Only browser egress is restricted. The Next server process itself can still make outbound requests (Sentry if a DSN is built into source or config, next/font/google downloads, any external SDK called during SSR).",
+        "evidence": "Only SENTRY_DISABLE_AUTO_UPLOAD (source-map upload) and NEXT_TELEMETRY_DISABLED are set. No SENTRY_DSN override or server network block exists, and sentry.server/edge configs are copied unchanged.",
+        "impact": "Synthetic errors or requests could reach real external or production services such as a production Sentry project, which conflicts with the no-production constraint. This cannot be ruled out from the supplied text.",
+        "recommended_fix": "Explicitly empty the DSN-related variables and disable Sentry in the child environment. Run the server with outbound network denied, except loopback and the owned database.",
+        "required_test": "Run the probe with an egress monitor or firewall rule on the owned process tree and assert there are zero non-loopback connections.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "fs.symlinkSync(root/node_modules, link, 'junction')",
+        "issue": "The mirror links to the real worktree's node_modules. Any tool that writes to node_modules/.cache (or similar) during dev compilation would write into the real worktree rather than the owned temporary mirror.",
+        "evidence": "A junction to path.join(root,'node_modules') is used as the cwd's node_modules for next dev.",
+        "impact": "This could break the 'only the owned temporary mirror is written' constraint and leave artifacts in the worktree.",
+        "recommended_fix": "Record a snapshot of root node_modules (for example, directory listing and modification times of .cache) before the run and assert it is unchanged afterwards, or use a read-only mount or copy.",
+        "required_test": "Snapshot root/node_modules/.cache before and after a probe run and assert there is no difference.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "stopNext (POSIX branch) and finally-block junction cleanup",
+        "issue": "On non-Windows systems only the parent process gets SIGTERM, not the whole process tree. Separately, the cleanup code in finally calls assert, which can throw.",
+        "evidence": "server.kill('SIGTERM') without a detached process group. In finally, assert.ok(fs.lstatSync(link).isSymbolicLink()) runs outside any try, and the mirror directory is never removed.",
+        "impact": "Next worker processes may be left running on POSIX, though the marker check catches a listener that is still alive. A throw in finally discards the receipt and leaves the run without diagnostics.",
+        "recommended_fix": "On POSIX, spawn with detached:true and kill the process group. Wrap the junction cleanup in try/catch that sets receipt.cleanup.nodeModulesLink='FAIL' and status FAIL.",
+        "required_test": "Pre-create a real node_modules directory in the mirror, then confirm the function still returns a FAIL receipt. On POSIX, confirm no next processes remain after stopNext.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5"
+}

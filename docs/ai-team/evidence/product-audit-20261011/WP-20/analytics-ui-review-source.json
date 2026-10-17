@@ -1,0 +1,11 @@
+{
+  "suppliedRanges": {
+    "src/app/(app)/lives/[id]/analytics/page.tsx": "1-81,232-255,331-355 only",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx": "1-67,97-108,258-end only"
+  },
+  "files": {
+    "src/app/(app)/lives/[id]/analytics/page.tsx": "8e80f0661b14a5318e54aafea70c0aebdaf77ec1ca9c5306fba3eb14b8d1c658",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx": "97b1df1556df55167ef16de44ced153907f004559adf958e464496c22623b6fa"
+  },
+  "characters": 18488
+}

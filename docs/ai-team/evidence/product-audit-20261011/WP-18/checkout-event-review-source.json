@@ -1,0 +1,13 @@
+{
+  "sourceHashes": {
+    "src/app/api/payments/checkout/route.ts": "1d40145681021dc7c692906a678f58f81332106c395474963818a5f819520bf7",
+    "src/app/api/payments/checkout/route.test.ts": "6a65b2c95440621ce261156cdd607c861cdae95df67d760af1dc00d88e6eb5d2",
+    "src/lib/email-delivery.ts": "a4a0d5ef289cf0a313950194942e90ca42cd938a10086f84338a954b1bc51afa",
+    "src/lib/email-delivery.test.ts": "ba7052ef95c4616b4dc6a555a512400a872588b957ff7df69193e042983106ea",
+    "src/lib/checkout-followup.ts": "dafe89b2e915fa39dd5ad4c375893ba869a332aff3a0aa17ad1eb97bacbe2571",
+    "src/lib/checkout-followup.test.ts": "3f19c6fd188f3716351b6c59afe1f9c3c1bff1ff84a9eddfd9fccd8e678ef834"
+  },
+  "supplied": "full new checkout followup module; full checkout hook and email guard changed hunks",
+  "contextChars": 8444,
+  "wholeWp18": "NOT_READY"
+}

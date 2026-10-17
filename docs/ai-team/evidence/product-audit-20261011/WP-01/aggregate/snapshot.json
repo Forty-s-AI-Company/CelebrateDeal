@@ -1,0 +1,27 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "docs/ai-team/evidence/product-audit-20261011/WP-01/form-submit/browser.cjs",
+    "src/app/(app)/landing-pages/[id]/page.test.tsx",
+    "src/app/(app)/landing-pages/[id]/page.tsx",
+    "src/app/(app)/landing-pages/new/page.test.tsx",
+    "src/app/(app)/landing-pages/new/page.tsx",
+    "src/app/actions/landing-page-actions.test.ts",
+    "src/app/actions/landing-page-actions.ts",
+    "src/app/actions/sales-workspace-actions.test.ts",
+    "src/app/actions/sales-workspace-actions.ts",
+    "src/app/api/form-submissions/route.ts",
+    "src/components/landing-page-workspace.tsx",
+    "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "src/lib/automation-workflow.ts",
+    "src/lib/email-delivery.ts",
+    "src/lib/funnel-runtime.ts",
+    "src/lib/landing-page-service.test.ts",
+    "src/lib/landing-page-service.ts",
+    "src/lib/public-landing-page-status.test.ts",
+    "src/lib/public-landing-page-status.ts",
+    "src/proxy.test.ts",
+    "src/proxy.ts"
+  ],
+  "revision": "sha256:28091b888bcc5c7f39107f3d64ce85e1246004116808736555fa56b73daf18cc"
+}

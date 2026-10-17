@@ -1,0 +1,42 @@
+{
+  "src/components/app-shell.tsx": [
+    [
+      "taskPanelCollapsed = false,",
+      "taskPanelCollapsed = true,"
+    ]
+  ],
+  "src/app/(app)/layout.tsx": [
+    [
+      "preference?.taskPanelCollapsed ?? false",
+      "preference?.taskPanelCollapsed ?? true"
+    ]
+  ],
+  "src/app/actions/registration-actions.ts": [
+    [
+      "questionnaireStep: 0 }",
+      "questionnaireStep: 0, taskPanelCollapsed: true }"
+    ]
+  ],
+  "src/app/actions/sales-workspace-actions.ts": [
+    [
+      "vendorId: vendor.id, questionnaireAnswers: parsed",
+      "vendorId: vendor.id, taskPanelCollapsed: true, questionnaireAnswers: parsed"
+    ],
+    [
+      "guideDismissedAt: null, taskPanelCollapsed: false } });",
+      "guideDismissedAt: null } });"
+    ],
+    [
+      "vendorId: vendor.id, selectedProjectId: projectId }, update:",
+      "vendorId: vendor.id, taskPanelCollapsed: true, selectedProjectId: projectId }, update:"
+    ],
+    [
+      "vendorId: vendor.id, selectedProjectId: created.id }, update:",
+      "vendorId: vendor.id, taskPanelCollapsed: true, selectedProjectId: created.id }, update:"
+    ],
+    [
+      "vendorId: vendor.id, ...data }, update: data",
+      "vendorId: vendor.id, taskPanelCollapsed: true, ...data }, update: data"
+    ]
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "scope": "exact unified diff split at line boundaries; some files span parts; review must include adjacent context where needed",
+  "parts": [
+    {
+      "part": 1,
+      "file": "integrated-diff-part-01.txt",
+      "chars": 13894,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 2,
+      "file": "integrated-diff-part-02.txt",
+      "chars": 13971,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 3,
+      "file": "integrated-diff-part-03.txt",
+      "chars": 13894,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 4,
+      "file": "integrated-diff-part-04.txt",
+      "chars": 13993,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 5,
+      "file": "integrated-diff-part-05.txt",
+      "chars": 13685,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 6,
+      "file": "integrated-diff-part-06.txt",
+      "chars": 12163,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 7,
+      "file": "integrated-diff-part-07.txt",
+      "chars": 13465,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 8,
+      "file": "integrated-diff-part-08.txt",
+      "chars": 10298,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 9,
+      "file": "integrated-diff-part-09.txt",
+      "chars": 12265,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 10,
+      "file": "integrated-diff-part-10.txt",
+      "chars": 13963,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 11,
+      "file": "integrated-diff-part-11.txt",
+      "chars": 13973,
+      "review_status": "NOT_RUN"
+    },
+    {
+      "part": 12,
+      "file": "integrated-diff-part-12.txt",
+      "chars": 10818,
+      "review_status": "NOT_RUN"
+    }
+  ]
+}

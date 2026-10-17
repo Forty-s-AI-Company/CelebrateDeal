@@ -1,0 +1,11 @@
+{
+  "time": "2026-10-14T20:02:36.060105+00:00",
+  "sha256": {
+    "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql": "0bc0027334d8ea7df82f5b2fe38386c2097cf4ce5e67a3bb124d796e952a1da2",
+    "scripts/wp20-completion-publish-probe.mjs": "3b5f26326d56d2eb4442a94515e492e6d97a36dacf3696623b95edef571def03"
+  },
+  "db": "PASS 104 migrations and all source-invalidation/publish guards,20 retry orders",
+  "lint": "PASS",
+  "loadMillionFacts": "NOT_RUN",
+  "review": "PENDING for revised SQL"
+}

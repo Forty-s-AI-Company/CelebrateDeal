@@ -1,0 +1,49 @@
+{
+  "revision": "sha256:edc55d9b8da48c24a3c08e62d800b4b559b603dbf29da3b670d5b5d603f4b613",
+  "writer": "primary",
+  "scope_files": [
+    "src/lib/capability-confirmation.ts",
+    "src/lib/capability-confirmation.test.ts",
+    "src/lib/automation-voucher-exchange.ts",
+    "src/lib/automation-voucher-exchange.db.test.ts",
+    "src/app/api/automation/vouchers/redeem/route.ts",
+    "src/app/api/automation/vouchers/redeem/route.test.ts",
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts"
+  ],
+  "changed_files": [
+    "src/lib/capability-confirmation.ts",
+    "src/lib/capability-confirmation.test.ts",
+    "src/lib/automation-voucher-exchange.ts",
+    "src/lib/automation-voucher-exchange.db.test.ts",
+    "src/app/api/automation/vouchers/redeem/route.ts",
+    "src/app/api/automation/vouchers/redeem/route.test.ts"
+  ],
+  "unchanged_regression_dependencies": [
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts"
+  ],
+  "initial_review": "review-cli.json",
+  "initial_major": "Lost response or overwritten checkout cookie could strand discount",
+  "repair": "Same confirmed body derives same purpose-separated HMAC bearer; retry only when current persisted digest matches and grant still unused/unexpired; challenge retained for five minutes. Existing authenticated portal reissue verified for A after B.",
+  "compatibility": "Original checkout cookie/resolver/routes and schema unchanged; no usedOrderId/redeemedAt or order writes",
+  "verified": [
+    "unit",
+    "lint",
+    "typecheck",
+    "db-boundaries",
+    "voucher-chromium",
+    "voucher-firefox",
+    "portal-chromium",
+    "portal-firefox",
+    "checkout-schema-invariant",
+    "scope-diff"
+  ],
+  "limitations": [
+    "Same-kind previews share one challenge cookie; stale tabs may require reopening via portal",
+    "Replay after challenge expiry or lost browser state requires authenticated portal reissue",
+    "No production payment or external email performed",
+    "IP trust topology and remaining endpoint rate-limit coverage not part of this subitem"
+  ],
+  "environment": "Loopback disposable PostgreSQL with owned synthetic fixtures; browser raw URL/credential logs suppressed; fixtures cleaned"
+}

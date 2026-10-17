@@ -1,0 +1,10 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "WP17-prerequisite",
+  "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+  "status": "WAITING_AUTHORIZATION",
+  "exit_code": null,
+  "source_receipt": "../WP-17/reset-repair-validation.json",
+  "detail": "Original completeWP17 prerequisite still missing WP02/WP04 real reminder receipt and external facts; local-only success not full prerequisite."
+}

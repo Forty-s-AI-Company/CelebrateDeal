@@ -1,0 +1,160 @@
+Independent readonly review of a playback queue loss fix. Output only BLOCKER/MAJOR/MINOR/NIT findings including area/evidence/impact/recommended_fix/required_test/confidence; do not modify code or use tools. Prior code sealed a full queue and then closed its retained prefix as fully delivered even when another segment had been lost. New code drains exact retained sequence/payload but never calls close when capacityReached. The server session stays open/incomplete, so existing source audit cannot treat this as closed_contiguous. Exactly full queue with no lost segment can close. Network retry must preserve loss state. This is deliberately conservative, no durable loss-reason/issuance-closure producer yet; historical coverage remains unknown, full WP incomplete. Unit suite52 PASS, lint/typecheck PASS. Full code/test below.
+
+FILE src/lib/live-metric-delivery.ts
+import { playbackSegment, type PlaybackSample } from "./live-viewing-evidence";
+
+export type DeliverySegment = Readonly<{
+  sequence: number; startElapsedMs: number; endElapsedMs: number;
+  mediaStartMs: number; mediaEndMs: number; rate: number;
+}>;
+export type DeliveryReply = { ok: true; lastSequence: number } | { ok: false; retryable: boolean };
+export type MetricDeliveryTransport = {
+  append: (segments: readonly DeliverySegment[]) => Promise<DeliveryReply>;
+  close: (finalSequence: number) => Promise<{ terminal: boolean }>;
+};
+
+/** One session, one writer. Network failures retain exact payloads; callers
+ * schedule retries. No timers, credentials, storage or playback controls here.
+ * At the memory bound collection stops without renumbering retained rows.
+ * The missed next segment makes collection incomplete: drain the retained
+ * prefix, but leave the server session open instead of certifying its closure.
+ */
+export function createMetricDelivery(transport: MetricDeliveryTransport, capacity = 200) {
+  if (!Number.isInteger(capacity) || capacity < 20 || capacity > 1000) throw new Error("Invalid queue capacity");
+  const queue: DeliverySegment[] = [];
+  let previous: PlaybackSample | null = null;
+  let sequence = 0;
+  let sealed = false;
+  let terminal = false;
+  let rejected = false;
+  let capacityReached = false;
+  let pending: Promise<void> | null = null;
+
+  function sample(current: PlaybackSample) {
+    if (sealed || rejected || terminal) return;
+    const segment = playbackSegment(previous, current);
+    // Copy samples: callers may reuse a mutable event-derived object.
+    previous = { ...current };
+    if (!segment) return;
+    if (sequence >= 2_147_483_647 || queue.length >= capacity) {
+      sealed = true; capacityReached = true; previous = null; return;
+    }
+    queue.push(Object.freeze({ sequence: sequence++, startElapsedMs: segment.wallStartMs,
+      endElapsedMs: segment.wallEndMs, mediaStartMs: segment.mediaStartMs,
+      mediaEndMs: segment.mediaEndMs, rate: current.rate }));
+  }
+
+  async function deliver() {
+    try {
+      while (queue.length && !rejected) {
+        const batch = Object.freeze(queue.slice(0, 20));
+        const reply = await transport.append(batch);
+        if (!reply.ok) { rejected = !reply.retryable; return; }
+        // Never discard evidence on malformed or unrelated acknowledgements.
+        if (reply.lastSequence !== batch[batch.length - 1].sequence) { rejected = true; return; }
+        queue.splice(0, batch.length);
+      }
+      if (sealed && !capacityReached && !rejected && !queue.length) terminal = (await transport.close(sequence - 1)).terminal;
+    } catch {
+      // Unknown delivery outcome: retain the same sequence/payload for replay.
+    }
+  }
+
+  function flush(): Promise<void> {
+    if (pending) return pending;
+    if (terminal || rejected) return Promise.resolve();
+    // Defer start so a synchronous finish following an empty flush still
+    // observes the sealed state and sends its terminal request.
+    pending = Promise.resolve().then(deliver).finally(() => { pending = null; });
+    return pending;
+  }
+
+  return {
+    sample,
+    reset() { previous = null; },
+    flush,
+    finish() { sealed = true; previous = null; return flush(); },
+    state() { return { queued: queue.length, finalSequence: sequence - 1, sealed, terminal, rejected, capacityReached }; },
+  };
+}
+
+
+FILE src/lib/live-metric-delivery.test.ts
+import { describe, expect, it, vi } from "vitest";
+import { createMetricDelivery, type DeliverySegment } from "./live-metric-delivery";
+
+const point = (elapsedMs: number) => ({ elapsedMs, mediaMs: elapsedMs, rate: 1, playing: true });
+function transport() {
+  return { append: vi.fn(async (rows: readonly DeliverySegment[]) => ({ ok: true as const, lastSequence: rows.at(-1)!.sequence })),
+    close: vi.fn(async () => ({ terminal: true })) };
+}
+function populate(queue: ReturnType<typeof createMetricDelivery>, count: number) {
+  for (let i = 0; i <= count; i++) queue.sample(point(i * 1000));
+}
+
+describe("metric delivery queue", () => {
+  it("closes when finish races an empty flush", async () => {
+    const t = transport(); const q = createMetricDelivery(t);
+    await Promise.all([q.flush(), q.finish()]);
+    expect(t.close).toHaveBeenCalledExactlyOnceWith(-1);
+  });
+  it("serializes concurrent flush and finish, batches at 20, closes only after all acknowledgements", async () => {
+    const t = transport(); const q = createMetricDelivery(t); populate(q, 45);
+    await Promise.all([q.flush(), q.flush(), q.finish()]);
+    expect(t.append.mock.calls.map(([rows]) => rows.length)).toEqual([20, 20, 5]);
+    expect(t.close).toHaveBeenCalledExactlyOnceWith(44);
+    expect(q.state()).toMatchObject({ queued: 0, terminal: true });
+  });
+  it("retries the identical payload after an ambiguous network outcome", async () => {
+    const t = transport(); t.append.mockRejectedValueOnce(new Error("network"));
+    const q = createMetricDelivery(t); populate(q, 2);
+    await q.finish(); expect(t.close).not.toHaveBeenCalled();
+    expect(q.state().queued).toBe(2);
+    await q.flush(); expect(t.append.mock.calls[1][0]).toEqual(t.append.mock.calls[0][0]);
+    expect(q.state().terminal).toBe(true);
+  });
+  it("drains the retained prefix but never closes a capacity-truncated session as complete", async () => {
+    const t = transport(); const q = createMetricDelivery(t, 20); populate(q, 25);
+    expect(q.state()).toMatchObject({ queued: 20, finalSequence: 19, capacityReached: true, sealed: true });
+    await q.flush(); await q.finish(); await q.flush();
+    expect(t.append.mock.calls.flatMap(([rows]) => rows.map(row => row.sequence)))
+      .toEqual(Array.from({ length: 20 }, (_, index) => index));
+    expect(t.close).not.toHaveBeenCalled();
+    expect(q.state()).toMatchObject({ queued: 0, finalSequence: 19, capacityReached: true, sealed: true, terminal: false });
+  });
+  it("can close an exactly full queue when no segment was lost", async () => {
+    const t = transport(); const q = createMetricDelivery(t, 20); populate(q, 20);
+    await q.finish();
+    expect(t.close).toHaveBeenCalledExactlyOnceWith(19);
+    expect(q.state()).toMatchObject({ queued: 0, capacityReached: false, terminal: true });
+  });
+  it("replays the retained prefix after network failure without clearing the overflow signal", async () => {
+    const t = transport(); t.append.mockRejectedValueOnce(new Error("network"));
+    const q = createMetricDelivery(t, 20); populate(q, 21);
+    await q.finish();
+    expect(q.state()).toMatchObject({ queued: 20, capacityReached: true, terminal: false });
+    await q.flush();
+    expect(t.append.mock.calls[1][0]).toEqual(t.append.mock.calls[0][0]);
+    expect(t.close).not.toHaveBeenCalled();
+    expect(q.state()).toMatchObject({ queued: 0, capacityReached: true, terminal: false });
+  });
+  it("rejects a mismatched acknowledgement without falsely closing", async () => {
+    const t = transport(); t.append.mockResolvedValueOnce({ ok: true, lastSequence: 9 });
+    const q = createMetricDelivery(t); populate(q, 2); await q.finish();
+    expect(q.state()).toMatchObject({ rejected: true, queued: 2, terminal: false });
+    expect(t.close).not.toHaveBeenCalled();
+  });
+  it("resets sampling across seeks, pauses and source changes", async () => {
+    const t = transport(); const q = createMetricDelivery(t);
+    q.sample(point(0)); q.reset(); q.sample(point(1000)); q.sample(point(2000));
+    await q.finish(); expect(t.append.mock.calls[0][0]).toEqual([
+      { sequence: 0, startElapsedMs: 1000, endElapsedMs: 2000, mediaStartMs: 1000, mediaEndMs: 2000, rate: 1 },
+    ]);
+  });
+  it("retries an unacknowledged close without collecting further segments", async () => {
+    const t = transport(); t.close.mockRejectedValueOnce(new Error("network"));
+    const q = createMetricDelivery(t); await q.finish(); q.sample(point(0)); q.sample(point(1000));
+    await q.flush(); expect(t.close.mock.calls).toEqual([[-1], [-1]]);
+    expect(t.append).not.toHaveBeenCalled();
+  });
+});

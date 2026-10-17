@@ -1,0 +1,13 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "receipt": "unavailable-fixed-review.json",
+  "findings": 5
+}

@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "scope": "Actual authenticated loopback Next dev API/UI reads of synthetic persisted A/B attribution/status fixtures; disposable PostgreSQL, desktop/mobile readout axe. No active experiment, provider delivery, raw session capture or production-mode build.",
+  "tests": [
+    {
+      "title": "reads attributed current confirmation counts from PostgreSQL through the real merchant API and UI",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "timedOut",
+          "error": "Test timeout of 180000ms exceeded."
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T04:47:22.191Z",
+    "duration": 215839.40999999997,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 131
+}

@@ -1,0 +1,39 @@
+{
+  "at": "2026-10-16T01:29:13.709055+00:00",
+  "subtask_status": "READY",
+  "whole_wp_status": "IN_PROGRESS",
+  "scope": "Original WP13 signed follow/unfollow consent events only",
+  "acceptance": "webhook-acceptance.json",
+  "source_revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3",
+  "changed_files": [
+    "src/lib/line-webhook-events.ts",
+    "src/lib/line-webhook-events.test.ts",
+    "src/app/api/webhooks/line/[vendorId]/route.ts",
+    "src/app/api/webhooks/line/[vendorId]/route.test.ts",
+    "docs/launch/line-notification-operations.md"
+  ],
+  "unit_tests": 25,
+  "actual_pg_checks": 9,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "review_observed_models": [
+    "claude-opus-5-5",
+    "claude-opus-5-5"
+  ],
+  "review_observed_effort": "unknown",
+  "review_latest_blocker_major": 0,
+  "review_latest_minor": 1,
+  "fallback_events": [
+    "AGY review RATE_LIMITED; retained webhook-review.json. Normalized runtime failure, verified Claude CLI fallback; no router changes."
+  ],
+  "unfinished": [
+    "LINE template selection and materialization",
+    "Rich Menu synchronization acceptance",
+    "Actual Sandbox registration/binding/reminder delivery and webhook redelivery setting",
+    "WP04 scheduler prerequisite",
+    "Cross-system clock skew and provider already-in-flight sends remain documented limits"
+  ],
+  "production": "NOT_AUTHORIZED",
+  "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "main_worktree_changed": false
+}

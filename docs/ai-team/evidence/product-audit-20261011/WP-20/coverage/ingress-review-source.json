@@ -1,0 +1,10 @@
+{
+  "promptCharacters": 19749,
+  "files": {
+    "src/lib/live-metric-ingress.ts": "7c2d967a1ebd5ac68277611714d0c2467397b36c2c9926877d22fbc293d6d823",
+    "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql": "adf0fc68335882b63864d4e323debab433a8b96013bdc01bd0f2f141111f143e",
+    "src/lib/live-metric-ingress.test.ts": "c57d06f6727ad1e32fc6241fb9910270f9f42ca257dcda5ddced002b91adb934",
+    "prisma/schema.prisma": "f55ef5a79b1626f5f4db6bcf8291aad91c2e466e85d8ce4aa99e36af610cfd16"
+  },
+  "schemaRange": "New ingress models plus one version relation only"
+}

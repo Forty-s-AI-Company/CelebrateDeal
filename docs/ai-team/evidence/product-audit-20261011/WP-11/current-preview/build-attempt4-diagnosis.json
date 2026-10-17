@@ -1,0 +1,35 @@
+{
+  "exit_code": 1,
+  "missing_modules": [
+    "../prisma.playwright.config"
+  ],
+  "failed_checks": [],
+  "passed_check_keys": [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_STREAM_TOKEN",
+    "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
+    "CRON_SECRET",
+    "CSRF_SECRET",
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "EMAIL_FROM",
+    "JOB_SECRET",
+    "LIVE_CHAT_INGRESS_SECRET",
+    "NEXT_PUBLIC_APP_URL",
+    "NEXT_PUBLIC_POSTHOG_HOST",
+    "NEXT_PUBLIC_POSTHOG_KEY",
+    "NEXT_PUBLIC_SENTRY_ENVIRONMENT",
+    "PAYMENT_PROVIDER",
+    "RESEND_API_KEY",
+    "SENTRY_DSN",
+    "SENTRY_ENVIRONMENT",
+    "SENTRY_ORG",
+    "SENTRY_PROJECT",
+    "SMOKE_TEST_EMAIL",
+    "STAGING_PREVIEW_DATA_IDENTITY",
+    "STAGING_PREVIEW_MEDIA_ISOLATION",
+    "UPSTASH_REDIS_REST_TOKEN",
+    "UPSTASH_REDIS_REST_URL"
+  ],
+  "raw_logs_persisted": false
+}

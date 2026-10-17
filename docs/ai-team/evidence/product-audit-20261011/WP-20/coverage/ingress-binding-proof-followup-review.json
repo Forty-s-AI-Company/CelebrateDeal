@@ -1,0 +1,173 @@
+{
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "status": "RATE_LIMITED"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "status": "SUCCESS"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the two supplied files: the proof module and the gateway. I did not review the omitted credential lines or any upstream callers. On the HMAC side: the signature is checked in constant time and in canonical form before any parsing, the payload schema rejects unknown fields, and the run, kind, method and target all have to match a server-side expectation. The gateway strips client `x-celebratedeal-metric-*` headers on requests and responses. It adds the signed header only after admission. The target it signs is the exact route that matched the allowlist, and it never trusts a client-chosen route or destination. The earlier Origin MINOR is fixed: the gateway checks Host, Origin and Sec-Fetch-Site before admission, sets the checked Host explicitly when forwarding (so a `Connection: host` trick can't remove it), and always connects to the fixed 127.0.0.1 port. A missing or unsigned header still gives no binding, and the signed header is never used for browser authorization. One MINOR is left: the gateway passes client-sent proxy headers such as X-Forwarded-Host, X-Forwarded-Proto and Forwarded to the upstream app unchecked, and they can override the preserved Host in the upstream same-origin check. The existing quota MAJOR and the pending startup, full-URL, source-fence and five-metric integration work are known and not reported again. An empty or short findings list does not mean tests or release have passed.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-gateway.ts",
+        "area": "handle(): `const headers = forwardedHeaders(request.headers); headers.host = expectedHost;` and forwardedHeaders()",
+        "issue": "The gateway preserves the validated Host when forwarding but passes client-sent `x-forwarded-host`, `x-forwarded-proto`, `x-forwarded-port`, `forwarded` and `x-real-ip` to the upstream app unchecked. A client can also name `origin` or `sec-fetch-site` in its `Connection` header, and the gateway will then drop those headers before forwarding.",
+        "evidence": "forwardedHeaders only removes hop-by-hop headers, any header named in Connection, and the `x-celebratedeal-metric-` prefix. Of the headers it forwards, only Host is overwritten with the checked value. Upstream frameworks commonly work out the canonical origin as `x-forwarded-host ?? host` (Next.js does this for its server-action origin check). The gateway's own Origin check runs only against `expectedHost` and ignores these headers.",
+        "impact": "The upstream same-origin check that the harness says it exercises can be fed a host or protocol the gateway never checked. Origin can also be removed after the gateway has accepted it. So a passing harness run may not show that the unchanged canonical check actually ran against the preserved gateway Host. Real-world risk is limited: browsers can't set these headers cross-origin or set Connection, and the gateway's own Host and Origin checks still apply. That is why this is MINOR. The weakness is in the evidence the harness produces, not in production authorization.",
+        "recommended_fix": "In the request path, strip `forwarded`, `x-forwarded-host`, `x-forwarded-proto`, `x-forwarded-port`, `x-forwarded-for` and `x-real-ip` from client headers. If upstream needs any of them, set fixed server-side values (for example `x-forwarded-host = expectedHost`, `x-forwarded-proto = 'http'`). Once a request has passed the gateway's Origin and Sec-Fetch-Site checks, forward those two headers from the checked values, so a Connection header cannot remove them.",
+        "required_test": "Gateway HTTP harness test against a real upstream that checks canonical same-origin: (1) send a same-origin POST with `X-Forwarded-Host: evil.example` and `X-Forwarded-Proto: https`; upstream must receive Host = gateway host and no client-sent forwarding values. (2) Send `Connection: origin, sec-fetch-site` with a valid Origin; upstream must still receive the checked Origin. (3) A cross-origin Origin must still get a 403 before admission, with no new frame row.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "reviewed": true,
+  "claude_cli_discovery_status": "SUCCESS",
+  "accepted": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  }
+}

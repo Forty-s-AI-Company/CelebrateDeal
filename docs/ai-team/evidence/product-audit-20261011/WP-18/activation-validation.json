@@ -1,0 +1,126 @@
+{
+  "status": "VALIDATED_INCREMENT_NOT_WHOLE_WP18_READY",
+  "scope": "WP18 dedicated recipe activation and no-show opt-out; original full WP18 acceptance pending",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "owner": "root sole writer",
+  "implementation_model_observed": "unknown",
+  "router_advisory": "gpt-6.1-sol/xhigh",
+  "review_model_observed": "claude-opus-5-5",
+  "review_effort_observed": "unknown",
+  "reviews": [
+    "activation-review.json",
+    "activation-fixed-review.json"
+  ],
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "passed": 60,
+      "files": 3
+    },
+    "actualDisposablePG": {
+      "status": "PASS",
+      "checks": 14,
+      "evidence": "activation-db.json"
+    },
+    "typecheck": {
+      "status": "PASS",
+      "session": 49940
+    },
+    "scopedLint": {
+      "status": "PASS",
+      "sessions": [
+        49940
+      ],
+      "finalBrowserSpecLint": "PASS"
+    },
+    "browser": {
+      "status": "PASS",
+      "evidence": "browser.json",
+      "assertions": [
+        "real owner login",
+        "three drafts inactive then activated",
+        "real HTTP demo checkout creates one pending order/candidate",
+        "no queue before30min",
+        "one queue after31min synthetic scheduler clock",
+        "replay no duplicate",
+        "settings/checkout desktop/mobile axe zero serious/critical"
+      ]
+    },
+    "remoteCI": "NOT_RUN",
+    "providerDelivery": "NOT_RUN",
+    "wholeWP18Gate": "NOT_RUN",
+    "diffCheck": "PASS"
+  },
+  "review_dispositions": [
+    {
+      "review": "activation-fixed-review.json",
+      "finding": 1,
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "reason": "Caller dispatchAutomationEvent already catches action errors, records failed/action_failed and reclaims failed execution. New test confirms missing public URL never queues and restores configuration then queues once; no product change needed."
+    },
+    {
+      "review": "activation-fixed-review.json",
+      "finding": 2,
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "reason": "Actual unsubscribe handler persists vendor/recipient suppression; actual dispatchEmailDelivery checks suppression after claim before provider. Additional realPG different-live no-show queues then is suppressed. activation-db.json futureDifferentNoShowIsSuppressedBeforeProvider PASS."
+    }
+  ],
+  "sourceHashes": {
+    "src/lib/automation-workflow.ts": "d26462aacbd98a28b443c1cb2a291cd2810b552a8348e40d0602afe152d76a98",
+    "src/lib/automation-workflow.test.ts": "ace190faadf4ac414a256ad704946c4716f535032548cee0ae034f49c91d6a4e",
+    "src/app/actions/automation-actions.ts": "93720609e9ef0cff905ff4d777a30d7875ed1f8737efa244a011f97b84e64c2b",
+    "src/app/actions/automation-actions.test.ts": "a07d10e261d71f17a1d7bfdbe9f9fb4cd1aadc7c03574618c6ed40093487523b",
+    "src/app/(app)/settings/automations/page.tsx": "608a1a315f8ef38c29536c65c22526331a80580e7c2580fe117d1091183af7ac",
+    "src/app/(app)/settings/automations/page.test.tsx": "34d3109135dc2e74b56acd1cc8b8e24fbebc771c0bcc8c85fa5894ed2251bb70"
+  },
+  "reviewApplicability": "All 3 current product source files match final review SHA. Only test added missing-config retry case after review; original review source/receipt retained. New browser spec is validation only.",
+  "not_verified": [
+    "Real negative HTTP CSRF test",
+    "actual playback attendance for existing no-show emitter",
+    "external Email/LINE delivery",
+    "legacy noncanonical email data",
+    "WP04 deployed scheduler dependency",
+    "whole WP18 canonical acceptance"
+  ],
+  "rollback": "Inspect activation-owned.patch then reverse only owned hunks; before snapshots preserve earlier WP changes. Never reset/clean/restore original checkout.",
+  "safety": "Independent efb8b7e9 worktree; owned loopback synthetic PostgreSQL; no Production/real provider send/push/deploy; no dotenv/secret reads",
+  "validationSources": {
+    "tests/e2e/wp18-followup-recipes.spec.ts": "521f0be2d0025130d22661566189d05e3fec29ce02670c74a8dc55d1a6a30a1a",
+    ".ai-team/reports/wp18-browser-check.mjs": "fbab6852022a38bc319386b60cd32a8d4660b9d74732dd7f7a69773e1745b870",
+    ".ai-team/reports/wp18-browser.config.ts": "a471ac3446c9ad703fed1e80e7229c9ad3ab35d9bf8b99f01832bd4d3167c8e5",
+    ".ai-team/reports/wp18-activation-db-check.mjs": "c8bfbdb7e075ae8db59b6c1e5d1eeb9b99f28c5d99800e55c2b564bdacc4d0f6"
+  },
+  "browserFailuresRetained": {
+    "browser-first-attempt.json": "FAIL: missing explicit trusted-entry fixture settings, login503; no product change",
+    "browser-reuse-start-failure.json": "FAIL: task config reporter relative path; initially diagnosed wrong cwd; not a product failure",
+    "browser-reuse-cwd-attempt.json": "FAIL: cwd change did not address missing reporter path",
+    "browser-reuse-reporter-diagnosis.json": "FAIL: Cannot find module ./scripts/playwright-ci-reporter.ts; task-specific config selects builtinJSON reporter; no shared config change"
+  },
+  "browserScope": "Real HTTP/login/browser and actual disposablePG; ingress is explicit synthetic proof to loopback only, not actual Vercel/Cloudflare edge proof. Browser blocks external requests. Same unchanged product source build reused at matching local origin. Synthetic scheduler now+31min only; no backdated source event. No actual Email/LINE provider send, no cookie/token read/output, trace off.",
+  "earlierReviewDispositions": [
+    {
+      "finding": "recipe readiness",
+      "disposition": "fixed via shared automationRuleReady creation guard"
+    },
+    {
+      "finding": "invalid active badge",
+      "disposition": "fixed: 設定待重建 and deactivation remains available"
+    },
+    {
+      "finding": "multiple-rule duplicate suggestion",
+      "disposition": "rejected_with_reason",
+      "reason": "Existing stable per-order/per-submission outbox primary keys plus earliest eligible rule already enforce dedup; earlier checkout/completed realPG receipts apply to unchanged source; do not add global one-rule framework."
+    },
+    {
+      "finding": "audit stale updatedAt",
+      "disposition": "fixed sparse id/isActive/version snapshot;14PG audit checkPASS"
+    },
+    {
+      "finding": "optional voucher product lookup",
+      "disposition": "fixed explicit product guard before DB; targeted testPASS"
+    }
+  ]
+}

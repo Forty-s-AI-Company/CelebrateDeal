@@ -1,0 +1,46 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import { PolicyDocument, PublicPolicyShell, PublicResourceLinks } from "./public-policy";
+import { policyDrafts } from "@/lib/public-policy-content";
+
+describe("public policy and operations entrypoints", () => {
+  it("exposes every public resource through accessible links", () => {
+    const html = renderToStaticMarkup(<PublicPolicyShell><PublicResourceLinks /></PublicPolicyShell>);
+
+    expect(html).toContain('aria-label="公開資訊"');
+    expect(html).toContain('href="/policies/terms"');
+    expect(html).toContain('href="/policies/privacy"');
+    expect(html).toContain('href="/policies/refunds"');
+    expect(html).toContain('href="/support"');
+    expect(html).toContain('href="/merchant-onboarding"');
+    expect(html).toContain('class="mt-4 text-center text-xs leading-5 text-slate-700"');
+    expect(html).not.toContain('class="mt-4 text-center text-xs leading-5 text-slate-500"');
+    expect(html).toContain("條款、隱私、退款、客服與商家指南均為草稿");
+  });
+
+  it.each(Object.values(policyDrafts))("renders the %s draft as unpublished with all paragraphs", (draft) => {
+    const html = renderToStaticMarkup(<PolicyDocument draft={draft} />);
+
+    expect(html).toContain(draft.title);
+    expect(html).not.toContain(draft.status);
+    expect(html).toContain("政策尚未正式發布");
+    expect(html).toContain('data-policy-publication="unpublished"');
+    expect(html).toContain("正式版本");
+    expect(html).toContain("尚未發布");
+    expect(html).toContain("生效日期");
+    expect(html).toContain("尚未生效");
+    for (const section of draft.sections) {
+      expect(html).toContain(section.heading);
+      for (const paragraph of section.paragraphs) expect(html).toContain(renderToStaticMarkup(<p>{paragraph}</p>));
+    }
+    expect(html).toContain("以下內容為草稿，尚未生效");
+  });
+  it("does not infer approval from internal draft metadata", () => {
+    const html = renderToStaticMarkup(<PolicyDocument draft={{ ...policyDrafts.terms, status: "PUBLISHED 2026-01-01", owner: "approved-owner" }} />);
+    expect(html).toContain("尚未發布");
+    expect(html).toContain("尚未生效");
+    expect(html).not.toContain("PUBLISHED 2026-01-01");
+    expect(html).not.toContain("approved-owner");
+    expect(html).not.toContain("<time");
+  });
+});

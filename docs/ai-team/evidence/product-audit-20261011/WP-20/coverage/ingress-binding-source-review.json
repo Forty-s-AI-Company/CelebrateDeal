@@ -1,0 +1,185 @@
+{
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "accepted": false,
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 4,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "finalModel": "claude-opus-5-5",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "provider": "agy_wrapper"
+    },
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the supplied migration and the two source writers, and found no BLOCKER or MAJOR defects. The database side works as described:\n- Rows with no run keep the old behaviour: a NULL frame is allowed and a non-NULL frame is rejected.\n- Rows for a version that has a run must bind a frame. The frame must have the same vendor, live, version and run, and a route kind that fits the table and sourceKind.\n- The composite deferred FK (match-simple) skips NULL frames and lets the parent version cascade go through.\n- Each table has a unique index on ingressFrameId, so a frame can be used once per table. The playback route and the page routes don't overlap, so a frame can't be used in both tables either.\n- The trigger takes locks in version, then run, then frame order. That matches run creation, which locks the version FOR UPDATE.\n- The binding is only ever a private server argument (binding?.frameId) and never comes from the request body.\n\nTwo MINOR items:\n1. The new playback branch denies playback to a viewer with valid admission whenever a binding is present but no collection version is active.\n2. The claim that the new trigger fires after the original guards can't be checked from the supplied text.\n\nNot certified: the omitted proof factory, input schema and credential lines; the requireMetricIngressSource semantics; the existing guard bodies and names; the whole-row immutability guards; the callers and routes. This is not a full work-package acceptance and does not confirm any test passed. No Production, positive-coverage, source-universe, epoch or seal claim is made, and the migration125 gate is untouched.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-playback-intake.ts",
+        "area": "resolveTrackedLivePlaybackSource: `if (!context && !current) { if(binding)throw new MetricIngestError('not_authorized'); ... }`",
+        "issue": "When a binding is passed and no collection version is active, the viewer is told they aren't authorized. Without a binding, the same viewer gets playback. A metrics argument now changes the outcome of the playback authorization decision.",
+        "evidence": "In the no-context branch, `binding` alone decides between `throw not_authorized` and `assertActive(null); return source`. The admission is still valid, and resolveLivePlaybackSource has already returned a source. Other race branches (`!context`, version mismatch) return null instead of throwing. The frame was admitted for a version that is no longer current. That happens normally when collection lifetime expiry or a disable lands between frame admission and source resolution.",
+        "impact": "A viewer with valid admission whose request crosses a collection-lifetime boundary gets an authorization error instead of playback, or the same null the other race branches return. That goes against the rule that existing viewer authorization stays canonical. It also reports a metrics-binding condition to callers as an auth failure.",
+        "recommended_fix": "Treat the binding as unusable here, not as an auth failure. Either return the canonical source untracked (the frame stays unmatched, which is already recorded as a gap) or return null, as the other context race branches do. Keep not_authorized only for real admission failures from assertActive.",
+        "required_test": "Synthetic test: an admitted viewer session, a frame admitted for version V, then V's collection lifetime ends before the call. Call with the binding and assert the result is not a not_authorized error and matches the no-binding outcome or the agreed null. Also assert that no intake row is created and the frame stays unbound.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql",
+        "area": "CREATE TRIGGER \"LiveMetricVisitPage_ingress_guard\" / \"LiveMetricPlaybackIntake_ingress_guard\"",
+        "issue": "The lock-ordering argument assumes these triggers fire after the original source guards. PostgreSQL fires BEFORE triggers in byte order of their names, and the original guard names aren't in the supplied text. If an original guard's suffix sorts after `_ingress_guard` (e.g. `_scope_guard`, `_source_guard`, `_visit_guard`), the new trigger would lock version, run and frame before the original guard locks Live, admission and Video.",
+        "evidence": "The comment says 'Names sort after original guards' but the migration never checks that. The trigger takes version FOR SHARE as its first action. The prerequisite says Live, admission and Video are locked before the version.",
+        "impact": "If the order is inverted, version and run locks would be taken before Live and admission locks during source insert, against the canonical lock order. That could deadlock with run creation or with the admission paths. Whether this happens can't be checked from the supplied text.",
+        "recommended_fix": "In the same transaction, add a check that raises if any non-internal trigger on each table whose name sorts after the new trigger is one of the original guards. Or rename the triggers with a prefix that is clearly last, such as `zz_`.",
+        "required_test": "A catalog test that reads pg_trigger for both tables, ordered by tgname with C collation, and asserts the ingress guard comes after every pre-existing source or scope guard. Also a concurrency test: source insert against run creation and an admission update on the same version, with no deadlock.",
+        "confidence": 0.35
+      }
+    ]
+  }
+}

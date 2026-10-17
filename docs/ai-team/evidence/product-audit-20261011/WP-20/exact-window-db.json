@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "checks": {
+    "exactCurrentPageQueryMatchesStoredReport": "PASS",
+    "shiftedWindowWrongModeTenantAndFingerprintRejected": "PASS",
+    "selectionIndependentOfDatabaseSessionTimezone": "PASS"
+  },
+  "scope": "Exact unchanged page SQL against actual queued report, no metric recomputation or new framework",
+  "browser": "NOT_RUN",
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

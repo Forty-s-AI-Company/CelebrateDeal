@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "session-race-targeted", "revision": "sha256:e25ee9390304114b987bd04f381afc037026723a4163bce99d3d518daccccdb4", "status": "PASS", "exit_code": 0, "duration_seconds": 3.437}

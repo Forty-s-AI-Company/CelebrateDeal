@@ -1,0 +1,191 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "completed": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "finalModel": "claude-opus-5-5",
+  "execution_provider": "claude_cli",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 17358,
+      "expected_duration": 0,
+      "code_surface_area": 8,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR regressions in the supplied fixes, but there are three MINOR issues to address. This is a read-only review of these two files only. The revised PostgreSQL run (multiple matching rules, version replay, non-UTC timestamps, poison priority) is still running, so none of those scenarios is confirmed as passing. Fix-by-fix: (1) One reminder per tenant/order holds. The source-event row lock serializes work per order: the candidate event is unique per vendor/order/dedupKey, and the EmailDelivery prefix check runs inside that lock. Identity validation rules out ':' and wildcard collisions. (2) The lateral subquery selects one earliest eligible rule, and malformed IDs, out-of-range versions and over-length keys are filtered before LIMIT. (3) The SQL and the send-time guard apply the same createdAt/updatedAt-before-checkout rule and the same delay/window boundaries. (4) ORDER BY attempt.startedAt NULLS FIRST puts never-tried candidates ahead of cooled-down failed ones. (5) Superseded mismatches get a skipped receipt that is never downgraded. (6) Comparing timestamptz values converted AT TIME ZONE 'UTC' against timestamp(3) columns is correct, assuming the default Prisma timestamp-without-time-zone columns. The three MINOR issues: the failure-recording path can throw and abort the batch before the fixed diagnostic is sent; the per-order prefix check on EmailDelivery can't use an index; and orders that can never qualify may be retried as poison every 5 minutes for 7 days.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "catch block after db.$transaction (failure receipt upsert/updateMany, captureOperationalError)",
+        "issue": "The failure-recording writes run before the fixed diagnostic and are not guarded. If either write throws, the error escapes processDueCheckoutFollowups: the remaining pairs in the batch are dropped, captureOperationalError never runs, and the caller receives a raw Prisma error instead of the fixed checkout_materialization_failed signal.",
+        "evidence": "In the catch block, `await db.automationExecutionLog.upsert(...)` and `await db.automationExecutionLog.updateMany(...)` run before `captureOperationalError(...)`, and neither is in its own try/catch. A transaction failure caused by a DB connectivity problem is exactly when the follow-up upsert is likely to fail too. A concurrent create can also make the upsert throw P2002.",
+        "impact": "A failed DB write here stops this run's materialization for the rest of the batch and loses the fixed operational diagnostic for this failure mode. The job is reported to keep dispatching, but only if it catches errors from the materializer, and that code wasn't supplied.",
+        "recommended_fix": "Send the fixed diagnostic first, or in a finally block. Wrap the failure-receipt upsert/updateMany in their own try/catch, treat P2002 as already recorded, and push { status: \"failed\" } so the loop continues with the next pair.",
+        "required_test": "Make the transaction throw for pair 1 and make automationExecutionLog.upsert throw for the failure receipt. Check that the fixed diagnostic is captured exactly once, pair 2 is still processed, and the function returns results without throwing.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "candidate SELECT: NOT EXISTS over EmailDelivery using left(d.\"idempotencyKey\", ...)",
+        "issue": "The once-per-order check compares left(idempotencyKey, n) against a prefix. A btree index on (vendorId, idempotencyKey) can't serve that, so for each pending candidate Postgres scans all of that vendor's EmailDelivery rows, on every job run.",
+        "evidence": "`left(d.\"idempotencyKey\", length('wp18-checkout-v1:' || e.\"orderId\" || ':')) = 'wp18-checkout-v1:' || e.\"orderId\" || ':'` runs inside a correlated NOT EXISTS for every event that is 30 minutes to 7 days old and still pending.",
+        "impact": "Run time grows roughly with pending candidates × vendor email volume. For high-volume tenants this can slow or time out the scheduled job, and the existing Email dispatch runs in the same job.",
+        "recommended_fix": "Use an index-friendly prefix predicate: a range on a C-collated key (idempotencyKey COLLATE \"C\" >= prefix AND < prefix || chr(0x10FFFF)), or LIKE prefix || '%' backed by a text_pattern_ops/C-collation index if one already exists. The no-schema-change constraint may rule out adding an index, so check EXPLAIN against existing indexes first.",
+        "required_test": "Seed a vendor with many EmailDelivery rows (for example 100k) and a few hundred pending candidates. Run EXPLAIN ANALYZE on the candidate query and confirm there is no per-candidate sequential scan of the vendor's deliveries and that runtime stays within the job budget.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "transaction body: revealCommerceOrderPii / protectEmailDeliveryPayload → catch marks failed",
+        "issue": "Orders that can never qualify, such as a missing or invalid buyer email, are recorded as retryable 'failed' rather than 'skipped'. They are retried every 5 minutes for the whole 7-day window, and every retry emits an operational error.",
+        "evidence": "Any exception from revealCommerceOrderPii, or from protectEmailDeliveryPayload when pii.buyer.email is absent or invalid, lands in the generic catch. That sets status 'failed' and restarts the RETRY_MS cooldown. Only order/guard mismatches go through markSuperseded.",
+        "impact": "Each such order is retried about 2,000 times over the 7-day window (every 5 minutes), each retry using a batch slot once never-tried work is drained. The diagnostic noise can hide real key or configuration outages. Customers are not affected.",
+        "recommended_fix": "Separate permanent ineligibility (no or invalid recipient email) from transient or decryption errors. Mark permanent cases with a skipped receipt and a fixed reason code, and keep 'failed' plus the cooldown for decryption and DB failures.",
+        "required_test": "A pending order with no buyer email gets one 'skipped' receipt, is not reselected on later runs, and emits no repeated diagnostics. An order with an undecryptable envelope still goes 'failed' and is retried after the cooldown, behind never-tried candidates.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ]
+}

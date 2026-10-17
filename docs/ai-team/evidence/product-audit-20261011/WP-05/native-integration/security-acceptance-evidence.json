@@ -1,0 +1,171 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\execution-pool.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "scope_detail": "Supplied exact storage/response/boundary/context/fields/migration source and route excerpts. UI excluded. Reviewer did not run tests. Global cap saturation and non-full contention remain documented risks.",
+    "lineage": [
+      "security-review-pool-cli.json"
+    ],
+    "scope_files": [
+      "src/lib/registration-form-retry.ts",
+      "src/lib/registration-form-retry-response.ts",
+      "src/components/registration-retry-boundary.tsx",
+      "src/components/registration-retry-context.tsx",
+      "src/lib/registration-form-fields.ts",
+      "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+      "src/app/api/form-submissions/route.ts"
+    ],
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\security-review-pool-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "all-public-entry-browser",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.11,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\all-public-entry-browser.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-lp-js",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 24.391,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\browser-lp-js.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-lp-native",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 24.14,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\browser-lp-native.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-partner",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 22.062,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\browser-partner.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-status",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.422,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\browser-status.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-webinar-js",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 25.844,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\browser-webinar-js.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-webinar-native",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 21.016,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\browser-webinar-native.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 25.422,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\browser.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.156,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "postgresql",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.516,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\postgresql.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "submission-invariant",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.062,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\submission-invariant.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 11.235,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:92b78cfa4c050005c10267b11d65de51a94692f55916d27ad11536d1101db97c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 9.609,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-pool-regression\\unit.json"
+    }
+  ],
+  "findings": []
+}

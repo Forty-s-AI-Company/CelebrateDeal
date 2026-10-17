@@ -1,0 +1,12 @@
+{
+  "sourceHashes": {
+    "src/lib/line-webinar-template.ts": "7b4bfdfbb4105065e8498bd83dd543c97d2b8666c0badba47429568abdf2f5b2",
+    "src/lib/line-notification.ts": "57070a8be35115510cdd072dd2572a7f094b692d70c002437ea19014ea2f8e2b",
+    "src/lib/line-notification-materializer.ts": "cb19242f5c9353170c2da0b11ac047599a205703a42973a3b6b239a3727e0e22",
+    "src/lib/line-live-started.ts": "423cdb17a4bcd0d4fce4ab09ef29b47732f4789eb52aad49bf63b1af7befc2c7",
+    "src/lib/message-template.ts": "259f55586012e3d01852fbcf254b04a76955fa8af6d7c815e375d6c932e45aeb",
+    "src/components/message-template-form-client.tsx": "ac17fd5ad0dd1760f8a71a7dc95c65401e0b3b532b43ba682a9c33133f7ea605"
+  },
+  "contextChars": 46752,
+  "scope": "Full6productmodules with canonical reviewer prompt; one existing type-only provider name normalized."
+}

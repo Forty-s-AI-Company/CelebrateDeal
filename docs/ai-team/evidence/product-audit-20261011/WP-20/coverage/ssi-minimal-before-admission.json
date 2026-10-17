@@ -1,0 +1,61 @@
+{
+  "status": "DIAGNOSTIC_COMPLETE",
+  "acceptance": "NOT_APPLICABLE",
+  "cases": [
+    {
+      "indexedStatus": false,
+      "synchronizedSnapshots": 20,
+      "attempts": 2,
+      "committed": 20,
+      "failures": []
+    },
+    {
+      "indexedStatus": true,
+      "synchronizedSnapshots": 20,
+      "attempts": 2,
+      "committed": 3,
+      "failures": [
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "40001",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "40001",
+        "P2034",
+        "40001",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "P2034",
+        "40001",
+        "P2034",
+        "P2034",
+        "P2034"
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

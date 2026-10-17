@@ -1,0 +1,160 @@
+Independent final WP08 coverage followup. Scope: remaining funnel list/gallery source, final copy replacements, closure of prior coverage findings. No tools. Report only concrete BLOCKER/MAJOR/MINOR/NIT; avoid expanding to new product features. Do not certify whole20WP. Current revision sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988
+Prior whole review MAJOR Puck/block coverage was closed by qualified followup; exact baseline efb8b7e9 copy-proof script retained. registerVariants consumer supplied and reviewed: id derives from category/id prefix, label only display. Dashboard,goal-picker,schedule complete source reviewed no BLOCKER/MAJOR; remaining copy findings fixed as below. AppShell+DashboardLoading4 browser states passed previous revision, current rerun ongoing; editor52 states current rerun ongoing.79tests/lint/typecheck current PASS. Prior stale-target MAJOR independently closed; full source guard inspected. Existing scoped lineage otherwise unchanged.
+Final copy-only replacements:
+{
+  "src/components/landing-pages/funnel-goal-picker.tsx": {
+    "自訂 一頁式網站": "自訂一頁式網站",
+    "建立新的 一頁式網站": "建立新的一頁式網站",
+    "一頁式網站 網址": "一頁式網站網址",
+    "Funnel 初始資料": "一頁式網站初始資料",
+    "連線中斷，一頁式網站尚未建立": "建立失敗，一頁式網站尚未建立",
+    "自動化線上講座 目前仍在開發中，完成編輯、排程與播放流程後會開放建立。": "此類型目前尚未開放建立。",
+    "pending ? \"建立中…\" : \"儲存\"": "pending ? \"建立中…\" : \"建立\""
+  },
+  "src/app/(app)/dashboard/page.tsx": {
+    "Cloudflare-first 直播導購營運總覽": "直播導購營運總覽"
+  },
+  "src/components/landing-pages/funnel-webinar-settings.tsx": {
+    "選擇既有活動與報名表，並在活動工作室 確認來源影片。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。": "設定線上講座時區、開始與結束時間，以及重播截止時間。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。"
+  }
+}
+COMPLETE SOURCE src/components/landing-pages/funnel-list.tsx
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState } from "react";
+
+import type { LandingPageSummary } from "@/lib/landing-page-service";
+
+type StatusFilter = "active" | "draft" | "all";
+
+export function FunnelList({ pages, readOnly = false }: { pages: LandingPageSummary[]; readOnly?: boolean }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("active");
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const filtered = useMemo(() => pages.filter((page) => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("zh-TW");
+    const matchesQuery = `${page.name} ${page.slug}`.toLocaleLowerCase("zh-TW").includes(normalizedQuery);
+    const matchesStatus = status === "all" || (status === "active" ? page.status === "published" : page.status === "draft");
+    return matchesQuery && matchesStatus;
+  }), [pages, query, status]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const visible = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  function resetFilters(next: { query?: string; status?: StatusFilter; size?: number }) {
+    if (next.query !== undefined) setQuery(next.query);
+    if (next.status !== undefined) setStatus(next.status);
+    if (next.size !== undefined) setPageSize(next.size);
+    setCurrentPage(1);
+  }
+
+  return <section aria-label="一頁式網站 清單" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 bg-slate-50/70 p-4">
+      <label className="min-w-56 flex-1 text-sm font-semibold text-slate-700">搜尋
+        <input value={query} onChange={(event) => resetFilters({ query: event.target.value })} placeholder="搜尋名稱或網址" className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+      </label>
+      <label className="text-sm font-semibold text-slate-700">狀態
+        <select value={status} onChange={(event) => resetFilters({ status: event.target.value as StatusFilter })} className="mt-1 block min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm">
+          <option value="active">已發布</option><option value="draft">草稿</option><option value="all">全部</option>
+        </select>
+      </label>
+      <label className="text-sm font-semibold text-slate-700">每頁
+        <select value={pageSize} onChange={(event) => resetFilters({ size: Number(event.target.value) })} className="mt-1 block min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm">
+          <option value={10}>10</option><option value={25}>25</option><option value={50}>50</option>
+        </select>
+      </label>
+    </div>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[680px] text-left text-sm">
+        <thead className="border-b border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500"><tr><th className="px-5 py-3">名稱</th><th className="px-5 py-3">狀態</th><th className="px-5 py-3">更新時間</th><th className="px-5 py-3 text-right">操作</th></tr></thead>
+        <tbody className="divide-y divide-slate-100">{visible.map((page) => <tr key={page.id} className="hover:bg-slate-50">
+          <td className="px-5 py-4"><p className="font-semibold text-slate-950">{page.name}</p><p className="mt-1 font-mono text-xs text-slate-500">/lp/{page.slug}</p></td>
+          <td className="px-5 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${page.status === "published" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{page.status === "published" ? "✓ 已發布" : "草稿"}</span></td>
+          <td className="px-5 py-4 text-slate-600"><time dateTime={page.updatedAt.toISOString()}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short" }).format(page.updatedAt)}</time></td>
+          <td className="px-5 py-4 text-right">{readOnly ? <span className="text-xs text-slate-400">唯讀</span> : <Link href={`/landing-pages/${page.id}/operations`} className="font-semibold text-blue-700 hover:text-blue-900">開啟 一頁式網站 →</Link>}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    {!visible.length ? <div className="px-5 py-12 text-center"><p className="font-semibold text-slate-800">找不到符合條件的 一頁式網站</p><p className="mt-1 text-sm text-slate-500">調整搜尋字詞或狀態篩選。</p></div> : null}
+    <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3 text-sm text-slate-500"><span>共 {filtered.length} 筆</span><div className="flex items-center gap-2"><button type="button" disabled={safePage <= 1} onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40">上一頁</button><span>{safePage} / {totalPages}</span><button type="button" disabled={safePage >= totalPages} onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40">下一頁</button></div></div>
+  </section>;
+}
+
+COMPLETE SOURCE src/components/landing-pages/funnel-template-gallery-picker.tsx
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FunnelPageDocumentRenderer, type FunnelViewport } from "./funnel-page-document-renderer";
+import { instantiateFunnelTemplate, type FunnelTemplateGalleryItem } from "@/lib/funnel-template-gallery";
+
+type Props = {
+  templates: readonly FunnelTemplateGalleryItem[];
+  selectedId: string;
+  disabled?: boolean;
+  onSelect: (templateId: string) => void;
+  onApply: (templateId: string) => void;
+};
+
+export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = false, onSelect, onApply }: Props) {
+  const [previewId, setPreviewId] = useState<string>();
+  const [viewport, setViewport] = useState<FunnelViewport>("desktop");
+  const [error, setError] = useState<string>();
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const documents = useMemo(() => new Map(templates.map((template) => [template.id, instantiateFunnelTemplate(template.id, `gallery_preview_${template.id}`)])), [templates]);
+  const preview = templates.find((template) => template.id === previewId);
+
+  useEffect(() => {
+    if (!preview) return;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewId(undefined);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [preview]);
+
+  if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 一頁式網站 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入 版型區塊。</span></div>;
+
+  const apply = (templateId: string) => {
+    setError(undefined);
+    try { onApply(templateId); }
+    catch { setError("模板目前無法套用，畫布內容沒有變更，請稍後再試。"); }
+  };
+
+  return <div className="grid gap-3" aria-busy={disabled}>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {templates.map((template) => {
+        const selected = selectedId === template.id;
+        const document = documents.get(template.id)!;
+        return <article key={template.id} className={`min-w-0 overflow-hidden rounded-xl border bg-white shadow-sm transition ${selected ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300"}`}>
+          <div aria-hidden="true" inert className="pointer-events-none m-2 mb-0 h-28 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+            <div className="origin-top-left w-[400%] scale-25"><FunnelPageDocumentRenderer document={document} mode="preview" className="min-h-[28rem] bg-white" /></div>
+          </div>
+          <button type="button" aria-pressed={selected} disabled={disabled} onClick={() => onSelect(template.id)} className="w-full min-w-0 p-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600">
+            <span className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{template.category}</span>
+            <strong className="mt-1 block break-words text-sm text-slate-900">{template.name}</strong>
+            <span className="mt-1 line-clamp-2 block break-words text-[11px] leading-4 text-slate-500">{template.description}</span>
+          </button>
+          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-2">
+            <button type="button" disabled={disabled} onClick={() => { setViewport("desktop"); setPreviewId(template.id); }} className="min-h-9 rounded-lg border border-slate-300 px-2 text-xs font-bold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">完整預覽</button>
+            <button type="button" disabled={disabled} onClick={() => apply(template.id)} className="min-h-9 rounded-lg bg-slate-900 px-2 text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{disabled && selected ? "套用中…" : "套用模板"}</button>
+          </div>
+        </article>;
+      })}
+    </div>
+    {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">{error}</p> : null}
+    {preview ? <div role="dialog" aria-modal="true" aria-labelledby="funnel-template-preview-title" className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-3 sm:p-6">
+      <div className="flex max-h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+          <div className="min-w-0"><span className="text-xs font-bold uppercase tracking-wide text-blue-700">{preview.category}</span><h3 id="funnel-template-preview-title" className="break-words text-lg font-bold text-slate-950">{preview.name}</h3></div>
+          <div className="flex gap-2"><button type="button" aria-pressed={viewport === "desktop"} onClick={() => setViewport("desktop")} className="min-h-10 rounded-lg border px-3 text-sm font-semibold">電腦版</button><button type="button" aria-pressed={viewport === "mobile"} onClick={() => setViewport("mobile")} className="min-h-10 rounded-lg border px-3 text-sm font-semibold">手機版</button><button ref={closeRef} type="button" onClick={() => setPreviewId(undefined)} className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">關閉</button></div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3 sm:p-6"><div data-template-preview-viewport={viewport} className={`mx-auto min-w-0 overflow-x-hidden rounded-xl bg-white shadow-sm transition-[max-width] ${viewport === "mobile" ? "max-w-[390px]" : "max-w-5xl"}`}><FunnelPageDocumentRenderer document={documents.get(preview.id)!} viewport={viewport} mode="preview" /></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4"><p className="text-xs leading-5 text-slate-600">預覽與套用共用相同的頁面內容與顯示方式。</p><button type="button" disabled={disabled} onClick={() => apply(preview.id)} className="min-h-10 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{disabled ? "套用中…" : "套用這個模板"}</button></div>
+      </div>
+    </div> : null}
+  </div>;
+}
+
+Remaining nonblocking dispositions: established one-page website product label retained, optional explicit ids/no names cannot occur in current2callers, parser requires string names, Unicode shaping kept, raw money formatting preexists. No scope changes to business values. Determine any remaining blocking coverage required before canonical gate.

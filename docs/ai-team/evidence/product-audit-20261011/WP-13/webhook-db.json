@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "scope": "Owned disposable PostgreSQL; synthetic identifiers; exact consent service and actual conditional updates; no provider calls.",
+  "checks": {
+    "tenantIsolation": "PASS",
+    "withdrawalSurvivesAccountReactivation": "PASS",
+    "previouslyQueuedReminderSuppressedBeforeProvider": "PASS",
+    "followCannotRestorePermission": "PASS",
+    "redeliveryDoesNotCreateIdentity": "PASS",
+    "lateEventCannotRevokeRenewedConsent": "PASS",
+    "futureEventNotAcknowledgedAndLaterRetryApplies": "PASS",
+    "concurrentRedeliveryConverges": "PASS",
+    "invalidPayloadRejected": "PASS"
+  },
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

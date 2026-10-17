@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-16T06:15:00.821693+00:00",
+  "revision": "sha256:b8f7981bd6311bb7d2f9303c8a50c5cc623a43404558ab69661bdc8e3086bb51",
+  "status": "DEFERRED_BY_USER",
+  "source_hashes_match": true,
+  "unit_passed": 72,
+  "typecheck": "PASS",
+  "eslint": "PASS",
+  "deep_review": {
+    "status": "SUCCESS",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "findings": 0,
+    "receipt": "naming-critical-fixed-review.json"
+  },
+  "actual_db": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "build": "NOT_RUN",
+  "canonical_acceptance": "NOT_RUN",
+  "whole_wp": "WAITING_AUTHORIZATION",
+  "completed": false,
+  "reason": "User requested temporarily skip current item. Existing changes retained; no further WP02 integration or implementation started. Original D2/D3 external facts remain deferred.",
+  "files": [
+    "src/app/(app)/billing/payment-methods/page.tsx",
+    "src/app/(app)/billing/payment-methods/page.test.tsx",
+    "src/lib/merchant-onboarding.ts",
+    "src/lib/merchant-onboarding.test.ts",
+    "src/lib/sales-workspace.ts",
+    "src/lib/sales-workspace.test.ts",
+    "src/app/(app)/onboarding/page.tsx",
+    "src/app/(app)/onboarding/page.test.tsx",
+    "src/app/(app)/dashboard/dashboard-details.tsx",
+    "src/app/(app)/dashboard/dashboard-details.test.ts"
+  ],
+  "next_item": "WP03 policy draft/presentation exists; actual operator/contact/effective facts deferred. Other remaining original WPs retain dependencies from remaining-original-requirements-audit-20261016.json."
+}

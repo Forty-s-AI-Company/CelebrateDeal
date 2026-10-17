@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "receipt-consistency-lint", "revision": "sha256:a99f0ee31b1ddad1143794c6d95d42f1adeb52bacf3c0308698003f1eb0ed643", "status": "PASS", "exit_code": 0, "duration_seconds": 5.719}

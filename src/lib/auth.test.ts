@@ -221,10 +221,12 @@ describe("requireFinanceAdmin", () => {
     },
   );
 
-  it("allows a platform administrator without MFA to use the admin area", async () => {
-    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "platform_admin", mfaFactor: null, mfaVerifiedAt: null }));
+  it.each([null, new Date("2026-07-21T00:00:00.000Z")])("requires enrollment even with a stale verified timestamp: %s", async (mfaVerifiedAt) => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "platform_admin", mfaFactor: null, mfaVerifiedAt }));
 
-    await expect(requireFinanceAdmin()).resolves.toMatchObject({ isPlatformAdmin: true });
+    await expect(requireFinanceAdmin()).rejects.toThrow("redirect:/mfa/setup?next=%2Fadmin%2Fbilling%2Fdashboard");
+    // Setup and its enrollment actions must remain reachable without a factor.
+    await expect(requireAuth()).resolves.toMatchObject({ isPlatformAdmin: true });
   });
 
   it("still requires MFA verification for a platform administrator", async () => {

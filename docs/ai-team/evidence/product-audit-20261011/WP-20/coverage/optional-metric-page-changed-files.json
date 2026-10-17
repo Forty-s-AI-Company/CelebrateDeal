@@ -1,0 +1,36 @@
+{
+  "scope": "This optional source-persistence isolation increment only",
+  "sourceHashes": {
+    "src/lib/optional-metric-page.ts": "06cc6bca42e2f91f948bcd68125321c65bb9dacd9f643fefdf8354fcb9484978",
+    "src/lib/optional-metric-page.test.ts": "613ec4a981a4e15e4b4d730aca10fe1cd618bf99c0f2c884bbccc554ce187b8c",
+    "src/components/metric-registration-visit.tsx": "dc87a6ddf5535d74d0bebd9ee9e6ad49c33d38f4826f6eb4624edb0955b90290",
+    "src/components/metric-registration-visit.test.tsx": "4850196e09d3f7e44f66736147465f10928ad9567e4f9422c78ef7d64c84aa67",
+    "src/app/(viewer)/live/[slug]/page.tsx": "726e094616b228aef89a3dfde3b3dfb85a32bfb2ae8a32d481f97327d3b1bb50",
+    "src/app/(viewer)/live/[slug]/page.test.tsx": "28c67aecae747b56f496dd3d6160edb0673b5ff51cc9b37110bc7a2fe18d8e81",
+    "scripts/wp20-optional-metric-page-probe.mjs": "dade6cbede5b7b76e9fc7f1a9241ca0a3503bfb21869199b3439f389b62307e2",
+    "scripts/wp20-optional-metric-page-disposable.mjs": "cb05a4af1d9acc187cd17ca4b1977eccb501a6dfb1be448e57694162c30c818d",
+    ".ai-team/reports/wp20-optional-metric-page-route.py": "875bdd09e66e006a46f2937b0b21fafb2673715b34d74054f45be2b136467038",
+    ".ai-team/reports/wp20-optional-metric-page-review.ps1": "f093a17c83c0b0591c0fd01f741b84f410d1fa0e5c59ebfcbb8407abd41c253f",
+    ".ai-team/reports/wp20-optional-metric-page-validate.py": "9125845b8f8e48d44da63573508119be4c0bf01eb4756b3119b2d25b365c4feb",
+    ".ai-team/reports/wp20-optional-metric-page-checkpoint.py": "0868cbee654c720fcabb016dd5d9d76780ae3406beb814addb97eb04d0de19a4",
+    "docs/launch/wp20-optional-metric-page.md": "e9c37f0f387cae2af8df586df00b6822412a9341607ff7030f5b7df8e1390213",
+    "docs\\launch\\product-audit-20261012-handoff.md": "3a248e98e327d777e45237aa6e55d72bd39df09c743cdd47402f911828ed7511",
+    "docs\\launch\\product-audit-20261011-progress.md": "a6a3e1dc4159182357692879a432fd39c96c470f2f567460548ae5b10e6acfda"
+  },
+  "otherChangedPaths": [
+    ".ai-team/state/goal-state.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-before-signal-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-before-signal-validation.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-checkpoint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-followup-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-followup-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-harness-lint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-react-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-review-disposition.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-route.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/optional-metric-page-validation.json"
+  ]
+}

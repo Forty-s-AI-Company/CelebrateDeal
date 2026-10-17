@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "protected_sourceHashes": {
+    "src/lib/sales-project-publication.ts": "ece7265c8c20c9bf53e7dad0a5a694ad11a45b3505e4bd14d8ae9d5f49c7d567",
+    "src/lib/payment-method-reference.ts": "fbc1fff19051b7014c77750d32e80560dc32374ead9b7a19e7506e4fbdcf956a",
+    "src/lib/payment-method-setup.ts": "caf6c4e8186d75dd672583190e797b06629696c48c46ea7b5a49f9a0001bfa4a",
+    "src/app/actions/payment-method-actions.ts": "4854a81bd977058754618d94036632a69a46117508c00ef832cc89ed0cb3edf1",
+    "prisma/schema.prisma": "99d155c2a906916cc1ed01b00c133dd557cad40b4a7df76bd39d2f27af695626",
+    "src/lib/payment-providers/demo.test.ts": "c8f8124a4f7aaef5a6118a0f6e29ffed5b9cdaaee208baf1a5542a14b1681ed4",
+    "src/lib/payment-providers/demo.ts": "6556eeede734c71ca43df83dc26e6b3ca170a0a2e1857125e0c780565373073e",
+    "src/lib/payment-providers/ecpay-like.test.ts": "a2d6ca16dada1b080af2a10e4a807918f0fb625a453c5cf38c245743e41c79e9",
+    "src/lib/payment-providers/ecpay-like.ts": "82986cfa8d377a780680274fec08df950efb97f39dd0007409d102fbc513f7ab",
+    "src/lib/payment-providers/index.ts": "5d9238e394373cbcb7fa5c57b3a962232fe8cd41bbe6a5bebf933cc2c9f254ae",
+    "src/lib/payment-providers/payuni-fixtures.ts": "d56d3444c6c9759488ecc24145c974e55210ace8c673c44084cba2134fbc9a9c",
+    "src/lib/payment-providers/payuni-setup.test.ts": "2eea6aa98fd9fea951c5d3de7edf9aea58057a9c6d037c12b33bacad8d8b58b1",
+    "src/lib/payment-providers/payuni.test.ts": "53f5ef36c31d6025968fe11f099a8f6a63b7bdb046abd815dd3eca9f6541339a",
+    "src/lib/payment-providers/payuni.ts": "b7d2004d57fdde3a72619082575ca0795767ff0af021eb1942c27ac0a76881cb",
+    "src/lib/payment-providers/types.test.ts": "67ef101ea679c6bde2048adcd7affc69f4e981ed44d510b48de682eff0ec03f5",
+    "src/lib/payment-providers/types.ts": "f90dd205fc19a0640b2d6adb7464b43eddc4133f5ae243508d25cf100095afbd"
+  },
+  "finance_auth_and_all_selected_columns_unchanged": true,
+  "original_shared_evaluator_noncopy_logic_unchanged": true,
+  "display_loader_only_changes": {
+    "src/app/(app)/onboarding/page.tsx": {
+      "only_change": "Added verifiedAt:notnull/lte existing now to the existing VENDOR/membershipnull/statusverified/unexpired count; all other code unchanged."
+    },
+    "src/app/(app)/dashboard/dashboard-details.tsx": {
+      "only_change": "Added verifiedAt:notnull/lte existing now to the existing VENDOR/membershipnull/statusverified/unexpired count; all other code unchanged."
+    }
+  },
+  "publication_guard_schema_provider_consent_actions_unchanged": true,
+  "actual_database_execution": "NOT_RUN; assertions are existing ORM query contracts, not a fake database evaluation."
+}

@@ -1,0 +1,9 @@
+{
+  "revision": "sha256:d174d0a9d58e8cdd9247cb7601e4a223c68357229e35e05396a1db779659d78f",
+  "files": [
+    "src/lib/live-metric-report-reader.ts",
+    "src/lib/live-metric-report-snapshot.ts",
+    "src/lib/live-metric-report-snapshot.test.ts",
+    "src/lib/live-metric-order-revision-snapshot.test.ts"
+  ]
+}

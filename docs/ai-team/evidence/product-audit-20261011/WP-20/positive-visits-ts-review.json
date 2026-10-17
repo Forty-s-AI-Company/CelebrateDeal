@@ -1,0 +1,195 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "payment",
+        "permission"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 12000,
+      "expected_duration": 0,
+      "code_surface_area": 4,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "accepted": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "claude_cli_discovery_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the TypeScript changes you supplied: the gateway's typed receipt and getter, the gateway clone and close logic, the full reader file, and the new tests. I found no blocking or major defects in that scope.\n\n**Gateway**\n- A receipt can only be created by a real gateway instance. Its record lives in a private, module-level weak map keyed by that gateway object, so a copied or caller-made object gets nothing back. Each read returns a fresh copy, so callers can't alter the stored receipt.\n- No receipt is created unless the database stop succeeds, both server shutdown and handler draining complete in time, the attestor is present, the admission and settlement failure counts are zero, no frames are pending, and the frame digest and close time are well-formed.\n- Requests that are refused or interrupted still return 503 without serving the page.\n\n**Reader**\n- Visit coverage is never complete unless a typed proof row passes the SQL proof-ready check, its receipt is correctly shaped and has the matching run ID, and its digest matches the source digest read in the same snapshot.\n- Old-style flags, viewing rows and changed metadata are all rejected.\n- Known gaps and source gaps take priority over positive proofs.\n- The 10,001-row overflow is rejected.\n\n**Findings**\nI found two minor issues and one nit:\n1. Tests are missing for several cases that must not produce a receipt.\n2. Matching the proof digest against the digest for the whole report window means coverage can silently stay incomplete when the proof's range differs from that window. It fails safe, but should be pinned down.\n3. The returned row count adds source records to audit rows.\n\n**Limits**\n- The migration 130 SQL (including the proof-ready function and source reconciliation) and the private publisher were outside this review.\n- The full browser and five-metric pipeline was not run.\n- An empty or short findings list doesn't confirm that tests or the release pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "live-metric-ingress-gateway (tests)",
+        "area": "NEW gateway tests – receipt cases",
+        "issue": "Only the success case and the admission-failure case are tested. Nothing tests the other conditions that must block a receipt.",
+        "evidence": "In close(), a receipt requires: no thrown error from stopMetricIngressRun, an attestor, settlementFailures===0, pendingFrames===0, a 64-hex frameDigest and a valid closedAt. Only admissionFailures=1 is tested as a negative case. The stopFailed path, the drain-timeout throw, pending>0, a settlement failure, a missing attestor and a malformed digest have no tests.",
+        "impact": "A later change could drop one of these conditions, letting a gateway with a failed stop, pending frames or no attestor create a receipt that the publisher trusts. The tests would not catch it.",
+        "recommended_fix": "Add small tests using the existing mocks: (a) the stop query rejects → close rejects and the getter returns null; (b) the count query returns count:1 → the getter returns null; (c) no attestor → null; (d) frameDigest 'x' → null; (e) settle rejects on an interrupted frame → null.",
+        "required_test": "Parameterised gateway tests that assert closedMetricIngressSource(gateway) is null after each of the failure cases above.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "live-metric-coverage reader",
+        "area": "visits proof acceptance: row.auditDigest===availableSource.sourceDigest",
+        "issue": "Each covered proof row's auditDigest is compared with a single source digest computed over the whole report window. But the proof row covers its own [startAt,endAt] range. Proofs for a narrower or wider range than the report window, or several proofs that together cover the window, can never match.",
+        "evidence": "reconcileMetricVisitSources is called with startAt/endAt=context.context.windowStartAt/windowEndAt, while proof rows are any rows overlapping the window (a.startAt<windowEnd AND a.endAt>windowStart). They are all compared to the same sourceDigest.",
+        "impact": "This fails safe: the result stays unknown and is never wrongly complete. But a valid page10/intent10/visit run whose audit range is not exactly the report window would silently stay unknown. The real flow you mention passes only if the publisher always writes the exact report window, and that assumption is not enforced or tested here.",
+        "recommended_fix": "Make it explicit. Either accept a proof only when row.startAt/endAt exactly equal the window (and document this), or compute the source digest for each proof's own range. Add a test for the chosen behaviour.",
+        "required_test": "A coverage test where a proof row has a matching digest but its range differs from the window, asserting the chosen result (unknown_history, or complete if per-range digests are added).",
+        "confidence": 0.55
+      },
+      {
+        "severity": "NIT",
+        "file": "live-metric-coverage reader",
+        "area": "final return rowCount",
+        "issue": "rowCount adds the number of audit rows to the number of source records, so it mixes two different kinds of count.",
+        "evidence": "rowCount:accepted.length+(availableSource?.rowCount??0)",
+        "impact": "Only affects how diagnostics or limits are read. It does not affect coverage soundness.",
+        "recommended_fix": "Report the audit count and the source count separately, or document that the field is a combined total.",
+        "required_test": "Update the existing visits test to assert the chosen rowCount fields.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "completed": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true
+}

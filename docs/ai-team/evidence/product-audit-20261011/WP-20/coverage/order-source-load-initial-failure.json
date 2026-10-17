@@ -1,0 +1,12 @@
+{
+  "status": "FAIL",
+  "stage": "fixture",
+  "orders": 100000,
+  "ledgerEvents": 1000000,
+  "constraintsAndTriggersEnabled": true,
+  "errorCode": "23514",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

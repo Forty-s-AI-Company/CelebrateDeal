@@ -1,0 +1,21 @@
+{
+  "status": "documented_from_actual_source",
+  "not_new_execution": true,
+  "coverage": [
+    {
+      "suite": "browser-ui-feedback.cjs",
+      "entry": "/form/{slug}, LeadForm",
+      "proof": "lines29-38 invalid email, native error400 when JSdisabled, values asserted; record at71"
+    },
+    {
+      "suite": "browser-lp.cjs",
+      "entry": "/lp/{slug} and /lp/{slug}/{step}, generic renderer",
+      "proof": "source31, invalid33, waitRetry40035, refill38; cases recorded43"
+    },
+    {
+      "suite": "browser-webinar.cjs",
+      "entry": "/lp/{slug} and /lp/{slug}/{step}, Webinar form",
+      "proof": "source32, invalid34, waitRetry40036, refill39; cases recorded44"
+    }
+  ]
+}

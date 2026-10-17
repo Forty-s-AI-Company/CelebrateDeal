@@ -1,0 +1,20 @@
+[
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "only_changes": {
+      "Elements · 基本內容": "元件 · 基本內容",
+      "Elements · 版面配置": "元件 · 版面配置",
+      "Blocks · Webinar 轉換": "區塊 · 線上講座轉換",
+      "倒數計時＋報名 CTA": "倒數計時＋報名按鈕"
+    },
+    "all_other_source_identical": true
+  },
+  {
+    "file": "src/lib/funnel-block-library.ts",
+    "only_changes": {
+      "Hero 歡迎訊息與行動按鈕": "主視覺歡迎訊息與行動按鈕",
+      "歡迎 Hero": "歡迎主視覺"
+    },
+    "all_other_source_identical": true
+  }
+]

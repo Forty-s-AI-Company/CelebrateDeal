@@ -29,7 +29,7 @@ export default async function MerchantCoursePayoutsPage() {
   return (
     <>
       <PageHeader
-        title="課程 F/G 分潤"
+        title="課程分潤"
         description="檢視課程分潤的 gross、net reference、應付金額、退款／dispute ledger 與人工出款結果。此頁為商家唯讀對帳，不會執行付款。"
       />
       <div className="mb-6 grid gap-4 md:grid-cols-3">

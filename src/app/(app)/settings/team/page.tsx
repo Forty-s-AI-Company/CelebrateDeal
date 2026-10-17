@@ -68,7 +68,7 @@ export default async function TeamSettingsPage({
 
   return (
     <>
-      <PageHeader title="團隊與上下線" description="建立銷售團隊、加入商家成員，並以可追溯的關係設定 payout 與展業歸屬。" />
+      <PageHeader title="團隊管理" description="建立銷售團隊、加入商家成員，並以可追溯的關係設定 payout 與展業歸屬。" />
       {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請重新整理後再試。"}</p> : null}
 

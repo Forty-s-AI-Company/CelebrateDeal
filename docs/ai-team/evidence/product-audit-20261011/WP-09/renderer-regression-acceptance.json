@@ -1,0 +1,7 @@
+{
+  "status": "BLOCKED",
+  "blockers": [
+    "required_check_unverified:WP17-prerequisite"
+  ],
+  "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944"
+}

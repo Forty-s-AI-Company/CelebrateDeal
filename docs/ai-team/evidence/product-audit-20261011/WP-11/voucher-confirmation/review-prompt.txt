@@ -1,0 +1,177 @@
+Read-only independent Critical security/permission review, findings schema only, no edits. WP11 voucher GET preview -> explicit POST single-use exchange. Scope is source below, plus existing portal regression because shared helper gains fixed voucher namespace/copy and portal default retained. Snapshot sha256:448f6d65cbc854370be8724ce0cfe124a44ac9ef061d84139520b1fc32023daa. Requirements: mail GET/HEAD must not set checkout cookie or mutate grant. POST canonical same-origin+browser/link/action-bound five-minute challenge. Atomic rotate old claimTokenHash to new random checkout bearer; old email link replay fails, 12 concurrent DB calls exactly one wins. No schema, payment routing, usedOrderId/redeemedAt writes or order creation. Same existing checkout cookie and grant resolver; new bearer actual DB test eligible100 discount, wrongtenant/product rejected, expired/used rejected, old bearer invalid. Unit/lint/tsc and DB boundaries PASS, Chromium/Firefox pending. Reviewer must evaluate CAS races, stale eligibility, customer/tenant/data boundary, browser replay and coupon compatibility; do not invent test execution. IP trust topology remains pending, not certified; existing rate limiter only reused. Shared helper previously qualified Critical reviewed; retains known same-kind multiple tabs challenge overwrite limitation, no auth bypass. No real credentials included; token property in excerpt may be cosmetic credentialField only. Browser GET URL may carry existing capability as before, no new query credentials on POST.
+
+FILE src/lib/capability-confirmation.ts
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { NextResponse } from "next/server";
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { readFormDataBody } from "@/lib/api-security";
+
+const TTL_SECONDS = 300;
+const FIELD = /^[A-Za-z0-9_-]{43}$/u;
+const PRIVATE_HEADERS = { "Cache-Control": "private, no-store", "Referrer-Policy": "strict-origin", "X-Robots-Tag": "noindex, nofollow", "X-Content-Type-Options": "nosniff" };
+type ConfirmationKind = "portal" | "voucher";
+function context(path: string, kind: ConfirmationKind = "portal") {
+  const action = new URL(path, getCanonicalAppUrl());
+  const secure = action.protocol === "https:";
+  if (!secure && (process.env.NODE_ENV === "production" || !["localhost", "127.0.0.1", "[::1]"].includes(action.hostname))) throw new Error("Confirmation requires HTTPS outside local development.");
+  return { action, secure, name: `${secure ? "__Host-" : ""}celebratedeal_${kind === "voucher" ? "voucher" : "access"}_confirmation` };
+}
+function digest(values: string[]) { return createHash("sha256").update(JSON.stringify(values)).digest("base64url"); }
+function escape(value: string) { return value.replace(/[&<>"']/gu, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)); }
+
+/** 預覽不建立登入狀態；短效 challenge 同時綁定瀏覽器、連結及確認入口。 */
+export function capabilityConfirmation(path: string, capability: string, vendorName = "學員中心", kind: ConfirmationKind = "portal") {
+  const { action, secure, name } = context(path, kind);
+  const title = kind === "voucher" ? "確認使用優惠券" : "確認登入學員中心";
+  const button = kind === "voucher" ? "確認並前往結帳" : "確認登入";
+  const explanation = kind === "voucher" ? "確認後會前往結帳頁，尚不會付款。若這不是你要使用的優惠券，請關閉此頁。" : "按下確認後，才會使用這封信的登入連結。若不是你提出的登入要求，請關閉此頁。";
+  const nonce = randomBytes(32).toString("base64url");
+  const issued = String(Date.now());
+  const response = new NextResponse(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="referrer" content="strict-origin"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,sans-serif;background:#f8fafc;color:#0f172a;margin:0}main{max-width:32rem;margin:10vh auto;padding:2rem}button{font:inherit;background:#0f172a;color:white;border:0;border-radius:.5rem;padding:.8rem 1.2rem;cursor:pointer}button:focus-visible{outline:3px solid #2563eb;outline-offset:4px}</style></head><body><main><h1>${title}</h1><p>商家：${escape(vendorName)}</p><p>${explanation}</p><form method="post" action="${escape(action.href)}"><input type="hidden" name="capability" value="${escape(capability)}"><input type="hidden" name="confirmation" value="${nonce}"><input type="hidden" name="issued" value="${issued}"><button type="submit">${button}</button></form></main></body></html>`, {
+    headers: { ...PRIVATE_HEADERS, "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action ${action.origin}; frame-ancestors 'none'; base-uri 'none'` },
+  });
+  response.cookies.set(name, digest([nonce, issued, capability, action.href]), { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: TTL_SECONDS });
+  return response;
+}
+
+/** 不依賴 forwarded host；明示來源須等於 canonical origin。 */
+export function isCapabilityConfirmationOrigin(request: Request, path: string) {
+  const { action } = context(path);
+  if (request.method !== "POST") return false;
+  let incoming: string;
+  try { incoming = new URL(request.headers.get("origin") ?? request.headers.get("referer") ?? "").origin; } catch { return false; }
+  const site = request.headers.get("sec-fetch-site");
+  return incoming === action.origin && (!site || site === "same-origin");
+}
+
+/** 短效表單值必須與此瀏覽器 HttpOnly challenge 完全一致。 */
+export async function readCapabilityConfirmation(request: Request, path: string, kind: ConfirmationKind = "portal"): Promise<string | null> {
+  const { action, name } = context(path, kind);
+  if (!isCapabilityConfirmationOrigin(request, path)) return null;
+  const form = await readFormDataBody(request, 8192);
+  if (!form || ["capability", "confirmation", "issued"].some((key) => form.getAll(key).length !== 1)) return null;
+  const capability = form.get("capability"), nonce = form.get("confirmation"), issued = form.get("issued");
+  if (typeof capability !== "string" || !capability || capability.length > 2048 || typeof nonce !== "string" || !FIELD.test(nonce) || typeof issued !== "string" || !/^\d{13}$/u.test(issued)) return null;
+  const age = Date.now() - Number(issued);
+  if (age < 0 || age >= TTL_SECONDS * 1000) return null;
+  const matches = (request.headers.get("cookie") ?? "").split(";").map((part) => part.trim()).filter((part) => part.startsWith(`${name}=`));
+  if (matches.length !== 1) return null;
+  const stored = matches[0].slice(name.length + 1);
+  if (!FIELD.test(stored)) return null;
+  const expected = digest([nonce, issued, capability, action.href]);
+  return timingSafeEqual(Buffer.from(stored), Buffer.from(expected)) ? capability : null;
+}
+
+export function clearCapabilityConfirmation(response: NextResponse, path: string, kind: ConfirmationKind = "portal") {
+  const { name, secure } = context(path, kind);
+  response.cookies.set(name, "", { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 0 });
+  return response;
+}
+
+FILE src/lib/automation-voucher-exchange.ts
+import { randomBytes } from "node:crypto";
+import type { PrismaClient } from "@prisma/client";
+import { hashInteractionBearer } from "@/lib/live-interaction";
+
+type VoucherDatabase = Pick<PrismaClient, "automationVoucherGrant">;
+export const AUTOMATION_VOUCHER_BEARER = /^[A-Za-z0-9_-]{43}$/u;
+
+/** 預覽保留原兌換資格，完全不寫入或建立 checkout 憑證。 */
+export async function previewAutomationVoucher(database: VoucherDatabase, capability: string, now = new Date()) {
+  if (!AUTOMATION_VOUCHER_BEARER.test(capability)) return null;
+  const grant = await database.automationVoucherGrant.findUnique({
+    where: { claimTokenHash: hashInteractionBearer(capability) },
+    select: { id: true, vendorId: true, productId: true, expiresAt: true, usedOrderId: true, vendor: { select: { name: true } } },
+  });
+  return grant && !grant.usedOrderId && grant.expiresAt > now ? grant : null;
+}
+
+/** 單次交換連結憑證；原子條件避免同一連結的重放或並發都取得 checkout 資格。 */
+export async function exchangeAutomationVoucher(database: VoucherDatabase, capability: string, now = new Date()) {
+  const grant = await previewAutomationVoucher(database, capability, now);
+  if (!grant) return null;
+  const bearer = randomBytes(32).toString("base64url");
+  const exchanged = await database.automationVoucherGrant.updateMany({
+    where: { id: grant.id, vendorId: grant.vendorId, productId: grant.productId, claimTokenHash: hashInteractionBearer(capability), usedOrderId: null, expiresAt: { gt: now } },
+    data: { claimTokenHash: hashInteractionBearer(bearer) },
+  });
+  if (exchanged.count !== 1) return null;
+  // 不設定 usedOrderId/redeemedAt，不建立訂單；原 checkout resolver 仍負責金額及商品資格。
+  return { bearer, vendorId: grant.vendorId, productId: grant.productId, expiresAt: grant.expiresAt };
+}
+
+FILE src/app/api/automation/vouchers/redeem/route.ts
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { NextResponse } from "next/server";
+import { AUTOMATION_VOUCHER_COOKIE } from "@/lib/live-interaction";
+import { getDb } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { capabilityConfirmation, clearCapabilityConfirmation, isCapabilityConfirmationOrigin, readCapabilityConfirmation } from "@/lib/capability-confirmation";
+import { AUTOMATION_VOUCHER_BEARER, exchangeAutomationVoucher, previewAutomationVoucher } from "@/lib/automation-voucher-exchange";
+
+const PATH = "/api/automation/vouchers/redeem";
+const PRIVATE_HEADERS = { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow" };
+function unavailable(status: 400 | 403 | 410) {
+  return new NextResponse('<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width, initial-scale=1"><title>無法確認優惠券</title></head><body><main><h1>無法確認優惠券</h1><p>這次確認已失效，請重新開啟最新的優惠券連結。若優惠券已使用或過期，請聯絡商家。</p></main></body></html>', { status, headers: { ...PRIVATE_HEADERS, "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'" } });
+}
+
+/** 郵件預覽不設 checkout cookie，也不旋轉連結。 */
+export async function GET(request: Request) {
+  const limited = await checkRateLimit(request, "automation-voucher-redeem", 60, 60_000);
+  if (limited) return limited;
+  const capability = new URL(request.url).searchParams.get("token") ?? "";
+  if (!AUTOMATION_VOUCHER_BEARER.test(capability)) return unavailable(400);
+  const grant = await previewAutomationVoucher(getDb(), capability);
+  if (!grant) return unavailable(410);
+  return capabilityConfirmation(PATH, capability, grant.vendor.name, "voucher");
+}
+
+export async function POST(request: Request) {
+  const limited = await checkRateLimit(request, "automation-voucher-confirm", 30, 60_000);
+  if (limited) return limited;
+  if (!isCapabilityConfirmationOrigin(request, PATH)) return unavailable(403);
+  const capability = await readCapabilityConfirmation(request, PATH, "voucher");
+  if (!capability) return clearCapabilityConfirmation(unavailable(403), PATH, "voucher");
+  const exchanged = await exchangeAutomationVoucher(getDb(), capability);
+  if (!exchanged) return clearCapabilityConfirmation(unavailable(410), PATH, "voucher");
+  const destination = new URL(`/checkout/${encodeURIComponent(exchanged.vendorId)}/${encodeURIComponent(exchanged.productId)}`, getCanonicalAppUrl());
+  const response = NextResponse.redirect(destination, { status: 303, headers: PRIVATE_HEADERS });
+  response.cookies.set(AUTOMATION_VOUCHER_COOKIE, exchanged.bearer, {
+    httpOnly: true, sameSite: "lax", secure: destination.protocol === "https:", path: "/",
+    maxAge: Math.max(1, Math.floor((exchanged.expiresAt.getTime() - Date.now()) / 1_000)),
+  });
+  return clearCapabilityConfirmation(response, PATH, "voucher");
+}
+
+UNCHANGED checkout resolver
+export async function resolveEligibleAutomationVoucherClaim(
+  db: PrismaClient,
+  bearer: string | null | undefined,
+  input: { vendorId: string; productId: string; priceCents: number; currency: string; now?: Date },
+) {
+  if (!bearer || !/^[A-Za-z0-9_-]{43}$/u.test(bearer)) return null;
+  const now = input.now ?? new Date();
+  const grant = await db.automationVoucherGrant.findUnique({
+    where: { claimTokenHash: hashInteractionBearer(bearer) },
+  });
+  if (
+    !grant
+    || grant.vendorId !== input.vendorId
+    || grant.productId !== input.productId
+    || grant.usedOrderId
+    || grant.expiresAt <= now
+    || grant.currency !== input.currency
+  ) return null;
+
+  const rawDiscount = grant.discountType === "percentage"
+    ? Math.floor(input.priceCents * grant.discountValue / 100)
+    : grant.discountValue;
+  const boundedDiscount = Math.max(0, Math.min(input.priceCents - 1, rawDiscount));
+  const discountAmountCents = input.currency === "TWD"
+    ? Math.floor(boundedDiscount / 100) * 100
+    : boundedDiscount;
+  return discountAmountCents > 0
+    ? { id: grant.id, source: "automation" as const, discountAmountCents }
+    : null;
+}
+

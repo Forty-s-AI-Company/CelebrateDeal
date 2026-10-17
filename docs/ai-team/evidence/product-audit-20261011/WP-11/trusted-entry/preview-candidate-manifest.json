@@ -1,0 +1,98 @@
+{
+  "status": "PREVIEW_DEPLOYED_READY_FUNCTIONAL_ACCEPTANCE_INCOMPLETE",
+  "source_revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+  "files": [
+    {
+      "path": "src/lib/trusted-entry-rate-limit.ts",
+      "before_sha256": null,
+      "after_sha256": "72f4f9d69c268ef769ba4811ff18959cbb61280c1a13b24bba6db441f5faf255"
+    },
+    {
+      "path": "src/lib/trusted-entry-rate-limit.test.ts",
+      "before_sha256": null,
+      "after_sha256": "1b5feba61cad2972ddfc49d0bd2e89ec135e35acfade8b844343733b9323ec81"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/access/route.ts",
+      "before_sha256": "9c87d49682b2989030840957222f2c8027a108c06a2598ae85cc20289c77fcf1",
+      "after_sha256": "d73c281adc7a324a2df4a066de1b79c8fc14f3acea9a8c5da4bcd0794b8244e3"
+    },
+    {
+      "path": "src/app/api/automation/vouchers/redeem/route.ts",
+      "before_sha256": "9bfc4d21ec8d9f5b789b65844c381bf68e6765b3e7d9d92fd870a6b39a501c37",
+      "after_sha256": "18b2f0f398873897b90f2a9f655ac6288168bcdd1d5d4aa65074a551ffbbbefc"
+    },
+    {
+      "path": "src/app/r/[code]/route.ts",
+      "before_sha256": "da386405458d083a739cd54cc16f4e48064716e9c6fdb6771351bb092bc21043",
+      "after_sha256": "a9ba5f26243e6fc68051e9503632b828738cef5eea63726282cf7b292854f31b"
+    },
+    {
+      "path": "src/app/api/live-admission/route.ts",
+      "before_sha256": "40d8910b33676f4ce918ed9bd8accc38b770b217f266f53075a130dc42c409bf",
+      "after_sha256": "3787a0bb2786bf6be4bc07bf1288ea589835f41687fa9040ef85a3390a719bfb"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/access/route.test.ts",
+      "before_sha256": "ded08b500f39c6dd415a7237059f0c5dd4abac5942d037bc6729bd4ca6942924",
+      "after_sha256": "b6dd1d6e559bcefb72a43a48b4698a0b8d539d9aa5aa69a4c5691550568243ac"
+    },
+    {
+      "path": "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "before_sha256": "0a5f97f87301b6366507e9e55f06e236651a228bb5b1eda5d728569256278556",
+      "after_sha256": "46f0844b016e174a97eea59a17667b15de06badf9dd354eb8732cbf7af06d6f8"
+    },
+    {
+      "path": "src/app/r/[code]/route.test.ts",
+      "before_sha256": "3ce93d8f81e791a01a9ed99029aed976f4649349def9253bb714f04301a039df",
+      "after_sha256": "f971c78046f255e14d5f3c35a90e3b7f14c6bfc7376af5553a2f306ab1fe42d9"
+    },
+    {
+      "path": "src/app/api/live-admission/route.test.ts",
+      "before_sha256": "9121f2b7a3b9f67d0d0ccab9484dbb11e3d2aa8274bcd1d5830877ab6b7ed36a",
+      "after_sha256": "73c133b6efd2ae919ed127ec060409b90cb736e2cf1428e6e763ac741480d421"
+    },
+    {
+      "path": "src/app/api/live-admission/route.lease-db.test.ts",
+      "before_sha256": "aa006a1ace1b29e1bd057b539ff4c635ac5573fc378c8e425aae51be71123b30",
+      "after_sha256": "3ab544296dd355f7da883027a8bfa8c9174adf8b839b33b83aab5e45845f7682"
+    }
+  ],
+  "patch_sha256": "cb2d6a82dc477aa1559452178bcac3235af21053a38a1e0dbdada37cd9036340",
+  "target_project": "celebrate-deal-staging",
+  "target_environment": "preview",
+  "last_verified_deployment": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+  "protected_hashes_unchanged": true,
+  "deployment_ready": false,
+  "preconditions": [
+    "Verify chosen remote source compatibility before applying patch; do not deploy entire dirty checkout",
+    "Confirm proof-backed ingress injection and synthetic data isolation without exposing secret values",
+    "Build and run scoped regressions on exact candidate source"
+  ],
+  "rollback": "Discard new Preview candidate without moving existing alias; if alias change separately authorized, reverify and restore prior deployment identity; no database migration",
+  "remote_compatibility": "NOT_PROVEN: current inspect lacks commit/gitSource; public marker lacks allowlisted source identifiers; searched known deployment evidence without matching ID",
+  "safe_next": "Build a separate known-source Preview candidate only after its source scope and nonproduction configuration are fixed; never patch or replace existing alias based on guessed lineage",
+  "candidate_source": "candidate-source.json",
+  "candidate_build": "candidate-build-result.json",
+  "proposed_next_action": {
+    "project": "celebrate-deal-staging",
+    "environment": "preview",
+    "source": "efb8b7e9 plus cumulative17 WP11 files",
+    "existing_alias": "PRESERVE",
+    "production": "NO",
+    "git_push": "NO",
+    "migration": "NO",
+    "database_writes": "NO until synthetic isolation verified",
+    "environment_changes": "NOT included; missing ingress setup must fail closed",
+    "authorization": "APPROVED_SESSION_NONPRODUCTION"
+  },
+  "remote_deployment": "READY",
+  "deployment_id": "dpl_E9wbsvtxx8ChBjZnUifufjgs93dC",
+  "preview_url": "https://celebrate-deal-staging-lo8afai2s-a25814740s-projects.vercel.app",
+  "remote_validation": {
+    "login": "PASS_HTTP_200",
+    "untrusted_entry": "PASS_FAIL_CLOSED_503",
+    "trusted_ingress_success_path": "NOT_VERIFIED",
+    "whole_wp": "INCOMPLETE"
+  }
+}

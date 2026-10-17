@@ -1,7 +1,7 @@
 import { getCurrentAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { DEFAULT_PRESENTER_LAYOUT, PresenterLayoutSchema, liveOrientation } from "@/lib/presenter-layout";
 import { Prisma } from "@prisma/client";
 import { mediaOrigin } from "@/lib/live-media-provider";

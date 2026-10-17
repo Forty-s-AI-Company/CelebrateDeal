@@ -1,0 +1,20 @@
+{
+  "migrationReview": {
+    "existing-update-truncate-protection": "Existing20261014180000 LiveMetricVisit_guard rejects UPDATE and no_truncate rejects TRUNCATE;20261016110000 intent guard rejects nonINSERT and no_truncate; no new bypass",
+    "one-run-constraint": "Existing20261016150000 Run versionId UNIQUE and scoped UNIQUE; second run cannot exist for same version",
+    "lock-upgrade-assumption": "Existing visitor/intent/visit writers already use RC and versionSH; visit_changed mutates Report, not Version; no new sourceRevision-upgrade path added. Broader contention not tested here; no global availability claim.",
+    "guard-error-retry": "First RR eligibility returns incomplete when collection disabled. A later guard race still propagates fail-closed intentionally; unit asserts no false recorded. Keep this nonblocking robustness limitation, no blind catch23514.",
+    "null-fields": "Existing CHECK requires responded httpStatus nonNULL; page sourceKind/issuedAt and intent preparedAt NOTNULL; malformed supported sources fail guard/reconciliation."
+  },
+  "tsReview": {
+    "receipt failure branches": "Existing mock tests now cover stop,pending,noattestor,digest,clock,settlement and admission failure;74testsPASS",
+    "range binding": "Explicit exact report window and two mismatch tests; final narrow review findings[]",
+    "rowCount semantics": "Comment documents combined audit/source retained-row budget; additional ingress frame/intake charging noted remaining before fullWP acceptance."
+  },
+  "notClaimed": [
+    "fullWP20READY",
+    "allprovidersavailable",
+    "productiondeployment",
+    "all20WPcomplete"
+  ]
+}

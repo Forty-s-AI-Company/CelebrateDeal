@@ -1,0 +1,172 @@
+{
+  "finalModel": "claude-sonnet-5-5",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "model": "claude-sonnet-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "medium",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "execution_provider": "claude_cli",
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "review": {
+    "summary": "The supplied transformation proof closes the specific MAJOR (missing Puck/block key preservation evidence) for the Puck config. All four replaced strings are display-only: category titles under the unchanged keys basic/layout/conversion, and the Countdown `label`. Component names (Heading…CTA) and the Countdown field keys, select option values and defaultProps are unchanged in the excerpt. The block-library evidence is acceptable but has two small residual gaps. The third argument to `registerVariants` is not shown, so its role (display only vs. id/persistence/search) is unproven. The block-library baseline (git HEAD) differs from the Puck baseline (a pre-WP08 copy), and the proof is a self-reported script result rather than a retained artifact. Neither gap is a BLOCKER or MAJOR. This is a targeted review only and is not a whole-WP certification; canonical acceptance is NOT_RUN.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/funnel-block-library.ts",
+        "area": "line 255: registerVariants(\"welcome\", \"welcome\", \"歡迎主視覺\", ...)",
+        "issue": "The changed third argument is passed to registerVariants, but the supplied excerpt does not show how the function uses it. Preservation of persisted or derived keys therefore depends on that argument being display-only.",
+        "evidence": "Only lines 88 and 255 were supplied. The first two arguments (\"welcome\", \"welcome\") look like the category and id-prefix. The third (\"歡迎主視覺\", formerly \"歡迎 Hero\") is a changed string whose consumer is not shown. The proof asserts source equality outside the strings but cannot show runtime derivation (e.g. variant ids, slugs, search indexes, or stored block names built from the label).",
+        "impact": "If registerVariants derives variant ids, persisted block references, or lookup keys from this label, saved funnels or templates could fail to resolve. This is unlikely, since the existing 79 tests passed, but is not proven by the supplied evidence.",
+        "recommended_fix": "Show the registerVariants body, or add a small before/after assertion that the set of generated block ids/variant ids for the welcome category is identical to the HEAD baseline and that the label is used only for display.",
+        "required_test": "A test or script that loads the block library at HEAD and at the current tree and asserts deep equality of all block/variant ids and category keys, with only label/description fields allowed to differ.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+        "area": "whole-file transformation proof (both files)",
+        "issue": "The proof is a self-reported script result with no retained script, hashes or diff artifact. The two files used different baselines (saved pre-WP08 copy for Puck, git HEAD for the block library), and it is not stated that HEAD is the pre-WP08 state.",
+        "evidence": "The statement reads \"read saved pre-WP08 copy for Puck and git HEAD for block library\". If WP08 edits to the block library were already committed to HEAD, the equality assertion would not cover them.",
+        "impact": "Key preservation relative to the true pre-WP08 baseline is established for Puck but only relative to HEAD for the block library. The evidence cannot be independently re-verified by a later reviewer.",
+        "recommended_fix": "State or verify that HEAD for funnel-block-library.ts is the pre-WP08 baseline (give the commit SHA). Store the transformation script and its output in the review record, ideally with before/after SHA-256 of each file.",
+        "required_test": "Re-run the equality assertion against the explicit pre-WP08 commit SHA for both files and record the output.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "completed": false,
+  "observed": {
+    "model": "claude-sonnet-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "reviewed": true
+}

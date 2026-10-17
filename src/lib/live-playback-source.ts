@@ -12,7 +12,7 @@ type PlaybackSourceInput = {
 };
 
 /** Resolves a playback URL only for an unexpired session bound to this live and vendor. */
-export async function resolveLivePlaybackSource(db: PrismaClient, input: PlaybackSourceInput) {
+export async function resolveLivePlaybackSource(db: Pick<PrismaClient, "liveViewerSession" | "live">, input: PlaybackSourceInput) {
   const now = input.now ?? new Date();
   if (!await hasActiveLiveViewerSession(db, { ...input, now })) return null;
 

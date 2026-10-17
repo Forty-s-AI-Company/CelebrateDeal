@@ -3,12 +3,14 @@ import { NextResponse } from "next/server";
 import { requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
-import { resolveLivePlaybackSource } from "@/lib/live-playback-source";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { resolveTrackedLivePlaybackSource } from "@/lib/live-metric-playback-intake";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { MetricIngestError } from "@/lib/live-metric-ingestion";
+import { metricIngressFromRequest } from '@/lib/live-metric-ingress-proof';
 
 const PlaybackSourceQuery = z.object({
-  vendorId: z.string().min(1).max(128),
-  liveId: z.string().min(1).max(128),
+  vendorId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  liveId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
 }).strict();
 
 function unavailableResponse() {
@@ -35,10 +37,16 @@ export async function GET(request: Request) {
   const token = liveViewerTokenFromRequest(request);
   if (!token) return unavailableResponse();
 
-  const source = await resolveLivePlaybackSource(getDb(), { ...parsed.data, token });
-  if (!source) return unavailableResponse();
-
-  return NextResponse.json(source, {
-    headers: { "Cache-Control": "private, no-store" },
-  });
+  try {
+    const binding=metricIngressFromRequest(request.headers,{kind:'playback',method:'GET',target:url.pathname+url.search});
+    const source = binding?await resolveTrackedLivePlaybackSource(getDb(), { ...parsed.data, token },binding)
+      :await resolveTrackedLivePlaybackSource(getDb(), { ...parsed.data, token });
+    if (!source) return unavailableResponse();
+    return NextResponse.json(source, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) {
+    if (error instanceof MetricIngestError && error.code === "not_authorized") return unavailableResponse();
+    return NextResponse.json({ error: "Playback temporarily unavailable" }, {
+      status: 503, headers: { "Cache-Control": "private, no-store" },
+    });
+  }
 }

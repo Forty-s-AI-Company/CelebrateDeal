@@ -1,0 +1,14 @@
+{
+  "status": "FAIL",
+  "checks": {},
+  "scope": "Actual candidate persistence and send-time source queries only; no materializer or SMTP/LINE/provider delivery",
+  "monitoringTransport": "NOT_RUN scoped no-network fixture stub; fixed diagnostic unit-tested separately",
+  "browser": "NOT_RUN",
+  "remoteCI": "NOT_RUN",
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "failureCategory": "Synthetic BuyerContact.phone=null rejected by existing optional-string PII schema; omitted in corrected fixture. Product validator unchanged."
+}

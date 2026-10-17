@@ -1,0 +1,18 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+  "status": "TOOL_BLOCKED",
+  "independent": true,
+  "role": "senior_review",
+  "model": "unknown",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "reason": "Final helper review failed twice with NETWORK_TRANSIENT. Earlier two qualified Sonnet5.5 reviews do not cover latest fixture/browser-fetch/diagnostic changes; no false final approval.",
+  "receipts": [
+    "ab-browser-review.json",
+    "ab-browser-fixed-review.json",
+    "ab-browser-built-review.json",
+    "ab-browser-final-review.json"
+  ]
+}

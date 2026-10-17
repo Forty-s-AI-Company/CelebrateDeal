@@ -1,0 +1,75 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-actual-browser-pg-axe",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-browser.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-actual-browser-pg-axe-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-build",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-build.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-build-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-typecheck",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-browser-exec-checks.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-typecheck-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-lint",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-browser-exec-checks.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-lint-receipt.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "agy_wrapper",
+    "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+    "status": "PASS",
+    "independent": true,
+    "role": "senior_review",
+    "model": "gemini-3.8-flash-high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "model_source": "canonical resolved/discovered slug, AGY terminal does not report actual model; not claimed as observed",
+    "provider_receipt": "../WP-19/capability-copy-readable-fallback-review.json",
+    "source_receipt": "../WP-19/capability-copy-combined-review-source.json",
+    "finding_count": 0,
+    "fallback_route": "capability-copy-fallback-review-route.json",
+    "gpt_final_verdict": false,
+    "coverage": "Exact current final3 test/caller files and2 declared product dependencies reviewed; original5 product source hashes unchanged from prior qualified Sonnet readout review.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-fallback-review-qualification.json"
+  },
+  "findings": []
+}

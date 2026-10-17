@@ -45,7 +45,12 @@ function triggerLabel(value: string) {
 function channelLabel(value: string) {
   if (value === "email") return "Email";
   if (value === "line") return "LINE";
-  return value;
+  if (value === "sms") return "SMS（尚未串接）";
+  return "未知通道";
+}
+
+function channelAvailable(value: string) {
+  return value === "email" || value === "line";
 }
 
 export default async function MessageTemplatesPage({
@@ -94,7 +99,7 @@ export default async function MessageTemplatesPage({
     <>
       <PageHeader
         title="訊息模板"
-        description="管理報名成功、開播提醒與課後通知 Email；購買追蹤、SMS、LINE 在事件來源或 provider 接通前保持停用。"
+        description="可選 Email 或 LINE 建立通知模板。LINE 須連接官方帳號並取得學員綁定；實際送達仍取決於排程與供應商。SMS 尚未串接。"
         action={(
           <div className="flex flex-wrap gap-2">
             <ButtonLink href="/messages/deliveries" tone="secondary">查看寄送紀錄</ButtonLink>
@@ -149,7 +154,7 @@ export default async function MessageTemplatesPage({
       {templates.length === 0 ? (
         <EmptyState
           title={hasFilters ? "找不到符合條件的訊息模板" : "還沒有訊息模板"}
-          description={hasFilters ? "請調整搜尋文字或篩選條件後再試。" : "先建立報名成功、開播提醒或課後通知 Email；其餘渠道會在事件來源或 provider 完成後才開放。"}
+          description={hasFilters ? "請調整搜尋文字或篩選條件後再試。" : "先建立 Email 或 LINE 通知模板；SMS 尚未串接，目前不能啟用。"}
           action={hasFilters ? <Link href="/messages/templates" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700">清除篩選</Link> : <ButtonLink href="/messages/templates/new">新增模板</ButtonLink>}
         />
       ) : (
@@ -162,8 +167,10 @@ export default async function MessageTemplatesPage({
                   <p className="mt-1 text-sm text-slate-500">{triggerLabel(template.trigger)}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <Badge tone="blue">{channelLabel(template.channel)}</Badge>
-                  <Badge tone={template.isActive ? "green" : "gray"}>{template.isActive ? "啟用" : "停用"}</Badge>
+                  <Badge tone={channelAvailable(template.channel) ? "blue" : "gray"}>{channelLabel(template.channel)}</Badge>
+                  <Badge tone={channelAvailable(template.channel) && template.isActive ? "green" : "gray"}>
+                    {channelAvailable(template.channel) ? (template.isActive ? "模板啟用" : "模板停用") : "通道不可用"}
+                  </Badge>
                   <Link href={`/messages/templates/${encodeURIComponent(template.id)}/edit`} className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-white transition hover:bg-primary-dark">編輯</Link>
                   <Link href={`/messages/templates/${encodeURIComponent(template.id)}/preview`} className="inline-flex min-h-10 items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">預覽內容</Link>
                 </div>

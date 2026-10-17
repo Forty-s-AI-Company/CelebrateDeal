@@ -1,0 +1,44 @@
+{
+  "status": "FINDINGS_OPEN",
+  "observed_model": "claude-opus-5-5",
+  "severityCounts": {
+    "BLOCKER": 0,
+    "MAJOR": 1,
+    "MINOR": 3,
+    "NIT": 1
+  },
+  "items": [
+    {
+      "index": 1,
+      "severity": "MAJOR",
+      "area": "Payment webhook deadlock recovery",
+      "status": "OPEN"
+    },
+    {
+      "index": 2,
+      "severity": "MINOR",
+      "area": "Retry budget",
+      "status": "OPEN"
+    },
+    {
+      "index": 3,
+      "severity": "MINOR",
+      "area": "Classifier tests",
+      "status": "ADDRESSED_PENDING_REVIEW"
+    },
+    {
+      "index": 4,
+      "severity": "MINOR",
+      "area": "Deadlock harness evidence",
+      "status": "PARTIALLY_ADDRESSED_PENDING_REVIEW"
+    },
+    {
+      "index": 5,
+      "severity": "NIT",
+      "area": "Naming",
+      "status": "ADDRESSED_PENDING_REVIEW"
+    }
+  ],
+  "majorRemaining": "Real callback transaction forced deadlock with exactly-once ledger/event assertions",
+  "typecheck": "Earlier source passed; latest NIT/test additions not rerun through final typecheck gate"
+}

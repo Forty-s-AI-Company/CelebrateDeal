@@ -1,0 +1,22 @@
+{
+  "reviewer": "root",
+  "scope": "Edited React server composition only; independent Auth/Permission review separate",
+  "sourceHashes": {
+    "src/components/metric-registration-visit.tsx": "dc87a6ddf5535d74d0bebd9ee9e6ad49c33d38f4826f6eb4624edb0955b90290",
+    "src/app/(viewer)/live/[slug]/page.tsx": "726e094616b228aef89a3dfde3b3dfb85a32bfb2ae8a32d481f97327d3b1bb50",
+    "src/lib/optional-metric-page.ts": "06cc6bca42e2f91f948bcd68125321c65bb9dacd9f643fefdf8354fcb9484978"
+  },
+  "checks": {
+    "serverClientBoundary": "PASS: helper remains server-only composition; no new client hook/state or browser import",
+    "authorizationOrder": "PASS: signature parsing and existing public readiness remain before optional callback",
+    "childIdentity": "PASS: registration child keeps original sibling slot/reference; viewer playback component preserved",
+    "accessibility": "PASS within diff: form/action/fields/labels/aria unchanged",
+    "serializationPrivacy": "PASS within diff: no extra client props/nonce on failure; fixed warning contains no request values",
+    "performance": "No new I/O/retry or parallel transaction; existing blocking query/lock latency remains unresolved",
+    "typescript": "PASS: typed exact error instance+code; other errors propagated"
+  },
+  "notClaimed": [
+    "Full app a11y/performance or UI certification",
+    "No slow-query/lock/pool isolation proof"
+  ]
+}

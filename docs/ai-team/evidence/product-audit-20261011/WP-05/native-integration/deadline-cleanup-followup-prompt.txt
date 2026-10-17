@@ -1,0 +1,12 @@
+Read-only focused followup. Do not execute tools or modify files. Only actionable BLOCKER/MAJOR/MINOR/NIT. Prior review MAJOR resolved. Two remaining MINOR were form.id access during partial fixture failure and implicit funnelVisit cascade. Review the corrected cleanup only, not unrelated test scope. A synthetic forced failure directly after vendor creation has run: exit1 expected, cleanup=true, all ten counts zero. Full normal matrix is rerunning. Changes: guard formSubmission delete with if(form); guard form-bound count promises; explicitly delete funnelVisit before landingPage; assign counts before assert. No product code changed.
+finally {try {
+ if(browser)await browser.close();
+ if(form)await db.registrationFormRetryDraft.deleteMany({where:{formId:form.id}});
+ if(vendor){await db.funnelSubmission.deleteMany({where:{vendorId:vendor.id}});await db.funnelVisit.deleteMany({where:{vendorId:vendor.id}});await db.landingPage.updateMany({where:{vendorId:vendor.id},data:{publishedVersionId:null}});await db.landingPageVersion.deleteMany({where:{vendorId:vendor.id}});await db.landingPage.deleteMany({where:{vendorId:vendor.id}});await db.emailDelivery.deleteMany({where:{vendorId:vendor.id}});if(form)await db.formSubmission.deleteMany({where:{formId:form.id}});await db.registrationForm.deleteMany({where:{vendorId:vendor.id}});await db.salesProject.deleteMany({where:{vendorId:vendor.id}});await db.vendor.delete({where:{id:vendor.id}});}
+ if(vendor){
+  const counts=await Promise.all([db.vendor.count({where:{id:vendor.id}}),form?db.formSubmission.count({where:{formId:form.id}}):Promise.resolve(0),db.registrationForm.count({where:{vendorId:vendor.id}}),db.salesProject.count({where:{vendorId:vendor.id}}),db.emailDelivery.count({where:{vendorId:vendor.id}}),db.funnelVisit.count({where:{vendorId:vendor.id}}),db.funnelSubmission.count({where:{vendorId:vendor.id}}),db.landingPage.count({where:{vendorId:vendor.id}}),db.landingPageVersion.count({where:{vendorId:vendor.id}}),form?db.registrationFormRetryDraft.count({where:{formId:form.id}}):Promise.resolve(0)]);
+  report.cleanupRowCounts=counts;assert.ok(counts.every(count=>count===0));
+ }
+ report.cleanup=true;
+}catch(error){report.cleanupError=error.code??error.name;process.exitCode=1;}
+await db.$disconnect();fs.writeFileSync(process.argv[2],JSON.stringify(report,null,2));}})();

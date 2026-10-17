@@ -1,0 +1,17 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "axe": [
+    {
+      "label": "merchant-diagnosis",
+      "scope": "[aria-label=\"公開網址狀態\"]",
+      "violations": []
+    }
+  ],
+  "restored": true,
+  "stage": "unpublished-project",
+  "errorType": "TimeoutError",
+  "assertionCode": null,
+  "stackLocation": "    at WORKTREE\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\form-submit\\browser.cjs:29:130",
+  "contextRequired": false
+}

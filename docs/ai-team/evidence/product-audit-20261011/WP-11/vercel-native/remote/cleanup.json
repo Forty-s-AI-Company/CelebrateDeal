@@ -1,0 +1,9 @@
+{
+  "temporary_host_removed": true,
+  "probe_deployment_removed": true,
+  "sandbox_stop_exit": 0,
+  "redis_already_stopped": true,
+  "existing_wp11_preview_preserved": true,
+  "project_environment_changed": false,
+  "sandbox_removed": true
+}

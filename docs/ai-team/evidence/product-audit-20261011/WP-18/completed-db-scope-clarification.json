@@ -1,0 +1,16 @@
+{
+  "rawEvidence": "completed-followup-db.json",
+  "rawSha256": "bd20fc1daa0bab4a29d8b205a60e939acbd2a70623b6dbc5155ba5f94d49aec6",
+  "checkLabelScope": {
+    "noDuplicateAcrossRulesAndReports": "Actual asserts cover same-current-report replay and a late second matching rule; no actual creation/turnover of a second report was exercised. Stable per-submission PK is source-level evidence of report-independent dedup, not a separate PG turnover PASS."
+  },
+  "notRun": [
+    "Actual fresh report creation/physical pruning recovery",
+    "Malformed persisted completion projection fixture: producer guards were not disabled; CASE is reviewed code, normal-input PG passed",
+    "Noncanonical historical/manual Email identity cases",
+    "Production/Sandbox provider delivery",
+    "HTTP browser E2E/axe",
+    "Remote CI",
+    "Load benchmark"
+  ]
+}

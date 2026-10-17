@@ -1,0 +1,13 @@
+{
+  "files_sha256": {
+    "src/components/registration-retry-boundary.tsx": "beacb8224b60937b1f99929010826ba6547873ca464236dc11be0c681b415c79",
+    "src/components/registration-retry-context.tsx": "33b441e36ce08523599c9f582b0218721cedb0aaa16e0baca8b3112435a85f82",
+    "src/components/registration-closed-feedback.tsx": "19cd833b3724213a1137643cc256c18ead5ecb26d5eb5225e93f6c95749c0cda",
+    "src/components/registration-deadline-outcome.tsx": "8ea7f70f72cbefc494e97912f774e454b7c6e95b444980a5051b1400ef8be624",
+    "src/app/lp/[slug]/page.tsx": "c33ca4910d57d0f7b790c71d769aafe22a0810539a9b59c2f8ffe1a6b67637cc",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "eeb34c9a692724e5c989ebe1d4951559719328b7dbfc3ba2289f2f6a272449cf",
+    "src/app/api/form-submissions/route.ts": "20eac4e68ee5d7a5fdf60b34915e6b95094c79e0f265977a8268a0a3436558b3"
+  },
+  "prompt_chars": 16731,
+  "scope": "Full helper components; lp default functions (metadata/imports/unchanged consultation declaration omitted); route success/parser/wrapper excerpt"
+}

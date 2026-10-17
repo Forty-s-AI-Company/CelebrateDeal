@@ -128,7 +128,11 @@ describe("/messages/templates route", () => {
       trigger: "post_live_followup",
     });
     expect(html).toContain("課後通知");
-    expect(html).toContain("管理報名成功、開播提醒與課後通知 Email");
+    expect(html).toContain("可選 Email 或 LINE 建立通知模板");
+    expect(html).toContain("LINE 須連接官方帳號並取得學員綁定");
+    expect(html).toContain("SMS 尚未串接");
+    expect(html).toContain("模板啟用");
+    expect(html).not.toContain("SMS、LINE 在事件來源或 provider 接通前保持停用");
   });
 
   it.each([
@@ -153,6 +157,9 @@ describe("/messages/templates route", () => {
     const initialHtml = renderToStaticMarkup(await MessageTemplatesPage({ searchParams: Promise.resolve({}) }));
     expect(initialHtml).toContain("還沒有訊息模板");
     expect(initialHtml).not.toContain("找不到符合條件的訊息模板");
+    expect(initialHtml).toContain("先建立 Email 或 LINE 通知模板");
+    expect(initialHtml).toContain("SMS 尚未串接，目前不能啟用");
+    expect(initialHtml).not.toContain("其餘渠道會在事件來源或 provider 完成後才開放");
     expect(initialHtml).toContain('href="/messages/templates/new"');
 
     const filteredHtml = renderToStaticMarkup(await MessageTemplatesPage({ searchParams: Promise.resolve({ status: "inactive" }) }));
@@ -167,5 +174,19 @@ describe("/messages/templates route", () => {
     expect(html).not.toMatch(/<a href="\/messages\/templates\/template%2Fone\/edit"[^>]*>[^<]*報名成功信/);
     expect(html).toContain("編輯");
     expect(html).toContain("預覽內容");
+  });
+
+  it("marks legacy SMS and unknown channels unavailable instead of presenting them as active", async () => {
+    mocks.templateFindMany.mockResolvedValue([
+      { id: "legacy-sms", name: "舊 SMS", channel: "sms", trigger: "live_reminder", isActive: true },
+      { id: "legacy-unknown", name: "未知渠道", channel: "provider_magic", trigger: "live_reminder", isActive: true },
+    ]);
+
+    const html = renderToStaticMarkup(await MessageTemplatesPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain("SMS（尚未串接）");
+    expect(html).toContain("未知通道");
+    expect(html.match(/通道不可用/g)).toHaveLength(2);
+    expect(html).not.toContain(">provider_magic<");
   });
 });

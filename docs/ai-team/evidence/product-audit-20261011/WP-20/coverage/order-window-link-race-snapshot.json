@@ -1,0 +1,12 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "files": {
+    "scripts/wp20-order-window-link-race.mjs": "0d1f3d7a63b77e811e4f3822b00a2f17f55ffc928243d0569277a05eea39fc51",
+    "scripts/wp20-order-window-source-probe.mjs": "ca9f01fbab7afc431d82701056d71e6b0ced31135bb624afea6393c35afbea65"
+  },
+  "lint": "PASS",
+  "integration": "order-window-link-race-db.json",
+  "schedule": "payment commits before relink commits",
+  "otherSchedules": "NOT_VERIFIED",
+  "review": "PENDING"
+}

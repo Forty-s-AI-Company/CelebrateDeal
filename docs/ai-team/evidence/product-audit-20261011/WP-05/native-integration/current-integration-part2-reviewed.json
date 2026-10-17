@@ -1,0 +1,172 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "I found no blocking defects in the supplied WP05 excerpts. Both lp routes run the published loader and the funnel runtime 'unavailable' → notFound check before reading any retry draft or result cookie. Draft and result reads are bound to formId and sourcePath, and the form id matches the webinar/submission goal in both the render and deadline paths. Deadline handling works: 'closed' and 'redirect' render a read-only page with no submit control when a feedback query is present. Otherwise 'redirect' sends visitors to the designated step and 'closed' shows the static closed page. The UI does not treat the URL flag as success unless the cookie verifies. On native posts, redirectTo must stay on the same origin (protocol-relative and backslash tricks are rejected), errors become a 503 retry response, and only numeric Retry-After values are passed on. There are two possible integration gaps I can't confirm from the excerpts: (1) the URL path stored when a result or draft is saved may be encoded differently from the path the page uses to look it up; (2) a native success with no redirectTo returns raw JSON. Both depend on omitted code (attachRegistrationResult, registrationRetryResponse, the form component) and should be checked with targeted tests. No findings does not mean tests or release are certified.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/app/lp/[slug]/page.tsx; src/app/lp/[slug]/[stepPath]/page.tsx; src/components/registration-deadline-outcome.tsx",
+        "area": "sourcePath construction vs redirectTo/destination construction",
+        "issue": "The two kinds of path are encoded differently. The page looks up the draft and result using a raw path (`/lp/${page.slug}` and `/lp/${page.slug}/${step.path}`). The success redirectTo and the deadline destination are built with encodeURIComponent. A browser Referer or URL.pathname is also always percent-encoded. If attachRegistrationResult or registrationRetryResponse saves a path taken from redirectTo, Referer or the request URL, the saved path won't equal the raw sourcePath for any slug or step path that encodeURIComponent changes, such as Chinese characters or spaces.",
+        "evidence": "The page uses sourcePath: `/lp/${page.slug}/${step.path}`. The redirect uses redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}`. verifiedRegistrationSubmission and readRegistrationRetryDraft both compare against the raw sourcePath.",
+        "impact": "For non-ASCII slugs or paths, a verified submission would never show its confirmation and a saved draft would never be restored. The user would see the 'cannot confirm' text even after a successful or recoverable submission. This fails closed, so it is not a security leak, but the UI would be wrong. It only applies if slugs or paths can contain characters that need encoding.",
+        "recommended_fix": "Normalise to one form before saving and before comparing: for example, build sourcePath with the same encodeURIComponent segments, or decode the stored path in one shared helper. Alternatively, confirm and enforce that slugs and step paths are limited to the unreserved ASCII set.",
+        "required_test": "Unit or browser test that runs native success and native failure from a step whose slug and path contain non-ASCII characters and a space. Assert that the confirmation message and restored read-only draft appear on the target and source pages.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/form-submissions/route.ts; src/app/lp/[slug]/page.tsx",
+        "area": "submissionResponse native branch; non-funnel/last-step submission props",
+        "issue": "A native (no-JS) success only produces a 303 redirect carrying `submitted=verification_required` when redirectTo is present. The non-funnel PublicFunnelDocument submission and the last funnel step (nextPath null) pass no redirectTo. Unless the omitted form component adds a fallback hidden redirectTo pointing at the current page, these native posts get the raw JSON `{ok:true,verificationRequired:true}`, and the source-page feedback flow is never reached.",
+        "evidence": "The response code is `isNativeFormPost && redirectTo && isSameOriginRedirect(...) ? NextResponse.redirect(...) : NextResponse.json({ ok: true, verificationRequired: true })`. The non-funnel submission prop has no redirectTo, and on funnel pages redirectTo is added only when nextPath exists.",
+        "impact": "No-JS users who submit successfully on a single-page landing page or on the final step would see a raw JSON body instead of the verified confirmation UI that hasRegistrationFeedbackQuery/withRetry is designed to show.",
+        "recommended_fix": "Make sure the native form always sends a same-origin redirectTo, using the current source path when there is no next step. Or have the route fall back to redirecting to the verified source path on native success.",
+        "required_test": "Browser test with JavaScript disabled: submit successfully on a non-funnel landing page and on the last funnel step. Assert a 303 to the source page with submitted=verification_required and the verification status message, not a JSON body.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "reviewed": true,
+  "accepted": false,
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ],
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  }
+}

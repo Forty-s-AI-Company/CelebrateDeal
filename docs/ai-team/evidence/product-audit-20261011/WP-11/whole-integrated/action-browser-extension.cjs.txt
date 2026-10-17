@@ -1,0 +1,30 @@
+// Fresh real Next server actions behind owned loopback ingress, disposable DB only.
+report.stage = 'trusted-registration';
+const signupContext = await browser.newContext({ extraHTTPHeaders: { 'cf-connecting-ip': '198.51.100.22', 'x-forwarded-for': '203.0.113.22' } });
+const signupPage = await signupContext.newPage();
+const signupEmail = `wp11-${engine}-${randomUUID()}@example.test`;
+const signupPassword = 'synthetic-browser-password-only-20261014';
+await signupPage.goto(base + '/register');
+for (const [name, value] of Object.entries({ name: 'Synthetic Owner', workspaceName: 'Synthetic Workspace', email: signupEmail, password: signupPassword })) {
+  await signupPage.locator(`input[name="${name}"]`).fill(value);
+}
+await signupPage.getByRole('button', { name: '建立帳號並開始設定', exact: true }).click();
+await signupPage.waitForURL(url => url.pathname === '/welcome', { timeout: 60000 });
+const signupUser = await db.user.findUniqueOrThrow({ where: { email: signupEmail }, select: { id: true } });
+assert.equal(await db.userSession.count({ where: { userId: signupUser.id } }), 1);
+report.checks.push({ realRegistrationAction: true, trustedIngress: true, spoofedForwardingIgnored: true, durableUserAndSession: true });
+await signupContext.close();
+
+report.stage = 'trusted-login';
+const loginContext = await browser.newContext();
+const loginPage = await loginContext.newPage();
+await loginPage.goto(base + '/login');
+await loginPage.locator('input[name="email"]').fill(signupEmail);
+await loginPage.locator('input[name="password"]').fill(signupPassword);
+await loginPage.getByRole('button', { name: '登入', exact: true }).click();
+await loginPage.waitForURL(url => url.pathname === '/dashboard', { timeout: 60000 });
+assert.equal(await db.userSession.count({ where: { userId: signupUser.id } }), 2);
+assert.equal(await db.auditLog.count({ where: { actorId: signupUser.id, action: 'login_success' } }), 1);
+report.checks.push({ realLoginAction: true, trustedIngress: true, newSessionAndAudit: true });
+await loginContext.close();
+// The canonical parent runner removes the entire owned disposable database.

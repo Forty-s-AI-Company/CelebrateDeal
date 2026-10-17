@@ -1,0 +1,24 @@
+{
+  "status": "SCOPED_REVALIDATED",
+  "originalReview": "next-runtime-probe-review.json",
+  "severity": "MAJOR",
+  "issue": "Fixture added trusted-edge proof/IP to public source browser requests",
+  "change": "Unmodified source route.continue; gateway strips spoofed trusted IP/proof headers; only exact auxiliary route.fetch injects generated values",
+  "verification": {
+    "currentTargeted": "121 unit + lint + full tsc PASS",
+    "runtime": "PASS:3 bound page sources/3 visits/1 visitor/6 API200;128 migrations/cleanup PASS",
+    "independentReview": "Probe and gateway followups completed; no BLOCKER/MAJOR in current supplied scopes; MINOR/NIT retained"
+  },
+  "oldPass": "next-runtime-before-proxy-fix-db.json",
+  "oldPassNotCurrent": true,
+  "otherChanges": [
+    "Rename SSR-only/bootstrap and client-visit checks to avoid full hydration certification",
+    "Bounded wait for six API responses after visible DB commit",
+    "Explicit empty Sentry DSNs in minimal owned child environment"
+  ],
+  "unchangedLimits": [
+    "Full entry universe and minimum deployed role absent",
+    "No positive coverage or five-metric acceptance",
+    "Earlier cold502/SSI/intermittent failures not all explained"
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "agy_discovery_process_status": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "The original MAJOR finding is resolved. In the context.route handler, `if(source){await route.continue();return;}` runs before the `headers` object is built. Page-source GETs therefore reach the real gateway with the browser's original headers, without the generated `x-celebratedeal-live-chat-ingress` proof or the synthetic `cf-connecting-ip`. Only the auxiliary classes go to the owned upstream Next with the proof and IP: `_next/static` GETs, the exact visit POST with no query string, and the exact CSP-report POST with no query string. Requests from other origins and all other auxiliary requests are aborted.\n\nI found no new Auth/Permission BLOCKER or MAJOR in the supplied code:\n- WebSocket forwarding only accepts the gateway host and the exact `/_next/hmr` path. It connects to the owned 127.0.0.1 Next and does not add the proof or IP.\n- The browser and taskkill use the minimal environment that was passed in.\n- The mirror rejects `.env*` names before touching their metadata or contents, and it rejects symlinks.\n\nOne NIT: the static-asset check matches by path prefix and allows query strings, so the proof is sent on a slightly wider set of requests than the other auxiliary checks.\n\nWhat I didn't review: the omitted credential lines (including how `edgeProof` is given to Next), the gateway's header stripping (reviewed separately), and whether the run actually works at runtime. An empty or near-empty findings list doesn't mean tests or a release have passed.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "context.route handler, `asset` predicate (`url.pathname.startsWith('/_next/static/')`)",
+        "issue": "The static-asset check matches by path prefix and allows any query string, unlike the exact, no-query checks for visit and CSP requests. Any matching GET is sent straight to Next with the generated edge proof and synthetic cf-connecting-ip, skipping the gateway.",
+        "evidence": "`const asset=request.method()==='GET'&&url.pathname.startsWith('/_next/static/');` has no `!url.search` condition. `visit` and `csp` both require exact path equality and `!url.search`. All three then share `headers={...,'x-celebratedeal-live-chat-ingress':edgeProof}`.",
+        "impact": "Low. The proof is synthetic and the environment is owned. Still, the set of requests that carry the proof and skip the gateway is broader than the 'exact static' scope describes, so receipts can't claim the proof was attached only to exactly matched auxiliary requests.",
+        "recommended_fix": "Either don't attach the edge proof or synthetic IP to static-asset requests, since static files don't need them, or tighten the asset check: allow only safe path characters (no percent-encoded separators or dot segments) and block or count unexpected query strings.",
+        "required_test": "Assert that requests whose path is `/_next/static/` followed by percent-encoded traversal (or that carry a query string) are either aborted or forwarded without `x-celebratedeal-live-chat-ingress`. Also assert that page-source GETs reaching the gateway never carry the proof header.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "reviewed": true,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "accepted": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 1,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "completed": false,
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "exitCode": 3
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ]
+}

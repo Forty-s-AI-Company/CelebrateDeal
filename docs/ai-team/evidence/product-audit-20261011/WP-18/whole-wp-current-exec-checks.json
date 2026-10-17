@@ -1,0 +1,15 @@
+{
+  "unit_exit": 0,
+  "unit_chunk": "22ac07",
+  "unit_passed": 262,
+  "typecheck_session": 67827,
+  "typecheck_exit": 0,
+  "typecheck_chunk": "346833",
+  "lint_session": 74466,
+  "lint_exit": 0,
+  "lint_chunk": "6f6c7f",
+  "new_product_edits": 0,
+  "new_model_calls": 0,
+  "db_and_browser_rerun": false,
+  "review_coverage": "whole-wp-current-source-audit.json"
+}

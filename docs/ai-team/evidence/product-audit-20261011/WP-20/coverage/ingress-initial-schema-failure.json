@@ -1,0 +1,22 @@
+{
+  "status": "FAIL",
+  "stage": "start",
+  "checks": {},
+  "sourceHashes": {
+    "prisma/schema.prisma": "95fd74081b5b722512c70fbea9ddc0e6e3443c7df680e1ddd1b416b99bf53018",
+    "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql": "eaf89b08b7c66dcd12a2020522779a2ed877b5da880640b7d1014455526190b8",
+    "src/lib/live-metric-ingress.ts": "7c2d967a1ebd5ac68277611714d0c2467397b36c2c9926877d22fbc293d6d823",
+    "scripts/wp20-ingress-disposable.mjs": "2cde17e807b0c468c24cadf01193df5edb21905769211bb6fdc2756bd2df09ec"
+  },
+  "migrationCount": 127,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "error": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "sqlState": null,
+    "assertionLine": 128
+  }
+}

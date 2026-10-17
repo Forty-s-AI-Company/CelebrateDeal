@@ -1,0 +1,26 @@
+{
+  "status": "MAINTAINER_ADJUDICATION_NOT_FINAL_ACCEPTANCE",
+  "original_review": "review-current.json",
+  "reviewed_revision": "sha256:c10d2c7192b96a076a9ecf0b907580296cdbc556ccf85f64e78d46c3c9bd79c8",
+  "findings": [
+    {
+      "review_finding_index": 1,
+      "severity": "MAJOR",
+      "disposition": "rejected_with_reason",
+      "reason": "Conditional premise is not present in current SQL: wp20_metric_evidence_changed does not UPDATE LiveMetricVersion. The stale schema comment was corrected. Real parallel service ingests into two sessions of one version both commit and leave sourceRevision unchanged; preserve FOR SHARE needed for source mutation synchronization."
+    },
+    {
+      "review_finding_index": 2,
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "reason": "Explicit security contract: post-release or expired-admission replay is not_authorized. Existing interval stays durable. Database regression test verifies both outcome and row preservation; closed metric session with still-active admission is a distinct condition."
+    },
+    {
+      "review_finding_index": 3,
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "reason": "Known SQLSTATE 23514/23505/40P01/40001 and Prisma unique/serialization codes mapped to stable typed errors; unknown failures remain internal for generic route handling. Real finalSequence guard rejection tested as evidence_rejected."
+    }
+  ],
+  "note": "Original reviewer output preserved. Latest modified error handling and eventual HTTP identity boundary still require final review."
+}

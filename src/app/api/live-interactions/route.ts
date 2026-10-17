@@ -18,7 +18,7 @@ import {
   hashLiveViewerToken,
   liveViewerTokenFromRequest,
 } from "@/lib/live-quota-admission";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { decryptSensitiveValue } from "@/lib/sensitive-data";
 import { normalizeLiveQuestionBody, normalizeLiveQuestionDisplayName } from "@/lib/live-question";
@@ -214,6 +214,10 @@ async function projectRun(runId: string, participantHash: string) {
 }
 
 export async function GET(request: Request) {
+  // Polling every 2s: 32 viewers behind one IP use at most 992 requests/min
+  // including their initial reads. Keep headroom and a separate read bucket.
+  const limited = await checkRateLimit(request, "live-interactions-read", 1_200, 60_000);
+  if (limited) return limited;
   const url = new URL(request.url);
   const vendorId = url.searchParams.get("vendorId") ?? "";
   const liveId = url.searchParams.get("liveId") ?? "";
@@ -388,14 +392,23 @@ async function issueFlashSaleClaim(tx: Prisma.TransactionClient, input: {
   return bearer;
 }
 
+async function readLimitedInteraction(request: Request) {
+  // Bound parsing first, then separate scripted polling from viewer mutations.
+  const limited = await checkRateLimit(request, "live-interactions-request", 1_200, 60_000);
+  if (limited) return limited;
+  const parsed = RequestBody.safeParse(await readJsonBody(request));
+  const opening = parsed.success && parsed.data.action === "open";
+  const actionLimited = await checkRateLimit(request, opening ? "live-interactions-open" : "live-interactions", opening ? 1_200 : 60, 60_000);
+  if (actionLimited) return actionLimited;
+  if (!parsed.success) return NextResponse.json({ error: "Invalid interaction request" }, { status: 400 });
+  return parsed.data;
+}
+
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
-  const limited = await checkRateLimit(request, "live-interactions", 60, 60_000);
-  if (limited) return limited;
-  const parsed = RequestBody.safeParse(await readJsonBody(request));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid interaction request" }, { status: 400 });
-  const data = parsed.data;
+  const data = await readLimitedInteraction(request);
+  if (data instanceof Response) return data;
   const viewer = await admittedViewer(request, data.vendorId, data.liveId);
   if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
 

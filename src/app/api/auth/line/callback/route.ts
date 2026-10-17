@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
-import { AUTH_COOKIE, createUserSession, sessionCookieOptions } from "@/lib/auth";
+import { AUTH_COOKIE, createUserSession, getCurrentAuth, sessionCookieOptions } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { LINE_LOGIN_BROWSER_COOKIE, lineLoginBrowserCookieOptions } from "@/lib/line-login-browser-binding";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { completeLineLogin, LineFetchLoginProvider } from "@/lib/line-login";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 function resultRedirect(path: string, status: "linked" | "authenticated" | "error") {
   const url = new URL(path, getCanonicalAppUrl());
   url.searchParams.set("line", status);
-  return NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store" } });
+  const response=NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store" } });
+  response.cookies.set(LINE_LOGIN_BROWSER_COOKIE,"",{...lineLoginBrowserCookieOptions(),maxAge:0});
+  return response;
 }
 
 export async function GET(request: Request) {
@@ -18,7 +22,9 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state") ?? "";
   const code = url.searchParams.get("code") ?? "";
   try {
-    const result = await completeLineLogin(getDb(), new LineFetchLoginProvider(), { state, code });
+    const browserBinding=(await cookies()).get(LINE_LOGIN_BROWSER_COOKIE)?.value;
+    const auth=await getCurrentAuth();
+    const result = await completeLineLogin(getDb(), new LineFetchLoginProvider(), { state, code, browserBinding, currentUserId:auth?.user.id });
     if (result.identity.subjectType === "buyer_order" || result.identity.subjectType === "buyer_registration") {
       return resultRedirect(result.redirectPath, "linked");
     }

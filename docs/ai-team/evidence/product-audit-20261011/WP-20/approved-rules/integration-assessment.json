@@ -1,0 +1,32 @@
+{
+  "status": "NOT_INTEGRATABLE_WITH_CURRENT_EVIDENCE",
+  "verified_sources": [
+    {
+      "path": "src/components/live-playback.tsx",
+      "lines": "1701-1711",
+      "finding": "Fixed playback-position checkpoints30/60/120/300/600; cannot reconstruct unique media intervals or exact first90percent timestamp"
+    },
+    {
+      "path": "src/app/api/analytics/route.ts",
+      "lines": "35-39",
+      "finding": "Strict progress payload only enumerated seconds; adding intervals requires event-write scope"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "finding": "LiveViewerSession lacks stable registration identity;AnalyticsEvent payload not proof of complete playback history;usage ledger aggregates not media positions"
+    }
+  ],
+  "required_before_product_integration": [
+    "Verified same-tenant person/session linkage",
+    "Content version and trustworthy duration",
+    "Actually played intervals excluding seek gaps with event time and deduplication",
+    "First90percent crossing time with explicit precision",
+    "Order identity linkage and cancellation state"
+  ],
+  "not_authorized": [
+    "new tracking/events",
+    "migration",
+    "Production access"
+  ],
+  "next": "Finish pure-function independent review;prepare exact bounded data proposal, do not fabricate values"
+}

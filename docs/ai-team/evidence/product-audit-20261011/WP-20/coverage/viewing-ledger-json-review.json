@@ -1,0 +1,206 @@
+{
+  "process_status": "SUCCESS",
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "review": {
+    "summary": "Not ready to accept. Several things are sound: the insert-only ledger, the cascade-only delete path, snapshot COUNT revisions within one primary snapshot, permission revokes for API roles, the identifier-reuse block, and treating pre-epoch history as unknown. There is no BLOCKER on its face. There are 5 MAJOR findings. (1) Release is gated: the work package (WP) is incomplete and synchronized20 fails 7 of 20. (2) The ledger skips session updates unless they touch a fixed list of columns, so changes to any other column (new or existing) are dropped silently. (3) The issued/removed window counts use each event's session time range at write time, which goes stale if a session's anchorAt or expiresAt changes. (4) The audit reads the ledger tables directly under RLS without the RLS bypass the revision function uses, so a non-owner runtime role could silently get zero counts. (5) Immutability does not hold against the table-owner role if the app connects as that owner. The digest's binding to enumerated content is unverified, because the per-row digest code was not supplied. Everything in the harness receipt was reported to me, not independently checked.",
+    "findings": [
+      {
+        "issue": "Not ready to accept: the WP is incomplete and synchronized20 still fails 7 of 20.",
+        "area": "Release gating",
+        "impact": "Passing the migration and unit tests says nothing about whole-system correctness. Merging could ship a partial ledger that is later read as evidence.",
+        "recommended_fix": "Keep collection disabled and treat migration118 as foundation only until the WP is complete and synchronized20 passes 20/20.",
+        "required_test": "synchronized20 passes 20/20 against this migration, with independent review of the harness source.",
+        "evidence": "User states: full WP incomplete; synchronized20 7/20 FAIL; harness source not supplied.",
+        "file": "(process)",
+        "severity": "MAJOR",
+        "confidence": 0.9
+      },
+      {
+        "issue": "The update skip uses an allow-list of columns. A session update that changes any column outside the 11 compared columns (including any added later) is treated as progress and records no event.",
+        "area": "Source completeness / triggers",
+        "impact": "Real state changes, such as a revocation or status column now or later, can happen without any ledger event or revision bump. The ledger then looks complete when it is not.",
+        "recommended_fix": "Reverse the logic: compare the whole row with only the named progress columns excluded (for example, to_jsonb(NEW)-'progressCols' compared with to_jsonb(OLD)-'progressCols'). Add a schema test that fails when a new LiveMetricSession column is not classified.",
+        "required_test": "Update each non-progress column one at a time and assert a state event each time. Add a catalog test listing LiveMetricSession columns against a classified set.",
+        "evidence": "In wp20_metric_viewing_source, the UPDATE comparison is a fixed column tuple, and RETURN NULL skips everything else.",
+        "file": "migration118",
+        "severity": "MAJOR",
+        "confidence": 0.6
+      },
+      {
+        "issue": "The skip assumes every progress-only update comes with an interval INSERT in the same transaction. That is not enforced.",
+        "area": "Revision semantics",
+        "impact": "If progress is ever updated without an interval insert (heartbeat, discarded partial budget, retry, separate transaction), session data changes but viewingRevision does not. If the digest leans on revisions rather than enumerated rows, two different states produce the same digest.",
+        "recommended_fix": "Either enforce the pairing (reject a progress change unless an interval was inserted in the same transaction, via a deferred constraint trigger), or record progress changes too. Confirm the per-row digest code (not supplied) hashes session and interval contents, sessionCount, and intervalCount.",
+        "required_test": "Update progress without an interval insert, then assert it is either rejected or changes the revision. Assert two snapshots that differ only in session progress produce different digests.",
+        "evidence": "Comment: 'Stored interval INSERT emits its own event atomically with progress'. The final digest.update hashes only the revisions, epoch, and issued/removed counts.",
+        "file": "migration118; audit result/digest",
+        "severity": "MAJOR",
+        "confidence": 0.5
+      },
+      {
+        "issue": "issuedCount and removedCount filter on the anchorAt/expiresAt stored on each event row. Issued rows keep the range from insert time, while later state and removed rows carry the updated range.",
+        "area": "Audit correctness",
+        "impact": "If a session's anchorAt or expiresAt changes (both are in the change-detection list), issuedCount can miss sessions that overlap the window, and removedCount can exceed issuedCount. The reported issuance numbers are then misleading.",
+        "recommended_fix": "Count distinct sessionId per version where any event's range overlaps the window, or use the latest event per session. Alternatively, make anchorAt/expiresAt immutable on the session. Add the invariant removedCount ≤ issuedCount when history is ledger_enabled.",
+        "required_test": "Extend a session's expiresAt past the window end, then assert it is counted for a window that only overlaps the extension. Delete it and assert removed ≤ issued.",
+        "evidence": "The issuedCount and removedCount subqueries filter by the event row's anchorAt and expiresAt, and kind='issued' rows are never updated.",
+        "file": "audit context query",
+        "severity": "MAJOR",
+        "confidence": 0.55
+      },
+      {
+        "issue": "The audit reads LiveMetricViewingSource and LiveMetricViewingEpoch directly, under RLS with no policies, while viewingRevision comes from a SECURITY DEFINER function with row_security=off.",
+        "area": "RLS/ACL / audit correctness",
+        "impact": "If the runtime role is not the table owner but has SELECT, RLS hides every row. issuedCount and removedCount come back as 0 and the epoch as null ('unknown'), with no error, and are inconsistent with viewingRevision. Without SELECT, the audit fails instead.",
+        "recommended_fix": "Move the epoch lookup and window counts into a private SECURITY DEFINER STABLE function (search_path=pg_catalog, row_security=off), or verify the runtime role explicitly. Schema-qualify the table names. Assert issuedCount+removedCount ≤ viewingRevision.",
+        "required_test": "Run the audit as the real runtime role in the disposable DB and assert the counts and epoch match what the owner sees.",
+        "evidence": "Unqualified \"LiveMetricViewingSource\" subqueries and a LEFT JOIN on \"LiveMetricViewingEpoch\". Both tables have ENABLE ROW LEVEL SECURITY and no policies.",
+        "file": "audit context query; migration118",
+        "severity": "MAJOR",
+        "confidence": 0.55
+      },
+      {
+        "issue": "Immutability only binds non-owner roles. The table owner, which is likely also the Prisma migration and runtime role, can disable or drop the triggers or delete the version to erase provenance.",
+        "area": "Permission / trust boundary",
+        "impact": "If the app connects as the owner, a compromised app can rewrite the ledger. The receipt's 'unprivilegedRoleDenied' does not cover the role that actually matters.",
+        "recommended_fix": "Run the app as a separate non-owner role with only the grants it needs. Document that version deletion is the only retention boundary, and restrict who can delete LiveMetricVersion.",
+        "required_test": "Using the runtime role, try DISABLE TRIGGER, direct UPDATE/DELETE/INSERT on the ledger, and an out-of-policy version DELETE; all should be denied.",
+        "evidence": "There is no FORCE RLS and no ownership separation. The source trigger function comments that parent version deletion owns whole-scope retention.",
+        "file": "migration118",
+        "severity": "MAJOR",
+        "confidence": 0.5
+      },
+      {
+        "issue": "The forged-insert guard checks pg_trigger_depth()≥2, which means 'inside any trigger', not 'inside our source trigger'.",
+        "area": "Source security",
+        "impact": "Any role that has INSERT on the ledger can forge events by inserting from its own trigger. The receipt's forgedDirectInsertRejected only tests a depth-1 insert. The practical risk is limited because API roles have no grants.",
+        "recommended_fix": "Have the source and epoch functions set a transaction-local marker (set_config with is_local=true) and check and clear it, or check that the current role is the definer's owner.",
+        "required_test": "Insert into LiveMetricViewingSource from a user-defined trigger on another table and assert it is rejected.",
+        "evidence": "wp20_metric_viewing_immutable: IF pg_trigger_depth()<2 THEN RAISE.",
+        "file": "migration118",
+        "severity": "MINOR",
+        "confidence": 0.7
+      },
+      {
+        "issue": "Updates that change a session's identity (id, vendorId, liveId, versionId) are recorded as a 'state' event under the NEW key only.",
+        "area": "Immutability / ID reuse",
+        "impact": "The old version keeps an issued event with no removed event. The new id has no issued row, so it can be reused after deletion, which gets around the issued-only unique index.",
+        "recommended_fix": "In the source trigger, raise an error if any identity column changes on UPDATE (or confirm an existing guard does this and cite it).",
+        "required_test": "UPDATE a session's id or versionId and assert it is rejected.",
+        "evidence": "The trigger takes s:=NEW for UPDATE, and the identity columns are in the compare tuple rather than rejected.",
+        "file": "migration118",
+        "severity": "MINOR",
+        "confidence": 0.55
+      },
+      {
+        "issue": "Pre-existing versions get state, removed, and interval events (and issued events for new sessions) but have no epoch, and the audit still reports issuedCount and removedCount for them.",
+        "area": "Migration correctness / result semantics",
+        "impact": "For legacy scopes, removedCount can exceed issuedCount, and consumers may take the counts as meaningful even though history is 'unknown'.",
+        "recommended_fix": "When history is unknown, return null for the counts or label them partial. Document that legacy session ids are not protected from reuse.",
+        "required_test": "Delete a legacy session after migrating and assert the result labels the counts as partial or null.",
+        "evidence": "There is no backfill. The counts are returned whatever the history value.",
+        "file": "audit result",
+        "severity": "MINOR",
+        "confidence": 0.6
+      },
+      {
+        "issue": "TRUNCATE on LiveMetricSession or LiveMetricInterval does not fire row triggers, so no removed tombstones are written.",
+        "area": "Source completeness",
+        "impact": "Sessions can disappear without trace unless those tables already have no-truncate guards.",
+        "recommended_fix": "Confirm, or add, the wp20_metric_visit_no_truncate guard on LiveMetricSession and LiveMetricInterval.",
+        "required_test": "TRUNCATE each table and assert it is rejected.",
+        "evidence": "No-truncate triggers are only added on the two new tables.",
+        "file": "migration118",
+        "severity": "MINOR",
+        "confidence": 0.45
+      },
+      {
+        "issue": "Prisma cannot represent the partial unique index LiveMetricViewingSource_issued_key, the CHECK constraints, or the triggers.",
+        "area": "Migration safety / schema drift",
+        "impact": "A later 'prisma migrate dev' or diff may report drift or generate a DROP of the partial index, which would silently remove the reuse protection.",
+        "recommended_fix": "Check that 'prisma migrate diff --from-migrations --to-schema-datamodel' is empty. Add a CI check that the index and triggers exist.",
+        "required_test": "CI: run migrate diff and expect no changes, and query the catalog to assert issued_key (with its predicate) and all triggers are present.",
+        "evidence": "The models have no unique constraint for the partial index, and kind is a plain String.",
+        "file": "Prisma models",
+        "severity": "MINOR",
+        "confidence": 0.5
+      },
+      {
+        "issue": "The issued-only unique index throws 23505 (unique violation) from inside an AFTER trigger when a session INSERT reuses a deleted id.",
+        "area": "Availability / error mapping",
+        "impact": "If session ids are deterministic or caller-influenced, a legitimate re-admission fails, and the product may misreport the error as a session primary-key conflict.",
+        "recommended_fix": "Confirm session ids are server-generated random values, and map this constraint name to a distinct error.",
+        "required_test": "Delete a session and re-insert the same id; assert the specific error is surfaced and existing flows never reuse ids.",
+        "evidence": "CREATE UNIQUE INDEX ... WHERE kind='issued'.",
+        "file": "migration118",
+        "severity": "MINOR",
+        "confidence": 0.45
+      },
+      {
+        "issue": "Hot-path write amplification: every session update and interval insert now runs a SECURITY DEFINER function with SET clauses, plus a lookup and an insert into a table with 3 indexes. The revision COUNT is O(events) per audit, and version deletion runs an EXISTS check for each cascaded row.",
+        "area": "Performance",
+        "impact": "Higher latency and table bloat under load. The audit and version deletion slow down as events grow.",
+        "recommended_fix": "Measure under realistic load. If needed, consider a maintained counter updated in the same transaction (commit-safe under row lock) or bounded retention.",
+        "required_test": "Load test: interval insert throughput and p99 latency before and after the migration, plus audit and version-delete timing at high event counts.",
+        "evidence": "The per-row triggers on Session and Interval, and count(*) in wp20_metric_viewing_revision.",
+        "file": "migration118",
+        "severity": "MINOR",
+        "confidence": 0.5
+      },
+      {
+        "issue": "Equal COUNT implies an identical event set only for snapshots taken on the primary, where visibility is nested over time. The read-only repeatable-read check does not stop the audit running on a hot standby, where commit visibility order can differ.",
+        "area": "Commit-order revision semantics",
+        "impact": "Comparing digests taken on the primary and a replica could treat different event sets as equal.",
+        "recommended_fix": "Assert pg_is_in_recovery() is false in the audit transaction, or document that the audit runs on the primary only.",
+        "required_test": "Run the audit with recovery mode simulated or on a replica and assert it is rejected.",
+        "evidence": "The context only checks transaction_isolation and transaction_read_only.",
+        "file": "audit context query",
+        "severity": "NIT",
+        "confidence": 0.35
+      },
+      {
+        "issue": "The SECURITY DEFINER functions put 'public' in search_path without an explicit trailing pg_temp.",
+        "area": "Function hardening",
+        "impact": "Low risk because every relation is schema-qualified, but it departs from hardening best practice.",
+        "recommended_fix": "Use search_path=pg_catalog, pg_temp (all references are already qualified).",
+        "required_test": "Catalog check that every wp20_* SECURITY DEFINER proconfig has a hardened search_path.",
+        "evidence": "SET search_path=pg_catalog,public on the epoch and source functions.",
+        "file": "migration118",
+        "severity": "NIT",
+        "confidence": 0.5
+      },
+      {
+        "issue": "Grant verification is limited to anon, authenticated, and service_role, while the receipt only claims 'unprivilegedRoleDenied'.",
+        "area": "ACL",
+        "impact": "Other roles that get grants through default privileges or membership could still have access.",
+        "recommended_fix": "Add a post-migration assertion using has_table_privilege, has_function_privilege, and has_sequence_privilege across every non-owner role.",
+        "required_test": "Catalog test enumerating pg_roles, asserting no access other than the owner's.",
+        "evidence": "The DO block loops over 3 role names only.",
+        "file": "migration118",
+        "severity": "NIT",
+        "confidence": 0.4
+      },
+      {
+        "issue": "The ledger_enabled condition (startAt ≥ epoch) is stricter than needed: sessions of a newly inserted version cannot exist before the epoch. The comment about trigger order relative to the interval cascade is also unverified and doesn't matter.",
+        "area": "Result semantics / comments",
+        "impact": "Windows between collectionStartedAt and the epoch are reported as 'unknown' when they are actually covered. The comment is slightly misleading.",
+        "recommended_fix": "Keep the safe default but document why, and drop or correct the ordering comment.",
+        "required_test": "Test a window that starts between collectionStartedAt and the epoch and check the history value matches the documented behaviour.",
+        "evidence": "history logic in the audit result; the comment on LiveMetricInterval_viewing_source.",
+        "file": "audit result; migration118",
+        "severity": "NIT",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "fallback_reason": "AGY_IDLE_TIMEOUT_AND_CLI_STREAM_TRUNCATION",
+  "status": "REVIEW_COMPLETED",
+  "model_key": "opus",
+  "prior_receipt": "viewing-ledger-review.json",
+  "exitCode": 0,
+  "execution_provider": "claude_cli"
+}

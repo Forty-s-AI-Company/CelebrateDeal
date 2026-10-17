@@ -1,0 +1,11 @@
+{
+  "files": {
+    "src/lib/live-metric-registration-audit.ts": "cb71e711243d37c43f13b755e4c12f7c46a770279288ba85da8f9305c8a5a54e",
+    "src/lib/live-metric-registration-source-audit.ts": "573b63b5f2e54d98d8c40c172d781c7f6c1cfb19e542a1b254a6170726b7c4c4",
+    "src/lib/live-metric-registration-coverage.ts": "39e6540ce1ac6afcc5d7b82e089c638bab87cd80daaa331b59711cf48271b257",
+    "src/lib/live-metric-coverage-reader.ts": "252bd12b75391c358e7333fac2655e6ad661c218a6c8c850a774bead53356da9",
+    "prisma/migrations/20261015120000_live_metric_coverage_audit/migration.sql": "a3e28fb266dc7606b5a5c4740e2447ed14926aed4780890d94198246c4d5689f",
+    "prisma/migrations/20261015190000_live_metric_registration_coverage_proof/migration.sql": "076eb0b765f0e91a4ebff6b07938ead89eb83102d7ec0763c67e38553b358df5",
+    "scripts/wp20-registration-matched-audit.mjs": "f764fb64e7ddaef30962fb5f9ada1c4593db01a43750a7ebf8b0c9cd030b644d"
+  }
+}

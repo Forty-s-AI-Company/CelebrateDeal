@@ -1,0 +1,9 @@
+{
+  "revision": "sha256:dec4bdcf0cb2f99e89f10e2be1b10eb5bf2c77a3137e5de9760d5a792050e117",
+  "files": [
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "scripts/prisma-loopback-disposable-migration-runner.test.mjs",
+    "scripts/prisma-migrate-status-diagnostic.mjs",
+    "scripts/prisma-migrate-status-diagnostic.test.mjs"
+  ]
+}

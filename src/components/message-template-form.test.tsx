@@ -1,4 +1,7 @@
+// @vitest-environment happy-dom
 import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot } from "react-dom/client";
+import { act } from "react";
 import type { MessageTemplate } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,13 +57,13 @@ beforeEach(() => {
 });
 
 describe("MessageTemplateForm", () => {
-  it("renders only Email as available and exposes bounded supported variables", () => {
+  it("renders Email and LINE choices with bounded supported variables and honest delivery conditions", () => {
     const html = renderToStaticMarkup(<MessageTemplateForm template={template} />);
 
     expect(html).toContain('name="channel"');
     expect(html).toContain('value="email" selected=""');
     expect(html).toMatch(/value="sms" disabled=""/u);
-    expect(html).toMatch(/value="line" disabled=""/u);
+    expect(html).toMatch(/<option value="line">LINE<\/option>/u);
     expect(html).toMatch(/value="cart_followup" disabled=""/u);
     expect(html).toContain('value="post_live_followup"');
     expect(html).toContain("課後通知");
@@ -91,6 +94,33 @@ describe("MessageTemplateForm", () => {
     expect(html).toContain("課後通知");
   });
 
+  it("edits the LINE started template with honest native block and latest-template rules", () => {
+    const html = renderToStaticMarkup(<MessageTemplateForm template={{ ...template, channel: "line", trigger: "live_started" }} />);
+    expect(html).toContain('value="line" selected=""');
+    expect(html).toMatch(/value="live_started" selected=""/u);
+    expect(html).toMatch(/value="post_live_followup" disabled=""/u);
+    expect(html).toContain("以最近儲存的模板為準");
+    expect(html).toContain("封鎖操作說明網址");
+    expect(html).toContain("商家已連接官方帳號");
+  });
+
+  it("changes channel and resets only incompatible trigger choices in the actual React controls", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");const root = createRoot(container);
+    try {
+      await act(async () => root.render(<MessageTemplateForm template={{ ...template, trigger: "post_live_followup" }} />));
+      const channel = container.querySelector('select[name="channel"]') as HTMLSelectElement;
+      const trigger = container.querySelector('select[name="trigger"]') as HTMLSelectElement;
+      const choose = async (select: HTMLSelectElement, value: string) => act(async () => { select.value=value;select.dispatchEvent(new Event("change", { bubbles:true })); });
+      expect(trigger.value).toBe("post_live_followup");
+      await choose(channel,"line");expect(trigger.value).toBe("registration_confirmed");
+      expect((trigger.querySelector('option[value="live_started"]') as HTMLOptionElement).disabled).toBe(false);
+      await choose(trigger,"live_started");await choose(channel,"email");
+      expect(trigger.value).toBe("registration_confirmed");
+      expect((trigger.querySelector('option[value="live_started"]') as HTMLOptionElement).disabled).toBe(true);
+    } finally { await act(async () => root.unmount());vi.unstubAllGlobals(); }
+  });
+
   it.each([
     ["invalid_template", "模板資料無效"],
     ["missing_template", "已不存在或不屬於目前商店"],
@@ -98,6 +128,7 @@ describe("MessageTemplateForm", () => {
     const html = renderToStaticMarkup(<MessageTemplateForm error={error} />);
     expect(html).toContain('role="alert"');
     expect(html).toContain(message);
+    if (error === "invalid_template") expect(html).toContain("通道為 Email 或 LINE");
   });
 
   it("keeps the submitted merchant copy visible after server validation fails", () => {

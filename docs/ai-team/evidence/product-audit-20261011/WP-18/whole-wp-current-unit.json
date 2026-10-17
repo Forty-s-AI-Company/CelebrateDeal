@@ -1,0 +1,10 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "current-unit",
+  "revision": "sha256:d980a258e9342e086ee014d2222a6eb269acba1f8fda056835d833313ee37838",
+  "status": "PASS",
+  "exit_code": 0,
+  "source_receipt": "whole-wp-current-unit.json",
+  "detail": "262currenttests/9files"
+}

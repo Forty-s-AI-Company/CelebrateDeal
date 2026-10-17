@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, six synthetic template apply/publish/registration journeys using current gallery and renderer; reuses latest successful build only for these unchanged dependencies. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "six sales/course templates apply through owner UI, publish and collect synthetic leads; desktop/mobile axe",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T05:24:38.073Z",
+    "duration": 33727.933,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 0,
+  "migrations": 131
+}

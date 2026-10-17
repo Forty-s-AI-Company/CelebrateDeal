@@ -1,0 +1,15 @@
+{
+  "time": "2026-10-14T19:57:06.729538+00:00",
+  "hashes": {
+    "src/lib/live-metric-completion-store.ts": "0537fe0317c8bea3c440856a5f34b6c3338427117c5fec5cfbfe165e946e00c0",
+    "src/lib/live-metric-completion-store.test.ts": "0fd61884ccddba425907b9562fad6d0b07c72a16c544fbf7f703f8304573380f",
+    "src/lib/live-metric-report-snapshot.ts": "47834ffc7b34143e42c6450bd0cea6083f2cbc41cd3e2231ddc6633826121ffc"
+  },
+  "unitTests": 25,
+  "unitStatus": "PASS",
+  "lint": "PASS",
+  "integration": "12 checks passed then original contention FAIL 8/20",
+  "forcedTimeoutTest": "NOT_RUN",
+  "typecheck": "NOT_RUN",
+  "review": "PENDING"
+}

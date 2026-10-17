@@ -1,0 +1,17 @@
+{
+  "files": {
+    "prisma/schema.prisma": "19bd005fa5821c8d05af0e740ec33ba13d026bef9ead0ddfff8f5087ed08d0bf",
+    "src/lib/live-metric-registration-coverage.ts": "39e6540ce1ac6afcc5d7b82e089c638bab87cd80daaa331b59711cf48271b257",
+    "src/lib/live-metric-registration-audit.ts": "cb71e711243d37c43f13b755e4c12f7c46a770279288ba85da8f9305c8a5a54e",
+    "src/lib/live-metric-registration-source-audit.ts": "573b63b5f2e54d98d8c40c172d781c7f6c1cfb19e542a1b254a6170726b7c4c4",
+    "src/lib/live-metric-coverage-reader.ts": "252bd12b75391c358e7333fac2655e6ad661c218a6c8c850a774bead53356da9",
+    "docs/launch/wp20-coverage-producer-contract.md": "d8b3ed4f54c67cc855a6e1e6975f280ee9e9bfc3ea049ec69184ed1e59687649"
+  },
+  "schema": "PASS",
+  "typecheck": "PASS",
+  "targetedUnitTests": {
+    "passed": 14,
+    "files": 3
+  },
+  "independentReview": "NOT_RUN"
+}

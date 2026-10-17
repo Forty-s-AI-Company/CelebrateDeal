@@ -1,0 +1,13 @@
+{
+  "files": {
+    "scripts/wp20-registration-matched-audit.mjs": "f764fb64e7ddaef30962fb5f9ada1c4593db01a43750a7ebf8b0c9cd030b644d",
+    "scripts/wp20-payment-retry-disposable.mjs": "eb95eb724dd45a47a9b85c624a8d58607cd81300e82bfe60f54719fda06ade87"
+  },
+  "lint": "PASS",
+  "database": "PASS",
+  "independent_review": "NOT_RUN",
+  "limits": [
+    "Original Serializable contention gate remains FAIL",
+    "Full schema/typecheck and remaining producers not verified this turn"
+  ]
+}

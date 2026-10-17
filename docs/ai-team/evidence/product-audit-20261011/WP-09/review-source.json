@@ -1,0 +1,8 @@
+{
+  "sourceHashes": {
+    "src/lib/funnel-template-gallery.ts": "720aab8c638a363caa3b32764904d364c337d277b74e2232ed445c4f8acb7981",
+    "src/lib/funnel-template-gallery.test.ts": "7a7cf61f8623239235e4b1a10bbb848b3a072d41656d14d007089b6a63f42fec"
+  },
+  "contextChars": 14935,
+  "scope": "six new templates/helpers, stepfilter, fulltests; existing node helper supplied"
+}

@@ -1,0 +1,251 @@
+{
+  "accepted": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "exitCode": 3
+    },
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "Plan-level review only. I didn't inspect source code, so none of this certifies code, tests or a release. The direction is sound and stays within the owner's limits. Showing the existing private report result on the existing authorized analytics page, with explicit unavailable/queued/failed states, is real WP20 product progress. It builds no new wiring, ingress, seal or proof infrastructure. The plan correctly says this is not full WP20 acceptance, keeps the count at 8/20 completed, and leaves the held WPs and D2–D6 decisions unresolved. Before implementation, the plan should add these missing functional requirements: (1) a stop rule for when no existing reader can be called from the page without a new API or gateway; (2) explicit tenant/event authorization on the read path, done on the server; (3) availability decided per metric, so registrationRate and averageViewingSeconds stay unavailable while visits/viewing coverage is unsupported; (4) a defined rule for which snapshot is shown, including when a newer job is queued or has failed; (5) clear handling of zero and missing denominators; (6) that the UI only formats the existing calculator's output and doesn't recompute it; (7) that the page's existing all-unavailable tests are kept as a regression case. postCompletionOrderRate's data source should also be confirmed as not depending on a held billing or provider decision. No BLOCKER-level defects were found in the plan.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "(plan) analytics page ↔ existing latest-report reader",
+        "area": "Scope-verification step: reader/API reuse discovery",
+        "issue": "The plan has no stop rule for when the existing latest-report reader can't be called from the authorized analytics page without adding a route, server action, gateway or shared adapter.",
+        "evidence": "The plan says 'First identify existing reader/API reuse and minimal exact file scope' and also 'zero new schema/migration/gateway/producer/runner/shared framework'. It doesn't say what happens if discovery finds no path the UI can call.",
+        "impact": "Implementation could quietly add a new endpoint or adapter layer to connect the page. That would repeat the infrastructure drift the owner explicitly stopped.",
+        "recommended_fix": "Add a precondition to the Claude scope verification: if the existing reader can't be called from the page through existing server-side data loading or an existing route, stop. Report it as a scope proposal and don't build a bridge. List the exact files allowed to change before editing.",
+        "required_test": "Scope check before the WP: a list of every touched file, each mapped to the existing reader call site. The diff review after the WP confirms no new route, gateway, migration or shared module files.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MAJOR",
+        "file": "(plan) analytics page data loading / existing reader",
+        "area": "Authorization on the report read path",
+        "issue": "The plan reuses 'existing auth' but doesn't explicitly require that the latest-report read is limited to the authenticated user's organization/event and runs on the server.",
+        "evidence": "The plan describes the report modules as 'private report job/snapshot/worker/publish/read/reload' and the UI as 'authorized analytics UI'. It doesn't say the reader call itself is authorized per tenant/event, or that private snapshot storage stays out of the client bundle.",
+        "impact": "Connecting a private report store to a UI is a common place for cross-tenant or cross-event data exposure, for example a snapshot looked up only by event ID that the client supplies.",
+        "recommended_fix": "Require the page to call the reader on the server, after the existing authorization check, with an organization/event identity that comes from the session. The UI should receive only the aggregate metric values and states it needs.",
+        "required_test": "Targeted page/loader test using existing test utilities: an unauthorized user, or a user from another organization, asking for an event's report gets the existing denied or unavailable response and no metric values.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MAJOR",
+        "file": "(plan) metric card formatter/state mapping",
+        "area": "Per-metric availability vs report-level state",
+        "issue": "The plan defines states at report level (unavailable/queued/failed). It doesn't say that each metric must be marked available or unavailable on its own, based on whether its inputs are actually covered.",
+        "evidence": "The plan says 'Visits/viewing positive coverage remains unsupported: no fabricated covered flags or showing incomplete rows as complete.' The calculator outputs registrationRate and averageViewingSeconds, which likely depend on visit and viewing inputs.",
+        "impact": "A successful report could show registrationRate or averageViewingSeconds as a real-looking number (including 0) even though visit/viewing coverage isn't supported. That misreports the product's metrics to users.",
+        "recommended_fix": "Map each of the five cards separately: show a value only when the report succeeded and that metric's coverage is supported. Otherwise show 'unavailable' with a reason. Use coverage flags the report already has, and never assume coverage.",
+        "required_test": "Synthetic formatter test: a successful report with uncovered visits/viewing shows registrationRate and averageViewingSeconds as unavailable, while covered metrics show their values.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MINOR",
+        "file": "(plan) latest-report selection",
+        "area": "Choosing between the latest successful snapshot and the latest job",
+        "issue": "The plan doesn't say what the page shows when an earlier published snapshot exists but a newer job is queued or has failed.",
+        "evidence": "The plan lists 'explicit unavailable/queued/failed states' and a 'trusted latest-report reader' without a rule for which one takes priority.",
+        "impact": "The page could hide valid published data behind a 'queued' or 'failed' state, or show stale data with no indication. Either way the UI is inconsistent and confusing.",
+        "recommended_fix": "Use whatever the existing reader already does. Write down the rule, for example: show the last published snapshot with its generation time, plus a note that a refresh is queued or failed. Don't add new selection logic outside the reader.",
+        "required_test": "Synthetic state tests for: no report, queued with no prior snapshot, failed with no prior snapshot, published, and published plus a newer queued or failed job.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "(plan) metric formatter",
+        "area": "Zero/missing denominator handling",
+        "issue": "The plan doesn't say how rates with a zero or missing denominator are shown.",
+        "evidence": "The five approved rules include ratio metrics (registrationRate, attendanceRate, completionRate, postCompletionOrderRate). The plan doesn't address NaN, Infinity or division by zero.",
+        "impact": "The UI could show 'NaN%', 'Infinity' or a misleading 0% for events with no activity.",
+        "recommended_fix": "Show the calculator's null/undefined result as unavailable or a dash, following the existing approved rule. Only format values the calculator returned, and don't redo the division in the UI.",
+        "required_test": "Synthetic formatter test with zero-denominator input for each rate: no NaN/Infinity is shown, and the expected unavailable display appears.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "(plan) analytics page / metric cards",
+        "area": "Source of metric values",
+        "issue": "The plan doesn't explicitly ban recomputing metrics in the UI. The page must only format the existing calculator's output from the report.",
+        "evidence": "'Existing pure calculator supports ...' and 'original five approved metric rules'. If the UI applies the rules itself, the same logic exists in two places.",
+        "impact": "If the logic is duplicated, the page and the report can disagree, and the 'original five approved metric rules' requirement is broken without anyone noticing.",
+        "recommended_fix": "The UI only formats calculator values already stored in the report snapshot. Calculation and rounding stay in the existing calculator, or follow its documented display rule.",
+        "required_test": "Check after the WP that the page/formatter diff contains no ratio or average calculation. Run the existing calculator tests unchanged.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "(plan) existing analytics page tests",
+        "area": "Updating existing all-unavailable assertions",
+        "issue": "The existing page tests probably assert that all five cards are unavailable. Updating them for the new data path could remove the unavailable-state coverage.",
+        "evidence": "The plan says the 'Existing analytics page still hardcodes all five metric cards unavailable' and asks to 'validate ... existing page tests'.",
+        "impact": "Changing the tests to expect only data-filled cards would leave the unavailable and failed paths without regression coverage.",
+        "recommended_fix": "Keep the all-unavailable case as the expected result for the no-report state. Add the data-filled and per-metric unavailable cases using the existing test setup, with no new test infrastructure.",
+        "required_test": "Existing page test suite run after the change covering: no report → all unavailable; synthetic published report → covered metrics shown; failed → failed state.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "(plan) postCompletionOrderRate card",
+        "area": "Possible dependency on held decisions",
+        "issue": "The plan doesn't confirm that the order data behind postCompletionOrderRate is independent of the held billing/provider decisions (D2–D6, WP02/03/04/12/13/19).",
+        "evidence": "The plan holds 'actual legal/billing/provider decisions' and several WPs because of decisions, but enables all five 'original approved metric rules' in the UI.",
+        "impact": "Showing this metric could suggest, or depend on, an order/billing integration that hasn't been decided. That quietly resolves a held decision through the UI.",
+        "recommended_fix": "During scope verification, confirm the metric's input comes from existing data with no dependency on a held decision. If it does depend on one, show it as unavailable, give the reason, and record it as a deferred dependency.",
+        "required_test": "Scope-verification note naming the input source of postCompletionOrderRate. If it's held, a synthetic state test shows the card as unavailable.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "reviewed": true,
+  "completed": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 4500,
+      "expected_duration": 30,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED"
+}

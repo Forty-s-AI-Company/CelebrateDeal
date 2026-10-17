@@ -1,0 +1,9 @@
+{
+  "status": "FAIL",
+  "session": 29687,
+  "exitCode": 1,
+  "diagnosticCode": "TS6053",
+  "scope": "npx tsc --noEmit while owned nextbuild regenerated .next/types",
+  "observed": "Missing generated .next/types/app/.../page.ts files matched by existing include; no product diagnostic or validation exclusion added",
+  "resolution": "After successful directbuild46977, same product source tsc74894 exit0. No tsconfig changes."
+}

@@ -4,8 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { canPublishSalesProject, parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
+import { publishOwnedSalesProject } from "@/lib/sales-project-publication";
+import { parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
 import { assertServerActionOrigin, assertServerActionSecurity } from "@/lib/csrf";
+import type { Prisma } from "@prisma/client";
+
+/** 建立諮詢專案時一併開啟入口；原子追加可保留其他設定並避免重複。 */
+async function enableConsultationForProject(tx: Prisma.TransactionClient, vendorId: string) {
+  await tx.vendor.updateMany({
+    where: { id: vendorId, NOT: { enabledFeatureModules: { has: "consultation_booking" } } },
+    data: { enabledFeatureModules: { push: "consultation_booking" } },
+  });
+}
 
 function nextQuestionnaireStep(answers: SalesWorkspaceQuestionnaire) {
   if (!answers.sellingApproach) return 0;
@@ -21,7 +31,7 @@ export async function saveOnboardingAnswerAction(answers: SalesWorkspaceQuestion
   const parsed = parseSalesWorkspaceQuestionnaire(answers);
   await getDb().userOnboardingPreference.upsert({
     where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } },
-    create: { userId: auth.user.id, vendorId: vendor.id, questionnaireAnswers: parsed, questionnaireStep: nextQuestionnaireStep(parsed) },
+    create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, questionnaireAnswers: parsed, questionnaireStep: nextQuestionnaireStep(parsed) },
     update: { questionnaireAnswers: parsed, questionnaireStep: nextQuestionnaireStep(parsed) },
   });
 }
@@ -45,16 +55,18 @@ export async function completePersonalizedOnboardingAction() {
   if (nextQuestionnaireStep(answers) !== 4) redirect("/welcome?error=incomplete");
   const mode = recommendSalesWorkspaceMode(answers);
   await getDb().$transaction(async (tx) => {
-    await tx.userOnboardingPreference.update({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, data: { questionnaireStep: 4, questionnaireDoneAt: new Date(), recommendedMode: mode, selectedMode: mode, guideDismissedAt: null, taskPanelCollapsed: false } });
+    await tx.userOnboardingPreference.update({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, data: { questionnaireStep: 4, questionnaireDoneAt: new Date(), recommendedMode: mode, selectedMode: mode, guideDismissedAt: null } });
     await tx.onboardingTaskState.createMany({ data: WORKSPACE_ONBOARDING_TASKS.map((task) => ({ vendorId: vendor.id, scopeKey: "workspace", taskKey: task.key, status: "not_started" })), skipDuplicates: true });
     const projectCount = await tx.salesProject.count({ where: { vendorId: vendor.id } });
     if (projectCount === 0) {
       const flow = mode === "consulting" ? "consultation" : "live";
       const project = await tx.salesProject.create({ data: { vendorId: vendor.id, name: mode === "consulting" ? "我的諮詢專案" : "我的第一個銷售專案", slug: "first-sales-project", mode, primaryFlow: flow, onboardingEnabled: true } });
+      if (flow === "consultation") await enableConsultationForProject(tx, vendor.id);
       await tx.userOnboardingPreference.update({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, data: { selectedProjectId: project.id } });
       await tx.onboardingTaskState.createMany({ data: projectOnboardingTasks(flow).map((task) => ({ vendorId: vendor.id, projectId: project.id, scopeKey: project.id, taskKey: task.key, status: "not_started" })), skipDuplicates: true });
     }
   });
+  revalidatePath("/", "layout");
   redirect("/welcome/preparing");
 }
 
@@ -65,7 +77,7 @@ export async function selectSalesProjectAction(projectId: string | null) {
     const exists = await getDb().salesProject.count({ where: { id: projectId, vendorId: vendor.id, status: { not: "archived" } } });
     if (exists !== 1) throw new Error("project_not_found");
   }
-  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, selectedProjectId: projectId }, update: { selectedProjectId: projectId } });
+  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, selectedProjectId: projectId }, update: { selectedProjectId: projectId } });
   revalidatePath("/", "layout");
 }
 
@@ -85,7 +97,8 @@ export async function createSalesProjectAction(formData: FormData) {
   });
   const project = await getDb().$transaction(async (tx) => {
     const created = await tx.salesProject.create({ data: { ...parsed, vendorId: vendor.id } });
-    await tx.userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, selectedProjectId: created.id }, update: { selectedProjectId: created.id } });
+    if (parsed.primaryFlow === "consultation") await enableConsultationForProject(tx, vendor.id);
+    await tx.userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, selectedProjectId: created.id }, update: { selectedProjectId: created.id } });
     if (parsed.onboardingEnabled) await tx.onboardingTaskState.createMany({ data: projectOnboardingTasks(parsed.primaryFlow).map((task) => ({ vendorId: vendor.id, projectId: created.id, scopeKey: created.id, taskKey: task.key, status: "not_started" })) });
     return created;
   });
@@ -101,40 +114,9 @@ export async function publishSalesProjectAction(formData: FormData) {
   const { vendor } = await requireVendorManagerContext();
   const projectId = String(formData.get("projectId") ?? "").trim();
   if (!projectId || projectId.length > 191) throw new Error("project_not_found");
-  const db = getDb();
-  const project = await db.salesProject.findFirst({
-    where: { id: projectId, vendorId: vendor.id, status: { not: "archived" } },
-    select: { id: true, primaryFlow: true },
-  });
-  if (!project) throw new Error("project_not_found");
-  const now = new Date();
-  const [pricedProducts, funnels, lives, consultations, paymentMethods] = await Promise.all([
-    db.salesProjectProduct.count({ where: { vendorId: vendor.id, projectId, product: { isActive: true, priceCents: { gt: 0 } } } }),
-    db.registrationForm.count({ where: { vendorId: vendor.id, projectId, isActive: true } }),
-    db.live.count({ where: { vendorId: vendor.id, projectId } }),
-    db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId, isActive: true }, select: { weeklySchedule: true } }),
-    // A legacy or inconsistent row cannot satisfy the publication gate merely by status.
-    db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
-  ]);
-  const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
-    if (!entry || typeof entry !== "object") return false;
-    const ranges = (entry as { ranges?: unknown }).ranges;
-    return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
-  }));
-  const ready = canPublishSalesProject(project.primaryFlow, {
-    exists: true,
-    hasLinkedProduct: pricedProducts > 0,
-    hasPricedProduct: pricedProducts > 0,
-    hasFunnelTemplate: funnels > 0,
-    hasLiveSession: lives > 0,
-    hasConsultationService: consultations.length > 0,
-    hasAvailability,
-    hasPaymentMethod: paymentMethods > 0,
-    hasPreviewableFlow: true,
-    isPublished: false,
-  });
-  if (!ready) redirect(`/projects/${encodeURIComponent(projectId)}?error=not_ready`);
-  await db.salesProject.updateMany({ where: { id: projectId, vendorId: vendor.id, status: { not: "archived" } }, data: { status: "published", publishedAt: now } });
+  const result = await publishOwnedSalesProject(getDb(), vendor.id, projectId);
+  if (result.status === "not_found") throw new Error("project_not_found");
+  if (result.status === "not_ready") redirect(`/projects/${encodeURIComponent(projectId)}?error=not_ready`);
   revalidatePath("/", "layout");
   revalidatePath(`/projects/${projectId}`);
   redirect(`/projects/${encodeURIComponent(projectId)}?published=1`);
@@ -148,7 +130,7 @@ export async function controlOnboardingGuideAction(control: "hide" | "remind" | 
     : control === "remind" ? { taskPanelHiddenUntil: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) }
       : control === "stop" ? { guideDismissedAt: now, taskPanelCollapsed: true }
         : { guideDismissedAt: null, taskPanelHiddenUntil: null, taskPanelCollapsed: false };
-  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, ...data }, update: data });
+  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, ...data }, update: data });
   revalidatePath("/", "layout");
 }
 

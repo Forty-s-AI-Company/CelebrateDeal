@@ -1,0 +1,375 @@
+{
+  "status": "IN_PROGRESS",
+  "wholeWp": "NOT_READY",
+  "wholeGoalCompleted": 8,
+  "wholeGoalTotal": 20,
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "engineeringResolved": {
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "engineeringObserved": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 326
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "db": {
+      "status": "PASS",
+      "stage": "complete",
+      "scope": "Owned loopback synthetic DB and recorded VOD; fixture authorization, not signed Next HTTP",
+      "checks": {
+        "unverifiedReadinessWritesNoMetrics": "PASS",
+        "realBrowserVerificationRecoveryAndReplayWithoutReload": "PASS",
+        "oldUnmatchedIntakeRetainedAndDistinctNewSessionAnchors": "PASS",
+        "actualSqlTypesAndNonUtcMatchingEpoch": "PASS",
+        "changedVerificationEpochDoesNotAllocateRecovery": "PASS",
+        "exhaustedAdmissionQuotaReturnsFalseWithoutNewIntake": "PASS",
+        "nonUtcQuotaParity": "PASS"
+      },
+      "sourceHashes": {
+        "src/lib/live-metric-playback-controller.ts": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906",
+        "src/lib/live-metric-collector.ts": "76d26ab4f86dbe663c42f26a0cc3073a108054b4b4246aae1b7042de37239892",
+        "src/lib/live-metric-readiness.ts": "6414e8fbc6bd3a7018352718a2d8f5a0509c26f63e5d1f11d771597c7f829598"
+      },
+      "browserDiagnostics": {
+        "unexpected": 0,
+        "denied": 1,
+        "sourceRequests": 3,
+        "sessionRequests": 3,
+        "readinessRequests": 3,
+        "sameMediaSource": true,
+        "controller": {
+          "stopped": true,
+          "sourceChanged": false,
+          "restart": false,
+          "attempts": 3,
+          "delivery": {
+            "queued": 0,
+            "finalSequence": 4,
+            "sealed": true,
+            "terminal": true,
+            "rejected": false,
+            "capacityReached": false,
+            "collectionLost": false
+          }
+        }
+      },
+      "sessionDiagnostics": [
+        {
+          "complete": true,
+          "closed": true,
+          "intervals": 6
+        },
+        {
+          "complete": true,
+          "closed": true,
+          "intervals": 5
+        }
+      ],
+      "browser": {
+        "sourceRequests": 3,
+        "sessionRequests": 3,
+        "readinessRequests": 3,
+        "expectedAuthorizationRefusals": 1,
+        "intervals": [
+          6,
+          5
+        ],
+        "sameMediaSource": true,
+        "cadenceWaitMs": 30100
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    }
+  },
+  "reviews": {
+    "server": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "provider": "claude_cli",
+      "sourceHashes": {
+        "src/lib/live-metric-readiness.ts": {
+          "reviewed": "6414e8fbc6bd3a7018352718a2d8f5a0509c26f63e5d1f11d771597c7f829598",
+          "current": "6414e8fbc6bd3a7018352718a2d8f5a0509c26f63e5d1f11d771597c7f829598",
+          "match": true
+        },
+        "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": {
+          "reviewed": "9ac427b0d5aba77723f9cd5a991c2073d163accd18e5f532581300d09e48825f",
+          "current": "25b609221abeca4b53b43058cdd628a1cf59c60ac378030023396144db050e4e",
+          "match": false
+        },
+        "src/lib/live-metric-request-authorization.ts": {
+          "reviewed": "5cd9fb5075b37877c87fe91ded8f9ebf8b62ec087e82c9effb9df305ccb3cf83",
+          "current": "5cd9fb5075b37877c87fe91ded8f9ebf8b62ec087e82c9effb9df305ccb3cf83",
+          "match": true
+        }
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-readiness.ts",
+          "area": "active-state SQL: registration verifiedAt mismatch predicate and open-session expiry predicate",
+          "issue": "Some timestamp comparisons depend on the database session's time zone, while other comparisons in the same query use explicit UTC.",
+          "evidence": "`g.\"verifiedAt\" IS DISTINCT FROM f.\"verifiedAt\" AT TIME ZONE 'UTC'` turns one side into timestamptz, while g.\"verifiedAt\" is converted using the session TimeZone (the default for a Prisma DateTime is timestamp(3) without time zone). `s.\"expiresAt\">clock_timestamp()` has no UTC normalization, unlike `a.\"expiresAt\">clock_timestamp() AT TIME ZONE 'UTC'`.",
+          "impact": "If the session TimeZone isn't UTC, every existing matching registration counts as mismatched, so readiness is permanently false and qualified recovery never starts. The open-session count can also be off by the time-zone offset. This fails closed, so it affects availability and accuracy, not authorization.",
+          "recommended_fix": "Compare g.\"verifiedAt\" with f.\"verifiedAt\" directly, or normalize both the same way. Write the open-session expiry check as `s.\"expiresAt\">clock_timestamp() AT TIME ZONE 'UTC'`, matching the column types and POST's predicate.",
+          "required_test": "A DB test that runs readiness with SET TIME ZONE 'America/New_York' (not UTC), an existing registration with the same verifiedAt, and open sessions near expiry. Readiness should match the result under UTC and match POST's result.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-readiness.ts",
+          "area": "active-state EXISTS predicate as a whole",
+          "issue": "The readiness query re-implements POST's eligibility and quota checks in its own raw SQL instead of sharing them. It also leaves out the playback-intake requirement that POST enforces (requirePlaybackIntake/renewPlaybackIntake).",
+          "evidence": "POST calls issueMetricSession(..., { requirePlaybackIntake: true, renewPlaybackIntake: true }). The readiness SQL never refers to intake. It hand-copies the totalPerAdmission, openPerAdmission and totalPerRegistration checks plus the registration-mismatch rule.",
+          "impact": "Readiness can say true when POST will deny the request (for example, a missing or expired intake, or quota rules that later drift apart). That causes repeated denied probe/POST cycles, which only the client's 30s denied-probe limit holds back. Readiness can also say false when POST would succeed, which blocks recovery. POST stays authoritative, so integrity isn't affected.",
+          "recommended_fix": "Move the eligibility and quota predicate into a shared function that both issueMetricSession and readiness use, including the intake condition if readiness is meant to predict POST success. Otherwise, document that the intake gap is intended and confirm that the controller backs off on it.",
+          "required_test": "A parity table test that runs the same fixtures through readiness and POST issuance: no intake, expired intake, each quota at its limit, a registration whose verifiedAt doesn't match, and an expired admission. Readiness true should mean POST doesn't return 403 or 409 for those reasons.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "NIT",
+          "file": "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts",
+          "area": "GET catch block",
+          "issue": "Every MetricIngestError code becomes a 403 in GET, including retryable_conflict, which POST maps to 503.",
+          "evidence": "`if (error instanceof LiveChatError || error instanceof MetricIngestError) return json({ ready: false }, 403);`, whereas POST maps retryable_conflict to 503.",
+          "impact": "A temporary conflict is reported as a permanent denial, so the client waits out its 30s denied-probe window instead of retrying sooner.",
+          "recommended_fix": "Map retryable_conflict to 503 in GET, the same way POST does.",
+          "required_test": "A unit test that makes the authorizer or resolveContext throw a MetricIngestError('retryable_conflict') and expects GET to return 503 with { ready: false }.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/live-metric-readiness.ts",
+          "area": "row locks on FormSubmission/LiveViewerSession",
+          "issue": "A GET that only returns a hint takes FOR NO KEY UPDATE (write-intent) locks on the viewer's FormSubmission and LiveViewerSession rows and can hold them for up to 5s. The lock order relative to POST and ingestion isn't visible in the supplied code.",
+          "evidence": "`FOR NO KEY UPDATE` on both rows inside a 5000ms transaction, at up to 120 requests per minute.",
+          "impact": "These locks can block or slow concurrent verification, admission renewal or issuance for the same viewer. If the order differs from POST, a deadlock surfaces as a 503. Only the viewer's own rows are affected.",
+          "recommended_fix": "Use FOR SHARE (or no locks, since the result is only a hint), or document that the lock order exactly matches issueMetricSession.",
+          "required_test": "A concurrency test that runs readiness and POST issuance and verification updates in parallel for the same viewer, with no deadlock 503s and no added latency beyond the statement timeout.",
+          "confidence": 0.35
+        }
+      ],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "INVALID_REVIEW",
+          "exitCode": 0
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "client": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage"
+      },
+      "provider": "claude_cli",
+      "sourceHashes": {
+        "src/lib/live-metric-playback-collector.ts": {
+          "reviewed": "bc7ad2d699f55fe43cba0620f35c04de1a557ea1af16ee712696a49806223a07",
+          "current": "bc7ad2d699f55fe43cba0620f35c04de1a557ea1af16ee712696a49806223a07",
+          "match": true
+        },
+        "src/lib/live-metric-collector.ts": {
+          "reviewed": "76d26ab4f86dbe663c42f26a0cc3073a108054b4b4246aae1b7042de37239892",
+          "current": "76d26ab4f86dbe663c42f26a0cc3073a108054b4b4246aae1b7042de37239892",
+          "match": true
+        },
+        "src/lib/live-metric-playback-controller.ts": {
+          "reviewed": "4e4f50cacd013b7b9e523c92284b428378f3909604c08d5c0496d17b7fb0350a",
+          "current": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906",
+          "match": false
+        },
+        "src/lib/live-metric-playback-receipt.ts": {
+          "reviewed": "fc9ecd3f1b4f5247ddf5e555862128890f781fee69a8dc834ba2f09bf95a201f",
+          "current": "fc9ecd3f1b4f5247ddf5e555862128890f781fee69a8dc834ba2f09bf95a201f",
+          "match": true
+        }
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-playback-controller.ts",
+          "area": "onPlaying handler (ended -> restart, nextProbeAt = 0)",
+          "issue": "An ended→playing cycle resets `nextProbeAt` to 0, which bypasses the claimed 30-second limit on denied probes.",
+          "evidence": "`onPlaying`: `if (ended) { ended = false; restart = true; nextProbeAt = 0; }` followed by `void tick()`. `run()` sets `nextProbeAt = time + 30000` only before each `recover()`. Each readiness denial leaves `used` unchanged, so the 64-entry cap never applies.",
+          "impact": "On VOD/replay, seeking to the end and playing again in a loop sends a readiness GET (and a fresh-source GET that issues an intake when ready) on every cycle, not at most once per 30 seconds. Server rate limits still apply, so the impact is limited to a client contract violation and extra load or intake noise.",
+          "recommended_fix": "Do not reset `nextProbeAt` on restart, or allow at most one immediate restart probe per 30-second window, for example by tracking `lastRestartProbeAt` separately.",
+          "required_test": "Unit test with a fake clock: trigger ended→playing several times within 30 seconds while readiness returns `{ready:false}` or 403. Assert at most one readiness GET per 30 seconds.",
+          "confidence": 0.65
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-playback-controller.ts",
+          "area": "finish() / get() / recover()",
+          "issue": "`finish()` waits for any pending recovery but does not abort its in-flight readiness or source GETs. Each GET has only its own 8-second timeout, and recovery runs them one after the other.",
+          "evidence": "`get()` uses a local `AbortController` that only the timer can trigger. `finish()` sets `stopped` and then does `if (pending) await pending`. `recover()` awaits the readiness GET and then the `/api/live-playback-source` GET before checking `stopped` again.",
+          "impact": "The hook releases admission only after `finish` resolves, so private-chat admission can stay held for about 16 seconds after the viewer leaves. If the source GET is already in flight, the server may also issue a durable intake after stop, which becomes an orphan unmatched intake.",
+          "recommended_fix": "Keep a controller-level `AbortController` (or a set of active ones) and abort it in `finish()` before awaiting `pending`. Treat an abort as a normal stop.",
+          "required_test": "Unit test: start recovery with a fetcher that never resolves, call `finish()`, and assert that it resolves promptly, that the fetch signal was aborted, and that no collector was created.",
+          "confidence": 0.6
+        }
+      ],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "IDLE_TIMEOUT",
+          "exitCode": -1
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "followup-initial": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5"
+      },
+      "provider": "claude_cli",
+      "sourceHashes": {
+        "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": {
+          "reviewed": "25b609221abeca4b53b43058cdd628a1cf59c60ac378030023396144db050e4e",
+          "current": "25b609221abeca4b53b43058cdd628a1cf59c60ac378030023396144db050e4e",
+          "match": true
+        },
+        "src/lib/live-metric-playback-controller.ts": {
+          "reviewed": "0cbf8e9a0c8da57ea2397e8f08dcfab1f9581986c4aa14977a43c2de72745db3",
+          "current": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906",
+          "match": false
+        }
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-playback-controller.ts",
+          "area": "recover(): post-creation backoff reset `if (active?.state().delivery && !active.state().disabled) nextProbeAt = 0;`",
+          "issue": "The backoff reset only checks that `delivery` exists and the collector isn't disabled. It doesn't exclude `delivery.rejected` or `delivery.collectionLost`, which run() treats as needing recovery. A recovery whose first tick creates a delivery state that is already rejected or lost (for example, the session POST or intake is refused) could clear the 30s backoff.",
+          "evidence": "run() computes `needsRecovery = restart || !active || state?.disabled || state?.delivery?.rejected || state?.delivery?.collectionLost`. The reset condition checks only `delivery` being truthy and `!disabled`. The followup states that only a recovery that actually established delivery resets nextProbeAt, and that denials keep 30s. Whether the collector can show a delivery object with rejected=true after its first tick isn't visible in the supplied scope (collector source not supplied), so confidence is moderate.",
+          "impact": "If the collector reports a rejected or lost delivery after its first tick, every later tick re-probes right away. Each probe does a readiness GET, a source GET that issues a fresh server nonce, and a session POST. This burns through the 64-nonce cap quickly and then sets sourceChanged permanently, so collection is lost for the rest of playback instead of retrying every 30s. It also adds server load and rate-limit pressure. Data integrity is kept (fail closed, no invented samples).",
+          "recommended_fix": "Reset nextProbeAt only when the post-tick state passes the same health predicate run() uses. For example: `const s = active?.state(); if (s?.delivery && !s.disabled && !s.delivery.rejected && !s.delivery.collectionLost) nextProbeAt = 0;`. Better, move the predicate into one shared helper used by both places.",
+          "required_test": "Controller unit test: the fixture lets the readiness and source GETs succeed but makes the session POST or first delivery get rejected, so the collector shows delivery.rejected. Assert that a tick inside the next 30s makes no new readiness or source request, and that a tick after 30s does exactly one new probe.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-playback-controller.ts",
+          "area": "recover(): `if (!identity || sourceIdentity(fresh) !== identity) { sourceChanged = true; return; }` and the `!receipt` branch",
+          "issue": "get() returns null for any non-OK response. A transient 429, 503 or 500 from /api/live-playback-source therefore looks like a source-identity change and sets sourceChanged=true. Nothing ever resets that flag, so tick() becomes a no-op for the rest of the controller's life.",
+          "evidence": "In get(), `return response.ok ? await response.json() : null`. sourceIdentity(null) returns null, which is never equal to a non-null identity, so `sourceChanged = true`. tick() returns early whenever `sourceChanged` is set, and no code path clears it. The readiness GET treats null as 'return and keep the 30s backoff', but the source GET does not. The followup states that transient errors keep the 30s cadence.",
+          "impact": "One transient failure on the source endpoint during a recovery attempt stops metric recovery for the rest of playback, unless the media owner rebuilds the controller. The owner won't do that, because the actual source didn't change. Collection stays fail-closed with visible gaps, so integrity holds, but the recovery contract isn't met.",
+          "recommended_fix": "Handle a null `fresh` (non-OK response or unparseable body) separately from a confirmed identity mismatch: return without setting sourceChanged so the 30s backoff applies. Set sourceChanged only when a well-formed source response carries a different identity. Consider whether a source that is present but has no receipt is transient too, and treat it the same way if so.",
+          "required_test": "Controller unit test: start a recovery where readiness returns {ready:true} and the source GET returns 503. Assert state().sourceChanged is still false. Then, after 30s, the source GET returns the same identity with a new receipt, and a new collector is created.",
+          "confidence": 0.7
+        }
+      ],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "INVALID_REVIEW",
+          "exitCode": 0
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "followup": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "provider": "claude_cli",
+      "sourceHashes": {
+        "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": {
+          "reviewed": "25b609221abeca4b53b43058cdd628a1cf59c60ac378030023396144db050e4e",
+          "current": "25b609221abeca4b53b43058cdd628a1cf59c60ac378030023396144db050e4e",
+          "match": true
+        },
+        "src/lib/live-metric-playback-controller.ts": {
+          "reviewed": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906",
+          "current": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906",
+          "match": true
+        }
+      },
+      "findings": [],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "INVALID_REVIEW",
+          "exitCode": 0
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    }
+  },
+  "originalSynchronized20Serializable": {
+    "successes": 7,
+    "failures": 13,
+    "rerun": false
+  },
+  "unverified": [
+    "full URL/cohort capture including pre-epoch URLs",
+    "7-day observation versus cohort binding",
+    "positive viewing/visits producer/proof/atomic fences/reader",
+    "load/populated upgrades/deployed roles",
+    "scheduler host/queue/cadence/nonproduction integration",
+    "signed Next browser HTTP/live-WHEP/long soak",
+    "remote CI"
+  ],
+  "ownership": {
+    "writer": "root",
+    "maxParallel": 1,
+    "maxDepth": 1,
+    "automaticSpawn": false
+  },
+  "git": {
+    "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "mode": "independent detached worktree",
+    "head": "efb8b7e9",
+    "promotion": "NOT_REQUESTED"
+  },
+  "production": "NOT_AUTHORIZED",
+  "acceptance": "NOT_READY; full WP gate not submitted as ready"
+}

@@ -1,0 +1,15 @@
+{
+  "sourceHash": "a0b3ef9fd5dbf0eebc9168dde465c17b0661a0639c1e2392faf8b140d96b6e4f",
+  "runnerHash": "9fafddcf10d150a84f205bd123ebc0b7aa9a65dfd377e91ff2b5d5a90d8b591a",
+  "rootCause": "ERR_WORKER_OUT_OF_MEMORY confirmed under256MB",
+  "change": "Replace global per-interval dedup strings with per-person reference sort and in-place unique",
+  "unitTests": 79,
+  "unitStatus": "PASS",
+  "lint": "PASS",
+  "workerChecks": 7,
+  "workerStatus": "PASS",
+  "heapLimitMb": 256,
+  "inputLimit": 1000000,
+  "review": "PENDING",
+  "scopeLimit": "CPU worker only; not DB publish load or end-to-end report acceptance"
+}

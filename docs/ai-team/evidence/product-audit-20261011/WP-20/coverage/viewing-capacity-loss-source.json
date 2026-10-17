@@ -1,0 +1,7 @@
+{
+  "files": {
+    "src/lib/live-metric-delivery.ts": "13fe79a5ee09087b9c03e0cb0ba141506f1e3018712949b3b2b1c4f0b1fdc7c0",
+    "src/lib/live-metric-delivery.test.ts": "992fc75841a93aa2c9d1ac7eb01bde41569d2630b1eb4cf63a1407d34d67616e"
+  },
+  "behavior": "Capacity-exhausted delivery drains retained sequence0..19 but never sends final close; exactly full without loss may still close; network retry preserves overflow."
+}

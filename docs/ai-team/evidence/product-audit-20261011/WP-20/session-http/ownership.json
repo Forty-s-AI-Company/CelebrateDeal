@@ -1,0 +1,15 @@
+{
+  "writer": "root",
+  "files": [
+    "src/lib/live-metric-session.ts",
+    "src/lib/live-metric-version.ts",
+    "src/lib/live-metric-version.test.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.test.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs",
+    "src/lib/live-runtime-state.ts",
+    "src/lib/live-metric-session.test.ts"
+  ],
+  "depth": 0,
+  "automatic_spawn": false
+}

@@ -1,0 +1,13 @@
+{
+  "status": "INSPECTED",
+  "operation": "read-only deployment inspect",
+  "env_read": false,
+  "deployment_mutation": false,
+  "project": "celebrate-deal-staging",
+  "target": "preview",
+  "state": "READY",
+  "deployment_id": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+  "created": 1791514273531,
+  "source_commit": null,
+  "expected_project": true
+}

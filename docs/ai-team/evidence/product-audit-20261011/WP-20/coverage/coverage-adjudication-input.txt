@@ -1,0 +1,379 @@
+Independent adjudication of previous coverage review findings. Return concise structured JSON under 5500 characters, no tools. Prior MAJOR1 alleged audit insert FOR SHARE invalidation could race report creation/claim/finish because dependencies omitted. Supplied existing functions now show all three take version FOR UPDATE. Prior MAJOR2 alleged collection disable/re-enable may not bump revision; existing BEFORE UPDATE guard unconditionally increments revision and collection origin immutable. Actual DB test disabled collection and rejected old positive certificate; re-enable explicit test not yet done. Assess these claims from exact dependency source, not our assertions. MAJOR3 missing per-kind coverage partially addressed: snapshot now reads all four kinds with one shared budget. No calculator adapter/producer wired yet, so keep that integration prerequisite incomplete; do not certify full WP or producer. Existing scope-read guards require RepeatableRead and lease/current revision. Give resolved/disputed decisions in summary, report remaining concrete defects. Late historical covered certificate semantics are based on independently audited past range, not current collectionEnabled; collection lifecycle gaps are producer's pending responsibility.
+
+EXISTING MIGRATION lines 211-260
+);
+ALTER TABLE "LiveMetricInterval" ADD CONSTRAINT "LiveMetricInterval_values_check" CHECK (
+  "sequence" >= 0 AND "payloadHash" ~ '^[0-9a-f]{64}$'
+  AND "mediaStartMs" >= 0 AND "mediaEndMs" > "mediaStartMs"
+  AND "wallEndAt" > "wallStartAt"
+  AND "wallEndAt" - "wallStartAt" <= INTERVAL '5 seconds'
+  AND "receivedAt" >= "wallEndAt"
+  AND "mediaEndMs" - "mediaStartMs" <= EXTRACT(EPOCH FROM ("wallEndAt" - "wallStartAt")) * 4000 + 1
+  AND "mediaEndMs" - "mediaStartMs" >= EXTRACT(EPOCH FROM ("wallEndAt" - "wallStartAt")) * 250 - 1
+);
+ALTER TABLE "LiveMetricReport" ADD CONSTRAINT "LiveMetricReport_state_check" CHECK (
+  "windowStartAt" < "windowEndAt" AND "inputRevision" >= 0
+  AND "processedCount" >= 0 AND "attempts" >= 0 AND "expiresAt" > "createdAt"
+  AND "status" IN ('queued','running','ready','failed','stale')
+  AND (("status" = 'running' AND "leaseOwner" IS NOT NULL AND "leaseExpiresAt" IS NOT NULL)
+    OR ("status" <> 'running' AND "leaseOwner" IS NULL AND "leaseExpiresAt" IS NULL))
+  AND ("status" <> 'ready' OR ("result" IS NOT NULL AND "finishedAt" IS NOT NULL))
+);
+
+CREATE FUNCTION public.wp20_metric_version_update() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+BEGIN
+  IF current_setting('transaction_isolation')<>'read committed' THEN
+    RAISE EXCEPTION 'metric writes require read committed isolation' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    NEW."sourceRevision" := 0;
+    IF NOT EXISTS (SELECT 1 FROM public."Live" l WHERE l."id"=NEW."liveId" AND l."vendorId"=NEW."vendorId"
+      AND l."videoId" IS NOT DISTINCT FROM NEW."videoId"
+      AND (NEW."videoId" IS NULL OR EXISTS (SELECT 1 FROM public."Video" v WHERE v."id"=NEW."videoId" AND v."vendorId"=NEW."vendorId"))) THEN
+      RAISE EXCEPTION 'metric source must belong to its live' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF (NEW."id", NEW."vendorId", NEW."liveId", NEW."videoId", NEW."mode", NEW."fingerprint", NEW."durationMs")
+    IS DISTINCT FROM (OLD."id", OLD."vendorId", OLD."liveId", OLD."videoId", OLD."mode", OLD."fingerprint", OLD."durationMs") THEN
+    RAISE EXCEPTION 'metric version identity is immutable' USING ERRCODE = '23514';
+  END IF;
+  IF OLD."collectionStartedAt" IS NOT NULL AND NEW."collectionStartedAt" IS DISTINCT FROM OLD."collectionStartedAt" THEN
+    RAISE EXCEPTION 'metric collection origin is immutable' USING ERRCODE = '23514';
+  END IF;
+  NEW."sourceRevision" := OLD."sourceRevision" + 1;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricVersion_revision" BEFORE INSERT OR UPDATE ON "LiveMetricVersion"
+  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_version_update();
+
+CREATE FUNCTION public.wp20_metric_report_invalidate() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+BEGIN
+EXISTING MIGRATION lines 516-650
+
+CREATE FUNCTION public.wp20_metric_report_guard() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+DECLARE current_revision BIGINT;
+BEGIN
+  IF current_setting('transaction_isolation')<>'read committed' THEN
+    RAISE EXCEPTION 'metric writes require read committed isolation' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP='INSERT' AND current_setting('wp20.report_writer',true) IS DISTINCT FROM 'create' THEN
+    RAISE EXCEPTION 'metric report requires creation function' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP='UPDATE' AND NEW.status='queued' THEN
+    RAISE EXCEPTION 'queued metric report is immutable; create replacement' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP='UPDATE' AND NEW.status IN ('running','ready')
+    AND current_setting('wp20.report_writer',true) IS DISTINCT FROM (CASE WHEN NEW.status='running' THEN 'claim' ELSE 'finish' END) THEN
+    RAISE EXCEPTION 'metric report requires worker function' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP='UPDATE' AND (NEW."id",NEW."vendorId",NEW."liveId",NEW."versionId",NEW."windowStartAt",NEW."windowEndAt",NEW."inputRevision")
+    IS DISTINCT FROM (OLD."id",OLD."vendorId",OLD."liveId",OLD."versionId",OLD."windowStartAt",OLD."windowEndAt",OLD."inputRevision") THEN
+    RAISE EXCEPTION 'metric report input is immutable' USING ERRCODE='23514';
+  END IF;
+  IF NEW."status" IN ('queued','running','ready') THEN
+    -- Workers lock the version before the report. SHARE also closes the race
+    -- between a report INSERT and an evidence-triggered revision increment.
+    SELECT "sourceRevision" INTO current_revision FROM public."LiveMetricVersion"
+    WHERE "id"=NEW."versionId" AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+    IF NOT FOUND OR current_revision<>NEW."inputRevision" THEN
+      RAISE EXCEPTION 'metric report input is stale' USING ERRCODE='23514';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricReport_current_input" BEFORE INSERT OR UPDATE ON "LiveMetricReport"
+  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_report_guard();
+
+DO $$ DECLARE function_name TEXT; api_role TEXT; BEGIN
+  FOREACH function_name IN ARRAY ARRAY['wp20_metric_version_update','wp20_metric_report_invalidate','wp20_metric_scope_update','wp20_metric_evidence_changed','wp20_metric_registration_guard','wp20_metric_interval_guard','wp20_metric_visitor_guard','wp20_metric_session_guard','wp20_metric_report_guard','wp20_metric_interval_progress'] LOOP
+    EXECUTE format('REVOKE ALL PRIVILEGES ON FUNCTION public.%I() FROM PUBLIC', function_name);
+    FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=api_role) THEN
+        EXECUTE format('REVOKE ALL PRIVILEGES ON FUNCTION public.%I() FROM %I', function_name,api_role);
+      END IF;
+    END LOOP;
+  END LOOP;
+END $$;
+
+-- Worker entry points lock the version before the report, matching ingestion's
+-- version -> report invalidation order. The API must not claim with raw UPDATE.
+CREATE FUNCTION public.wp20_metric_report_claim(
+  vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+  worker_id TEXT, lease_until TIMESTAMPTZ(3)
+) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+DECLARE changed INTEGER; previous_writer TEXT;
+BEGIN
+  IF worker_id IS NULL OR length(worker_id)=0 OR lease_until<=clock_timestamp()
+    OR lease_until>clock_timestamp()+INTERVAL '5 minutes' THEN
+    RAISE EXCEPTION 'invalid metric worker lease' USING ERRCODE='23514';
+  END IF;
+  PERFORM 1 FROM public."LiveMetricVersion"
+    WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN 0; END IF;
+  UPDATE public."LiveMetricReport" SET status='failed',"errorCode"='attempt_limit',"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+    WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+      AND attempts>=5 AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()));
+  previous_writer := current_setting('wp20.report_writer',true);
+  PERFORM set_config('wp20.report_writer','claim',true);
+  UPDATE public."LiveMetricReport" SET status='running',"leaseOwner"=worker_id,
+    "leaseExpiresAt"=lease_until,attempts=attempts+1
+    WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+      AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()))
+      AND attempts<5 AND "expiresAt">clock_timestamp();
+  GET DIAGNOSTICS changed = ROW_COUNT;
+  PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+  RETURN changed;
+END $$;
+CREATE FUNCTION public.wp20_metric_report_finish(
+  vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+  worker_id TEXT, report_result JSONB
+) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+DECLARE changed INTEGER; previous_writer TEXT;
+BEGIN
+  IF report_result IS NULL THEN RAISE EXCEPTION 'metric result required' USING ERRCODE='23514'; END IF;
+  PERFORM 1 FROM public."LiveMetricVersion"
+    WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN 0; END IF;
+  previous_writer := current_setting('wp20.report_writer',true);
+  PERFORM set_config('wp20.report_writer','finish',true);
+  UPDATE public."LiveMetricReport" SET status='ready',result=report_result,
+    "finishedAt"=clock_timestamp(),"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+    WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+      AND status='running' AND "leaseOwner"=worker_id AND "leaseExpiresAt">clock_timestamp()
+      AND "expiresAt">clock_timestamp();
+  GET DIAGNOSTICS changed = ROW_COUNT;
+  PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+  RETURN changed;
+END $$;
+DO $$ DECLARE signature TEXT; api_role TEXT; BEGIN
+  FOREACH signature IN ARRAY ARRAY[
+    'public.wp20_metric_report_claim(text,text,text,text,text,timestamp with time zone)',
+    'public.wp20_metric_report_finish(text,text,text,text,text,jsonb)'
+  ] LOOP
+    EXECUTE format('REVOKE ALL PRIVILEGES ON FUNCTION %s FROM PUBLIC', signature);
+    FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=api_role) THEN
+        EXECUTE format('REVOKE ALL PRIVILEGES ON FUNCTION %s FROM %I', signature,api_role);
+      END IF;
+    END LOOP;
+  END LOOP;
+END $$;
+
+CREATE UNIQUE INDEX "LiveMetricReport_active_window_key" ON "LiveMetricReport"
+  ("vendorId","liveId","versionId","windowStartAt","windowEndAt","inputRevision")
+  WHERE status IN ('queued','running','ready');
+
+CREATE FUNCTION public.wp20_metric_report_create(
+  vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+  window_start TIMESTAMPTZ(3), window_end TIMESTAMPTZ(3), input_revision BIGINT, expires_at TIMESTAMPTZ(3)
+) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+DECLARE previous_writer TEXT;
+BEGIN
+  PERFORM 1 FROM public."LiveMetricVersion" WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'metric version missing' USING ERRCODE='23514'; END IF;
+  IF window_end>clock_timestamp() THEN RAISE EXCEPTION 'metric report window must have ended' USING ERRCODE='23514'; END IF;
+  previous_writer := current_setting('wp20.report_writer',true);
+  PERFORM set_config('wp20.report_writer','create',true);
+  INSERT INTO public."LiveMetricReport" (id,"vendorId","liveId","versionId","windowStartAt","windowEndAt","inputRevision","expiresAt")
+    VALUES (report_id,vendor_id,live_id,version_id,window_start,window_end,input_revision,expires_at);
+  PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+  RETURN 1;
+END $$;
+REVOKE ALL PRIVILEGES ON FUNCTION public.wp20_metric_report_create(text,text,text,text,timestamptz,timestamptz,bigint,timestamptz) FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=api_role) THEN
+FILE prisma/migrations/20261015120000_live_metric_coverage_audit/migration.sql
+-- Storage for independent collector audits. No backfill and no automatic
+-- certification from collectionEnabled, row counts or successful requests.
+CREATE TABLE public."LiveMetricCoverageAudit" (
+ id TEXT PRIMARY KEY,
+ "vendorId" TEXT NOT NULL, "liveId" TEXT NOT NULL, "versionId" TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK (kind IN ('visits','registrations','viewing','orders')),
+ status TEXT NOT NULL CHECK (status IN ('covered','gap')),
+ "startAt" TIMESTAMPTZ(3) NOT NULL, "endAt" TIMESTAMPTZ(3) NOT NULL,
+ "sourceRevision" BIGINT NOT NULL CHECK ("sourceRevision">=0),
+ "auditDigest" CHAR(64) NOT NULL CHECK ("auditDigest" ~ '^[0-9a-f]{64}$'),
+ "recordedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+ CONSTRAINT "LiveMetricCoverageAudit_range_check" CHECK ("startAt"<"endAt"),
+ CONSTRAINT "LiveMetricCoverageAudit_version_fkey" FOREIGN KEY ("vendorId","liveId","versionId")
+ REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION
+);
+CREATE INDEX "LiveMetricCoverageAudit_scope_range_idx" ON public."LiveMetricCoverageAudit"("vendorId","liveId","versionId",kind,"startAt","endAt");
+CREATE FUNCTION public.wp20_metric_coverage_guard() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+DECLARE v public."LiveMetricVersion"%ROWTYPE;
+BEGIN
+ IF TG_OP='DELETE' THEN
+  IF NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=OLD."versionId") THEN RETURN OLD; END IF;
+  RAISE EXCEPTION 'metric coverage audit requires parent deletion' USING ERRCODE='23514';
+ ELSIF TG_OP='UPDATE' THEN
+  RAISE EXCEPTION 'metric coverage audit is immutable' USING ERRCODE='23514';
+ END IF;
+ IF current_setting('transaction_isolation')<>'read committed' THEN
+  RAISE EXCEPTION 'metric coverage writes require read committed isolation' USING ERRCODE='23514';
+ END IF;
+ SELECT * INTO v FROM public."LiveMetricVersion" WHERE id=NEW."versionId"
+  AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'metric coverage scope unavailable' USING ERRCODE='23514'; END IF;
+ NEW."recordedAt":=date_trunc('milliseconds',clock_timestamp());
+ IF NEW."sourceRevision"<>v."sourceRevision" OR NEW."endAt">NEW."recordedAt"
+  OR NEW."endAt">v."expiresAt" THEN
+  RAISE EXCEPTION 'metric coverage revision or range unavailable' USING ERRCODE='23514';
+ END IF;
+ -- This is a necessary boundary, not proof of uninterrupted collection.
+ IF NEW.status='covered' AND (v."collectionStartedAt" IS NULL OR NEW."startAt"<v."collectionStartedAt") THEN
+  RAISE EXCEPTION 'metric coverage cannot certify pre-collection history' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE FUNCTION public.wp20_metric_coverage_changed() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+BEGIN
+ UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+ WHERE "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" AND "versionId"=NEW."versionId"
+  AND "windowStartAt"<NEW."endAt" AND "windowEndAt">NEW."startAt" AND status<>'stale';
+ RETURN NULL;
+END $$;
+CREATE TRIGGER "LiveMetricCoverageAudit_guard" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricCoverageAudit"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_coverage_guard();
+CREATE TRIGGER "LiveMetricCoverageAudit_changed" AFTER INSERT ON public."LiveMetricCoverageAudit"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_coverage_changed();
+CREATE TRIGGER "LiveMetricCoverageAudit_no_truncate" BEFORE TRUNCATE ON public."LiveMetricCoverageAudit"
+ FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+ALTER TABLE public."LiveMetricCoverageAudit" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."LiveMetricCoverageAudit" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_coverage_guard(),public.wp20_metric_coverage_changed() FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricCoverageAudit" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_coverage_guard(),public.wp20_metric_coverage_changed() FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+FILE src/lib/live-metric-report-snapshot.ts
+import { readMetricCoverage } from "./live-metric-coverage-reader";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { MetricReadBudget, readMetricVisitLossPage, readMetricVisitPage, readMetricReportContext, readMetricRegistrationPage, readMetricSessionPage, readMetricSessionIntervals,
+  type MetricVisitLossRow, type MetricVisitRow, type MetricReportContext, type MetricRegistrationRow, type MetricSessionRow, type MetricIntervalRow } from "./live-metric-report-reader";
+import type { MetricReportLease } from "./live-metric-report-lease";
+import { type MetricCoverage } from "./live-metric-coverage";
+
+export type MetricViewingSnapshot = {
+  context: MetricReportContext;
+  visitCoverage: MetricCoverage;
+  registrationCoverage: MetricCoverage;
+  viewingCoverage: MetricCoverage;
+  orderCoverage: MetricCoverage;
+  visitLosses: MetricVisitLossRow[];
+  visits: MetricVisitRow[];
+  registrations: MetricRegistrationRow[];
+  sessions: Array<{ registrationId: string; session: MetricSessionRow; intervals: MetricIntervalRow[] }>;
+  deliveryComplete: boolean;
+};
+type FailureReason = "limit_exceeded" | "lease_or_scope_unavailable" | "registration_outside_cohort" | "identity_changed";
+class SnapshotUnavailable extends Error {
+  constructor(readonly reason: FailureReason) { super(reason); }
+}
+
+/** Database I/O only: this does not run the CPU-heavy metric calculation.
+ * All pages share one MVCC snapshot and one work budget. A failed page discards
+ * the entire snapshot, while incomplete delivery remains explicit metadata.
+ */
+export async function loadMetricViewingSnapshot(db: Pick<PrismaClient, "$transaction">, lease: MetricReportLease,
+  budget = new MetricReadBudget()): Promise<{ status: "available"; data: MetricViewingSnapshot } | { status: "unavailable"; reason: FailureReason }> {
+  try {
+    const data = await db.$transaction(async tx => {
+      // This timeout limits each SQL statement; the transaction timeout bounds
+      // all statements together. Neither changes the immutable evidence.
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+      const context = await readMetricReportContext(tx, lease);
+      if (context.status !== "available") throw new SnapshotUnavailable(context.reason);
+      // Each metric depends on its own intake audit. A visits certificate
+      // must never certify registration, playback or order history.
+      const coverage = async (kind: "visits" | "registrations" | "viewing" | "orders") => {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const audit = await readMetricCoverage(tx, lease, kind);
+        if (audit.status !== "available") throw new SnapshotUnavailable(audit.reason);
+        if (!budget.retain(audit.rowCount)) throw new SnapshotUnavailable("limit_exceeded");
+        return audit.coverage;
+      };
+      const visitCoverage = await coverage("visits");
+      const registrationCoverage = await coverage("registrations");
+      const viewingCoverage = await coverage("viewing");
+      const orderCoverage = await coverage("orders");
+      const result: MetricViewingSnapshot = { context: context.context, visitCoverage,
+        registrationCoverage, viewingCoverage, orderCoverage,
+        visitLosses: [], visits: [], registrations: [], sessions: [], deliveryComplete: true };
+      let afterLoss: Date | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricVisitLossPage(tx, { ...lease, after: afterLoss, take: 500 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        result.visitLosses.push(...page.rows);
+        if (!page.hasMore) break;
+        afterLoss = page.next;
+      }
+      // A proven gap is decisive even while the collection-start audit is unknown.
+      if (result.visitLosses.length) result.visitCoverage = { status: "unavailable", reason: "evidence_gap" };
+      let after: { id: string; visitedAt: Date } | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricVisitPage(tx, { ...lease, after, take: 500 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        result.visits.push(...page.rows);
+        if (!page.hasMore) break;
+        after = page.next;
+      }
+      let afterId: string | null = null;
+      for (;;) {
+        if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+        const page = await readMetricRegistrationPage(tx, { ...lease, afterId, take: 100 });
+        if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+        if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+        for (const registration of page.rows) {
+          if (!registration.identityCurrent) throw new SnapshotUnavailable("identity_changed");
+          result.registrations.push(registration);
+          await appendRegistrationSessions(tx, lease, registration.id, budget, result);
+        }
+        if (!page.hasMore) return result;
+        afterId = page.nextId;
+      }
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000, maxWait: 5000 });
+    return { status: "available", data };
+  } catch (error) {
+    if (error instanceof SnapshotUnavailable) return { status: "unavailable", reason: error.reason };
+    // Infrastructure failures propagate to the job runner. They are never
+    // converted into an empty cohort or a successfully calculated zero.
+    throw error;
+  }
+}
+
+async function appendRegistrationSessions(tx: Prisma.TransactionClient, lease: MetricReportLease, registrationId: string,
+  budget: MetricReadBudget, result: MetricViewingSnapshot) {
+  let afterId: string | null = null;
+  for (;;) {
+    if (!budget.nextPage()) throw new SnapshotUnavailable("limit_exceeded");
+    const page = await readMetricSessionPage(tx, { ...lease, registrationId, afterId, take: 100 });
+    if (page.status !== "available") throw new SnapshotUnavailable(page.reason);
+    if (!budget.retain(page.rows.length)) throw new SnapshotUnavailable("limit_exceeded");
+    for (const session of page.rows) {
+      const intervals = await readMetricSessionIntervals(tx, { ...lease, sessionId: session.id }, budget);
+      if (intervals.status !== "available") throw new SnapshotUnavailable(intervals.reason);
+      if (intervals.registrationId !== registrationId) throw new SnapshotUnavailable("identity_changed");
+      result.sessions.push({ registrationId, session, intervals: intervals.rows });
+      result.deliveryComplete &&= intervals.deliveryComplete;
+    }
+    if (!page.hasMore) return;
+    afterId = page.nextId;
+  }
+}

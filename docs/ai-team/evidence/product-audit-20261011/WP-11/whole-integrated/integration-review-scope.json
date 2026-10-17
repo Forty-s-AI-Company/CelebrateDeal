@@ -1,0 +1,22 @@
+{
+  "files": [
+    "src/app/api/automation/vouchers/redeem/route.ts",
+    "src/app/api/live-admission/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/r/[code]/route.ts",
+    "src/lib/automation-voucher-exchange.ts",
+    "src/lib/capability-confirmation.ts",
+    "src/lib/live-quota-admission.ts",
+    "src/lib/request-client-ip.ts",
+    "src/lib/rate-limit.ts",
+    "src/lib/trusted-entry-rate-limit.ts",
+    "src/lib/live-chat-request-security.ts",
+    "src/app/api/live-chat/instructor/route.ts",
+    "src/app/api/live-chat/messages/route.ts",
+    "src/app/api/live-chat/private/route.ts",
+    "src/app/api/live-purchase-broadcasts/route.ts"
+  ],
+  "prompt_characters": 75007,
+  "parent_revision": "sha256:7ae09a30a310a2f2ebd7487da5f18503900f96b4f55d66d41bc9d72c6b1ed2bb",
+  "prior_all94_hashes_verified": true
+}

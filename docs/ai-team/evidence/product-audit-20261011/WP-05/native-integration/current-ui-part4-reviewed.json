@@ -1,0 +1,194 @@
+{
+  "finalModel": "claude-sonnet-5-5",
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "completed": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "observed": {
+    "model": "claude-sonnet-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "medium",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "review": {
+    "summary": "Partial WP05 review of the supplied diff and sources. No BLOCKER or MAJOR defects found. The generic renderer's JS path correctly locks synchronously, reads FormData before the disabled render, sends the attribution payload through the shared helper, maps statuses to shared messages, and keeps values on error. Its native fallback carries formId, landingPageId, funnelStepId, liveId and redirectTo as hidden fields and restores drafts via defaultValue. The webinar form uses native POST only, carries the same identity fields, and sets the thank-you redirect. Remaining items are MINOR hardening: no pending lock on the webinar native submit, `response.ok` as the only success signal in the JS path, a native/JS divergence for absent source IDs, and an unvalidated client redirect target. This partial review does not certify full-WP acceptance, API processing, or draft/receipt storage.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+        "area": "WebinarRegistrationForm: <RegistrationSubmissionFeedback pending={false} .../> and <button disabled={preview}>",
+        "issue": "The webinar registration form has no in-flight/pending state for native submission. The submit button is disabled only in preview, and pending is hard-coded to false.",
+        "evidence": "Button: `disabled={preview}`. Feedback: `pending={false}`. onSubmit is `undefined` outside preview, so nothing prevents repeated clicks or Enter presses before the browser navigates. The generic renderer, by contrast, locks synchronously and sets aria-busy.",
+        "impact": "On a slow response the user gets no 'submitting' feedback and can send duplicate POSTs. Depending on API idempotency this may create duplicate drafts or verification emails, or produce a confusing second redirect or error. This is inconsistent with the shared feedback behaviour in the generic form.",
+        "recommended_fix": "Add a small client-side submit handler for the non-preview case that sets a ref/state lock on first submit (without preventDefault), disables the button, and passes pending to RegistrationSubmissionFeedback. Alternatively, confirm the API is idempotent per form + email and document that.",
+        "required_test": "Browser test: on the webinar registration form, double-click the submit button against a delayed API response and assert that exactly one POST to /api/form-submissions is sent and the button shows a pending state.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "PublicSubmissionForm.submit: `if (!response.ok) {...} setStatus(\"success\")`",
+        "issue": "Success is decided by `response.ok` alone. A followed redirect (fetch follows by default) to an HTML page, or an upstream/proxy 2xx that is not the API's acceptance response, would be treated as success. No `response.redirected` check or body/contract check is made.",
+        "evidence": "The helper `postRegistrationSubmission` returns the raw Response. The caller only checks `response.ok`, then shows the success message with the Email-verification instruction and navigates.",
+        "impact": "An unexpected redirect or intermediary response could show 'submitted, please check your Email' and navigate away although no submission was accepted. This conflicts with the stated 'avoid false success' requirement; the likelihood depends on the API and middleware contract, which was not supplied.",
+        "recommended_fix": "In postRegistrationSubmission or the caller, treat `response.redirected` or a non-JSON content type as failure. Optionally require the API's explicit acceptance field in the JSON body before reporting success.",
+        "required_test": "Unit test with a mocked fetch returning {ok:true, redirected:true} and a 200 text/html response; assert the form shows the error message, not success, and does not navigate.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "PublicSubmissionForm: JS body vs hidden inputs for landingPageId / funnelStepId / liveId",
+        "issue": "The native and JS payloads encode absent source identity differently. Native sends empty strings (`?? \"\"`). JS sends the raw value: `landingPageId`/`funnelStepId` as-is (omitted if undefined, null if null) and `liveId ?? null`. The webinar form likewise sends \"\" for missing source fields.",
+        "evidence": "Hidden inputs: `value={submission.landingPageId ?? \"\"}`, `value={submission.funnelStepId ?? \"\"}`, `value={submission.liveId ?? \"\"}`. JS: `{ formId, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload }`.",
+        "impact": "If the API validates source IDs strictly (e.g. UUID or null) and does not normalize '', native submissions without a source could be rejected or stored differently than JS submissions. This could cause a native/JS attribution divergence. Whether the API normalizes is outside the supplied scope.",
+        "recommended_fix": "Confirm that the API normalizes '' to null for formId-adjacent source fields, or have both paths send the same normalized representation.",
+        "required_test": "API/contract test: submit identical form data via JSON (null/omitted IDs) and via form-encoded (empty-string IDs) and assert identical stored source attribution.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "PublicSubmissionForm.submit: `if (submission.redirectTo) window.location.assign(submission.redirectTo);`",
+        "issue": "The client navigates to `submission.redirectTo` without any same-origin or path validation. The webinar component builds a safe `/lp/...` path, but the generic renderer's redirectTo origin is not in the supplied scope.",
+        "evidence": "Raw string passed to `window.location.assign`. The same value is also posted as the hidden `redirectTo` field, where only the server's validation protects the native path.",
+        "impact": "If redirectTo can originate from author-editable document data and is not validated upstream, a `javascript:` or external URL could execute on or redirect a visitor after a successful submit. This is a low-likelihood hardening concern and is only actionable if upstream does not already validate it.",
+        "recommended_fix": "Validate on the client (value starts with a single `/` and not `//`, or parsed URL origin equals location.origin) before assigning. Otherwise skip navigation and show the success message.",
+        "required_test": "Unit test with redirectTo set to `javascript:alert(1)`, `//evil.example`, and `https://evil.example`; assert no navigation occurs, while `/lp/slug/thank-you` navigates.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "claude_cli_discovery_status": "SUCCESS"
+}

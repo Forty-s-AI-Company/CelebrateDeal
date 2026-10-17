@@ -1,0 +1,173 @@
+{
+  "review": {
+    "summary": "I reviewed only the three supplied files and found one new minor issue. I did not verify the omitted helpers (context, visitor, proof, intent, record, rate limit, api-security), the schema or deployment, and no test results are inferred.\n\n**Corrections confirmed against the supplied code:**\n- **Error mapping:** both composition catches map MetricVisitIntentError to SCOPE_UNAVAILABLE (HTTP 404), and other non-visitor errors become PERSISTENCE_UNAVAILABLE (HTTP 503).\n- **Prepare entry point:** the HTTP route imports prepareTrackedMetricVisit, which requires a valid Event. The event-optional prepareMetricVisit is not reachable over HTTP. Both reject bad scope or event with sanitized SCOPE_UNAVAILABLE before any transaction starts.\n- **Lowercasing:** Event lowercases the UUID once. The same lowercased eventId reaches both requireMetricVisitIntent and recordMetricVisit inside the same transaction.\n- **Collect checks:** collectPreparedMetricVisit requires a string proof that is present and at most 2048 characters, and it always runs with requirePreparation=true. If an identity is allocated for an invalid proof, the visitor-bound intent check fails and the transaction rolls back.\n- **Client:** a client-side abort after prepare returns retryable. A visit receipt that parses and validates has no later abort check, so it is recorded. The per-instance versionId guard stops one event from crossing versions once a version has been seen.\n- **Unchanged controls:** origin, client-header, body-size, rate-limit, cookie and no-store handling are the same as before.\n- **Disclosed behaviour:** when a prepare reply is lost before its cookie is stored, the intent stays permanently unmatched and returns a 404 that is not retried. This is disclosed and not treated as a defect.\n\n**New issue (minor):** an invalid but present proof cookie permanently blocks that browser for that scope until the cookie expires.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-collection.ts",
+        "area": "prepareMetricVisit, existingProof branch (versionForLive null -> PROOF_INVALID); route catch PROOF_* -> 403; client unavailable(403) retryable:false",
+        "issue": "When the browser's HttpOnly proof cookie exists but no longer verifies, prepare throws PROOF_INVALID and never reissues a cookie. This can happen if its key leaves LIVE_METRIC_VISITOR_KEYRING, if the cookie is corrupted, or if server-side expiry is earlier than the browser cookie expiry because of clock skew. JavaScript cannot clear an HttpOnly cookie, and the client treats 403 as not retryable.",
+        "evidence": "In prepareMetricVisit: `if (!oldVersion) throw new MetricVisitorError(\"PROOF_INVALID\")`. The route maps `error.code.startsWith(\"PROOF_\")` to 403 with no Set-Cookie. The client's `unavailable(status)` sets retryable only for 429 or >=500. The no-cookie path does issue a fresh identity, so refusing to replace an unverifiable cookie adds no security: any client can drop the cookie itself.",
+        "impact": "Every later page visit from that browser for that vendor/live scope fails with 403 until the old cookie expires, which could be the whole proof lifetime. For example, after a keyring rotation that drops a key, every browser holding a cookie signed with that key silently stops recording visits. Nothing is counted wrongly; the result is a bounded under-count and an availability gap. Severity also depends on the omitted versionForLive and keyring retention behaviour, which were not supplied.",
+        "recommended_fix": "In prepareMetricVisit only, treat an unverifiable existingProof the same as a version change: set retained = null and issue a fresh identity and cookie, which replaces the bad one. Keep collectPreparedMetricVisit strict (403) so events are never recorded against an unverified identity. Alternatively, have the route clear the cookie on PROOF_* errors (Max-Age=0, same __Host- attributes) so the next prepare starts clean.",
+        "required_test": "Use a local disposable DB with synthetic data. Issue a proof with keyring K1, then switch the config to a keyring without K1, or tamper with the cookie value. Prepare must succeed with exactly one new visitor and a replacement cookie (or the cookie must be cleared and the next prepare succeed). The following visit must record exactly one visit. Collect called directly with the bad proof must still return 403 and record nothing.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 0,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "completed": false,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "finalModel": "claude-opus-5-5",
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "cross_module",
+        "migration",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

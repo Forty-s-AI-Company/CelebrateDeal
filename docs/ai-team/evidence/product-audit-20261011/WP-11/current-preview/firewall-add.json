@@ -1,0 +1,8 @@
+{
+  "status": "PUBLISHED",
+  "exact_host_added": "celebrate-deal-staging-pee8uidcp-a25814740s-projects.vercel.app",
+  "rule_id": "rule_log_generated_staging_preview_hosts_HJx9RW",
+  "preview_only": true,
+  "all_other_rule_fields_preserved": true,
+  "rollback": "remove only this exact host after re-reading current rule; preserve concurrent changes"
+}

@@ -1,0 +1,109 @@
+[
+  {
+    "snapshot": "snapshot-security-minors.json",
+    "matches_current": false,
+    "files": [
+      "src/app/api/form-submissions/route.ts",
+      "src/app/api/form-submissions/route.test.ts",
+      "src/lib/api-security.ts",
+      "src/lib/registration-submission-receipt.ts",
+      "src/lib/registration-submission-receipt.test.ts"
+    ]
+  },
+  {
+    "snapshot": "snapshot-cache-boundary.json",
+    "matches_current": false,
+    "files": [
+      "prisma/migrations/20261011_registration_form_retry_draft/migration.sql",
+      "prisma/schema.prisma",
+      "src/app/(viewer)/loading.tsx",
+      "src/app/admin/loading.tsx",
+      "src/app/affiliate-portal/loading.tsx",
+      "src/app/api/form-submissions/route.db.test.ts",
+      "src/app/api/form-submissions/route.test.ts",
+      "src/app/api/form-submissions/route.ts",
+      "src/app/checkout/loading.tsx",
+      "src/app/form/[slug]/page.test.tsx",
+      "src/app/form/[slug]/page.tsx",
+      "src/app/loading.test.tsx",
+      "src/app/login/loading.tsx",
+      "src/app/lp/[slug]/[stepPath]/page.tsx",
+      "src/app/lp/[slug]/page.test.tsx",
+      "src/app/lp/[slug]/page.tsx",
+      "src/app/merchant-onboarding/loading.tsx",
+      "src/app/mfa/loading.tsx",
+      "src/app/p/[slug]/page.tsx",
+      "src/app/page.tsx",
+      "src/app/password-reset/loading.tsx",
+      "src/app/policies/loading.tsx",
+      "src/app/portal/loading.tsx",
+      "src/app/register/loading.tsx",
+      "src/app/registration-error/page.tsx",
+      "src/app/root-loading.tsx",
+      "src/app/support/loading.tsx",
+      "src/app/team-template/loading.tsx",
+      "src/app/unsubscribe/loading.tsx",
+      "src/app/verify-registration/loading.tsx",
+      "src/app/welcome/loading.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "src/components/lead-form.tsx",
+      "src/components/registration-retry-boundary.test.tsx",
+      "src/components/registration-retry-boundary.tsx",
+      "src/components/registration-retry-context.test.tsx",
+      "src/components/registration-retry-context.tsx",
+      "src/lib/registration-form-fields.ts",
+      "src/lib/registration-form-retry-response.test.ts",
+      "src/lib/registration-form-retry-response.ts",
+      "src/lib/registration-form-retry.db.test.ts",
+      "src/lib/registration-form-retry.test.ts",
+      "src/lib/registration-form-retry.ts",
+      "src/lib/registration-submission-receipt.test.ts",
+      "src/lib/registration-submission-receipt.ts",
+      "src/components/registration-submission-feedback.tsx",
+      "src/components/registration-submission-feedback.test.tsx"
+    ]
+  },
+  {
+    "snapshot": "snapshot-no-store-repair.json",
+    "matches_current": false,
+    "files": [
+      "src/lib/registration-submission-receipt.ts",
+      "src/lib/registration-submission-receipt.test.ts"
+    ]
+  },
+  {
+    "snapshot": "snapshot-ui-followup.json",
+    "matches_current": true,
+    "files": [
+      "src/components/lead-form.tsx",
+      "src/components/registration-submission-feedback.tsx",
+      "src/app/page.tsx",
+      "src/app/page.test.tsx",
+      "src/app/loading.test.tsx"
+    ]
+  },
+  {
+    "snapshot": "snapshot-home-redirect.json",
+    "matches_current": true,
+    "files": [
+      "src/app/page.tsx",
+      "src/app/page.test.tsx",
+      "src/app/loading.test.tsx"
+    ]
+  },
+  {
+    "snapshot": "snapshot-closed-feedback-evidence.json",
+    "matches_current": true,
+    "files": [
+      "src/components/registration-closed-feedback.tsx",
+      "src/components/registration-closed-feedback.test.tsx",
+      "src/components/registration-retry-boundary.tsx",
+      "src/app/lp/[slug]/page.tsx",
+      "src/app/lp/[slug]/[stepPath]/page.tsx",
+      "src/app/lp/[slug]/page.test.tsx",
+      "src/components/registration-deadline-outcome.tsx",
+      "src/components/registration-deadline-outcome.test.tsx"
+    ]
+  }
+]

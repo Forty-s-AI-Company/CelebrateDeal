@@ -1,0 +1,43 @@
+{
+  "source_revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+  "resolved": [
+    {
+      "finding": "Native share/ref/lp missing; window-derived share SSR state",
+      "resolution": "Server searchParams through matching-form boundary, same hidden/JS metadata, encrypted draft persistence through failed native POST/reload",
+      "evidence": [
+        "browser-attribution-chromium.json",
+        "browser-attribution-firefox.json",
+        "attribution-repair-reviewed.json"
+      ]
+    },
+    {
+      "finding": "Legacy repeated query picks first value",
+      "resolution": "getAll helper shares duplicate rejection with server arrays",
+      "evidence": [
+        "src/lib/registration-attribution.test.ts",
+        "attribution-followup-reviewed.json"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "finding": "form page loses success because context lacks submitted",
+      "reason": "Page separately verifies receipt and conditionally replaces LeadForm with verified success; full page independently reviewed and finding withdrawn.",
+      "evidence": "attribution-followup-reviewed.json"
+    }
+  ],
+  "limitations": [
+    "Attribution browser cases intentionally use invalid contact data to prove actual transport/retry without asserting synthetic share business eligibility.",
+    "Legacy callers outside public retry boundary retain JS event-time query fallback; no expansion into live playback native/noJS functionality.",
+    "Backend attribution rules, payment, email confirmation, publishing gates and database schema unchanged."
+  ],
+  "static_checks": "unit192,DB7,lint,typecheck,core invariant PASS",
+  "browser_attribution": "8 cases PASS; actual API400 retry and encrypted draft retrieval",
+  "success_regression": "PASS:4 standalone +4 partner actual API/DB cases",
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb"
+  },
+  "whole_wp_acceptance": false
+}

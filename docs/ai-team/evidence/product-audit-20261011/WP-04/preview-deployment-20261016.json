@@ -1,0 +1,114 @@
+{
+  "kind": "non_production_deployment",
+  "status": "PARTIAL",
+  "project": "a25814740s-projects/celebrate-deal-staging",
+  "project_id": "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn",
+  "deployment_id": "dpl_8TvGjjmYQgKMNfSgU8oPjTXXtmxc",
+  "deployment_url": "https://celebrate-deal-staging-r6hmm08ip-a25814740s-projects.vercel.app",
+  "target": "preview",
+  "ready_state": "REMOVED_AFTER_VERIFICATION",
+  "source_base": "efb8b7e9a737ea30ea691870318d85bf74830331",
+  "source_state": {
+    "clean": false,
+    "scope": "Current isolated Goal worktree with the 20-WP implementation changes and the corrected deployment-only .vercelignore.",
+    "reproducibility": "The exact deployment ID is authoritative for the uploaded source; the base commit alone is not presented as the deployed snapshot.",
+    "snapshot_limitation": "No content manifest was preserved at upload time. Later worktree hashes must not be presented as the deployed snapshot, so this deployment cannot prove acceptance of a reviewed source revision."
+  },
+  "build": {
+    "next_compile": "PASS",
+    "typescript": "PASS",
+    "static_pages": "189/189",
+    "output_count": 570,
+    "required_route": {
+      "path": "api/funnel/operations/reports",
+      "present": true,
+      "rsc_path_present": true
+    },
+    "production_target": false
+  },
+  "environment_preflight": {
+    "status": "CONFIG_PRESENT",
+    "detail": "Build-time preflight reported required names and staging isolation assertions present; no values were read or recorded.",
+    "data_isolation": "NOT_RUN",
+    "payment_boundary": "Staging payment still uses the configured PayUni flow and is outside this isolation proof."
+  },
+  "packaging": {
+    "first_attempt": "FAILED_FILE_SIZE_LIMIT",
+    "repair": "Excluded root-only local .next outputs, orchestration receipts, and host-only paths through .vercelignore.",
+    "superseded_deployment": {
+      "id": "dpl_GqfZQyS5N8EEFZDuywaqFhpnpXPS",
+      "ready_state": "READY",
+      "static_pages": "188/188",
+      "defect": "An unanchored reports/ ignore rule omitted the nested api/funnel/operations/reports route from the deployment archive."
+    },
+    "corrected_attempt": "TARGETED_PASS",
+    "verification_scope": "The repaired deployment is READY and its remote output contains both api/funnel/operations/reports and api/funnel/operations/reports.rsc. A full local-to-remote route manifest comparison was not preserved, so archive completeness beyond the repaired route is not claimed."
+  },
+  "alias_inventory": {
+    "status": "NO_MATCHING_ALIAS",
+    "checked_with": "vercel alias ls --scope a25814740s-projects",
+    "checked_at_utc": "2026-10-16T14:08:31Z",
+    "listing_completeness": "The CLI returned no matching alias for either exact deployment hostname; the deployments were subsequently removed, so alias absence is no longer a live safety dependency.",
+    "deployments": [
+      "dpl_8TvGjjmYQgKMNfSgU8oPjTXXtmxc",
+      "dpl_GqfZQyS5N8EEFZDuywaqFhpnpXPS"
+    ],
+    "policy": "Neither deployment may be assigned an alias or used as a scheduler target. Both were removed after evidence collection."
+  },
+  "http_verification": {
+    "status": "EDGE_MITIGATION_BLOCKED",
+    "paths": [
+      { "path": "/api/health", "status": 403, "x_vercel_mitigated": "deny", "region": "hkg1" },
+      { "path": "/policies", "status": 403, "x_vercel_mitigated": "deny", "region": "hkg1" },
+      { "path": "/policies/terms", "status": 403, "x_vercel_mitigated": "deny", "region": "hkg1" },
+      { "path": "/settings/line", "status": 403, "x_vercel_mitigated": "deny", "region": "hkg1" },
+      { "path": "/projects", "status": 403, "x_vercel_mitigated": "deny", "region": "hkg1" }
+    ],
+    "classification": "Every response from the corrected deployment carried X-Vercel-Mitigated: deny and an hkg1 Vercel request region, so the Vercel edge denied it before a verified application response. The exact mitigation rule could not be identified because read-only firewall overview returned plan permission error 402. No runtime route was marked PASS.",
+    "firewall_inventory": "PLAN_PERMISSION_BLOCKED_402"
+  },
+  "local_link_cleanup": {
+    "status": "PASS",
+    "detail": "Vercel CLI created .env.local and .vercel link metadata while linking for the read-only firewall query. The env file contents were never read or output. Both the generated env file and the verified in-worktree .vercel directory were removed."
+  },
+  "stop_conditions": {
+    "edge_deny_control": "OBSERVED_ONLY_NOT_CONTROLLED",
+    "deployment_protection_status": "NOT_RUN",
+    "evaluated": [
+      { "condition": "data isolation is not proven", "status": "MET" },
+      { "condition": "staging uses non-sandbox PayUni payment configuration", "status": "PRESUMED_MET_FROM_APPROVED_STAGING_CONFIGURATION" },
+      { "condition": "edge mitigation persistence and regional coverage are unknown", "status": "MET" },
+      { "condition": "superseded deployment is missing a required route", "status": "MET_FOR_SUPERSEDED_DEPLOYMENT" }
+    ],
+    "action": "Both Preview deployments were removed. Neither may be used as a scheduler target."
+  },
+  "deployment_removal": {
+    "status": "PASS",
+    "removed_at_utc": "2026-10-16T14:08:31Z",
+    "deployments": [
+      { "id": "dpl_8TvGjjmYQgKMNfSgU8oPjTXXtmxc", "remove_exit_code": 0, "post_remove_inspect_exit_code": 1, "absent": true },
+      { "id": "dpl_GqfZQyS5N8EEFZDuywaqFhpnpXPS", "remove_exit_code": 0, "post_remove_inspect_exit_code": 1, "absent": true }
+    ]
+  },
+  "scheduler_inventory": {
+    "registered": 0,
+    "undeployed": 0,
+    "modified": 0,
+    "vercel_cron_target": "production deployment URL",
+    "preview_cron_available": false
+  },
+  "not_run": [
+    "scheduled invocation",
+    "heartbeat continuity",
+    "data isolation verification",
+    "runtime route verification (edge blocked before removal)",
+    "synthetic email delivery receipt",
+    "LINE provider delivery",
+    "duplicate external scheduler exclusion",
+    "exact mitigation-rule identification",
+    "deployment-time source manifest reconstruction",
+    "full local-to-remote route manifest comparison",
+    "Vercel Deployment Protection status",
+    "Production deployment or production data access"
+  ]
+}

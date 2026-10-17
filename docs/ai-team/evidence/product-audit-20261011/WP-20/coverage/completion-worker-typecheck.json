@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "completion-worker-typecheck", "revision": "completion-worker-current", "status": "PASS", "exit_code": 0, "duration_seconds": 98.093}

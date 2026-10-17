@@ -1,4 +1,5 @@
-import type { ClientIpTrustConfig } from "./request-client-ip";
+import { entryIpTrustConfig, getEntryClientIp, nativeBucketIdentity } from "./entry-client-ip";
+import { getRequestClientIp, type ClientIpTrustConfig } from "./request-client-ip";
 import { isExplicitLocalE2eRuntime } from "./app-url";
 
 export function liveChatIpTrustConfig(env: NodeJS.ProcessEnv = process.env): ClientIpTrustConfig {
@@ -30,6 +31,12 @@ export function liveChatIpTrustConfig(env: NodeJS.ProcessEnv = process.env): Cli
   return { trustMode: "none", deploymentSource: "none" };
 }
 
+/** 顯式 ENTRY 設定優先且不降級；舊部署未設定時保留原有可信代理契約。 */
+export function getLiveChatClientIp(request: Request) {
+  if (process.env.ENTRY_CLIENT_IP_TRUST_MODE !== undefined) return getEntryClientIp(request);
+  return getRequestClientIp(request, liveChatIpTrustConfig());
+}
+
 export function rateLimitRequestWithIdentity(request: Request, clientIp: string | null) {
   const headers = new Headers(request.headers);
 
@@ -38,7 +45,9 @@ export function rateLimitRequestWithIdentity(request: Request, clientIp: string 
   // by this route so forged alternate headers cannot create another bucket.
   headers.delete("x-forwarded-for");
   headers.delete("x-real-ip");
-  headers.set("cf-connecting-ip", clientIp ?? "unknown");
+  const bucketIp = entryIpTrustConfig().trustMode === "vercel-native"
+    ? nativeBucketIdentity(clientIp) : clientIp;
+  headers.set("cf-connecting-ip", bucketIp ?? "unknown");
   // 限流只讀 metadata；不分岔 body，避免未消費的分支阻塞超量串流取消。
   return new Request(request.url, { method: request.method, headers });
 }

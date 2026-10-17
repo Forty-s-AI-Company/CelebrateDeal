@@ -1,0 +1,14 @@
+{
+  "files": {
+    "scripts/wp20-payment-callback-deadlock-probe.mjs": "c1e8335aeefcbb317574cb03438bf0ecf4360249d4a94f2ddbeee195730761c0",
+    "scripts/wp20-payment-callback-deadlock-disposable.mjs": "207915148be0554ca994989e0d3bf06724deb74b0785b67e68eadf91d246ac27",
+    "src/lib/database-write-conflict.ts": "bf0cd8026c1155489a911381593307b0b867a09a54b82101826a37c92513f299",
+    "src/lib/payment-webhook-conflict-retry.test.ts": "2063b22f961edf532130472f74c03c04fc70a8a27fd86040bfd9a30f2d64b6b8",
+    "src/app/api/webhooks/payments/route.ts": "b6009ac8b45d0b0d88e972c220d534b1081fd41a7b66234d6c160320ba357193",
+    "src/lib/payment-webhooks.ts": "4aed60d2813e26068cc5c3391611235f8c72a48e20bcaf4070a67ea7e8903371",
+    "src/lib/payment-webhook-errors.ts": "34284b53615403f116b5d164914431f663064aa95b1f4a3b330801c415995014"
+  },
+  "execution_provider": "claude_cli",
+  "requested_model": "opus",
+  "scope": "Actual callback deadlock recovery and prior MAJOR adjudication"
+}

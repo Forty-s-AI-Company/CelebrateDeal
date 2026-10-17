@@ -1,5 +1,7 @@
+import { FollowupSourceUnavailableError, isCurrentCheckoutFollowupDelivery } from "@/lib/checkout-followup";
+import { isCurrentCompletedFollowupDelivery } from "@/lib/completed-followup";
 import { createHash } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { sendTransactionalEmail, TransactionalEmailError } from "@/lib/email";
@@ -789,12 +791,13 @@ type ClaimedDelivery = {
 };
 
 type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist">
-  & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
+  & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken" | "commerceOrder" | "commerceOrderEvent" | "automationRule">>
+  & Partial<Pick<PrismaClient, "$transaction">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
   ClaimedDelivery,
   "id" | "vendorId" | "sourceLiveId" | "sourceFormSubmissionId" | "trigger"
-> & { idempotencyKey?: string };
+> & { idempotencyKey?: string; recipientHash?: string };
 
 async function isCurrentLiveReminderDelivery(
   delivery: EmailDeliverySnapshotIdentity,
@@ -1017,7 +1020,9 @@ export async function isCurrentEmailDeliverySnapshot(
     && await isCurrentLiveNotificationDeliverySnapshot(delivery, now, database)
     && await isCurrentPostLiveFollowupDelivery(delivery, now, database)
     && await isCurrentFormVerificationDelivery(delivery, now, database)
-    && await isCurrentStudentPortalDelivery(delivery, now, database);
+    && await isCurrentStudentPortalDelivery(delivery, now, database)
+    && await isCurrentCheckoutFollowupDelivery(delivery, database, now)
+    && await isCurrentCompletedFollowupDelivery(delivery, database, now);
 }
 
 function reportDeliveryFailure(error: unknown, operation: string, status: string) {
@@ -1100,7 +1105,23 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   // Requested authentication mail is not a marketing subscription. Its capability
   // still has to pass the send-time validity guard below.
   if (suppression && !suppression.resubscribedAt && !["student_portal_magic_link", "form_submission_verification"].includes(delivery.trigger)) return finalizeSuppressed(delivery);
-  if (!(await isCurrentEmailDeliverySnapshot(delivery, new Date()))) {
+  let current: boolean;
+  try { current = await isCurrentEmailDeliverySnapshot(delivery, new Date()); }
+  catch (error) {
+    if (!(error instanceof FollowupSourceUnavailableError)) throw error;
+    // Source availability is retryable under the existing outbox policy. Do
+    // not turn a temporary report/key outage into permanent supersession.
+    const status = attemptCount >= delivery.maxAttempts ? "exhausted" : "failed";
+    const finalized = await db.emailDelivery.updateMany({
+      where: { id: delivery.id, status: "sending", attemptCount },
+      data: { status, claimedAt: null, failedAt: new Date(),
+        nextAttemptAt: status === "failed" ? nextAttemptDate(attemptCount) : null,
+        lastErrorCode: "followup_source_unavailable" },
+    });
+    reportDeliveryFailure(new FollowupSourceUnavailableError(), "followup_source", status);
+    return { status: finalized.count === 1 ? status : "claimed_elsewhere" };
+  }
+  if (!current) {
     return finalizeSuperseded(
       delivery,
       ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger) ? "verification_superseded" : "config_superseded",

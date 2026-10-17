@@ -1,0 +1,1 @@
+["src/app/api/form-submissions/route.ts", "src/lib/registration-form-fields.ts", "src/components/lead-form.tsx", "src/components/landing-pages/funnel-page-document-renderer.tsx", "src/components/landing-pages/funnel-webinar-experience.tsx", "src/app/form/[slug]/page.tsx", "src/app/p/[slug]/page.tsx", "src/app/lp/[slug]/page.tsx", "src/app/lp/[slug]/[stepPath]/page.tsx"]

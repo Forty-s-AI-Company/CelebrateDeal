@@ -1,0 +1,20 @@
+{
+  "status": "REPAIRED_LOCAL_SCOPE_ACCEPTED",
+  "target_shared_ip_viewers": 32,
+  "poll_interval_ms": 2000,
+  "GET_limit": 1200,
+  "POST_open_limit": 1200,
+  "POST_preparse_limit": 1200,
+  "other_POST_limit": 60,
+  "backoff": "GET retries pause whole polling; POST retries pause only scripted opening; 2..60s delay, fallback30s",
+  "cache": "Clear on409/500/network; preserve during429/503 backoff",
+  "review": "review-final-cli.json: noBLOCKER/MAJOR/MINOR;1optionaltestcoverageNIT retained",
+  "not_certified": [
+    "wholeWP11",
+    "commercialUpstash",
+    "newdeployment",
+    "browserE2Eofcurrentpatch",
+    "realDBofcurrentpatch",
+    "otherpolledendpointcapacity"
+  ]
+}

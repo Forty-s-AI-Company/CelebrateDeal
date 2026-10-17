@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "pool-before", "revision": "sha256:f1b5c9a13e931db0df090ea85c4afd01e25a5241e4b054b85e8e49469d4b22dd", "status": "FAIL", "exit_code": 1, "duration_seconds": 3.985}

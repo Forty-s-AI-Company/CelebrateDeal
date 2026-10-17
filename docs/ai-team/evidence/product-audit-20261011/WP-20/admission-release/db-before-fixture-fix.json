@@ -1,0 +1,29 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "name": "lease compare-and-delete preserves renewed and foreign admissions",
+      "status": "FAIL",
+      "code": "ASSERTION_OR_RUNNER_ERROR",
+      "guard": null,
+      "assertion": null
+    }
+  ],
+  "loadMetrics": null,
+  "indexMetrics": null,
+  "passed": 0,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 97,
+    "failure": {
+      "category": "wp20-persistence-check-failed",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

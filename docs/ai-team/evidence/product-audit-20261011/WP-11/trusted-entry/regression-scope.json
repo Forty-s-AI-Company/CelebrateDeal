@@ -1,0 +1,6 @@
+{
+  "additional_test_file": "src\\app\\api\\live-admission\\route.lease-db.test.ts",
+  "reason": "Approved DB regression needs explicit synthetic ingress metadata; all existing lease assertions retained",
+  "product_scope_expansion": false,
+  "writer": "main"
+}

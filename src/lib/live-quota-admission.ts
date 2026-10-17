@@ -39,6 +39,7 @@ type AdmissionInput = {
 };
 
 type LiveViewerSessionIdentity = {
+  expiresAt: Date;
   id: string;
   vendorId: string;
   liveId: string;
@@ -78,7 +79,7 @@ export function liveViewerTokenFromRequest(request: Request) {
 
 /** Returns true only when an opaque viewer session is active for this exact vendor/live pair. */
 export async function hasActiveLiveViewerSession(
-  db: PrismaClient,
+  db: Pick<PrismaClient, "liveViewerSession">,
   input: { vendorId: string; liveId: string; token: string; now?: Date },
 ) {
   const session = await db.liveViewerSession.findUnique({
@@ -126,6 +127,11 @@ function assertCreditsAvailable(
   if (remainingCredits < stopWhenCreditsBelow) {
     throw new LiveQuotaAdmissionError("credits_below_threshold");
   }
+}
+
+async function assertViewerCapacity(tx: Prisma.TransactionClient, input: AdmissionInput, maximum: number, now: Date) {
+  const active = await tx.liveViewerSession.count({ where: activeSessionWhere(input.vendorId, input.liveId, now) });
+  if (active >= maximum) throw new LiveQuotaAdmissionError("viewer_limit_reached");
 }
 
 async function admitWithinTransaction(tx: Prisma.TransactionClient, input: AdmissionInput) {
@@ -216,29 +222,29 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
   const existing = requestedTokenHash
     ? await tx.liveViewerSession.findUnique({
         where: { tokenHash: requestedTokenHash },
-        select: { id: true, vendorId: true, liveId: true },
+        select: { id: true, vendorId: true, liveId: true, expiresAt: true },
       }) as LiveViewerSessionIdentity | null
     : null;
 
   if (requestedToken && existing?.vendorId === input.vendorId && existing.liveId === input.liveId) {
-    const expiresAt = new Date(now.getTime() + LIVE_VIEWER_SESSION_TTL_MS);
+    // 過期租約已釋放名額，恢復前須在同一Serializable交易重新檢查容量。
+    if (existing.expiresAt <= now) {
+      await assertViewerCapacity(tx, input, policy.maxConcurrentViewers, now);
+    }
+    // Strictly advance even when two renewals share a millisecond.
+    const expiresAt = new Date(Math.max(now.getTime() + LIVE_VIEWER_SESSION_TTL_MS, +existing.expiresAt + 1));
     await tx.liveViewerSession.update({
       where: { id: existing.id },
       data: { lastSeenAt: now, expiresAt },
     });
-    return { token: requestedToken, expiresAt, reused: true };
+    return { token: requestedToken, expiresAt, reused: true, lease: { id: existing.id, expiresAtMs: +expiresAt } };
   }
 
-  const activeSessions = await tx.liveViewerSession.count({
-    where: activeSessionWhere(input.vendorId, input.liveId, now),
-  });
-  if (activeSessions >= policy.maxConcurrentViewers) {
-    throw new LiveQuotaAdmissionError("viewer_limit_reached");
-  }
+  await assertViewerCapacity(tx, input, policy.maxConcurrentViewers, now);
 
   const token = createLiveViewerToken();
   const expiresAt = new Date(now.getTime() + LIVE_VIEWER_SESSION_TTL_MS);
-  await tx.liveViewerSession.create({
+  const created = await tx.liveViewerSession.create({
     data: {
       vendorId: input.vendorId,
       liveId: input.liveId,
@@ -248,7 +254,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     },
     select: { id: true },
   });
-  return { token, expiresAt, reused: false };
+  return { token, expiresAt, reused: false, lease: { id: created.id, expiresAtMs: +expiresAt } };
 }
 
 function isPrismaCode(error: unknown, code: string) {
@@ -303,14 +309,16 @@ export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
   throw new LiveQuotaAdmissionError("admission_busy");
 }
 
-export async function releaseLiveViewer(db: PrismaClient, input: Omit<AdmissionInput, "now">) {
+export async function releaseLiveViewer(db: PrismaClient, input: Omit<AdmissionInput, "now"> & { lease?: { id: string; expiresAtMs: number } }) {
   const token = isValidViewerToken(input.token) ? input.token : null;
-  if (!token) return 0;
+  if (!token || !input.lease || !Number.isSafeInteger(input.lease.expiresAtMs) || input.lease.expiresAtMs < 0 || input.lease.expiresAtMs > 8_640_000_000_000_000) return 0;
   const result = await db.liveViewerSession.deleteMany({
     where: {
       vendorId: input.vendorId,
       liveId: input.liveId,
       tokenHash: hashLiveViewerToken(token),
+      id: input.lease.id,
+      expiresAt: new Date(input.lease.expiresAtMs),
     },
   });
   return result.count;

@@ -9,7 +9,7 @@ import {
   liveViewerTokenFromRequest,
 } from "@/lib/live-quota-admission";
 import { captureProductEvent } from "@/lib/product-analytics";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 const AnalyticsId = z.string().min(1).max(128);
 const AnalyticsSlug = z.string().min(1).max(160);

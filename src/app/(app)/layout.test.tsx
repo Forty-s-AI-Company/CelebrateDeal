@@ -43,6 +43,7 @@ describe("protected shell data boundary", () => {
     mocks.getDb.mockReturnValue(db);
     const view = await ProtectedLayout({ children: "protected content" });
     expect(view.props.planLabel).toBe("Test plan");
+    expect(view.props.taskPanelCollapsed).toBe(true);
     expect(view.props.projects).toEqual([]);
     expect(view.props.onboardingTasks.length).toBeGreaterThan(0);
     expect(db.userOnboardingPreference.findUnique).toHaveBeenCalledWith({ where: { userId_vendorId: { userId: "user-1", vendorId: "vendor-1" } } });
@@ -69,6 +70,7 @@ describe("protected shell data boundary", () => {
     };
     mocks.getDb.mockReturnValue(db);
     const view = await ProtectedLayout({ children: "protected content" });
+    expect(view.props.taskPanelCollapsed).toBe(false);
     const own = selectedProjectId === "own-project";
     expect(view.props.selectedProjectId).toBe(own ? "own-project" : null);
     expect(db.onboardingTaskState.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", scopeKey: own ? "own-project" : "workspace" } }));

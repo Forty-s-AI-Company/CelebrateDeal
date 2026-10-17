@@ -2,17 +2,25 @@
 # environment variables only. They must never become deployment source files.
 .env
 .env.*
-.private/
+/.private/
 
 # Generated diagnostics can contain browser state, request traces, or test data.
-coverage/
-reports/
-test-results/
-error.log
+/coverage/
+/reports/
+/test-results/
+/error.log
+/.next/
+/.next-*/
 
 # Local database and compiler artefacts are not application source.
-prisma/dev.db
-tsconfig.tsbuildinfo
+/prisma/dev.db
+/tsconfig.tsbuildinfo
 
 # Supabase CLI link/cache metadata may include runtime connection details.
 /supabase/.temp/
+
+# Goal orchestration receipts and host-only diagnostic paths are never runtime
+# inputs. Keep them out of Preview deployment archives.
+/.ai-team/
+/docs/ai-team/evidence/
+/%SystemDrive%/

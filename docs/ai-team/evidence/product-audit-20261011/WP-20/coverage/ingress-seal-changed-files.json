@@ -1,0 +1,33 @@
+{
+  "scope": "Current source-seal increment; full Goal includes earlier changes",
+  "sourceHashes": {
+    "prisma/schema.prisma": "e15b9ef839ac03a67c15d13a68e54eac2f65bdc96751348a511ff9d4b0f891f0",
+    "prisma/migrations/20261016170000_live_metric_ingress_source_seal/migration.sql": "f2bacf068d4fff2c55b0278fe23eb9f0aad125f17c90da90769a92a6db975c49",
+    "src/lib/live-metric-ingress-seal.ts": "9ac448f0f1b2c5479975616e0479a6f7fa3f421efedd420f47637c91664385d2",
+    "src/lib/live-metric-ingress-seal.test.ts": "5c3eb9dd28a7589ac9ab55b8e87174b1a57ba2d17814ff68fc4a6df4165d9209",
+    "scripts/wp20-ingress-seal-disposable.mjs": "fdd9db9546c2c4e697cfce049b9aa6cee36921a67149169f084aea69fd4b83b2",
+    ".ai-team/reports/wp20-ingress-seal-route.py": "e79e98b977a77611e141b497b58cf1ab9824aec3b9511e459a9d8f4b3787180e",
+    ".ai-team/reports/wp20-ingress-seal-review.ps1": "8b5057c644b62a97e638103b0b71c27e9940c035f56635c03d4fa586c01c7508",
+    ".ai-team/reports/wp20-ingress-seal-validate.py": "8b86d38afed2bb5ede51fce7e4d5280c0b7b9c99abecdb6e63e7b35fc0fd2733",
+    ".ai-team/reports/wp20-ingress-seal-checkpoint.py": "08fe1fc1ce6204550855485d612433d105ab37c1b5397198b5ebd437123d97cc",
+    "docs/launch/wp20-ingress-source-seal.md": "c70a9d09d11f4c3db354e0621af5cb0138415eb92202a80ce767c517bfc53137",
+    "docs\\launch\\product-audit-20261012-handoff.md": "3544c90cd1f89bbadbbe98aa06e5ccc2742b372c5d78c8e81164cf45c99433da",
+    "docs\\launch\\product-audit-20261011-progress.md": "d0f7edf11e29ca4ce830b35e10c740c098ade1598aa8692d2b6e6343c4e96c10"
+  },
+  "otherChangedPaths": [
+    ".ai-team/state/goal-state.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-checkpoint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-failure-disposition.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-fixture-strict-scope-failure.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-followup-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-followup-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-initial-fixture-failure.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-page-races-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-page-source-null-failure.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-route.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/ingress-seal-validation.json"
+  ]
+}

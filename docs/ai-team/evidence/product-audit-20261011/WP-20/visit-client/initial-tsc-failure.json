@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "tsc", "revision": "sha256:d0bad3eed45216bdfe7ef8f4c38604461a591126adab7ecd57341a745796dc0b", "status": "FAIL", "exit_code": 2, "duration_seconds": 13.969}

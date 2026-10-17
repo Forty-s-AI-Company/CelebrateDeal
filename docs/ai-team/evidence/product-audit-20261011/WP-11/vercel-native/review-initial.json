@@ -1,0 +1,225 @@
+{
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "reviewed": true,
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "review": {
+    "summary": "Scope: local, inactive vercel-native implementation in src/lib/trusted-entry-rate-limit.ts and its two test files only. This is not WP11 acceptance and does not authorize enabling the mode remotely. I found no BLOCKER or MAJOR defects in the supplied code. The native mode only turns on when every condition holds: explicit mode and source, a direct-vercel topology, VERCEL=1, VERCEL_ENV=preview, a non-empty expected project ID that matches VERCEL_PROJECT_ID, and RATE_LIMIT_PROVIDER=upstash_redis. If any check fails, the request gets a 503 with no proxy fallback. The configuration is read again on every request by default, and the provider is checked again at call time. Only x-vercel-forwarded-for is used, and the test fixtures confirm that forged cf-connecting-ip, x-real-ip and x-forwarded-for headers are ignored. Native rate-limit buckets use their own key prefix, separate from legacy buckets. IPv6 addresses are grouped by /64 and IPv4-mapped addresses are mapped back to IPv4. The request body is left intact, and a provider network failure returns 503 instead of letting the request through. There are four MINOR findings: (1) any caller can pass a hand-built vercel-native config and skip the gate, (2) the native path doesn't check that Upstash credentials are configured, and no test proves the limiter doesn't silently fall back to memory, (3) the project-ID match only helps if the runtime value of VERCEL_PROJECT_ID is set by Vercel and can't be overridden, and (4) /64 bucketing is a coarse policy. Two NIT test gaps are also listed. I could not check the omitted proof-mode return line or the unshown helpers (normalizeClientIp, getRequestClientIp, rateLimitRequestWithIdentity, the legacy limiter); my conclusions rely on how the supplied tests show they behave. Remote acceptance is still incomplete: a second egress path and the real Upstash limiter are unverified, so this review gives no grounds to enable the mode on any deployment. An empty or non-blocking set of findings does not certify that tests pass or that the code is ready to release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "checkRateLimit signature and native branch (config parameter / `const native = config.trustMode === \"vercel-native\"`)",
+        "issue": "The native capability is a plain structural object. Any caller can pass `{ trustMode: \"vercel-native\", deploymentSource: \"vercel\" }` and skip the Preview, project and topology checks. Inside checkRateLimit, only the provider ID is checked again.",
+        "evidence": "EntryIpTrustConfig includes the literal native variant, and checkRateLimit accepts it as a caller-supplied argument. The native branch only calls getRateLimitProviderId() before trusting x-vercel-forwarded-for. VERCEL_ENV, VERCEL, the project ID and the topology are never checked again. The test 'rejects a provider switch even with a previously resolved native config' covers only the provider check.",
+        "impact": "If a WP11 caller (now or later) builds or caches the native config itself, x-vercel-forwarded-for could be trusted in production or in a non-Vercel or proxied topology. In that case the header may be controlled by the client, which lets an attacker evade the rate limit or exhaust another user's bucket. It takes caller misuse to trigger, so it's defense in depth and not currently exploitable.",
+        "recommended_fix": "Make the native config opaque so it can't be built by hand: for example, a module-private unique symbol brand produced only by entryIpTrustConfig. Or, when trustMode is vercel-native, run the full environment check again inside checkRateLimit (the same predicate as entryIpTrustConfig), not just the provider check.",
+        "required_test": "Call checkRateLimit with a hand-built `{trustMode:\"vercel-native\",deploymentSource:\"vercel\"}` while VERCEL_ENV=production, then again with the project ID mismatched, then with the topology unset. Assert a 503 each time and that the limiter is never called.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "native branch provider check / delegation to checkLegacyRateLimit",
+        "issue": "The native path checks that the provider ID is upstash_redis but not that the Upstash REST URL and token are present. No test shows that the legacy limiter refuses (fails closed) when they are missing, as opposed to falling back to per-instance memory or allowing the request.",
+        "evidence": "The code comment says 'No fallback: direct Vercel traffic cannot rely on Cloudflare WAF or per-instance memory'. However, the native path only checks getRateLimitProviderId() === \"upstash_redis\" before delegating. The provider test always sets UPSTASH_REDIS_REST_URL plus a credential and only tests a network exception. The unit test mocks the limiter completely.",
+        "impact": "If the shared limiter falls back to memory or allows requests when credentials are missing or empty, a misconfigured Preview would get ineffective per-instance limiting with no visible error. That breaks the stated no-fallback guarantee.",
+        "recommended_fix": "Either confirm that the existing shared limiter fails closed when Upstash configuration is missing and pin that with a test, or add a narrow check on the native path that returns 503 when the Upstash URL or credential is absent. Do not change the shared limiter itself.",
+        "required_test": "Run the native-provider protocol test with UPSTASH_REDIS_REST_URL removed, then with the credential removed, then with each set to an empty string. Assert a 503 (or another fail-closed result), no in-memory counting across repeated hits, and that fetch is never called with a missing URL.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "entryIpTrustConfig native predicate (`expectedProject === env.VERCEL_PROJECT_ID`)",
+        "issue": "The project-match check only adds assurance if VERCEL_PROJECT_ID at runtime is set by the platform and can't be overridden by the operator. If it is a normal environment variable, or isn't exposed to the function at runtime, the check either becomes a comparison of two operator-set values or always fails closed.",
+        "evidence": "Both sides of the comparison are read from process.env. The code doesn't show where VERCEL_PROJECT_ID comes from at runtime, and the tests set both values synthetically.",
+        "impact": "If an operator copies the configuration to another project or to a non-Vercel host and sets VERCEL_PROJECT_ID by hand, the gate passes. If the value isn't provided at runtime, native mode never activates (fails closed, availability only).",
+        "recommended_fix": "Record evidence that VERCEL_PROJECT_ID is a reserved system variable available at runtime in the target Preview function, and include it in the remote acceptance checklist. If that can't be shown, add a second platform-provided value (for example VERCEL_DEPLOYMENT_ID) or drop the claim that the project check adds assurance.",
+        "required_test": "Remote Preview diagnostic (scope proposal, not local): confirm the runtime VERCEL_PROJECT_ID equals the expected project, and confirm that setting a user environment variable with the same name cannot override it.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "nativeBucketIdentity /64 bucketing",
+        "issue": "Bucketing at /64 still lets a client with a /56 or /48 allocation rotate through 256 to 65,536 separate buckets. All non-mapped low addresses (::1 and IPv4-compatible ::a.b.c.d) collapse into one shared bucket, 0:0:0:0::.",
+        "evidence": "The function returns only the first four 16-bit words. The test expects '::1' to map to '0:0:0:0::'. An input like '::192.0.2.1' would also give 0:0:0:0:: because words[5] is not 0xffff.",
+        "impact": "An attacker with a delegated IPv6 prefix can multiply their rate-limit allowance. The shared low-address bucket only matters if the platform ever sends such addresses. This is a policy decision, not a regression.",
+        "recommended_fix": "Record /64 as an accepted policy. Optionally, as a separate scope proposal, add a coarser secondary limit for /48 or /56 prefixes. Do not change the shared limiter or schema as part of this task.",
+        "required_test": "Add assertions that document the chosen behavior: two addresses in different /64s of the same /48 land in different buckets (or a secondary limit applies), and IPv4-compatible or NAT64 inputs are either rejected or bucketed deterministically.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/trusted-entry-rate-limit.native.test.ts",
+        "area": "'normalizes %s into stable bucket %s' cases",
+        "issue": "No test shows that non-canonical spellings of the same IPv6 /64 (uppercase hex, leading zeros, fully expanded form) produce the same bucket, or that the dotted mapped form and the hex mapped form share a bucket in the protocol test.",
+        "evidence": "The cases are all lowercase compressed forms. The way parseInt and toString(16) canonicalize addresses is never exercised with uppercase or zero-padded groups.",
+        "impact": "Normalization could drift in normalizeClientIp without being caught, letting one source split across several buckets.",
+        "recommended_fix": "Add cases such as '2001:0DB8:ABCD:1234:0:0:0:1' and '2001:db8:abcd:1234::1' both mapping to '2001:db8:abcd:1234::', and '::FFFF:C000:0201' mapping to '192.0.2.1'.",
+        "required_test": "Parameterized equivalence test asserting the same cf-connecting-ip identity for each spelling.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/trusted-entry-rate-limit.native-provider.test.ts",
+        "area": "buckets key assertions",
+        "issue": "The protocol test checks the key prefix and the bucket count but not the exact bucket suffix, so it doesn't prove that the forged header values never reach the Redis key.",
+        "evidence": "`every(key=>key.startsWith(\"celebratedeal:rl:entry-vercel-native:entry:\"))` and `buckets.size === 4`. Bucket isolation is only inferred from the counts.",
+        "impact": "A regression that put a forged value into the key could still give four buckets in some arrangements of the test.",
+        "recommended_fix": "Assert the exact set of keys, for example the prefix followed by 192.0.2.1, 192.0.2.2, 2001:db8:1:2:: and 2001:db8:1:3:: (in whatever hashed or encoded form the limiter uses), and assert that no key contains 192.0.2.10x.",
+        "required_test": "Exact key-set equality assertion in the existing protocol test.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "execution_provider": "claude_cli",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "critical",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false
+}

@@ -1,0 +1,53 @@
+{
+  "status": "PASS",
+  "scope": "Static SSR semantic accessibility only; production CSS and running Next server NOT_RUN",
+  "pages": [
+    {
+      "engine": "chromium",
+      "slug": "terms",
+      "status": "PASS",
+      "violations": 0,
+      "publishedDateInvented": false
+    },
+    {
+      "engine": "chromium",
+      "slug": "privacy",
+      "status": "PASS",
+      "violations": 0,
+      "publishedDateInvented": false
+    },
+    {
+      "engine": "chromium",
+      "slug": "refunds",
+      "status": "PASS",
+      "violations": 0,
+      "publishedDateInvented": false
+    },
+    {
+      "engine": "firefox",
+      "slug": "terms",
+      "status": "PASS",
+      "violations": 0,
+      "publishedDateInvented": false
+    },
+    {
+      "engine": "firefox",
+      "slug": "privacy",
+      "status": "PASS",
+      "violations": 0,
+      "publishedDateInvented": false
+    },
+    {
+      "engine": "firefox",
+      "slug": "refunds",
+      "status": "PASS",
+      "violations": 0,
+      "publishedDateInvented": false
+    }
+  ],
+  "lastCheck": {
+    "engine": "firefox",
+    "slug": "refunds",
+    "violations": []
+  }
+}

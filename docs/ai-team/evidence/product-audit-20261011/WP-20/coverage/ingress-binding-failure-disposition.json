@@ -1,0 +1,26 @@
+{
+  "raceObservation": {
+    "receipt": "ingress-binding-initial-race-failure.json",
+    "observed": "No wait seen using pg_stat_activity inside transaction",
+    "change": "Use live pg_locks/pg_blocking_pids; actual blocked writer then defined null verified",
+    "scope": "Sampler failure; not claimed to have reproduced a product write race"
+  },
+  "httpStop": {
+    "receipt": "ingress-binding-defined-result-http-failure.json",
+    "status": "UNEXPLAINED",
+    "known": "Initial shutdown failure masked primary HTTP failure and left owned upstream listener alive; that failed owned process was terminated",
+    "fix": "finally closes upstream even if stop fails; primary/upstream/shutdown sanitized errors recorded separately",
+    "notClaimed": "Later matching PASS does not explain or fix the old intermittent HTTP/stop failure"
+  },
+  "sensitiveReview": {
+    "receipts": [
+      "ingress-binding-initial-sensitive-review.json",
+      "ingress-binding-entry-sensitive-review.json"
+    ],
+    "action": "Kept guard enabled; omitted matching credential declaration lines with explicit review scope; no real credential values transmitted"
+  },
+  "reviewDisputes": {
+    "sourceDefinedConditionalBlocker": "Baseline already contained ingressFrameId INSERT; current INSERT supplied and independent final review no BLOCKER/MAJOR",
+    "retention": "Frame has admittedAt, not expiresAt; only version cascade deletes, no independent frame/run sweep"
+  }
+}

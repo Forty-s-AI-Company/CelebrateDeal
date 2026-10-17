@@ -1,0 +1,86 @@
+{
+  "at": "2026-10-15T21:06:40.044407+00:00",
+  "status": "DRAFT_REVISED",
+  "draftVersion": 3,
+  "sourceHash": "20a4efa4608c83503b80f2b20c22880d5b2385c5f35cf7b9f5f38e7d41c91a33",
+  "qualifiedReviews": [
+    {
+      "raw": "policy-draft-review.json",
+      "model": "claude-opus-5-5",
+      "effort": "unknown"
+    },
+    {
+      "raw": "policy-draft-v2-review.json",
+      "model": "claude-opus-5-5",
+      "effort": "unknown"
+    }
+  ],
+  "v2Findings": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 1,
+    "NIT": 2
+  },
+  "v3Changes": "Only pickup obligation wording, explicit channel state placeholder and header nonpublic label",
+  "v3TextChecks": "PASS",
+  "v3FullReview": "NOT_RUN",
+  "publication": "NOT_READY",
+  "wholeWp03": "NOT_READY",
+  "remainingOwnerFacts": [
+    "operator identity/contact",
+    "collection/settlement responsibility",
+    "actual providers, regions, retention and confirmed controls",
+    "identifiable analytics sharing scope",
+    "actual feature/renewal/cancel/optout interfaces and invoice state"
+  ],
+  "findingsDisposition": [
+    {
+      "severity": "MINOR",
+      "rawFinding": {
+        "severity": "MINOR",
+        "file": "CelebrateDeal policy draft2 (退款與付款支援政策)",
+        "area": "### 返還與付款狀態, first sentence",
+        "issue": "The pickup duty is weaker than CPA Art 19-2 para 1. The draft says the seller '原則上應…15日內安排取回'. The statute requires the business to actually pick up the goods (至原交付處所或約定處所取回商品) within 15 days, with individual negotiation as the only exception. '安排' (arrange) and '原則上' (in principle) suggest that only arranging a pickup within 15 days is enough, or that other unstated exceptions exist.",
+        "evidence": "Draft: '出賣人原則上應自收到書面通知之次日起15日內安排取回，依法得另行個別磋商的取回方式除外。' Supplied verified authority: GOODS pickup within 15 days from the day after receipt of written notice, unless individually negotiated.",
+        "impact": "Consumers could read the seller's obligation as only arranging pickup, not completing it, within 15 days. That understates the statutory duty in public consumer-facing text.",
+        "recommended_fix": "Reword to: '除當事人另有個別磋商外，出賣人應於收到書面解除通知之次日起15日內，至原交付處所或約定處所取回商品。' Drop '原則上' and '安排'. Keep the separate refund-trigger sentence as it is.",
+        "required_test": "Text diff check that the pickup sentence states actual pickup within 15 days, keeps the individual-negotiation exception as the only exception, and leaves the refund triggers (取回/收到退回商品/收到解除服務契約通知) unchanged.",
+        "confidence": 0.7
+      },
+      "disposition": "resolved",
+      "verification": "targeted text assertions against exact source hash; no fullv3 legal review claim"
+    },
+    {
+      "severity": "NIT",
+      "rawFinding": {
+        "severity": "NIT",
+        "file": "CelebrateDeal policy draft2 (使用條款)",
+        "area": "### 通知與變更, first paragraph",
+        "issue": "The public-facing text still uses internal planning wording: '通知規劃提供 Email、LINE、SMS' and '預備功能不代表已可送達'. This is roadmap language, not an operator commitment, which is inconsistent with the stated draft2 repair goal.",
+        "evidence": "'通知規劃提供 Email、LINE、SMS…預備功能不代表已可送達。'",
+        "impact": "Users may be confused about which channels actually exist. It leaves a small editorial leftover in the public text.",
+        "recommended_fix": "Rephrase as a factual statement, e.g. '我們提供的通知通道及其可用狀態，以帳號設定頁實際顯示為準；未顯示為已啟用的通道不會用於送達。' Do this without adding or removing any channel scope.",
+        "required_test": "Read the public sections and confirm no '規劃/預備' roadmap wording remains in operator-commitment sentences.",
+        "confidence": 0.55
+      },
+      "disposition": "resolved",
+      "verification": "targeted text assertions against exact source hash; no fullv3 legal review claim"
+    },
+    {
+      "severity": "NIT",
+      "rawFinding": {
+        "severity": "NIT",
+        "file": "CelebrateDeal policy draft2 (header)",
+        "area": "Document header: 版本／狀態 lines",
+        "issue": "The draft-status header ('草案2…不是法務簽核或整包WP03驗收…下列三份公開文字候選') is not marked as excluded from the public page. Only the editorial record section carries '（不放上公開頁）'. The header also cites internal workstream IDs (WP03).",
+        "evidence": "The editorial section is explicitly labeled '編輯與驗收紀錄（不放上公開頁）'. The header block has no such label and sits above the public sections.",
+        "impact": "There is a small risk that internal status text and workstream references get published, or that the 生效日 and version fields are left inconsistent at publication.",
+        "recommended_fix": "Mark the status header as non-public too, or move it into the editorial record. Keep only a public version and 生效日 line in the published text.",
+        "required_test": "Publication checklist: confirm the published text contains no '草案', 'WP03', or '公開文字候選' strings, and that the version and 生效日 are filled.",
+        "confidence": 0.5
+      },
+      "disposition": "resolved",
+      "verification": "targeted text assertions against exact source hash; no fullv3 legal review claim"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "ab-browser-typecheck",
+  "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+  "status": "PASS",
+  "exit_code": 0,
+  "source_receipt": "ab-browser-exec-checks.json"
+}

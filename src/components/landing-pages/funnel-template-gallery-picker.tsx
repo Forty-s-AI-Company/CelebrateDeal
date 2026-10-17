@@ -30,7 +30,7 @@ export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [preview]);
 
-  if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 Funnel 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入 Blocks。</span></div>;
+  if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 一頁式網站 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入 版型區塊。</span></div>;
 
   const apply = (templateId: string) => {
     setError(undefined);
@@ -67,7 +67,7 @@ export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = 
           <div className="flex gap-2"><button type="button" aria-pressed={viewport === "desktop"} onClick={() => setViewport("desktop")} className="min-h-10 rounded-lg border px-3 text-sm font-semibold">電腦版</button><button type="button" aria-pressed={viewport === "mobile"} onClick={() => setViewport("mobile")} className="min-h-10 rounded-lg border px-3 text-sm font-semibold">手機版</button><button ref={closeRef} type="button" onClick={() => setPreviewId(undefined)} className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">關閉</button></div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3 sm:p-6"><div data-template-preview-viewport={viewport} className={`mx-auto min-w-0 overflow-x-hidden rounded-xl bg-white shadow-sm transition-[max-width] ${viewport === "mobile" ? "max-w-[390px]" : "max-w-5xl"}`}><FunnelPageDocumentRenderer document={documents.get(preview.id)!} viewport={viewport} mode="preview" /></div></div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4"><p className="text-xs leading-5 text-slate-600">預覽與套用共用同一份 PageDocument 與 renderer。</p><button type="button" disabled={disabled} onClick={() => apply(preview.id)} className="min-h-10 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{disabled ? "套用中…" : "套用這個模板"}</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4"><p className="text-xs leading-5 text-slate-600">預覽與套用共用相同的頁面內容與顯示方式。</p><button type="button" disabled={disabled} onClick={() => apply(preview.id)} className="min-h-10 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{disabled ? "套用中…" : "套用這個模板"}</button></div>
       </div>
     </div> : null}
   </div>;

@@ -1,0 +1,19 @@
+{
+  "status": "INDEPENDENT_FOLLOWUP_COMPLETED",
+  "initial_review": "initial-reviewed.json",
+  "evidence": {
+    "desktop_panel": "app-shell.tsx unchanged desktop aside at212",
+    "visible_instances": "18 actual shell browser states PASS; merchant exactly1, platform_admin0",
+    "mobile_flow": "Normal document flow outside sticky header; precise comment changed",
+    "kpi_string": "Only ratio derived from numeric counts; no independent nonzero string metric",
+    "currency": "Intentional explicit code plus preexisting symbol; cosmetic MINOR retained pending review",
+    "default_duplication": "NIT retained; no schema/migration authorized"
+  },
+  "remaining_requirements": [
+    "operations first-form measurement with full shell",
+    "current snapshot required check receipts",
+    "independent findings closure",
+    "canonical acceptance"
+  ],
+  "result": "observed claude-opus-5-5; MAJOR and2MINOR closed; residual1MINOR currency redundancy and1NIT default duplication nonblocking"
+}

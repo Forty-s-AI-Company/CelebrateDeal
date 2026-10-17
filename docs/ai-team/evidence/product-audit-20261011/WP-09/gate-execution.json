@@ -1,0 +1,13 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "detail": "Owned source edits completed through desktop tools; full acceptance separate"
+}

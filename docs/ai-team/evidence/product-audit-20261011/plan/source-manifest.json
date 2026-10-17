@@ -1,0 +1,68 @@
+{
+  "base_revision": "efb8b7e9a737ea30ea691870318d85bf74830331",
+  "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "sources": [
+    {
+      "path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\AGENTS.md",
+      "sha256": "d35ad7383a76e6d2282beb2c6b005e85177ffdaebb241190e0ab40160ed902ad",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\ai-team\\GOAL-PROTOCOL.md",
+      "sha256": "fab57deee5c11e17d8e08a92a176b668c050004868fbe20049cea8c959f22dc3",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\ai-team\\ROUTING.md",
+      "sha256": "beabe65596c05b8ffc6c1c1386daca8f9e477a4a29029184d74731acbe0439eb",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\ai-team\\handoff-schema.md",
+      "sha256": "9d1cc235f0bc4ae537c744b3c1432303fe3ad5bf0dae1e60ac79230fc584c33a",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\config\\routing-policy.json",
+      "sha256": "825479d6f70351a1320088dce23d44fb7fcd8b801daad3c8b517f4eebfe47be8",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\reviews\\2026-10-11-product-audit-consolidated.md",
+      "sha256": "4286d38f36f33ad11b0202165eee3def61550756d5cc1cb4a6ae1e2237c14662",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\reviews\\2026-10-11-product-audit.md",
+      "sha256": "82fbecfb8d256eb803f8eb1890d61ad71636d524cc36235b016bf65fb85cfd4f",
+      "read_scope": "targeted excerpts"
+    },
+    {
+      "path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\AGENTS.md",
+      "sha256": "dc69da044747b1e2ae074e7231ac5f35752b210acbd8f479339da593e8507671",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\GOAL-PROTOCOL.md",
+      "sha256": "fab57deee5c11e17d8e08a92a176b668c050004868fbe20049cea8c959f22dc3",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\ROUTING.md",
+      "sha256": "49dcccbc889116667e04bd36cf8fd998d68bed0d3615c3cf7b653c6dce52eb2e",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\handoff-schema.md",
+      "sha256": "e1d97eaed4c45c387c69e3d6a9f642c7433f3a59748a210634d91a94137182e9",
+      "read_scope": "complete"
+    },
+    {
+      "path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\.ai-team\\config\\routing-policy.json",
+      "sha256": "a6e1c089ad063214c6c7b72894404ff65f1a4779ddca0dd529627ddf8c73efdd",
+      "read_scope": "complete"
+    }
+  ],
+  "original_worktree_access": "read_only",
+  "screenshots_reexamined": false
+}

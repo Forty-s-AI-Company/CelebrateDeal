@@ -1,0 +1,11 @@
+{
+  "files": {
+    "src/app/(app)/lives/[id]/analytics/page.tsx": "08c07875736c1c4363f8b5fff285ebcd15c5d3633ec31b5309f567ae9935c4b7",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx": "258dffa6bc8db558df51accf93d3252728c77eee8ceee2f35d707bd8c7787c0c"
+  },
+  "suppliedRanges": {
+    "src/app/(app)/lives/[id]/analytics/page.tsx": "33-52 only",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx": "last24lines and unready assertion"
+  },
+  "previous": "analytics-ui-final-review.json"
+}

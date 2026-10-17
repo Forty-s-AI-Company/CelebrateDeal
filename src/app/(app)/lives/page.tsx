@@ -14,7 +14,7 @@ export default async function LivesPage() {
 
   return (
     <>
-      <PageHeader title="直播間管理" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
+      <PageHeader title="直播間" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
       {lives.length === 0 ? (
         <EmptyState title="還沒有直播間" description="用 stepper 建立第一場直播，把影片、商品與報名表串起來。" action={<ButtonLink href="/lives/new" tone="cta">建立直播</ButtonLink>} />
       ) : (

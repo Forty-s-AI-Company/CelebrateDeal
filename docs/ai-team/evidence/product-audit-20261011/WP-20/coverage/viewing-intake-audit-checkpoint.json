@@ -1,0 +1,280 @@
+{
+  "status": "IN_PROGRESS",
+  "wholeWp": "NOT_READY",
+  "previousGoalTurn": "PROGRESS",
+  "wholeGoalCompleted": 8,
+  "wholeGoalTotal": 20,
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "engineeringResolved": {
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "engineeringObserved": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 298
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "db": {
+      "status": "PASS",
+      "stage": "complete",
+      "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+      "checks": {
+        "unconfiguredPlaybackPreserved": "PASS",
+        "committedBeforeSourceAndLostReplyRetained": "PASS",
+        "canonicalSessionBindingIdempotentAndBounded": "PASS",
+        "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+        "sameBrowserIntakeSessionAnchorRenewedAndRevisionAdvanced": "PASS",
+        "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+        "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+        "sameSnapshotIntakesSessionsQuotaLossAndSharedBudget": "PASS",
+        "concurrentNewIntakeInvisibleWithinRrThenChangesNextDigest": "PASS",
+        "privateDefinerKeepsSessionAndIdentityJoinsAuthoritative": "PASS",
+        "privatePageExecutionDeniedWithoutGrant": "PASS",
+        "rlsFilteringCannotShiftOutcomeCounts": "PASS",
+        "boundSessionUpdatesCannotChangeIdentityAnchorOrExceedIntake": "PASS",
+        "timestamptzCatalogAndNonUtcBoundUpdates": "PASS",
+        "intakeEpochLossAndSessionBindingImmutable": "PASS",
+        "unexpectedColumnGrantRejectedAndProbeRoleCleaned": "PASS",
+        "expiredSessionAndIntakeCannotResurrectAfterAdmissionRenewal": "PASS",
+        "renewalCounterCannotBeForged": "PASS",
+        "renewalWaitingAcrossOldExpiryRollsBack": "PASS",
+        "databaseRejectsUnboundClosedExpiredAndShortenedLeases": "PASS",
+        "existingSessionGuardRejectsReopeningClosedSession": "PASS",
+        "concurrentCanonicalRenewalsSerializeAndExtendOnlyOnce": "PASS",
+        "admissionDeletionRetainsIntakeVersionCascadeCleans": "PASS"
+      },
+      "browser": {
+        "sessionRequests": 2,
+        "intervals": 9,
+        "terminal": true,
+        "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+        "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+      },
+      "intakeInspection": {
+        "count": 65,
+        "quotaLosses": 1,
+        "outcomes": {
+          "future_intake": 1,
+          "pre_window_expired": 0,
+          "pending_session": 61,
+          "missing_session": 0,
+          "identity_mismatch": 0,
+          "outside_cohort": 0,
+          "open_session": 2,
+          "incomplete_session": 0,
+          "closed_session": 1
+        },
+        "coverage": "unknown"
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    },
+    "ledgerRegression": {
+      "status": "PASS",
+      "stage": "complete",
+      "scope": "Persistent viewing issuance/mutation ledger with private inspection; no positive coverage",
+      "sameScopeRegistrationFk": "VALIDATED_NOT_DEFERRABLE",
+      "results": {
+        "sessionCount": 3,
+        "intervalCount": 2,
+        "openVisible": true,
+        "emptyClosedVisible": true,
+        "pageSizeIndependentDigest": true,
+        "repeatableReadSnapshot": true,
+        "freshSnapshotSeesClose": true,
+        "revocationVisible": true,
+        "partialBudgetDiscarded": true,
+        "foreignScopeDenied": true,
+        "coverage": "unknown"
+      },
+      "ledger": {
+        "newVersionEpoch": true,
+        "preEpochWindowUnknown": true,
+        "issued3Interval2State5Events": true,
+        "noOpNoEvent": true,
+        "deletionTombstoneRetained": true,
+        "revisionAndDigestChange": true,
+        "immutableUpdateDeleteTruncate": true,
+        "forgedDirectInsertRejected": true,
+        "reusedSessionIdRejected": true,
+        "rollbackAtomic": true,
+        "commitOrderUsesCount": true,
+        "unprivilegedRoleDenied": true,
+        "parentVersionCascadeNoOrphans": true,
+        "rangeChangesRetainIssuance": true,
+        "sourceTableTruncateRejected": true,
+        "identityMutationRejected": true,
+        "nonOwnerProvenanceNotFiltered": true,
+        "wholeRowChangeRecorded": true,
+        "unbackedProgressRejected": true,
+        "nestedTriggerForgeryRejected": true,
+        "nonOwnerDdlAndVersionDeleteDenied": true,
+        "invalidWindowRejected": true,
+        "revisionFunctionsAgree": true,
+        "triggerCatalogBindingsEnabled": true,
+        "issuedPartialIndexAndSessionIndexPresent": true,
+        "newObjectsOwnerOnlyAcl": true,
+        "intervalRawNumericTypesInteger": true,
+        "fullAuditAsNonOwnerEffectiveRoleMatches": true,
+        "runtimeRoleLedgerReadDdlTruncateDeleteDenied": true,
+        "unexpectedAclGuardRejectedAndRolledBack": true
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    }
+  },
+  "review": {
+    "status": "REVIEW_COMPLETED",
+    "observed": {
+      "source": "cli_terminal_model_usage",
+      "model": "claude-opus-5-5",
+      "effort": "unknown"
+    },
+    "scope": "Full intake helper and parent viewing audit; harness/functions SQL not supplied",
+    "provider": "claude_cli",
+    "sourceHashMatch": false,
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-metric-playback-intake-audit.ts",
+        "area": "inspectPlaybackIntakes SQL LEFT JOINs (LiveMetricSession, LiveMetricRegistration, Live, FormSubmission, RegistrationForm) and classifyPlaybackIntake",
+        "issue": "The private revision check only proves that intake rows are visible. The joined rows that decide the classification can be hidden by row-level security without the audit noticing.",
+        "evidence": "The revision is computed only from LiveMetricPlaybackIntake columns (count, lossAt, renewalCount). The session is attached with a LEFT JOIN, so a hidden session gives sessionId=null, which is classified as pending_session or missing_session. A hidden Registration, Live, FormSubmission or RegistrationForm gives identityCurrent=false or verifiedAt=null, which is classified as identity_mismatch. Either way the result still has status 'enumerated'. In the viewing audit, the session enumeration is also never compared with context.viewingRevision or issuedCount.",
+        "impact": "If the role can see intakes but row-level security filters sessions or identity rows, the audit reports a clean 'enumerated' result with the wrong outcome counts (open or closed sessions show up as missing or pending sessions, or as identity mismatches). This is the same kind of silently wrong result the intake revision was meant to prevent, just one join further along.",
+        "recommended_fix": "Have the private SECURITY DEFINER function also return a joined-visibility revision. For example, return the count of intakes that have a bound session plus the count with a resolvable registration and identity chain, computed in the same snapshot. Return intake_source_not_visible when the visible joined counts don't match. Alternatively, run the classification joins inside the definer function and return only aggregates.",
+        "required_test": "Use a NOLOGIN role where intake rows are visible but LiveMetricSession (and separately FormSubmission/RegistrationForm) is filtered by row-level security. The audit must return unavailable and must not return shifted outcome counts. Also test that the fully visible role still matches.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-playback-intake-audit.ts",
+        "area": "classifyPlaybackIntake ordering; quotaLosses accounting",
+        "issue": "Intakes that suffered a quota loss, and intakes that expired before the window started, are counted under the window's pending_session or missing_session outcomes.",
+        "evidence": "lossAt is never checked during classification. The supplied synthetic run shows this: 64 intakes = 61 pending + 2 open + 1 closed, so the one quota-loss intake was counted as a pending session. Because the audit covers every intake in the version, an intake with issuedAt and expiresAt both before startAt and no session is still counted as missing_session for this window.",
+        "impact": "An intake that lost its quota will never get a session, so counting it as pending is wrong. Intakes from before the window inflate the missing_session count for the window being audited. Anyone reconciling outcome counts against the window would draw the wrong conclusions.",
+        "recommended_fix": "Add separate outcomes, for example quota_lost (checked before the session and expiry branches, or reported alongside them) and pre_window_expired (expiresAt <= startAt with no session). Alternatively, document that the outcomes cover the whole version and not just the window.",
+        "required_test": "Unit test classifyPlaybackIntake with (a) lossAt set, no session and an unexpired lease, and (b) an intake that expired before startAt with no session. Assert the dedicated outcomes, and assert that the outcome totals still equal count.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-playback-intake-audit.ts",
+        "area": "final digest.update([...revision, epochStartedAt, outcomes, quotaLosses, earliestLossAt])",
+        "issue": "The digest includes the outcome counts, which depend on asOf, but does not include asOf itself.",
+        "evidence": "pending_session versus missing_session is decided by expiresAt > context.asOf, and asOf comes from clock_timestamp(). asOf is not hashed in either the intake digest or the viewing digest.",
+        "impact": "Two audits of the same rows (same revision) can produce different digests just because a pending lease expired between the two runs. Comparing digests then looks like the data changed when it didn't, so the digest is not a deterministic function of the inputs it records.",
+        "recommended_fix": "Either hash asOf (or a classification cutoff that is bound to the window) together with the outcomes, or split the digest into a source digest (the rows plus the revision) and a separate classification digest that includes asOf.",
+        "required_test": "Run two audits on the same data, one before and one after a pending intake's expiresAt. Assert that the source digest stays the same and that any difference in the classification digest can be explained by the asOf value that was bound into it.",
+        "confidence": 0.5
+      }
+    ],
+    "attempts": [
+      {
+        "provider": "agy_wrapper",
+        "status": "IDLE_TIMEOUT",
+        "exitCode": -1
+      },
+      {
+        "provider": "claude_cli",
+        "status": "SUCCESS",
+        "exitCode": 0
+      }
+    ]
+  },
+  "followupReview": {
+    "status": "REVIEW_COMPLETED",
+    "observed": {
+      "source": "cli_terminal_model_usage",
+      "model": "claude-opus-5-5",
+      "effort": "unknown"
+    },
+    "scope": "Full121 SQL and intake helper; parent changed integration excerpts; no harness",
+    "sourceHashMatch": true,
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016090000_live_metric_private_viewing_pages/migration.sql",
+        "area": "wp20_metric_playback_intake_page LEFT JOIN LiveMetricSession / ORDER BY i.id; wp20_metric_viewing_page ORDER BY s.id,coalesce(i.sequence,-1)",
+        "issue": "Pagination is correct only if the sort keys are unique. The intake page sorts by i.id and resumes with i.id>cursor, but the LEFT JOIN to sessions on intakeId can return several rows per intake if intakeId isn't unique. The viewing page has the same exposure on (sessionId, sequence) for intervals. The supplied migration doesn't create or check either uniqueness rule, and the schema wasn't supplied.",
+        "evidence": "The intake keyset uses only i.id while the session join is one-to-many unless constrained. TS keeps cursor=last.id, so the next page skips any remaining rows with the same i.id. If duplicates straddle a page boundary, the intake's revision is still counted once and can match expectedRevision, while the second session row is never classified or hashed.",
+        "impact": "If those uniqueness rules are missing, an intake with two sessions, or two intervals with the same sequence, can be silently left out of outcomes and the source digest. Duplicates inside one page only inflate the revision and fail closed.",
+        "recommended_fix": "In this migration, check that unique indexes or constraints exist on LiveMetricSession(\"intakeId\") and on LiveMetricInterval(\"sessionId\",sequence), and raise an error if they don't. Alternatively, make the ORDER BY and cursor fully unique (e.g. i.id,s.id) and have the TS code reject repeated keys.",
+        "required_test": "Disposable DB: try to insert two sessions for one intake and two intervals with the same sequence. Either the constraint rejects them, or with pageSize set so the duplicate straddles a page boundary, the audit returns unavailable or counts both rows.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016090000_live_metric_private_viewing_pages/migration.sql",
+        "area": "REVOKE/ACL assertion block; function WHERE clause (no caller-tenant check)",
+        "issue": "The access boundary depends entirely on a later EXECUTE grant that isn't in the supplied scope. The functions accept any vendor/live/version tuple and read with row_security=off, so whichever role is granted EXECUTE can read pseudonymous session, identity and interval data for every tenant. The ACL check runs only at migration time.",
+        "evidence": "There is no GRANT and no check on the intended audit role, and nothing checks the caller's tenant. The task states the deployed role is unverified, and the supplied parent code runs the call under the primary application transaction.",
+        "impact": "If EXECUTE is later granted to the general application or Prisma runtime role rather than a dedicated audit role, any code path on that connection could read data across tenants. This is a deployment and scope risk, not a defect in the authorized task.",
+        "recommended_fix": "Scope proposal: grant EXECUTE only to a dedicated NOLOGIN audit role held by a dedicated login. Add a deploy or startup check that the function ACL equals {owner, audit role}, prosecdef is true, and proconfig still contains the row_security=off and search_path settings.",
+        "required_test": "Deployment check against the real DB role: the general application role gets permission denied on both functions, the audit role can call them, and the ACL check fails if any other grantee appears.",
+        "confidence": 0.5
+      }
+    ],
+    "attempts": [
+      {
+        "provider": "agy_wrapper",
+        "status": "INVALID_REVIEW",
+        "exitCode": 0
+      },
+      {
+        "provider": "claude_cli",
+        "status": "SUCCESS",
+        "exitCode": 0
+      }
+    ]
+  },
+  "sourceContract": "Private recorded-only enumeration; no positive proof or coverage writer. URL/cohort universe and historical protocol closure still unproven.",
+  "validationReuse": "Current121 functions/definer adapters and split digests:298 units/lint/typecheck and actual disposable DB PASS.",
+  "unverified": [
+    "full URL/cohort capture and pre-epoch URLs",
+    "7-day observation versus cohort window binding",
+    "replay/verification recovery",
+    "positive coverage writer/proof/fence/reader",
+    "load/populated upgrades/deployed role",
+    "scheduler host/queue/cadence/nonproduction integration",
+    "full signed HTTP browser auth/live-WHEP/long soak",
+    "remote GitHub Actions"
+  ],
+  "originalSynchronized20Serializable": {
+    "successes": 7,
+    "failures": 13,
+    "rerun": false
+  },
+  "ownership": {
+    "writer": "root",
+    "maxParallel": 1,
+    "maxDepth": 1,
+    "automaticSpawn": false
+  },
+  "nextAction": "Disposition scoped review; enforce full playback/cohort lifecycle closure including pre-epoch URLs and replay/verification transitions, then wire positive proof/fence/consumer and scheduler. Do not use recorded-only counts to certify coverage.",
+  "git": {
+    "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "mode": "independent detached worktree",
+    "promotion": "NOT_REQUESTED"
+  },
+  "production": "NOT_AUTHORIZED"
+}

@@ -1,0 +1,15 @@
+{
+  "status": "EVIDENCE_INSPECTED",
+  "recordedAt": "2026-10-14T21:28:20.943118+00:00",
+  "receipt": "order-source-load.json",
+  "receiptSha256": "0807797d298f0c3b3ae400ac5a5a0b20e1ce90b9d7e4a942d42cfd8036ec5b62",
+  "currentFiles": {
+    "scripts/wp20-order-load-disposable.mjs": "fc1dbc24f330a2024526b49b1cf05d2f61a169a30e0dcc56b4710dfd534ca7a4",
+    "src/lib/live-metric-order-audit.ts": "2843f32cc9febf6ce444fc40eba65bd7390ccaa4c3a34e1ad0e324d0ec06509e",
+    "src/lib/live-metric-order-source-audit.ts": "957028d1c37adbc1b29782d472fcb239f8ec1881462ff9502be5790149248f4c",
+    "prisma/migrations/20261015210000_live_metric_order_tenant_revision/migration.sql": "f5d76318a3f8abfb1f1403d156803e6d0af985ff216b81ae532be4bfa58a9d35"
+  },
+  "snapshotTiming": "Recorded after execution; not a pre-run attestation",
+  "scope": "Synthetic missing-payment inventory only; no matched payment join workload or SSI acceptance",
+  "reviewStatus": "PENDING"
+}

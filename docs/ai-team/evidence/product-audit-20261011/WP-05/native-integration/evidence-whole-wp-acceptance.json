@@ -1,0 +1,187 @@
+{
+  "scope": "Entire WP05 authorized requirements",
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "scope": "Entire authorized WP05 implementation; all required checks terminal. No Production or git promotion.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\execution-whole-wp.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "lineage": [
+      "current-security-part1-reviewed.json",
+      "current-integration-part2-reviewed.json",
+      "current-ui-part3-reviewed.json",
+      "current-ui-part4-reviewed.json",
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json",
+      "final-contract-reviewed.json",
+      "final-contract-followup-reviewed.json",
+      "whole-wp-reviewed.json",
+      "whole-wp-followup-reviewed.json"
+    ],
+    "scope_detail": "Entire WP05 via hashed unchanged source plus qualified amendment reviews, final integration review and terminal-evidence followup; no deployment or other WP acceptance.",
+    "source_lineage": "acceptance-source-lineage.json",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\review-whole-wp-receipt.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 14.375,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\unit.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "postgresql",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.781,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\postgresql.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 8.36,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 14.39,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "submission-invariant",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.11,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\submission-invariant.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-ui-feedback",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 27.016,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\browser-ui-feedback.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-lp-js",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 25.14,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\browser-lp-js.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-webinar",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 19.578,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\browser-webinar.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "webinar-pending",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 42.313,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\webinar-pending.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-status",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 13.188,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\browser-status.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-lp",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 20.64,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\browser-lp.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-partner",
+      "revision": "sha256:c4bb775048bfbaf646f71f1172cb1712cefd26b6796e29c3227602fe5575423f",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 19.657,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-final-contract\\browser-partner.json"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "MINOR",
+      "disposition": "confirmed",
+      "issue": "Manual native navigation cancel retains pending until reload (documented tradeoff)"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "confirmed",
+      "issue": "Global128draft capacity can saturate; fail-closed field-retention availability limit"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "confirmed",
+      "issue": "Noncanonical tampered legacy paths may fail retry validation; authored ASCII paths supported"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "confirmed",
+      "issue": "Browser report concise flags require coverage notes; source/entry mapping now provided"
+    }
+  ],
+  "requirements": "whole-wp-requirements.json",
+  "coverage_notes": "whole-wp-coverage-notes.json"
+}

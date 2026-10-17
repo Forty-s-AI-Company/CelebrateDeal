@@ -1,0 +1,17 @@
+{
+  "scope": "Public login and static historical marker only; no authenticated routes or database probe",
+  "deployment_identity": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+  "checks": [
+    {
+      "path": "/login",
+      "status": 200,
+      "known_login_marker": true
+    },
+    {
+      "path": "/__celebratedeal_wp187_fingerprint.json",
+      "status": 200,
+      "historical_wp187_marker": false,
+      "source_digest": null
+    }
+  ]
+}

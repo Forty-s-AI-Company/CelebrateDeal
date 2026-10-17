@@ -1,0 +1,9 @@
+{
+  "revision": "sha256:f4b5cae38766e1eca99648c6b2a4fca154d2eadb3a015a4df5ba1811981b4e6b",
+  "files": [
+    "src/lib/live-metric-registration-capture.ts",
+    "prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "test_source": "focused excerpts; full runner hashed"
+}

@@ -1,0 +1,9 @@
+{
+  "workflow": ".github/workflows/ci.yml",
+  "workflow_sha256": "200c284e34b2158c083ab3b0ff850db110ead9de5b2efab7c49058552e294356",
+  "push_trigger": true,
+  "lint_command": "npm run lint",
+  "unit_command": "npm run test:coverage",
+  "changed": false,
+  "remote_run": "NOT_RUN_NO_PUSH"
+}

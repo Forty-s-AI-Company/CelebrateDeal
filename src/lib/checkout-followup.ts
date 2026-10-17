@@ -1,0 +1,137 @@
+import { CommerceOrderPiiValidationError, revealCommerceOrderPii } from "@/lib/commerce-order-pii";
+import { createEmailRecipientHash } from "@/lib/email-delivery-pii";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { captureOperationalError } from "@/lib/monitoring";
+import { createHash } from "node:crypto";
+
+const Identity = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u);
+const Scope = z.object({ vendorId: Identity, orderId: Identity }).strict();
+const DeliveryReference = z.object({ orderId: Identity, ruleId: Identity,
+  ruleVersion: z.number().int().min(1).max(2_147_483_647) }).strict();
+const CANDIDATE_KEY = "checkout-followup-candidate:v1";
+const CANDIDATE_TYPE = "checkout_incomplete_candidate";
+const DELIVERY_PREFIX = "wp18-checkout-v1";
+export const CHECKOUT_FOLLOWUP_TRIGGER = "checkout_followup";
+export const CHECKOUT_FOLLOWUP_DELAY_MS = 30 * 60_000;
+export const CHECKOUT_FOLLOWUP_WINDOW_MS = 7 * 86_400_000;
+
+/** Availability is not evidence that the recipient stopped qualifying. The
+ * existing outbox retry policy owns recovery; no raw source error is exposed. */
+export class FollowupSourceUnavailableError extends Error {
+  constructor() { super("Follow-up source unavailable"); this.name = "FollowupSourceUnavailableError"; }
+}
+type CandidateDb = Pick<PrismaClient, "commerceOrder" | "commerceOrderEvent">;
+type GuardDb = Partial<Pick<Prisma.TransactionClient, "commerceOrder" | "commerceOrderEvent" | "automationRule">>;
+
+function pendingOrderWhere(scope: z.infer<typeof Scope>): Prisma.CommerceOrderWhereInput {
+  return { id: scope.orderId, vendorId: scope.vendorId, status: "pending_payment",
+    paidAt: null, paidAmountCents: 0, refundedAmountCents: 0, totalAmountCents: { gt: 0 },
+    primaryPaymentTransaction: { is: { vendorId: scope.vendorId, status: "pending" } } };
+}
+
+/** Records an observation, not abandonment or permission to send. A replay
+ * keeps the original DB timestamps and one event per tenant/order. */
+export async function recordCheckoutFollowupCandidate(db: CandidateDb, value: z.infer<typeof Scope>) {
+  const scope = Scope.parse(value);
+  const order = await db.commerceOrder.findFirst({ where: pendingOrderWhere(scope), select: { id: true } });
+  if (!order) return { status: "not_eligible" as const };
+  const event = await db.commerceOrderEvent.upsert({
+    where: { vendorId_orderId_dedupKey: { ...scope, dedupKey: CANDIDATE_KEY } },
+    create: { ...scope, dedupKey: CANDIDATE_KEY, eventType: CANDIDATE_TYPE,
+      actorType: "system", sanitizedData: { version: 1 } },
+    update: {}, select: { id: true, eventType: true, actorType: true },
+  });
+  if (event.eventType !== CANDIDATE_TYPE || event.actorType !== "system") throw new Error("Checkout follow-up event mismatch");
+  return { status: "recorded" as const, eventId: event.id };
+}
+
+/** A notification observation must never change a successful checkout result.
+ * Report a fixed diagnostic, not a raw database/provider error or buyer data. */
+export async function tryRecordCheckoutFollowupCandidate(db: CandidateDb, value: z.infer<typeof Scope>) {
+  try { return await recordCheckoutFollowupCandidate(db, value); }
+  catch {
+    try { captureOperationalError(new Error("Checkout follow-up event unavailable"),
+      { source: "checkout_followup", operation: "record_candidate", status: "failed" }); }
+    catch { /* Monitoring cannot change payment behaviour. */ }
+    return { status: "failed" as const };
+  }
+}
+
+/** Existing outbox identity carries opaque order/rule references. No new
+ * schema, PII envelope fields, payment URL or recovery capability is needed. */
+export function checkoutFollowupDeliveryKey(value: z.infer<typeof DeliveryReference>) {
+  const ref = DeliveryReference.parse(value);
+  const key = `${DELIVERY_PREFIX}:${ref.orderId}:${ref.ruleId}:${ref.ruleVersion}`;
+  if (key.length > 256) throw new Error("Checkout follow-up reference exceeds email transport limit");
+  return key;
+}
+
+/** Stable across rules/versions. Existing outbox PK enforces one reminder per
+ * order without a schema/index change or wildcard prefix scans. */
+export function checkoutFollowupDeliveryId(value: z.infer<typeof Scope>) {
+  const scope = Scope.parse(value);
+  return `wp18-checkout-${createHash("sha256").update(`${scope.vendorId}\n${scope.orderId}`).digest("hex")}`;
+}
+
+function deliveryReference(key: string | undefined) {
+  if (!key || key.length > 256) return null;
+  const parts = key.split(":");
+  if (parts.length !== 4 || parts[0] !== DELIVERY_PREFIX || !/^[1-9]\d{0,9}$/u.test(parts[3])) return null;
+  const ref = DeliveryReference.safeParse({ orderId: parts[1], ruleId: parts[2], ruleVersion: Number(parts[3]) });
+  return ref.success ? ref.data : null;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function checkoutEmailRule(condition: unknown, actions: unknown) {
+  return record(condition)?.type === "order_pending_payment" && Array.isArray(actions) && actions.length === 1
+    && record(actions[0])?.type === "send_email_notification" && record(actions[0])?.template === "checkout_followup";
+}
+
+/** Recheck immediately before an existing Email outbox attempt. A queued
+ * observation is not evidence that the order is still pending. DB failures
+ * propagate; they must not silently turn into either a send or permanent drop. */
+export async function isCurrentCheckoutFollowupDelivery(
+  delivery: { vendorId: string; trigger: string; idempotencyKey?: string; recipientHash?: string }, db: GuardDb,
+  now = new Date(),
+) {
+  if (delivery.trigger !== CHECKOUT_FOLLOWUP_TRIGGER) return true;
+  const ref = deliveryReference(delivery.idempotencyKey);
+  if (!ref || typeof delivery.recipientHash !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(delivery.recipientHash)
+    || !Identity.safeParse(delivery.vendorId).success || !db.commerceOrder || !db.commerceOrderEvent || !db.automationRule) return false;
+  const scope = { vendorId: delivery.vendorId, orderId: ref.orderId };
+  const [order, event, rule] = await Promise.all([
+    db.commerceOrder.findFirst({ where: pendingOrderWhere(scope), select: { id: true, buyerEncryptedEnvelope: true } }),
+    db.commerceOrderEvent.findUnique({ where: { vendorId_orderId_dedupKey: { ...scope, dedupKey: CANDIDATE_KEY } },
+      select: { eventType: true, actorType: true, createdAt: true } }),
+    db.automationRule.findFirst({ where: { id: ref.ruleId, vendorId: delivery.vendorId, version: ref.ruleVersion,
+      trigger: "checkout_incomplete", isActive: true, funnelPageId: null }, select: { condition: true, actions: true, createdAt: true, updatedAt: true } }),
+  ]);
+  if (!order || event?.eventType !== CANDIDATE_TYPE || event.actorType !== "system"
+    || !rule || !checkoutEmailRule(rule.condition, rule.actions)) return false;
+  // Recheck the observation's original age at send time too. New rules must
+  // not retroactively turn old checkouts into a marketing recipient list.
+  if (!Number.isFinite(now.getTime()) || !(event.createdAt instanceof Date) || !(rule.createdAt instanceof Date) || !(rule.updatedAt instanceof Date)
+    || !Number.isFinite(event.createdAt.getTime()) || !Number.isFinite(rule.createdAt.getTime())
+    || event.createdAt.getTime() > now.getTime() - CHECKOUT_FOLLOWUP_DELAY_MS
+    || event.createdAt.getTime() < now.getTime() - CHECKOUT_FOLLOWUP_WINDOW_MS
+    || !Number.isFinite(rule.updatedAt.getTime()) || rule.createdAt > event.createdAt || rule.updatedAt > event.createdAt) return false;
+  // Use the existing scoped encryption and HMAC helpers; never log buyer
+  // contact details or introduce another recipient/PII persistence format.
+  try {
+    const pii = revealCommerceOrderPii({ buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: null },
+      { vendorId: scope.vendorId, orderId: scope.orderId });
+    return createEmailRecipientHash(pii.buyer.email, scope.vendorId) === delivery.recipientHash;
+  } catch (error) {
+    // A fixed diagnostic makes widespread key/configuration failures visible
+    // without exposing the envelope, exception details or buyer information.
+    try { captureOperationalError(new Error("Checkout follow-up recipient binding unavailable"),
+      { source: "checkout_followup", operation: "validate_recipient", status: "rejected" }); }
+    catch { /* Monitoring cannot authorize a send or break finalization. */ }
+    if (error instanceof CommerceOrderPiiValidationError) return false;
+    throw new FollowupSourceUnavailableError();
+  }
+}

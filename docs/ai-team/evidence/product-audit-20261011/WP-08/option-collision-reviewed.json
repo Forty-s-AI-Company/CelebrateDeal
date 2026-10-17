@@ -1,0 +1,164 @@
+{
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ],
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "reviewed": true,
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "completed": false,
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 5,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "payment",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "Read-only follow-up limited to `funnel-display-labels.ts`, its test and its snapshot. This doesn't certify the whole WP, and an empty or low-severity result doesn't certify tests or release.\n\n**Prior MINOR (final labels colliding with authored suffixes): closed.** `referenceOptions` now checks whether the final labels are still unique. If they aren't, every label gets a position prefix (`${index + 1}. `). Two prefixed labels can never match: each prefix is digits followed by `.`, so the position number is read the same way every time and each position is different. That means the final labels are always unique. The new regression test uses an authored name of `報名頁（第 2 項）`, which collides with the generated label `報名頁（第 2 項）` for item b. Without the fallback the test sees only 3 distinct labels instead of 4, so it would fail. The test also checks that option values stay in their original order and that the source `names` object is not changed.\n\n**Prior NIT (full report status snapshot): closed.** The new snapshot lists every order status (8), every verification status (2) and every payment status (10), and the labels match the dictionaries. Unknown statuses and names that exist only on the object prototype (like `constructor` or `__proto__`) still show `未知狀態`, so nothing unknown is labeled as successful.\n\n**Original values unchanged: confirmed.** `referenceOptions` only reads `names` and `ids` and builds new objects. Option values are the original IDs, and the tests check that the inputs aren't modified.\n\n**Notes (not defects):**\n- The status lists in the snapshot test are typed by hand rather than derived from the label maps. If a new status is added later, the snapshot won't pick it up automatically. The `satisfies Record<...>` checks on the label maps still make sure every known status has a label.\n- In the new test, looping over both `kind` values doesn't change the result, because every ID in that test has a name.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-display-labels.ts",
+        "area": "referenceOptions name normalization (`replace(/[​﻿]/gu, \"\")`)",
+        "issue": "Only U+200B and U+FEFF are removed before duplicates are counted. Other invisible characters, such as U+200C/U+200D (zero-width non-joiner/joiner), U+2060 (word joiner) and U+00AD (soft hyphen), are left in. Text that looks the same but is encoded differently (e.g. NFC vs NFD) also isn't normalized. Two names that look the same can therefore count as different strings and get no position suffix or prefix.",
+        "evidence": "names {a: \"報名頁\", b: \"報名頁‌\"} → labels [\"報名頁\", \"報名頁‌\"]. These are 2 distinct strings, so no suffix and no prefix is added, and the dropdown shows two options that look identical. The existing 'visually identical' test only covers surrounding whitespace and U+200B.",
+        "impact": "This only affects the dropdown display. Option values are still the original IDs, so no data is stored wrong. The risk is that a merchant picks the wrong one of two identical-looking options. It requires unusual authored names, so the impact is low.",
+        "recommended_fix": "Normalize the name before counting duplicates, for example with `.normalize(\"NFC\")` and by removing the Unicode default-ignorable / format characters (`/[\\p{Cf}]/gu` or `/[\\p{Default_Ignorable_Code_Point}]/gu`) instead of only U+200B and U+FEFF.",
+        "required_test": "Add a case with names that differ only by U+200C, U+2060 or U+00AD, and one with NFD vs NFC forms of the same name. Assert that the labels get position suffixes and that the input values are unchanged.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "files": [
+    "src/lib/automation-workflow.ts",
+    "src/lib/automation-workflow.test.ts",
+    "src/app/actions/automation-actions.ts",
+    "src/app/actions/automation-actions.test.ts",
+    "src/app/(app)/settings/automations/page.tsx",
+    "src/app/(app)/settings/automations/page.test.tsx"
+  ],
+  "owner": "root sole writer",
+  "team": "ai-team-pro",
+  "risk_categories": [
+    "payment"
+  ],
+  "scope": "Activate only exact vendor-wide dedicated followup recipes; generic event bypass must stay blocked; retain CSRF/vendor-owner auth and optimistic activation; three recipes created inactive; do not expose unsupported custom combinations. UI explains actual-source checks instead of pretending numeric dryrun proves completion.",
+  "previousTurn": "progress: trusted actual-completion producer/guard plus134tests/16PG evidence persisted",
+  "noSchemaOrProviderChanges": true
+}

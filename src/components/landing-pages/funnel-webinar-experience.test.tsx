@@ -4,7 +4,7 @@ import { FunnelWebinarExperience, type WebinarExperienceResource } from "./funne
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 
 const resource: WebinarExperienceResource = {
-  live: { id: "owned_live", slug: "owned-live", videoId: "owned_video", videoTitle: "已授權來源" },
+  live: { id: "owned_live", slug: "owned-live", title: "公開活動名稱", videoId: "owned_video", videoTitle: "已授權來源" },
   form: { id: "owned_form", fields: [{ key: "name", label: "姓名", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出報名", successMessage: "待確認" },
 };
 function state() {
@@ -32,6 +32,7 @@ describe("Webinar shared preview/public experience", () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
     const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} />);
     expect(html).toContain('action="/api/form-submissions"');
+    expect(html).toContain('id="webinar-registration"');
     expect(html).toContain('value="owned_form"');
     expect(html).toContain('value="owned_live"');
     expect(html).toContain('value="/lp/current-slug/thank-you"');
@@ -52,5 +53,18 @@ describe("Webinar shared preview/public experience", () => {
     const html = renderToStaticMarkup(<FunnelWebinarExperience {...props} />);
     expect(html).toContain('data-webinar-state="expired"');
     expect(html).not.toContain('/broadcast/play');
+  });
+  it("offers optional calendar export only on a configured future thank-you page",()=>{
+    vi.useFakeTimers();vi.setSystemTime(new Date("2029-12-31T00:00:00.000Z"));
+    const props={state:state(),slug:"current-slug",stepId:"webinar_thank_you",resource};
+    const html=renderToStaticMarkup(<FunnelWebinarExperience {...props}/>);
+    expect(html).toContain("下載活動行事曆（.ics）");expect(html).toContain("仍須完成 Email 確認");
+    expect(html).toMatch(/<button(?=[^>]*disabled)(?=[^>]*aria-busy="true")[^>]*>下載活動行事曆/u);
+    expect(html).toContain("公開活動名稱");expect(html).not.toContain(">Webinar</p>");
+    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props} preview/>)).toContain("預覽模式，不下載行事曆");
+    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props} stepId="webinar_registration"/>)).not.toContain("下載活動行事曆");
+    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props} resource={undefined}/>)).not.toContain("下載活動行事曆");
+    vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props}/>)).not.toContain("下載活動行事曆");
   });
 });

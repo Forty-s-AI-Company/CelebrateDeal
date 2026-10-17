@@ -1,0 +1,181 @@
+{
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "attempts": [
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli"
+    }
+  ],
+  "review": {
+    "summary": "I reviewed only the supplied source text and did not run any tests. I found no auth bypass, no tenant or customer boundary break, and no compare-and-swap (CAS) race defect.\n\n- **GET/HEAD:** these only preview the voucher and set the confirmation challenge cookie. They don't set the checkout cookie or change the grant. App Router falls back to GET for HEAD, so HEAD behaves the same.\n- **POST:** it requires a canonical Origin/Referer (or Sec-Fetch-Site same-origin) and a single HttpOnly challenge. The challenge is bound to the nonce, issue time, capability and action URL, and expires after five minutes. Portal and voucher use separate cookie names, so they don't collide, and the portal defaults are unchanged.\n- **Atomic swap:** `updateMany` is keyed on id, vendorId, productId, the old `claimTokenHash`, `usedOrderId: null` and `expiresAt > now`. Postgres re-checks the WHERE after taking the row lock, so concurrent callers get exactly one row updated. Replaying the old link then fails at both preview and CAS, and the old bearer can no longer be found in the resolver.\n- **Out-of-date eligibility:** product, price and currency are left to the unchanged checkout resolver, which re-checks vendor/product match, `usedOrderId`, expiry and currency.\n- **No forbidden writes:** nothing writes `usedOrderId`/`redeemedAt` or creates an order.\n\n**Main gap (MAJOR):** the exchange has no safe retry. If the redirect response that sets the cookie is lost, the voucher can't be used: for example after a double submit, an aborted navigation, a network drop, a lost cookie, or a second voucher overwriting the same cookie. The grant is left with a hash of a bearer nobody holds, and the email link fails by design. The customer loses the discount with no way to recover it.\n\nStill pending and not certified here: Chromium/Firefox runs and IP trust topology. The known limitation where several same-kind tabs overwrite each other's challenge is unchanged.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/automation-voucher-exchange.ts",
+        "area": "exchangeAutomationVoucher (random bearer + updateMany rotation); src/app/api/automation/vouchers/redeem/route.ts POST cookie set",
+        "issue": "The single-use swap is not idempotent and has no recovery path. If the browser never stores the new bearer cookie, the grant can no longer be used.",
+        "evidence": "`bearer = randomBytes(32)` and only `hashInteractionBearer(bearer)` is saved. The plaintext bearer exists only in the Set-Cookie of the 303 response. A retry with the same email link and the same still-valid challenge fails at preview/CAS, because the old hash is gone, and returns 410. The confirmation page CSP (`default-src 'none'`) allows no script, so double submit can't be blocked on the page. `AUTOMATION_VOUCHER_COOKIE` is a single cookie name, so exchanging voucher B overwrites voucher A's rotated bearer. Before this change the email link could always restore A; now it can't.",
+        "impact": "Common cases leave the customer's discount stuck: double-clicking 確認並前往結帳 (the browser drops the first response and the second POST gets 410 'used or expired'), a dropped connection after commit, private-mode or cleared cookies, confirming on one device and paying on another, or redeeming a second voucher. The grant stays unused but unreachable until it expires. This is customer and vendor harm and support load, not a security bypass.",
+        "recommended_fix": "Make retries from the same browser challenge idempotent without bringing back link replay. Derive the bearer as HMAC(server secret, grantId || old claimTokenHash || challenge nonce) instead of using pure randomness. On POST, if the CAS count is 0 but the challenge is valid, recompute the bearer and accept it only if the grant's current claimTokenHash equals hash(derived bearer), `usedOrderId` is null and the grant hasn't expired; then re-issue the cookie. A different browser or a later replay has a different or missing challenge nonce, so it still fails. If a stuck grant is an accepted product trade-off, document it and give vendors a re-issue path. Separately, consider keying the voucher cookie per grant or vendor/product so one exchange can't silently strand another.",
+        "required_test": "DB test: two sequential POSTs with the same challenge cookie and form, where the first response is discarded. The second must return 303 with a bearer that resolveEligibleAutomationVoucherClaim accepts (eligible100 discount). A POST of the same email link from a different challenge/browser must still fail, and the 12-way concurrency test must still have exactly one CAS winner. Browser test (Chromium/Firefox): double-clicking confirm ends on checkout with the discount applied. Exchanging voucher B after voucher A must leave A recoverable, or the documented behaviour must be verified.",
+        "confidence": 0.65
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:448f6d65cbc854370be8724ce0cfe124a44ac9ef061d84139520b1fc32023daa",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/lib/capability-confirmation.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/lib/automation-voucher-exchange.ts",
+      "src/lib/automation-voucher-exchange.db.test.ts",
+      "src/app/api/automation/vouchers/redeem/route.ts",
+      "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "src/app/api/automation/vouchers/redeem/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/lib/automation-voucher-exchange.db.test.ts",
+      "src/lib/automation-voucher-exchange.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/lib/capability-confirmation.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "completed": false,
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED"
+}

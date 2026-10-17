@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "savepoint-db", "revision": "sha256:6b025eaebc5f0f9beffb7a723ab08b1d3845025eb73445438de80c0b44ceea77", "status": "PASS", "exit_code": 0, "duration_seconds": 50.187}

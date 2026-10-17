@@ -1,0 +1,83 @@
+{
+  "execution": {
+    "kind": "execution",
+    "revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3",
+    "status": "COMPLETED",
+    "source": "desktop_native",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\webhook-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "webhook-unit",
+      "revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.765,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\webhook-unit-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "webhook-disposable-pg",
+      "revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 22.407,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\webhook-disposable-pg-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "webhook-typecheck",
+      "revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 28.484,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\webhook-typecheck-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "webhook-lint",
+      "revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 10.891,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\webhook-lint-receipt.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "revision": "sha256:26d7297bbe1a2192906c1f89b065395e43083d744b0b277cf65b617434cb46e3",
+    "status": "PASS",
+    "independent": true,
+    "source": "claude_cli",
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "provider_receipt": "webhook-fixed-review.json",
+    "scope": "Two full changed product modules and operations document; tests executed separately.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\webhook-review-qualification.json"
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/line-webhook-events.ts",
+      "area": "applyVerifiedLineWebhookEvents: future-unfollow pre-check (events.some(...) > now.getTime()) and src/app/api/webhooks/line/[vendorId]/route.ts retry_later branch",
+      "issue": "If any single unfollow in the batch has a future timestamp, the whole batch gets a 503. That holds back every other valid unfollow in the same delivery. There is no clock-skew tolerance (even 1 ms ahead triggers it), and the server records nothing when it returns 503 for retry_later, so a lasting clock problem cannot be seen.",
+      "evidence": "The pre-check returns { status: \"retry_later\" } for the whole batch when any one successfully parsed unfollow has timestamp > now.getTime(). The route returns a 503 with a fixed body and no log or metric. The operations document says the system depends on clock sync and provider redelivery, but gives no way to detect that a channel keeps getting 503.",
+      "impact": "Normally the skew is small and redelivery fixes it, so this is not a correctness defect. But if the server clock falls well behind LINE's clock, every batch that contains an unfollow keeps getting 503 until LINE stops redelivering. All consent withdrawals in those batches are then lost, and nothing in the system shows it happened. The worker could keep sending to users who have withdrawn consent with no warning.",
+      "recommended_fix": "Keep the current semantics (no clamping, no partial acknowledgement). Add a fixed-text log or metric for retry_later that contains no identifiers, for example the vendorId's tenant-scoped counter and the skew in ms. Optionally treat a skew larger than the redelivery window as an operational alarm. Do not add a schema or an inbox.",
+      "required_test": "Unit test: a batch with one future unfollow plus one current unfollow returns retry_later and makes zero updateMany calls. After `now` moves forward, redelivering the same batch revokes both with their original timestamps. Route test: retry_later produces a 503 and the non-identifying skew signal is emitted.",
+      "confidence": 0.6,
+      "disposition": "unresolved"
+    }
+  ]
+}

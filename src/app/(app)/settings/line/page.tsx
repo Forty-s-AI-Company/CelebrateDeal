@@ -5,7 +5,9 @@ import { requireVendorOwner } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
-import { LineRichMenuSchema } from "@/lib/line-rich-menu";
+import { parseRichMenuDraftContent,richMenuPublicationView } from "@/lib/line-rich-menu-draft-content";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 
 function maskIdentityId(identityId: string) {
   if (identityId.length <= 8) return `***${identityId.slice(-4)}`;
@@ -18,20 +20,23 @@ const triggerLabels: Record<string, string> = {
   order_paid: "訂單付款",
 };
 
-export default async function LineSettingsPage() {
+async function loadLineSettings(vendorId:string,requestedAccountId:string|undefined) {
+  const accounts = await getDb().lineOfficialAccount.findMany({
+      where: { vendorId: vendorId },
+      orderBy: [{isDefault:"desc"},{createdAt:"asc"}],
+      select: { id: true, displayName:true, isDefault:true, status: true, connectedAt: true, lastValidatedAt: true },
+    });
+  const account = requestedAccountId === "new" ? null : requestedAccountId ? accounts.find(item=>item.id===requestedAccountId) ?? null : accounts[0] ?? null;
+  if(requestedAccountId && requestedAccountId !== "new" && !account) notFound();
+  const draft = account ? await getDb().lineRichMenuDraft.findFirst({where:{vendorId:vendorId,lineOfficialAccountId:account.id},select:{id:true,revision:true,menu:true}}) : null;
+  return {accounts,account,draft};
+}
+
+export default async function LineSettingsPage({searchParams}: {searchParams?:Promise<{accountId?:string}>}) {
   const auth = await requireVendorOwner();
-  const [csrfToken, account, draft] = await Promise.all([
-    getCsrfToken(),
-    getDb().lineOfficialAccount.findUnique({
-      where: { vendorId: auth.vendor.id },
-      select: { id: true, status: true, connectedAt: true, lastValidatedAt: true },
-    }),
-    getDb().lineRichMenuDraft.findUnique({
-      where: { vendorId: auth.vendor.id },
-      select: { id: true, revision: true, menu: true },
-    }),
-  ]);
-  const parsedMenu = draft ? LineRichMenuSchema.safeParse(draft.menu) : null;
+  const query = await searchParams;
+  const [csrfToken,{accounts,account,draft}] = await Promise.all([getCsrfToken(),loadLineSettings(auth.vendor.id,query?.accountId)]);
+  const parsedMenu = draft ? parseRichMenuDraftContent(draft.menu) : null;
   const deliveries = account
     ? await getDb().lineDelivery.findMany({
         where: { vendorId: auth.vendor.id, lineOfficialAccountId: account.id },
@@ -48,20 +53,33 @@ export default async function LineSettingsPage() {
         },
       })
     : [];
-  const webhookUrl = `${getCanonicalAppUrl()}/api/webhooks/line/${encodeURIComponent(auth.vendor.id)}`;
+  const webhookUrl = account ? `${getCanonicalAppUrl()}/api/webhooks/line/${encodeURIComponent(auth.vendor.id)}/${encodeURIComponent(account.id)}` : "";
   return (
     <div className="space-y-6">
       <PageHeader title="LINE 整合" description="管理官方帳號推播與 LINE Login。憑證只會加密儲存，不會在頁面重新顯示。" />
+      <section className="space-y-3 rounded-lg border p-5">
+        <h2 className="font-semibold">官方帳號清單</h2>
+        <p className="text-sm text-slate-600">帳號只需新增一次，各課程 Project 可選擇同一個帳號。學員的 LINE Login 用於綁定通知身份；官方帳號串接仍需在 LINE 後台設定通道。Messaging API 與 LINE Login 通道請建立在同一個 Provider，並將 Login 通道連結此官方帳號。</p>
+        <a href="https://manager.line.biz/" target="_blank" rel="noreferrer" className="inline-block underline">登入 LINE 官方帳號後台</a>
+        <form method="get" className="flex flex-wrap gap-2"><label>管理帳號 <select name="accountId" defaultValue={account?.id ?? "new"} className="min-h-11 rounded border px-3">{accounts.map(item=><option key={item.id} value={item.id}>{item.displayName}{item.isDefault?"（預設）":""}</option>)}<option value="new">新增官方帳號</option></select></label><button className="rounded border px-4" type="submit">開啟</button></form>
+        <Link href="/settings/line?accountId=new" className="inline-block underline">新增官方帳號</Link>
+      </section>
       <LineOfficialAccountForm
+        key={account?.id ?? "new"}
+        accountId={account?.id}
+        displayName={account?.displayName}
         csrfToken={csrfToken}
         connected={account?.status === "active"}
         webhookUrl={webhookUrl}
         lastValidatedAt={account?.lastValidatedAt?.toLocaleString("zh-TW") ?? null}
       />
-      {draft && !parsedMenu?.success ? <p role="alert">選單草稿格式無法載入，請聯絡管理員協助處理；原始草稿已保留。</p> : <LineRichMenuStudio
+      {draft && !parsedMenu ? <p role="alert">選單草稿格式無法載入，請聯絡管理員協助處理；原始草稿已保留。</p> : account ? <LineRichMenuStudio
+        accountId={account.id}
+        key={`${account.id}:${draft?.id??"new"}:${draft?.revision??0}`}
         csrfToken={csrfToken}
-        existing={draft && parsedMenu?.success ? { id: draft.id, revision: draft.revision, menu: parsedMenu.data } : null}
-      />}
+        connected={account?.status==="active"}
+        existing={draft && parsedMenu ? { id: draft.id, revision: draft.revision, menu: parsedMenu.menu,publication:richMenuPublicationView(parsedMenu.publication) } : null}
+      /> : null}
       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">推播紀錄</h2>

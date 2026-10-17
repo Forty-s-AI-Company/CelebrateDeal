@@ -1,0 +1,31 @@
+{
+  "files": [
+    "scripts/wp20-payment-retry-disposable.mjs",
+    "src/lib/webhook-retry.ts",
+    "src/lib/payment-webhooks.ts",
+    "src/lib/inventory-reservations.ts",
+    "src/lib/commerce-orders.ts",
+    "src/lib/product-delivery.ts",
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql"
+  ],
+  "sha256": {
+    "scripts/wp20-payment-retry-disposable.mjs": "7dd14a8d4c941a2f71c95401d4bed9d4a1e813175a057674e808db6f42e5362a",
+    "src/lib/webhook-retry.ts": "578f85e521587ca2395956e435f1948c1605236d27398397cfd3ace505409dbb",
+    "src/lib/payment-webhooks.ts": "a401f51f37b36a5ce8b1c62934e4f73c5e835b1c14d318182733c6bdd6ce8ef6",
+    "src/lib/inventory-reservations.ts": "a86f4265477288ef4809c94ff984db028c35d420d75d1036f59bb3531a6b907b",
+    "src/lib/commerce-orders.ts": "80d97f5eca06c4dc3402b1999eee522c97f6efd78206b9b7ae68ab4b9398cf1a",
+    "src/lib/product-delivery.ts": "b0e516fc585fdb745876299bc4bf76cdd5508cd9941b99bfb6863aaf77c30301",
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql": "024fee2d3ab12e9136f74e34bdc733e1d3f0977046130ef6cf5aff97f3648807",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql": "2c6d0c19dad5514297b6c1cec170c89ac4cee27edd6432ad387aaeae7f4417c6"
+  },
+  "status": "PASS",
+  "coverage": "20 canonical synthetic checkouts, persisted failed events drained with real scheduler and real payment processor, duplicate scheduler and individual retry no extra payment/order/entitlement",
+  "limitations": [
+    "starts from persisted failed events; does not create those failures through HTTP concurrent callbacks",
+    "provider signatures/remote delivery/timer not exercised",
+    "no positive affiliate commission fixture",
+    "first-burst 20-writer acceptance remains FAIL",
+    "append-ledger independent review pending"
+  ]
+}

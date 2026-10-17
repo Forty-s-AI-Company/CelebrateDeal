@@ -1,0 +1,76 @@
++          {!history.present.popups.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-slate-500">尚未建立 彈出視窗。</p> : history.present.popups.map((popup) => { const auto = validatePopupTrigger(popup, "automatic_delay"); const exit = validatePopupTrigger(popup, "exit_intent"); return <article key={popup.id} className="grid gap-2 rounded-xl border bg-white p-3"><input className={control} value={popup.name} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { name: event.currentTarget.value }))} /><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openAutomatically} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openAutomatically: event.currentTarget.checked } }))} />自動開啟</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.showCloseButton} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { showCloseButton: event.currentTarget.checked } }))} />顯示關閉按鈕</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openOnExitIntent} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openOnExitIntent: event.currentTarget.checked } }))} />離開頁面時顯示（桌機單次觸發；手機不支援）</label><label className="grid gap-1 text-xs">顯示延遲（秒）<input className={control} type="number" min="0" value={popup.settings.automaticDelaySeconds} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { automaticDelaySeconds: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">背景色<input className={control} value={popup.settings.backgroundColor} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { backgroundColor: event.currentTarget.value } }))} /></label><label className="grid gap-1 text-xs">內距<input type="number" min="0" className={control} value={popup.settings.padding} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { padding: Number(event.currentTarget.value) } }))} /></label><div className="grid grid-cols-2 gap-2"><label className="grid gap-1 text-xs">邊框<input type="number" min="0" className={control} value={popup.settings.borderWidth} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { borderWidth: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">陰影<select className={control} value={popup.settings.shadow} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { shadow: event.currentTarget.value as typeof popup.settings.shadow } }))}><option value="none">無</option><option value="soft">柔和</option><option value="medium">中等</option><option value="strong">明顯</option></select></label></div><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.pageId === history.present.id} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { pageId: event.currentTarget.checked ? history.present.id : undefined }))} />只綁定目前頁面</label><p className="text-[11px] text-slate-500">自動顯示：{auto.executable ? `${auto.delayMs}ms` : auto.reason}</p><p className="text-[11px] text-amber-700">離開頁面時顯示：{exit.reason}</p><p className="text-[11px] text-slate-500">寬度與圓角可進入「編輯」後選取 彈出視窗區塊 調整。</p><div className="grid grid-cols-3 gap-2"><button className={control} onClick={() => { setEditingPopupId(popup.id); setSelectedId(undefined); }}>編輯</button><button className={control} onClick={() => setPreviewPopupId(popup.id)}>預覽</button><button className={`${control} text-red-700`} onClick={() => { if (editingPopupId === popup.id) setEditingPopupId(undefined); replaceDocument(deleteFunnelPopup(history.present, popup.id)); }}>刪除</button></div></article>; })}
+         </div> : panel === "page" ? <div className="grid gap-4">
+           <h2 className="text-base font-bold">頁面設定</h2>
+           {commerceEnabled ? <FunnelCommerceSettings binding={history.present.commerce} products={commerceProducts} disabled={disabled} onChange={(commerce) => replaceDocument({ ...history.present, commerce })} /> : <p className="text-xs text-slate-600">商品與結帳設定位於「訂單表單」步驟的頁面設定。</p>}
+-          <label className="grid gap-1 text-sm font-semibold">語言<select className={control} value={history.present.settings.language} onChange={(event) => commit({ type: "update_settings", settings: { language: event.currentTarget.value as PageDocument["settings"]["language"] } })}><option value="zh-TW">繁體中文</option><option value="en">English</option><option value="ja">日本語</option></select></label>
+-          <label className="grid gap-1 text-sm font-semibold">SEO 標題<input className={control} value={history.present.settings.seo.title ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, title: event.currentTarget.value } } })} /></label>
+-          <label className="grid gap-1 text-sm font-semibold">SEO 描述<textarea className={control} value={history.present.settings.seo.description ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, description: event.currentTarget.value } } })} /></label>
++          <label className="grid gap-1 text-sm font-semibold">語言<select className={control} value={history.present.settings.language} onChange={(event) => commit({ type: "update_settings", settings: { language: event.currentTarget.value as PageDocument["settings"]["language"] } })}><option value="zh-TW">繁體中文</option><option value="en">英文</option><option value="ja">日本語</option></select></label>
++          <label className="grid gap-1 text-sm font-semibold">搜尋引擎 標題<input className={control} value={history.present.settings.seo.title ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, title: event.currentTarget.value } } })} /></label>
++          <label className="grid gap-1 text-sm font-semibold">搜尋引擎 描述<textarea className={control} value={history.present.settings.seo.description ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, description: event.currentTarget.value } } })} /></label>
+           <label className="grid gap-1 text-sm font-semibold">背景色<input className={control} value={history.present.settings.background.color} onChange={(event) => commit({ type: "update_settings", settings: { background: { ...history.present.settings.background, color: event.currentTarget.value } } })} /></label>
+           <label className="grid gap-1 text-sm font-semibold">內文字型<input className={control} value={history.present.settings.typography.bodyFont} onChange={(event) => commit({ type: "update_settings", settings: { typography: { ...history.present.settings.typography, bodyFont: event.currentTarget.value } } })} /></label>
+-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">Tracking：{history.present.settings.tracking.reason}<br />Affiliate：{history.present.settings.affiliate.reason}</div>
++          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">追蹤設定：{history.present.settings.tracking.reason}<br />推薦夥伴：{history.present.settings.affiliate.reason}</div>
+         </div> : selected ? <div className="grid gap-4">
+-          <div><p className="text-xs font-bold text-slate-500">Breadcrumb</p><p className="mt-1 text-sm text-slate-700">{path?.map((item) => getFunnelNodeDefinition(item.type).label).join(" › ")}</p></div>
+-          <FunnelElementInspector node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} stepIds={stepIds} onCommand={commit} />
++          <div><p className="text-xs font-bold text-slate-500">目前位置</p><p className="mt-1 text-sm text-slate-700">{path?.map((item) => getFunnelNodeDefinition(item.type).label).join(" › ")}</p></div>
++          <FunnelElementInspector node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} popupNames={Object.fromEntries(history.present.popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds ?? history.present.flow?.steps.map((step) => step.id)} stepNames={stepNames ?? Object.fromEntries((history.present.flow?.steps ?? []).map((step) => [step.id, step.name]))} onCommand={commit} />
+           <div className="grid grid-cols-2 gap-2"><button className={control} onClick={() => commit({ type: "move_up", nodeId: selected.id })}>上移</button><button className={control} onClick={() => commit({ type: "move_down", nodeId: selected.id })}>下移</button><button className={control} onClick={() => commit({ type: "duplicate", nodeId: selected.id })}>複製</button><button className={`${control} text-red-700`} onClick={() => { commit({ type: "delete", nodeId: selected.id }); setSelectedId(undefined); }}>刪除</button></div>
+         </div> : <p className="text-sm text-slate-500">請先在畫布選取節點。</p>}
+@@ -259,5 +259,5 @@
+     </aside>
+     <div className="min-h-0 overflow-auto bg-slate-200/70 p-5" onDragOver={(event) => { if (event.dataTransfer.types.some((type) => type.includes("celebratedeal-funnel-element") || type.includes("celebratedeal-funnel-block"))) event.preventDefault(); }} onDrop={(event) => { const type = event.dataTransfer.getData("application/x-celebratedeal-funnel-element") as FunnelNodeType; const blockId = event.dataTransfer.getData("application/x-celebratedeal-funnel-block"); if (type) { event.preventDefault(); add(type); } else if (blockId) { event.preventDefault(); addBlock(blockId); } }}>
+-      <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><span className="font-semibold text-slate-700">{editingPopup ? `正在編輯 Popup：${editingPopup.name}` : "正在編輯頁面"}</span>{editingPopup ? <button type="button" className={control} onClick={() => { setEditingPopupId(undefined); setSelectedId(undefined); }}>返回頁面畫布</button> : null}</div>
++      <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><span className="font-semibold text-slate-700">{editingPopup ? `正在編輯彈出視窗：${editingPopup.name}` : "正在編輯頁面"}</span>{editingPopup ? <button type="button" className={control} onClick={() => { setEditingPopupId(undefined); setSelectedId(undefined); }}>返回頁面畫布</button> : null}</div>
+       <div className={`mx-auto min-h-full bg-white shadow-xl transition-[width] ${viewport === "mobile" ? "w-[375px] max-w-full rounded-[2rem] border-[10px] border-slate-900" : "w-full max-w-[1440px]"}`}>
+         <FunnelPageDocumentRenderer document={canvasDocument} commerce={commerceViewForBinding(canvasDocument.commerce, commerceProducts)} viewport={viewport} mode="editor" selectedNodeId={selectedId} onMoveNode={moveNode} onSelectNode={(id) => { setSelectedId(id); setPanel("settings"); }} />
+
+--- src/components/landing-pages/funnel-popup-preview.test.tsx (before)
++++ src/components/landing-pages/funnel-popup-preview.test.tsx
+@@ -62,5 +62,5 @@
+     expect(html).toContain('data-funnel-popup-state="open"');
+     expect(html).toContain('data-funnel-popup-close');
+-    expect(html).toContain('aria-label="關閉 Popup"');
++    expect(html).toContain('aria-label="關閉彈出視窗"');
+     expect(html).toContain('tabindex="-1"');
+     expect(html).toContain("background-color:#fff7ed");
+
+--- src/components/landing-pages/funnel-popup-preview.tsx (before)
++++ src/components/landing-pages/funnel-popup-preview.tsx
+@@ -136,5 +136,5 @@
+ function statusLabel(status: PopupTriggerEligibility): string {
+   if (status.status === "unverified") return `Exit intent：unverified（${status.reason}）`;
+-  return status.status === "disabled" ? `Popup：${status.reason}` : status.reason;
++  return status.status === "disabled" ? `彈出視窗：${status.reason}` : status.reason;
+ }
+ 
+@@ -158,5 +158,5 @@
+   const popup = parsed?.popups.find((candidate) => candidate.id === popupId) ?? null;
+   if (!parsed || !popup) {
+-    return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">找不到可預覽的 Popup。</div>;
++    return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">找不到可預覽的彈出視窗。</div>;
+   }
+   return (
+@@ -305,5 +305,5 @@
+           <button
+             type="button"
+-            aria-label="關閉 Popup"
++            aria-label="關閉彈出視窗"
+             data-funnel-popup-close
+             className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-lg leading-none text-slate-700 shadow-sm"
+
+--- src/components/landing-pages/funnel-step-pages-editor.tsx (before)
++++ src/components/landing-pages/funnel-step-pages-editor.tsx
+@@ -83,5 +83,5 @@
+     if (publishState(result.state)) { publishHistory(result.history); setError(undefined); }
+   };
+-  if (!active) return <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">Funnel steps 資料無法通過驗證。</p>;
++  if (!active) return <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">網站步驟 資料無法通過驗證。</p>;
+   const editableSteps = state.flow.steps.filter((step) => !step.isSystem);
+   const addStep = () => {
+@@ -101,17 +101,17 @@
+   return <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-hidden lg:grid-cols-[18rem_minmax(0,1fr)]">
+     {error ? <p role="alert" className="col-span-full bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+-    <aside className="max-h-[48dvh] min-h-0 min-w-0 overflow-auto border-b border-slate-200 bg-slate-50 p-3 lg:max-h-none lg:border-r lg:border-b-0" aria-label="Funnel steps">

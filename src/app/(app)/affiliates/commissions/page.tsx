@@ -51,7 +51,7 @@ export default async function AffiliateCommissionsPage({
   return (
     <>
       <PageHeader
-        title="聯盟分潤"
+        title="佣金結算"
         description="依活動、商品與推廣碼追蹤佣金，並與平台交易服務費分開列帳。"
       />
 

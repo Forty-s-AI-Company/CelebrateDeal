@@ -62,6 +62,41 @@ describe("Funnel operations tenant/CAS boundary",()=>{
  });
 });
 describe("trusted report queries",()=>{
+ it("counts current confirmations separately for each attributed experiment arm",async()=>{
+  mocks.visits.mockResolvedValue([
+   {id:"v1",stepId:"control",logicalStepId:"registration",visitorId:"visitor1",createdAt:new Date(),experimentId:"exp1",arm:"control"},
+   {id:"v2",stepId:"control",logicalStepId:"registration",visitorId:"visitor1",createdAt:new Date(),experimentId:"exp1",arm:"control"},
+  ]);
+  const attributed=(id:string,experimentId:string|null,arm:string|null,status:string)=>({id,stepId:"registration",visit:{logicalStepId:"registration",experimentId,arm},submission:{verificationStatus:status}});
+  mocks.submissions.mockResolvedValueOnce([
+   attributed("s1","exp1","control","VERIFIED"),attributed("s2","exp1","control","UNVERIFIED"),
+   attributed("s3","exp1","variant","UNVERIFIED"),attributed("s4","older-exp","variant","VERIFIED"),
+   attributed("unattributed",null,null,"VERIFIED"),
+  ]).mockResolvedValueOnce([]);
+  const now=new Date("2026-10-16T00:00:00Z");
+  const result=await loadFunnelReports("page1",now);
+  expect(result.experiments).toEqual([
+   {id:"exp1",arm:"control",pageViews:2,submissions:2,verifiedSubmissions:1},
+   {id:"exp1",arm:"variant",pageViews:0,submissions:1,verifiedSubmissions:0},
+   {id:"older-exp",arm:"variant",pageViews:0,submissions:1,verifiedSubmissions:1},
+  ]);
+  const query=mocks.submissions.mock.calls[0]![0];
+  expect(query.where.createdAt.lte).toEqual(now);
+  expect(query.select.submission).toEqual({select:{verificationStatus:true}});
+  expect(JSON.stringify(query.select)).not.toMatch(/email|phone|answers|name/);
+  expect(result.statsTruncated).toBe(false);
+  expect(mocks.update).not.toHaveBeenCalled();
+ });
+ it("keeps both counts within the existing report cap and signals partial data",async()=>{
+  const row={id:"synthetic",stepId:"registration",visit:{logicalStepId:"registration",experimentId:"exp1",arm:"variant"},submission:{verificationStatus:"VERIFIED"}};
+  mocks.submissions.mockResolvedValueOnce(Array.from({length:10001},(_,index)=>({...row,id:`s${index}`}))).mockResolvedValueOnce([]);
+  const result=await loadFunnelReports("page1");
+  expect(result.experiments).toEqual([{id:"exp1",arm:"variant",pageViews:0,submissions:10000,verifiedSubmissions:10000}]);
+  expect(result.statsTruncated).toBe(true);
+ });
+ it("returns no experiment data for an empty report",async()=>{
+  expect((await loadFunnelReports("page1")).experiments).toEqual([]);
+ });
  it("loads editor and reports from one tenant-checked page snapshot",async()=>{
   const result=await loadFunnelOperationsBundle("page1");
   expect(result.editor.pageId).toBe("page1");

@@ -1,0 +1,12 @@
+{
+  "files": [
+    "tests/e2e/wp14-ab-readout.spec.ts",
+    ".ai-team/reports/wp14-ab-browser-check.mjs",
+    ".ai-team/reports/wp14-ab-browser.config.ts"
+  ],
+  "sourceHashes": {
+    "tests/e2e/wp14-ab-readout.spec.ts": "412ea188db47e2db60bf152f113cb65abddd6e0fc2357f4f24ee05304d0a4c86",
+    ".ai-team/reports/wp14-ab-browser-check.mjs": "33e324e160d1ff53b05282a41b32ece0cd8d3b70f3683d77bd633deb24790927",
+    ".ai-team/reports/wp14-ab-browser.config.ts": "24ee70befbfba82d0fb6353cb270ddecf1df13935937b7c598366879d87b80b5"
+  }
+}

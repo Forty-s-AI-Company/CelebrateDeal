@@ -1,0 +1,20 @@
+{
+  "status": "IN_PROGRESS",
+  "review_blocker": "AUTH_REQUIRED at final qualified review; no same-root retry",
+  "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+  "validation": "79targeted/lint/typecheck/terminology52editor+4shell a11y PASS",
+  "changed_files": [
+    "src/components/landing-pages/funnel-goal-picker.tsx",
+    "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "src/app/(app)/dashboard/page.tsx"
+  ],
+  "acceptance": {
+    "status": "BLOCKED",
+    "blockers": [
+      "final_reviewer_not_qualified",
+      "independent_review_unverified"
+    ],
+    "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988"
+  },
+  "next": "Restore Claude CLI review login then rerun final evidence followup; keep20WP goal active, independent work can continue"
+}

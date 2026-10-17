@@ -1,0 +1,27 @@
+{
+  "normalized_status": "BUDGET_EXHAUSTED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    }
+  ],
+  "status": "BUDGET_EXHAUSTED",
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": false,
+  "verification": {
+    "status": "BUDGET_EXHAUSTED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "observed": {
+    "effort": "unknown",
+    "source": "not_reported",
+    "model": "unknown"
+  },
+  "completed": false
+}

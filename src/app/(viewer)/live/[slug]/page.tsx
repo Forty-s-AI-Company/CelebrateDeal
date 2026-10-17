@@ -1,4 +1,10 @@
+import {optionalMetricPage} from '@/lib/optional-metric-page';
+import { LiveMetricVisit } from "@/components/live-metric-visit";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
+import { headers } from 'next/headers';
+import {metricIngressConfigured,metricIngressFromRequest} from '@/lib/live-metric-ingress-proof';
+import { issueMetricVisitPage } from "@/lib/live-metric-visit-page";
 import { PersistentLivePlaybackRegistration } from "@/components/persistent-live-playback";
 import { getDb } from "@/lib/db";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
@@ -9,6 +15,8 @@ import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
+  // Per-request, uncounted expectation must never be generated at build time.
+  await connection();
   const { slug } = await params;
   const serverNow = new Date();
   const publicAvailability = publicLiveAvailabilityWhere();
@@ -119,7 +127,16 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
           : null,
       }))
 
+  const metricEnabled = process.env.LIVE_METRIC_VISITOR_KEYRING && runtime.state !== "unavailable";
+  const metricBinding = metricEnabled && metricIngressConfigured()
+    ? metricIngressFromRequest(await headers(),{kind:'viewer',method:'GET',target:`/live/${encodeURIComponent(slug)}`}) : undefined;
+  const metricPage = metricEnabled
+    ? await optionalMetricPage(()=>metricBinding?issueMetricVisitPage(getDb(), { vendorId: live.vendorId, liveId: live.id }, { kind: 'viewer' },metricBinding)
+      : issueMetricVisitPage(getDb(), { vendorId: live.vendorId, liveId: live.id }, { kind: 'viewer' })) : null;
+
   return (
+    <>
+    {metricPage ? <LiveMetricVisit key={`${live.id}:${metricPage.eventId}`} vendorId={live.vendorId} liveId={live.id} eventId={metricPage.eventId} /> : null}
     <PersistentLivePlaybackRegistration
       live={{
         id: live.id,
@@ -167,5 +184,6 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         })),
       }}
     />
+    </>
   );
 }

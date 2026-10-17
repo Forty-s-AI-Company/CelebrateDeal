@@ -9,8 +9,14 @@ import { classifyFailure, listCanonicalMigrations, parseContainerInspection, ver
 test("discovers canonical migration directory names without a fixed count", () => {
   const migrations = listCanonicalMigrations();
   assert.ok(migrations.length > 0);
+  // 日期格式不得讓既有草稿資料表 migration 靜默漏跑。
+  assert.ok(migrations.includes("20261011_registration_form_retry_draft"));
+  const sourceDirectories = fs.readdirSync(path.resolve("prisma/migrations"), { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && fs.existsSync(path.resolve("prisma/migrations", entry.name, "migration.sql")))
+    .map(entry => entry.name).sort();
+  assert.deepEqual(migrations, sourceDirectories);
   assert.deepEqual([...migrations].sort(), migrations);
-  assert.ok(migrations.every((name) => /^\d{12,14}_[a-z0-9_]+$/.test(name)));
+  assert.ok(migrations.every((name) => /^(?:\d{8}|\d{12,14})_[a-z0-9_]+$/.test(name)));
 });
 
 test("keeps generic Schema engine errors explicitly unconfirmed", () => {
@@ -119,6 +125,18 @@ test("keeps the mirror inventory limited to schema, config, lock, and migrations
     ].sort());
     assert.equal(fs.existsSync(path.join(mirror, ".env")), false);
     assert.equal(fs.existsSync(path.join(mirror, ".env.local")), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+
+test("rejects SQL migration directories outside the supported date formats", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-migration-name-"));
+  try {
+    fs.mkdirSync(path.join(tempRoot, "2026101_bad"));
+    fs.writeFileSync(path.join(tempRoot, "2026101_bad", "migration.sql"), "SELECT 1;");
+    assert.throws(() => listCanonicalMigrations(tempRoot), /migration-name-noncanonical/);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

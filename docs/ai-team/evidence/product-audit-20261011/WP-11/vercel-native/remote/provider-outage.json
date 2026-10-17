@@ -1,0 +1,13 @@
+{
+  "exit": 0,
+  "result": {
+    "mode": "one",
+    "http_status": 503,
+    "synthetic_reached": false,
+    "rate_limited": false,
+    "source_unavailable": false,
+    "provider_unavailable": true
+  },
+  "passed": true,
+  "fixture_store_stopped": true
+}

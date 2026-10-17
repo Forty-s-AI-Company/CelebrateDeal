@@ -1,0 +1,151 @@
+Read-only independent security repair review. No tools or edits. Return findings with severity BLOCKER/MAJOR/MINOR/NIT,file,area,issue,evidence,impact,recommended_fix,required_test,confidence. Snapshot sha256:cbd7bcd7e67496a18c8d50263d6983fe6236722f92cec6bc838e3445689fe9b0. Previous independent review had noBLOCKER/MAJOR and3MINOR. Review updated Retry-After forwarding and no-store before encryption; parser limits and malformed input behavior. No full storage audit claim.
+
+FILE src/lib/registration-submission-receipt.ts
+import { NextResponse } from "next/server";
+import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+import { registrationRetrySourcePath, registrationRetrySecureCookies } from "@/lib/registration-form-retry";
+
+const PURPOSE = "registration-submission-result-v1";
+export const REGISTRATION_RESULT_TTL_MS = 60_000;
+export function registrationResultCookieName(secure: boolean) {
+  return secure ? "__Host-celebratedeal_registration_result" : "celebratedeal_registration_result";
+}
+
+/** 僅證明此瀏覽器近期成功送出此表單，不代表Email確認或存取資格。 */
+export function attachRegistrationResult(request: Request, response: NextResponse, data: FormData | null, now = Date.now()) {
+  if (response.status !== 303 || !data || !Number.isFinite(now)) return;
+  try {
+    const location = response.headers.get("location");
+    const origin = new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin;
+    if (!location || request.headers.get("origin") !== origin) return;
+    const target = new URL(location, origin);
+    const formId = data.get("formId");
+    if ((target.origin !== origin && target.origin !== new URL(request.url).origin) || target.searchParams.get("submitted") !== "verification_required" || typeof formId !== "string" || !formId || formId.length > 128 || !registrationRetrySourcePath(target.pathname)) return;
+    // 成功返回也使用已驗證的公開origin，避免內部host導向造成回條跨host遺失。
+    response.headers.set("Location", new URL(target.pathname + target.search + target.hash, origin).toString());
+    // 即使回條加密失敗，成功轉址也不可被快取。
+    response.headers.set("Cache-Control", "no-store");
+    const value = encryptSensitiveValue(JSON.stringify({ formId, path: target.pathname, expiresAt: now + REGISTRATION_RESULT_TTL_MS }), PURPOSE);
+    if (value.length > 3800) return;
+    const secure = registrationRetrySecureCookies(new URL(request.url).host);
+    response.cookies.set(registrationResultCookieName(secure), value, { httpOnly: true, sameSite: "strict", secure, path: "/", maxAge: REGISTRATION_RESULT_TTL_MS / 1000 });
+  } catch { /* 提示無法建立不得影響已成功提交，也不記錄識別值。 */ }
+}
+
+export function verifyRegistrationResult(value: string | undefined, formId: string | undefined, path: string, now = Date.now()): boolean {
+  if (!value || value.length > 3800 || !formId || !Number.isFinite(now) || !registrationRetrySourcePath(path)) return false;
+  try {
+    const result: unknown = JSON.parse(decryptSensitiveValue(value, PURPOSE));
+    if (!result || typeof result !== "object") return false;
+    const entry = result as Record<string, unknown>;
+    return entry.formId === formId && entry.path === path && typeof entry.expiresAt === "number" && entry.expiresAt > now && entry.expiresAt <= now + REGISTRATION_RESULT_TTL_MS;
+  } catch { return false; }
+}
+
+POST wrapper
+export async function POST(request: Request) {
+  const native = /application\/x-www-form-urlencoded|multipart\/form-data/i.test(request.headers.get("content-type") ?? "");
+  if (!native) {
+    const response = await processSubmission(request);
+    if (response.ok) await clearRegistrationRetry(request, response);
+    return response;
+  }
+  // 有界讀取容納32×2000字元的URL編碼；JSON上限與欄位驗證保持原樣。
+  const formData = await readFormDataBody(request, 1_000_000);
+  let response: NextResponse;
+  try { response = await processSubmission(request, formData); }
+  catch { response = NextResponse.json({ error: "Submission unavailable" }, { status: 503 }); }
+  if (response.status >= 400) {
+    const retryResponse = await registrationRetryResponse(request, formData, response.status);
+    // 保留伺服器限流等待時間；不轉送其他錯誤回應標頭。
+    const retryAfter = response.headers.get("Retry-After");
+    if (response.status === 429 && retryAfter && /^\d{1,8}$/.test(retryAfter)) retryResponse.headers.set("Retry-After", retryAfter);
+    return retryResponse;
+  }
+  await clearRegistrationRetry(request, response);
+  attachRegistrationResult(request, response, formData);
+  return response;
+}
+
+api-security bounded body reader excerpt
+async function readBoundedBody(request: Request, maxBytes: number) {
+  const contentLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    await request.body?.cancel().catch(() => undefined);
+    return null;
+  }
+
+  if (!request.body) return new Uint8Array();
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytesRead = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    await reader.cancel().catch(() => undefined);
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(bytesRead);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+export async function readJsonBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<unknown> {
+  const bytes = await readBoundedBody(request, maxBytes);
+  if (!bytes) return {};
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 讀取需要保留原始內容的 webhook／安全回報，並沿用相同的固定記憶體上限。
+ * `null` 代表內容超量或串流讀取失敗，呼叫端應直接拒絕，不能繼續驗證簽章。
+ */
+export async function readTextBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<string | null> {
+  const bytes = await readBoundedBody(request, maxBytes);
+  return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+export async function readFormDataBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+) {
+  const bytes = await readBoundedBody(request, maxBytes);
+  if (!bytes) return null;
+  try {
+    return await new Response(bytes, {
+      headers: { "content-type": request.headers.get("content-type") ?? "" },
+    }).formData();
+  } catch {
+    return null;
+  }
+}
+
+Validation evidence: missing encryption unit asserts303/no-store/canonical destination/no receipt. Existing actual route oversized>1000000byte and malformed multipart tests both assert303/no-store/error destination/noDB lookups/no submission writes. Real local429 browser checks positive delay<=60seconds,persisted disposableDBdraft,refill and zero submissions. unit/lint/typecheck PASS. No human AT or production tests.

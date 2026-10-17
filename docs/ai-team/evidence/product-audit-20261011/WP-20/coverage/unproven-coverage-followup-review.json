@@ -1,0 +1,160 @@
+{
+  "completed": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "finalModel": "claude-opus-5-5",
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "payment",
+        "permission"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 16000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "review": {
+    "summary": "I reviewed only the three files supplied: live-metric-coverage-reader.ts, migration 20261016130000_live_metric_unproven_coverage/migration.sql and live-metric-coverage-reader.test.ts. I found no BLOCKER, MAJOR, MINOR or NIT defects in the authorized temporary fail-closed scope.\n\nReader SQL: The parentheses balance. The gap branch is OR'd at the top level, so gap rows for every kind are still admitted. The positive branch now requires kind IN ('registrations','orders'). Inside that branch, the existing typed checks still apply: registrationCount and registrationRevision, plus orderCount, orderProofVersion=2, and the orderRevision, orderTenantRevision and orderRegistrationRevision values. The CASE in the revisions CTE only computes these revision functions for supported kinds. The TypeScript code applies the same trust rule a second time: covered rows for visits or viewing are dropped and gaps are kept. With no accepted rows, coverage is null, which reports unknown_history rather than an audited zero. The 10001-row limit is checked before filtering, so oversized results fail closed.\n\nMigration: The new trigger runs BEFORE INSERT and only rejects status='covered' rows for visits or viewing, with error 23514. Gaps and other kinds pass through. The trigger function runs with the caller's privileges and a pinned search_path. After revoking access from PUBLIC and the API roles, the ACL check fails closed if any role other than the owner can still run the function. Trigger functions are not checked for EXECUTE privilege when they fire, so the revoke cannot block legitimate inserts.\n\nThe UPDATE only targets versions that currently have a covered visits or viewing row at the version's current sourceRevision. Its tenant/live/version join matches the reader. Older stale flags are already untrusted by the old readers, which compare sourceRevision. CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock on the audit table before the UPDATE runs, so no concurrent covered visits or viewing insert can commit unseen between the gate and the revision bump. Under live traffic, a writer that holds a version row lock and then inserts an audit row could deadlock with the migration or hit the 5s lock timeout. That would roll back the whole migration (fail-closed) and needs an operational retry; it is not a correctness defect. Legacy audit rows are not changed.\n\nTests: The unit test for visits and viewing checks both outcomes: a covered row alone gives unknown_history, and a covered row plus a gap gives evidence_gap. The union test for registrations keeps the original assertions.\n\nWhat this review does not certify: test or release success. The mock-based unit tests cannot check the SQL predicate itself; that rests on the DB replay you described, which I have not seen. It also does not cover the version-update and invalidation trigger, the projection and revision binding, the helper functions (wp20_metric_*), the Prisma CLI upgrade on populated data, default-privilege behaviour on the target platform, or the disclosed full-WP source-proof, fence and reader work.",
+    "findings": []
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "attempts": [
+    {
+      "status": "AGY_RUNTIME_ERROR",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 1
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ]
+}

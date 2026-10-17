@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "protected": {
+    "src/lib/taiwan-electronic-invoice.ts": "2661e579ce70e0404b61d166640907d0e52bceef58e3d1da08b4642fc20fe0d5",
+    "src/lib/taiwan-electronic-invoice-job.ts": "714eb241fc5f4f001d8541a8192a9d2ae3b70d4f984b04e8de9c23bd2840aa34",
+    "src/app/api/jobs/electronic-invoices/route.ts": "da9e2bd8f718912c0b8f09f022fbf9185c759aeafaf0f7d576e63bb0aeebe839",
+    "src/app/(app)/billing/electronic-invoices/export/route.ts": "f84428edbb18ddeb2fd7e960d1e88cdf3f6242c9b9a4b214214c7b027505beda",
+    "src/lib/taiwan-invoice-request.ts": "f8d292e2990cefd1ce17526713f4eb96e3dc3f23ed6711f224eb416162545e6a",
+    "src/components/commerce-checkout-form.tsx": "4a8659e6e4651540442033d3b70786a9b8137112ce18ea9e59025e5ec2f9191a",
+    "src/lib/commerce-orders.ts": "80d97f5eca06c4dc3402b1999eee522c97f6efd78206b9b7ae68ab4b9398cf1a",
+    "prisma/schema.prisma": "99d155c2a906916cc1ed01b00c133dd557cad40b4a7df76bd39d2f27af695626",
+    "src/lib/message-template.ts": "259f55586012e3d01852fbcf254b04a76955fa8af6d7c815e375d6c932e45aeb"
+  },
+  "protected9_hashes_unchanged": true,
+  "finance_guard_query_source_unchanged": true,
+  "checkout_entire_source_equals_baseline_plus_exact_legend_notice": true,
+  "sms_code_unchanged": true
+}

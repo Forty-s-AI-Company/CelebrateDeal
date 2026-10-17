@@ -1,0 +1,79 @@
+{
+  "at": "2026-10-16T05:04:36.452081+00:00",
+  "verification_status": "PASS",
+  "task_status": "REVIEW_BLOCKED",
+  "whole_wp_status": "IN_PROGRESS",
+  "goal_complete_wp": 9,
+  "goal_total_wp": 20,
+  "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+  "owned_files": [
+    "tests/e2e/wp14-ab-readout.spec.ts",
+    ".ai-team/reports/wp14-ab-browser-check.mjs",
+    ".ai-team/reports/wp14-ab-build-check.mjs"
+  ],
+  "product_snapshot_unchanged": true,
+  "actual_built_browser": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "retries": 0,
+    "axe_scans": 2,
+    "axe_scope": "Readout section at1280/390, not whole app",
+    "screenshot_widths": [
+      1280,
+      390
+    ],
+    "manually_viewed_both": true
+  },
+  "actual_postgresql": "PASS",
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "build": "PASS",
+  "prior_product_unit": {
+    "passed": 45,
+    "source_revision": "sha256:141c46dc3856d3bf92f55279d9ae8f88c96bc6930a1c8110f349d7530619a26d",
+    "rerun_this_turn": false
+  },
+  "qualified_earlier_reviews": 2,
+  "qualified_models": [
+    "claude-sonnet-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "final_review": "NETWORK_TRANSIENT",
+  "final_observed_model": "unknown",
+  "network_failures": 2,
+  "review_retry_stopped": true,
+  "unfinished": [
+    "Current final test/caller independent review",
+    "Original A/B experiment approval/evaluation criteria/representative real traffic",
+    "LINE real Sandbox delivery and WP04/WP13/WP17 prerequisites"
+  ],
+  "not_claimed": [
+    "Actual runtime experiment assignment/activation",
+    "Verification token flow",
+    "Provider delivery",
+    "10k dataset query latency",
+    "Whole-app accessibility",
+    "Preview/staging/Production"
+  ],
+  "failed_attempts_retained": [
+    "ab-browser-login-failure.json",
+    "ab-browser-login-diagnostic-failure.json",
+    "ab-browser-dev-timeout.json",
+    "ab-browser-built-timeout.json",
+    "ab-browser-after-template-failure.json",
+    "ab-browser-api-context-failure.json"
+  ],
+  "root_causes": [
+    "Missing established synthetic ingress headers",
+    "Initial audience template deliberately unselected, correctly disabling Stats",
+    "APIRequestContext differs from authenticated browser; exact original API response not captured. Final request uses actual browser fetch and verifiesJSON."
+  ],
+  "safety": "Independent worktree; synthetic disposable data; no product/source policy/schema/event/token changes, .env* contents or real customer/payment data, Production, push/deploy or provider send."
+}

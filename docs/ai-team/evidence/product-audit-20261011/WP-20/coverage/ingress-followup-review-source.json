@@ -1,0 +1,9 @@
+{
+  "schemaRange": "New ingress models plus one version relation only",
+  "files": {
+    "prisma/schema.prisma": "f55ef5a79b1626f5f4db6bcf8291aad91c2e466e85d8ce4aa99e36af610cfd16",
+    "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql": "d3f2e4c62c04a0b37e76ba7a4ec78de92625984c7a43b141645c353b39361070",
+    "src/lib/live-metric-ingress.ts": "7c2d967a1ebd5ac68277611714d0c2467397b36c2c9926877d22fbc293d6d823"
+  },
+  "promptCharacters": 18416
+}

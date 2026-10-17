@@ -1,0 +1,30 @@
+{
+  "status": "IN_PROGRESS",
+  "acceptance": "NOT_READY",
+  "files": {
+    "src/lib/live-metric-ingestion.ts": "1d2c8888ad8740cbb5897f5b4b0756fc6f5c3c011c600ba9026a09bed1aa4c23",
+    "src/lib/live-metric-ingestion.test.ts": "768f3bc4a351b0493206d43abea5c3b6977ed556cb0e5cdaa4439cb3c4c05dfe",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.ts": "694454a581b631d1f8b37e53c20447cb4e701bb2243f4b82665e0bf698cd5176",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.test.ts": "132414aac87ae9271b1fb7fb21368310f08b8037437f2c7ab6e034f2521d4908",
+    "scripts/wp20-metric-persistence-disposable.mjs": "dbe0b69868444a0b864ab76c3abe8e05bb20d3b624971b602212f710975a20be"
+  },
+  "validation": {
+    "targeted": "PASS 42/42",
+    "scoped_lint": "PASS",
+    "typecheck": "PASS",
+    "database_current_snapshot": "PASS 83/83; 97 migrations; cleanup PASS",
+    "independent_review_current_snapshot": "SUCCESS observed claude-opus-5-5; blacklist race fixed; three conditional findings rejected with inspected source reasons in adjudication"
+  },
+  "next": [
+    "session issuance and verified registration linkage",
+    "player and anonymous visit integration",
+    "bounded report worker/read adapter/UI/browser acceptance"
+  ],
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "selected_model": "router gpt-6.1-sol xhigh",
+  "observed_model": "unknown",
+  "writer": "root",
+  "automatic_spawn": false,
+  "revision": "sha256:db64e059072efef6857146a7661ba1dcb2d9a89c1883bc03e8222b4621c41080"
+}

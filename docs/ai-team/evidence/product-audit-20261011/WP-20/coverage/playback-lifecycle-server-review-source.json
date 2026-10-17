@@ -1,0 +1,10 @@
+{
+  "promptCharacters": 13044,
+  "scope": "server",
+  "omitted": "server two canonical credential-read declarations; client transport/delivery/media/clock and UI hook not supplied",
+  "files": {
+    "src/lib/live-metric-readiness.ts": "6414e8fbc6bd3a7018352718a2d8f5a0509c26f63e5d1f11d771597c7f829598",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": "9ac427b0d5aba77723f9cd5a991c2073d163accd18e5f532581300d09e48825f",
+    "src/lib/live-metric-request-authorization.ts": "5cd9fb5075b37877c87fe91ded8f9ebf8b62ec087e82c9effb9df305ccb3cf83"
+  }
+}

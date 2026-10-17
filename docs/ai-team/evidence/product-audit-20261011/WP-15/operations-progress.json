@@ -1,0 +1,15 @@
+{
+  "status": "IN_PROGRESS",
+  "product_files": [
+    "src/components/landing-pages/funnel-operations-panel.tsx"
+  ],
+  "change": "Step move/remove controls minimum44x44; mobile step list max-height15rem scrolls; desktop remains unbounded",
+  "checks": {
+    "browser": "PASS52 states including operations control dimensions and axe",
+    "eslint": "PASS",
+    "typecheck": "PASS exit0",
+    "independent_review": "REVIEW_COMPLETED observed claude-opus-5-5;1MAJOR/3MINOR/1NIT; not accepted"
+  },
+  "remaining": "Review findings, remaining first-viewport scope, current snapshot acceptance",
+  "next": "Supply unchanged desktop panel context and desktop browser proof to independently adjudicate MAJOR; evaluate remaining findings"
+}

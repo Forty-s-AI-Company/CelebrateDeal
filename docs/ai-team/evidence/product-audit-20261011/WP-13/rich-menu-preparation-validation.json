@@ -1,0 +1,58 @@
+{
+  "at": "2026-10-16T02:18:30.076302+00:00",
+  "status": "IN_PROGRESS",
+  "whole_wp13": "IN_PROGRESS",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "implementation_observed_model": "unknown",
+  "implementation_observed_effort": "unknown",
+  "ownership": "root solewriter; depth0; no subagents or Claude calls this checkpoint",
+  "source_hashes": {
+    "src/lib/line-rich-menu-publication.ts": "f5a33af8817e2a6e0c4e725c998da80f8cf55f4c5bcad666bb913cc26efbd9ac",
+    "src/lib/line-rich-menu-publication.test.ts": "068d951f9d625c7effbf9b65fd6b4ca2b2eab09e8e4ad273b7594e449382bb0e",
+    "src/lib/line-rich-menu-client.ts": "e3dfd5d2f41508be9056ad845e12b3a277f93d34a65e5cc3472182d9507e6608",
+    "src/lib/line-rich-menu-client.test.ts": "d18078ab9324783ebbefaf6ffd85bed32f3e12be3a1ba734043d6f4a2528e172"
+  },
+  "changed_files": [
+    "src/lib/line-rich-menu-publication.ts",
+    "src/lib/line-rich-menu-publication.test.ts",
+    "src/lib/line-rich-menu-client.ts",
+    "src/lib/line-rich-menu-client.test.ts"
+  ],
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "tests": 35,
+      "files": 3,
+      "evidence": "rich-menu-preparation-unit.json"
+    },
+    "typecheck": {
+      "status": "PASS",
+      "session": 64870
+    },
+    "lint": {
+      "status": "PASS",
+      "errors": 0
+    }
+  },
+  "implemented": [
+    "Resolve draft links without mutating the saved draft; reject unresolved placeholders and unsafe URI replacements.",
+    "Validate actual PNG/JPEG bytes, full decoding, bounded size/pixels and exact menu canvas dimensions; deterministic content/image fingerprint.",
+    "Existing fetch transport conventions, fixed official API hosts and redirect rejection, safe failures without remote bodies.",
+    "One-attempt create/upload/default/confirm protocol, authoritative callback checks before and after switching. Stale/changed remote default never reports synced; ambiguous create/switch outcomes stay uncertain. No remote cleanup/rollback performed automatically."
+  ],
+  "not_implemented": [
+    "Authenticated owner action and durable tenant/revision CAS publication state",
+    "Connecting UI upload/sync/status to the service",
+    "Actual external LINE Sandbox integration and provider acceptance",
+    "Full original WP13 and Goal acceptance"
+  ],
+  "review_status": "NOT_RUN for this partial implementation; independent critical review required after owner/persistence boundary integration, no READY claim",
+  "next_action": "Implement tenant-owned revision/CAS state and sync server action, then UI; keep saved raw-draft compatibility. Persist remote outcomes honestly, with unknown outcomes reconciled before retry. Only synthetic/offline execution until fixed Sandbox facts are known.",
+  "safety": "No DB/schema/shared runner/router/CI changes; no actual LINE calls, push or deploy; original dirty worktree untouched.",
+  "sources": [
+    "https://developers.line.biz/en/reference/messaging-api/nojs/#upload-rich-menu-image",
+    "https://developers.line.biz/en/docs/messaging-api/using-rich-menus/"
+  ],
+  "retained_accepted_template_scope": "Unchanged exact source revision sha256:25db39dca621e11af50febb6d0fd6a4b2f53142027333270344cee1ef58deea0"
+}

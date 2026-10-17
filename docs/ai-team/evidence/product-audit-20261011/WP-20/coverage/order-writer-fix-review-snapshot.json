@@ -1,0 +1,15 @@
+{
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql",
+    "src/lib/live-metric-report-reader.ts"
+  ],
+  "sha256": {
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql": "2dc9c1486c43ca6b1611a220948d1022d71b0dbbc502528dd33cd51314a8fbf3",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql": "adb27151acbd2280ce26f60e92441567e60060f94339fbe9c02db429b1cfb01f",
+    "src/lib/live-metric-report-reader.ts": "b1222ee06ec37e83ece92e4a408c4ad7f86f95e3f375cf0963302645a8f15a0e"
+  },
+  "status": "SUCCESS",
+  "provider": "claude_cli",
+  "observed_model": "claude-opus-5-5"
+}

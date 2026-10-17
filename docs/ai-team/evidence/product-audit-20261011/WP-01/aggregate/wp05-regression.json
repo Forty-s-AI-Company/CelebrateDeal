@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "wp01_original_aggregate_revision": "sha256:28091b888bcc5c7f39107f3d64ce85e1246004116808736555fa56b73daf18cc",
+  "current_aggregate_revision": "sha256:e83370c73d44107465f928a99f40e427da423c85dc866d2ecca6e08a0d45d15a",
+  "dependent_change_acceptance": "docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\client-submission\\acceptance.json",
+  "regression_checks": [
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\client-submission\\final-checks\\browser-chromium.json",
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\client-submission\\final-checks\\browser-firefox.json"
+  ],
+  "scope": "WP01 dual-publication, actual registration and provenance assertions included in WP05 browser runner; no-project and consultation source unchanged",
+  "old_aggregate_source_snapshot_superseded": true
+}

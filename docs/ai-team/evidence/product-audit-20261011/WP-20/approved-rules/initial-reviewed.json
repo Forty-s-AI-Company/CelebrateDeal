@@ -1,0 +1,222 @@
+{
+  "reviewed": true,
+  "completed": false,
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "審查範圍僅限所提供的 WP20 純計算規則與合成測試。未發現 BLOCKER。核心規則（90% 唯一覆蓋、整數 BigInt 門檻比較、區間聯集、null 與 [] 的區分、7 天含邊界的 UTC 經過毫秒）在文字上實作正確，數值界限也合理。有一項 MAJOR：`cancelled` 與缺漏欄位在執行期 fail-open（`undefined` 會被視為「未取消」而合格），與模組「不猜測缺漏資料」的宣稱不符。另有數項 MINOR/NIT 與測試覆蓋、輸入型別防禦與語意文件有關。本審查僅為文字審閱，並未執行測試；空的 findings 不代表測試或發佈成功，也不代表整個 WP20 完成。",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "live-metric-contract.ts",
+        "area": "evaluatePostCompletionOrder：缺漏判斷（約 null 檢查與 return 運算式）",
+        "issue": "缺漏/未知判斷只比對 `=== null`。若執行期傳入 `cancelled: undefined`（欄位遺失、未驗證的 JSON/DB 映射）或非布林值（0、\"false\"），且時間戳有效，會通過所有檢查並以 `!order.cancelled` 得到 `qualifies: true`，即 fail-open。",
+        "evidence": "`order.cancelled === null` 為 false（undefined !== null）；後續只驗證兩個時間戳；`qualifies: !order.cancelled && ...` 中 `!undefined === true`。測試只覆蓋 `cancelled: null`，未覆蓋 undefined。",
+        "impact": "取消狀態未知的訂單可能被計為合格的下單，直接灌水分子，違反「不猜測缺漏的取消狀態」與「null 未知不同於已知」的核准規則。雖然 TypeScript 型別禁止，但模組明確接收來自上游的資料，執行期防線缺失。",
+        "recommended_fix": "以 `typeof order.cancelled !== \"boolean\"` 判定：`null`/`undefined` 回傳 missing_data，其他非布林回傳 invalid_data；時間戳同樣以 `== null`（或 typeof number 檢查）處理 undefined。",
+        "required_test": "新增測試：cancelled 為 undefined、0、\"false\" 時不得回傳 qualifies:true（應為 unavailable）；establishedAtMs/firstCompletedAtMs 為 undefined 時應為 unavailable 而非拋錯或 available。",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "live-metric-contract.ts",
+        "area": "evaluateVideoCompletion：輸入驗證（intervals.some 與解構）",
+        "issue": "`intervals` 或 `durationMs` 為 undefined、或陣列元素為 null/undefined/非物件時，行為不一致：intervals 為 undefined 會在 `.some` 拋出 TypeError；元素為 null 時解構拋錯；durationMs 為 undefined 被歸類為 invalid_data 而非 missing_data。",
+        "evidence": "只檢查 `=== null`；`intervals.some(({ startMs, endMs }) => ...)` 對 null 元素會拋 TypeError。",
+        "impact": "純計算函式預期以 status 回報無法使用，卻可能拋例外而中斷呼叫端指標計算；缺漏與無效的分類在 undefined 上不一致，影響後續缺漏資料統計。",
+        "recommended_fix": "以 `== null` 處理 undefined；以 `Array.isArray` 與元素 typeof object 檢查包住驗證，非法則回傳 invalid_data；或在文件中明確聲明呼叫端須保證型別並以 runtime schema 驗證。",
+        "required_test": "新增測試：intervals 為 undefined、含 null 元素、非陣列時回傳 unavailable 且不拋錯。",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "live-metric-contract.test.ts",
+        "area": "approved unique video completion rule 與 post-completion order window",
+        "issue": "測試覆蓋有缺口，未鎖定關鍵數值與邊界行為。",
+        "evidence": "90% 門檻只用 duration=100000（可整除）；沒有 duration 無法整除 90% 的案例（例如 duration 99 或 101，89/90、90/91 的臨界）以證明不會向上取整；沒有相鄰區間（[0,10],[10,20]）、零長度區間、巢狀區間、duration 接近 MAX_SAFE_INTEGER 時 BigInt 路徑的測試；時間戳上限 8_640_000_000_000_000 剛好與 +1 的邊界未測；缺漏與無效並存時的優先順序（例如 NaN 時間戳且 cancelled=null）未測。",
+        "impact": "核心防護（避免把低於門檻者向上捨入成 90%、避免大數精度錯誤）日後被改成浮點運算時，現有測試不會失敗。",
+        "recommended_fix": "補上上述案例，特別是非整除 duration 的門檻測試與大數 BigInt 測試，並對 8_640_000_000_000_000 及其 +1 加入邊界測試。",
+        "required_test": "例如 duration=101：覆蓋 90ms → completed=false、91ms → true；duration=Number.MAX_SAFE_INTEGER 時單一完整區間 → completed=true；上限時間戳 → available，上限+1 → invalid_data。",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "live-metric-contract.ts",
+        "area": "EstablishedOrderFact 型別與 evaluatePostCompletionOrder 的 null 語意",
+        "issue": "`establishedAtMs: null` 同時可能代表「資料未知」與「訂單尚未成立」，型別無法區分；且 `cancelled === true` 但時間戳缺漏時，結果其實已確定為不合格，卻回傳 unavailable。",
+        "evidence": "型別只有 `number | null` 與 `boolean | null`；缺漏檢查在取消檢查之前統一回傳 missing_data。",
+        "impact": "呼叫端若把「尚未成立」的訂單傳入，會被計為資料缺漏而非已知不合格，可能污染缺漏率；是否應保留 unavailable 取決於未定義的分母，不應由此模組猜測。",
+        "recommended_fix": "在 JSDoc 明確規定：僅可傳入已確認成立的訂單事實，null 一律代表未知；對「已知不合格但時間未知」是否回傳 qualifies:false 提出範圍提案由指標負責人決定，不要在此自行推斷。",
+        "required_test": "若核准更改：cancelled=true 且 establishedAtMs=null 的預期結果測試；若不更改則加入文件化行為的測試（目前行為為 unavailable）。",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "live-metric-contract.ts",
+        "area": "整數毫秒與半開區間語意（模組頂部與 MediaInterval 註解）",
+        "issue": "驗證要求安全整數毫秒，播放器位置（currentTime*1000）常為小數，且區間端點為半開還是閉區間、取整方向未在文件說明。",
+        "evidence": "`Number.isSafeInteger(startMs/endMs/durationMs)` 拒絕小數；註解未說明來源如何正規化。",
+        "impact": "上游若以向上取整（把 endMs 進位）正規化，可能把低於門檻的觀看者提前推過 90%；規則本身抑制了模組內的進位，但契約未約束上游。",
+        "recommended_fix": "在註解中寫明：呼叫端須以保守方式（start 向上、end 向下，或依驗證證據）正規化為整數毫秒，區間為 [startMs, endMs) 半開語意。",
+        "required_test": "文件性質；可加入零長度區間不增加覆蓋的測試。",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "live-metric-contract.ts",
+        "area": "模組範圍與可維護性",
+        "issue": "`evaluateVideoCompletion` 只回傳 completed 與 coveredMs，不產生 firstCompletedAtMs；`evaluatePostCompletionOrder` 又需要它。連接兩者的證據來源屬於尚未授權的範圍。另外區間數量無上限、BigInt 需要 ES2020 以上 lib。",
+        "evidence": "註解自述「Completion time must come from verified first threshold-crossing evidence」，但模組內無對應函式；無區間數量限制。",
+        "impact": "呼叫端可能誤用其他時間（例如最後觀看時間、事件到達時間）當作 firstCompletedAtMs，使 7 天視窗失真；此模組通過也不代表 WP20 整體完成或可接入產品頁面。",
+        "recommended_fix": "以範圍提案提出『首次跨越門檻時間』的來源與驗證契約，不在此模組自行推斷；確認 tsconfig target/lib 支援 BigInt；如需要可在上游限制區間數量。",
+        "required_test": "無需於本模組新增；待範圍提案核准後針對 first-threshold-crossing 推導另建測試。",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "large",
+      "large_workload": true,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/lib/live-metric-contract.ts",
+        "src/lib/live-metric-contract.test.ts"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/lib/live-metric-contract.test.ts",
+      "src/lib/live-metric-contract.ts"
+    ],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-sonnet-5-5",
+  "accepted": false,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-sonnet-5-5"
+    }
+  ],
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-sonnet-5-5"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS"
+}

@@ -1,0 +1,339 @@
+Read-only security/integration repair review. No tools or edits. Output actionable BLOCKER/MAJOR/MINOR/NIT only. Prior confirmed MAJOR: LeadForm omitted native ref/lp and initialized shareCode from window during SSR. Current repair gets scalar query metadata on server, shares via existing form-bound retry context, persists valid metadata inside existing encrypted draft, and native hidden/JS body use same data. Existing API attribution qualification is unchanged; helper only filters format, does not authorize referrals. Existing legacy caller without boundary still reads URL in submit event only. Invalid/repeated query fields are omitted consistently. SourcePath redirects never include metadata. API nativeFormPayload already maps these hidden keys and excludes reserved keys from answers. No DB schema changes. Current targeted browser run checks actual JSON/native request bodies, rejected-contact error retries and no hydration mismatch, not business eligibility for generated codes. 191 unit plus7 DB initial pass; final lint/typecheck/browser run is ongoing. Review focus: data leakage, hydration, native/JS parity, error retry persistence, boundary isolation and regression.
+
+src/lib/registration-attribution.ts
+import { z } from "zod";
+
+// 只驗證傳遞格式；歸因資格與跨租戶檢查仍由提交 API 決定。
+export const RegistrationAttributionSchema = z.object({
+  referralCode: z.string().min(1).max(80).optional(),
+  shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).optional(),
+  landingPageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u).optional(),
+}).strict();
+export type RegistrationAttribution = z.infer<typeof RegistrationAttributionSchema>;
+export type RegistrationAttributionQuery = { ref?: string | string[]; share?: string | string[]; lp?: string | string[] };
+
+/** 無效或重複 query 不建立來源聲明；原生與 JS 使用同一份 server metadata。 */
+export function registrationAttribution(query: RegistrationAttributionQuery = {}): RegistrationAttribution {
+  const result: RegistrationAttribution = {};
+  const mappings = [["ref", "referralCode"], ["share", "shareCode"], ["lp", "landingPageId"]] as const;
+  for (const [queryKey, field] of mappings) {
+    const parsed = RegistrationAttributionSchema.shape[field].safeParse(query[queryKey]);
+    if (parsed.success && parsed.data !== undefined) result[field] = parsed.data;
+  }
+  return result;
+}
+
+
+src/components/lead-form.tsx
+"use client";
+
+import { registrationAttribution, type RegistrationAttribution } from "@/lib/registration-attribution";
+import { useRegistrationRetry } from "@/components/registration-retry-context";
+import { useRef, useState } from "react";
+import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+import { LineLoginButton } from "@/components/line-login-button";
+import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
+
+// Preserve the existing exports for callers while sharing the submission contract.
+export { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE } from "@/lib/registration-submission-client";
+
+type FieldSpec = {
+  key: string;
+  label: string;
+  type?: string;
+  required?: boolean;
+};
+
+export type LeadFormSession = {
+  id: string;
+  title: string;
+  description: string | null;
+  scheduledAt: string;
+  status: "scheduled" | "live" | "ended";
+};
+
+function fieldAutoComplete(field: FieldSpec) {
+  if (field.key === "name") return "name";
+  if (field.type === "email") return "email";
+  if (field.type === "tel") return "tel";
+  return undefined;
+}
+
+function fieldInputMode(field: FieldSpec): "email" | "tel" | "url" | "decimal" | undefined {
+  if (field.type === "email" || field.type === "tel" || field.type === "url") return field.type;
+  if (field.type === "number") return "decimal";
+  return undefined;
+}
+
+function formatSessionDate(value: string) {
+  try {
+    return new Intl.DateTimeFormat("zh-TW", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Asia/Taipei",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+function sessionStatusLabel(status: LeadFormSession["status"]) {
+  if (status === "live") return "直播中";
+  if (status === "ended") return "回放場次";
+  return "即將開始";
+}
+
+export function buildFormSubmissionRequestBody(input: {
+  formId: string;
+  liveId?: string | null;
+  payload: Record<string, FormDataEntryValue>;
+  referralCode: string | null;
+  shareCode: string;
+  landingPageId?: string | null;
+}) {
+  return {
+    formId: input.formId,
+    ...(input.landingPageId && /^[A-Za-z0-9_-]{1,128}$/.test(input.landingPageId) ? { landingPageId: input.landingPageId } : {}),
+    liveId: input.liveId,
+    payload: input.payload,
+    referralCode: input.referralCode,
+    ...(input.shareCode ? { shareCode: input.shareCode } : {}),
+  };
+}
+
+export function getSubmittedLiveId(formData: FormData, fallbackLiveId?: string | null) {
+  const submittedLiveId = formData.get("liveId");
+  return typeof submittedLiveId === "string" && submittedLiveId.trim()
+    ? submittedLiveId.trim()
+    : fallbackLiveId ?? null;
+}
+
+function attributionFields(value: RegistrationAttribution = {}) {
+  return { shareCode: value.shareCode ?? "", referralCode: value.referralCode ?? "", landingPageId: value.landingPageId ?? "" };
+}
+
+export function LeadForm({
+  formId,
+  liveId,
+  fields,
+  sessions = [],
+  submitLabel,
+  successMessage,
+  redirectTo,
+  themeColor = "#c2410c",
+}: {
+  formId: string;
+  liveId?: string | null;
+  fields: FieldSpec[];
+  sessions?: LeadFormSession[];
+  submitLabel: string;
+  successMessage: string;
+  redirectTo?: string;
+  themeColor?: string;
+}) {
+  const retry = useRegistrationRetry(formId);
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
+  const [errorMessage, setErrorMessage] = useState(retry?.message ?? "");
+  const submissionInFlight = useRef(false);
+  const attribution = retry?.attribution;
+  const nativeAttribution = attributionFields(attribution);
+
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    // React 尚未更新 disabled 前，也要擋住同一輪事件的重複送出。
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    setStatus("loading");
+    setErrorMessage("");
+    const form = event.currentTarget;
+
+    try {
+      const formData = new FormData(form);
+      const selectedLiveId = getSubmittedLiveId(formData, liveId);
+      const payload = Object.fromEntries(
+        [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "landingPageId", "redirectTo", "__registrationReturnPath"].includes(key)),
+      );
+      // 舊有無 boundary 的互動式 caller 只在事件中讀網址，避免 SSR 初始畫面分歧。
+      const query = new URLSearchParams(window.location.search);
+      const source = attributionFields(attribution ?? registrationAttribution({ ref: query.get("ref") ?? undefined, share: query.get("share") ?? undefined, lp: query.get("lp") ?? undefined }));
+      const response = await postRegistrationSubmission(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode: source.referralCode || null, shareCode: source.shareCode, landingPageId: source.landingPageId }));
+
+      if (response.ok) {
+        setStatus("success");
+        form.reset();
+        // 成功後移除舊重試旗標，重新整理不再誤顯示先前錯誤。
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("registrationRetry");
+        cleanUrl.searchParams.delete("submitted");
+        window.history.replaceState(window.history.state, "", cleanUrl);
+      } else {
+        submissionInFlight.current = false;
+        setStatus("error");
+        setErrorMessage(formSubmissionErrorMessage(response.status));
+      }
+    } catch {
+      submissionInFlight.current = false;
+      setStatus("error");
+      setErrorMessage(formSubmissionErrorMessage());
+    }
+  }
+
+
+  return (
+    <form method="post" action="/api/form-submissions" onSubmit={onSubmit} aria-busy={status === "loading"} className="grid gap-4">
+      {status !== "success" ? <>
+      <input type="hidden" name="formId" value={formId} />
+      {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
+      {sessions.length === 0 && liveId ? <input type="hidden" name="liveId" value={liveId} /> : null}
+      <input type="hidden" name="shareCode" value={nativeAttribution.shareCode} />
+      <input type="hidden" name="referralCode" value={nativeAttribution.referralCode} />
+      <input type="hidden" name="landingPageId" value={nativeAttribution.landingPageId} />
+      {redirectTo || retry?.sourcePath ? <input type="hidden" name="redirectTo" value={redirectTo || retry?.sourcePath} /> : null}
+
+      {sessions.length > 0 ? (
+        <fieldset className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <legend className="px-1 text-sm font-bold text-slate-900">選擇場次</legend>
+          <div className="grid gap-2">
+            {sessions.map((session, index) => (
+              <label key={session.id} className="grid cursor-pointer gap-1 rounded-lg border border-slate-200 bg-white p-3 text-sm transition has-[:checked]:border-[var(--registration-form-theme)] has-[:checked]:ring-2 has-[:checked]:ring-blue-100" style={{ "--registration-form-theme": themeColor } as React.CSSProperties}>
+                <span className="flex items-center gap-2 font-semibold text-slate-900">
+                  <input type="radio" disabled={status === "loading"} name="liveId" value={session.id} required defaultChecked={retry?.draft?.liveId && sessions.some((item) => item.id === retry.draft?.liveId) ? session.id === retry.draft.liveId : index === 0} className="h-4 w-4 accent-[var(--registration-form-theme)]" />
+                  {session.title}
+                </span>
+                <span className="pl-6 text-xs text-slate-500">{sessionStatusLabel(session.status)} · {formatSessionDate(session.scheduledAt)}</span>
+                {session.description ? <span className="pl-6 text-sm leading-6 text-slate-600">{session.description}</span> : null}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
+
+      {fields.map((field) => (
+        <label key={field.key} className="grid gap-1.5 text-sm font-medium text-slate-700">
+          {field.label}
+          <input
+            name={field.key}
+            defaultValue={retry?.draft?.answers[field.key] ?? ""}
+            type={field.type ?? "text"}
+            required={field.required}
+            disabled={status === "loading"}
+            autoComplete={fieldAutoComplete(field)}
+            inputMode={fieldInputMode(field)}
+            className="h-11 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          />
+        </label>
+      ))}
+
+      <button type="submit" disabled={status === "loading"} aria-disabled={status === "loading"} aria-busy={status === "loading"} style={{ backgroundColor: themeColor }} className="h-11 rounded-md text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60">
+        {status === "loading" ? "送出中..." : submitLabel}
+      </button>
+      </> : null}
+      <RegistrationSubmissionFeedback key="submission-feedback" pending={status === "loading"} errorMessage={status === "error" ? errorMessage || formSubmissionErrorMessage() : ""} successMessage={status === "success" ? successMessage : ""} focusSuccess />
+      {status === "success" ? <div className="grid gap-3">
+        <p className="rounded-lg border border-emerald-100 bg-white p-4 text-sm leading-6 text-emerald-800">{FORM_SUBMISSION_VERIFICATION_MESSAGE}</p>
+        <LineLoginButton request={{ mode: "registration", redirectPath: retry?.sourcePath ?? (typeof window === "undefined" ? "/" : window.location.pathname) }}>
+          🟢 接收 LINE 開播提醒與電子票券
+        </LineLoginButton>
+      </div> : null}
+    </form>
+  );
+}
+
+
+src/components/registration-retry-context.tsx
+"use client";
+import { createContext, useContext, type ReactNode } from "react";
+import type { RegistrationRetryDraft } from "@/lib/registration-form-retry";
+import { formSubmissionErrorMessage } from "@/lib/registration-submission-client";
+import type { RegistrationAttribution } from "@/lib/registration-attribution";
+
+type RetryState = { formId?: string; sourcePath: string; draft: RegistrationRetryDraft | null; failed: boolean; submitted?: boolean; attribution?: RegistrationAttribution };
+const Context = createContext<RetryState | null>(null);
+export function RegistrationRetryProvider({ value, children }: { value: RetryState; children: ReactNode }) {
+  return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+export function useRegistrationRetry(formId: string) {
+  const state = useContext(Context);
+  if (!state || state.formId !== formId) return null;
+  // 網址可被分享或保留；沒有有效草稿時，不把網址旗標當成送出失敗的證據。
+  return { ...state, message: state.failed ? state.draft ? formSubmissionErrorMessage(state.draft.status) : "目前沒有可恢復的填寫內容，無法確認先前的送出結果。若您已報名，請先查看確認信，避免重複送出；若尚未報名，請重新填寫。" : "" };
+}
+
+
+src/components/registration-retry-boundary.tsx
+import { registrationAttribution, type RegistrationAttributionQuery } from "@/lib/registration-attribution";
+import { registrationResultCookieName, verifyRegistrationResult } from "@/lib/registration-submission-receipt";
+import { cookies, headers } from "next/headers";
+import type { ReactNode } from "react";
+import { getDb } from "@/lib/db";
+import { readRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName } from "@/lib/registration-form-retry";
+import { RegistrationRetryProvider } from "@/components/registration-retry-context";
+
+/** 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。 */
+export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted, attributionQuery }: {
+  formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string; attributionQuery?: RegistrationAttributionQuery;
+}) {
+  const failed = typeof retry === "string" && ["400", "403", "404", "429", "503", "unavailable"].includes(retry);
+  let draft = null;
+  if (failed && retry !== "unavailable" && formId) {
+    const jar = await cookies();
+    const host = (await headers()).get("host") ?? "";
+    const capability = jar.get(registrationRetryCookieName(registrationRetrySecureCookies(host)))?.value;
+    try { draft = await readRegistrationRetryDraft(getDb(), { capability, formId, sourcePath }); } catch { /* 明示未保留，不送出敏感診斷。 */ }
+  }
+  const verifiedSubmission = await verifiedRegistrationSubmission(formId, sourcePath, submitted);
+  return function RetryBoundary(children: ReactNode) {
+    return <RegistrationRetryProvider value={{ formId, sourcePath, draft, failed, submitted: verifiedSubmission, attribution: draft?.attribution ?? registrationAttribution(attributionQuery) }}>{children}</RegistrationRetryProvider>;
+  };
+}
+
+
+/** 共用驗證，避免個別入口直接信任網址上的成功旗標。 */
+export async function verifiedRegistrationSubmission(formId: string | undefined, sourcePath: string, submitted?: string) {
+  if (submitted !== "verification_required" || !formId) return false;
+  const jar = await cookies();
+  const secure = registrationRetrySecureCookies((await headers()).get("host") ?? "");
+  return verifyRegistrationResult(jar.get(registrationResultCookieName(secure))?.value, formId, sourcePath);
+}
+
+/** 網址只決定是否呈現結果頁；成功與欄位仍須通過原來源綁定驗證。 */
+export function hasRegistrationFeedbackQuery(query: { registrationRetry?: string; submitted?: string }) {
+  return ["400", "403", "404", "429", "503", "unavailable"].includes(query.registrationRetry ?? "") || query.submitted === "verification_required";
+}
+
+
+src/lib/registration-form-retry.ts only changed schema and return lines (existing encrypted envelope uses ...Draft.shape)
+import { RegistrationAttributionSchema } from "@/lib/registration-attribution";
+  attribution: RegistrationAttributionSchema.optional(),
+    return { formId: value.formId, sourcePath: value.sourcePath, answers: value.answers, liveId: value.liveId, status: value.status, ...(value.attribution ? { attribution: value.attribution } : {}) };
+
+src/lib/registration-form-retry-response.ts changed save arguments
+if (valid) saved = await saveRegistrationRetryDraft(getDb(), {
+        formId: String(data.get("formId") ?? ""), sourcePath, answers,
+        attribution: registrationAttribution({ ref: typeof data.get("referralCode") === "string" ? String(data.get("referralCode")) : undefined, share: typeof data.get("shareCode") === "string" ? String(data.get("shareCode")) : undefined, lp: typeof data.get("landingPageId") === "string" ? String(data.get("landingPageId")) : undefined }),
+        liveId: typeof data.get("liveId") === "string" ? String(data.get("liveId")) : null, status: errorStatus,
+  
+
+src/app/form/[slug]/page.tsx changed query type/boundary call lines; unchanged publication guards precede boundary
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+  searchParams: Promise<RegistrationAttributionQuery & { submitted?: string; liveId?: string; registrationRetry?: string }>;
+  const query = await searchParams;
+  const withRetry = await registrationRetryBoundary({ formId: form.id, sourcePath: `/form/${slug}`, attributionQuery: query, retry: query.registrationRetry });
+
+src/app/p/[slug]/page.tsx changed query type/boundary call lines; unchanged publication guards precede boundary
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+export default async function PublicPartnerFunnelPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams?: Promise<RegistrationAttributionQuery & { registrationRetry?: string; submitted?: string }> }) {
+  const query = await searchParams;
+  const withRetry = await registrationRetryBoundary({ formId: view.state === "ready" ? view.page?.webinar?.registration?.formId : undefined, sourcePath: `/p/${slug}`, retry: query?.registrationRetry, submitted: query?.submitted, attributionQuery: query });
+
+src/app/lp/[slug]/page.tsx changed query type/boundary call lines; unchanged publication guards precede boundary
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+export default async function PublicLandingPage({ params, searchParams }: { searchParams?: Promise<RegistrationAttributionQuery & { registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string }> }) {
+  const query = await searchParams ?? {};
+  const buildRetryBoundary = () => registrationRetryBoundary({ formId: isFunnelStepPages(page.content) && page.content.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}`, attributionQuery: query, retry: query.registrationRetry, submitted: query.submitted });
+
+src/app/lp/[slug]/[stepPath]/page.tsx changed query type/boundary call lines; unchanged publication guards precede boundary
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+export default async function PublicFunnelStepPage({ params, searchParams }: { searchParams?: Promise<RegistrationAttributionQuery & { registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string; stepPath: string }> }) {
+  const query = await searchParams ?? {};
+  const withRetry = await registrationRetryBoundary({ formId: steps.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}/${step.path}`, attributionQuery: query, retry: query.registrationRetry, submitted: query.submitted });

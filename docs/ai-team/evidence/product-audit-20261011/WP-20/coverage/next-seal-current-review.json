@@ -1,0 +1,173 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR issues in this increment. The earlier MAJOR (no discriminating control) is mostly fixed. The pre-seal Next GET for the interrupted control frame adds a fourth page. The unmatched query then shows that only the late frame is still unmatched. The predicate is true before the seal and false after it. A raw INSERT after the seal is rejected with SQLSTATE 23514. The counterfactual transaction removes only the exact seal clause, which lets the predicate pass and the INSERT succeed (1 row); the rollback then restores both the false result and the count. Counts and the repeated seal call are checked again after Next stops, which also catches any late writes from after the response. In the seal helper, the version row is locked FOR SHARE and then the run row FOR UPDATE, with stoppedAt required and a local statement_timeout. Retries return the stored row, so the seal stays immutable. Cleanup failures in the finally block can only turn a PASS into a FAIL, never the reverse. One MINOR remains: the late Next GET proves that no row appeared, but nothing shows that the seal was what blocked it. The counterfactual only covers trusted raw SQL. Out of scope (not a defect): the probe's database role can run CREATE OR REPLACE on the fence function, so the seal guards data integrity against trusted callers but is not access control. Production role privileges and ownership need a separate review. This review covers only the supplied increment and cleanup. It does not certify the whole app, the credential declarations, form body rendering, coverage or epochs, or that the release is ready. The goal stays NOT_READY.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "source-seal stage: receipt.sourceSeal.lateHttpStatus=await signedGet(late) through the actualNextLateSignedSourceAndTrustedSqlRejectedAfterSeal check",
+        "issue": "The test never shows why the late Next GET adds no row. The only evidence is HTTP 200 plus an unchanged count. The seal-clause counterfactual covers only the raw INSERT made from the probe's own transaction. It does not cover the Next request path.",
+        "evidence": "signedGet(late) checks only response.status===200 and the body size, then counts() stays at 4 pages and unmatched() stays at 1. Nothing captures a SQLSTATE, rollback, trigger rejection or source-side outcome for this request. The control GET differs from the late GET in frame id, elapsed time since admission and seal state, not just seal state. The weakened function only exists inside the rolled-back transaction, so Next never runs against it. The check name still says the actual Next late source was 'Rejected After Seal'.",
+        "impact": "Suppose the Next source skips the insert for some reason other than the seal, such as frame age, ordering or a per-run limit, and swallows the error to render 200. The receipt would still record the Next path as fenced by the seal. The raw-SQL fence evidence holds, but the claim that the seal enforces the actual Next path is stronger than what was observed.",
+        "recommended_fix": "Capture a DB-side signal for the late request in the disposable database. Options: (1) take a pg_stat_database xact_rollback delta, or temporarily set log_min_error_statement in the owned disposable server, and check that a 23514 occurs tied to the late frame id; or (2) add a time-matched control, i.e. admit another interrupted frame at the same moment, wait the same delay and consume it before sealing, so elapsed time is ruled out. Otherwise rename the check and receipt field to say only 'no source row after seal (cause not observed)'.",
+        "required_test": "Repeat the runtime probe and record the source-rejection evidence for the late GET, for example a 23514 rollback delta or log entry tied to the late frame. Also show that a frame with the same timing and no seal still appends through actual Next. The check passes only if both hold.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "completed": false,
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  }
+}

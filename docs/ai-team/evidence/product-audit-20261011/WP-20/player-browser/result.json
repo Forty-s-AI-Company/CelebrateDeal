@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "scope": "Owned loopback page, generated canvas video, synthetic transport; no application credentials",
+  "checks": {
+    "fullPlaybackReaches90PercentCoverage": true,
+    "fullPlaybackClosesOnce": true,
+    "producesSegments": true,
+    "capturesAtLeast80PercentOfContinuousPlayback": true,
+    "pauseAddsNoSegments": true,
+    "closesOnce": true
+  },
+  "metrics": {
+    "completeMediaMs": 3960,
+    "completeRecordedMs": 3704,
+    "completeCloseCount": 1,
+    "timeupdates": 27,
+    "segments": 9,
+    "observedMediaMs": 2399,
+    "recordedMs": 2379,
+    "rowsBeforePause": 9,
+    "rowsAfterPause": 9,
+    "closeCount": 1,
+    "terminal": true
+  }
+}

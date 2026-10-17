@@ -1,0 +1,305 @@
+--- a/src/app/(app)/billing/payment-methods/page.tsx
++++ b/src/app/(app)/billing/payment-methods/page.tsx
+@@ -66,9 +66,22 @@
+   return null;
+ }
+ 
++/** 只呈現目前紀錄的有效性；發布仍由既有 guard 重新檢查，不代表顧客收款核可。 */
++function referenceDisplayStatus(reference: { status: string; verifiedAt: Date | null; expiresAt: Date | null }, now: Date) {
++  if (reference.status !== "verified") {
++    return ["pending", "expired", "revoked"].includes(reference.status) ? reference.status : "unknown";
++  }
++  const verifiedAt = reference.verifiedAt?.getTime();
++  const expiresAt = reference.expiresAt?.getTime();
++  if (verifiedAt === undefined || !Number.isFinite(verifiedAt) || verifiedAt > now.getTime()
++    || (expiresAt !== undefined && !Number.isFinite(expiresAt))) return "unconfirmed";
++  if (expiresAt !== undefined && expiresAt <= now.getTime()) return "expired";
++  return "verified";
++}
++
+ function statusTone(status: string) {
+   if (status === "verified") return "green" as const;
+-  if (status === "pending") return "orange" as const;
++  if (status === "pending" || status === "unconfirmed") return "orange" as const;
+   return "gray" as const;
+ }
+ 
+@@ -78,7 +91,8 @@
+     case "pending": return "待驗證";
+     case "expired": return "已過期";
+     case "revoked": return "已撤銷";
+-    default: return status;
++    case "unconfirmed": return "驗證資料待確認";
++    default: return "狀態待確認";
+   }
+ }
+ 
+@@ -115,6 +129,7 @@
+   const message = errorMessage(queryValue(params.error));
+   const status = statusMessage(queryValue(params.status));
+   const provider = providerSetupState(vendor.id);
++  const renderedAt = new Date();
+   const membershipNames = new Map(
+     memberships.map((membership) => [membership.id, `${membership.team.name} · ${membership.vendorMember.user.name}`]),
+   );
+@@ -122,11 +137,12 @@
+   return (
+     <>
+       <PageHeader
+-        title="付款方式"
+-        description="管理平台方案與 Stream 用量需要的付款方式驗證狀態；CelebrateDeal 只保留 provider opaque reference，不接觸卡號。"
++        title="平台服務付款方式"
++        description="管理平台方案與 Stream 用量的付款驗證；這不是顧客結帳收款設定。平台不保存卡號。"
+       />
+       {message ? <p role="alert" className="mb-6 rounded-md bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800">{message}</p> : null}
+       {status ? <p role="status" className="mb-6 rounded-md bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{status}</p> : null}
++      <p className="mb-6 text-sm text-slate-600">專案發布仍檢查有效的商家層級付款驗證紀錄，成員紀錄不計入。完成本頁設定不代表顧客收款已啟用或取得收款核可；顧客收款需另外確認，發布時也會重新檢查驗證有效性。</p>
+ 
+       <div className="grid gap-4 lg:grid-cols-3">
+         <Card>
+@@ -135,21 +151,21 @@
+           <div className="mt-2"><Badge tone={provider.available ? "green" : "orange"}>{provider.available ? "可發起設定" : "尚未提供設定流程"}</Badge></div>
+         </Card>
+         <Card>
+-          <p className="text-sm font-medium text-slate-500">商店付款方式</p>
++          <p className="text-sm font-medium text-slate-500">商家平台服務付款紀錄</p>
+           <p className="mt-2 text-xl font-semibold text-slate-950">{references.filter((reference) => reference.scopeType === "VENDOR").length} 筆</p>
+-          <p className="mt-1 text-xs text-slate-500">需有已驗證且未過期的 reference 才能啟用商店扣款。</p>
++          <p className="mt-1 text-xs text-slate-500">筆數包含待驗證與過期紀錄；平台扣款仍需已驗證且未過期的有效紀錄。</p>
+         </Card>
+         <Card>
+-          <p className="text-sm font-medium text-slate-500">成員扣款對象</p>
++          <p className="text-sm font-medium text-slate-500">成員平台服務付款對象</p>
+           <p className="mt-2 text-xl font-semibold text-slate-950">{memberships.length} 位</p>
+-          <p className="mt-1 text-xs text-slate-500">逐位成員驗證，避免把商店付款方式誤套用到會員扣款。</p>
++          <p className="mt-1 text-xs text-slate-500">成員與商家紀錄分開驗證，不代表顧客結帳付款已啟用。</p>
+         </Card>
+       </div>
+ 
+       <Card className="mt-6">
+         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+           <div>
+-            <h2 className="text-lg font-semibold text-slate-950">商店付款方式</h2>
++            <h2 className="text-lg font-semibold text-slate-950">商家平台服務付款方式</h2>
+             <p className="mt-1 text-sm text-slate-500">用於商店層級的平台方案、用量與扣款流程。設定完成前，相關流程會安全停止。</p>
+           </div>
+           {provider.available ? (
+@@ -164,7 +180,7 @@
+ 
+       <Card className="mt-6">
+         <div className="mb-4">
+-          <h2 className="text-lg font-semibold text-slate-950">成員付款方式</h2>
++          <h2 className="text-lg font-semibold text-slate-950">成員付款方式（平台服務）</h2>
+           <p className="mt-1 text-sm text-slate-500">需要由每位成員各自建立並驗證付款 reference；頁面不顯示 provider customer reference 或付款方式 reference。</p>
+         </div>
+         {memberships.length > 0 ? (
+@@ -198,25 +214,28 @@
+         <h2 className="text-lg font-semibold text-slate-950">已保存的驗證狀態</h2>
+         <p className="mt-1 text-sm text-slate-500">以下只呈現必要的狀態與時間，不呈現任何 card number、token 或 provider opaque reference。</p>
+         <div className="mt-4 grid gap-3">
+-          {references.length > 0 ? references.map((reference) => (
+-            <div key={reference.id} className="grid gap-2 rounded-md border border-border p-4 md:grid-cols-[1fr_auto] md:items-center">
+-              <div>
+-                <p className="font-medium text-slate-950">{reference.scopeType === "VENDOR" ? "商店付款方式" : membershipNames.get(reference.membershipId ?? "") ?? "成員付款方式"}</p>
+-                <p className="mt-1 text-xs text-slate-500">Provider：{reference.providerName} · 建立於 {formatDateTime(reference.createdAt)}</p>
+-                <p className="mt-1 text-xs text-slate-500">最後驗證：{reference.lastValidatedAt ? formatDateTime(reference.lastValidatedAt) : "尚未驗證"}{reference.expiresAt ? ` · 到期 ${formatDateTime(reference.expiresAt)}` : ""}</p>
++          {references.length > 0 ? references.map((reference) => {
++            const displayStatus = referenceDisplayStatus(reference, renderedAt);
++            return (
++              <div key={reference.id} className="grid gap-2 rounded-md border border-border p-4 md:grid-cols-[1fr_auto] md:items-center">
++                <div>
++                  <p className="font-medium text-slate-950">{reference.scopeType === "VENDOR" ? "商家平台服務付款方式" : membershipNames.get(reference.membershipId ?? "") ?? "成員付款方式"}</p>
++                  <p className="mt-1 text-xs text-slate-500">Provider：{reference.providerName} · 建立於 {formatDateTime(reference.createdAt)}</p>
++                  <p className="mt-1 text-xs text-slate-500">最近檢查時間：{reference.lastValidatedAt ? formatDateTime(reference.lastValidatedAt) : "尚無時間紀錄"}{reference.expiresAt ? ` · 到期 ${formatDateTime(reference.expiresAt)}` : ""}</p>
++                </div>
++                <div className="flex items-center gap-3">
++                  <Badge tone={statusTone(displayStatus)}>{statusLabel(displayStatus)}</Badge>
++                  {reference.status !== "revoked" ? (
++                    <form action={revokePaymentMethodReferenceAction}>
++                      <CsrfField />
++                      <input type="hidden" name="referenceId" value={reference.id} />
++                      <FormSubmitButton pendingChildren="撤銷中…" pendingMessage="正在撤銷付款方式並停用後續扣款，請勿重複送出。" confirmMessage="確認撤銷這個付款方式？後續扣款會立即 fail closed。" className="min-h-10 rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">撤銷</FormSubmitButton>
++                    </form>
++                  ) : null}
++                </div>
+               </div>
+-              <div className="flex items-center gap-3">
+-                <Badge tone={statusTone(reference.status)}>{statusLabel(reference.status)}</Badge>
+-                {reference.status !== "revoked" ? (
+-                  <form action={revokePaymentMethodReferenceAction}>
+-                    <CsrfField />
+-                    <input type="hidden" name="referenceId" value={reference.id} />
+-                    <FormSubmitButton pendingChildren="撤銷中…" pendingMessage="正在撤銷付款方式並停用後續扣款，請勿重複送出。" confirmMessage="確認撤銷這個付款方式？後續扣款會立即 fail closed。" className="min-h-10 rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">撤銷</FormSubmitButton>
+-                  </form>
+-                ) : null}
+-              </div>
+-            </div>
+-          )) : <p className="text-sm text-slate-500">尚無付款方式 reference。</p>}
++            );
++          }) : <p className="text-sm text-slate-500">尚無平台服務付款紀錄。</p>}
+         </div>
+       </Card>
+     </>
+--- a/src/app/(app)/billing/payment-methods/page.test.tsx
++++ b/src/app/(app)/billing/payment-methods/page.test.tsx
+@@ -1,5 +1,5 @@
+ import { renderToStaticMarkup } from "react-dom/server";
+-import { beforeEach, describe, expect, it, vi } from "vitest";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ 
+ const mocks = vi.hoisted(() => ({
+   requireVendorFinance: vi.fn(),
+@@ -24,6 +24,7 @@
+ 
+ beforeEach(() => {
+   vi.clearAllMocks();
++  vi.stubEnv("PAYUNI_ENV", "sandbox");
+   mocks.requireVendorFinance.mockResolvedValue({ vendor: { id: "vendor-current" } });
+   mocks.referenceFindMany.mockResolvedValue([
+     {
+@@ -56,11 +57,17 @@
+   mocks.getCsrfToken.mockResolvedValue("csrf-payment-method");
+ });
+ 
++afterEach(() => { vi.unstubAllEnvs(); });
++
+ describe("/billing/payment-methods route", () => {
+   it("renders actionable vendor and member setup forms without exposing opaque references", async () => {
+     const html = renderToStaticMarkup(await PaymentMethodsPage({}));
+ 
+-    expect(html).toContain("付款方式設定");
++    expect(html).toContain("可發起設定");
++    expect(html).toContain("平台服務付款方式");
++    expect(html).toContain("這不是顧客結帳收款設定");
++    expect(html).toContain("完成本頁設定不代表顧客收款已啟用或取得收款核可");
++    expect(html).toContain("成員紀錄不計入");
+     expect(html).toContain("北區團隊 · 王小明");
+     expect(html).toContain("已驗證");
+     expect(html).toContain('name="scopeType" value="VENDOR"');
+@@ -184,7 +191,37 @@
+ 
+     mocks.referenceFindMany.mockResolvedValue([]);
+     const emptyHtml = renderToStaticMarkup(await PaymentMethodsPage({}));
+-    expect(emptyHtml).toContain("尚無付款方式 reference");
++    expect(emptyHtml).toContain("尚無平台服務付款紀錄");
++  });
++
++  it.each([
++    ["verified", "2026-10-16T12:00:00.000Z", null, "已驗證"],
++    ["verified", "2026-10-16T11:00:00.000Z", "2026-10-16T12:00:00.001Z", "已驗證"],
++    ["verified", "2026-10-16T11:00:00.000Z", "2026-10-16T12:00:00.000Z", "已過期"],
++    ["verified", "2026-10-16T11:00:00.000Z", "2026-10-16T11:59:59.999Z", "已過期"],
++    ["verified", null, null, "驗證資料待確認"],
++    ["verified", "2026-10-16T12:00:00.001Z", null, "驗證資料待確認"],
++    ["pending", null, null, "待驗證"],
++    ["provider_unknown_state", null, null, "狀態待確認"],
++    ["revoked", null, null, "已撤銷"],
++    ["expired", "2026-10-16T11:00:00.000Z", null, "已過期"],
++  ] as const)("renders reference state %s/%s/%s as %s without implying customer collection approval", async (status, verifiedAt, expiresAt, label) => {
++    vi.useFakeTimers({ toFake: ["Date"] });
++    vi.setSystemTime(new Date("2026-10-16T12:00:00.000Z"));
++    try {
++      mocks.referenceFindMany.mockResolvedValue([{
++        id: "synthetic-state-reference", scopeType: "VENDOR", membershipId: null, providerName: "payuni", status,
++        verifiedAt: verifiedAt ? new Date(verifiedAt) : null, expiresAt: expiresAt ? new Date(expiresAt) : null,
++        lastValidatedAt: null, createdAt: new Date("2026-10-01T00:00:00.000Z"),
++      }]);
++      const html = renderToStaticMarkup(await PaymentMethodsPage({}));
++      expect(html).toContain(`>${label}<`);
++      if (label !== "已驗證") expect(html).not.toContain(">已驗證<");
++      expect(html).not.toContain("provider_unknown_state");
++      expect(html).toContain("顧客收款需另外確認");
++      expect(html).toContain('name="scopeType" value="VENDOR"');
++      expect(mocks.referenceFindMany).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ where: { vendorId: "vendor-current" } }));
++    } finally { vi.useRealTimers(); }
+   });
+ 
+   it("fails closed when provider discovery throws", async () => {
+--- a/src/lib/merchant-onboarding.ts
++++ b/src/lib/merchant-onboarding.ts
+@@ -89,12 +89,12 @@
+     }),
+     step({
+       key: "payment",
+-      title: "付款方式驗證",
+-      description: "完成商店層級 provider reference 驗證；平台不保存卡號。",
++      title: "平台服務付款驗證",
++      description: "確認平台方案與 Stream 用量的付款紀錄；現行專案發布仍需有效驗證，顧客收款設定需另外確認。",
+       href: "/billing/payment-methods",
+-      actionLabel: "驗證付款方式",
++      actionLabel: "設定平台付款方式",
+       deferred: true,
+-      requirements: [{ label: "有效的商店付款方式", done: signals.verifiedVendorPaymentMethodCount > 0 }],
++      requirements: [{ label: "有效的商家平台服務付款紀錄", done: signals.verifiedVendorPaymentMethodCount > 0 }],
+     }),
+     step({
+       key: "catalog",
+--- a/src/lib/merchant-onboarding.test.ts
++++ b/src/lib/merchant-onboarding.test.ts
+@@ -85,4 +85,11 @@
+     expect(progress.steps.find((item) => item.key === "payment")?.deferred).toBe(true);
+     expect(progress.nextStep).toMatchObject({ key: "catalog", href: "/products/new" });
+   });
++
++  it.each([0, 1])("explains platform payment purpose without changing the persisted count signal %i", (count) => {
++    const payment = merchantOnboardingProgress({ ...completeSignals, verifiedVendorPaymentMethodCount: count }).steps.find(item => item.key === "payment");
++    expect(payment).toMatchObject({ key: "payment", title: "平台服務付款驗證", href: "/billing/payment-methods", actionLabel: "設定平台付款方式", deferred: true });
++    expect(payment?.description).toContain("顧客收款設定需另外確認");
++    expect(payment?.requirements).toEqual([{ label: "有效的商家平台服務付款紀錄", done: count > 0 }]);
++  });
+ });
+--- a/src/lib/sales-workspace.ts
++++ b/src/lib/sales-workspace.ts
+@@ -71,7 +71,7 @@
+ export const WORKSPACE_ONBOARDING_TASKS: readonly OnboardingTaskDefinition[] = [
+   { key: "workspace_profile", title: "完成商家基本資料", estimatedMinutes: 2, required: true },
+   { key: "workspace_logo", title: "上傳 Logo", estimatedMinutes: 1, required: false },
+-  { key: "workspace_payment", title: "串接付款方式", estimatedMinutes: 4, required: true, skipImpact: "已略過付款設定，目前無法接受線上付款。" },
++  { key: "workspace_payment", title: "驗證平台服務付款方式", estimatedMinutes: 4, required: true, skipImpact: "已略過平台服務付款驗證，專案發布仍需有效的商家付款紀錄；顧客收款設定需另行確認。" },
+   { key: "workspace_support", title: "設定客服與通知資訊", estimatedMinutes: 2, required: true, skipImpact: "已略過客服與通知設定，客戶可能無法取得必要協助與通知。" },
+   { key: "workspace_team", title: "邀請團隊成員", estimatedMinutes: 1, required: false },
+   { key: "workspace_test_order", title: "完成測試訂單", estimatedMinutes: 3, required: true, skipImpact: "已略過測試訂單，付款與交付流程尚未驗證。" },
+@@ -82,7 +82,7 @@
+   { key: "project_product", title: "建立商品", estimatedMinutes: 3, required: true },
+   { key: "project_funnel", title: "選擇漏斗頁模板", estimatedMinutes: 3, required: true },
+   { key: "project_live", title: "設定直播場次", estimatedMinutes: 3, required: true },
+-  { key: "project_payment", title: "檢查付款方式", estimatedMinutes: 1, required: true, skipImpact: "已略過付款檢查，顧客可能無法完成線上付款。" },
++  { key: "project_payment", title: "檢查發布所需付款驗證", estimatedMinutes: 1, required: true, skipImpact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。" },
+   { key: "project_preview", title: "預覽流程", estimatedMinutes: 2, required: true },
+   { key: "project_publish", title: "發布並取得分享連結", estimatedMinutes: 1, required: true },
+ ];
+@@ -93,7 +93,7 @@
+   { key: "project_price", title: "設定價格", estimatedMinutes: 2, required: true },
+   { key: "project_availability", title: "設定可預約時間", estimatedMinutes: 3, required: true },
+   { key: "project_funnel", title: "建立漏斗頁", estimatedMinutes: 3, required: true },
+-  { key: "project_payment", title: "檢查付款方式", estimatedMinutes: 1, required: true, skipImpact: "已略過付款檢查，顧客可能無法完成線上付款。" },
++  { key: "project_payment", title: "檢查發布所需付款驗證", estimatedMinutes: 1, required: true, skipImpact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。" },
+   { key: "project_preview", title: "預覽流程", estimatedMinutes: 2, required: true },
+   { key: "project_publish", title: "發布並取得分享連結", estimatedMinutes: 1, required: true },
+ ];
+--- a/src/lib/sales-workspace.test.ts
++++ b/src/lib/sales-workspace.test.ts
+@@ -38,7 +38,7 @@
+     ]);
+     expect(progress.completedCount).toBe(2);
+     expect(progress.tasks.find((task) => task.key === "workspace_payment")).toMatchObject({
+-      status: "skipped", impact: "已略過付款設定，目前無法接受線上付款。",
++      status: "skipped", impact: "已略過平台服務付款驗證，專案發布仍需有效的商家付款紀錄；顧客收款設定需另行確認。",
+     });
+     expect(progress.tasks.find((task) => task.key === "workspace_test_order")?.status).toBe("not_started");
+     expect(progress.isComplete).toBe(false);
+@@ -100,4 +100,14 @@
+     expect(canPublishSalesProject("consultation", { ...ready, hasLiveSession: false, hasConsultationService: true, hasAvailability: true })).toBe(true);
+     expect(canPublishSalesProject("consultation", { ...ready, hasLiveSession: false, hasConsultationService: true })).toBe(false);
+   });
++
++  it.each(["live", "consultation"] as const)("keeps skipped platform verification blocking %s publication", (flow) => {
++    const signals = { ...ready, hasConsultationService: true, hasAvailability: true, hasPaymentMethod: false };
++    const progress = evaluateProjectOnboarding(flow, signals, [{ taskKey: "project_payment", status: "skipped" }]);
++    expect(canPublishSalesProject(flow, signals)).toBe(false);
++    expect(progress.tasks.find(task => task.key === "project_payment")).toMatchObject({
++      title: "檢查發布所需付款驗證", status: "skipped", impact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。",
++    });
++    expect(canPublishSalesProject(flow, { ...signals, hasPaymentMethod: true })).toBe(true);
++  });
+ });

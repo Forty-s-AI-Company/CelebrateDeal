@@ -1,0 +1,22 @@
+{
+  "cron_count": 0,
+  "not_verified": [
+    "Other platform schedulers",
+    "DB isolation",
+    "Job authentication",
+    "Heartbeat",
+    "Synthetic delivery"
+  ],
+  "modified_count": 0,
+  "scope": "a25814740s-projects",
+  "at": "2026-10-16T11:32:05.4950497+00:00",
+  "status": "LIVE_METADATA_VERIFIED",
+  "mutations": false,
+  "undeployed_count": 0,
+  "project_id": "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn",
+  "exit_code": 0,
+  "enabled": true,
+  "secrets_read": false,
+  "operation": "vercel crons ls",
+  "read_only": true
+}

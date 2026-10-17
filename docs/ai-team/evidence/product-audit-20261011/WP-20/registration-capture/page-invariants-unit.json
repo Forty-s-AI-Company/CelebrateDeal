@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "page-invariants-unit", "revision": "sha256:557858a45d492d0efaa47207f7488f9e1f17b6448dfc7fb236f9b8cf66e1227e", "status": "FAIL", "exit_code": 1, "duration_seconds": 1.719}

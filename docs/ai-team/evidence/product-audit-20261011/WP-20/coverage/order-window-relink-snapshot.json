@@ -1,0 +1,9 @@
+{
+  "files": {
+    "scripts/wp20-order-window-source-probe.mjs": "a3b7061749cb07a7ec1858300e9a106125be5bf145f2c328a0b736f7c0e6dd0f",
+    "scripts/wp20-payment-retry-disposable.mjs": "da86a265d3c202de689ba2dda6add30f84e3e0d41ef331bd0ab22faee06ee744"
+  },
+  "lint": "PASS",
+  "integration": "order-window-relink-db.json",
+  "scope": "Sequential relink/rollback and existing RR metadata race; concurrent link interleavings pending"
+}

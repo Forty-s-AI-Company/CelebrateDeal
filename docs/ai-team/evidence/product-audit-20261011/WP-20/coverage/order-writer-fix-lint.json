@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "order writer race runner lint", "revision": "sha256:9e0b46840e8cd57bbe2f0dfca2992a8b8b59acd3c23dfd8985f4409ccafb0ac7", "status": "PASS", "exit_code": 0, "duration_seconds": 4.297}

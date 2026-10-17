@@ -1,0 +1,13 @@
+{
+  "revision": "sha256:66e56a5a745f8f33e82628547a0a44be12c3588533ac2ed9b075cfb8de8dfbbb",
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql",
+    "prisma/schema.prisma",
+    "src/lib/live-metric-report-reader.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "status": "FAIL",
+  "review": "NOT_RUN_AFTER_APPEND_REDESIGN",
+  "diagnostic": "Own-order reads and writes use CommerceOrder_pkey Index Scan. Root cause of remaining Serializable conflicts not confirmed. Append ledger alone did not fix 20-writer acceptance."
+}

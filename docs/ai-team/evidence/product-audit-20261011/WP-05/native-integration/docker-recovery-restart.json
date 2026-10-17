@@ -1,0 +1,21 @@
+{
+  "status_before": "stopped",
+  "wsl_before": {
+    "Ubuntu": "Stopped",
+    "docker-desktop": "Stopped"
+  },
+  "services_before": {
+    "vmcompute": "Running",
+    "WslService": "Running",
+    "com.docker.service": "Stopped"
+  },
+  "action": "docker desktop restart --timeout 45",
+  "restart_exit_code": 0,
+  "status_after": "running",
+  "container_id": "adf15c5b5ef6bd57be32c2dd3aaeba62a61e67a2aa945d20d5da2cdc097fce26",
+  "container_before": "exited",
+  "verified_binding": "127.0.0.1:64506 -> 5432/tcp",
+  "container_start_exit_code": 0,
+  "container_recreated": false,
+  "production_access": false
+}

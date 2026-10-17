@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import {
   createLandingPage,
+  getLandingPagePublicationStatus,
   deleteLandingPage,
   duplicateLandingPage,
   LandingPageConflictError,
@@ -105,6 +106,17 @@ function success(message: string, result: { id: string; revision?: number }) {
   return { status: "success" as const, message, id: result.id, ...(result.revision ? { revision: result.revision } : {}) };
 }
 
+/** 診斷失敗不回滾已完成的寫入，但必須清除過期的公開狀態。 */
+async function successWithPublication(message: string, result: { id: string; revision?: number }): Promise<LandingPageActionState> {
+  let publication: NonNullable<LandingPageActionState["publication"]>;
+  try {
+    publication = await getLandingPagePublicationStatus(result.id);
+  } catch {
+    publication = { available: false, message: "尚無法確認公開網址狀態，請重新整理後再查看。", projectHref: "/projects", missing: [] };
+  }
+  return { ...success(`${message}${publication.message}`, result), publication };
+}
+
 /**
  * The page editor uses a single CSRF-protected action. Tenant identity and the
  * selected project are derived again inside each service mutation.
@@ -131,20 +143,20 @@ export async function landingPageAction(
       const expectedRevision = revision(formData);
       if (!id || !draft || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再儲存。" };
       const saved = await saveLandingPageDraft({ id, revision: expectedRevision, ...draft });
-      return success("草稿已儲存。", saved);
+      return successWithPublication("草稿已儲存。", saved);
     }
 
     if (command === "publish") {
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再發布。" };
       const published = await publishLandingPage(id, expectedRevision);
-      return success(`版本 v${published.version} 已發布。`, published);
+      return successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published);
     }
 
     if (command === "unpublish") {
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再取消發布。" };
-      return success("已取消發布；歷史版本與草稿都仍保留。", await unpublishLandingPage(id, expectedRevision));
+      return successWithPublication("已取消發布；歷史版本與草稿都仍保留。", await unpublishLandingPage(id, expectedRevision));
     }
 
     if (command === "duplicate") {
@@ -158,7 +170,7 @@ export async function landingPageAction(
       const expectedRevision = revision(formData);
       const mutation = stepMutation(formData);
       if (!id || !expectedRevision || !mutation) return { status: "error", message: "步驟資料或版本資訊不完整，請重新整理後再試。" };
-      return success("步驟已自動儲存。", await saveLandingPageStepMetadata({ id, revision: expectedRevision, mutation }));
+      return successWithPublication("步驟已自動儲存。", await saveLandingPageStepMetadata({ id, revision: expectedRevision, mutation }));
     }
 
     if (command === "delete") {

@@ -1,0 +1,686 @@
+{
+  "status": "FAIL",
+  "profiles": [
+    {
+      "role": "owner",
+      "features": "all",
+      "results": [
+        {
+          "href": "/dashboard",
+          "finalPath": "/dashboard",
+          "status": 200
+        },
+        {
+          "href": "/billing/payment-methods",
+          "finalPath": "/billing/payment-methods",
+          "status": 200
+        },
+        {
+          "href": "/onboarding",
+          "finalPath": "/onboarding",
+          "status": 200
+        },
+        {
+          "href": "/projects",
+          "finalPath": "/projects",
+          "status": 200
+        },
+        {
+          "href": "/lives",
+          "finalPath": "/lives",
+          "status": 200
+        },
+        {
+          "href": "/videos",
+          "finalPath": "/videos",
+          "status": 200
+        },
+        {
+          "href": "/landing-pages",
+          "finalPath": "/landing-pages",
+          "status": 200
+        },
+        {
+          "href": "/forms",
+          "finalPath": "/forms",
+          "status": 200
+        },
+        {
+          "href": "/products",
+          "finalPath": "/products",
+          "status": 200
+        },
+        {
+          "href": "/orders",
+          "finalPath": "/orders",
+          "status": 200
+        },
+        {
+          "href": "/consultations",
+          "finalPath": "/consultations",
+          "status": 200
+        },
+        {
+          "href": "/customers",
+          "finalPath": "/customers",
+          "status": 200
+        },
+        {
+          "href": "/support-cases",
+          "finalPath": "/support-cases",
+          "status": 200
+        },
+        {
+          "href": "/messages/templates",
+          "finalPath": "/messages/templates",
+          "status": 200
+        },
+        {
+          "href": "/messages/deliveries",
+          "finalPath": "/messages/deliveries",
+          "status": 200
+        },
+        {
+          "href": "/interaction-scripts",
+          "finalPath": "/interaction-scripts",
+          "status": 200
+        },
+        {
+          "href": "/interaction-roles",
+          "finalPath": "/interaction-roles",
+          "status": 200
+        },
+        {
+          "href": "/blacklists",
+          "finalPath": "/blacklists",
+          "status": 200
+        },
+        {
+          "href": "/affiliates",
+          "finalPath": "/affiliates",
+          "status": 200
+        },
+        {
+          "href": "/team-templates",
+          "finalPath": "/team-templates",
+          "status": 200
+        },
+        {
+          "href": "/partner-pages",
+          "finalPath": "/partner-pages",
+          "status": 200
+        },
+        {
+          "href": "/team-performance",
+          "finalPath": "/team-performance",
+          "status": 200
+        },
+        {
+          "href": "/affiliate-portal",
+          "finalPath": "/affiliate-portal",
+          "status": 200
+        },
+        {
+          "href": "/settings/brand",
+          "finalPath": "/settings/brand",
+          "status": 200
+        },
+        {
+          "href": "/settings/tracking",
+          "finalPath": "/settings/tracking",
+          "status": 200
+        },
+        {
+          "href": "/settings/features",
+          "finalPath": "/settings/features",
+          "status": 200
+        },
+        {
+          "href": "/settings/line",
+          "finalPath": "/settings/line",
+          "status": 200
+        },
+        {
+          "href": "/settings/automations",
+          "finalPath": "/settings/automations",
+          "status": 200
+        },
+        {
+          "href": "/settings/team",
+          "finalPath": "/settings/team",
+          "status": 200
+        },
+        {
+          "href": "/settings/security",
+          "finalPath": "/settings/security",
+          "status": 200
+        },
+        {
+          "href": "/billing/usage",
+          "finalPath": "/billing/usage",
+          "status": 200
+        },
+        {
+          "href": "/billing/plans",
+          "finalPath": "/billing/plans",
+          "status": 200
+        },
+        {
+          "href": "/billing/invoices",
+          "finalPath": "/billing/invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/electronic-invoices",
+          "finalPath": "/billing/electronic-invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/settlements",
+          "finalPath": "/billing/settlements",
+          "status": 200
+        },
+        {
+          "href": "/billing/payouts",
+          "finalPath": "/billing/payouts",
+          "status": 200
+        },
+        {
+          "href": "/affiliates/commissions",
+          "finalPath": "/affiliates/commissions",
+          "status": 200
+        },
+        {
+          "href": "/billing/course-payouts",
+          "finalPath": "/billing/course-payouts",
+          "status": 200
+        },
+        {
+          "href": "/policies",
+          "finalPath": "/policies",
+          "status": 200
+        },
+        {
+          "href": "/support",
+          "finalPath": "/support",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "role": "owner",
+      "features": "none",
+      "results": [
+        {
+          "href": "/dashboard",
+          "finalPath": "/dashboard",
+          "status": 200
+        },
+        {
+          "href": "/billing/payment-methods",
+          "finalPath": "/billing/payment-methods",
+          "status": 200
+        },
+        {
+          "href": "/onboarding",
+          "finalPath": "/onboarding",
+          "status": 200
+        },
+        {
+          "href": "/projects",
+          "finalPath": "/projects",
+          "status": 200
+        },
+        {
+          "href": "/products",
+          "finalPath": "/products",
+          "status": 200
+        },
+        {
+          "href": "/orders",
+          "finalPath": "/orders",
+          "status": 200
+        },
+        {
+          "href": "/customers",
+          "finalPath": "/customers",
+          "status": 200
+        },
+        {
+          "href": "/support-cases",
+          "finalPath": "/support-cases",
+          "status": 200
+        },
+        {
+          "href": "/messages/templates",
+          "finalPath": "/messages/templates",
+          "status": 200
+        },
+        {
+          "href": "/messages/deliveries",
+          "finalPath": "/messages/deliveries",
+          "status": 200
+        },
+        {
+          "href": "/blacklists",
+          "finalPath": "/blacklists",
+          "status": 200
+        },
+        {
+          "href": "/affiliate-portal",
+          "finalPath": "/affiliate-portal",
+          "status": 200
+        },
+        {
+          "href": "/settings/brand",
+          "finalPath": "/settings/brand",
+          "status": 200
+        },
+        {
+          "href": "/settings/tracking",
+          "finalPath": "/settings/tracking",
+          "status": 200
+        },
+        {
+          "href": "/settings/features",
+          "finalPath": "/settings/features",
+          "status": 200
+        },
+        {
+          "href": "/settings/line",
+          "finalPath": "/settings/line",
+          "status": 200
+        },
+        {
+          "href": "/settings/automations",
+          "finalPath": "/settings/automations",
+          "status": 200
+        },
+        {
+          "href": "/settings/team",
+          "finalPath": "/settings/team",
+          "status": 200
+        },
+        {
+          "href": "/settings/security",
+          "finalPath": "/settings/security",
+          "status": 200
+        },
+        {
+          "href": "/billing/usage",
+          "finalPath": "/billing/usage",
+          "status": 200
+        },
+        {
+          "href": "/billing/plans",
+          "finalPath": "/billing/plans",
+          "status": 200
+        },
+        {
+          "href": "/billing/invoices",
+          "finalPath": "/billing/invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/electronic-invoices",
+          "finalPath": "/billing/electronic-invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/settlements",
+          "finalPath": "/billing/settlements",
+          "status": 200
+        },
+        {
+          "href": "/policies",
+          "finalPath": "/policies",
+          "status": 200
+        },
+        {
+          "href": "/support",
+          "finalPath": "/support",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "role": "admin",
+      "features": "all",
+      "results": [
+        {
+          "href": "/dashboard",
+          "finalPath": "/dashboard",
+          "status": 200
+        },
+        {
+          "href": "/billing/payment-methods",
+          "finalPath": "/billing/payment-methods",
+          "status": 200
+        },
+        {
+          "href": "/onboarding",
+          "finalPath": "/onboarding",
+          "status": 200
+        },
+        {
+          "href": "/projects",
+          "finalPath": "/projects",
+          "status": 200
+        },
+        {
+          "href": "/lives",
+          "finalPath": "/lives",
+          "status": 200
+        },
+        {
+          "href": "/videos",
+          "finalPath": "/videos",
+          "status": 200
+        },
+        {
+          "href": "/landing-pages",
+          "finalPath": "/landing-pages",
+          "status": 200
+        },
+        {
+          "href": "/forms",
+          "finalPath": "/forms",
+          "status": 200
+        },
+        {
+          "href": "/products",
+          "finalPath": "/products",
+          "status": 200
+        },
+        {
+          "href": "/orders",
+          "finalPath": "/orders",
+          "status": 200
+        },
+        {
+          "href": "/consultations",
+          "finalPath": "/consultations",
+          "status": 200
+        },
+        {
+          "href": "/customers",
+          "finalPath": "/customers",
+          "status": 200
+        },
+        {
+          "href": "/support-cases",
+          "finalPath": "/support-cases",
+          "status": 200
+        },
+        {
+          "href": "/messages/templates",
+          "finalPath": "/messages/templates",
+          "status": 200
+        },
+        {
+          "href": "/messages/deliveries",
+          "finalPath": "/messages/deliveries",
+          "status": 200
+        },
+        {
+          "href": "/interaction-scripts",
+          "finalPath": "/interaction-scripts",
+          "status": 200
+        },
+        {
+          "href": "/interaction-roles",
+          "finalPath": "/interaction-roles",
+          "status": 200
+        },
+        {
+          "href": "/blacklists",
+          "finalPath": "/blacklists",
+          "status": 200
+        },
+        {
+          "href": "/affiliates",
+          "finalPath": "/affiliates",
+          "status": 200
+        },
+        {
+          "href": "/team-templates",
+          "finalPath": "/team-templates",
+          "status": 200
+        },
+        {
+          "href": "/partner-pages",
+          "finalPath": "/partner-pages",
+          "status": 200
+        },
+        {
+          "href": "/team-performance",
+          "finalPath": "/team-performance",
+          "status": 200
+        },
+        {
+          "href": "/affiliate-portal",
+          "finalPath": "/affiliate-portal",
+          "status": 200
+        },
+        {
+          "href": "/settings/brand",
+          "finalPath": "/settings/brand",
+          "status": 200
+        },
+        {
+          "href": "/settings/tracking",
+          "finalPath": "/settings/tracking",
+          "status": 200
+        },
+        {
+          "href": "/settings/features",
+          "finalPath": "/settings/features",
+          "status": 200
+        },
+        {
+          "href": "/settings/automations",
+          "finalPath": "/settings/automations",
+          "status": 200
+        },
+        {
+          "href": "/settings/team",
+          "finalPath": "/settings/team",
+          "status": 200
+        },
+        {
+          "href": "/settings/security",
+          "finalPath": "/settings/security",
+          "status": 200
+        },
+        {
+          "href": "/billing/usage",
+          "finalPath": "/billing/usage",
+          "status": 200
+        },
+        {
+          "href": "/billing/plans",
+          "finalPath": "/billing/plans",
+          "status": 200
+        },
+        {
+          "href": "/billing/invoices",
+          "finalPath": "/billing/invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/electronic-invoices",
+          "finalPath": "/billing/electronic-invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/settlements",
+          "finalPath": "/billing/settlements",
+          "status": 200
+        },
+        {
+          "href": "/billing/payouts",
+          "finalPath": "/billing/payouts",
+          "status": 200
+        },
+        {
+          "href": "/affiliates/commissions",
+          "finalPath": "/affiliates/commissions",
+          "status": 200
+        },
+        {
+          "href": "/billing/course-payouts",
+          "finalPath": "/billing/course-payouts",
+          "status": 200
+        },
+        {
+          "href": "/policies",
+          "finalPath": "/policies",
+          "status": 200
+        },
+        {
+          "href": "/support",
+          "finalPath": "/support",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "role": "admin",
+      "features": "none",
+      "results": [
+        {
+          "href": "/dashboard",
+          "finalPath": "/dashboard",
+          "status": 200
+        },
+        {
+          "href": "/billing/payment-methods",
+          "finalPath": "/billing/payment-methods",
+          "status": 200
+        },
+        {
+          "href": "/onboarding",
+          "finalPath": "/onboarding",
+          "status": 200
+        },
+        {
+          "href": "/projects",
+          "finalPath": "/projects",
+          "status": 200
+        },
+        {
+          "href": "/products",
+          "finalPath": "/products",
+          "status": 200
+        },
+        {
+          "href": "/orders",
+          "finalPath": "/orders",
+          "status": 200
+        },
+        {
+          "href": "/customers",
+          "finalPath": "/customers",
+          "status": 200
+        },
+        {
+          "href": "/support-cases",
+          "finalPath": "/support-cases",
+          "status": 200
+        },
+        {
+          "href": "/messages/templates",
+          "finalPath": "/messages/templates",
+          "status": 200
+        },
+        {
+          "href": "/messages/deliveries",
+          "finalPath": "/messages/deliveries",
+          "status": 200
+        },
+        {
+          "href": "/blacklists",
+          "finalPath": "/blacklists",
+          "status": 200
+        },
+        {
+          "href": "/affiliate-portal",
+          "finalPath": "/affiliate-portal",
+          "status": 200
+        },
+        {
+          "href": "/settings/brand",
+          "finalPath": "/settings/brand",
+          "status": 200
+        },
+        {
+          "href": "/settings/tracking",
+          "finalPath": "/settings/tracking",
+          "status": 200
+        },
+        {
+          "href": "/settings/features",
+          "finalPath": "/settings/features",
+          "status": 200
+        },
+        {
+          "href": "/settings/automations",
+          "finalPath": "/settings/automations",
+          "status": 200
+        },
+        {
+          "href": "/settings/team",
+          "finalPath": "/settings/team",
+          "status": 200
+        },
+        {
+          "href": "/settings/security",
+          "finalPath": "/settings/security",
+          "status": 200
+        },
+        {
+          "href": "/billing/usage",
+          "finalPath": "/billing/usage",
+          "status": 200
+        },
+        {
+          "href": "/billing/plans",
+          "finalPath": "/billing/plans",
+          "status": 200
+        },
+        {
+          "href": "/billing/invoices",
+          "finalPath": "/billing/invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/electronic-invoices",
+          "finalPath": "/billing/electronic-invoices",
+          "status": 200
+        },
+        {
+          "href": "/billing/settlements",
+          "finalPath": "/billing/settlements",
+          "status": 200
+        },
+        {
+          "href": "/policies",
+          "finalPath": "/policies",
+          "status": 200
+        },
+        {
+          "href": "/support",
+          "finalPath": "/support",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "role": "accountant",
+      "features": "all",
+      "results": []
+    }
+  ],
+  "restored": true,
+  "failure": "TIMEOUT"
+}

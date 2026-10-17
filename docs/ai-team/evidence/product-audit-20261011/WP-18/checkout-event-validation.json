@@ -1,0 +1,209 @@
+{
+  "at": "2026-10-15T22:02:42.103570+00:00",
+  "status": "IN_PROGRESS",
+  "wholeWp18": "NOT_READY",
+  "sourceHashes": {
+    "src/app/api/payments/checkout/route.ts": "1d40145681021dc7c692906a678f58f81332106c395474963818a5f819520bf7",
+    "src/app/api/payments/checkout/route.test.ts": "6a65b2c95440621ce261156cdd607c861cdae95df67d760af1dc00d88e6eb5d2",
+    "src/lib/email-delivery.ts": "aa145a3a0e3cfee7bfda28f52848520800cc2fb9440b4c65376d64a8b138d95c",
+    "src/lib/email-delivery.test.ts": "a5e2538be087058a59455b77a975283a6d16673155a67b901b0d199357e24259",
+    "src/lib/checkout-followup.ts": "7786c71cc81004dc5efc8a8f05a9f91c42239724fd1c6d96c326220ed568fd84",
+    "src/lib/checkout-followup.test.ts": "56308f08ca31f1ba5cf52d91421d2e20d7a7c88e53353712b48bed2d8ea7fcd8"
+  },
+  "implemented": [
+    "post-commit candidate observation on original and validated replay checkout paths",
+    "stable per-tenant/order candidate fact, no timestamps rewritten on replay",
+    "existing Email dispatcher guard against nonpending/paid-primary transaction and cancelled/expired/refunded state",
+    "same-vendor active/version-matched vendorwide rule and supported condition/template",
+    "recipient HMAC matches correctly scoped decrypted buyer, no plaintext persistence/logging",
+    "corrupt/misbound/no-email source superseded; database errors still propagate",
+    "fixed diagnostic for crypto/configuration failure; safe if monitoring fails",
+    "existing email transport256character bound applied to reference builder/parser"
+  ],
+  "validation": {
+    "targeted": {
+      "status": "PASS",
+      "tests": 192,
+      "files": 8,
+      "exitCode": 0
+    },
+    "lint": {
+      "status": "PASS",
+      "scopeFiles": 6,
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "diffCheck": "PASS",
+    "disposablePG": {
+      "status": "PASS",
+      "checks": {
+        "actualCandidateAndConcurrentReplayStable": "PASS",
+        "noBuyerOrPaymentPayloadInFact": "PASS",
+        "currentOwnedPendingSourceAccepted": "PASS",
+        "wrongRecipientRejected": "PASS",
+        "crossTenantSourceRejected": "PASS",
+        "paidCancelledExpiredFailedRefundedOrdersRejected": "PASS",
+        "paidPrimaryTransactionRejectsEvenIfOrderStalePending": "PASS",
+        "disabledOrChangedVersionRejected": "PASS",
+        "scopedOrIncompatibleRulesRejected": "PASS"
+      },
+      "scope": "Actual candidate persistence and send-time source queries only; no materializer or SMTP/LINE/provider delivery",
+      "monitoringTransport": "NOT_RUN scoped no-network fixture stub; fixed diagnostic unit-tested separately",
+      "browser": "NOT_RUN",
+      "remoteCI": "NOT_RUN",
+      "migrations": 131,
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    }
+  },
+  "reviewReceipts": [
+    {
+      "path": "checkout-event-review.json",
+      "status": "REVIEW_COMPLETED",
+      "observedModel": "claude-opus-5-5",
+      "effort": "unknown",
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/email-delivery.ts",
+          "area": "DeliverySnapshotDatabase / EmailDeliverySnapshotIdentity (~L791-800) and the isCurrentCheckoutFollowupDelivery call (~L1022)",
+          "issue": "The new guard needs delivery.idempotencyKey, but the shown EmailDeliverySnapshotIdentity Pick only covers \"id\" | \"vendorId\" | \"sourceLiveId\" | \"sourceFormSubmissionId\" | \"trigger\". The guard's parameter types idempotencyKey as optional, so a narrowed identity object, or a claim query that doesn't select idempotencyKey, still compiles. In that case the guard always returns false for checkout_followup.",
+          "evidence": "In the guard's signature, idempotencyKey is optional ({ vendorId; trigger; idempotencyKey?: string }). deliveryReference(undefined) returns null, so the guard returns false. The diff adds the commerceOrder, commerceOrderEvent and automationRule delegates to the database type but does not add idempotencyKey to EmailDeliverySnapshotIdentity.",
+          "impact": "This fails closed, so nothing is sent wrongly. But once a producer exists, every checkout follow-up email could be silently suppressed, and unit tests that pass whole delivery objects would hide it.",
+          "recommended_fix": "Add \"idempotencyKey\" to the EmailDeliverySnapshotIdentity Pick, or make it required in the guard's parameter type. Also confirm that the claim and snapshot select includes idempotencyKey.",
+          "required_test": "Write a test that builds the delivery through the real claim and snapshot path, not a hand-made object, with trigger checkout_followup, a valid key and eligible DB rows. It should assert the guard returns true. Add a negative test where idempotencyKey is absent.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/app/api/payments/checkout/route.ts",
+          "area": "Hunks @@ -688 (getDb()) and @@ -978 (db)",
+          "issue": "The two call sites use different clients. If either `db` is an interactive-transaction client, or the order/transaction rows aren't committed yet at the getDb() call, there are two failure modes. (a) The pendingOrderWhere read can't see the rows and quietly returns not_eligible. (b) A failed upsert inside a Postgres transaction aborts that transaction (25P02), even though the try/catch handles the JS error. That would change the checkout result, which goes against the brief's 'must not affect checkout result' requirement.",
+          "evidence": "In the first path, getDb() is called right after the prior `orderId: order.id` call. The second path uses the local `db`. The supplied hunks don't show whether either path has committed.",
+          "impact": "Depending on the transaction boundary: either candidates are silently never recorded, or a checkout fails or rolls back because of the observational write.",
+          "recommended_fix": "Confirm that both call sites run after commit on a non-transactional client, and use the same client source in both paths. If either one can run inside a transaction, move the call outside it.",
+          "required_test": "Run against the disposable PG for both checkout paths. (1) Assert that a candidate event exists after a successful checkout. (2) Force the upsert to fail (for example, a pre-existing event with the same dedupKey but a different eventType). Assert the checkout response, order and transaction rows are unchanged and committed.",
+          "confidence": 0.3
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/checkout-followup.ts",
+          "area": "isCurrentCheckoutFollowupDelivery",
+          "issue": "The guard binds order, rule and version through the key, but it never checks that the outbox recipient is the order's buyer contact. Any checkout_followup outbox row with a valid key and an arbitrary recipient passes the guard.",
+          "evidence": "The guard selects only { id: true } from commerceOrder and takes no recipient field from the delivery.",
+          "impact": "There is no producer in this increment, so nothing can be exploited now. But the guard won't catch a future producer bug that pairs a valid key with the wrong recipient, which could send one buyer's checkout reminder to a different address.",
+          "recommended_fix": "Raise this as a scope proposal for the producer task: either bind the recipient (or a hash of it) to the order in the guard, or document that the producer is the only enforcement point.",
+          "required_test": "Once the producer exists, add a negative test: a delivery with a valid key but a recipient that doesn't match the order should not send.",
+          "confidence": 0.35
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/checkout-followup.ts",
+          "area": "recordCheckoutFollowupCandidate upsert",
+          "issue": "When two legitimate replays run at the same time, both can take the upsert's create branch and hit a unique-constraint error (P2002). This is caught and reported as 'Checkout follow-up event unavailable' even though the event was recorded.",
+          "evidence": "Prisma upsert is not atomic across concurrent creates, and the catch maps every error to the failed status and logs the diagnostic.",
+          "impact": "Monitoring gets a false-positive failure diagnostic. Checkout behaviour and the data are unaffected.",
+          "recommended_fix": "Optionally, treat a unique-constraint error as already recorded (re-read the event, or skip the diagnostic).",
+          "required_test": "Run two candidate records for the same order concurrently. Assert one event exists, and optionally that no failure diagnostic is logged.",
+          "confidence": 0.6
+        }
+      ]
+    },
+    {
+      "path": "checkout-event-fixed-review.json",
+      "status": "REVIEW_COMPLETED",
+      "observedModel": "claude-opus-5-5",
+      "effort": "unknown",
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "checkout follow-up guard (isCurrentCheckoutFollowupDelivery)",
+          "area": "revealCommerceOrderPii / createEmailRecipientHash call at end of isCurrentCheckoutFollowupDelivery",
+          "issue": "Decryption, binding or format failures of the buyer data (a damaged or wrong-tenant envelope, a key/version mismatch, or a missing buyer.email) aren't handled. They are thrown out of the send-time guard after dispatchEmailDelivery has already marked the delivery as 'sending'. The guard's own comment only intends to let temporary database failures propagate. These failures are permanent and should fail closed, not be treated like a temporary error. The decrypt-binding mismatch path also has no test.",
+          "evidence": "The guard calls revealCommerceOrderPii({buyerEncrypted: order.buyerEncryptedEnvelope, ...}, {vendorId, orderId}) and then reads pii.buyer.email with no guard. dispatchEmailDelivery awaits isCurrentEmailDeliverySnapshot after the updateMany that sets status 'sending', with no try/catch shown. The reported database checks cover wrong-recipient and cross-tenant cases, but cross-tenant is rejected earlier by the pendingOrderWhere vendor filter, so the decryption-binding rejection itself isn't exercised.",
+          "impact": "No email is sent in this case, so it fails safe for privacy. But a permanently undecryptable or email-less order leaves the outbox row stuck in 'sending', or it is retried repeatedly by whatever recovers stale claims, instead of being finalized as config_superseded. Thrown errors may also reach generic monitoring with crypto error details. No plaintext is expected, but this isn't verified here.",
+          "recommended_fix": "Leave the three database reads (Promise.all) able to throw as they do now. Wrap only the decrypt step and the email/hash comparison so that a decryption/binding exception, or a buyer.email that is missing or not a string, returns false and the delivery is finalized as superseded. Don't log the error object or any buyer fields.",
+          "required_test": "Unit test: give the guard a pending order whose buyerEncryptedEnvelope was encrypted for a different vendor/order binding (or is malformed), plus a valid event, rule and 43-character hash. The guard should return false, and dispatchEmailDelivery should finalize as config_superseded without calling the provider. Add a second case where the decrypted buyer has no email. Keep the existing test that a database read rejection still propagates.",
+          "confidence": 0.6
+        }
+      ]
+    },
+    {
+      "path": "checkout-event-final-review.json",
+      "status": "REVIEW_COMPLETED",
+      "observedModel": "claude-opus-5-5",
+      "effort": "unknown",
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "checkout-followup module (isCurrentCheckoutFollowupDelivery tail)",
+          "area": "try { revealCommerceOrderPii(...); createEmailRecipientHash(...) } catch { return false; }",
+          "issue": "The bare catch treats every error from the encryption and recipient-hash helpers the same way. A record-level problem (malformed, misbound or missing-email envelope) gets the same permanent `false` as an environment-level failure, such as a missing or rotated encryption key or HMAC secret, or a broken helper. The catch logs nothing and records no metric, so these drops are invisible.",
+          "evidence": "The catch has no condition and returns false with the comment 'Do not log the envelope/exception'. The function's doc comment says failures 'must not silently turn into either a send or permanent drop', but the repair only keeps database failures out of that path. Your task text says existing dispatchEmailDelivery tests map `false` to superseded/config_superseded, which is a final outcome.",
+          "impact": "A temporary key or secret misconfiguration during deployment would quietly mark every pending checkout follow-up as superseded, and nobody would see it. This fails closed (no wrong-recipient send), so it is not a payment or privacy risk. The cost is lost deliveries that can't be diagnosed.",
+          "recommended_fix": "Keep returning false for record-level failures. Either (a) let environment errors propagate, which needs only a local check of the error type or code that the existing helpers already expose, or (b) emit a counter or log line with only a fixed reason code and no envelope, exception message or PII, so mass drops can be seen. Either fix stays inside this module and needs no shared transport, crypto or schema change.",
+          "required_test": "Unit test: make the existing encryption or HMAC helper's key or secret unavailable through the existing test configuration, call isCurrentCheckoutFollowupDelivery for an otherwise valid delivery, and assert the chosen behaviour: it either rejects, or returns false while recording the fixed non-PII reason code. In both cases the provider must not be called.",
+          "confidence": 0.55
+        }
+      ]
+    }
+  ],
+  "reviewDisposition": [
+    {
+      "source": "checkout-event-review.json#0",
+      "disposition": "rejected_with_reason",
+      "reason": "Identity already has optional idempotencyKey; ClaimedDelivery requires it and recipientHash, findUnique fetches whole row and spread retains them. Real dispatch function positive/negative tests prove valid row sends and missing key/hash cannot send; legacy identity omission intentionally fails closed."
+    },
+    {
+      "source": "checkout-event-review.json#1",
+      "disposition": "rejected_with_reason",
+      "reason": "Full source confirms main db=getDb singleton, await createReservedPaymentTransaction resolves before candidate callback, inventory runSerializable returns awaited Prisma transaction. Replay also uses getDb outside interactive transaction. Candidate function cannot poison a transaction used by current HTTP routes. No financial write altered."
+    },
+    {
+      "source": "checkout-event-review.json#2",
+      "disposition": "resolved",
+      "reason": "Existing scoped buyer decrypt and Email recipient HMAC binding added; wrong recipient/vendor/order/missing-email negatives pass."
+    },
+    {
+      "source": "checkout-event-review.json#3",
+      "disposition": "confirmed",
+      "severity": "NIT",
+      "reason": "Concurrent native upsert tested with both calls recorded and exactly1fact/stabletimestamps. A provider/engine P2002 may still yield fixed best-effort failure diagnostic; no checkout failure or duplicate send. Not a universal race guarantee."
+    },
+    {
+      "source": "checkout-event-fixed-review.json#0",
+      "disposition": "resolved",
+      "reason": "Only data decrypt/hash exceptions returnfalse, leaving DB reads outside catch; actual dispatcher finalizes superseded and never calls sender for unreadable snapshots."
+    },
+    {
+      "source": "checkout-event-final-review.json#0",
+      "disposition": "resolved",
+      "reason": "Implemented reviewer optionB: fixed recipient-binding diagnostic with no original error/envelope/cause/PII; missing-secret and failing-monitor tests pass. This last diagnostic-only repair is deterministically verified, not another full reviewer pass."
+    }
+  ],
+  "reviewSourceApplicability": "Three qualified scoped reviews; final source adds only fixed diagnostic and tests after last suggested fix. No current full-WP same-snapshot acceptance claimed. Raw findings unmodified.",
+  "dbEvidenceApplicability": "9actual DB checks apply to unchanged query predicates, select columns, valid decrypt path and upsert. Subsequent key-bound/error/logging deltas tested with real crypto unit and actual dispatcher tests; no extra DB/migration rerun claimed.",
+  "firstFailedAttempt": "checkout-event-db-first-attempt.json retains rejected synthetic phone:null fixture; corrected input only; no lowered validator",
+  "notRun": [
+    "real checkoutHTTP + fresh DB end-to-end",
+    "browser/E2E/axe",
+    "SMTP/LINE/SMS real Sandbox delivery",
+    "queue materialization/delay/replay executor",
+    "wholeWP18 acceptance gate",
+    "remoteCI/Production"
+  ],
+  "remaining": [
+    "trusted actual completion source event",
+    "bounded queue materializer, delayed-candidate and replay recovery semantics",
+    "only enable pending trigger/templates after accepted end-to-end path",
+    "Sandbox dedup/unsubscribe/delivery and original final scheduling dependency",
+    "wholeWP18 critical review and canonical acceptance"
+  ],
+  "ownership": "root sole writer; independent worktree efb8b7e9; no native subagent, external readonly reviews sequential; no source in user dirty tree changed",
+  "safety": "No .env/Secret/customer data read; only owned disposablePG and synthetic application crypto; no external sends, schema, price, money, idempotency or Production changes"
+}

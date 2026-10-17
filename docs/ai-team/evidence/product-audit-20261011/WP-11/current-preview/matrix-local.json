@@ -1,0 +1,87 @@
+{
+  "mode": "matrix",
+  "rows": [
+    {
+      "case": "chat-get",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "chat-post",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "private-get",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "private-post",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "admission-release",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "voucher-preview",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "voucher-confirm",
+      "http_status": 403,
+      "expected_status": 403,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "portal-preview",
+      "http_status": 303,
+      "expected_status": 303,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "portal-confirm",
+      "http_status": 303,
+      "expected_status": 303,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "referral-invalid",
+      "http_status": 307,
+      "expected_status": 307,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    }
+  ],
+  "passed": true,
+  "business_database_success_claimed": false
+}

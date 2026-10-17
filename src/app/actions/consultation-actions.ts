@@ -13,7 +13,8 @@ import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automa
 import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/sales-project-scope";
 import { ensureSalesProjectCustomerMembership } from "@/lib/sales-project-customer-membership";
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { entryRateLimitHeaders } from "@/lib/entry-rate-limit-headers";
 
 const MANAGEMENT_PATH = "/consultations";
 const EVENT_ID = z.string().trim().min(1).max(191);
@@ -102,11 +103,7 @@ function db(): ConsultationDatabase {
 
 async function publicBookingRequest() {
   const incoming = await headers();
-  const forwarded = new Headers();
-  for (const name of ["cf-connecting-ip", "x-forwarded-for", "user-agent"]) {
-    const value = incoming.get(name);
-    if (value) forwarded.set(name, value);
-  }
+  const forwarded = entryRateLimitHeaders(incoming);
   return new Request(getCanonicalAppUrl(), { headers: forwarded });
 }
 

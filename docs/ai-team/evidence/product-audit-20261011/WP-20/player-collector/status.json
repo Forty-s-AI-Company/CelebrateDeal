@@ -1,0 +1,26 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:92f018443cbcbb6a4da2798abe3fb4fef30bb1a9f643a6280d592fdb97747cff",
+  "canonical_prior_revision": "sha256:083f0808335b60e7bece8db43d47ca0ba5f1075d0b4269d9dfcbc40074ce6109",
+  "canonical_prior_checks": {
+    "targeted": "PASS",
+    "scoped_lint": "PASS",
+    "typecheck": "PASS"
+  },
+  "latest_change": "Increment generation on cleanup to prevent two simultaneous owners releasing twice",
+  "latest_targeted": {
+    "status": "PASS",
+    "count": 9
+  },
+  "latest_scoped_lint": "PASS",
+  "review": "TRUNCATED_REVIEW",
+  "review_process_status": "RATE_LIMITED",
+  "review_process_terminal": true,
+  "browser": "NOT_RUN",
+  "remaining": [
+    "cross-tab and already-dispatched release/renew ordering",
+    "RTT uncertainty persistence/report semantics",
+    "independent review",
+    "browser reconciliation"
+  ]
+}

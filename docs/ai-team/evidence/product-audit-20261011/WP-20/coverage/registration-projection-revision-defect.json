@@ -1,0 +1,34 @@
+{
+  "status": "FAIL",
+  "stage": "matched-registration-audit",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "registrationTruncateProtection": {
+    "status": "PASS",
+    "cases": [
+      {
+        "table": "FormSubmission",
+        "rejected": true
+      },
+      {
+        "table": "Live",
+        "rejected": true
+      },
+      {
+        "table": "RegistrationForm",
+        "rejected": true
+      }
+    ]
+  },
+  "auditPhase": "post-race-publish",
+  "assertion": null,
+  "sqlState": null,
+  "guard": null,
+  "errorCode": "ASSERTION_OR_RUNNER_ERROR"
+}

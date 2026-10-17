@@ -7,6 +7,8 @@ import {
   unprotectLineOfficialAccountCredentials,
 } from "@/lib/line-credentials";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+import { lineLoginAccountVersion, resolveSubjectLineAccount, type LineAccountRoutingDatabase } from "@/lib/line-account-routing";
+import { lineLoginBrowserBinding, matchesLineLoginBrowser } from "./line-login-browser-binding";
 
 const LINE_AUTHORIZE_URL = "https://access.line.me/oauth2/v2.1/authorize";
 const LINE_TOKEN_URL = "https://api.line.me/oauth2/v2.1/token";
@@ -17,7 +19,7 @@ const OAUTH_VALUE = /^[A-Za-z0-9_-]{43}$/u;
 export const LINE_LOGIN_SUBJECT_TYPES = ["user", "promoter", "buyer_order", "buyer_registration", "login"] as const;
 export type LineLoginSubjectType = typeof LINE_LOGIN_SUBJECT_TYPES[number];
 
-type LineLoginDatabase = Pick<PrismaClient, "$transaction" | "lineOfficialAccount" | "lineLoginState" | "lineUserIdentity">;
+type LineLoginDatabase = LineAccountRoutingDatabase & Pick<PrismaClient, "$transaction" | "lineLoginState" | "lineUserIdentity">;
 
 export type LineLoginProfile = {
   userId: string;
@@ -112,7 +114,7 @@ export async function beginLineLogin(
   if (!input.vendorId || !input.subjectId || !LINE_LOGIN_SUBJECT_TYPES.includes(input.subjectType)) {
     throw new Error("Invalid LINE Login subject.");
   }
-  const account = await db.lineOfficialAccount.findUnique({ where: { vendorId: input.vendorId } });
+  const account = await resolveSubjectLineAccount(db, input.vendorId, input.subjectType, input.subjectId);
   if (!account || account.status !== "active" || !account.loginChannelIdEncrypted || !account.loginChannelSecretEncrypted) {
     throw new Error("LINE Login is not configured.");
   }
@@ -127,6 +129,8 @@ export async function beginLineLogin(
     data: {
       id: stateId,
       vendorId: input.vendorId,
+      lineOfficialAccountId: account.id,
+      accountVersion: lineLoginAccountVersion(account),
       stateHash: stateHash(state),
       nonceHash: stateHash(nonce),
       codeVerifierEncrypted: encryptSensitiveValue(`${codeVerifier}:${nonce}`, verifierPurpose(input.vendorId, stateId)),
@@ -152,23 +156,25 @@ export async function beginLineLogin(
     // add-friend prompt as part of the same consent flow.
     bot_prompt: "aggressive",
   }).toString();
-  return { authorizationUrl: authorizationUrl.toString() };
+  return { authorizationUrl: authorizationUrl.toString(), browserBinding: lineLoginBrowserBinding(state) };
 }
 
 export async function completeLineLogin(
   db: LineLoginDatabase,
   provider: LineLoginProvider,
-  input: { state: string; code: string },
+  input: { state: string; code: string; browserBinding?:string; currentUserId?:string },
   now = new Date(),
 ) {
   if (!OAUTH_VALUE.test(input.state) || !input.code || input.code.length > 4_096) throw new Error("Invalid LINE Login callback.");
+  if (!matchesLineLoginBrowser(input.state,input.browserBinding)) throw new Error("LINE Login browser binding is invalid.");
   const attempt = await db.lineLoginState.findUnique({
     where: { stateHash: stateHash(input.state) },
     include: { vendor: { select: { id: true } } },
   });
   if (!attempt || attempt.consumedAt || attempt.expiresAt <= now) throw new Error("LINE Login callback expired.");
-  const account = await db.lineOfficialAccount.findUnique({ where: { vendorId: attempt.vendorId } });
-  if (!account || !account.loginChannelIdEncrypted || !account.loginChannelSecretEncrypted) throw new Error("LINE Login is not configured.");
+  if (attempt.subjectType === "user" && input.currentUserId !== attempt.subjectId) throw new Error("LINE Login session changed.");
+  const account = await resolveSubjectLineAccount(db, attempt.vendorId, attempt.subjectType, attempt.subjectId);
+  if (!account || account.status !== "active" || account.id !== attempt.lineOfficialAccountId || lineLoginAccountVersion(account) !== attempt.accountVersion || !account.loginChannelIdEncrypted || !account.loginChannelSecretEncrypted) throw new Error("LINE Login is not configured.");
   const credentials = unprotectLineOfficialAccountCredentials(attempt.vendorId, account);
   if (!credentials.loginChannelId || !credentials.loginChannelSecret) throw new Error("LINE Login is not configured.");
   const codeVerifier = decryptSensitiveValue(attempt.codeVerifierEncrypted, verifierPurpose(attempt.vendorId, attempt.id));
@@ -188,6 +194,8 @@ export async function completeLineLogin(
   });
 
   return db.$transaction(async (tx) => {
+    const currentAccount = await resolveSubjectLineAccount(tx, attempt.vendorId, attempt.subjectType, attempt.subjectId);
+    if (!currentAccount || currentAccount.status !== "active" || currentAccount.id !== account.id || lineLoginAccountVersion(currentAccount) !== attempt.accountVersion) throw new Error("LINE Login account changed.");
     const consumed = await tx.lineLoginState.updateMany({
       where: { id: attempt.id, consumedAt: null, expiresAt: { gt: now } },
       data: { consumedAt: now },
@@ -195,22 +203,25 @@ export async function completeLineLogin(
     if (consumed.count !== 1) throw new Error("LINE Login callback already consumed.");
     const lookupHash = lineUserIdHash(attempt.vendorId, profile.userId);
     if (attempt.subjectType === "login") {
-      const identity = await tx.lineUserIdentity.findUnique({
-        where: { vendorId_lineUserIdHash: { vendorId: attempt.vendorId, lineUserIdHash: lookupHash } },
+      const identities = await tx.lineUserIdentity.findMany({
+        where: { vendorId: attempt.vendorId, lineOfficialAccountId: account.id, lineUserIdHash: lookupHash, subjectType: "user", revokedAt: null }, take: 2,
       });
+      const identity = identities.length === 1 ? identities[0] : null;
       if (!identity || identity.revokedAt) throw new Error("LINE Login identity is not linked.");
       return { identity, redirectPath: attempt.redirectPath, login: true as const };
     }
     const identity = await tx.lineUserIdentity.upsert({
       where: {
-        vendorId_subjectType_subjectId: {
+        vendorId_lineOfficialAccountId_subjectType_subjectId: {
           vendorId: attempt.vendorId,
+          lineOfficialAccountId: account.id,
           subjectType: attempt.subjectType,
           subjectId: attempt.subjectId,
         },
       },
       create: {
         vendorId: attempt.vendorId,
+        lineOfficialAccountId: account.id,
         subjectType: attempt.subjectType,
         subjectId: attempt.subjectId,
         lineUserIdHash: lookupHash,
@@ -226,6 +237,8 @@ export async function completeLineLogin(
         pictureUrlEncrypted: profile.pictureUrl ? protectLineProfileValue(attempt.vendorId, "pictureUrl", profile.pictureUrl) : null,
         linkedAt: now,
         revokedAt: null,
+        lastMaterializedAt: null,
+        materializationCursor: null,
       },
     });
     return { identity, redirectPath: attempt.redirectPath, login: false as const };

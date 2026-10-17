@@ -1,0 +1,12 @@
+{
+  "sourceHashes": {
+    "prisma/migrations/20261016190000_live_metric_viewing_coverage/migration.sql": "96595512b4332ad44f77fc38bd1889750427b43de2d20ab6d416c400c4b8e292",
+    "src/lib/live-metric-viewing-coverage.ts": "af90c57cb95c82e4a115cc3fbbd7aaa2752e2725ef0820d1a7005dd9ac0abb0e",
+    "src/lib/live-metric-coverage-reader.ts": "669dc2241301af59a529b5d618ff29e5d83965541681c7f2a77e41f3af1bc0b7",
+    "src/lib/live-metric-visit-reconciliation.ts": "8ac43857a19a1a9f3f038c44d3d7239664c6cf64d39559349300fc519ecf95bb",
+    "prisma/schema.prisma": "99d155c2a906916cc1ed01b00c133dd557cad40b4a7df76bd39d2f27af695626"
+  },
+  "supplied": "complete current publisher+reader+frontier; first-start SQL delta and retained source budget fix; restSQL reviewed prior unchanged",
+  "promptChars": 19483,
+  "inputGuardEvent": "First20957charprompt rejected before provider; same source/context shortened to fit existing limit, no validator edits"
+}

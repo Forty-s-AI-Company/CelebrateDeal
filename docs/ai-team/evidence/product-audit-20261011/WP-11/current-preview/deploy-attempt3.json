@@ -1,0 +1,28 @@
+{
+  "exit_code": 0,
+  "status": "ok",
+  "reason": null,
+  "deployment": {
+    "id": "dpl_HP9tejPPwmSLXd7rm2aZDwNXKPhq",
+    "url": "https://celebrate-deal-staging-9tuzq06yk-a25814740s-projects.vercel.app",
+    "readyState": "INITIALIZING",
+    "target": null
+  },
+  "diagnostic_tokens": [
+    "deployment",
+    "deployment",
+    "deployment",
+    "deployment",
+    "deployment",
+    "cli",
+    "project",
+    "preview"
+  ],
+  "output_sizes": [
+    1051,
+    544
+  ],
+  "raw_logs_persisted": false,
+  "alias_changes": false,
+  "platform_project_id_manually_set": false
+}

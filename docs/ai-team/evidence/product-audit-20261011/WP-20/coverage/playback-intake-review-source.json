@@ -1,0 +1,17 @@
+{
+  "files": {
+    "prisma/migrations/20261016070000_live_metric_playback_intake/migration.sql": "2327bd27b7a8ed965137f76583da348b7032964b025f8c0d6dec374477781835",
+    "prisma/schema.prisma": "c28286aeba8670183dd1b5184dc094facebbbd0e30ec6dadc9acd466f770580d",
+    "src/lib/live-metric-playback-intake.ts": "95d5fd0eb0972e00c76756b3e04abe108f7c46d4b8c8edab9e9ec179c43b3186",
+    "src/lib/live-metric-session.ts": "54577dba29fb30501414af38e3f68a71f35ae510a14e82b2d7f54d18f5b62d42",
+    "src/lib/live-metric-version.ts": "d141b7d964ed80d0a121a547ed8b62402502433d4c0675ef03f171bbd2570008",
+    "src/app/api/live-playback-source/route.ts": "3892b508171f7468464ea671e2298cdfd3e7db4afa956e7e176632a4e94fc63c",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": "ff00a94bf52c2ff8d796f13c8a976072fcc7e97e33866c92d84488659448bd7e",
+    "src/components/live-playback.tsx": "44e5fc0c73823a67b0dc41be4f8709fe712edd6c5749ecd34213553371ee11aa",
+    "src/lib/live-metric-playback-collector.ts": "bc7ad2d699f55fe43cba0620f35c04de1a557ea1af16ee712696a49806223a07",
+    "src/lib/live-metric-playback-receipt.ts": "fc9ecd3f1b4f5247ddf5e555862128890f781fee69a8dc834ba2f09bf95a201f",
+    "scripts/wp20-playback-intake-disposable.mjs": "f45d51fd927462dc3ac9c3820fae30790f9c0e8d61e9fc1699ad514c8fc5cad4"
+  },
+  "reviewScope": "Full119 SQL/service except one-line Input declaration; new session binding excerpt. Other code/tests/harness not supplied.",
+  "promptCharacters": 17542
+}

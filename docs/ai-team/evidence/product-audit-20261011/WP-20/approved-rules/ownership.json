@@ -1,0 +1,16 @@
+{
+  "owner": "main",
+  "scope": [
+    "src/lib/live-metric-contract.ts",
+    "src/lib/live-metric-contract.test.ts"
+  ],
+  "authorized": "90percent completion and7days established noncancelled orders",
+  "not_authorized": [
+    "new event writes",
+    "schema/migration",
+    "unapproved metric denominators"
+  ],
+  "limits": "single writer, automatic_spawn=false, isolated worktree",
+  "review": "router final independent review still required",
+  "observed_model": "unknown"
+}

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
+  $transaction: vi.fn(),
   registrationForm: { findUnique: vi.fn() },
   landingPage: { findFirst: vi.fn() },
   live: { findFirst: vi.fn(), findMany: vi.fn() },
@@ -18,9 +19,14 @@ const db = {
   emailSuppression: { findUnique: vi.fn() },
 };
 
-vi.mock("@/lib/db", () => ({ getDb: () => db }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+vi.mock("@/lib/live-metric-registration-capture", () => ({ capturePublicMetricRegistration: vi.fn(async () => ({ status: "unavailable", code: "SCOPE_UNAVAILABLE" })) }));
 
+vi.mock("@/lib/db", () => ({ getDb: () => db }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+
+import { capturePublicMetricRegistration } from "@/lib/live-metric-registration-capture";
+import { NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { POST } from "@/app/api/form-submissions/route";
 import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
@@ -57,6 +63,8 @@ function nativeFormRequest(redirectTo: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("LIVE_METRIC_VISITOR_KEYRING", "");
+  db.$transaction.mockImplementation(async (callback: (tx: typeof db) => Promise<unknown>) => callback(db));
   db.landingPage.findFirst.mockResolvedValue(null);
   vi.stubEnv("CSRF_SECRET", "form-submission-email-test-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
@@ -124,6 +132,25 @@ describe("team lead attribution", () => {
       body: JSON.stringify(payload),
     });
   }
+
+  it("captures new metric registration inside its transaction without blocking on unavailable metrics", async () => {
+    vi.stubEnv("LIVE_METRIC_VISITOR_KEYRING", JSON.stringify({ current: { id: "synthetic", key: "37".repeat(32) } }));
+    const response = await POST(jsonRequest({ formId: "form-1", liveId: "live-a", payload: { name: "Lead", email: "lead@example.test" } }));
+    expect(response.status).toBe(200);
+    expect(db.$transaction).toHaveBeenCalledOnce();
+    expect(capturePublicMetricRegistration).toHaveBeenCalledWith(db,
+      { vendorId: "vendor-1", liveId: "live-a", submissionId: expect.any(String) }, expect.objectContaining({ verify: expect.any(Function) }), null);
+    expect(db.formSubmission.create).toHaveBeenCalledOnce();
+  });
+
+  it("does not attach the current visitor to a duplicate submission", async () => {
+    vi.stubEnv("LIVE_METRIC_VISITOR_KEYRING", JSON.stringify({ current: { id: "synthetic", key: "37".repeat(32) } }));
+    db.formSubmission.findFirst.mockResolvedValueOnce(pendingSubmission("existing"));
+    const response = await POST(jsonRequest({ formId: "form-1", liveId: "live-a", payload: { name: "Lead", email: "lead@example.test" } }));
+    expect(response.status).toBe(200);
+    expect(capturePublicMetricRegistration).not.toHaveBeenCalled();
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+  });
 
   it.each([true, false])("stores only a same-vendor published marketing page hint: %s", async (available) => {
     db.landingPage.findFirst.mockResolvedValueOnce(available ? { id: "page-1" } : null);
@@ -768,7 +795,8 @@ describe("native form submission redirects", () => {
       body,
     }));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
     expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
     expect(db.formSubmission.create).not.toHaveBeenCalled();
   });
@@ -808,8 +836,30 @@ describe("native form submission redirects", () => {
       body,
     }));
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
     expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
     expect(db.formSubmission.create).not.toHaveBeenCalled();
   });
+});
+
+it.each(["oversized", "malformed"])("bounds native body failure: %s", async (kind) => {
+ const response = await POST(new Request("https://app.example.test/api/form-submissions", {
+  method: "POST", headers: { origin: "https://app.example.test", "content-type": kind === "oversized" ? "application/x-www-form-urlencoded" : "multipart/form-data; boundary=synthetic" },
+  body: kind === "oversized" ? "name=" + "x".repeat(1_000_001) : "malformed multipart",
+ }));
+ expect(response.status).toBe(303);
+ expect(response.headers.get("cache-control")).toBe("no-store");
+ expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
+ expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
+ expect(db.formSubmission.create).not.toHaveBeenCalled();
+});
+
+it("preserves the server rate-limit delay on native error redirect", async () => {
+  vi.mocked(checkRateLimit).mockResolvedValueOnce(NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "30" } }));
+  const response = await POST(nativeFormRequest("/form/synthetic"));
+  expect(response.status).toBe(303);
+  expect(response.headers.get("Retry-After")).toBe("30");
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(db.formSubmission.create).not.toHaveBeenCalled();
 });

@@ -1,0 +1,258 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "name": "registration attribution is scoped and rejects a changed verification epoch",
+      "status": "PASS"
+    },
+    {
+      "name": "report lease service isolates claim ownership and aggregate completion",
+      "status": "PASS"
+    },
+    {
+      "name": "lease compare-and-delete preserves renewed and foreign admissions",
+      "status": "PASS"
+    },
+    {
+      "name": "authorization callback and interval append share one real transaction",
+      "status": "PASS"
+    },
+    {
+      "name": "authorization denial rolls back callback writes and appends nothing",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid callback identity rolls back prior callback writes",
+      "status": "PASS"
+    },
+    {
+      "name": "blacklist committed on another connection after identity resolution prevents append",
+      "status": "PASS"
+    },
+    {
+      "name": "identity changing during locked revalidation cannot append",
+      "status": "PASS"
+    },
+    {
+      "name": "close seals a complete delivered sequence and exact retries preserve the close timestamp",
+      "status": "PASS"
+    },
+    {
+      "name": "pending close allows missing sequences but cannot claim delivery completion early",
+      "status": "PASS"
+    },
+    {
+      "name": "declared final sequence cannot grow and a batch beyond it rolls back atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "close refuses another tenant or registration and permits an explicit empty stream",
+      "status": "PASS"
+    },
+    {
+      "name": "expired metric sessions can acknowledge stored history but cannot append",
+      "status": "PASS"
+    },
+    {
+      "name": "racing append and close never skip or duplicate the final event",
+      "status": "PASS"
+    },
+    {
+      "name": "released admission cannot close or read historical delivery receipts",
+      "status": "PASS"
+    },
+    {
+      "name": "a changed version after lock acquisition aborts interval ingestion",
+      "status": "PASS"
+    },
+    {
+      "name": "expired pending close becomes terminal unknown and exact retries remain idempotent",
+      "status": "PASS"
+    },
+    {
+      "name": "unavailable current content terminates pending old delivery without fabricating completion",
+      "status": "PASS"
+    },
+    {
+      "name": "resolver infrastructure failure never turns missing evidence into a terminal receipt",
+      "status": "PASS"
+    },
+    {
+      "name": "append expiry and historical close remain exact in UTC",
+      "status": "PASS"
+    },
+    {
+      "name": "append expiry and historical close remain exact in America/Los_Angeles",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent session issuance and replay return one stable server-anchored session",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance rejects other tenant version and forged identity scope",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance refuses disabled collection without enabling it",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance refuses revoked verification and expired provisioning",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance creates verified registration but rolls it back on revalidation denial",
+      "status": "PASS"
+    },
+    {
+      "name": "a different proven browser permits issuance without rewriting first registration attribution",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance rejects identity drift after locks",
+      "status": "PASS"
+    },
+    {
+      "name": "session lifetime cannot exceed version or active admission",
+      "status": "PASS"
+    },
+    {
+      "name": "session replay cannot exceed a shortened server lifetime",
+      "status": "PASS"
+    },
+    {
+      "name": "issued sessions accept ingestion and closed keys cannot restart",
+      "status": "PASS"
+    },
+    {
+      "name": "admission open-session quota rejects N plus one while preserving idempotent retries",
+      "status": "PASS"
+    },
+    {
+      "name": "admission lifetime session quota also bounds already-closed session history",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy verification timestamps normalize SQL microseconds to the schema millisecond precision",
+      "status": "PASS"
+    },
+    {
+      "name": "registration lifetime quota survives renewal of the admission credential",
+      "status": "PASS"
+    },
+    {
+      "name": "actual issuance locks allow concurrent foreign-key-style key-share reads",
+      "status": "PASS"
+    },
+    {
+      "name": "issuance transaction timeout under a second backend lock is retryable and leaves no rows",
+      "status": "PASS"
+    },
+    {
+      "name": "HTTP context resolver chooses an enabled matching live content version inside issuance",
+      "status": "PASS"
+    },
+    {
+      "name": "HTTP interval ingestion accepts the current content version with server-bound time",
+      "status": "PASS"
+    },
+    {
+      "name": "issuance rolls back when runtime context changes before final authorization",
+      "status": "PASS"
+    },
+    {
+      "name": "canonical runtime selects replay independently of browser input",
+      "status": "PASS"
+    },
+    {
+      "name": "waiting and unavailable runtimes refuse metric sessions",
+      "status": "PASS"
+    },
+    {
+      "name": "disabled version is neither enabled nor bypassed by the context resolver",
+      "status": "PASS"
+    },
+    {
+      "name": "same video ID with replaced content cannot reuse the old fingerprint",
+      "status": "PASS"
+    },
+    {
+      "name": "version duration must agree with current stored video configuration",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service persists and acknowledges an exact replay",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service rejects conflicting retry payload",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service refuses another tenant or another registration",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service accepts a replay prefix and new suffix atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent ingestion retries append once and acknowledge once",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion batch rejects gaps without partial persistence",
+      "status": "PASS"
+    },
+    {
+      "name": "different ingestion sessions on one version commit without upgrading its revision lock",
+      "status": "PASS"
+    },
+    {
+      "name": "released admission cannot replay but historical service evidence survives",
+      "status": "PASS"
+    },
+    {
+      "name": "database guard rejection becomes a typed ingestion error",
+      "status": "PASS"
+    },
+    {
+      "name": "visit facts count revisits in selected windows and invalidate overlapping reports",
+      "status": "PASS"
+    },
+    {
+      "name": "visit insertion and report finish cannot leave stale ready output in either lock order",
+      "status": "PASS"
+    },
+    {
+      "name": "complete visit collection commits once and final-write failure rolls back new identity",
+      "status": "FAIL",
+      "code": "ASSERTION_OR_RUNNER_ERROR",
+      "errorType": "AssertionError",
+      "differingReceiptFields": [
+        "versionId"
+      ],
+      "guard": null,
+      "assertion": null
+    }
+  ],
+  "loadMetrics": null,
+  "indexMetrics": null,
+  "visitDeletionMetrics": null,
+  "passed": 56,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 99,
+    "failure": {
+      "category": "wp20-persistence-check-failed",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

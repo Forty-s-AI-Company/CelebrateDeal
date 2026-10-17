@@ -1,0 +1,8 @@
+{
+  "initialReviewMajor": "No discriminating proof of seal causality; preserved original review and 4frame/3page receipt",
+  "fix": "Actual Next pre-seal control after stop adds4th page; unused late predicate true->false; rawSQL23514; seal-clause mutation actually INSERT1 then rollback; post-Next-stop stable",
+  "moduleParse": "Duplicate allowed declaration rejected before DB/browser; renamed sourceAllowed; syntax/lint/current review matches new hash",
+  "priorFollowup": "Its supplied snapshot preceded lexical rename; only latest current-review/source used for matching hashes",
+  "remainingMinor": "Next internal rejection reason not observed; do not infer it from HTTP200/no new row",
+  "historicalFailures": "Old page helper null/SSI/HTTP failures are not explained by this passing run"
+}

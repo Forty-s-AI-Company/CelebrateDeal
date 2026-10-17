@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-15T21:42:21.008029+00:00",
+  "files": [
+    "src/app/api/payments/checkout/route.ts",
+    "src/app/api/payments/checkout/route.test.ts",
+    "src/lib/email-delivery.ts",
+    "src/lib/email-delivery.test.ts",
+    "src/lib/checkout-followup.ts",
+    "src/lib/checkout-followup.test.ts"
+  ],
+  "newFiles": [
+    "src/lib/checkout-followup.ts",
+    "src/lib/checkout-followup.test.ts"
+  ],
+  "beforeHashes": {
+    "src/app/api/payments/checkout/route.ts": "a34e1394afd8938796a26536268aeec24dea129acd19a1b8f6eb773354b33fe2",
+    "src/app/api/payments/checkout/route.test.ts": "215f17346677d6533cfb3038865ad921c7c4ff09f90af5d58bbf117e63858f2f",
+    "src/lib/email-delivery.ts": "d623732a00af9ad80f41f9b4c123f8c1730129b2541274715c8cb503a15c32dd",
+    "src/lib/email-delivery.test.ts": "bdaa0e89eea4aef0475f5ad26b0a2678bd4d2bdc0a7a99a7cde5d5bfd40dce68"
+  },
+  "scope": "WP18 only record server-confirmed pending checkout candidate event and guard follow-up send-time current pending order/rule; no enqueue/sending activation, schema or financial writes",
+  "ownership": "root sole writer; existing independent worktree efb8b7e9",
+  "review": "independent critical review required before acceptance; selected implementation model advisory only, observed unknown",
+  "remaining": [
+    "trusted completion source",
+    "queue/materializer with replay/delay semantics",
+    "unblock only after qualified acceptance",
+    "wholeWP18 integration/E2E/Sandbox gate"
+  ],
+  "excluded": [
+    "money/status/prices/payment idempotency mutation",
+    "schema/migration",
+    "generic PII transport or scheduler framework",
+    "external sends, credentials, Production, push/deploy"
+  ]
+}

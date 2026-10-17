@@ -1,0 +1,11 @@
+{
+  "sourceHashes": {
+    "src/app/actions/line-rich-menu-actions.ts": "ed00b152fdf2c268789ca558acc9358a93c9e35b44836c872c169fdba556001d",
+    "src/app/actions/line-actions.ts": "8e2dec4349817e65baddf1677748881d31bfa0f0ef8f04f8165503a40e6d91c5",
+    "src/components/line-rich-menu-studio.tsx": "7c0e8d00b75956235aad469202b93d17414855644c0d3213188ce8f2fdb89d62",
+    "src/components/line-official-account-form.tsx": "9d02a39315d04f060b59a0d68e3b38abb75b70ef1a1065fb9b2804b66ba54c0c",
+    "src/app/(app)/settings/line/page.tsx": "2b7845f4444b96319ab990a8b124fff31d5064e6e725418a9c38b559eb62f513"
+  },
+  "contextChars": 36539,
+  "scope": "Full5boundarymodules, separate core review required. No actual credential values."
+}

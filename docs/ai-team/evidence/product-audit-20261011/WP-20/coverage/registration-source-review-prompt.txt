@@ -1,0 +1,231 @@
+Independent Critical Migration/Permission review. Fixed sources only; no tools or edits. JSON summary and findings with severity BLOCKER/MAJOR/MINOR/NIT,file,area,issue,evidence,impact,recommended_fix,required_test,confidence; under7000chars. Scope: registration source audit reader and new source revision trigger. These are not a coverage producer yet: outputs always unknown; no proof writer. Audit uses source verified FormSubmission not capture table to identify missing capture, same read-only RR transaction all pages, limited scope/time/rows. Existing sourceRevision changes invalidate reports and positive coverage certificates. Existing legacy FormSubmission UPDATE trigger only invalidates reports for materialized registrations; new trigger handles uncaptured verified inserts/updates/deletes. Real105 migrations PASS;20 concurrent ReadCommitted verified inserts commit20/20 in407ms; RR snapshot excludes late source, fresh snapshot includes it and revision increases. Original Serializable payment20/20 gate FAIL, not waived. Full50k source audit14.8s. Identify actionable correctness/security/deadlock issues; don't mistake unknown diagnostic for certified complete.
+
+FILE src/lib/live-metric-registration-audit.ts
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const Request = z.object({ vendorId: id, liveId: id, versionId: id, startAt: z.date(), endAt: z.date(),
+  afterSubmissionId: id.nullable(), take: z.number().int().min(1).max(500) }).strict()
+  .refine(value => value.startAt < value.endAt, "Invalid audit window");
+export type RegistrationAuditRequest = z.infer<typeof Request>;
+type Database = Pick<Prisma.TransactionClient, "$queryRaw">;
+type Row = { submissionId: string; captureVersionId: string | null; registrationId: string | null; matches: boolean };
+
+/** Internal evidence discovery, not a coverage certificate. Caller owns one
+ * bounded read-only RR transaction across all pages. Start from source submissions
+ * so an absent capture cannot disappear from the audit. No customer PII is read.
+ */
+export async function readRegistrationAuditPage(tx: Database, value: RegistrationAuditRequest) {
+  const input = Request.parse(value);
+  const [settings] = await tx.$queryRaw<{ isolation: string; readOnly: string }[]>(Prisma.sql`
+    SELECT current_setting('transaction_isolation') AS isolation,current_setting('transaction_read_only') AS "readOnly"`);
+  if (settings?.isolation !== "repeatable read" || settings.readOnly !== "on") throw new Error("Registration audit requires read-only repeatable-read");
+  const [context] = await tx.$queryRaw<{ sourceRevision: bigint }[]>(Prisma.sql`
+    SELECT v."sourceRevision" FROM "LiveMetricVersion" v
+    JOIN "Live" l ON l.id=v."liveId" AND l."vendorId"=v."vendorId"
+    WHERE v.id=${input.versionId} AND v."vendorId"=${input.vendorId} AND v."liveId"=${input.liveId}
+      AND v."collectionStartedAt"<=${input.startAt} AND v."expiresAt">=${input.endAt}
+      AND ${input.endAt}<=clock_timestamp()`);
+  if (!context) return { status: "unavailable" as const, reason: "scope_or_window_unavailable" as const };
+  const cursor = input.afterSubmissionId === null ? Prisma.empty : Prisma.sql`AND s.id>${input.afterSubmissionId}`;
+  const rows = await tx.$queryRaw<Row[]>(Prisma.sql`
+    SELECT s.id AS "submissionId",c."versionId" AS "captureVersionId",g.id AS "registrationId",
+      coalesce(g."verifiedAt"=(s."verifiedAt" AT TIME ZONE 'UTC') AND g."visitorId" IS NOT DISTINCT FROM c."visitorId",false) AS matches
+    FROM "FormSubmission" s
+    JOIN "RegistrationForm" f ON f.id=s."formId" AND f."vendorId"=${input.vendorId}
+    JOIN "Live" l ON l.id=s."liveId" AND l."vendorId"=${input.vendorId} AND l."formId"=s."formId"
+    LEFT JOIN "LiveMetricRegistrationCapture" c ON c."submissionId"=s.id AND c."vendorId"=${input.vendorId} AND c."liveId"=${input.liveId}
+    LEFT JOIN "LiveMetricRegistration" g ON g."submissionId"=s.id AND g."vendorId"=${input.vendorId}
+      AND g."liveId"=${input.liveId} AND g."versionId"=${input.versionId}
+    WHERE s."liveId"=${input.liveId} AND s."verificationStatus"='VERIFIED'
+      AND s."verifiedAt">=(${input.startAt}::timestamptz AT TIME ZONE 'UTC')
+      AND s."verifiedAt"<(${input.endAt}::timestamptz AT TIME ZONE 'UTC') ${cursor}
+    ORDER BY s.id ASC LIMIT ${input.take + 1}`);
+  const page = rows.slice(0, input.take);
+  return { status: "available" as const, sourceRevision: context.sourceRevision, coverage: "unknown" as const,
+    rows: page.map(row => ({ submissionId: row.submissionId,
+      outcome: row.captureVersionId === null ? "missing_capture" as const
+        : row.captureVersionId !== input.versionId ? "other_version" as const
+        : row.registrationId === null ? "missing_registration" as const
+        : !row.matches ? "identity_mismatch" as const : "matched" as const })),
+    hasMore: rows.length > input.take, nextSubmissionId: page.at(-1)?.submissionId ?? input.afterSubmissionId };
+}
+
+
+FILE src/lib/live-metric-registration-source-audit.ts
+import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { readRegistrationAuditPage, type RegistrationAuditRequest } from "./live-metric-registration-audit";
+
+type Scope = Omit<RegistrationAuditRequest, "take" | "afterSubmissionId">;
+/** A bounded source enumeration, not permission to issue covered certificates.
+ * The digest identifies this observation; source-insert revision fencing and
+ * durable proof publication are separate requirements still enforced by callers.
+ */
+export async function auditMetricRegistrationSources(db: Pick<PrismaClient, "$transaction">, scope: Scope,
+  limits = { rows: 1_000_000, pages: 2000 }) {
+  if (!Number.isSafeInteger(limits.rows) || limits.rows < 1 || limits.rows > 1_000_000
+    || !Number.isSafeInteger(limits.pages) || limits.pages < 1 || limits.pages > 2000) throw new Error("Invalid audit limits");
+  return db.$transaction(async tx => {
+    await tx.$executeRaw(Prisma.sql`SET TRANSACTION READ ONLY`);
+    await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+    const started = performance.now();
+    const digest = createHash("sha256").update(JSON.stringify({ format: "registration-source-audit-v1", ...scope }));
+    const outcomes = { matched: 0, missing_capture: 0, missing_registration: 0, identity_mismatch: 0, other_version: 0 };
+    let cursor: string | null = null, count = 0;
+    let sourceRevision: bigint | undefined;
+    for (let pageNumber = 0; pageNumber < limits.pages; pageNumber++) {
+      if (performance.now() - started >= 25000) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+      const page = await readRegistrationAuditPage(tx, { ...scope, take: 500, afterSubmissionId: cursor });
+      if (page.status !== "available") return page;
+      if (sourceRevision !== undefined && sourceRevision !== page.sourceRevision) throw new Error("Audit snapshot revision changed");
+      sourceRevision = page.sourceRevision;
+      count += page.rows.length;
+      if (count > limits.rows) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+      for (const row of page.rows) {
+        outcomes[row.outcome]++;
+        digest.update(JSON.stringify([row.submissionId, row.outcome]) + "\n");
+      }
+      if (!page.hasMore) return { status: "enumerated" as const, coverage: "unknown" as const,
+        sourceRevision, count, outcomes, digest: digest.update(sourceRevision.toString()).digest("hex") };
+      if (page.rows.length === 0 || page.nextSubmissionId === null || page.nextSubmissionId === cursor) throw new Error("Audit cursor did not advance");
+      cursor = page.nextSubmissionId;
+    }
+    return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000, maxWait: 5000 });
+}
+
+
+FILE prisma/migrations/20261015170000_live_metric_registration_source_revision/migration.sql
+-- Audit revisions must include authoritative submissions even when optional
+-- metric capture failed. No historical coverage is certified by this migration.
+CREATE FUNCTION public.wp20_metric_registration_source_revision() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+DECLARE old_live TEXT; new_live TEXT; version_id TEXT;
+BEGIN
+ IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."FormSubmission"'::regclass THEN
+  RAISE EXCEPTION 'invalid registration source relation' USING ERRCODE='23514';
+ END IF;
+ IF TG_OP='UPDATE' AND
+  (NEW.id,NEW."liveId",NEW."formId",NEW."verificationStatus",NEW."verifiedAt") IS NOT DISTINCT FROM
+  (OLD.id,OLD."liveId",OLD."formId",OLD."verificationStatus",OLD."verifiedAt") THEN RETURN NULL; END IF;
+ IF TG_OP<>'INSERT' AND OLD."verificationStatus"='VERIFIED' THEN old_live:=OLD."liveId"; END IF;
+ IF TG_OP<>'DELETE' AND NEW."verificationStatus"='VERIFIED' THEN new_live:=NEW."liveId"; END IF;
+ -- Stable order across old/new scopes; registration without capture is included.
+ -- Existing version revision trigger invalidates both audits and report inputs.
+ FOR version_id IN SELECT v.id FROM public."LiveMetricVersion" v
+  WHERE v."liveId"=old_live OR v."liveId"=new_live ORDER BY v.id LOOP
+  UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1 WHERE id=version_id;
+ END LOOP;
+ RETURN NULL;
+END $$;
+CREATE TRIGGER "FormSubmission_metric_audit_revision" AFTER INSERT OR UPDATE OR DELETE ON public."FormSubmission"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_registration_source_revision();
+REVOKE ALL ON FUNCTION public.wp20_metric_registration_source_revision() FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_registration_source_revision() FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+
+FILE scripts/wp20-registration-source-concurrency.mjs
+import assert from 'node:assert/strict';
+/** Real independent connections, synthetic sources, all triggers enabled. */
+export async function verifyRegistrationSourceConcurrency(db, service, fixture) {
+ const {vendor,live,video,form}=fixture;
+ const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+ const start=new Date(+clock.now-20000),end=new Date(+clock.now-1000),verifiedAt=new Date(+clock.now-10000);
+ const versionId='registration-race-version',ids=[];
+ await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ($1,$2,$3,$4,'live',$5,true,$6,$7)`,versionId,vendor.id,live.id,video.id,'c'.repeat(64),start,new Date(+clock.now+3600000));
+ const revision=async client=>(await client.$queryRawUnsafe('SELECT "sourceRevision" AS revision FROM "LiveMetricVersion" WHERE id=$1',versionId))[0].revision;
+ const create=async i=>{
+  const id=`registration-race-${i}`;ids.push(id);
+  return db.formSubmission.create({data:{id,formId:form.id,liveId:live.id,name:'Synthetic',email:`race-${i}@example.test`,verificationStatus:'VERIFIED',verifiedAt}});
+ };
+ try {
+  const before=await revision(db),started=performance.now();
+  const results=await Promise.allSettled(Array.from({length:20},(_,i)=>create(i)));
+  assert.equal(results.filter(x=>x.status==='fulfilled').length,20);
+  assert.equal(await revision(db),before+BigInt(20));
+  const concurrentMs=Math.round(performance.now()-started);
+  const request={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:end,afterSubmissionId:null,take:500};
+  await db.$transaction(async tx=>{
+   await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+   const old=await service.readRegistrationAuditPage(tx,request);
+   assert.equal(old.status,'available');assert.equal(old.rows.length,20);
+   await create(20);
+   const same=await service.readRegistrationAuditPage(tx,request);
+   assert.equal(same.sourceRevision,old.sourceRevision);assert.equal(same.rows.length,20);
+   assert.ok(await revision(db)>old.sourceRevision);
+  },{isolationLevel:'RepeatableRead',timeout:15000});
+  await db.$transaction(async tx=>{
+   await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+   const fresh=await service.readRegistrationAuditPage(tx,request);
+   assert.equal(fresh.status,'available');assert.equal(fresh.rows.length,21);
+  },{isolationLevel:'RepeatableRead',timeout:15000});
+  return {status:'PASS',submitted:20,committed:20,concurrentMs,snapshotIsolation:'PASS',nextSnapshotSeesLateSource:'PASS',scope:'ReadCommitted concurrent calls; not synchronized Serializable payment acceptance'};
+ } finally {
+  await db.formSubmission.deleteMany({where:{id:{in:ids}}});
+  await db.$executeRawUnsafe('DELETE FROM "LiveMetricVersion" WHERE id=$1',versionId);
+ }
+}
+
+
+FILE prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql
+-- No historical backfill: current devices cannot establish original attribution.
+CREATE TABLE public."LiveMetricRegistrationCapture" (
+ "submissionId" TEXT PRIMARY KEY, "vendorId" TEXT NOT NULL, "liveId" TEXT NOT NULL,
+ "versionId" TEXT NOT NULL, "visitorId" TEXT,
+ "capturedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+ CONSTRAINT "LiveMetricRegistrationCapture_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES public."FormSubmission"(id) ON DELETE CASCADE ON UPDATE NO ACTION,
+ CONSTRAINT "LiveMetricRegistrationCapture_vendorId_liveId_versionId_fkey" FOREIGN KEY ("vendorId","liveId","versionId") REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION,
+ CONSTRAINT "LiveMetricRegistrationCapture_visitor_fkey" FOREIGN KEY ("vendorId","liveId","versionId","visitorId") REFERENCES public."LiveMetricVisitor"("vendorId","liveId","versionId",id) ON DELETE NO ACTION ON UPDATE NO ACTION
+);
+CREATE INDEX "LiveMetricRegistrationCapture_scope_submission_idx" ON public."LiveMetricRegistrationCapture"("vendorId","liveId","versionId","submissionId");
+CREATE INDEX "LiveMetricRegistrationCapture_scope_visitor_idx" ON public."LiveMetricRegistrationCapture"("vendorId","liveId","versionId","visitorId");
+CREATE FUNCTION public.wp20_metric_capture_guard() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+BEGIN
+ IF TG_OP='UPDATE' THEN
+  RAISE EXCEPTION 'metric initial capture is immutable' USING ERRCODE='23514';
+ ELSIF TG_OP='DELETE' THEN
+  IF EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=OLD."versionId")
+   AND EXISTS(SELECT 1 FROM public."FormSubmission" WHERE id=OLD."submissionId") THEN
+   RAISE EXCEPTION 'metric initial capture requires parent deletion' USING ERRCODE='23514';
+  END IF;
+  RETURN OLD;
+ END IF;
+ PERFORM 1 FROM public."LiveMetricVersion" WHERE id=NEW."versionId" AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'metric capture scope unavailable' USING ERRCODE='23514'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=NEW."versionId" AND "collectionEnabled" AND "collectionStartedAt"<=clock_timestamp() AND "expiresAt">clock_timestamp()) THEN
+  RAISE EXCEPTION 'metric capture collection unavailable' USING ERRCODE='23514';
+ END IF;
+ PERFORM 1 FROM public."FormSubmission" s
+ JOIN public."RegistrationForm" f ON f.id=s."formId" AND f."vendorId"=NEW."vendorId"
+ JOIN public."Live" l ON l.id=s."liveId" AND l."vendorId"=NEW."vendorId" AND l."formId"=s."formId"
+ WHERE s.id=NEW."submissionId" AND s."liveId"=NEW."liveId" AND s."verificationStatus"='UNVERIFIED' FOR SHARE OF s;
+ IF NOT FOUND THEN RAISE EXCEPTION 'metric capture initial submission unavailable' USING ERRCODE='23514'; END IF;
+ NEW."capturedAt" := date_trunc('milliseconds',clock_timestamp());
+ RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricRegistrationCapture_guard" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricRegistrationCapture" FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_capture_guard();
+CREATE FUNCTION public.wp20_metric_capture_no_truncate() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+BEGIN RAISE EXCEPTION 'metric capture truncate prohibited' USING ERRCODE='23514'; END $$;
+CREATE TRIGGER "LiveMetricRegistrationCapture_no_truncate" BEFORE TRUNCATE ON public."LiveMetricRegistrationCapture" FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_capture_no_truncate();
+ALTER TABLE public."LiveMetricRegistrationCapture" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."LiveMetricRegistrationCapture" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_capture_guard(),public.wp20_metric_capture_no_truncate() FROM PUBLIC;
+DO $$ DECLARE api_role text; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricRegistrationCapture" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_capture_guard(),public.wp20_metric_capture_no_truncate() FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+

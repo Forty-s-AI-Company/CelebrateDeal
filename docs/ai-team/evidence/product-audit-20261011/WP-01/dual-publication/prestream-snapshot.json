@@ -1,0 +1,17 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/lib/landing-page-service.ts",
+    "src/app/actions/landing-page-actions.ts",
+    "src/components/landing-page-workspace.tsx",
+    "src/app/(app)/landing-pages/[id]/page.tsx",
+    "src/lib/landing-page-service.test.ts",
+    "src/app/actions/landing-page-actions.test.ts",
+    "src/app/(app)/landing-pages/[id]/page.test.tsx",
+    "src/proxy.ts",
+    "src/proxy.test.ts",
+    "src/lib/public-landing-page-status.ts",
+    "src/lib/public-landing-page-status.test.ts"
+  ],
+  "revision": "sha256:9aa578dcad8c03e92859126493e7348ba44cfd0a0aaa4e9a76b43a901eac9e79"
+}

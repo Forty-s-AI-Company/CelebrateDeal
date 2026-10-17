@@ -1,0 +1,9 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "legacy",
+  "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+  "status": "PASS",
+  "exit_code": 0,
+  "detail": "legacy-compat.json:exact12metadata/nodetrees"
+}

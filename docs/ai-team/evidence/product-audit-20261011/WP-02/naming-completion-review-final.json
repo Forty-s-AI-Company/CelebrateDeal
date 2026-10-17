@@ -1,0 +1,168 @@
+{
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR issues in the supplied WP-02 diff or the new PostgreSQL test. There is one MINOR finding about test coverage, and it does not block delivery.\n\n**Acceptance criteria**\n- **Customer collection vs. platform payment:** The copy now separates platform-service payment verification from customer collection. The page, onboarding and sales-workspace text all say customer collection needs separate confirmation. None of them say customer collection is approved or enabled.\n- **Status display:** A status is shown as verified only when all of these hold: status is \"verified\", the record is vendor-level (not a member record), verifiedAt is a valid time not in the future, and the record has not expired. A \"verified\" status with a missing, future or invalid verifiedAt shows as \"驗證資料待確認\". Any status the code does not recognise shows as \"狀態待確認\", and the raw status string is no longer displayed. Unknown never counts as verified.\n- **Readiness checks:** Onboarding and Dashboard both add `verifiedAt: { not: null, lte: now }`. The disposable PostgreSQL run shows this condition is evaluated correctly. It excludes null, future-dated, expired-at-boundary, pending, provider_unknown, member-scoped, team-scoped and other-tenant records, and it includes the no-expiry and future-expiry records.\n- **Unchanged areas:** The supplied diff does not touch provider, webhook, consent, charging, schema or publication-gate code.\n\n**D-2/D-3 conclusion:** Truthful handling of the unknown state can complete WP-02 without a real external payment operation. Two separate things are being tracked:\n- **PayUni customer-collection approval** (approval, settlement and legal position) is shown the same way in every state: \"needs separate confirmation\". The code never claims it, so actual approval being unknown does not make any copy untrue.\n- **Platform payment record states** (approved, unapproved, unknown) are covered with synthetic records: verified, pending and provider_unknown.\n\nNo acceptance rule I was given requires a live PayUni call. D-2/D-3 (real PayUni approval, settlement and legal positioning) stay open dependencies for any future change that would claim or enable customer collection. They are not unmet WP-02 acceptance rules.\n\n**Verification limits:**\n- I reviewed only the supplied text.\n- I did not see the publication-gate predicate itself or the full Onboarding/Dashboard query bodies. That they match relies on the earlier exact-hash review and on the diff context.\n- Not run: real provider call, browser, production build, remote CI, deployment and production data.\n- An empty or minor findings list does not certify release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "WP-02 disposable PostgreSQL test (new)",
+        "area": "`ready` findMany predicate block (the inline where clause and its assertions)",
+        "issue": "The test copies the readiness condition inline instead of running the real Onboarding query, the real Dashboard query or the publication guard. It proves how PostgreSQL/Prisma evaluates this condition, including null and boundary cases. It does not prove that the production queries or the unchanged publication gate use the same condition.",
+        "evidence": "The test builds its own where clause: `{ vendorId, scopeType: 'VENDOR', membershipId: null, status: 'verified', verifiedAt: { not: null, lte: now }, OR: [...] }`. It imports only `getDb` and calls no product function from onboarding/page.tsx, dashboard-details.tsx or the publication guard. The diff context for Onboarding and Dashboard does not show whether `scopeType`/`membershipId: null` are present in those queries.",
+        "impact": "The acceptance rule 'Onboarding and Dashboard must match the unchanged publication readiness predicate' is backed by code review only, not by this DB test. If any of these queries drifts later, for example a member-scoped or verifiedAt-null record counted in one place but not another, the test would still pass. Dashboard could then show 'ready' while publication is refused, or the other way round.",
+        "recommended_fix": "Move the readiness condition into one shared exported builder used by Onboarding, Dashboard and the publication guard, or make the DB test call those real entry points. Then assert all three return the same result for the same fixtures.",
+        "required_test": "Using the same disposable PostgreSQL fixtures, check that the publication guard, the Onboarding readiness signal and the Dashboard readiness count all agree. Each should report exactly the 2 valid vendor-level records, and each should report not ready when only the null, future, expired, pending, unknown, member, team and other-tenant records exist.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "reviewed": true,
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "billing",
+        "migration",
+        "payment",
+        "production_data",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "completed": false
+}

@@ -733,7 +733,7 @@ test("owner can edit LINE menu drafts, reject stale tabs, and recreate after del
     await studio.getByRole("button", { name: "儲存草稿", exact: true }).click();
     await expect(studio.locator('input[name="revision"]')).toHaveValue("1");
     expect(await studio.locator('input[name="id"]').inputValue()).not.toBe(firstId);
-    expect(await db.lineRichMenuDraft.findUnique({ where: { vendorId: seed.vendorId } })).toMatchObject({ revision: 1 });
+    expect(await db.lineRichMenuDraft.findFirst({ where: { vendorId: seed.vendorId } })).toMatchObject({ revision: 1 });
   } finally {
     await stale.close();
   }

@@ -1,0 +1,174 @@
+{
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-opus-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "payment",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "review": {
+    "summary": "I reviewed only the three supplied files. No BLOCKER or MAJOR defects are shown in them. There is one MINOR finding: a malformed ID crashes the page instead of skipping metrics.\n\n**What the files get right:**\n- `connection()` runs before any work, and the metadata/viewport paths don't touch the wrapper.\n- An explicit `liveId` must match the loader's sessions or the page 404s.\n- Only one resolved session is ever tracked, so there's no first-pick or fan-out across sessions.\n- Visits are not tracked when fields are invalid or the submission is already verified.\n- The wrapper checks the scope and that `LIVE_METRIC_VISITOR_KEYRING` is set before touching the DB. It returns the original child when scope is missing or issuance returns null. The retry wrapper still wraps the result.\n- The client props are only `vendorId`, `liveId` and `eventId`, with no secret, proof or URL.\n- The owner lookup runs outside the transaction and is used only as a hint.\n- Any non-`MetricVisitorError` failure becomes `PERSISTENCE_UNAVAILABLE` and propagates, as the owner specified.\n\n**Not certified (the code is in files that weren't supplied):**\n- **Locked recheck.** That issuance re-checks form/live/vendor, active state and project vendor+published state under SHARE locks happens inside `issueMetricVisitPage`, which wasn't supplied.\n- **Errors that should skip metrics.** I can't tell whether that helper returns null or throws `MetricVisitorError` for a stale binding, a full quota or an ineligible session. If it throws, the wrapper passes the error on and the public registration page fails. That would contradict \"unavailable scope returns original child\".\n- **Retry rendering.** `registrationRetryBoundary`/`withRetry` wasn't supplied, so I can't confirm it never replaces the form with a non-form screen after a visit is issued.\n- **Not in scope:** funnel/webinar callers, the PageDocument classifier, the 125 gate, the browser protocol and the test receipts weren't supplied, so I can't certify them.\n\nAn empty findings list here would not certify test or release success either.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-registration-page.ts",
+        "area": "issueMetricRegistrationPage: `const scope=Scope.parse(value);` (runs before the try block)",
+        "issue": "A form or live ID that is present but doesn't match the regex makes `Scope.parse` throw a raw ZodError. The error escapes the wrapper and fails the public form page. It should instead count as unavailable scope and return the original child.",
+        "evidence": "`withMetricRegistrationVisit` only checks that the IDs are non-empty before calling issuance. `Scope.parse` sits outside the try/catch, so the ZodError is neither turned into null nor mapped to `MetricVisitorError`. The task says 'unavailable scope returns original child with no collector'.",
+        "impact": "Low likelihood, since IDs come from the DB and are probably cuid/uuid. But if a stored ID is longer than 128 characters or contains other characters, the registration page returns a 500 instead of rendering without metrics. The error type also differs from the stated `MetricVisitorError` contract.",
+        "recommended_fix": "Use `Scope.safeParse` and return null when it fails, so the wrapper returns the child unchanged. Alternatively, check the ID shape in the wrapper before any await. Keep throwing for real data/commit failures.",
+        "required_test": "Unit test: call `withMetricRegistrationVisit` with the keyring set and a formId over 128 characters (or containing '/'). Assert it returns the original child, renders no `LiveMetricVisit`, and makes no DB calls (use a db spy).",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "accepted": false,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "exitCode": 3
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  }
+}

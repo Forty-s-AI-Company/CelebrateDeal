@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/lib/live-metric-delivery.test.ts",
+    "src/lib/live-metric-collector.test.ts",
+    "src/lib/live-metric-media.test.ts",
+    "src/lib/live-metric-viewing-source-audit.test.ts"
+  ],
+  "testsPassed": 52
+}

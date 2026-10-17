@@ -1,0 +1,52 @@
+{
+  "scope": "This continuation only; prior Goal changes preserved",
+  "sourceFiles": [
+    "prisma/migrations/20261016060000_live_metric_viewing_source/migration.sql",
+    "prisma/schema.prisma",
+    "src/lib/live-metric-viewing-source-audit.ts",
+    "src/lib/live-metric-viewing-source-audit.test.ts",
+    "scripts/wp20-viewing-source-ledger-disposable.mjs",
+    "src/lib/live-metric-version.ts",
+    "src/lib/live-metric-version.test.ts"
+  ],
+  "documents": [
+    "docs/launch/wp20-coverage-producer-contract.md",
+    "docs/launch/product-audit-20261012-handoff.md",
+    "docs/launch/product-audit-20261011-progress.md"
+  ],
+  "reviewWrappers": [
+    ".ai-team/reports/wp20-viewing-ledger-review.ps1",
+    ".ai-team/reports/wp20-viewing-ledger-json-review.ps1",
+    ".ai-team/reports/wp20-viewing-ledger-followup-review.ps1"
+  ],
+  "evidence": [
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/playback-intake-version-lint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/playback-intake-version-route.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/playback-intake-version-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/playback-intake-version-typecheck.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/playback-intake-version-unit.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-final-lint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-final-typecheck.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-final-unit.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-first-review-disposition.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-followup-prompt.txt",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-followup-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-followup-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-initial-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-json-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-lint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-review-disposition.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-review-fix-initial-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-review-prompt.txt",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-revised-lint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-revised-typecheck.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-revised-unit.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-route.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-snapshot.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-typecheck.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/viewing-ledger-unit.json"
+  ]
+}

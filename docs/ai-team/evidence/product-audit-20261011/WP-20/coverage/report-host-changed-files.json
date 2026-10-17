@@ -1,0 +1,26 @@
+{
+  "scope": "Local process-host incremental scope, not complete Goal diff",
+  "files": {
+    "src/lib/live-metric-report-host.ts": "30ccc4100b62111e9f9d3cded6f1c1f719047ba5dacebb0ad322c5cb00cb4b33",
+    "src/lib/live-metric-report-host.test.ts": "4626b6343a08188a26ee49fb063d32074b201411db7b144e5ad8aaaeac8f4e78",
+    "src/lib/live-metric-report-scheduler.ts": "aec9c44b548a2007e397ee6e805b95a4816c00a428c0edd9afefb9da68a61d98",
+    "src/lib/live-metric-report-scheduler.test.ts": "762f86a1064f4201a2f3010d468f5173c94c33611b83f9e7ee7850ccecb38976",
+    "scripts/run-metric-report-host.mjs": "e36b9881b99526f5e7e11b5a5f57c326374d405ad7f4d6dfbb02ad1f4b8cc435",
+    "scripts/build-metric-report-host.mjs": "5ecf0933afd25e3a9faaaf64aac1de9ba83e9a9a4a395f45ded0467f47040c61",
+    "scripts/wp20-report-host-disposable.mjs": "dbb32f48db43ce0e6b3f009092319ac68ace8f2e9ed2fdac2b73667d64682753",
+    "package.json": "6ec227aad916381e8b99961faffd6840e726354aff7556a8c68ae2849bdd9e9a",
+    "scripts/metric-report-host-artifacts.mjs": "5ad7af0e56f3c2762e54f1cc4eb7484196e35c071861258b47eb05d1188bcdbd",
+    "scripts/metric-report-host-runtime.mjs": "f9e6d38c488c058bef72434ad6e5d2daed13085d1a67cc7d839b0ec5b11b0ebf",
+    "scripts/metric-report-host-build-gate.mjs": "8df201bcec912b80f1f436ff8801e8f5bb788e29acf9197944916af6eca66a0f",
+    "scripts/metric-report-host-contract.test.mjs": "c8c5024759764548b48817f44a1f2374c61e50bfea5f8b5780910b8c08297484",
+    ".ai-team/reports/wp20-report-host-review.ps1": "d04d8ac926173434e000584766e65364f9da8440972b3bb0c446c758dd023765",
+    ".ai-team/reports/wp20-report-host-validate.py": "68c5940f167040b94c2db1cf6e2f6fa2ff7d980a2d3e999e03bbfcaeea7b40b9",
+    ".ai-team/reports/wp20-report-host-checkpoint.py": "41d1d95f7115a6f95cefd13a18abf683d86a896e428f14970d7919f83c94dbc5",
+    "docs/launch/wp20-metric-report-host.md": "3ac2539c19fdf244fe70b7fb77fd1e535adb44f0dba762dadb14f90084aa6c3a",
+    "docs/launch/product-audit-20261012-handoff.md": "9b25c56a88fb4e73518afa208e0ac64b6a6b10f198b53ebaf2f85dab1aa88afd",
+    "docs/launch/product-audit-20261011-progress.md": "071eb8cb1888792bbbd3f39b228785a09e0e66c8768766c2c7fce09ed8675b7e",
+    "docs/launch/wp20-coverage-producer-contract.md": "07d569893a6672dd3a5cc2e39528b387a9090996003a731cc1168bf7408b90e0",
+    ".ai-team/state/goal-state.json": "8ce0a35d9e5dd543ff475b11b65923e29b8954006fc0d953528e254aafd3f36c",
+    ".ai-team/logs/goal-progress.md": "b7ac11297b20870352c3c36ebb57f892852b89087983050ee6bb8f61ed73ab14"
+  }
+}

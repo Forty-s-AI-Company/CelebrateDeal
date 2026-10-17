@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; new context resolver/tests only plus evidence. Existing public page gates unchanged. Independent review required.

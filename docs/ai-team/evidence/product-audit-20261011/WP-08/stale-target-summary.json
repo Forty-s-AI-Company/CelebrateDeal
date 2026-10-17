@@ -1,0 +1,26 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:4ec2f4aeba9747f45ace9f63008ea4d931158ad3a6e1590ab01a157087c79b7b",
+  "changed_files": [
+    "src/components/landing-pages/funnel-element-inspector.tsx"
+  ],
+  "validation": {
+    "targeted": 79,
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "terminology": "PASS",
+    "component_browser_a11y": 52,
+    "hashes": "unchanged"
+  },
+  "review": {
+    "observed_model": "claude-sonnet-5-5",
+    "effort": "unknown",
+    "stale_target_MAJOR": "repair consistent; no BLOCKER/MAJOR on followup",
+    "remaining_disposition": [
+      "Speculative stale extra fields: helper at src/lib/funnel-element-inspector.ts183-196 reconstructs whitelisted action per type, no draft spread",
+      "Speculative undefined actions: FunnelNode actions is required array at funnel-page-document.ts144, schema defaults[] at130; defensive key fallback harmless",
+      "NIT duplicate status/draft tab discard retained as nonblocking existing interaction limitation"
+    ]
+  },
+  "remaining": "operations/editor broader integration review and canonical WP acceptance; full goal remains20WP"
+}

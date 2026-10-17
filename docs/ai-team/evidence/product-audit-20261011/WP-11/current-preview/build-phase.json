@@ -1,0 +1,8 @@
+{
+  "observation": "terminal_log_reader",
+  "preflight_failure_count": 0,
+  "compiled": true,
+  "typechecking": true,
+  "generating_pages": false,
+  "raw_logs_persisted": false
+}

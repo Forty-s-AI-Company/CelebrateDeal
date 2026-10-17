@@ -1,0 +1,13 @@
+{
+  "status": "COVERED_BY_EXISTING_HUMAN_AUTHORIZATION",
+  "source": "Direct human instructions in this conversation",
+  "quote": "另外 我記得我說過了 這個session對話 都核准",
+  "additional_scope_quote": "核准獨立 Preview 部署",
+  "scope": "Requested editable template generation/apply/publish in local/Preview nonproduction only; existing Goal includes these six templates. No repeated content-permission question.",
+  "not_inferred": [
+    "Production deployment or production content adoption",
+    "Legal operator/contact/effective facts",
+    "Provider contracts, actual approvals or actual delivery"
+  ],
+  "actual_content": "Six new templates are editable generic course/lecture layouts without fabricated results/price/limited places; no unverified real business facts substituted."
+}

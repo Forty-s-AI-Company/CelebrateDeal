@@ -1,0 +1,12 @@
+{
+  "sourceHashes": {
+    "src/lib/quick-webinar.ts": "027d04377277df5375bf034d346a87db9af0ecdf41c821bbe2ba02fdf5eb4599",
+    "src/lib/sales-project-publication.ts": "ece7265c8c20c9bf53e7dad0a5a694ad11a45b3505e4bd14d8ae9d5f49c7d567",
+    "src/app/actions/quick-webinar-actions.ts": "7426202d270ea9ed10f858262a0d8c63708bc1cd114b4ec554fbeeef128e0ddf",
+    "src/app/actions/sales-workspace-actions.ts": "046ec76d0a50a4a6c8bc5b9be2ac6b6675ad7a1586cce782e454bb4ef79a4053",
+    "src/components/quick-webinar-form.tsx": "d0170e9e7483d6d271af0aeaa39ce46338232bb649c523917a0ebe0d0f8ef9c2",
+    "src/app/(app)/lives/new/page.tsx": "667a4ea2153831a8970a564bcc3ef66ca5aa73b58da318493cf691c0fc4c0fb0"
+  },
+  "contextChars": 16415,
+  "scope": "Full3server modules; oldaction wrapper/UI/page change summarized; sourceactual review not validation claims"
+}

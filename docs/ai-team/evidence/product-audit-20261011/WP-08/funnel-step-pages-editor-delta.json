@@ -1,0 +1,6 @@
+[
+  {
+    "before": "mmerceEnabled={active.step.type === \"order_form\"} stepIds={state.flow.steps.map((step) => step.id)} disabled={disabled || !active.editable} onChange={(page) => {\n      if (disabled) return false;\n    ",
+    "after": "mmerceEnabled={active.step.type === \"order_form\"} stepIds={state.flow.steps.map((step) => step.id)} stepNames={Object.fromEntries(state.flow.steps.map((step) => [step.id, step.name]))} disabled={disabled || !active.editable} onChange={(page) => {\n      if (disabled) return false;\n    "
+  }
+]

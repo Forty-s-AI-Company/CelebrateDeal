@@ -1,0 +1,21 @@
+{
+  "scope": "Incremental ingress census/gateway only; not full Goal diff",
+  "files": {
+    "src/lib/live-metric-ingress.ts": "7c2d967a1ebd5ac68277611714d0c2467397b36c2c9926877d22fbc293d6d823",
+    "src/lib/live-metric-ingress.test.ts": "67c903fd35038431f0a28aea80f849b83936d6560b6dcc67ae13ba6c32aafce0",
+    "src/lib/live-metric-ingress-gateway.ts": "db8310b21fdfbb58a547809b80f206fc70825bed7a197cfe7010b0f7b80c55e7",
+    "scripts/wp20-ingress-disposable.mjs": "fb2af3e1a279f60fbffc362fd84cbdf1344e48e07d3d3b22b001f7d11a1d1203",
+    "prisma/schema.prisma": "f55ef5a79b1626f5f4db6bcf8291aad91c2e466e85d8ce4aa99e36af610cfd16",
+    "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql": "d3f2e4c62c04a0b37e76ba7a4ec78de92625984c7a43b141645c353b39361070",
+    ".ai-team/reports/wp20-ingress-route.py": "d601b3193897985228bfb7e7c66567ffff20e5ef0e0794309fdb69e58610394b",
+    ".ai-team/reports/wp20-ingress-validate.py": "19926e7959340fa69668546b7a9c6552bd42cf4dd50748d71572ef9502d03ce9",
+    ".ai-team/reports/wp20-ingress-review.ps1": "bffeea28b4d3dc1b8b73f872c388ca7a73930c93ae01eb0016d868a90d73bcd0",
+    ".ai-team/reports/wp20-ingress-gateway-review.ps1": "a87e648553ac5d51120206a1a42cfe32611c42aca9b3cba86201b8779dd7ffd8",
+    ".ai-team/reports/wp20-ingress-checkpoint.py": "015194dd6c652c92cc769b0c3b9c13d6848a7b6717dd38be0529a60094c30792",
+    "docs/launch/wp20-ingress-census.md": "6c2fe72b90041736c5ffc1d9db888f804c1520700e004ce48fb5dd0f6875b35c",
+    "docs/launch/product-audit-20261012-handoff.md": "a4b58a73730a3a13cae3fe7261655cfa7cbda509c5e9ee0397e96fd46144a508",
+    "docs/launch/product-audit-20261011-progress.md": "38516e3d73544696f3e7414eef1959129c3350207af3f376c67d75e35a86ee7d",
+    ".ai-team/state/goal-state.json": "0bf26795f1a23439816f9b85f722ec385553dd68d52ea133fe63a32760a98657",
+    ".ai-team/logs/goal-progress.md": "baf95c690816a6211a22a1a873178a84e9a162af42486e79e4fd760b321ce7ca"
+  }
+}

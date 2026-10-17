@@ -1,0 +1,18 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:e9d482014206c651db7c99c9090030ef144d1f337869e296746dac6e00c58ca5",
+  "targeted": {
+    "status": "PASS",
+    "count": 39
+  },
+  "scoped_lint": "PASS",
+  "typecheck": "NOT_RUN",
+  "independent_review": "NOT_RUN",
+  "real_database_http": "NOT_RUN",
+  "timing_limit": "Offsets are lower-bound estimates; RTT uncertainty must be carried into integration/report interpretation. No exact wall-time claim.",
+  "remaining": [
+    "player integration",
+    "uncertainty treatment and end-to-end reconciliation",
+    "independent Auth review"
+  ]
+}

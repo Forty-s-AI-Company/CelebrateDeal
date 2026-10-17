@@ -85,7 +85,7 @@ export const FUNNEL_BLOCK_CATEGORY_METADATA: Readonly<Record<FunnelBlockCategory
   features: { id: "features", label: "功能特色", description: "多欄特色與重點說明", variantCount: 3 },
   page_footers: { id: "page_footers", label: "頁尾", description: "品牌資訊、導覽與社群連結", variantCount: 3 },
   team_presentation: { id: "team_presentation", label: "團隊介紹", description: "團隊成員照片、職稱與介紹", variantCount: 3 },
-  welcome: { id: "welcome", label: "歡迎區塊", description: "Hero 歡迎訊息與行動按鈕", variantCount: 3 },
+  welcome: { id: "welcome", label: "歡迎區塊", description: "主視覺歡迎訊息與行動按鈕", variantCount: 3 },
   price_plans: { id: "price_plans", label: "價格方案", description: "方案比較、推薦方案與行動按鈕", variantCount: 3 },
   page_headers: { id: "page_headers", label: "頁首", description: "品牌名稱與導覽選單", variantCount: 3 },
   testimonials: { id: "testimonials", label: "客戶見證", description: "照片、引言與客戶資訊", variantCount: 3 },
@@ -252,7 +252,7 @@ registerVariants("opt-in-form", "opt_in_forms", "名單表單", "圖片與可編
 registerVariants("features", "features", "功能特色", "三張可獨立編輯的特色卡片。", features);
 registerVariants("page-footer", "page_footers", "品牌導覽頁尾", "品牌資訊、導覽選單與社群分享。", pageFooter);
 registerVariants("team", "team_presentation", "團隊介紹", "團隊照片、職稱與介紹。", teamPresentation);
-registerVariants("welcome", "welcome", "歡迎 Hero", "品牌歡迎訊息與主要行動按鈕。", welcome);
+registerVariants("welcome", "welcome", "歡迎主視覺", "品牌歡迎訊息與主要行動按鈕。", welcome);
 registerVariants("price-plans", "price_plans", "價格方案", "含推薦方案標示的價格比較。", pricePlans);
 registerVariants("page-header", "page_headers", "品牌導覽頁首", "品牌名稱與頁內導覽。", pageHeader);
 registerVariants("testimonials", "testimonials", "客戶見證", "照片、引言、姓名與職稱均可獨立編輯。", testimonials);

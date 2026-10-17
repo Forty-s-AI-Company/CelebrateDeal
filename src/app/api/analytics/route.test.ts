@@ -19,7 +19,7 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 vi.mock("@/lib/product-analytics", () => ({ captureProductEvent: mocks.captureProductEvent }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/live-quota-admission", () => ({
   hasActiveLiveViewerSession: mocks.hasActiveLiveViewerSession,
   hashLiveViewerToken: mocks.hashLiveViewerToken,

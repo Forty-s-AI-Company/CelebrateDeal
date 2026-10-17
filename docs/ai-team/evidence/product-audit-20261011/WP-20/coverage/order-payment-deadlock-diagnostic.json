@@ -1,0 +1,95 @@
+{
+  "status": "PASS",
+  "diagnostics": [
+    {
+      "orderIsolation": "ReadCommitted",
+      "paymentIsolation": "ReadCommitted",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "ReadCommitted",
+      "paymentIsolation": "RepeatableRead",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "ReadCommitted",
+      "paymentIsolation": "Serializable",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "RepeatableRead",
+      "paymentIsolation": "ReadCommitted",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "RepeatableRead",
+      "paymentIsolation": "RepeatableRead",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "RepeatableRead",
+      "paymentIsolation": "Serializable",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "Serializable",
+      "paymentIsolation": "ReadCommitted",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "Serializable",
+      "paymentIsolation": "RepeatableRead",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    },
+    {
+      "orderIsolation": "Serializable",
+      "paymentIsolation": "Serializable",
+      "loser": 1,
+      "code": "UNKNOWN",
+      "deadlockMessage": true,
+      "serializationMessage": false,
+      "lockTimeoutMessage": false,
+      "type": "PrismaClientUnknownRequestError"
+    }
+  ]
+}

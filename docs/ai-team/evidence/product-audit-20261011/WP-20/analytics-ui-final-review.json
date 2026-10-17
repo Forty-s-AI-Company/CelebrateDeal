@@ -1,0 +1,183 @@
+{
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "payment"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 14000,
+      "expected_duration": 30,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "attempts": [
+    {
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "finalModel": "claude-opus-5-5",
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "accepted": false,
+  "review": {
+    "summary": "Fixes 1–3 look resolved in the supplied page helper, card and test lines. Fix 1: when the report is not ready, every card shows only the value 尚不可計算 with no cause text, and the section state message explains the real state. The no-report test still checks that all 5 cards are unavailable with no numbers. The ready missing_data test now checks for the original cause text. Fix 2: the new tests check that unexpected errors from the candidate read and the ready-report read are passed through (rejects.toBe), and that the 5 malformed available-metric cases show 尚不可計算 and 報表資料尚待確認. I checked each case against the guard in metricDisplay. Fix 3: the comment is corrected. Authorization, candidate binding and the expiry/revision reader are unchanged in the supplied text. No blocker or major issue found. Two non-blocking gaps remain. MINOR: inside a ready report, metricDisplay still shows the hard-coded cause for any metric that is not available and not a zero denominator. That includes a missing metric entry, an unknown status, and an unavailable or not_applicable metric with a reason other than missing_data. In those cases the page states a guessed cause instead of the invalid-data message. NIT: the no-report and unready tests check that only 2 of the 5 cause texts are absent. Per the brief, tsc is still rerunning and WP20 remains NOT_READY; an empty or non-blocking findings list does not certify tests or release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "analytics/page.tsx",
+        "area": "metricDisplay: `if (metric.status !== 'available') return { value: '尚不可計算', reason: missingReason };`",
+        "issue": "In a ready report, the hard-coded cause for a metric is shown for any status other than available or not_applicable/zero_denominator. That includes a missing metric key (record() returns {}), an unknown status, and an unavailable or not_applicable metric with a reason other than missing_data. These are malformed or unknown report states, but the page shows a specific guessed source cause instead of the 報表資料尚待確認 message that Fix 2 uses for malformed available metrics.",
+        "evidence": "The status check does not look at metric.reason except for zero_denominator. For example, a missing registrationRate key yields status undefined, so the page shows 缺少報名頁的不重複訪客數…. The tests only cover reason 'missing_data' for the cause text.",
+        "impact": "In an edge case, the page can show a misleading cause for why a metric is unavailable. No numbers are wrong and no stale data is shown, so this does not block.",
+        "recommended_fix": "Show missingReason only when status === 'unavailable' && reason === 'missing_data'. For every other non-available status or reason, return { value: '尚不可計算', reason: '報表資料尚待確認。' }.",
+        "required_test": "In page.test.tsx, set up a ready report where registrationRate is absent, then {status:'unavailable',reason:'other'}, then {status:'bogus'}. Assert that the card shows 尚不可計算 and 報表資料尚待確認, and does not contain 不重複訪客數.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "page.test.tsx",
+        "area": "no-report it.each and the queued/running/failed/stale it.each",
+        "issue": "The tests that check no guessed cause is shown only check that 2 of the 5 cause texts are absent (不重複訪客數, and 完成觀看與同一位觀眾 in the no-report case only). The attendance, completion and average-viewing cause texts are never checked.",
+        "evidence": "expect(section).not.toContain(\"不重複訪客數\"); expect(section).not.toContain(\"完成觀看與同一位觀眾\"); the queued/running/failed/stale cases check only '不重複訪客數'.",
+        "impact": "If one of the other three cause texts came back on unready cards, the tests would not catch it. Behavior is correct today because the page uses reason ''.",
+        "recommended_fix": "Loop over coreMetricDefinitions' reason strings, or a duplicated fixed list, and assert that none appears when the state is not ready.",
+        "required_test": "Same tests, with a not.toContain assertion for all 5 cause strings.",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "reviewed": true
+}

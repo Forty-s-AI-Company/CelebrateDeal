@@ -1,0 +1,14 @@
+{
+  "source_snapshot": "sha256:06fdfd19da5f262db42a37b83a06837084747ea7eafd88132d3c70c3cf0e61f6",
+  "harness_sha256": {
+    "browser.cjs": "e8b593d10e7587bf070652ccaaa1fe82f41bc33cfec490d02e56ad17d996d102",
+    "browser-lp.cjs": "ff44c52c11224b8c17881082d1f8220d68d29730939af81fea4361778e56776f",
+    "browser-lp-js.cjs": "c715e51dfe9f309b463ef060d18fec0f3a9f1f88cd8b955ce35b15cd5ff39764",
+    "browser-webinar.cjs": "e4a1595213bab9dadf0b2460cb273f9bb4b038109a63d1ac32ceaa2ba9387089",
+    "browser-webinar-js.cjs": "dcc8bef4edda61d8d5484f70b88c2337acbf981af94807aec6bd16ce1a1fe8f9",
+    "browser-partner.cjs": "2b607659ee87ca400c50c4533b411aa7fdcae774560a1f19258ecc8f23257ffc",
+    "verify-public-matrix.py": "afc40aeae83ddc5d10b9e42c20c2ba411b828634d30a0be055d65f2c0305bb97",
+    "run-contrast.py": "bda5fd855bf041575dfd9868ee18a901e11051967e911206a17d46f7b74a385c"
+  },
+  "scope": "24 synthetic public entry cases; 400 and successful resubmission; JS cases assert no serious/critical axe issues. Status403/404/429 tested separately on form. 503 queue failure covered by real route/DB with queue boundary fault injection, not browser."
+}

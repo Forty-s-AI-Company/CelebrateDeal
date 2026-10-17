@@ -1,0 +1,17 @@
+{
+  "status": "FAIL",
+  "stage": "readiness-quota",
+  "scope": "Owned loopback synthetic DB and recorded VOD; fixture authorization, not signed Next HTTP",
+  "checks": {
+    "unverifiedReadinessWritesNoMetrics": "PASS",
+    "realBrowserVerificationRecoveryAndReplayWithoutReload": "PASS",
+    "oldUnmatchedIntakeRetainedAndDistinctNewSessionAnchors": "PASS",
+    "changedVerificationEpochDoesNotAllocateRecovery": "PASS"
+  },
+  "errorType": "PrismaClientKnownRequestError",
+  "errorCode": "23514",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

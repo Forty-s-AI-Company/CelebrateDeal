@@ -1,0 +1,15 @@
+{
+  "sourceHashes": {
+    "src/lib/checkout-followup.ts": "b9f87c6892f4137a56a9423d7a280b047d2406978784b50ecc1e371ff7962097",
+    "src/lib/checkout-followup.test.ts": "814251593b6b734d056089d43a4f7be73e39e721dae959234b664397c5e9f8c3",
+    "src/lib/email-delivery.ts": "3f42bc52eba290fa6de60921f881c0a41330484af965c7594f7abd87cf2499f1",
+    "src/lib/email-delivery.test.ts": "ae6de03c7d827ccfe30ad35df4c4f6b965b298e8142a2aa42be3b9584bb69d46",
+    "src/app/api/jobs/email-deliveries/route.ts": "8a58e97255db6d9129be5b525cac34a38c22e7c6cff208e4527e8592bb05304c",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "cb55588fcdd9221e95631a4da99ee715e36eb3ef6aed0f9d87d7b26d67d0b240",
+    "src/lib/completed-followup.ts": "549d4e0ce99e82cf66f81e094a0816cc8da797f140aa05848fc75b03a72c0e2c",
+    "src/lib/completed-followup.test.ts": "778a429c372abfcf22513ef54e95dad251b24bf72b53f38995c6128bf89c6805"
+  },
+  "supplied": "full completed-followup.ts; integration summary, not full integration source",
+  "contextChars": 19679,
+  "wholeWP18": "NOT_READY"
+}

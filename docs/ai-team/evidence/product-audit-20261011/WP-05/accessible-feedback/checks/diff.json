@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "diff", "revision": "sha256:3ce0ab65dd20117476df69ce55d7a5e7f3e2833dc4c49674f6e990b530ef7569", "status": "FAIL", "exit_code": 2, "duration_seconds": 0.062}

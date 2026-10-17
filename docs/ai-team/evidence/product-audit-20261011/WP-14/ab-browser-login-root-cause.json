@@ -1,0 +1,17 @@
+{
+  "observed": {
+    "path": "/login",
+    "error": "temporarily_unavailable",
+    "sessions": 0,
+    "login_success": 0
+  },
+  "cause": "New browser spec omitted the existing WP17 synthetic ingress headers while reusing the runner trusted-proxy configuration. trusted-entry-rate-limit returns503 if getEntryClientIp cannot authenticate proxy source, and login maps503 to temporarily_unavailable.",
+  "source": [
+    "src/lib/trusted-entry-rate-limit.ts",
+    "src/lib/entry-rate-limit-headers.ts",
+    "src/lib/entry-client-ip.ts",
+    "tests/e2e/wp17-quick-webinar.spec.ts"
+  ],
+  "fix": "Use the same existing synthetic loopback request headers in this spec; no auth/IP policy or shared runner edits.",
+  "status": "SOURCE_CONFIRMED_RUNTIME_RECHECK_PENDING"
+}

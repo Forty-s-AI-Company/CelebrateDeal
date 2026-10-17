@@ -1,0 +1,80 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "engine": "chromium",
+      "entry": "root",
+      "behavior": "closed",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": true,
+      "noResubmit": true,
+      "normalDeadlinePreserved": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "root",
+      "behavior": "redirect",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": "configured-target-remains-viewable",
+      "noResubmit": true,
+      "normalDeadlinePreserved": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "step",
+      "behavior": "closed",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": true,
+      "noResubmit": true,
+      "normalDeadlinePreserved": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "step",
+      "behavior": "redirect",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": "configured-target-remains-viewable",
+      "noResubmit": true,
+      "normalDeadlinePreserved": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "firefox",
+      "entry": "root",
+      "behavior": "closed",
+      "native": true,
+      "readonlyDraft": true,
+      "sourceBinding": true,
+      "verifiedSuccess": true,
+      "noResubmit": true,
+      "normalDeadlinePreserved": true,
+      "noMailSent": true
+    }
+  ],
+  "cleanup": true,
+  "step": "invalid-submit",
+  "controls": [
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "role": null,
+      "label": "開啟最新消息",
+      "inMain": false
+    }
+  ],
+  "stage": "firefox:root:redirect",
+  "errorType": "TimeoutError",
+  "assertion": {},
+  "failureLine": "40"
+}

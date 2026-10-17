@@ -1,0 +1,172 @@
+{
+  "completed": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "reviewed": true,
+  "accepted": false,
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "Code review of the remediation only; this does not certify tests. All three earlier findings look fixed in code. (1) LeadForm: RegistrationSubmissionFeedback now sits at a fixed child position between two conditional slots, so its live regions stay mounted when the form switches to success. The success paragraph has tabIndex=-1 and gets focus through an effect after the submit button unmounts. Batched setStatus followed by form.reset() is safe. (2) On a successful JS submit, registrationRetry and submitted are removed with replaceState. (3) The home page awaits getCurrentVendor() before calling redirect(), and has no root loading.tsx or Suspense. That matches the reported HTTP 307, and both identity branches are unit-tested, including that redirect is not called before identity resolves. No BLOCKER or MAJOR defects found. Two low-impact NITs on how focus behaves are listed below. The real browser test of success focus is still unverified because the Docker DB fixture was unavailable.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "src/components/registration-submission-feedback.tsx",
+        "area": "success focus effect (focusSuccess/successMessage useEffect) + role=status paragraph",
+        "issue": "Moving focus onto an element that is also a polite live region whose text just changed can make some screen readers read the success message twice: once as the live-region update and once when focus lands on it.",
+        "evidence": "The success <p> has role=\"status\" aria-live=\"polite\" aria-atomic=\"true\", and its text changes from the pending text to successMessage at the same moment the effect calls successRef.current?.focus().",
+        "impact": "Repeated speech for screen-reader users. It does not block the task and no information is lost.",
+        "recommended_fix": "Optional. Either keep the focus move and accept the duplicate, or point focus at a non-live heading/container that wraps the confirmation, so the live region announces once and focus only gives position.",
+        "required_test": "Manual screen-reader check (NVDA/VoiceOver) of a successful submit, or leave as known behavior. No automated test required.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/lead-form.tsx",
+        "area": "initial status from retry?.submitted with focusSuccess",
+        "issue": "When the form mounts already in the success state (the no-JS POST then redirect path with retry.submitted), the focus effect runs on mount. It focuses and scrolls to the success message on page load, not in response to a user action in this session.",
+        "evidence": "useState initial status is \"success\" when retry?.submitted. RegistrationSubmissionFeedback's effect fires on first commit because successMessage is non-empty, pending is false, and focusSuccess is true.",
+        "impact": "The page jumps to the form on load or refresh of the success URL. This is probably intended for the fallback flow, but it is a side effect the repair added.",
+        "recommended_fix": "If unintended, focus on mount only when coming straight from the fallback redirect, or skip focus on the first render when the initial status was already success. Otherwise, document the behavior as intended.",
+        "required_test": "Unit test rendering LeadForm with a retry context where submitted=true, asserting the expected focus behavior on mount.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5"
+}

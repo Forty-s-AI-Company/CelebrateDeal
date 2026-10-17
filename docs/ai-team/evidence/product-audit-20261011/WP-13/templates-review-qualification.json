@@ -1,0 +1,13 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:25db39dca621e11af50febb6d0fd6a4b2f53142027333270344cee1ef58deea0",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "provider_receipt": "templates-final-transport-review.json",
+  "coverage": "Full current3affected product files. Other3 byte-identical to prior canonical full6review; proof templates-final-review-source.json. Prior MAJOR on NULL ordering closed by finalreview and actualPG150rowcase."
+}

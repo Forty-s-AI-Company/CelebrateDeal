@@ -1,0 +1,17 @@
+{
+  "status": "READY",
+  "work_package": "WP-01",
+  "acceptance_mode": "All three unchanged product subscopes revalidated by canonical assess_acceptance; registration evidence revalidated against its own current snapshot and added to publication gate. No receipt revision rewritten.",
+  "aggregate_revision": "sha256:28091b888bcc5c7f39107f3d64ce85e1246004116808736555fa56b73daf18cc",
+  "canonical_gate_receipts": [
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\aggregate\\no-project-acceptance-revalidated.json",
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\aggregate\\consultation-acceptance-revalidated.json",
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\aggregate\\dual-publication-expanded-acceptance.json"
+  ],
+  "remaining_nonblocking": [
+    "Earlier Firefox navigation failure did not reproduce; root cause unknown",
+    "Publication load/concurrency testing not executed; not an explicit WP01 acceptance requirement",
+    "Email delivery and email-confirmation end-to-end are not claimed by registration queue evidence"
+  ],
+  "goal_complete": false
+}

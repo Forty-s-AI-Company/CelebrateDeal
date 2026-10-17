@@ -1,0 +1,11 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "scope": "Attribution repair only; all tool sessions completed."
+}

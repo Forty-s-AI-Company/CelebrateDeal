@@ -1,0 +1,375 @@
+Independent precise re-review. Severity MUST be BLOCKER, MAJOR, MINOR, NIT only. Max 4 concise findings. Prior review registration-projection-review found MAJOR old-scope UPDATE fence and MAJOR TRUNCATE bypass, MINOR error mapping tests and MINOR retained ledger on Live-only delete. Reassess only these and the new no-truncate trigger. Supplied legacy scope guard makes scope move impossible; exact runtime probe received23514. New projection no-truncate trigger passes real TRUNCATE CASCADE probe. Dedicated original source proof lifecycle test: commit projection delete -> new report unknown; recreate -> new report unknown; re-audit -> complete. Error mapping has real two-connection revision-to-insert race plus four unit refusal tests. Latest disposable108 migrations/full runnerPASS. Ledger retains deleted-live events until vendor deletion by existing design: MINOR remains open; no claim fixed. Other broad review concerns (count performance, broad scope invalidation, full report commit interleavings, app role separation) remain open. Do not duplicate excluded issues into a new audit, do not approve whole Goal. Return explicit disposition of the two previous MAJOR issues in summary and only current findings. No tools or changes.
+
+FILE prisma/migrations/20261015200000_live_metric_registration_projection_revision/migration.sql
+1: -- Coverage proofs bind both authoritative sources and materialized registrations.
+2: -- Append events instead of updating a shared counter on the request path.
+3: CREATE FUNCTION public.wp20_metric_registration_projection_revision() RETURNS trigger
+4: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+5: DECLARE fact RECORD;
+6: BEGIN
+7:  IF TG_OP='DELETE' THEN fact:=OLD; ELSE fact:=NEW; END IF;
+8:  -- Parent removal discards its proofs too; never recreate events during a vendor cascade.
+9:  IF EXISTS(SELECT 1 FROM public."Vendor" WHERE id=fact."vendorId")
+10:   AND EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=fact."versionId"
+11:    AND "vendorId"=fact."vendorId" AND "liveId"=fact."liveId") THEN
+12:   INSERT INTO public."LiveMetricRegistrationSource" ("vendorId","liveId") VALUES (fact."vendorId",fact."liveId");
+13:  END IF;
+14:  RETURN NULL;
+15: END $$;
+16: CREATE TRIGGER "LiveMetricRegistration_source_revision" AFTER INSERT OR UPDATE OR DELETE ON public."LiveMetricRegistration"
+17:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_registration_projection_revision();
+18: REVOKE ALL ON FUNCTION public.wp20_metric_registration_projection_revision() FROM PUBLIC;
+19: DO $$ DECLARE api_role TEXT; BEGIN
+20:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+21:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+22:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_registration_projection_revision() FROM %I',api_role);
+23:   END IF;
+24:  END LOOP;
+25: END $$;
+26: 
+27: -- Statement-level deletion bypasses row revision triggers. Fail closed.
+28: CREATE TRIGGER "LiveMetricRegistration_no_truncate" BEFORE TRUNCATE ON public."LiveMetricRegistration"
+29:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+
+FILE src/lib/live-metric-registration-coverage.ts
+1: import { createHash } from "node:crypto";
+2: import { Prisma, type PrismaClient } from "@prisma/client";
+3: import { auditMetricRegistrationSources } from "./live-metric-registration-source-audit";
+4: type Scope = Parameters<typeof auditMetricRegistrationSources>[1];
+5: /** Private backend producer. Never accepts caller-supplied counts, proof or
+6:  * completeness. Only an internally completed, bidirectionally matched audit
+7:  * can publish; current revisions are checked again in the write transaction.
+8:  */
+9: export async function publishRegistrationCoverage(db: Pick<PrismaClient, "$transaction">, value: Scope) {
+10:   const scope = { vendorId: value.vendorId, liveId: value.liveId, versionId: value.versionId,
+11:     startAt: new Date(value.startAt), endAt: new Date(value.endAt) };
+12:   const audit = await auditMetricRegistrationSources(db, scope);
+13:   if (audit.status !== "enumerated") return { status: "unavailable" as const };
+14:   if (audit.count !== audit.projectionCount || audit.outcomes.matched !== audit.count
+15:     || audit.projectionOutcomes.matched !== audit.projectionCount) return { status: "incomplete" as const };
+16:   const proofId = createHash("sha256").update("registration-coverage-v1:" + audit.digest).digest("hex");
+17:   try {
+18:   return await db.$transaction(async tx => {
+19:     await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true),set_config('lock_timeout','2000',true)`);
+20:     const [version] = await tx.$queryRaw<{ sourceRevision: bigint }[]>(Prisma.sql`
+21:       SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=${scope.versionId}
+22:         AND "vendorId"=${scope.vendorId} AND "liveId"=${scope.liveId} FOR SHARE`);
+23:     if (!version || version.sourceRevision !== audit.sourceRevision) return { status: "source_changed" as const };
+24:     const [source] = await tx.$queryRaw<{ revision: bigint }[]>(Prisma.sql`
+25:       SELECT public.wp20_metric_registration_revision(${scope.vendorId},${scope.liveId}) AS revision`);
+26:     if (source.revision !== audit.registrationRevision) return { status: "source_changed" as const };
+27:     await tx.$queryRaw(Prisma.sql`
+28:       INSERT INTO "LiveMetricCoverageAudit" (id,"vendorId","liveId","versionId",kind,status,"startAt","endAt",
+29:         "sourceRevision","registrationRevision","registrationCount","auditDigest")
+30:       VALUES (${proofId},${scope.vendorId},${scope.liveId},${scope.versionId},'registrations','covered',${scope.startAt},${scope.endAt},
+31:         ${audit.sourceRevision},${audit.registrationRevision},${audit.count},${audit.digest}) ON CONFLICT (id) DO NOTHING`);
+32:     return { status: "recorded" as const, proofId };
+33:   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+34:   } catch (error) {
+35:     // A source commit may land after the explicit revision read. Only the
+36:     // dedicated DB guard is a stale-proof result; other database errors propagate.
+37:     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2010"
+38:       && error.meta?.code === "23514"
+39:       && typeof error.meta?.message === "string"
+40:       && error.meta.message.includes("registration coverage source mismatch")) {
+41:       return { status: "source_changed" as const };
+42:     }
+43:     throw error;
+44:   }
+45: }
+
+FILE src/lib/live-metric-registration-coverage.test.ts
+1: import { beforeEach, expect, it, vi } from "vitest";
+2: import { Prisma } from "@prisma/client";
+3: const audit = vi.hoisted(() => vi.fn());
+4: vi.mock("./live-metric-registration-source-audit", () => ({ auditMetricRegistrationSources: audit }));
+5: import { publishRegistrationCoverage } from "./live-metric-registration-coverage";
+6: const scope = { vendorId: "v", liveId: "l", versionId: "version", startAt: new Date(0), endAt: new Date(100) };
+7: beforeEach(() => { audit.mockReset().mockResolvedValue({ status: "enumerated", count: 0, projectionCount: 0,
+8:   outcomes: { matched: 0 }, projectionOutcomes: { matched: 0 }, digest: "a".repeat(64) }); });
+9: const failDb = (error: unknown) => ({ $transaction: vi.fn().mockRejectedValue(error) }) as unknown as Parameters<typeof publishRegistrationCoverage>[0];
+10: const sqlError = (code: string, message: string) => new Prisma.PrismaClientKnownRequestError("Database guard rejected write", {
+11:   code: "P2010", clientVersion: "test", meta: { code, message },
+12: });
+13: it("reports a dedicated stale-proof guard as source_changed", async () => {
+14:   await expect(publishRegistrationCoverage(failDb(sqlError("23514", "registration coverage source mismatch")), scope))
+15:     .resolves.toEqual({ status: "source_changed" });
+16: });
+17: it.each([
+18:   ["23514", "unrelated integrity constraint"],
+19:   ["55P03", "registration coverage source mismatch"],
+20: ])("preserves unrelated database failures %s", async (code, message) => {
+21:   const error = sqlError(code, message);
+22:   await expect(publishRegistrationCoverage(failDb(error), scope)).rejects.toBe(error);
+23: });
+24: it("does not convert an audit infrastructure failure into a write race", async () => {
+25:   const error = sqlError("23514", "registration coverage source mismatch");
+26:   audit.mockRejectedValue(error);
+27:   const db = failDb(new Error("Writer must not run"));
+28:   await expect(publishRegistrationCoverage(db, scope)).rejects.toBe(error);
+29:   expect(db.$transaction).not.toHaveBeenCalled();
+30: });
+
+FILE scripts/wp20-registration-matched-audit.mjs
+1: import { verifyRegistrationProofMutations } from "./wp20-registration-proof-mutation-probe.mjs";
+2: import assert from 'node:assert/strict';
+3: /** Exercise the real lifecycle with an isolated synthetic live, not forged audit rows. */
+4: export async function verifyMatchedRegistrationAudit(db, service, vendor) {
+5:  const form=await db.registrationForm.create({data:{vendorId:vendor.id,name:'Synthetic matched audit',slug:'matched-audit',headline:'Synthetic',fields:[]}});
+6:  const video=await db.video.create({data:{vendorId:vendor.id,title:'Synthetic matched audit',videoUrl:'https://example.test/matched.mp4',durationSec:100}});
+7:  const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+8:  const start=new Date(+clock.now-1000),expires=new Date(+clock.now+3600000);
+9:  const live=await db.live.create({data:{vendorId:vendor.id,formId:form.id,videoId:video.id,title:'Synthetic matched audit',slug:'matched-audit',scheduledAt:start}});
+10:  const versionId='matched-audit-version';
+11:  let phase='setup';
+12:  try {
+13:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ($1,$2,$3,$4,'live',$5,true,$6,$7)`,versionId,vendor.id,live.id,video.id,'d'.repeat(64),start,expires);
+14:   // An audited empty source is distinguishable from missing historical evidence.
+15:   const [emptyClock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+16:   const emptyScope={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:emptyClock.now};
+17:   phase='empty-proof';
+18:   const emptyProof=await service.publishRegistrationCoverage(db,emptyScope);
+19:   assert.equal(emptyProof.status,'recorded');
+20:   const [emptyRow]=await db.$queryRawUnsafe('SELECT "registrationCount" FROM "LiveMetricCoverageAudit" WHERE id=$1',emptyProof.proofId);
+21:   assert.equal(emptyRow.registrationCount,0);
+22:   phase='matched-source';
+23:   const submission=await db.formSubmission.create({data:{formId:form.id,liveId:live.id,name:'Synthetic',email:'matched@example.test',verificationStatus:'UNVERIFIED'}});
+24:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistrationCapture" ("submissionId","vendorId","liveId","versionId") VALUES ($1,$2,$3,$4)`,submission.id,vendor.id,live.id,versionId);
+25:   const [verified]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+26:   await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'VERIFIED',verifiedAt:verified.now}});
+27:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistration" (id,"vendorId","liveId","versionId","submissionId","verifiedAt") VALUES ('matched-audit-registration',$1,$2,$3,$4,$5)`,vendor.id,live.id,versionId,submission.id,verified.now);
+28:   // Let DB time move beyond the verified timestamp before closing the half-open window.
+29:   await db.$executeRawUnsafe('DO $$ BEGIN PERFORM pg_sleep(0.005); END $$');
+30:   const [end]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+31:   const scope={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:end.now};
+32:   const result=await service.auditMetricRegistrationSources(db,scope);
+33:   assert.equal(result.status,'enumerated');assert.equal(result.count,1);assert.equal(result.projectionCount,1);
+34:   assert.equal(result.outcomes.matched,1);assert.equal(result.projectionOutcomes.matched,1);
+35:   assert.equal(Object.values(result.outcomes).reduce((a,b)=>a+b,0),1);
+36:   assert.equal(Object.values(result.projectionOutcomes).reduce((a,b)=>a+b,0),1);
+37:   assert.equal(result.coverage,'unknown');
+38:   const repeated=await service.auditMetricRegistrationSources(db,scope);
+39:   assert.equal(repeated.digest,result.digest);
+40:   // Force a committed source change after the audit snapshot closes and before
+41:   // the publisher starts its write transaction. This is a real DB race boundary.
+42:   let transactions=0;
+43:   const racingDb={$transaction:async (callback,options)=>{
+44:    const answer=await db.$transaction(callback,options);
+45:    if (++transactions===1) await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'UNVERIFIED'}});
+46:    return answer;
+47:   }};
+48:   phase='race-count';
+49:   const proofCount=async()=>{const [row]=await db.$queryRawUnsafe('SELECT COUNT(*)::integer AS count FROM "LiveMetricCoverageAudit" WHERE "versionId"=$1',versionId);return row.count;};
+50:   const countBeforeRace=await proofCount();
+51:   phase='race-publish';
+52:   assert.deepEqual(await service.publishRegistrationCoverage(racingDb,scope),{status:'source_changed'});
+53:   assert.equal(await proofCount(),countBeforeRace);
+54:   await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'VERIFIED'}});
+55:   phase='post-race-publish';
+56:   // Commit a new authoritative source after the publisher's revision SELECT,
+57:   // immediately before INSERT; the DB guard must reject it without leaking an error.
+58:   let injected=false;
+59:   const insertRaceDb={$transaction:(callback,options)=>db.$transaction(tx=>callback(new Proxy(tx,{
+60:    get(target,key){
+61:     if(key==='$queryRaw') return async query=>{
+62:      if(!injected && query.strings.join('').includes('INSERT INTO "LiveMetricCoverageAudit"')){
+63:       injected=true;
+64:       await db.formSubmission.create({data:{formId:form.id,liveId:live.id,name:'Synthetic race',email:'race@example.test',verificationStatus:'VERIFIED',verifiedAt:verified.now}});
+65:      }
+66:      return target.$queryRaw(query);
+67:     };
+68:     const member=Reflect.get(target,key);return typeof member==='function'?member.bind(target):member;
+69:    }
+70:   })),options)};
+71:   const beforeInsertRace=await proofCount();
+72:   assert.deepEqual(await service.publishRegistrationCoverage(insertRaceDb,scope),{status:'source_changed'});
+73:   assert.equal(injected,true);assert.equal(await proofCount(),beforeInsertRace);
+74:   await db.formSubmission.deleteMany({where:{liveId:live.id,email:'race@example.test'}});
+75:   const proof=await service.publishRegistrationCoverage(db,scope);
+76:   assert.equal(proof.status,'recorded');
+77:   assert.deepEqual(await service.publishRegistrationCoverage(db,scope),proof);
+78:   const mutationProtection=await verifyRegistrationProofMutations(db,versionId,submission.id);
+79:   phase='coverage-read';
+80:   const coverage=async id=>{
+81:    const [v]=await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1',versionId);
+82:    const lease={vendorId:vendor.id,liveId:live.id,versionId,reportId:id,workerId:'matched-audit-worker'};
+83:    await db.$queryRawUnsafe('SELECT public.wp20_metric_report_create($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::bigint,$8::timestamptz)',vendor.id,live.id,versionId,id,start,end.now,v.sourceRevision,expires);
+84:    assert.equal(await service.claimMetricReport(db,lease),true);
+85:    return db.$transaction(async tx=>{
+86:     await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+87:     return service.readMetricCoverage(tx,lease,'registrations');
+88:    },{isolationLevel:'RepeatableRead',timeout:10000});
+89:   };
+90:   assert.deepEqual((await coverage('matched-audit-before-revoke')).coverage,{status:'complete'});
+91:   // Commit a projection deletion, then create a fresh report. Invalidating only
+92:   // the old report is insufficient: the new reader must reject the old proof.
+93:   assert.equal(await db.$executeRawUnsafe('DELETE FROM "LiveMetricRegistration" WHERE id=$1','matched-audit-registration'),1);
+94:   assert.deepEqual((await coverage('matched-audit-after-projection-delete')).coverage,{status:'unavailable',reason:'unknown_history'});
+95:   assert.deepEqual(await service.publishRegistrationCoverage(db,scope),{status:'incomplete'});
+96:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistration" (id,"vendorId","liveId","versionId","submissionId","verifiedAt") VALUES ('matched-audit-registration',$1,$2,$3,$4,$5)`,vendor.id,live.id,versionId,submission.id,verified.now);
+97:   // Recreating facts does not revive the previous proof; a new audit is required.
+98:   assert.deepEqual((await coverage('matched-audit-after-projection-recreate')).coverage,{status:'unavailable',reason:'unknown_history'});
+99:   const refreshedProof=await service.publishRegistrationCoverage(db,scope);
+100:   assert.equal(refreshedProof.status,'recorded');assert.notEqual(refreshedProof.proofId,proof.proofId);
+101:   // Retire the existing synthetic report before making another report for the same window.
+102:   await db.$executeRawUnsafe('UPDATE "LiveMetricReport" SET status=$2,result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL WHERE id=$1','matched-audit-after-projection-recreate','stale');
+103:   assert.deepEqual((await coverage('matched-audit-after-proof-refresh')).coverage,{status:'complete'});
+104:   // Current source identity changes must make the persisted projection visibly invalid.
+105:   await db.formSubmission.update({where:{id:submission.id},data:{verificationStatus:'UNVERIFIED'}});
+106:   const changed=await service.auditMetricRegistrationSources(db,scope);
+107:   assert.equal(changed.status,'enumerated');assert.equal(changed.count,0);
+108:   assert.equal(changed.projectionCount,1);assert.equal(changed.projectionOutcomes.invalid_source,1);
+109:   assert.ok(changed.registrationRevision>result.registrationRevision);
+110:   assert.notEqual(changed.digest,result.digest);
+111:   assert.deepEqual(await service.publishRegistrationCoverage(db,scope),{status:'incomplete'});
+112:   assert.deepEqual((await coverage('matched-audit-after-revoke')).coverage,{status:'unavailable',reason:'unknown_history'});
+113:   return {status:'PASS',mutationProtection,matchedBothDirections:'PASS',stableDigest:'PASS',revokedSourceDetected:'PASS',privateProofPublish:'PASS',emptySourceProof:'PASS',auditToPublishRace:'PASS',revisionToInsertRace:'PASS',staleProofRejected:'PASS',projectionProofLifecycle:'PASS',coverage:'complete before revoke; unknown after revoke'};
+114:  } catch(error) { error.auditPhase=phase; throw error; } finally {
+115:   await db.$executeRawUnsafe('DELETE FROM "LiveMetricVersion" WHERE id=$1',versionId);
+116:   await db.live.delete({where:{id:live.id}});
+117:   await db.registrationForm.delete({where:{id:form.id}});
+118:   await db.video.delete({where:{id:video.id}});
+119:  }
+120: }
+
+FILE scripts/wp20-registration-proof-mutation-probe.mjs
+1: import assert from 'node:assert/strict';
+2: /** Fixed SQL probes run only on the synthetic matched fixture; every change rolls back. */
+3: export async function verifyRegistrationProofMutations(db,versionId,submissionId) {
+4:  const probes=[
+5:   ['registration-scope-update','UPDATE "LiveMetricRegistration" SET "liveId"=\'foreign-scope\' WHERE "submissionId"=$1','23514'],
+6:   ['capture-update','UPDATE "LiveMetricRegistrationCapture" SET "versionId"="versionId" WHERE "submissionId"=$1','23514'],
+7:   ['capture-duplicate','INSERT INTO "LiveMetricRegistrationCapture" SELECT * FROM "LiveMetricRegistrationCapture" WHERE "submissionId"=$1','23505'],
+8:   ['registration-duplicate',`INSERT INTO "LiveMetricRegistration" (id,"vendorId","liveId","versionId","submissionId","verifiedAt") SELECT 'duplicate-probe',"vendorId","liveId","versionId","submissionId","verifiedAt" FROM "LiveMetricRegistration" WHERE "submissionId"=$1`,'23505'],
+9:  ];
+10:  for(const [name,sql,expected] of probes){
+11:   let code=null;
+12:   await assert.rejects(db.$transaction(async tx=>{
+13:    await tx.$executeRawUnsafe('SAVEPOINT mutation_probe');
+14:    // Initial capture accepts only UNVERIFIED sources. Satisfy that guard
+15:    // within the rolled-back probe so the duplicate reaches the unique key.
+16:    if(name==='capture-duplicate') await tx.$executeRawUnsafe('UPDATE "FormSubmission" SET "verificationStatus"=$2::"FormSubmissionVerificationStatus" WHERE id=$1',submissionId,'UNVERIFIED');
+17:    try{await tx.$executeRawUnsafe(sql,submissionId);}catch(error){code=error?.meta?.code;}
+18:    await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT mutation_probe');
+19:    throw new Error('mutation-probe-rollback');
+20:   }),{message:'mutation-probe-rollback'});
+21:   console.log(JSON.stringify({probe:name,sqlState:/^[0-9A-Z]{5}$/.test(code??'')?code:null,expected}));
+22:   assert.equal(code,expected);
+23:  }
+24:  let invalidated=false;
+25:  await assert.rejects(db.$transaction(async tx=>{
+26:   const [before]=await tx.$queryRawUnsafe('SELECT public.wp20_metric_registration_revision("vendorId","liveId") AS "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1',versionId);
+27:   const removed=await tx.$executeRawUnsafe('DELETE FROM "LiveMetricRegistration" WHERE "submissionId"=$1',submissionId);
+28:   const [after]=await tx.$queryRawUnsafe('SELECT public.wp20_metric_registration_revision("vendorId","liveId") AS "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1',versionId);
+29:   invalidated=removed===1 && after.sourceRevision>before.sourceRevision;
+30:   throw new Error('mutation-probe-rollback');
+31:  }),{message:'mutation-probe-rollback'});
+32:  console.log(JSON.stringify({probe:'projection-delete',invalidated}));
+33:  assert.equal(invalidated,true);
+34:  return {status:'PASS',captureImmutable:'PASS',captureUnique:'PASS',registrationUnique:'PASS',projectionDeleteInvalidates:'PASS'};
+35: }
+
+FILE scripts/wp20-registration-truncate-probe.mjs
+1: import assert from 'node:assert/strict';
+2: /** Only called inside the owned disposable database; even unexpected success rolls back. */
+3: export async function verifyRegistrationTruncateProtection(db) {
+4:  const cases=[];
+5:  for (const table of ['FormSubmission','Live','RegistrationForm','LiveMetricRegistration']) {
+6:   let rejected=false;
+7:   await assert.rejects(db.$transaction(async tx=>{
+8:    await tx.$executeRawUnsafe('SAVEPOINT truncate_probe');
+9:    try { await tx.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`); }
+10:    catch(error) { rejected=['23514','0A000'].includes(error?.meta?.code); }
+11:    await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT truncate_probe');
+12:    // Roll back the outer transaction as well; never commit a probe mutation.
+13:    throw new Error('truncate-probe-rollback');
+14:   }),{message:'truncate-probe-rollback'});
+15:   assert.equal(rejected,true,`Source truncate must be rejected: ${table}`);
+16:   cases.push({table,rejected:true});
+17:  }
+18:  return {status:'PASS',cases};
+19: }
+
+DEPENDENCY EXCERPT prisma/migrations/20261014120000_live_metric_evidence/migration.sql lines 269-350
+269: 
+270: CREATE FUNCTION public.wp20_metric_scope_update() RETURNS trigger
+271: LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+272: BEGIN
+273:   IF (NEW."id", NEW."vendorId", NEW."liveId", NEW."versionId")
+274:     IS DISTINCT FROM (OLD."id", OLD."vendorId", OLD."liveId", OLD."versionId") THEN
+275:     RAISE EXCEPTION 'metric evidence scope is immutable' USING ERRCODE = '23514';
+276:   END IF;
+277:   RETURN NEW;
+278: END $$;
+279: 
+280: -- Ordinary evidence does not rewrite a shared version counter. It invalidates
+281: -- only reports whose input window overlaps the changed facts. The shared lock
+282: -- serializes report creation against inserts without serializing viewers.
+283: CREATE FUNCTION public.wp20_metric_evidence_changed() RETURNS trigger
+284: LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+285: DECLARE fact JSONB; affected_start TIMESTAMPTZ; affected_end TIMESTAMPTZ;
+286: BEGIN
+287:   IF current_setting('transaction_isolation')<>'read committed' THEN
+288:     RAISE EXCEPTION 'metric writes require read committed isolation' USING ERRCODE='23514';
+289:   END IF;
+290:   IF TG_TABLE_NAME='LiveMetricSession' AND TG_OP='UPDATE' THEN
+291:     IF (to_jsonb(NEW)-'lastSequence'-'lastElapsedMs')=(to_jsonb(OLD)-'lastSequence'-'lastElapsedMs') THEN RETURN NULL; END IF;
+292:   END IF;
+293:   fact := CASE WHEN TG_OP='DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
+294:   IF TG_TABLE_NAME='LiveMetricInterval' THEN
+295:     affected_start := (fact->>'wallStartAt')::timestamp;
+296:     affected_end := (fact->>'wallEndAt')::timestamp;
+297:   ELSIF TG_TABLE_NAME='LiveMetricVisitor' THEN
+298:     affected_start := (fact->>'firstVisitedAt')::timestamp;
+299:     affected_end := affected_start+INTERVAL '1 millisecond';
+300:   ELSIF TG_TABLE_NAME='LiveMetricRegistration' THEN
+301:     affected_start := (fact->>'verifiedAt')::timestamp;
+302:     affected_end := affected_start+INTERVAL '1 millisecond';
+303:   ELSE
+304:     affected_start := (fact->>'anchorAt')::timestamp;
+305:     affected_end := (fact->>'expiresAt')::timestamp;
+306:   END IF;
+307:   PERFORM 1 FROM public."LiveMetricVersion" WHERE id=fact->>'versionId'
+308:     AND "vendorId"=fact->>'vendorId' AND "liveId"=fact->>'liveId' FOR SHARE;
+309:   IF NOT FOUND THEN RETURN NULL; END IF;
+310:   UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+311:     WHERE "versionId"=fact->>'versionId' AND "vendorId"=fact->>'vendorId' AND "liveId"=fact->>'liveId'
+312:       AND "windowStartAt"<affected_end AND "windowEndAt">affected_start AND status<>'stale';
+313:   RETURN NULL;
+314: END $$;
+315: DO $$ DECLARE metric_table TEXT; BEGIN
+316:   FOREACH metric_table IN ARRAY ARRAY['LiveMetricVisitor','LiveMetricRegistration','LiveMetricSession','LiveMetricInterval'] LOOP
+317:     EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_scope_update()', metric_table || '_scope_immutable', metric_table);
+318:     EXECUTE format('CREATE TRIGGER %I AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_evidence_changed()', metric_table || '_revision', metric_table);
+319:   END LOOP;
+320: END $$;
+321: 
+322: CREATE FUNCTION public.wp20_metric_registration_guard() RETURNS trigger
+323: LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+324: BEGIN
+325:   IF current_setting('transaction_isolation')<>'read committed' THEN
+326:     RAISE EXCEPTION 'metric writes require read committed isolation' USING ERRCODE='23514';
+327:   END IF;
+328:   PERFORM 1 FROM public."Live" WHERE id=NEW."liveId" AND "vendorId"=NEW."vendorId" FOR SHARE;
+329:   PERFORM 1 FROM public."FormSubmission" WHERE id=NEW."submissionId" FOR SHARE;
+330:   PERFORM 1 FROM public."LiveMetricVersion" WHERE id=NEW."versionId"
+331:     AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+332:   IF TG_OP='UPDATE' AND (NEW."submissionId",NEW."visitorId",NEW."verifiedAt")
+333:     IS DISTINCT FROM (OLD."submissionId",OLD."visitorId",OLD."verifiedAt") THEN
+334:     RAISE EXCEPTION 'metric registration identity is immutable' USING ERRCODE='23514';
+335:   END IF;
+336:   IF NOT EXISTS (
+337:     SELECT 1 FROM public."FormSubmission" s
+338:     JOIN public."RegistrationForm" f ON f."id" = s."formId"
+339:     JOIN public."Live" l ON l."id" = s."liveId" AND l."vendorId" = f."vendorId"
+340:     WHERE s."id" = NEW."submissionId" AND s."liveId" = NEW."liveId" AND f."vendorId" = NEW."vendorId"
+341:       AND s."verificationStatus" = 'VERIFIED' AND s."verifiedAt" = NEW."verifiedAt"
+342:       AND l."formId" = s."formId"
+343:   ) THEN
+344:     RAISE EXCEPTION 'verified metric registration required' USING ERRCODE = '23514';
+345:   END IF;
+346:   RETURN NEW;
+347: END $$;
+348: CREATE TRIGGER "LiveMetricRegistration_verified" BEFORE INSERT OR UPDATE ON "LiveMetricRegistration"
+349:   FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_registration_guard();
+350: 

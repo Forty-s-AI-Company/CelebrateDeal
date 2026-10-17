@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "scope": "Actual local Next dev public routes/desktop-mobile axe; disposable PostgreSQL, no account/order/provider operations or secret/session capture. Production-mode build NOT_RUN for this copy/presentation subitem.",
+  "tests": [
+    {
+      "title": "owner adds reusable LINE accounts and selects them independently for two courses",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(page).toHaveURL(expected) failed\n\nExpected pattern: /\\/dashboard/u\nTimeout: 30000ms\n\nCall log:\n  - Expect \"toHaveURL\" with timeout 30000ms\n"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T12:50:04.454Z",
+    "duration": 76892.042,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 132
+}

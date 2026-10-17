@@ -1,0 +1,11 @@
+{
+  "policyDraftsLiteralSha256": "27f23b6e4c60e66736cdf23f85ca170eae70371bea05cdad9a1e9f5f1ddbe53d",
+  "policyDocumentDraftSha256": "20a4efa4608c83503b80f2b20c22880d5b2385c5f35cf7b9f5f38e7d41c91a33",
+  "unchanged_module_hashes": {
+    "src/app/support/requests/page.tsx": "4b97196c089a12c55d5194f0d3a705cf0b29c8aa274827431391bb9923ca6d9f",
+    "src/app/merchant-onboarding/page.tsx": "af079368e69d1ab9cf71e4d5a550edf5c576fdda1c214f23e806315c3795734a"
+  },
+  "status": "PASS",
+  "literal_hash_normalization": "UTF8 source with universal newline normalization; actual stored working-policy values unchanged",
+  "legacy_notice_body": "Exact same function text after trimming outer whitespace; status/owner capability callers unchanged."
+}

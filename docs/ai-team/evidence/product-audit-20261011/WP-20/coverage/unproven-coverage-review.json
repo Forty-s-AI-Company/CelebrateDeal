@@ -1,0 +1,183 @@
+{
+  "review": {
+    "summary": "I reviewed only the three supplied files. I found no blocker or major defect in them. Parentheses in the reader SQL are balanced. Only gap rows, and registrations/orders rows with proof fields that match the current revisions, can pass the reader. Covered visits/viewing rows are excluded no matter what their sourceRevision is. When rows are empty the reader still returns unknown_history, and gap rows still produce evidence_gap. The migration runs in one transaction with the stated 5s lock and 30s statement limits. CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock on the audit table, so no concurrent insert can add a covered row between the trigger being created and the version UPDATE. The UPDATE only bumps versions that currently have a covered visits/viewing audit, so supported-only versions are untouched. The ACL check fails closed if any role other than the owner holds a privilege. I have two minor findings. First, the guard catches INSERT only. Changing existing audit rows (status or sourceRevision) is not guarded in the supplied scope, so old revision-comparing readers could trust legacy rows again unless an append-only guard I wasn't given already prevents it. Second, the exclusion of visits/viewing exists only in the SQL predicate. The TypeScript layer and the mocked unit tests would not catch a regression. This review does not show that tests pass, that a Prisma CLI upgrade of a populated database works, or that the full WP work is release-ready.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql",
+        "area": "CREATE TRIGGER \"LiveMetricCoverageAudit_unproven_guard\" BEFORE INSERT ... (trigger definition)",
+        "issue": "The fail-closed guard fires only on INSERT. An UPDATE of an existing LiveMetricCoverageAudit row is not checked. Examples: changing a visits/viewing gap to status='covered', or moving a legacy covered row's sourceRevision to the newly bumped version revision.",
+        "evidence": "The trigger is declared 'BEFORE INSERT ON public.\"LiveMetricCoverageAudit\"' with no UPDATE event. The comment in the migration says old readers/workers are protected because they still compare audit.sourceRevision. That protection only holds while legacy rows cannot be rewritten to match the bumped v.sourceRevision. No append-only/immutability trigger for the audit table appears in the supplied scope.",
+        "impact": "If any path can update audit rows (an existing worker, carry-forward logic, or an owner/maintenance script), old pre-125 readers that compare sourceRevision could again certify visits/viewing as complete. That would reopen the canonical124 defect for old code during rollout. The new reader is not affected, because it ignores covered visits/viewing whatever the revision.",
+        "recommended_fix": "Make the guard fire on BEFORE INSERT OR UPDATE OF status, kind, \"sourceRevision\" and reject when the NEW row is covered visits/viewing. To leave legacy raw rows unedited, either reject every UPDATE of such rows, or allow only updates that leave them non-current. If an audit-table append-only guard already exists, cite it in the migration comment and add a test that relies on it.",
+        "required_test": "On a disposable synthetic DB after 125: (a) UPDATE a visits gap row to status='covered' → expect 23514 or the existing immutability error; (b) UPDATE a legacy covered visits row's sourceRevision to the current v.sourceRevision → expect rejection; (c) confirm the archived pre-fix reader still does not return complete for that version.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-coverage-reader.ts",
+        "area": "WHERE predicate 'a.status='gap' OR (a.kind IN ('registrations','orders') ...)' and the TS ranges(\"covered\") mapping; test file 'rejects oversized audits' case",
+        "issue": "Visits/viewing positive flags are excluded only inside the SQL text. The TypeScript code passes every returned 'covered' row to assessMetricCoverage without checking the kind. The unit tests mock $queryRaw, so they cannot detect a regression in that predicate. The limit test also feeds 10001 covered visits rows, which the real SQL can no longer return.",
+        "evidence": "ranges = (status) => rows.filter(row => row.status === status) has no kind gate. Feeding a mocked [covered 1000-3000] row for kind 'visits' would make the reader return coverage complete. No unit test asserts that visits/viewing covered rows are ignored. The only stated proof is the DB regression, which was not supplied.",
+        "impact": "A future edit to the SQL (for example a parenthesis or OR change, or removing the kind IN clause) could silently re-enable certification of unproven kinds. Mocked unit tests would still pass, and fail-closed safety would depend on running the separate DB regression.",
+        "recommended_fix": "Add a defense-in-depth gate in TypeScript: for kind 'visits' or 'viewing', treat covered as an empty set (still return null when rows.length is 0, to keep unknown_history). Alternatively, assert that no covered row is returned for those kinds and fail with unavailable if one is. Use registrations, or covered-plus-gap, in the oversized test so the fixture stays realistic.",
+        "required_test": "Unit tests: a mocked [covered 1000-3000] for 'visits' and for 'viewing' must not return complete. A mocked [covered, gap] for visits must return evidence_gap. Keep the DB regression proving the SQL excludes these rows.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "completed": false,
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "payment",
+        "permission"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 16000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_process_status": "SUCCESS",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  }
+}

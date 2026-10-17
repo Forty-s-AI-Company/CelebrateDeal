@@ -1,0 +1,299 @@
+Read-only ordinary review of WP08 display-only localization batch. No tools/edits. Report concrete BLOCKER/MAJOR/MINOR/NIT. Scope: display labels and merchant page title alignment, no business operations changed. This is not final WP08 acceptance: browser/a11y and remaining raw identifiers audit still pending. Current49targeted tests,lint,typecheck PASS on sha256:bb30b260ea137b85812a7d4c5495361ba0f0a39034ddd528551a4d8cb5448751. The new display map leaves stored keys untouched and unknown state displays unknown, not success. Router chooses model, ordinary copy review suffices. Sources below contain full new display helper and exact current reporting functions; navigation-title mapping enumerates actual old title and new label. Do not expand into deferred product decisions or backend implementation. Check translation accuracy, unsafe rendering, lost useful meaning, data-key mutation and maintainability. Known remaining: action dropdowns still display raw popup/step IDs; dynamic inspector registry labels and secondary dashboard text need followup. These are recorded incomplete scope, not concealed acceptance.
+
+NAVIGATION TITLE CHANGES
+[
+  {
+    "href": "/dashboard",
+    "label": "營運總覽",
+    "previous_title": "營運總覽"
+  },
+  {
+    "href": "/projects",
+    "label": "銷售專案",
+    "previous_title": "銷售專案"
+  },
+  {
+    "href": "/lives",
+    "label": "直播間",
+    "previous_title": "直播間管理"
+  },
+  {
+    "href": "/videos",
+    "label": "媒體素材",
+    "previous_title": "影片庫"
+  },
+  {
+    "href": "/landing-pages",
+    "label": "一頁式網站",
+    "previous_title": "一頁式網站"
+  },
+  {
+    "href": "/forms",
+    "label": "報名管理",
+    "previous_title": "報名表管理"
+  },
+  {
+    "href": "/products",
+    "label": "商品",
+    "previous_title": "商品管理"
+  },
+  {
+    "href": "/orders",
+    "label": "訂單管理",
+    "previous_title": "訂單與履約"
+  },
+  {
+    "href": "/consultations",
+    "label": "諮詢預約",
+    "previous_title": "諮詢預約工作台"
+  },
+  {
+    "href": "/customers",
+    "label": "學員 CRM",
+    "previous_title": "學員 CRM"
+  },
+  {
+    "href": "/support-cases",
+    "label": "售後服務",
+    "previous_title": "客服案件"
+  },
+  {
+    "href": "/messages/templates",
+    "label": "訊息模板",
+    "previous_title": "訊息模板"
+  },
+  {
+    "href": "/messages/deliveries",
+    "label": "寄送紀錄",
+    "previous_title": "Email 寄送營運"
+  },
+  {
+    "href": "/interaction-scripts",
+    "label": "互動腳本",
+    "previous_title": "互動腳本"
+  },
+  {
+    "href": "/interaction-roles",
+    "label": "互動角色",
+    "previous_title": "互動角色"
+  },
+  {
+    "href": "/blacklists",
+    "label": "封鎖名單",
+    "previous_title": "黑名單管理"
+  },
+  {
+    "href": "/affiliates",
+    "label": "推廣夥伴",
+    "previous_title": "聯盟夥伴"
+  },
+  {
+    "href": "/team-templates",
+    "label": "團隊模板",
+    "previous_title": "團隊展業"
+  },
+  {
+    "href": "/partner-pages",
+    "label": "我的夥伴頁",
+    "previous_title": "我的夥伴頁"
+  },
+  {
+    "href": "/team-performance",
+    "label": "成效分析",
+    "status": "component_owned_title_requires_inspection"
+  },
+  {
+    "href": "/billing/usage",
+    "label": "用量與扣點",
+    "previous_title": "用量與扣點"
+  },
+  {
+    "href": "/billing/payment-methods",
+    "label": "付款方式",
+    "previous_title": "付款方式設定"
+  },
+  {
+    "href": "/billing/plans",
+    "label": "方案",
+    "previous_title": "方案"
+  },
+  {
+    "href": "/billing/invoices",
+    "label": "帳單",
+    "previous_title": "帳單"
+  },
+  {
+    "href": "/billing/electronic-invoices",
+    "label": "電子發票",
+    "previous_title": "電子發票"
+  },
+  {
+    "href": "/billing/settlements",
+    "label": "月結",
+    "previous_title": "月結"
+  },
+  {
+    "href": "/billing/payouts",
+    "label": "批次出款",
+    "previous_title": "批次出款"
+  },
+  {
+    "href": "/affiliates/commissions",
+    "label": "佣金結算",
+    "previous_title": "聯盟分潤"
+  },
+  {
+    "href": "/billing/course-payouts",
+    "label": "課程分潤",
+    "previous_title": "課程 F/G 分潤"
+  },
+  {
+    "href": "/onboarding",
+    "label": "上線導引",
+    "previous_title": "商家上線導引"
+  },
+  {
+    "href": "/settings/brand",
+    "label": "品牌設定",
+    "previous_title": "品牌設定"
+  },
+  {
+    "href": "/settings/tracking",
+    "label": "追蹤",
+    "previous_title": "追蹤設定"
+  },
+  {
+    "href": "/settings/features",
+    "label": "功能模組",
+    "previous_title": "功能模組管理"
+  },
+  {
+    "href": "/settings/line",
+    "label": "LINE 整合",
+    "previous_title": "LINE 整合"
+  },
+  {
+    "href": "/settings/automations",
+    "label": "自動化",
+    "previous_title": "自動化工作室"
+  },
+  {
+    "href": "/settings/team",
+    "label": "團隊管理",
+    "previous_title": "團隊與上下線"
+  },
+  {
+    "href": "/settings/security",
+    "label": "安全性",
+    "previous_title": "安全設定"
+  }
+]
+
+FILE src/components/landing-pages/funnel-display-labels.ts
+import type { FunnelGoal, FunnelStepType } from "@/lib/funnel-flow";
+
+// 僅顯示層對照；儲存、路由與 API 使用原本的識別值。
+export const funnelTabLabels = {
+  Configuration: "頁面設定", "Automation Rules": "自動化規則", "A/B test": "A/B 測試",
+  Stats: "成效統計", Leads: "報名名單", Sales: "銷售紀錄", "Deadline settings": "截止設定",
+} as const;
+export const funnelGoalLabels = {
+  audience: "建立名單", sell: "銷售商品", custom: "自訂流程", webinar: "網路研討會",
+} satisfies Record<FunnelGoal, string>;
+export const funnelStepLabels = {
+  sales_page: "銷售頁", order_form: "訂單表單", upsell: "加購頁", downsell: "降價加購頁", thank_you_page: "感謝頁",
+  opt_in_page: "名單頁", opt_in_thank_you_page: "名單感謝頁", inline_form: "內嵌表單", popup_form: "彈出表單", link_in_bio: "個人簡介連結頁",
+  info_page: "資訊頁", contact_us_page: "聯絡我們", webinar_registration_page: "網路研討會報名頁",
+  webinar_thank_you_page: "網路研討會感謝頁", webinar_broadcast_page: "網路研討會播放頁", inactive_page: "停用頁",
+} satisfies Record<FunnelStepType, string>;
+export const experimentStatusLabels = { draft: "草稿", running: "進行中", stopped: "已停止", winner: "已選定勝出組別" } as const;
+export const experimentArmLabels = { control: "對照組", variant: "測試組" } as const;
+
+const reportStatusLabels: Record<string, string> = {
+  UNVERIFIED: "尚未驗證", VERIFIED: "已驗證", draft: "草稿", pending: "處理中", pending_payment: "待付款",
+  paid: "已付款", payment_failed: "付款失敗", failed: "失敗", expired: "已逾期", cancelled: "已取消",
+  partially_refunded: "部分退款", refunded: "已退款",
+};
+/** 未知狀態不可冒充成功，也不直接把內部 enum 當成產品文案。 */
+export function reportStatusLabel(value: string): string {
+  return Object.hasOwn(reportStatusLabels, value) ? reportStatusLabels[value] : "未知狀態";
+}
+FILE src/components/landing-pages/funnel-display-labels.test.ts
+import { describe, expect, it } from "vitest";
+import { FUNNEL_GOALS, FUNNEL_STEP_TYPES } from "@/lib/funnel-flow";
+import { funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel } from "./funnel-display-labels";
+
+describe("merchant display terminology", () => {
+  it("covers every persisted goal and step type without changing its key", () => {
+    expect(Object.keys(funnelGoalLabels)).toEqual([...FUNNEL_GOALS]);
+    expect(Object.keys(funnelStepLabels)).toEqual([...FUNNEL_STEP_TYPES]);
+    for (const key of FUNNEL_STEP_TYPES) {
+      expect(funnelStepLabels[key]).toMatch(/[\u4e00-\u9fff]/u);
+      expect(funnelStepLabels[key]).not.toBe(key);
+    }
+  });
+  it("keeps the approved display dictionary reviewable", () => {
+    expect({ funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels }).toMatchSnapshot();
+  });
+});
+
+it("never labels an unknown or inherited status as successful", () => {
+  expect(reportStatusLabel("paid")).toBe("已付款");
+  expect(reportStatusLabel("VERIFIED")).toBe("已驗證");
+  for (const status of ["new_future_state", "__proto__", "constructor"]) expect(reportStatusLabel(status)).toBe("未知狀態");
+});
+FILE src/components/landing-pages/funnel-operations-panel.test.tsx
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
+import { defaultFunnelOperations } from "@/lib/funnel-operations";
+import { FunnelOperationsPanel } from "./funnel-operations-panel";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("@/app/actions/landing-page-actions", () => ({ landingPageAction: vi.fn() }));
+vi.mock("@/app/actions/funnel-operations-actions", () => ({ readFunnelOperations: vi.fn(), updateFunnelOperations: vi.fn() }));
+vi.mock("@/components/landing-pages/funnel-automation-settings", () => ({ FunnelAutomationSettings: () => null }));
+
+// 真實 flow 與 panel：可見名稱改變，但頁面路径、步驟識別值與資料完全保留。
+describe("localized merchant operations", () => {
+  it("renders translated tabs and step labels without mutating stored content", () => {
+    const content = createGoalFunnelStepPages({ id: "synthetic", name: "測試網站", goal: "audience", domain: "synthetic" })!;
+    const initial: Parameters<typeof FunnelOperationsPanel>[0]["initial"] = {
+      pageId: "synthetic", name: "測試網站", slug: "synthetic", currency: "TWD", revision: 7,
+      status: "draft", operations: defaultFunnelOperations(), content, formId: null, liveId: null,
+      steps: content.flow.steps.filter((step) => !step.isSystem).map(({ id, name, path }) => ({ id, name, path })),
+    };
+    const before = structuredClone(initial);
+    for (const label of ["一頁式網站", "建立名單", "版本", "名單頁", "頁面設定", "自動化規則", "成效統計", "報名名單", "銷售紀錄", "截止設定"]) expect(html).toContain(label);
+    for (const oldLabel of ["Configuration", "Automation Rules", "opt_in_page", "audience · revision"]) expect(html).not.toContain(oldLabel);
+    expect(html).toContain('href="/lp/synthetic"');
+    expect(initial).toEqual(before);
+  });
+});
+EXACT REPORT FUNCTIONS
+function ReportSettings({ tab, editor, reports, reportError, retry, onChange }: { tab: "Stats" | "Leads" | "Sales"; editor: FunnelOperationsEditor; reports: FunnelReports | null; reportError: boolean; retry: () => void; onChange: (operations: FunnelOperations) => void }) {
+  const key = tab.toLowerCase() as "stats" | "leads" | "sales";
+  const filter = editor.operations.reports[key];
+  function change(patch: Partial<typeof filter>) { onChange({ ...editor.operations, reports: { ...editor.operations.reports, [key]: { ...filter, ...patch } } }); }
+  return <div className="space-y-4">
+    <div className="flex flex-wrap gap-3"><label className="grid gap-1 text-sm">報表步驟<select className={control} value={filter.stepId} onChange={(event) => change({ stepId: event.target.value })}><option value="">全部步驟</option>{editor.steps.map((step) => <option key={step.id} value={step.id}>{step.name}</option>)}</select></label><label className="grid gap-1 text-sm">最近天數<input className={control} type="number" min={1} max={90} value={filter.days} onChange={(event) => change({ days: Number(event.target.value) })} /></label></div>
+    <p className="text-sm text-slate-500">儲存後套用篩選條件。來源紀錄唯讀。{reports ? `以下為已儲存條件的結果，更新時間：${reports.generatedAt}。` : null}</p>
+    {reports ? tab === "Stats" ? <StatsReport reports={reports} /> : tab === "Leads" ? <LeadsReport reports={reports} editor={editor} /> : <SalesReport reports={reports} editor={editor} /> : reportError ? <p role="alert">報表暫時無法載入。<button type="button" className="ml-2 underline" onClick={retry}>重試</button></p> : <p role="status">報表載入中…</p>}
+  </div>;
+}
+function StatsReport({ reports }: { reports: FunnelReports }) {
+  return <div className="overflow-auto"><p className="mb-3 text-sm">瀏覽次數為伺服器公開頁交付紀錄，包含重新整理；步驟轉換為同一匿名訪客依序到達下一步，非成交。未取得匿名識別的瀏覽不計入。</p>{reports.statsTruncated ? <p role="alert">已達 10,000 筆上限，以下為部分資料，請縮短日期範圍。</p> : null}
+    <table className="w-full text-left text-sm"><thead><tr>{["步驟", "瀏覽次數", "訪客", "報名次數", "步驟轉換", "流失人數"].map((label) => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{reports.stats.map((row) => <tr key={row.stepId} className="border-t"><td className="p-2">{row.name}</td><td>{row.pageViews}</td><td>{row.visitors}</td><td>{row.submissions}</td><td>{row.conversionRate === null ? "—" : `${(row.conversionRate * 100).toFixed(1)}% (${row.conversions})`}</td><td>{row.dropOff ?? "—"}</td></tr>)}</tbody></table>
+    <div className="mt-4">{reports.experiments.map((row) => <p key={`${row.id}-${row.arm}`} className="text-sm">實驗 {row.id} · {row.arm === "control" || row.arm === "variant" ? experimentArmLabels[row.arm] : "未知組別"} · 瀏覽次數 {row.pageViews} · 報名次數 {row.submissions}</p>)}</div>
+    <details className="mt-4"><summary>檢視來源事件編號（前 20 筆）</summary>{reports.sources.map((source) => <p key={source.id} className="break-all font-mono text-xs">{source.id} · {source.stepId} · {source.createdAt}</p>)}</details>
+  </div>;
+}
+function LeadsReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
+  return <div className="overflow-auto"><p className="mb-3 text-sm">只列出伺服器驗證網站來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。</p>{reports.leadsTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["網站", "步驟", "時間", "報名編號", "驗證狀態"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.leads.map((row) => <tr className="border-t" key={row.id}><td className="p-2">{editor.name}</td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "已移除的步驟"}</td><td>{row.createdAt}</td><td className="font-mono">{row.submissionId}</td><td>{reportStatusLabel(row.verificationStatus)}</td></tr>)}</tbody></table>{!reports.leads.length ? <p className="p-3">此範圍尚無可信提交紀錄。</p> : null}</div>;
+}
+function SalesReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
+  return <div className="overflow-auto"><p className="mb-3 text-sm">來源為訂單與付款紀錄的已付款資料，排除測試訂單；退款另列，不將不同幣別相加。</p>{reports.salesTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["訂單", "步驟", "付款時間", "幣別", "已付／退款（分）", "訂單／付款狀態", "付款編號"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.sales.map((row) => <tr className="border-t" key={row.id}><td className="p-2"><span>{row.orderNumber}</span><small className="block">{row.id}</small></td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "已移除的步驟"}</td><td>{row.paidAt}</td><td>{row.currency}</td><td>{row.paidAmountCents} / {row.refundedAmountCents}</td><td>{reportStatusLabel(row.status)} / {reportStatusLabel(row.paymentStatus)}</td><td className="font-mono">{row.paymentId}</td></tr>)}</tbody></table>{!reports.sales.length ? <p className="p-3">此範圍尚無已付款訂單。</p> : null}</div>;
+}
+
+MAIN DISPLAY CONTRACT
+Tabs keep original const array and comparisons; render funnelTabLabels[item] and funnelTabLabels[tab]. Header renders funnelGoalLabels[content.flow.goal] and revision number. Step sidebar renders funnelStepLabels[step.type] for non-system steps. Template display resolves templateId to its existing name, fallback 已套用模板; API templateId stays unchanged. Experiment status/arm text uses dictionary, state assignments unchanged. Source strings in other editor palettes and visible JSX headings translated; event types, data attributes and serialized values untouched. Server PageHeader title strings only are aligned with route labels; auth and DB calls unchanged. Dashboard function names/data scopes unchanged, only title/aria/loading strings localized. Two navigation labels corrected to actual destination semantics: payout list now 批次出款 instead of 稅務匯出; course payouts now 課程分潤 instead of 勞報單審核. Assess ambiguity rather than assuming these labels change eligibility.

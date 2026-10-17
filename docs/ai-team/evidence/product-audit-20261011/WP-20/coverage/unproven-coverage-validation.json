@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "recording": "Recorded from actual current-turn terminal results, not reviewer assertions",
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "testsPassed": 59,
+      "exitCode": 0,
+      "terminalChunk": "597924"
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0,
+      "terminalChunk": "0927d4"
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0,
+      "terminalSession": 83486
+    }
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-coverage-reader.ts": "cabfd232d0ae217a85dec0df75a121a74c87f68a6daf47f6a5d274fafb0be12c",
+    "src/lib/live-metric-coverage-reader.test.ts": "2b419bcbcd19d7c79a261804e5662786dcb78e2bf4e53511d9892dbcb4c96675",
+    "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql": "4d2523a2a88a351e3161fa72707b3b61b54839fe1529febc17b3bed3b9d406a0",
+    "scripts/wp20-unproven-coverage-disposable.mjs": "80fc183064d9efd41322938888cc6874f42d215755ffd65f277b9752cd0fd0a5",
+    "src/lib/live-metric-coverage.test.ts": "3a545866256b4c15180a8b83ed2594f92d2c8508f429dbbc4813129b557cdd5b",
+    "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+    "src/lib/live-metric-snapshot-input.test.ts": "eeeb7d2eec12e2ef32d2610642aeb79784c632f7ed7524a40376918daffa5224",
+    "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+    "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656",
+    "src/lib/live-metric-order-coverage.test.ts": "2ababe347d7025a98720d97eae280185457dafb70b1763afa1934c4c3eb09414"
+  }
+}

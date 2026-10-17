@@ -1,0 +1,103 @@
+Independent final integration/acceptance review for WP08 only. You receive accumulated scoped review summaries and current evidence facts, not every source file. Evaluate whether their union and stated limitations support WP08, identify concrete missing coverage or unresolved BLOCKER/MAJOR. Do not fabricate inspections or certify whole20WP. Report BLOCKER/MAJOR/MINOR/NIT.
+Requirements: Chinese visible merchant workspace/dashboard vocabulary; nav/page title consistency; persisted/API identifiers unchanged; terminology snapshot and a11y; no product payment/auth/schema changes.
+Current revision sha256:f232a4fdee800192ab45c3f865947b309759a4f777bec62f48fa4bf8c4965ef5
+Current79targeted/lint/typecheck/terminology and52 real-component browser/a11y states passed; all source hashes unchanged. Browser uses synthetic adapters, NOT authenticated full-app E2E; WP08 plan requires targeted+a11y.52 covers chromium/firefox desktop/mobile actions,deleted targets,same-node reset,reports,settings/dialogs.
+Source scope:
+src/app/(app)/affiliates/commissions/page.tsx
+src/app/(app)/affiliates/page.tsx
+src/app/(app)/billing/course-payouts/page.tsx
+src/app/(app)/billing/payment-methods/page.tsx
+src/app/(app)/blacklists/page.tsx
+src/app/(app)/consultations/page.tsx
+src/app/(app)/dashboard/dashboard-details-loading.test.tsx
+src/app/(app)/dashboard/dashboard-details-loading.tsx
+src/app/(app)/dashboard/dashboard-kpis-loading.test.tsx
+src/app/(app)/dashboard/dashboard-kpis-loading.tsx
+src/app/(app)/dashboard/loading.tsx
+src/app/(app)/dashboard/page.tsx
+src/app/(app)/forms/page.tsx
+src/app/(app)/interaction-scripts/page.tsx
+src/app/(app)/landing-pages/page.tsx
+src/app/(app)/lives/page.tsx
+src/app/(app)/messages/deliveries/page.tsx
+src/app/(app)/onboarding/page.tsx
+src/app/(app)/orders/page.tsx
+src/app/(app)/products/page.tsx
+src/app/(app)/settings/automations/page.tsx
+src/app/(app)/settings/features/page.tsx
+src/app/(app)/settings/security/page.tsx
+src/app/(app)/settings/team/page.tsx
+src/app/(app)/settings/tracking/page.tsx
+src/app/(app)/support-cases/page.tsx
+src/app/(app)/team-templates/page.tsx
+src/app/(app)/videos/page.tsx
+src/components/__snapshots__/app-shell.test.ts.snap
+src/components/app-shell.test.ts
+src/components/app-shell.tsx
+src/components/landing-page-workspace.tsx
+src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap
+src/components/landing-pages/funnel-display-labels.test.ts
+src/components/landing-pages/funnel-display-labels.ts
+src/components/landing-pages/funnel-element-inspector.tsx
+src/components/landing-pages/funnel-goal-picker.tsx
+src/components/landing-pages/funnel-list.tsx
+src/components/landing-pages/funnel-operations-panel.test.tsx
+src/components/landing-pages/funnel-operations-panel.tsx
+src/components/landing-pages/funnel-page-editor.tsx
+src/components/landing-pages/funnel-popup-preview.test.tsx
+src/components/landing-pages/funnel-popup-preview.tsx
+src/components/landing-pages/funnel-step-pages-editor.tsx
+src/components/landing-pages/funnel-template-gallery-picker.tsx
+src/components/landing-pages/funnel-webinar-experience.tsx
+src/components/landing-pages/funnel-webinar-settings.tsx
+src/components/landing-pages/landing-page-puck-config.tsx
+src/components/landing-pages/workspace-editor.tsx
+src/components/team-performance-dashboard.tsx
+src/lib/funnel-block-library.ts
+Review lineage summaries:
+
+batch1-reviewed.json
+I reviewed the display-only scope only. I found no unsafe rendering: all output is plain JSX text and nothing uses dangerouslySetInnerHTML. I also saw no stored-key mutation in the supplied code. Tab comparisons, persisted goal and step keys, templateId and experiment state values stay unchanged, and reportStatusLabel safely rejects inherited and unknown keys. The most important problem is that the panel test, as supplied, never defines `html`. Either the excerpt is incomplete or the test cannot run, which conflicts with the stated PASS. The other findings are about lost meaning and maintainability: one shared status map with no type checking that can collapse real states into 「未知狀態」, raw cent amounts, tab labels with no type checking, and several page titles that narrow or blur what the page does. None of these blocks this non-final batch, but the test issue should be fixed or explained before relying on the 49-test PASS. An empty or short findings list does not certify browser or a11y results, or the raw-identifier audit, which remain out of scope.
+
+batch1-test-followup-reviewed.json
+The factual test-MAJOR is resolved as a review-packet defect, not a source defect. The disclosed prefix of line 22, `const html = renderToStaticMarkup(<FunnelOperationsPanel initial={initial} initialStepId={content.activeStepId}`, shows `html` is declared and assigned from the render call. The `typecheck` receipt (PASS, exit 0) would fail on an undefined or unassigned `html`, and the `targeted` receipt (PASS, exit 0) lists the test "localized merchant operations renders translated tabs and step labels without mutating stored content" as passed. Those results are consistent with a defined `html` that is rendered and asserted on. I do not infer that the omitted line is missing, and I have not re-reviewed unchanged code. Limits of this conclusion: (1) the supplied receipts show one passed test in this file and exit codes only, so the "49 passed / 0 failed" figure is asserted in the task text rather than shown in the supplied receipts; (2) the validation `revision` (sha256:bb30...) and the source file SHA256 (c3e23...) are different identifiers, and the supplied text does not show the link between them. Neither limit identifies a defect in the code under review. The remaining copy MINORs stay recorded for the later source-capability audit. This follow-up does not establish WP08 completeness or a11y PASS.
+
+option-collision-reviewed.json
+Read-only follow-up limited to `funnel-display-labels.ts`, its test and its snapshot. This doesn't certify the whole WP, and an empty or low-severity result doesn't certify tests or release.
+
+**Prior MINOR (final labels colliding with authored suffixes): closed.** `referenceOptions` now checks whether the final labels are still unique. If they aren't, every label gets a position prefix (`${index + 1}. `). Two prefixed labels can never match: each prefix is digits followed by `.`, so the position number is read the same way every time and each position is different. That means the final labels are always unique. The new regression test uses an authored name of `報名頁（第 2 項）`, which collides with the generated label `報名頁（第 2 項）` for item b. Without the fallback the test sees only 3 distinct labels instead of 4, so it would fail. The test also checks that option values stay in their original order and that the source `names` object is not changed.
+
+**Prior NIT (full report status snapshot): closed.** The new snapshot lists every order status (8), every verification status (2) and every payment status (10), and the labels match the dictionaries. Unknown statuses and names that exist only on the object prototype (like `constructor` or `__proto__`) still show `未知狀態`, so nothing unknown is labeled as successful.
+
+**Original values unchanged: confirmed.** `referenceOptions` only reads `names` and `ids` and builds new objects. Option values are the original IDs, and the tests check that the inputs aren't modified.
+
+**Notes (not defects):**
+- The status lists in the snapshot test are typed by hand rather than derived from the label maps. If a new status is added later, the snapshot won't pick it up automatically. The `satisfies Record<...>` checks on the label maps still make sure every known status has a label.
+- In the new test, looping over both `kind` values doesn't change the result, because every ID in that test has a name.
+
+navigation-final-safe-reviewed.json
+I reviewed only the supplied diffs and the new navigation-title test excerpt. In app-shell.tsx, every changed navigation item keeps its original href and the same managerOnly, financeOnly, ownerOnly and feature flags, so I found no change to routes or permissions. The edits only change visible labels, page titles and one aria-label. Several pages are listed with no diff: orders, settings/tracking and support-cases. If the test passes, their existing titles must already equal the new navigation labels "訂單與履約", "追蹤設定" and "客服案件", but I could not verify that from the excerpts. The settings/features excerpt was cut off, so I did not review it. I found no BLOCKER or MAJOR issues. The findings are: two titles that may mislead users ("一頁式網站" for funnels and "媒體素材" for an area that only handles video), one leftover old label, a stray space in an aria-label, and gaps in the new test: it checks only the owner role, its snapshot leaves out permission and feature flags, and its title matching is fragile. The note that all 79 targeted tests, lint and typecheck pass comes from the caller, and I have not checked it myself.
+
+stale-target-reviewed.json
+Scoped read-only review of the supplied FunnelElementInspector / ActionFields code. In the text provided, the stale-target guard is consistent: actionTargetState drives both the disabled button and the apply() handler for show_popup and next_step, and an empty stepIds array is handled (select disabled, any stepId is missing, empty stepId is invalid). The remount key includes node.id plus the serialized node.actions, so same-node undo/redo or external action changes reseed the draft. I found no BLOCKER or MAJOR defects in the supplied text. Remaining items are MINOR/NIT and depend on code not supplied (the lib helper and the FunnelNode type). The 52 browser state checks are described only as underway, and the pre-extraction version passed. I saw no result for this refactored version, so this review does not certify test or release success.
+
+reports-safe-reviewed.json
+I reviewed only the supplied excerpts and found no BLOCKER or MAJOR defects. Persisted values, routing values and API values stay unchanged: the tab keys, step-type values, report filter keys and enum keys used for status lookups all keep their original identifiers. Business calculations are also unchanged: conversion-rate math, drop-off and the raw cents amounts. Status labels fall back to "未知狀態" for unknown values instead of guessing success, and the experiment arm is checked before its label is looked up. I found one MINOR issue: the step-type picker uses its own hard-coded labels, and they already disagree with the shared label map for Webinar steps. I also found one NIT: the expiry wording varies within the deadline section. This review covers the excerpts only. It does not certify the tests or the release.
+
+editor-integration-reviewed.json
+I reviewed only the WP08 changes made after batch 1 and found no BLOCKER or MAJOR issues. Neither component file changes stored IDs. Popup and step IDs still go to the inspector unchanged, and the new popupNames and stepNames maps are keyed by those same IDs. The maps are rebuilt from history.present (popups) and state.flow (steps) on every render, so a renamed popup or step shows its new name next time. The new stepNames prop is optional and falls back to the document's own steps. Whenever names are missing, the reviewed helper uses "unnamed" labels, so a mismatched or partial map can't break selection. The translated text only changes what users see: the default name for new popups (`彈出視窗 N`) and the referral-partner label (`推薦夥伴`). Existing saved names and IDs are unchanged. I'm reporting two low-severity hardening points. I couldn't check whether these changes compile (whether PageDocument has `flow`, whether FunnelElementInspector accepts `popupNames`/`stepNames`, and the step/popup `name` types) because those declarations aren't in the excerpts. Run a typecheck before delivery. No findings here doesn't mean the tests pass.
+
+Findings dispositions:
+{"optional_names": "Retained MINOR: arbitrary external callers could pair explicit ids with omitted names; actual source callers pass both together or neither (funnel-step-pages-editor115,workspace-editor29). Current supported product paths not affected.", "parser": "FunnelPopupSchema.name safeShortText.min1; step collection validates every step; FunnelStep.name string; malformed persisted inputs rejected by existing parser. Do not add duplicate permissive parser in display helper.", "scope": "No new product mutation; final aggregate review requested."}
+Other dispositions: initial html undefined MAJOR was incomplete excerpt, followup independently closed. Stale popup MAJOR repaired and Sonnet followup finds no blocker. Typed maps, full status snapshots and suffix collisions repaired and Opus followup confirms. Unicode shaping NIT retained (not stripping ZWJ/ZWNJ). Nav media label corrected to video-specific; team link and aria spacing corrected; title check requires exactly1 literal. Existing role/feature tests cover all supported roles, title test separate. Existing established sidebar term one-page website retained with multi-step description; no new product glossary promise. Reviewer omitted one settings/features context line due sensitive-input pattern; it was a property type/context unrelated to copy? This still needs source verification, do not assume.
+Report selector hardcoded strings fixed after report review: now each label directly accesses funnelStepLabels, group Chinese and expiry terms consistent. Source below:
+const stepTypeOptions: Array<{ group: string; items: Array<{ value: EditableStepType; label: string }> }> = [
+  { group: "銷售", items: [{ value: "sales_page", label: funnelStepLabels.sales_page }, { value: "order_form", label: funnelStepLabels.order_form }, { value: "upsell", label: funnelStepLabels.upsell }, { value: "downsell", label: funnelStepLabels.downsell }, { value: "thank_you_page", label: funnelStepLabels.thank_you_page }] },
+  { group: "名單", items: [{ value: "opt_in_page", label: funnelStepLabels.opt_in_page }, { value: "opt_in_thank_you_page", label: funnelStepLabels.opt_in_thank_you_page }, { value: "inline_form", label: funnelStepLabels.inline_form }, { value: "popup_form", label: funnelStepLabels.popup_form }, { value: "link_in_bio", label: funnelStepLabels.link_in_bio }] },
+  { group: "資訊", items: [{ value: "info_page", label: funnelStepLabels.info_page }, { value: "contact_us_page", label: funnelStepLabels.contact_us_page }] },
+  { group: "線上講座", items: [{ value: "webinar_registration_page", label: funnelStepLabels.webinar_registration_page }, { value: "webinar_thank_you_page", label: funnelStepLabels.webinar_thank_you_page }, { value: "webinar_broadcast_page", label: funnelStepLabels.webinar_broadcast_page }] },
+];
+
+Remaining prior raw cents issue was unchanged baseline out of WP08 scope. No unresolved known BLOCKER/MAJOR. Canonical gate NOT_RUN.
+
+Resolved omitted-line gap: settings/features entire page is minified one line including a credential-prop name, which triggered input filter. Exact local comparison proved replacing only title="功能模組管理" with title="功能模組" in saved before source gives current source byte-for-byte after stripping terminal whitespace. No auth/function/prop change. Safe source excerpt: <PageHeader title="功能模組" description="只留下目前需要的工作區入口；停用功能不會刪除任何歷史資料。" />.

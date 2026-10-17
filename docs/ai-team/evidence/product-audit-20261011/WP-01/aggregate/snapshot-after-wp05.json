@@ -1,0 +1,33 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "docs/ai-team/evidence/product-audit-20261011/WP-01/form-submit/browser.cjs",
+    "src/app/(app)/landing-pages/[id]/page.test.tsx",
+    "src/app/(app)/landing-pages/[id]/page.tsx",
+    "src/app/(app)/landing-pages/new/page.test.tsx",
+    "src/app/(app)/landing-pages/new/page.tsx",
+    "src/app/actions/landing-page-actions.test.ts",
+    "src/app/actions/landing-page-actions.ts",
+    "src/app/actions/sales-workspace-actions.test.ts",
+    "src/app/actions/sales-workspace-actions.ts",
+    "src/app/api/form-submissions/route.ts",
+    "src/components/landing-page-workspace.tsx",
+    "src/components/landing-pages/funnel-page-document-renderer.test.tsx",
+    "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "src/components/lead-form.test.tsx",
+    "src/components/lead-form.tsx",
+    "src/lib/automation-workflow.ts",
+    "src/lib/email-delivery.ts",
+    "src/lib/funnel-runtime.ts",
+    "src/lib/landing-page-service.test.ts",
+    "src/lib/landing-page-service.ts",
+    "src/lib/public-landing-page-status.test.ts",
+    "src/lib/public-landing-page-status.ts",
+    "src/lib/registration-submission-client.test.ts",
+    "src/lib/registration-submission-client.ts",
+    "src/proxy.test.ts",
+    "src/proxy.ts"
+  ],
+  "revision": "sha256:e83370c73d44107465f928a99f40e427da423c85dc866d2ecca6e08a0d45d15a",
+  "lineage": "WP05/client-submission acceptance and browser regression supersede the original form renderer dependency; original WP01 product subscopes unchanged."
+}

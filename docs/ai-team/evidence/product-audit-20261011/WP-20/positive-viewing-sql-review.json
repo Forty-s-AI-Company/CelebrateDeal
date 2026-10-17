@@ -1,0 +1,205 @@
+{
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_process_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 13000,
+      "expected_duration": 0,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I reviewed only the supplied migration 131 SQL and the private writer. Viewing proof checks are typed and fail closed on NULLs. The registration-guard interop fix is narrow, and the visits branch is untouched. Four issues remain. The most likely to hurt: after seal, the frontier trigger lets a source row be deleted only once its version row is gone. Deletes from other parents (Live, Vendor, Registration) can therefore fail. The other three are minor: the proof doesn't check the first interval against the session start, the writer reports success on an insert conflict, and the proof runs twice under tight timeouts. This doesn't certify the DB131 rerun or release.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "migration 131",
+        "area": "wp20_metric_ingress_visit_frontier DELETE/UPDATE branch",
+        "issue": "After seal, a source row can be deleted only if its LiveMetricVersion row is already gone. A cascade or SET NULL from another parent fails if it fires while the version row still exists. Examples: Live, Vendor, LiveMetricRegistration, FormSubmission.",
+        "evidence": "The DELETE branch returns early only when NOT EXISTS(version). Otherwise it raises 'frontier sealed' for any UPDATE/DELETE once the seal exists. Postgres FK cascade order between sibling FKs follows trigger-name order, not the version-first order the code relies on.",
+        "impact": "Deleting a Live, vendor, or registration (including erasure requests) can fail with 23514 after seal.",
+        "recommended_fix": "Make sure every parent path reaches source rows only through the version cascade. Or explicitly allow cascades from a deleted Live, Vendor, or registration.",
+        "required_test": "Real-DB test: seal a run, then delete the Live, the vendor, and a referenced registration/FormSubmission. Each delete must succeed, or fail only by design.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "migration 131",
+        "area": "wp20_metric_viewing_proof_ready interval CTE / session predicate",
+        "issue": "Nothing checks that the first interval's wallStartAt is at or after the session's anchorAt. Elapsed time and contiguity are measured only from previous_end and last_end.",
+        "evidence": "previous_end is NULL for sequence 0, so the first interval has no lower bound. The elapsed check uses only last_end minus anchorAt.",
+        "impact": "Viewing time from before the anchor, and possibly before start_at (the run's openedAt), could pass the DB proof. That makes the SQL proof weaker than a strict closed_contiguous check.",
+        "recommended_fix": "Add min(\"wallStartAt\") to the intervals CTE. Reject the proof when it is below s.\"anchorAt\".",
+        "required_test": "Negative DB test: a session whose first interval starts before anchorAt must make proof_ready return FALSE.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "PRIVATE WRITER",
+        "area": "INSERT ... ON CONFLICT (id) DO NOTHING",
+        "issue": "The writer returns 'recorded' even when the insert hit a conflict and wrote nothing. An existing row may hold different revisions or a different receipt.",
+        "evidence": "$queryRaw INSERT has no RETURNING and no row-count check, and status 'recorded' is returned unconditionally.",
+        "impact": "The caller can be told a proof exists when the stored row doesn't match the current tuple. The reader then rejects it, so coverage silently stays missing.",
+        "recommended_fix": "Use RETURNING id, or on conflict compare the stored row to the intended values. Return a distinct status when they differ.",
+        "required_test": "Pre-insert a row with the same proofId but different revisions. The writer must not report 'recorded'.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "PRIVATE WRITER",
+        "area": "statement_timeout 5000 / transaction timeout 10000",
+        "issue": "proof_ready runs twice per write: once explicitly in the writer, then again in the unproven guard. Each run includes the frame digest and up to a 1M-row window-function scan, under a 5 s statement timeout and a 10 s transaction timeout.",
+        "evidence": "The writer calls proof_ready before the INSERT, and the trigger runs it again on NEW values.",
+        "impact": "At the stated 1M retained-source bound, timeouts can block legitimate proofs. This fails closed, so the cost is availability, not soundness.",
+        "recommended_fix": "Rely on the trigger as the authority and map its 23514 to source_changed. Or measure at the bound and size the timeouts to fit.",
+        "required_test": "Seeded DB test at the upper bound (10k sessions, about 1M intervals): the proof must finish within the configured timeouts.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "completed": false,
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "exitCode": 3
+    },
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

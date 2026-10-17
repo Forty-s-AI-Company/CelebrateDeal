@@ -1,0 +1,23 @@
+{
+  "finding": "Expired viewer session renewal bypassed concurrent viewer cap",
+  "before": "Real Request handlers with disposable PostgreSQL returned200 for expired renewal after another viewer filled cap; expected429. Baseline lease-expiry test passed.",
+  "fix": "Select persisted expiresAt; expired same-live renewal counts active viewers inside existing Serializable transaction before update; unexpired renewal and all publication/payment/credits guards retained.",
+  "verification": "Four DB cases include120/min release bucket, exact90s boundary, full-cap expired renewal, unexpired/empty-cap renewal, and concurrent last-slot race. Date only is controlled; this is route+DB integration, not network HTTP or real90s elapsed-time verification.",
+  "safety": "Existing dedicated loopback64506 database, sequential ownership, synthetic vendor/form/video/template/live rows only, finally cleanup; no external media fetch/mail/payment.",
+  "initial_failure": "before-tests.json",
+  "harness_failure": "Initial portable guard import used one excessive parent directory; import corrected. Failed receipts retained in checks/.",
+  "current_checks": "checks-race/",
+  "review": "Second bounded independent Opus review has no findings; scope acceptance READY, full WP11 incomplete",
+  "scope_files": [
+    "src/lib/live-quota-admission.ts",
+    "src/lib/live-quota-admission.test.ts",
+    "src/app/api/live-admission/route.lease-db.test.ts"
+  ],
+  "not_completed": [
+    "IP trust topology",
+    "full WP11",
+    "full Goal"
+  ],
+  "final_snapshot": "sha256:c299bf69004d4a0fd3f62c7d8e9fb93a09e5d0024ba934171c3ba41a027effd8",
+  "deterministic_races": "Real count queries held after reading0; expired/expired and expired/new race yield one success, one rejection, at least3 reads"
+}

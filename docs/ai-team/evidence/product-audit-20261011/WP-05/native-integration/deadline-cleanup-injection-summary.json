@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "scenario": "fail-after-vendor",
+      "expected_failure": true,
+      "cleanup": true,
+      "zero_counts": true
+    },
+    {
+      "scenario": "fail-browser-close",
+      "expected_failure": true,
+      "cleanup": true,
+      "zero_counts": true
+    },
+    {
+      "scenario": "fail-lost-form-handle",
+      "expected_failure": true,
+      "cleanup": true,
+      "zero_counts": true
+    }
+  ],
+  "scope": "Synthetic fixture fault injection only; not product test acceptance."
+}

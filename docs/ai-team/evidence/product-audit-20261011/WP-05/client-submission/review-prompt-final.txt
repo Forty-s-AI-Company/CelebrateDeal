@@ -1,0 +1,179 @@
+Review only WP05 client submission change for correctness, request handling, regressions, accessibility and maintainability. Revision sha256:686eef480bbe310a19aacb38d8c1f444de3ca7519e38b9e8970a58abc02fdeda. Share fixed same-origin JSON transport and error copy between existing LeadForm and PublicSubmissionForm; preserve payload and verification/redirect behavior; add same-frame lock and accessible states. Native Webinar POST and no-JS303 draft remain pending, not claimed complete. Only browser UI and helper code changes; server-side checks remain unchanged. Read only supplied code; no tools or claims about running tests. Return canonical JSON summary/findings with BLOCKER/MAJOR/MINOR/NIT and file,area,issue,evidence,impact,recommended_fix,required_test,confidence.
+diff --git a/src/components/landing-pages/funnel-page-document-renderer.tsx b/src/components/landing-pages/funnel-page-document-renderer.tsx
+index cb730eb6..1e2db23b 100644
+--- a/src/components/landing-pages/funnel-page-document-renderer.tsx
++++ b/src/components/landing-pages/funnel-page-document-renderer.tsx
+@@ -2,7 +2,8 @@
+ 
+ /* eslint-disable @next/next/no-img-element */
+ 
+-import { createContext, useContext, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
++import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
++import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
+ import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+ import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
+ import { FunnelCommerceElement } from "./funnel-commerce-element";
+@@ -296,33 +297,35 @@ function HeadlineMarkup({ level, text }: { level: string; text: string }) {
+ function PublicSubmissionForm({ submission, label, requireConsent }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean }) {
+   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+   const [message, setMessage] = useState("");
++  const submissionInFlight = useRef(false);
+   async function submit(event: FormEvent<HTMLFormElement>) {
+     event.preventDefault();
+-    if (status === "submitting" || status === "success") return;
++    // Lock synchronously: disabled is only applied after the next React render.
++    if (submissionInFlight.current) return;
++    submissionInFlight.current = true;
+     setStatus("submitting"); setMessage("");
+-    const values = new FormData(event.currentTarget);
+-    const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
+     try {
+-      const response = await fetch("/api/form-submissions", {
+-        method: "POST",
+-        headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
+-        body: JSON.stringify({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload }),
+-      });
++      const values = new FormData(event.currentTarget);
++      const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
++      const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload });
+       if (!response.ok) {
+-        setStatus("error"); setMessage(response.status === 429 ? "送出次數過多，請稍後再試。" : "資料未能送出，請檢查欄位後再試。");
++        submissionInFlight.current = false;
++        setStatus("error"); setMessage(formSubmissionErrorMessage(response.status));
+         return;
+       }
+-      setStatus("success"); setMessage(submission.form.successMessage);
++      setStatus("success"); setMessage(`${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
+       if (submission.redirectTo) window.location.assign(submission.redirectTo);
+     } catch {
+-      setStatus("error"); setMessage("連線中斷，資料尚未送出，請稍後再試。");
++      submissionInFlight.current = false;
++      setStatus("error"); setMessage(formSubmissionErrorMessage());
+     }
+   }
+-  return <form aria-label={label} onSubmit={submit} className="space-y-4">
++  return <form aria-label={label} aria-busy={status === "submitting"} onSubmit={submit} className="space-y-4">
+     {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
+     {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={status === "submitting" || status === "success"} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
+     <button type="submit" disabled={status === "submitting" || status === "success"} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "submitting" ? "送出中…" : status === "success" ? "已送出" : submission.form.submitLabel}</button>
+-    {message ? <p role={status === "error" ? "alert" : "status"} className={status === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>{message}</p> : null}
++    <span role="status" aria-live="polite" className="sr-only">{status === "submitting" ? "正在送出，請勿重複操作。" : ""}</span>
++    {message ? <p role={status === "error" ? "alert" : "status"} aria-live={status === "error" ? "assertive" : "polite"} className={status === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>{message}</p> : null}
+   </form>;
+ }
+ 
+diff --git a/src/components/lead-form.tsx b/src/components/lead-form.tsx
+index b625b932..b273d48d 100644
+--- a/src/components/lead-form.tsx
++++ b/src/components/lead-form.tsx
+@@ -2,6 +2,10 @@
+ 
+ import { useRef, useState } from "react";
+ import { LineLoginButton } from "@/components/line-login-button";
++import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
++
++// Preserve the existing exports for callers while sharing the submission contract.
++export { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE } from "@/lib/registration-submission-client";
+ 
+ type FieldSpec = {
+   key: string;
+@@ -18,15 +22,6 @@ export type LeadFormSession = {
+   status: "scheduled" | "live" | "ended";
+ };
+ 
+-export function formSubmissionErrorMessage(status?: number) {
+-  if (status === 400) return "請確認必填欄位與資料格式後再送出。";
+-  if (status === 429) return "送出次數太頻繁，請稍候一分鐘再試。";
+-  if (status === 404 || status === 503) return "這張表單目前無法接收資料，請稍後再試。";
+-  return "送出失敗；內容仍保留，請檢查網路後再試。";
+-}
+-
+-export const FORM_SUBMISSION_VERIFICATION_MESSAGE = "請到 Email 開啟確認連結；完成確認後才會列入正式名單。";
+-
+ function fieldAutoComplete(field: FieldSpec) {
+   if (field.key === "name") return "name";
+   if (field.type === "email") return "email";
+@@ -123,14 +118,7 @@ export function LeadForm({
+         [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "redirectTo"].includes(key)),
+       );
+       const referralCode = new URLSearchParams(window.location.search).get("ref");
+-      const response = await fetch("/api/form-submissions", {
+-        method: "POST",
+-        headers: {
+-          "Content-Type": "application/json",
+-          "X-CelebrateDeal-Client": "web",
+-        },
+-        body: JSON.stringify(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode, landingPageId: new URLSearchParams(window.location.search).get("lp") })),
+-      });
++      const response = await postRegistrationSubmission(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode, landingPageId: new URLSearchParams(window.location.search).get("lp") }));
+ 
+       if (response.ok) {
+         setStatus("success");
+
+FILE src/lib/registration-submission-client.ts
+/** Shared browser transport: keep attribution payloads intact and never expose server errors. */
+export function postRegistrationSubmission(body: Record<string, unknown>): Promise<Response> {
+  return fetch("/api/form-submissions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function formSubmissionErrorMessage(status?: number) {
+  if (status === 400) return "請確認必填欄位與資料格式後再送出。";
+  if (status === 403) return "這次送出未通過安全檢查，請重新整理頁面後再試。";
+  if (status === 429) return "送出次數太頻繁，請稍候一分鐘再試。";
+  if (status === 404 || status === 503) return "這張表單目前無法接收資料，請稍後再試。";
+  return "送出失敗；內容仍保留，請檢查網路後再試。";
+}
+
+export const FORM_SUBMISSION_VERIFICATION_MESSAGE = "請到 Email 開啟確認連結；完成確認後才會列入正式名單。";
+
+FILE src/lib/registration-submission-client.test.ts
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { formSubmissionErrorMessage, postRegistrationSubmission } from "./registration-submission-client";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("public registration client contract", () => {
+  it("posts to the fixed local API and preserves tenant-scoped provenance and optional attribution", async () => {
+    const response = new Response("", { status: 200 });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    const body = { formId: "synthetic-form", landingPageId: "synthetic-page", funnelStepId: "opt_in", liveId: null, payload: { name: "Synthetic", email: "synthetic@example.invalid" }, referralCode: "synthetic-ref" };
+    expect(await postRegistrationSubmission(body)).toBe(response);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/form-submissions");
+    expect(options.method).toBe("POST");
+    expect(options.headers).toEqual({ "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" });
+    expect(JSON.parse(options.body)).toEqual(body);
+  });
+
+  it.each([400, 403, 404, 429, 503])("leaves HTTP %i available to both form callers without displaying server details", async (status) => {
+    const response = new Response("synthetic internal diagnostic must not be shown", { status });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    const result = await postRegistrationSubmission({ formId: "synthetic-form", payload: {} });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(status);
+    expect(formSubmissionErrorMessage(status)).not.toContain("internal");
+    expect(formSubmissionErrorMessage(status)).toMatch(/請/);
+  });
+
+  it("propagates network failure so the caller can unlock retry without clearing inputs", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("synthetic network failure")));
+    await expect(postRegistrationSubmission({ payload: {} })).rejects.toThrow(TypeError);
+    expect(formSubmissionErrorMessage()).toContain("內容仍保留");
+  });
+
+  it("distinguishes request rejection from validation, rate and availability failures", () => {
+    expect(formSubmissionErrorMessage(400)).toContain("資料格式");
+    expect(formSubmissionErrorMessage(403)).toContain("安全檢查");
+    expect(formSubmissionErrorMessage(429)).toContain("一分鐘");
+    expect(formSubmissionErrorMessage(404)).toContain("無法接收");
+    expect(formSubmissionErrorMessage(503)).toContain("無法接收");
+  });
+});
+
+One quoted test title uses request rejection as a wording alias for HTTP403; executable code is unchanged. Review is ordinary UI/transport review, not a change to server-side access checks. Use the exact canonical JSON schema provided by the wrapper. Do not include markdown fences.

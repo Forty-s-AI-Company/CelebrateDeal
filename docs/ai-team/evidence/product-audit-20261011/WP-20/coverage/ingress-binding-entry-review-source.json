@@ -1,0 +1,20 @@
+{
+  "files": {
+    "src/app/api/live-playback-source/route.ts": "6243c6675ca4b8a6a789914c6ae7ff44dd1e645aac74ac4ef9b5ac1ea5e5795e",
+    "src/app/form/[slug]/page.tsx": "d34f790b8a67c0bd4588331f9f16ab47040fe84ba19f90dac38244f2f3252cd3",
+    "src/app/(viewer)/live/[slug]/page.tsx": "8c72f5b0f55a234b080a588ee9c392ebd9a1dd394af6adc39b31832c47dd24f6",
+    "src/lib/live-metric-registration-page.ts": "cdc90bde00a361485a10e0080161debd1ecc8f05dbf7330029ffe64d10e50fba",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "976a42dea4f97572e811feb4d37381b34caa3866f4e8f04137e35c791df57720",
+    "src/app/lp/[slug]/page.tsx": "eee88146ee9eba3c9b956faeca43f0adac7dea2e6d2f287e03f803a673b95fb7",
+    "src/components/metric-registration-visit.tsx": "76af1a5af88ec7df64c133b6925d14aece6498dcb85b97fbfda0b717021af850"
+  },
+  "schemaSupplied": false,
+  "promptCharacters": 16947,
+  "suppliedRanges": {
+    "src/app/form/[slug]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted",
+    "src/app/(viewer)/live/[slug]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted",
+    "src/app/api/live-playback-source/route.ts": "Full file except credential declaration lines 37; omitted lines not independently reviewed",
+    "src/app/lp/[slug]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted"
+  }
+}

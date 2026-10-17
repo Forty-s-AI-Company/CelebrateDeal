@@ -1,0 +1,13 @@
+{
+  "status": "FAIL",
+  "check": "Date reference mutation during initial await",
+  "observed": {
+    "expectedStartMs": 1000,
+    "expectedEndMs": 2000,
+    "actualStartMs": 0,
+    "actualEndMs": 10000
+  },
+  "source": "vitest actual failed assertion",
+  "testsPassed": 9,
+  "testsFailed": 1
+}

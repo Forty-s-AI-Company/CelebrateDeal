@@ -1,0 +1,16 @@
+{
+  "sourceHashes": {
+    "src/lib/checkout-followup-queue.ts": "f69f5eeb5d033c17debd0bfd9c4b1f8f3eedd75ce837b47a8295afc9d5dff787",
+    "src/lib/checkout-followup-queue.test.ts": "61bfab85de3b8786c88d23eeb69d10be0cae592429f41e1d266406a7d954a3f4",
+    "src/lib/checkout-followup.ts": "d505b601f10e56ed9c625a8a2c299b7c036acc091a9b6e9a2e42c46c4fecfca0",
+    "src/lib/checkout-followup.test.ts": "1fff9fb53be0d49f6bcdddc49e2c84152d3197113ac6cc2733864ed85f56faa1",
+    "src/lib/email-delivery.ts": "341282406f2ddd6a249a6a0bb82a1edcd37a50ae1f8ac52237cf999da5c3f1be",
+    "src/lib/email-delivery.test.ts": "f8efaa79812fada1cf772a6b890591952ab4b0c78fa53432a6b01a913ad3ff82",
+    "src/app/api/jobs/email-deliveries/route.ts": "f8cb8411f6b95437801a8bbd818f998e95bf7c5de7d9d50ac9c8ed58810dd60a",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "3780d1cd60219ff0cb739ef84ae90912b1a0c3fecca28d2a4e69af681c924f94"
+  },
+  "supplied": "Full2domainmodules; dispatcher/job integration described exactly; all8filehashes retained. Test/auth fixture harness omitted to meet canonical20kcharlimit.",
+  "contextChars": 17387,
+  "wholeWp18": "NOT_READY",
+  "omitted": "route.test authentication harness omitted from prompt to avoid lexical sensitive-input rejection; source hash retained. No secrets supplied."
+}

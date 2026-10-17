@@ -1,0 +1,18 @@
+{
+  "exit_code": 1,
+  "failed_environment_checks": [
+    "CLOUDFLARE_STREAM_TOKEN",
+    "CLOUDFLARE_STREAM_WEBHOOK_SECRET"
+  ],
+  "categories": {
+    "typescript": false,
+    "module_missing": false,
+    "npm_install": false,
+    "engine": false,
+    "preflight": true,
+    "schema": false,
+    "env_identity": true,
+    "media_identity": true
+  },
+  "raw_logs_persisted": false
+}

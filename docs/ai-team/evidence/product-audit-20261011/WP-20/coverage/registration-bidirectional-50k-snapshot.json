@@ -1,0 +1,15 @@
+{
+  "files": {
+    "scripts/wp20-completion-load-disposable.mjs": "1d67de16baa4912fd3c312d462967c44a88bfb9a4375c280814f3ca164f791be",
+    "src/lib/live-metric-registration-audit.ts": "cb71e711243d37c43f13b755e4c12f7c46a770279288ba85da8f9305c8a5a54e",
+    "src/lib/live-metric-registration-source-audit.ts": "573b63b5f2e54d98d8c40c172d781c7f6c1cfb19e542a1b254a6170726b7c4c4"
+  },
+  "sourceRows": 50000,
+  "projectionRows": 50000,
+  "lint": "PASS",
+  "limits": [
+    "Missing-capture fixture is detected, not certified complete",
+    "Not a million-row performance claim",
+    "Original Serializable gate unchanged"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "status": "NO_BLOCKER_OR_MAJOR_ON_REVIEWED_SOURCE; MINOR_FIXED_NOT_REREVIEWED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "executionProvider": "claude_cli",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "INVALID_REVIEW",
+      "exitCode": 0
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "severityCounts": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 1,
+    "NIT": 0
+  },
+  "finding": "Pre-existing finish/pending microtask handoff",
+  "reproduction": "viewing-finish-race-before-fix.json",
+  "fix": "After active pending settles, finish performs one follow-up flush; overflow still never closes.",
+  "unitTests": 53,
+  "playerRegressionTests": 87,
+  "reviewSourceMatchesCurrent": false,
+  "fullWp": "INCOMPLETE; not READY"
+}

@@ -1,0 +1,23 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:d9dd00dbb929f5c3f2a890c67715e0e400985dd32237c4bceb4753f1ae464659",
+  "changed_files": [
+    "src/components/landing-pages/funnel-display-labels.ts",
+    "src/components/landing-pages/funnel-display-labels.test.ts"
+  ],
+  "targeted_passed": 59,
+  "review": {
+    "scope": "display helper and tests only",
+    "observed_model": "claude-opus-5-5",
+    "effort": "unknown",
+    "blocker_major": 0,
+    "findings": "2 MINOR 2 NIT; whitespace MINOR repaired, unknown-domain coverage NIT repaired; payment dictionary drift and expiry wording remain to disposition"
+  },
+  "browser": "36 PASS on prior batch3 revision; helper repair browser not yet run",
+  "remaining": [
+    "payment source mapping audit",
+    "dynamic registry terminology (Hero) and webinar terminology consistency",
+    "final whole-scope review and acceptance"
+  ],
+  "safety": "isolated worktree only; no push/deploy/Production"
+}

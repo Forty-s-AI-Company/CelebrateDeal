@@ -4,7 +4,7 @@ const m = vi.hoisted(() => ({ auth: vi.fn(), origin: vi.fn(), limit: vi.fn(), sa
 vi.mock("@/lib/auth", () => ({ getCurrentAuth: m.auth }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ live: { findFirst: m.live, updateMany: m.liveUpdate }, liveMediaSession: { findFirst: m.find, findMany: m.expired, create: m.create, updateMany: m.update, deleteMany: m.remove } }) }));
 vi.mock("@/lib/api-security", async (original) => ({ ...await original<typeof import("@/lib/api-security")>(), requireSameOriginRequest: m.sameOrigin }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: m.limit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: m.limit }));
 vi.mock("@/lib/live-quota-admission", () => ({ hasActiveLiveViewerSession: m.admission, liveViewerTokenFromRequest: m.token, hashLiveViewerToken: m.hash }));
 vi.mock("@/lib/live-runtime-readiness", () => ({ getRuntimeLivePublishReadiness: m.readiness }));
 vi.mock("@/lib/live-media-provider", () => ({ mediaOrigin: m.origin, mediaPath: (vendor: string, live: string) => `${vendor}/${live}`, startMediaSession: m.start, stopMediaSession: m.stop }));

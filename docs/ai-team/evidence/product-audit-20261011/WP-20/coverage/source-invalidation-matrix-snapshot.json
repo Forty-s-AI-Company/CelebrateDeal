@@ -1,0 +1,4 @@
+{
+  "scripts/wp20-metric-source-invalidation.mjs": "42598c671017cc23d1c01f169b41f6609218169bad52d375abd66832def8d925",
+  "scripts/wp20-payment-retry-disposable.mjs": "54c95df2aa696461fabdffcaa99b8598b23a1f55b3deb4e16474f1c723752851"
+}

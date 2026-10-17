@@ -1,0 +1,83 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:6ecd7cc7dcd1724c39348dfb6601ced20c09d43ca4bdbaac02dd80cb673de471",
+  "completed_wp": [
+    "WP-01",
+    "WP-05",
+    "WP-06",
+    "WP-07",
+    "WP-10"
+  ],
+  "changed_files": [
+    "src/app/(app)/affiliates/commissions/page.tsx",
+    "src/app/(app)/affiliates/page.tsx",
+    "src/app/(app)/billing/course-payouts/page.tsx",
+    "src/app/(app)/billing/payment-methods/page.tsx",
+    "src/app/(app)/blacklists/page.tsx",
+    "src/app/(app)/consultations/page.tsx",
+    "src/app/(app)/dashboard/dashboard-details-loading.test.tsx",
+    "src/app/(app)/dashboard/dashboard-details-loading.tsx",
+    "src/app/(app)/dashboard/dashboard-kpis-loading.test.tsx",
+    "src/app/(app)/dashboard/dashboard-kpis-loading.tsx",
+    "src/app/(app)/dashboard/loading.tsx",
+    "src/app/(app)/dashboard/page.tsx",
+    "src/app/(app)/forms/page.tsx",
+    "src/app/(app)/interaction-scripts/page.tsx",
+    "src/app/(app)/landing-pages/page.tsx",
+    "src/app/(app)/lives/page.tsx",
+    "src/app/(app)/messages/deliveries/page.tsx",
+    "src/app/(app)/onboarding/page.tsx",
+    "src/app/(app)/orders/page.tsx",
+    "src/app/(app)/products/page.tsx",
+    "src/app/(app)/settings/automations/page.tsx",
+    "src/app/(app)/settings/features/page.tsx",
+    "src/app/(app)/settings/security/page.tsx",
+    "src/app/(app)/settings/team/page.tsx",
+    "src/app/(app)/settings/tracking/page.tsx",
+    "src/app/(app)/support-cases/page.tsx",
+    "src/app/(app)/team-templates/page.tsx",
+    "src/app/(app)/videos/page.tsx",
+    "src/components/__snapshots__/app-shell.test.ts.snap",
+    "src/components/app-shell.test.ts",
+    "src/components/app-shell.tsx",
+    "src/components/landing-page-workspace.tsx",
+    "src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap",
+    "src/components/landing-pages/funnel-display-labels.test.ts",
+    "src/components/landing-pages/funnel-display-labels.ts",
+    "src/components/landing-pages/funnel-element-inspector.tsx",
+    "src/components/landing-pages/funnel-goal-picker.tsx",
+    "src/components/landing-pages/funnel-list.tsx",
+    "src/components/landing-pages/funnel-operations-panel.test.tsx",
+    "src/components/landing-pages/funnel-operations-panel.tsx",
+    "src/components/landing-pages/funnel-page-editor.tsx",
+    "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "src/components/landing-pages/funnel-template-gallery-picker.tsx",
+    "src/components/landing-pages/workspace-editor.tsx",
+    "src/components/team-performance-dashboard.tsx"
+  ],
+  "repair": "Remove unnecessary regexp s flag in app-shell.test.ts; negated character class already matches newlines. Preserve compilation target and assertions.",
+  "validation": {
+    "targeted": {
+      "status": "PASS",
+      "tests": 53
+    },
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "terminology-snapshot": "PASS",
+    "a11y": {
+      "status": "PASS",
+      "states": 36,
+      "scope": "real components and CSS, synthetic adapters; not authenticated full-app E2E"
+    }
+  },
+  "remaining": [
+    "Translate remaining visible Affiliate/Popup/Webinar/Studio/Elements/Blocks labels identified by fresh inventory",
+    "Final scoped independent review",
+    "Canonical whole-WP acceptance"
+  ],
+  "historical_failures": [
+    "batch2 typecheck TS1501 preserved",
+    "inventory initial call missing output argument; rerun with explicit output path succeeded"
+  ],
+  "review_count_limit": null
+}

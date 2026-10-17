@@ -1,5 +1,5 @@
 import { getCanonicalAppUrl } from "@/lib/app-url";
-import type { PrismaClient } from "@prisma/client";
+import type { Live, PrismaClient } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { createLiveViewerUrl } from "@/lib/live-public-url";
 import {
@@ -13,19 +13,25 @@ import {
 const MATERIALIZE_LIMIT = 100;
 type LineMaterializationDatabase = Pick<PrismaClient,
   | "lineOfficialAccount"
+  | "salesProject"
   | "lineUserIdentity"
   | "lineDelivery"
   | "formSubmission"
   | "commerceOrder"
   | "affiliateCommission"
+  | "messageTemplate"
 >;
 
-function formatStart(value: Date) {
+function formatStart(value: Date, timeZone = "Asia/Taipei") {
   return new Intl.DateTimeFormat("zh-TW", {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: "Asia/Taipei",
+    timeZone,
   }).format(value);
+}
+
+function isUpcoming(live: Pick<Live, "status" | "startedAt" | "endedAt" | "scheduledAt">, now: Date) {
+  return live.status === "scheduled" && !live.startedAt && !live.endedAt && now < live.scheduledAt;
 }
 
 /**
@@ -47,9 +53,9 @@ export async function materializeLineNotifications(
   const now = dbOrNow instanceof Date ? dbOrNow : requestedNow;
   const identities = await db.lineUserIdentity.findMany({
     where: { revokedAt: null, subjectType: { in: ["buyer_registration", "buyer_order", "promoter"] } },
-    orderBy: [{ lastMaterializedAt: "asc" }, { id: "asc" }],
+    orderBy: [{ lastMaterializedAt: { sort: "asc", nulls: "first" } }, { id: "asc" }],
     take: MATERIALIZE_LIMIT,
-    select: { id: true, vendorId: true, subjectType: true, subjectId: true, materializationCursor: true },
+    select: { id: true, vendorId: true, subjectType: true, subjectId: true, linkedAt: true, lastMaterializedAt: true, materializationCursor: true },
   });
   const results: Array<{ status: string }> = [];
 
@@ -60,18 +66,31 @@ export async function materializeLineNotifications(
           id: identity.subjectId,
           verificationStatus: "VERIFIED",
           form: { vendorId: identity.vendorId },
+          live: { vendorId: identity.vendorId },
         },
         select: {
           id: true,
-          live: { select: { id: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true } },
+          name: true,
+          live: { select: { id: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true, vendor: { select: { name: true, timezone: true } } } },
         },
       });
       const live = submission?.live;
-      if (!live) {
+      if (!submission || !live) {
         await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });
         continue;
       }
       const viewerUrl = createLiveViewerUrl(live.slug);
+      const templateVariables = { name: submission.name, live_title: live.title, live_url: viewerUrl, live_start_at: formatStart(live.scheduledAt, live.vendor.timezone), vendor_name: live.vendor.name };
+      // Confirmation belongs to the newly observed binding, never a later
+      // template activation/backfill across previously processed identities.
+      if (isUpcoming(live, now) && identity.lastMaterializedAt == null) {
+        const confirmation = await enqueueLineNotification(db, {
+          vendorId: identity.vendorId, subjectType: "buyer_registration", subjectId: identity.subjectId,
+          trigger: "registration_confirmed", idempotencyKey: stableLineIdempotencyKey(["registration_confirmed", identity.subjectId]),
+          messages: [], templateVariables, requireTemplate: true, eventOccurredAt: identity.linkedAt, dueAt: now,
+        });
+        if (confirmation.status === "queued" || confirmation.status === "duplicate") results.push(confirmation);
+      }
       const reminderAt = new Date(live.scheduledAt.getTime() - 60 * 60_000);
       if (live.status === "scheduled" && !live.startedAt && now >= reminderAt && now < live.scheduledAt) {
         results.push(await enqueueLineNotification(db, {
@@ -81,6 +100,8 @@ export async function materializeLineNotifications(
           trigger: "live_reminder",
           idempotencyKey: stableLineIdempotencyKey(["live_reminder", live.id, identity.subjectId, live.scheduledAt]),
           messages: [buildLiveLineMessage({ kind: "reminder", liveTitle: live.title, startsAtText: formatStart(live.scheduledAt), viewerUrl })],
+          templateVariables,
+          dueAt: now,
         }));
       }
       if (live.status === "live" && live.startedAt && !live.endedAt) {
@@ -91,6 +112,8 @@ export async function materializeLineNotifications(
           trigger: "live_started",
           idempotencyKey: stableLineIdempotencyKey(["live_started", live.id, identity.subjectId, live.startedAt]),
           messages: [buildLiveLineMessage({ kind: "started", liveTitle: live.title, startsAtText: formatStart(live.startedAt), viewerUrl })],
+          templateVariables,
+          dueAt: now,
         }));
       }
       await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });

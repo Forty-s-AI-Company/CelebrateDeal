@@ -1,0 +1,85 @@
+{
+  "status": "PASS",
+  "scope": "support diagnostic only",
+  "profiles": [
+    {
+      "role": "support",
+      "features": "all",
+      "results": [
+        {
+          "href": "/support-cases",
+          "finalPath": "/support-cases",
+          "status": 200
+        },
+        {
+          "href": "/affiliate-portal",
+          "finalPath": "/affiliate-portal",
+          "status": 200
+        },
+        {
+          "href": "/settings/security",
+          "finalPath": "/settings/security",
+          "status": 200
+        },
+        {
+          "href": "/policies",
+          "finalPath": "/policies",
+          "status": 200
+        },
+        {
+          "href": "/support",
+          "finalPath": "/support",
+          "status": 200
+        }
+      ],
+      "inventory": [
+        "/support-cases",
+        "/affiliate-portal",
+        "/settings/security",
+        "/policies",
+        "/support"
+      ],
+      "status": "PASS"
+    },
+    {
+      "role": "support",
+      "features": "none",
+      "results": [
+        {
+          "href": "/support-cases",
+          "finalPath": "/support-cases",
+          "status": 200
+        },
+        {
+          "href": "/affiliate-portal",
+          "finalPath": "/affiliate-portal",
+          "status": 200
+        },
+        {
+          "href": "/settings/security",
+          "finalPath": "/settings/security",
+          "status": 200
+        },
+        {
+          "href": "/policies",
+          "finalPath": "/policies",
+          "status": 200
+        },
+        {
+          "href": "/support",
+          "finalPath": "/support",
+          "status": 200
+        }
+      ],
+      "inventory": [
+        "/support-cases",
+        "/affiliate-portal",
+        "/settings/security",
+        "/policies",
+        "/support"
+      ],
+      "status": "PASS"
+    }
+  ],
+  "restored": true
+}

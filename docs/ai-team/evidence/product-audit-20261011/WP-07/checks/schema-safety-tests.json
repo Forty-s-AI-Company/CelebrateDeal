@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "schema-safety-tests", "revision": "sha256:2aa7e3fb1f3db46c924615fb717d95c8fe2d54a2ce9026cb6f96ae0f94a7aa06", "status": "PASS", "exit_code": 0, "duration_seconds": 3.25}

@@ -1,0 +1,256 @@
+Read-only independent integration/security review of exact current WP05 source excerpts. No tools, edits or external actions. Only actionable BLOCKER/MAJOR/MINOR/NIT. Existing core submission processing is unchanged (verified invariant). Encrypted draft/receipt internals reviewed separately. Verify source/form binding, published/available gate order, native response, deadline closed vs designated target and UI truthfulness. Scope is this part only, not whole WP acceptance. 186 unit,7 DB,35 browser cases PASS. For two lp routes: metadata/import helpers omitted, load/resolve call existing published loader; consultation CSRF declaration omitted entirely for input filter, actual source retains it. No change to email confirmation, publication or deadline conditions.
+
+src/components/registration-retry-boundary.tsx
+import { registrationResultCookieName, verifyRegistrationResult } from "@/lib/registration-submission-receipt";
+import { cookies, headers } from "next/headers";
+import type { ReactNode } from "react";
+import { getDb } from "@/lib/db";
+import { readRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName } from "@/lib/registration-form-retry";
+import { RegistrationRetryProvider } from "@/components/registration-retry-context";
+
+/** 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。 */
+export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted }: {
+  formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string;
+}) {
+  const failed = typeof retry === "string" && ["400", "403", "404", "429", "503", "unavailable"].includes(retry);
+  let draft = null;
+  if (failed && retry !== "unavailable" && formId) {
+    const jar = await cookies();
+    const host = (await headers()).get("host") ?? "";
+    const capability = jar.get(registrationRetryCookieName(registrationRetrySecureCookies(host)))?.value;
+    try { draft = await readRegistrationRetryDraft(getDb(), { capability, formId, sourcePath }); } catch { /* 明示未保留，不送出敏感診斷。 */ }
+  }
+  const verifiedSubmission = await verifiedRegistrationSubmission(formId, sourcePath, submitted);
+  return function RetryBoundary(children: ReactNode) {
+    return <RegistrationRetryProvider value={{ formId, sourcePath, draft, failed, submitted: verifiedSubmission }}>{children}</RegistrationRetryProvider>;
+  };
+}
+
+
+/** 共用驗證，避免個別入口直接信任網址上的成功旗標。 */
+export async function verifiedRegistrationSubmission(formId: string | undefined, sourcePath: string, submitted?: string) {
+  if (submitted !== "verification_required" || !formId) return false;
+  const jar = await cookies();
+  const secure = registrationRetrySecureCookies((await headers()).get("host") ?? "");
+  return verifyRegistrationResult(jar.get(registrationResultCookieName(secure))?.value, formId, sourcePath);
+}
+
+/** 網址只決定是否呈現結果頁；成功與欄位仍須通過原來源綁定驗證。 */
+export function hasRegistrationFeedbackQuery(query: { registrationRetry?: string; submitted?: string }) {
+  return ["400", "403", "404", "429", "503", "unavailable"].includes(query.registrationRetry ?? "") || query.submitted === "verification_required";
+}
+
+src/components/registration-retry-context.tsx
+"use client";
+import { createContext, useContext, type ReactNode } from "react";
+import type { RegistrationRetryDraft } from "@/lib/registration-form-retry";
+import { formSubmissionErrorMessage } from "@/lib/registration-submission-client";
+type RetryState = { formId?: string; sourcePath: string; draft: RegistrationRetryDraft | null; failed: boolean; submitted?: boolean };
+const Context = createContext<RetryState | null>(null);
+export function RegistrationRetryProvider({ value, children }: { value: RetryState; children: ReactNode }) {
+  return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+export function useRegistrationRetry(formId: string) {
+  const state = useContext(Context);
+  if (!state || state.formId !== formId) return null;
+  // 網址可被分享或保留；沒有有效草稿時，不把網址旗標當成送出失敗的證據。
+  return { ...state, message: state.failed ? state.draft ? formSubmissionErrorMessage(state.draft.status) : "目前沒有可恢復的填寫內容，無法確認先前的送出結果。若您已報名，請先查看確認信，避免重複送出；若尚未報名，請重新填寫。" : "" };
+}
+
+src/components/registration-closed-feedback.tsx
+"use client";
+
+import { useRegistrationRetry } from "@/components/registration-retry-context";
+import { FORM_SUBMISSION_VERIFICATION_MESSAGE } from "@/lib/registration-submission-client";
+
+/** 截止頁只提供原來源綁定的結果及唯讀草稿，不提供任何送出入口。 */
+export function RegistrationClosedFeedback({ formId, fields = [], destination }: {
+  formId?: string;
+  fields?: Array<{ key: string; label: string }>;
+  destination?: string;
+}) {
+  const retry = useRegistrationRetry(formId ?? "");
+  return <main className="mx-auto grid max-w-2xl gap-4 px-6 py-16">
+    <h1 className="text-2xl font-bold">此活動已截止</h1>
+    <p>目前無法再次送出報名。</p>
+    {retry?.submitted ? <p role="status">{FORM_SUBMISSION_VERIFICATION_MESSAGE}</p>
+      : <p role="alert">{retry?.draft ? "先前送出未完成。以下保留當時填寫的內容，僅供查看。" : "無法確認先前的送出結果，也沒有可恢復的填寫內容。若您已報名，請查看確認信。"}</p>}
+    {!retry?.submitted && retry?.draft ? <div className="grid gap-3">
+      {fields.filter((field) => Object.hasOwn(retry.draft!.answers, field.key)).map((field) => <label key={field.key} className="grid gap-1 text-sm">
+        {field.label}<input readOnly value={retry.draft!.answers[field.key]} className="min-h-11 rounded border bg-slate-50 px-3" />
+      </label>)}
+    </div> : null}
+    {destination ? <a href={destination} className="underline">前往活動指定頁面</a> : null}
+  </main>;
+}
+
+src/components/registration-deadline-outcome.tsx
+import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
+import type { FunnelRuntimeDecision } from "@/lib/funnel-runtime";
+import { RegistrationClosedFeedback } from "./registration-closed-feedback";
+import { hasRegistrationFeedbackQuery } from "./registration-retry-boundary";
+
+/** 截止規則先決定可用性；只有結果查詢才留在原來源提供唯讀內容。 */
+export function registrationDeadlineOutcome({ decision, query, form, slug, withRetry }: {
+  decision: FunnelRuntimeDecision;
+  query: { registrationRetry?: string; submitted?: string };
+  form?: { id: string; fields: Array<{ key: string; label: string }> };
+  slug: string;
+  withRetry: (children: ReactNode) => ReactNode;
+}) {
+  if (decision.status !== "closed" && decision.status !== "redirect") return null;
+  const destination = decision.status === "redirect" ? `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(decision.path)}` : undefined;
+  if (hasRegistrationFeedbackQuery(query)) return withRetry(<RegistrationClosedFeedback formId={form?.id} fields={form?.fields} destination={destination} />);
+  if (destination) redirect(destination);
+  return <main className="mx-auto max-w-2xl px-6 py-24 text-center"><h1 className="text-2xl font-black text-slate-950">此活動已截止</h1><p className="mt-3 text-slate-600">目前不再接受新的瀏覽或送出資料。</p></main>;
+}
+
+src/app/lp/[slug]/page.tsx
+export default async function PublicLandingPage({ params, searchParams }: { searchParams?: Promise<{ registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string }> }) {
+  const query = await searchParams ?? {};
+  const page = await load((await params).slug);
+  if (!page) notFound();
+  const buildRetryBoundary = () => registrationRetryBoundary({ formId: isFunnelStepPages(page.content) && page.content.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}`, retry: query.registrationRetry, submitted: query.submitted });
+  if (isFunnelStepPages(page.content)) {
+    const requestedStep = page.content.flow.steps.find((step) => !step.isSystem);
+    if (!requestedStep) notFound();
+    const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
+    const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: requestedStep.id, visitorId });
+    if (!runtime || runtime.decision.status === "unavailable") notFound();
+    const withRetry = await buildRetryBoundary();
+    if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: page.content.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry });
+    const decision = runtime.decision;
+    await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
+    if (page.content.flow.goal === "webinar") return withRetry(<FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+    const document = getPublicFunnelPage(page.content, page.content.flow.steps.find((step) => step.id === decision.renderedStepId)?.path);
+    if (!document) notFound();
+    const logicalDocument = getPublicFunnelPage(page.content, requestedStep.path);
+    const nextPath = logicalDocument ? getNextPublicFunnelStepPath(page.content, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
+    return withRetry(<PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+  }
+  const withRetry = await buildRetryBoundary();
+  if (!isPageDocument(page.content)) return withRetry(<LandingPageRenderer content={page.content} context={page.context} />);
+  return withRetry(<PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />);
+}
+
+src/app/lp/[slug]/[stepPath]/page.tsx
+export default async function PublicFunnelStepPage({ params, searchParams }: { searchParams?: Promise<{ registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string; stepPath: string }> }) {
+  const { slug, stepPath } = await params;
+  const { page, document, steps } = await resolve(slug, stepPath);
+  if (!document) notFound();
+  const step = steps?.flow.steps.find((candidate) => candidate.path === stepPath);
+  if (!page || !steps || !step || step.isSystem) notFound();
+  const query = await searchParams ?? {};
+  const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
+  const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: step.id, visitorId });
+  if (!runtime || runtime.decision.status === "unavailable") notFound();
+  const withRetry = await registrationRetryBoundary({ formId: steps.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}/${step.path}`, retry: query.registrationRetry, submitted: query.submitted });
+  if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: steps.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry });
+  const decision = runtime.decision;
+  await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
+  if (steps.flow.goal === "webinar") return withRetry(<FunnelWebinarExperience state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+  const rendered = getPublicFunnelPage(steps, steps.flow.steps.find((candidate) => candidate.id === decision.renderedStepId)?.path);
+  if (!rendered) notFound();
+  const logicalDocument = getPublicFunnelPage(steps, step.path);
+  const nextPath = logicalDocument ? getNextPublicFunnelStepPath(steps, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
+  return withRetry(<PublicFunnelDocument document={rendered} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+}
+
+src/app/api/form-submissions/route.ts success/parser/wrapper excerpt
+function submissionResponse(
+  request: Request,
+  redirectTo: string | undefined,
+  isNativeFormPost: boolean,
+  formSubmissionId: string,
+  issueLineBindingCapability = false,
+) {
+  const response = isNativeFormPost && redirectTo && isSameOriginRedirect(redirectTo, request.url)
+    ? NextResponse.redirect(withSubmittedSearchParam(redirectTo, request.url), { status: 303 })
+    : NextResponse.json({ ok: true, verificationRequired: true });
+
+  response.cookies.set(FORM_SUBMISSION_COOKIE, formSubmissionId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: new URL(request.url).protocol === "https:",
+    path: "/",
+    maxAge: FORM_SUBMISSION_COOKIE_TTL_SECONDS,
+  });
+  if (issueLineBindingCapability) {
+    response.cookies.set(
+      FORM_SUBMISSION_LINE_BINDING_COOKIE,
+      createFormSubmissionLineBindingToken(formSubmissionId),
+      formSubmissionLineBindingCookieOptions(new URL(request.url).protocol === "https:"),
+    );
+  }
+  return response;
+}
+
+function withSubmittedSearchParam(redirectTo: string, requestUrl: string) {
+  const redirectUrl = new URL(redirectTo, requestUrl);
+  redirectUrl.searchParams.set("submitted", "verification_required");
+  return redirectUrl;
+}
+
+function isSameOriginRedirect(redirectTo: string, requestUrl: string) {
+  try {
+    return redirectTo.startsWith("/")
+      && new URL(redirectTo, requestUrl).origin === new URL(requestUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+function nativeFormPayload(formData: FormData | null) {
+  if (!formData) return {};
+  const payload: Record<string, unknown> = {};
+
+  for (const [key, value] of formData.entries()) {
+    if (!REGISTRATION_FORM_RESERVED_FIELDS.has(key)) {
+      if (typeof value !== "string") return {};
+      payload[key] = value;
+    }
+  }
+
+  const liveId = formData.get("liveId");
+  const landingPageId = formData.get("landingPageId");
+  const funnelStepId = formData.get("funnelStepId");
+  const referralCode = formData.get("referralCode");
+  const shareCode = formData.get("shareCode");
+  const redirectTo = formData.get("redirectTo");
+  return {
+    formId: String(formData.get("formId") ?? ""),
+    landingPageId: typeof landingPageId === "string" && landingPageId ? landingPageId : undefined,
+    funnelStepId: typeof funnelStepId === "string" && funnelStepId ? funnelStepId : undefined,
+    liveId: typeof liveId === "string" && liveId ? liveId : null,
+    payload,
+    referralCode: typeof referralCode === "string" && referralCode ? referralCode : null,
+    shareCode: typeof shareCode === "string" && shareCode ? shareCode : null,
+    redirectTo: typeof redirectTo === "string" && redirectTo.startsWith("/") ? redirectTo : undefined,
+  };
+}
+
+/** 保留JSON契約；native錯誤只在驗證同源後保存加密草稿。 */
+export async function POST(request: Request) {
+  const native = /application\/x-www-form-urlencoded|multipart\/form-data/i.test(request.headers.get("content-type") ?? "");
+  if (!native) {
+    const response = await processSubmission(request);
+    if (response.ok) await clearRegistrationRetry(request, response);
+    return response;
+  }
+  // 有界讀取容納32×2000字元的URL編碼；JSON上限與欄位驗證保持原樣。
+  const formData = await readFormDataBody(request, 1_000_000);
+  let response: NextResponse;
+  try { response = await processSubmission(request, formData); }
+  catch { response = NextResponse.json({ error: "Submission unavailable" }, { status: 503 }); }
+  if (response.status >= 400) {
+    const retryResponse = await registrationRetryResponse(request, formData, response.status);
+    // 保留伺服器限流等待時間；不轉送其他錯誤回應標頭。
+    const retryAfter = response.headers.get("Retry-After");
+    if (response.status === 429 && retryAfter && /^\d{1,8}$/.test(retryAfter)) retryResponse.headers.set("Retry-After", retryAfter);
+    return retryResponse;
+  }
+  await clearRegistrationRetry(request, response);
+  attachRegistrationResult(request, response, formData);
+  return response;
+}

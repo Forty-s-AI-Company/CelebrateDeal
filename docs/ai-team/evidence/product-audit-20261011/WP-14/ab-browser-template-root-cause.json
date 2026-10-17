@@ -1,0 +1,11 @@
+{
+  "cause": "The new readout spec used initial audience draft content. Existing createGoalFunnelStepPages deliberately leaves audience templates unselected, and FunnelOperationsPanel disables secondary tabs while needsTemplate is true. The click therefore waited on a correctly disabled Stats tab.",
+  "evidence": [
+    "src/lib/funnel-goal-step-pages.ts:22",
+    "src/components/landing-pages/funnel-operations-panel.tsx:86",
+    "tests/e2e/wp14-ab-readout.spec.ts"
+  ],
+  "fix": "Use the original WP14 webinar fixture goal, whose real built-in registration template is already instantiated; assert template identity is present before creating fixtures. Set bounded action timeout20sec rather than waiting for overall180sec. Product guards and all count/status/assertions remain.",
+  "status": "SOURCE_CONFIRMED_RUNTIME_RECHECK_PENDING",
+  "dev_timeout_cause": "Same fixture guard is present in both dev/built modes; no evidence that dev or compiler was the root cause."
+}

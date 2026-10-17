@@ -1,3 +1,4 @@
+import { isDatabaseWriteConflict } from "@/lib/database-write-conflict";
 import { reconcileAffiliatePendingPayout } from "@/lib/affiliate-payout-accounting";
 import { accrueMerchantAffiliatePlan } from "@/lib/merchant-affiliate-policy-service";
 import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
@@ -1270,8 +1271,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
 }
 
 function isRetryableCommissionWriteConflict(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError
-    && (error.code === "P2034" || error.code === "P2002");
+  return isDatabaseWriteConflict(error)
+    || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002");
 }
 
 /**

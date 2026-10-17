@@ -1,0 +1,6 @@
+{
+  "runner_sha256": "b3965206c37f58a57d2f096cc0d2247892834a0f24047619b359e7839a495031",
+  "lint": "PASS",
+  "verified": "Without Live.videoId, existing LiveMetricVersion immutable identity trigger rejects form vendor change SQLSTATE23514; rollback restores original video and owner",
+  "remaining": "Ready-report result invalidation matrix for allowed source changes not yet tested"
+}

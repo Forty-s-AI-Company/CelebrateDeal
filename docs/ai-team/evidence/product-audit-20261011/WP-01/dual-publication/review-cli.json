@@ -1,0 +1,232 @@
+{
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "I reviewed only the supplied D-1 diff. The merchant-side diagnostic is a reasonable approach: it is authorized through editorProject() with a vendor/project-scoped page lookup, the public route never passes the reason callback, the publish action handles diagnostic failure without reporting a false publish failure, and the project and publish gates are unchanged. One substantive acceptance gap remains, plus a few correctness and maintainability issues. The proposed separate check is a useful extra check, but it doesn't faithfully replace the strict HTTP 404 criterion. An unavailable public URL still returns HTTP 200 (a soft 404). That stays an open D-1 item unless the D-1 owner explicitly accepts the change. Other issues: the diagnostic can stop the editor from loading, the status panel can show stale information after unpublishing, the public-page lookup doesn't confirm it found this same page, and the copied project-gate checks can drift from the original. With the strict 404 test still failing and the multi-step/a11y E2E pending, D-1 is not ready.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "(acceptance) public Funnel route / proposed replacement check",
+        "area": "D-1 public-unavailability verification",
+        "issue": "The proposed check (not-found heading, noindex, absent authored content, merchant reason; valid published page returns 200 plus form) replaces the failing strict HTTP 404 test. It does not faithfully cover it.",
+        "evidence": "Strict HTTP404 test remains FAIL; unavailable public page shows not-found UI but HTTP 200. The installed Next.js docs say a streamed notFound() keeps status 200 once the shell has been flushed.",
+        "impact": "Crawlers, CDNs/caches, uptime monitors and link checkers will treat unpublished or unavailable Funnel URLs as live 200 pages (soft 404). noindex reduces search indexing but not caching or monitoring false positives. Swapping in a weaker test without owner sign-off silently narrows D-1. The phrase 'merchant reason' in the proposal is ambiguous. If it means asserting that the reason appears on the public page, that would expose internal diagnostics to anonymous visitors.",
+        "recommended_fix": "Keep strict 404 as an open D-1 item, or get explicit owner acceptance of the deviation and record it. To actually fix it, decide availability before streaming starts for the public segment: remove or move the loading.tsx/Suspense boundary above the availability check, or reject unavailable slugs earlier (for example in middleware or a non-streamed layout/route check). If the replacement check is accepted, assert that the merchant reason is ABSENT from the public HTML and present only in the authenticated editor.",
+        "required_test": "Strict HTTP 404 for: unpublished project, draft Funnel, and invalid published version. If a deviation is accepted, add an E2E asserting not-found heading, robots noindex, no authored content and no diagnostic reason text in the public response body, plus the reason shown in the editor. Keep the published-page check (HTTP 200 plus form).",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/landing-pages/[id]/page.tsx",
+        "area": "return statement, initialPublication={await getLandingPagePublicationStatus(id)}",
+        "issue": "The diagnostic call is made during render, outside the existing NotFound/Scope error handling and with no fallback. Any error it throws prevents the editor from loading.",
+        "evidence": "The publish action wraps the same call in try/catch with the comment that diagnostic failure must not be reported as failure. The page route has no such guard. The function can throw LandingPageNotFoundError or a scope error from editorProject(), for example if the selected project changes between the two calls, and it runs several extra queries plus loadPublicLandingPage.",
+        "impact": "A purely informational diagnostic can block the editor (error boundary or 500 instead of notFound) and makes the editor depend on extra queries.",
+        "recommended_fix": "Catch errors in the page route and pass undefined, or a fallback 'status unavailable' value, to initialPublication. Map NotFound/Scope errors the same way the page fetch does. Optionally run it in parallel with getCsrfToken().",
+        "required_test": "Unit/integration test: when getLandingPagePublicationStatus throws, the editor still renders (status absent or fallback), and scope/not-found errors map to the existing notFound behavior.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-page-workspace.tsx",
+        "area": "publicationResult state / unpublish handler",
+        "issue": "The publication panel is updated only after publish. Unpublish (and saves that change slug or operations) leave the previous status visible.",
+        "evidence": "if (operation === \"unpublish\") setPublished(false); does not touch publicationResult, and the unpublish result carries no publication. The panel is driven only by initialPublication or the publish result.",
+        "impact": "Unless a router refresh always follows, the merchant can see 'Funnel and project are published; the public page is reachable' right after unpublishing, which contradicts the goal of an accurate public-availability reason.",
+        "recommended_fix": "On unpublish, either return a fresh publication status from the action or clear/replace publicationResult with a 'Funnel not published' status. Alternatively, guarantee router.refresh() after state-changing actions.",
+        "required_test": "Component/E2E test: publish, then unpublish, and assert the panel shows that the Funnel is unpublished and the public URL is unavailable, without a manual reload.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/landing-page-service.ts",
+        "area": "getLandingPagePublicationStatus: loadPublicLandingPage(page.slug, …)",
+        "issue": "The diagnostic looks up the public page by slug but never checks that the result is the page being diagnosed.",
+        "evidence": "loadPublicLandingPage takes only a slug and returns the single candidate. The diagnostic uses Boolean(publicPage) and publicPage.content without comparing ids or vendor/project. Because of the candidates.length !== 1 handling, slug uniqueness is not structurally guaranteed.",
+        "impact": "If this page is excluded from the candidate set (for example a missing publishedVersion) and another page shares the slug, the merchant could be told 'available' based on another page, possibly another tenant's. Reason strings could also describe that other page's state.",
+        "recommended_fix": "Return the page id/vendorId from loadPublicLandingPage (or pass an expected id) and treat a mismatch as unavailable with a 'slug conflict / version inconsistent' reason.",
+        "required_test": "Integration test with two pages sharing a slug, where only the other vendor's page is publicly resolvable. The diagnostic must report unavailable for the merchant's page.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/landing-page-service.ts",
+        "area": "getLandingPagePublicationStatus: project-unpublished branch (Promise.all predicates)",
+        "issue": "The project-gate prerequisites are copied by hand from publishSalesProjectAction instead of shared, so the two will drift.",
+        "evidence": "The comment says 'Read-only mirror of publishSalesProjectAction: never relax its verified payment predicate'. The product, form, live, consultation-availability and verified-payment predicates are re-implemented inline. The original action is outside the supplied scope, so I couldn't check them for equivalence.",
+        "impact": "Any future change to the project gate makes the merchant's 'exact missing items' list wrong: either an empty list while publish fails, or blocking items that are no longer required. That undermines D-1's exact-missing-items requirement.",
+        "recommended_fix": "In a follow-up, or within scope if allowed, extract one read-only prerequisite function used by both publishSalesProjectAction and the diagnostic. Until then, add a parity test.",
+        "required_test": "Parity test: for fixtures covering each missing prerequisite (including expired, unverified and future-verifiedAt payment methods, and a membership-scoped payment), the diagnostic's missing list matches exactly the reasons publishSalesProjectAction rejects.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-page-workspace.tsx",
+        "area": "status badge and publication section",
+        "issue": "The badge says 'Funnel 已發布（公開狀態見下方）', but no section appears below when the post-publish diagnostic failed (result.publication undefined). The panel also always uses amber warning styling, even when the page is available.",
+        "evidence": "setPublicationResult({ source: initialPublication, value: result.publication }), where value can be undefined after the catch branch. The section className is fixed to border-amber-200 bg-amber-50.",
+        "impact": "Small UX inconsistency: a dangling reference, and a success state shown as a warning.",
+        "recommended_fix": "Show a fallback 'status unknown, please refresh' panel when publication is undefined after publish, and use neutral/success styling when publication.available is true.",
+        "required_test": "Component test for the diagnostic-failure publish path and the available state.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:1a7214fd7247fc913587e6d3db4a365137d0b880ab965be4f4adc4d57b5a1fbc",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/lib/landing-page-service.ts",
+      "src/app/actions/landing-page-actions.ts",
+      "src/components/landing-page-workspace.tsx",
+      "src/app/(app)/landing-pages/[id]/page.tsx",
+      "src/lib/landing-page-service.test.ts",
+      "src/app/actions/landing-page-actions.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/(app)/landing-pages/[id]/page.tsx",
+      "src/app/actions/landing-page-actions.test.ts",
+      "src/app/actions/landing-page-actions.ts",
+      "src/components/landing-page-workspace.tsx",
+      "src/lib/landing-page-service.test.ts",
+      "src/lib/landing-page-service.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "reviewed": true,
+  "execution_provider": "claude_cli"
+}

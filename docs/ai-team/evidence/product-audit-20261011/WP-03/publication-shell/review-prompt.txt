@@ -1,0 +1,260 @@
+Independent ordinary review of WP03 technical publication shell only. Output canonical JSON summary/findings; severity ONLY BLOCKER/MAJOR/MINOR/NIT. D5 formal contents deferred. All legal draft paragraphs must remain unchanged and rendered. Do not invent version/effective date or imply publication. Common footer becomes reader-facing; legacy support/merchant notices intentionally unchanged. EntireWP03 remainsINCOMPLETE. No legal advice review requested. Exactdiff and source below.
+diff --git "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\publication-shell\\before\\src\\components\\public-policy.tsx.txt" "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\components\\public-policy.tsx"
+index f2038c19..0e796497 100644
+--- "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\publication-shell\\before\\src\\components\\public-policy.tsx.txt"
++++ "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\components\\public-policy.tsx"
+@@ -28,7 +28,7 @@ export function PublicPolicyShell({ children }: { children: React.ReactNode }) {
+         <footer className="mt-12 border-t border-border pt-6">
+           <PublicResourceLinks compact />
+           <p className="mt-4 text-center text-xs leading-5 text-slate-700">
+-            目前頁面均為本機草稿；正式條款、隱私、退款、客服與商家 onboarding 仍需真人 owner 核准。
++            目前提供草稿資訊；正式條款、隱私與退款政策尚未發布，請勿將草稿視為已生效的政策。
+           </p>
+         </footer>
+       </div>
+@@ -54,7 +54,16 @@ export function PolicyDocument({ draft }: { draft: PolicyDraft }) {
+           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{draft.title}</h1>
+           <p className="mt-3 text-base leading-7 text-slate-600">{draft.summary}</p>
+         </div>
+-        <PolicyDraftNotice status={draft.status} owner={draft.owner} />
++        {/* D-5 has not supplied an approved version or effective date. Do not
++            infer publication from a draft's internal status or owner fields. */}
++        <aside role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
++          <p className="font-bold">政策尚未正式發布</p>
++          <p className="mt-1 leading-6">以下內容為草稿，尚未生效；正式版本與生效日期確認後會在本頁公布。</p>
++        </aside>
++        <dl className="mt-4 grid gap-3 text-sm text-slate-700 sm:grid-cols-2" aria-label="政策發布資訊">
++          <div><dt className="font-semibold">正式版本</dt><dd className="mt-1">尚未發布</dd></div>
++          <div><dt className="font-semibold">生效日期</dt><dd className="mt-1">尚未生效</dd></div>
++        </dl>
+         <div className="mt-8 grid gap-6">
+           {draft.sections.map((section) => (
+             <section key={section.heading} className="rounded-lg border border-border bg-white p-6 shadow-sm">
+diff --git "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\publication-shell\\before\\src\\components\\public-policy.test.tsx.txt" "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\components\\public-policy.test.tsx"
+index 8a7ef22d..4abf0763 100644
+--- "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\publication-shell\\before\\src\\components\\public-policy.test.tsx.txt"
++++ "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\components\\public-policy.test.tsx"
+@@ -1,32 +1,46 @@
+-import { renderToStaticMarkup } from "react-dom/server";
+-import { describe, expect, it } from "vitest";
+-import { PolicyDocument, PublicPolicyShell, PublicResourceLinks } from "./public-policy";
+-import { policyDrafts } from "@/lib/public-policy-content";
+-
+-describe("public policy and operations entrypoints", () => {
+-  it("exposes every public resource through accessible links", () => {
+-    const html = renderToStaticMarkup(<PublicPolicyShell><PublicResourceLinks /></PublicPolicyShell>);
+-
+-    expect(html).toContain('aria-label="公開資訊"');
+-    expect(html).toContain('href="/policies/terms"');
+-    expect(html).toContain('href="/policies/privacy"');
+-    expect(html).toContain('href="/policies/refunds"');
+-    expect(html).toContain('href="/support"');
+-    expect(html).toContain('href="/merchant-onboarding"');
+-    expect(html).toContain('class="mt-4 text-center text-xs leading-5 text-slate-700"');
+-    expect(html).not.toContain('class="mt-4 text-center text-xs leading-5 text-slate-500"');
+-    expect(html).toContain("正式條款、隱私、退款、客服與商家 onboarding 仍需真人 owner 核准");
+-  });
+-
+-  it.each(Object.values(policyDrafts))("renders the %s draft with an explicit human review boundary", (draft) => {
+-    const html = renderToStaticMarkup(<PolicyDocument draft={draft} />);
+-
+-    expect(html).toContain(draft.title);
+-    expect(html).toContain(draft.status);
+-    expect(html).toContain(draft.owner);
+-    for (const section of draft.sections) {
+-      expect(html).toContain(section.heading);
+-    }
+-    expect(html).toContain("不構成法律意見、正式政策或 release sign-off");
+-  });
+-});
++import { renderToStaticMarkup } from "react-dom/server";
++import { describe, expect, it } from "vitest";
++import { PolicyDocument, PublicPolicyShell, PublicResourceLinks } from "./public-policy";
++import { policyDrafts } from "@/lib/public-policy-content";
++
++describe("public policy and operations entrypoints", () => {
++  it("exposes every public resource through accessible links", () => {
++    const html = renderToStaticMarkup(<PublicPolicyShell><PublicResourceLinks /></PublicPolicyShell>);
++
++    expect(html).toContain('aria-label="公開資訊"');
++    expect(html).toContain('href="/policies/terms"');
++    expect(html).toContain('href="/policies/privacy"');
++    expect(html).toContain('href="/policies/refunds"');
++    expect(html).toContain('href="/support"');
++    expect(html).toContain('href="/merchant-onboarding"');
++    expect(html).toContain('class="mt-4 text-center text-xs leading-5 text-slate-700"');
++    expect(html).not.toContain('class="mt-4 text-center text-xs leading-5 text-slate-500"');
++    expect(html).toContain("正式條款、隱私與退款政策尚未發布，請勿將草稿視為已生效的政策");
++  });
++
++  it.each(Object.values(policyDrafts))("renders the %s draft with an explicit human review boundary", (draft) => {
++    const html = renderToStaticMarkup(<PolicyDocument draft={draft} />);
++
++    expect(html).toContain(draft.title);
++    expect(html).not.toContain(draft.status);
++    expect(html).toContain("政策尚未正式發布");
++    expect(html).toContain('aria-label="政策發布資訊"');
++    expect(html).toContain("正式版本");
++    expect(html).toContain("尚未發布");
++    expect(html).toContain("生效日期");
++    expect(html).toContain("尚未生效");
++    for (const section of draft.sections) {
++      expect(html).toContain(section.heading);
++      for (const paragraph of section.paragraphs) expect(html).toContain(renderToStaticMarkup(<p>{paragraph}</p>));
++    }
++    expect(html).toContain("以下內容為草稿，尚未生效");
++  });
++  it("does not infer approval from internal draft metadata", () => {
++    const html = renderToStaticMarkup(<PolicyDocument draft={{ ...policyDrafts.terms, status: "PUBLISHED 2026-01-01", owner: "approved-owner" }} />);
++    expect(html).toContain("尚未發布");
++    expect(html).toContain("尚未生效");
++    expect(html).not.toContain("PUBLISHED 2026-01-01");
++    expect(html).not.toContain("approved-owner");
++    expect(html).not.toContain("<time");
++  });
++});
+diff --git "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\publication-shell\\before\\src\\app\\policies\\[slug]\\page.test.tsx.txt" "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\app\\policies\\[slug]\\page.test.tsx"
+index 823b7245..b5bdfabe 100644
+--- "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\publication-shell\\before\\src\\app\\policies\\[slug]\\page.test.tsx.txt"
++++ "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\app\\policies\\[slug]\\page.test.tsx"
+@@ -1,28 +1,30 @@
+-import { renderToStaticMarkup } from "react-dom/server";
+-import { describe, expect, it } from "vitest";
+-import PolicyPage, { generateMetadata, generateStaticParams } from "./page";
+-
+-describe("/policies/[slug] route", () => {
+-  it("generates one static route for each policy draft", () => {
+-    expect(generateStaticParams()).toEqual([
+-      { slug: "terms" },
+-      { slug: "privacy" },
+-      { slug: "refunds" },
+-    ]);
+-  });
+-
+-  it("renders a valid policy draft and route metadata", async () => {
+-    const html = renderToStaticMarkup(await PolicyPage({ params: Promise.resolve({ slug: "refunds" }) }));
+-    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "refunds" }) });
+-
+-    expect(html).toContain("退款與付款支援政策（草稿）");
+-    expect(html).toContain("DRAFT — FINANCE／SUPPORT／LEGAL REVIEW REQUIRED");
+-    expect(metadata.title).toContain("退款與付款支援政策（草稿）");
+-  });
+-
+-  it("returns empty metadata for an unknown draft without exposing content", async () => {
+-    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "unknown" }) });
+-
+-    expect(metadata).toEqual({});
+-  });
+-});
++import { renderToStaticMarkup } from "react-dom/server";
++import { describe, expect, it } from "vitest";
++import PolicyPage, { generateMetadata, generateStaticParams } from "./page";
++
++describe("/policies/[slug] route", () => {
++  it("generates one static route for each policy draft", () => {
++    expect(generateStaticParams()).toEqual([
++      { slug: "terms" },
++      { slug: "privacy" },
++      { slug: "refunds" },
++    ]);
++  });
++
++  it("renders a valid policy draft and route metadata", async () => {
++    const html = renderToStaticMarkup(await PolicyPage({ params: Promise.resolve({ slug: "refunds" }) }));
++    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "refunds" }) });
++
++    expect(html).toContain("退款與付款支援政策（草稿）");
++    expect(html).not.toContain("DRAFT — FINANCE／SUPPORT／LEGAL REVIEW REQUIRED");
++    expect(html).toContain("政策尚未正式發布");
++    expect(html).toContain("尚未生效");
++    expect(metadata.title).toContain("退款與付款支援政策（草稿）");
++  });
++
++  it("returns empty metadata for an unknown draft without exposing content", async () => {
++    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "unknown" }) });
++
++    expect(metadata).toEqual({});
++  });
++});
+
+FULL COMPONENT
+import Link from "next/link";
+import type { PolicyDraft } from "@/lib/public-policy-content";
+import { publicPolicyLinks } from "@/lib/public-policy-content";
+
+export function PublicResourceLinks({ compact = false }: { compact?: boolean }) {
+  return (
+    <nav aria-label="公開資訊" className={compact ? "flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs" : "grid gap-2 sm:grid-cols-2"}>
+      {publicPolicyLinks.map((link) => (
+        <Link key={link.href} href={link.href} className="font-semibold text-primary hover:underline">
+          {link.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+export function PublicPolicyShell({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
+        <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <Link href="/policies" className="text-sm font-bold text-slate-950">CelebrateDeal</Link>
+          <Link href="/login" className="min-h-11 inline-flex items-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            返回登入
+          </Link>
+        </header>
+        {children}
+        <footer className="mt-12 border-t border-border pt-6">
+          <PublicResourceLinks compact />
+          <p className="mt-4 text-center text-xs leading-5 text-slate-700">
+            目前提供草稿資訊；正式條款、隱私與退款政策尚未發布，請勿將草稿視為已生效的政策。
+          </p>
+        </footer>
+      </div>
+    </main>
+  );
+}
+
+export function PolicyDraftNotice({ status, owner }: Pick<PolicyDraft, "status" | "owner">) {
+  return (
+    <aside role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      <p className="font-bold">{status}</p>
+      <p className="mt-1 leading-6">核准責任：{owner}。這個頁面不構成法律意見、正式政策或 release sign-off。</p>
+    </aside>
+  );
+}
+
+export function PolicyDocument({ draft }: { draft: PolicyDraft }) {
+  return (
+    <PublicPolicyShell>
+      <article className="mx-auto max-w-3xl">
+        <div className="mb-6">
+          <p className="text-sm font-semibold text-primary">政策與協助中心</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{draft.title}</h1>
+          <p className="mt-3 text-base leading-7 text-slate-600">{draft.summary}</p>
+        </div>
+        {/* D-5 has not supplied an approved version or effective date. Do not
+            infer publication from a draft's internal status or owner fields. */}
+        <aside role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <p className="font-bold">政策尚未正式發布</p>
+          <p className="mt-1 leading-6">以下內容為草稿，尚未生效；正式版本與生效日期確認後會在本頁公布。</p>
+        </aside>
+        <dl className="mt-4 grid gap-3 text-sm text-slate-700 sm:grid-cols-2" aria-label="政策發布資訊">
+          <div><dt className="font-semibold">正式版本</dt><dd className="mt-1">尚未發布</dd></div>
+          <div><dt className="font-semibold">生效日期</dt><dd className="mt-1">尚未生效</dd></div>
+        </dl>
+        <div className="mt-8 grid gap-6">
+          {draft.sections.map((section) => (
+            <section key={section.heading} className="rounded-lg border border-border bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-950">{section.heading}</h2>
+              <div className="mt-3 grid gap-3 text-sm leading-6 text-slate-600">
+                {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+              </div>
+            </section>
+          ))}
+        </div>
+      </article>
+    </PublicPolicyShell>
+  );
+}

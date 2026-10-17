@@ -1,0 +1,106 @@
+{
+  "egress": "sandbox",
+  "exit": 0,
+  "result": {
+    "mode": "headers",
+    "results": [
+      {
+        "case": "baseline",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      },
+      {
+        "case": "ipv4",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      },
+      {
+        "case": "ipv6",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      },
+      {
+        "case": "duplicate",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      },
+      {
+        "case": "case",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      },
+      {
+        "case": "list",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      },
+      {
+        "case": "empty",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      },
+      {
+        "case": "combined",
+        "http_status": 200,
+        "passed": true,
+        "booleans": {
+          "single": true,
+          "valid": true,
+          "equalsSentinel": false,
+          "includesSentinel": false,
+          "matchesRealIp": true
+        }
+      }
+    ],
+    "passed": true
+  }
+}

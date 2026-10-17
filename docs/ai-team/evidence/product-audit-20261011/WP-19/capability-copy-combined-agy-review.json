@@ -1,0 +1,9 @@
+{
+  "status": "RATE_LIMITED",
+  "observed_model": "unknown",
+  "requested_model": "claude-sonnet-5-5-high",
+  "exit_code": 3,
+  "review_output": null,
+  "observed_effort": "unknown",
+  "terminal_model_metadata_present": false
+}

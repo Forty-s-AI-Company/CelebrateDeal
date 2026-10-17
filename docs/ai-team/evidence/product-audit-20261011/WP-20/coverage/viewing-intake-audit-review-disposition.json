@@ -1,0 +1,36 @@
+{
+  "status": "SCOPED_REVIEW_COMPLETED_FULL_WP_NOT_READY",
+  "priorMajor": "FIXED_AND_REREVIEWED; both classification joins and session/interval enumeration use private stable definer pages with row_security off",
+  "counts": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 2,
+    "NIT": 0
+  },
+  "conditionalUniquenessFinding": {
+    "disposition": "EXISTING_CANONICAL_CONSTRAINTS",
+    "evidence": [
+      "prisma/migrations/20261016070000_live_metric_playback_intake/migration.sql:74",
+      "prisma/migrations/20261014120000_live_metric_evidence/migration.sql:149",
+      "prisma/schema.prisma:1249",
+      "prisma/schema.prisma:1271"
+    ],
+    "reason": "Session join matches the full UNIQUE(vendorId,liveId,versionId,intakeId) scope and nonNULL intakeId; interval UNIQUE(sessionId,sequence), persisted sequence>=0 makes the null-join -1 sentinel unique. Fresh121 migration deployment passed. No new direct-duplicate or deployed-index-drift probe claimed."
+  },
+  "laterGrantBoundary": {
+    "disposition": "DEPLOYMENT_SCOPE_PROPOSAL_NOT_VERIFIED",
+    "reason": "No production/staging runtime grant made. PUBLIC/common API roles denied by migration. Explicit test-only NOLOGIN grants cleaned. Dedicated audit login/role/startup ACL and proconfig verification remains deployment work."
+  },
+  "priorMinorDispositions": {
+    "classificationScope": "whole_version and pre_window_expired added; quota loss remains orthogonal and does not revoke a previously issued nonce",
+    "timeDigest": "source digest stable, classificationDigest binds explicit asOf and outcomes"
+  },
+  "regression": "Full existing ledger/source/role suite passed under121; all source facts/outcomes/digest equality retained; independent classification times bound and checked separately.",
+  "notCertified": [
+    "all URL/cohort closure",
+    "positive producer and proof/fence/reader",
+    "harness independent review",
+    "actual deployed role",
+    "full WP acceptance"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "files": {
+    "src/lib/live-metric-report-snapshot.ts": "44bd777bc2a519bd4f02298659814ec3a45702070cef5a6189d7f0207449d51e",
+    "src/lib/live-metric-snapshot-input.ts": "f6e1eaa080561ff093b93cbdc06a0bdaf8a3024ffc625faf372aa3220974dc4c",
+    "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+    "src/lib/live-metric-snapshot-input.test.ts": "eeeb7d2eec12e2ef32d2610642aeb79784c632f7ed7524a40376918daffa5224"
+  },
+  "tests": 25,
+  "status": "PASS",
+  "scope": "mocked snapshot/job and adapter calculation tests; DB-backed whole flow NOT_RUN",
+  "full_typecheck": "NOT_RUN"
+}

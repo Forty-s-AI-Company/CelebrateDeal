@@ -1,0 +1,17 @@
+{
+  "completed": false,
+  "verification": {
+    "source": "process_and_schema",
+    "status": "INVALID_INPUT",
+    "kind": "local_wrapper"
+  },
+  "observed": {
+    "model": "unknown",
+    "source": "not_reported",
+    "effort": "unknown"
+  },
+  "reviewed": false,
+  "status": "INVALID_INPUT",
+  "normalized_status": "INVALID_INPUT",
+  "attempts": []
+}

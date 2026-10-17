@@ -1,0 +1,9 @@
+{
+  "promptCharacters": 16071,
+  "suppliedRanges": {
+    "src/lib/live-metric-report-reader.ts": "1-185 inclusive; remaining unrelated reader bodies omitted"
+  },
+  "files": {
+    "src/lib/live-metric-report-reader.ts": "fb7de4c38bdb8531f7dd71565aa8db77ed23f3f1ec0c1153367a9c46dd27c097"
+  }
+}

@@ -1,7 +1,7 @@
 import { getCurrentAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { CardError } from "@/lib/interaction-card";
 import { ScriptedCommandSchema } from "@/lib/scripted-roles-contract";
 import { commandWarmup, instructorWarmup } from "@/lib/scripted-roles";

@@ -1,0 +1,13 @@
+{
+  "status": "PARTIAL",
+  "files": {
+    "src/lib/live-core-metrics-read-model.ts": "d738b716844eced64c9aa489c753f942cd37b82e3459bd39aec215ab048b5d42",
+    "src/lib/live-metric-completion-projection.test.ts": "58d2b5fd592262d81375655d15ce9038d597bc69505e753b2170f49c869d15f0"
+  },
+  "unit": "79 passed before equivalent test-object readonly fix",
+  "lint": "PASS",
+  "full_typecheck": "NOT_RUN",
+  "worker_protocol": "NOT_IMPLEMENTED",
+  "persistence": "NOT_IMPLEMENTED",
+  "review": "NOT_RUN"
+}

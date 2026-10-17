@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "checks": {
+    "atomicResourcesAndThreePageSchedule": "PASS",
+    "noMethodDoesNotPublishOrSend": "PASS",
+    "reminderRuleUsesExistingQueueContract": "PASS",
+    "sameRequestReusesResources": "PASS",
+    "pendingUnknownFutureExpiredMethodsCannotPublish": "PASS",
+    "verifiedGateCanCompleteUneditedReplayWithoutDuplicate": "PASS",
+    "priorPublishedDraftIsNotAutoRepublishedByReplayOrNewLaunch": "PASS",
+    "blankTitleReplaySurvivesSourceRename": "PASS",
+    "quickProjectPublicationHasExplicitAudit": "PASS",
+    "foreignVideoProjectAndChangedRequestDenied": "PASS",
+    "concurrentRequestCannotCreateSecondResourceSet": "PASS",
+    "failureRollsBackResourcesAndProjectPublication": "PASS",
+    "newMerchantGetsOwnedProjectAndDraftWithoutInventedReadiness": "PASS"
+  },
+  "scope": "Actual prepare service and unchanged project gate against owned disposable PostgreSQL. No mocked DB transaction/auth, no HTTP/browser/login yet. Synthetic method references only; no real method/payment/email/provider calls.",
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

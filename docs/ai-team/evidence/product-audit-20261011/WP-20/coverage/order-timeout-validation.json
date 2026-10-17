@@ -1,0 +1,18 @@
+{
+  "status": "PARTIAL",
+  "unit": {
+    "status": "PASS",
+    "tests": 13,
+    "files": 2
+  },
+  "lint": "PASS",
+  "databaseCancellationProbe": "PASS",
+  "independentReview": "PENDING",
+  "files": {
+    "src/lib/live-metric-order-source-audit.ts": "62eb48f008e4c386abafe6de25cc1a5595c0dcc358f17c5499e35d883e0c83fd",
+    "src/lib/live-metric-order-source-audit.test.ts": "3ecf79df796674942167616f78ef53469c434eb91a781207c9530714f029a643",
+    "scripts/wp20-order-source-audit-probe.mjs": "85daca3f1b38cb8da590176368827827f8b7c13df43740dc870910845209917d"
+  },
+  "databaseRecovery": "PASS",
+  "typecheck": "PASS"
+}

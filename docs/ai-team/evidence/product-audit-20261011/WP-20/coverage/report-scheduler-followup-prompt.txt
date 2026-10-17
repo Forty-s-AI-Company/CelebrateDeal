@@ -1,0 +1,245 @@
+Independent readonly follow-up on previous scheduler findings. Do not modify or execute. Report BLOCKER/MAJOR/MINOR/NIT with evidence, confidence and required_test. Reassess the previous speculative MAJOR head-of-line stall against ACTUAL unchanged claim function below and new real DB evidence: attempts>=5 terminalizes failed; revision mismatch terminalizes stale. New test exhausts five short DB-clock leases then default tick terminalizes the oldest row; next default tick processes its successor. No predicate weakening, attempt cap removal, data deletion or skipped assertions. Also review bounded barrier forcing both ticks to select the same report, explicit one recorded/one not_claimed, capped lease recovery/old finish rejection, expired rows/version, real foreign tenant/mixed scopes, create guard refusing future windows, and per-job unexpected-rejection accounting. New source/doc clarifies recovery vs inline retries. Scope: full current scheduler, full claim dependency, changed harness sections and new unit test. Earlier fixtures and unchanged unit cases remain prior-reviewed; NOT a fresh full-file review of those omitted sections. Full WP/deployed scheduling still incomplete; original synchronized Serializable20 remains7/20 FAIL.
+
+FULL SCHEDULER
+import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { runMetricReportJob } from "./live-metric-report-job";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+const Scope = z.object({ vendorId: id, liveId: id, versionId: id }).strict();
+const Limits = z.object({ jobs: z.number().int().min(1).max(4).default(1),
+  admissionMilliseconds: z.number().int().min(1).max(60000).default(45000) }).strict();
+type Database = Pick<PrismaClient, "$queryRaw" | "$transaction">;
+type Execute = Parameters<typeof runMetricReportJob>[2];
+type Project = Parameters<typeof runMetricReportJob>[3];
+type JobStatus = Awaited<ReturnType<typeof runMetricReportJob>>["status"];
+
+/** Private background tick for an already-authorized scope and queued reports.
+ * The host owns authentication, allowed scopes, cadence and worker artifacts.
+ * Selection is only a hint: the job's atomic DB-clock claim decides ownership.
+ * No new reports, collection enablement, certificates or inline retries here.
+ * Expired leases may be recovered through the existing claim's five-attempt
+ * cap; exhausted/stale candidates are terminalized by that same DB function.
+ * The admission budget stops NEW work; an in-flight bounded job is awaited.
+ */
+export async function runMetricReportSchedulerTick(db: Database, value: z.infer<typeof Scope>, execute: Execute,
+  project?: Project, options: z.input<typeof Limits> = {}) {
+  const scope = Scope.parse(value), limits = Limits.parse(options);
+  const started = performance.now();
+  let candidates: { id: string }[];
+  try {
+    candidates = await db.$transaction(async tx => {
+      await tx.$executeRaw(Prisma.sql`SET TRANSACTION READ ONLY`);
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      return tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT r.id FROM "LiveMetricReport" r
+        JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+        WHERE r."vendorId"=${scope.vendorId} AND r."liveId"=${scope.liveId} AND r."versionId"=${scope.versionId}
+          AND r."expiresAt">clock_timestamp() AND v."expiresAt">clock_timestamp()
+          AND r."windowEndAt"<=clock_timestamp()
+          AND (r.status='queued' OR (r.status='running' AND r."leaseExpiresAt"<=clock_timestamp()))
+        ORDER BY r."createdAt",r.id LIMIT ${limits.jobs}`);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+  } catch {
+    // Never expose query errors or selected report identities to scheduler logs.
+    return { status: "unavailable" as const, reason: "selection_failed" as const };
+  }
+  const outcomes: Record<JobStatus, number> = { recorded: 0, not_claimed: 0, snapshot_unavailable: 0,
+    execution_unavailable: 0, lease_lost: 0, failed: 0 };
+  let attempted = 0;
+  for (const candidate of candidates) {
+    if (performance.now() - started >= limits.admissionMilliseconds) break;
+    // Each attempt owns a fresh identity; two ticks cannot impersonate a lease.
+    attempted++;
+    try {
+      const result = await runMetricReportJob(db, { ...scope, reportId: candidate.id, workerId: randomUUID() }, execute, project);
+      outcomes[result.status]++;
+    } catch {
+      // The job normally sanitizes errors itself. Preserve earlier counts if
+      // an unexpected dependency rejects, and defer remaining work to the host.
+      outcomes.failed++;
+      break;
+    }
+  }
+  // recorded means aggregate storage succeeded, not complete source coverage.
+  return { status: "processed" as const, selected: candidates.length, attempted,
+    deferred: candidates.length - attempted, outcomes };
+}
+
+
+UNCHANGED DB CLAIM
+CREATE OR REPLACE FUNCTION public.wp20_metric_report_claim(
+  vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+  worker_id TEXT, lease_until TIMESTAMPTZ(3)
+) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+DECLARE changed INTEGER; previous_writer TEXT; order_revision BIGINT; registration_revision BIGINT; tenant_revision BIGINT;
+BEGIN
+
+  -- No shared source-row lock: payment changes append events. Version/report
+  -- locks retain metric lifecycle ordering. Every reader rechecks event count.
+  order_revision := (SELECT public.wp20_metric_order_window_revision(vendor_id,r."windowStartAt",r."windowEndAt") FROM public."LiveMetricReport" r WHERE r.id=report_id AND r."vendorId"=vendor_id AND r."liveId"=live_id AND r."versionId"=version_id);
+  registration_revision := public.wp20_metric_registration_revision(vendor_id,live_id);
+  tenant_revision := (SELECT public.wp20_metric_order_window_revision(vendor_id,r."windowStartAt",r."windowEndAt") FROM public."LiveMetricReport" r WHERE r.id=report_id AND r."vendorId"=vendor_id AND r."liveId"=live_id AND r."versionId"=version_id);
+  IF worker_id IS NULL OR length(worker_id)=0 OR lease_until<=clock_timestamp()
+    OR lease_until>clock_timestamp()+INTERVAL '5 minutes' THEN
+    RAISE EXCEPTION 'invalid metric worker lease' USING ERRCODE='23514';
+  END IF;
+  PERFORM 1 FROM public."LiveMetricVersion"
+    WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN 0; END IF;
+  IF EXISTS(SELECT 1 FROM public."LiveMetricReport" WHERE id=report_id AND "vendorId"=vendor_id
+      AND "liveId"=live_id AND "versionId"=version_id AND ("inputOrderRevision" IS DISTINCT FROM order_revision OR "inputRegistrationRevision" IS DISTINCT FROM registration_revision OR "inputOrderTenantRevision" IS DISTINCT FROM tenant_revision)) THEN
+    UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+      WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id AND status IN ('queued','running','ready');
+    RETURN 0;
+  END IF;
+
+  UPDATE public."LiveMetricReport" SET status='failed',"errorCode"='attempt_limit',"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+    WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+      AND attempts>=5 AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()));
+  previous_writer := current_setting('wp20.report_writer',true);
+  PERFORM set_config('wp20.report_writer','claim',true);
+  UPDATE public."LiveMetricReport" SET status='running',"leaseOwner"=worker_id,
+    "leaseExpiresAt"=lease_until,attempts=attempts+1
+    WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+      AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()))
+      AND attempts<5 AND "expiresAt">clock_timestamp();
+  GET DIAGNOSTICS changed = ROW_COUNT;
+  PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+  RETURN changed;
+END $$;
+
+
+
+CHANGED FIXTURE HELPER
+let windowOffset = 0;
+      const create = async (id, version = scope.versionId, until = expires, windowEnd = end) => {
+        const [v] = await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1', version);
+        await db.$queryRawUnsafe('SELECT public.wp20_metric_report_create($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::bigint,$8::timestamptz)', vendor.id, live.id, version, id, new Date(+start + windowOffset++), windowEnd, v.sourceRevision, until);
+      };
+      
+
+FULL CHANGED HARNESS TAIL
+receipt.stage = 'competing-ticks';
+      await create('scheduler-race');
+      let selections = 0, release, barrierTimer;
+      const bothSelected = new Promise((resolve, reject) => {
+        release = () => { clearTimeout(barrierTimer); resolve(); };
+        barrierTimer = setTimeout(() => reject(new Error('synthetic selection barrier timeout')), 10000);
+        barrierTimer.unref();
+      });
+      // Wait outside each committed selection transaction, so both schedulers
+      // definitely hold the same candidate before either can enter claim.
+      const racingDb = { $queryRaw: db.$queryRaw.bind(db), $transaction: async (read, options) => {
+        const result = await db.$transaction(read, options);
+        if (Array.isArray(result) && result.some(row => row.id === 'scheduler-race')) {
+          if (++selections === 2) release();
+          await bothSelected;
+        }
+        return result;
+      } };
+      const race = await Promise.all([service.runMetricReportSchedulerTick(racingDb, scope, execute, project), service.runMetricReportSchedulerTick(racingDb, scope, execute, project)]);
+      assert.deepEqual(race.map(value => value.selected), [1, 1]);
+      assert.equal(race.reduce((sum, value) => sum + value.outcomes.not_claimed, 0), 1);
+      assert.equal(race.reduce((sum, value) => sum + (value.outcomes?.recorded ?? 0), 0), 1);
+      assert.equal(executions, 3);
+      const [recorded] = await db.$queryRawUnsafe('SELECT status,attempts FROM "LiveMetricReport" WHERE id=$1', 'scheduler-race');
+      assert.equal(recorded.status, 'ready'); assert.equal(recorded.attempts, 1);
+      receipt.results.barrierCompetingTicksExactlyOneExecution = 'PASS';
+      receipt.stage = 'lease-recovery-and-cap';
+      const shortClaim = async (reportId, workerId) => {
+        const [result] = await db.$queryRawUnsafe(`SELECT public.wp20_metric_report_claim($1,$2,$3,$4,$5,date_trunc('milliseconds',clock_timestamp())+INTERVAL '100 milliseconds') AS changed`, scope.vendorId, scope.liveId, scope.versionId, reportId, workerId);
+        assert.equal(result.changed, 1);
+        await db.$queryRawUnsafe('SELECT pg_sleep(0.12)::text');
+      };
+      await create('scheduler-recover'); await shortClaim('scheduler-recover', 'expired-worker');
+      assert.equal((await service.runMetricReportSchedulerTick(db, scope, execute, project)).outcomes.recorded, 1);
+      const [recovered] = await db.$queryRawUnsafe('SELECT status,attempts FROM "LiveMetricReport" WHERE id=$1', 'scheduler-recover');
+      assert.equal(recovered.status, 'ready'); assert.equal(recovered.attempts, 2);
+      assert.equal(await service.finishMetricReport(db, { ...scope, reportId: 'scheduler-recover', workerId: 'expired-worker' }, rows.find(row => row.id === 'scheduler-one').result), false);
+      receipt.results.expiredLeaseRecoveredOldFinishRejected = 'PASS';
+      await create('scheduler-exhausted');
+      for (let attempt = 0; attempt < 5; attempt++) await shortClaim('scheduler-exhausted', `synthetic-attempt-${attempt}`);
+      await create('scheduler-behind-exhausted');
+      const beforeCap = executions;
+      const cap = await service.runMetricReportSchedulerTick(db, scope, execute, project);
+      assert.equal(cap.outcomes.not_claimed, 1); assert.equal(executions, beforeCap);
+      const [exhausted] = await db.$queryRawUnsafe('SELECT status,attempts,"errorCode" FROM "LiveMetricReport" WHERE id=$1', 'scheduler-exhausted');
+      assert.equal(exhausted.status, 'failed'); assert.equal(exhausted.attempts, 5); assert.equal(exhausted.errorCode, 'attempt_limit');
+      assert.equal((await service.runMetricReportSchedulerTick(db, scope, execute, project)).outcomes.recorded, 1);
+      assert.equal(executions, beforeCap + 1);
+      receipt.results.exhaustedHeadTerminalizedNextTickProgresses = 'PASS';
+      receipt.stage = 'eligibility';
+      await assert.rejects(create('scheduler-future-window', scope.versionId, expires, new Date(+clock.now + 60000)), error => error?.meta?.code === '23514');
+      receipt.results.futureWindowRejectedByCreateGuard = 'PASS';
+      const [fresh] = await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+      const shortExpiry = new Date(+fresh.now + 1000);
+      await create('scheduler-expired-report', scope.versionId, shortExpiry);
+      await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"durationMs","collectionEnabled","collectionStartedAt","expiresAt") VALUES ('scheduler-expired-version',$1,$2,$3,'replay',$4,100000,true,$5,$6)`, vendor.id, live.id, video.id, 'c'.repeat(64), start, shortExpiry);
+      await create('scheduler-expired-version-report', 'scheduler-expired-version', shortExpiry);
+      await db.$queryRawUnsafe('SELECT pg_sleep(1.05)::text');
+      assert.equal((await service.runMetricReportSchedulerTick(db, scope, execute, project)).selected, 0);
+      assert.equal((await service.runMetricReportSchedulerTick(db, { ...scope, versionId: 'scheduler-expired-version' }, execute, project)).selected, 0);
+      receipt.results.expiredReportAndVersionExcluded = 'PASS';
+      const other = await db.vendor.create({ data: { name: 'Synthetic other tenant', slug: 'metric-other-tenant', email: 'other@example.test', passwordHash: 'synthetic-unused' } });
+      const otherVideo = await db.video.create({ data: { vendorId: other.id, title: 'Synthetic', videoUrl: 'https://example.test/other.mp4', durationSec: 100 } });
+      const otherLive = await db.live.create({ data: { vendorId: other.id, videoId: otherVideo.id, title: 'Synthetic', slug: 'metric-other-tenant', scheduledAt: start } });
+      await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"durationMs","collectionEnabled","collectionStartedAt","expiresAt") VALUES ('scheduler-other-tenant-version',$1,$2,$3,'replay',$4,100000,true,$5,$6)`, other.id, otherLive.id, otherVideo.id, 'd'.repeat(64), start, expires);
+      const [otherVersion] = await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1', 'scheduler-other-tenant-version');
+      await db.$queryRawUnsafe('SELECT public.wp20_metric_report_create($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::bigint,$8::timestamptz)', other.id, otherLive.id, 'scheduler-other-tenant-version', 'scheduler-other-tenant-report', start, end, otherVersion.sourceRevision, expires);
+      for (const mixed of [{ ...scope, vendorId: other.id }, { ...scope, liveId: otherLive.id }, { vendorId: vendor.id, liveId: otherLive.id, versionId: 'scheduler-other-tenant-version' }])
+        assert.equal((await service.runMetricReportSchedulerTick(db, mixed, execute, project)).selected, 0);
+      const [untouched] = await db.$queryRawUnsafe('SELECT status,attempts FROM "LiveMetricReport" WHERE id=$1', 'scheduler-other-tenant-report');
+      assert.equal(untouched.status, 'queued'); assert.equal(untouched.attempts, 0);
+      receipt.results.realForeignTenantMixedScopesExcluded = 'PASS';
+      receipt.stage = 'complete'; receipt.status = 'PASS';
+    } finally { await db.$disconnect(); }
+  } });
+} catch (error) {
+  receipt.errorCode = /^(?:P[0-9]{4}|[0-9A-Z]{5})$/.test(error?.meta?.code ?? error?.code ?? '') ? (error.meta?.code ?? error.code) : 'ASSERTION_OR_RUNNER_ERROR';
+}
+receipt.cleanup = migration?.cleanup ?? 'UNKNOWN';
+if (migration?.status !== 'PASS') receipt.status = 'FAIL';
+fs.writeFileSync(output, JSON.stringify(receipt, null, 2));
+console.log(JSON.stringify(receipt));
+process.exitCode = receipt.status === 'PASS' ? 0 : 1;
+
+
+NEW UNIT TEST
+it("keeps partial counts and defers remaining jobs after an unexpected rejection", async () => {
+  const { db } = client([{ id: "one" }, { id: "private-report" }, { id: "later" }]);
+  ports.job.mockResolvedValueOnce({ status: "recorded" }).mockRejectedValueOnce(new Error("private report details"));
+  const result = await runMetricReportSchedulerTick(db as unknown as SchedulerDatabase, scope, execute, undefined, { jobs: 3 });
+  expect(result).toMatchObject({ attempted: 2, deferred: 1, outcomes: { recorded: 1, failed: 1 } });
+  expect(ports.job).toHaveBeenCalledTimes(2);
+  expect(JSON.stringify(result)).not.toContain("private");
+});
+
+
+REAL DB EVIDENCE
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Private scoped scheduler with real isolated worker; synthetic disposable database only",
+  "results": {
+    "defaultOneJobBound": "PASS",
+    "remainingQueueProcessed": "PASS",
+    "duplicateTickNoExecution": "PASS",
+    "realWorker": "PASS",
+    "unknownRemainsUnavailable": "PASS",
+    "activeLeaseExcluded": "PASS",
+    "foreignVersionExcluded": "PASS",
+    "barrierCompetingTicksExactlyOneExecution": "PASS",
+    "expiredLeaseRecoveredOldFinishRejected": "PASS",
+    "exhaustedHeadTerminalizedNextTickProgresses": "PASS",
+    "futureWindowRejectedByCreateGuard": "PASS",
+    "expiredReportAndVersionExcluded": "PASS",
+    "realForeignTenantMixedScopesExcluded": "PASS"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "scope": "Final DB regression fixture only; final typecheck after successful build",
+  "additional_lint_exit": 0,
+  "typecheck_exit": 0,
+  "typecheck_session": 86086,
+  "source": "desktop_exec_terminal"
+}

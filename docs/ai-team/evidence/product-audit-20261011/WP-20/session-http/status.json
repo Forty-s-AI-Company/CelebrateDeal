@@ -1,0 +1,34 @@
+{
+  "status": "IN_PROGRESS",
+  "acceptance": "NOT_READY",
+  "revision": "sha256:3ece3b1012a2bdb41c64f768e2a1f19f43958e30fd2867f3927a042ab5a9c17b",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "selected_model": "router gpt-6.1-sol xhigh",
+  "observed_model": "unknown",
+  "writer": "root",
+  "files": {
+    "src/lib/live-metric-session.ts": "71514c62c81dcc3e744b04da3b344cf5eeb469e1dcc89b95228078267c25a6df",
+    "src/lib/live-metric-version.ts": "6e49db6eb2e7e0923552f428fc8af866399bf404409f901c033d9dbe7c60b0b1",
+    "src/lib/live-metric-version.test.ts": "72dc51250d381f911d8067e3d4bdd825e33a6d93390c37751fafbb0125b4c711",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": "07420fceabd78bbd17f604ecdef1a01ed7ad4a652d45bde399151fba44487f82",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.test.ts": "8112f943fb82a09b4936b25b05f32f10219966bf1b1ea012d34fd44162a7da65",
+    "scripts/wp20-metric-persistence-disposable.mjs": "20ef5cdd0b730b9ec0a16e487ff0331c826a7ceb29e01cee405e9e2b312e8ba6",
+    "src/lib/live-runtime-state.ts": "d7d04338809f97787f0cc3fa23c382129137334b9c5e68e02d2c4740a861d11e",
+    "src/lib/live-metric-session.test.ts": "393a22985f03373e198d53cb98db22bd10d4e995ef786afee87f85857616a92c"
+  },
+  "validation": {
+    "targeted": "PASS 107/107",
+    "scoped_lint": "PASS",
+    "disposable_db": "PASS 106/106; 97 migrations; cleanup PASS",
+    "typecheck": "PASS",
+    "independent_review": "observed claude-opus-5-5; no BLOCKER/MAJOR after quota fixes; final phase-expiry and timeout refinements tested, not yet independently re-reviewed"
+  },
+  "remaining": [
+    "interval content fingerprint/mode revalidation",
+    "session finalSequence/close and player delivery lifecycle",
+    "isolated version provisioning and verified browser attribution",
+    "bounded report worker, read adapter, analytics UI and browser acceptance"
+  ],
+  "safety": "independent worktree, synthetic disposable database, no production/push/deployment"
+}

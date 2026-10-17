@@ -1,0 +1,7 @@
+{
+  "first_attempt": "FAIL: registration fixture exceeded 300-second transaction budget",
+  "observation": "Owned disposable PostgreSQL activity metadata showed active CPU registration-fixture query; no raw logs or secrets read",
+  "action": "Cancelled only marker-verified owned registration-fixture backend after >300 seconds; runner returned P2028 and cleaned container/temp",
+  "improvement": "ANALYZE uncommitted source fixture tables before trigger joins; all constraints and triggers retained",
+  "rerun": "PASS: 100001 real validated registrations and sessions; index plans verified; transaction rollback and disposal PASS"
+}

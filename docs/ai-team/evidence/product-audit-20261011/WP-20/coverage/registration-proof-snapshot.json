@@ -1,0 +1,16 @@
+{
+  "hashes": {
+    "src/lib/live-metric-registration-coverage.ts": "39e6540ce1ac6afcc5d7b82e089c638bab87cd80daaa331b59711cf48271b257",
+    "src/lib/live-metric-coverage-reader.ts": "252bd12b75391c358e7333fac2655e6ad661c218a6c8c850a774bead53356da9",
+    "prisma/migrations/20261015190000_live_metric_registration_coverage_proof/migration.sql": "076eb0b765f0e91a4ebff6b07938ead89eb83102d7ec0763c67e38553b358df5",
+    "prisma/schema.prisma": "19bd005fa5821c8d05af0e740ec33ba13d026bef9ead0ddfff8f5087ed08d0bf",
+    "scripts/wp20-registration-matched-audit.mjs": "270b5fa03da1c6a5637aea08b74e2ad8697203ee0caca80bfb025eca59509bdb"
+  },
+  "unit": "14 PASS",
+  "lint": "publisher/coverage reader PASS",
+  "latestDB": "107 migrations PASS; matched publish and repeat; complete before revoke,unknown after; incomplete refuses publish",
+  "intermittentFailure": "Prior run23514 metric report in source-invalidation-matrix,root cause not confirmed; initial failure preserved",
+  "review": "PENDING",
+  "otherKinds": "visits/viewing/orders producers not implemented",
+  "compatibility": "Legacy registration positive audits without registrationRevision/count no longer accepted"
+}

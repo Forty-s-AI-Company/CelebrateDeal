@@ -1,0 +1,181 @@
+{
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "reviewed": true,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "claude_cli_discovery_status": "SUCCESS",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_process_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "completed": false,
+  "review": {
+    "summary": "I reviewed only the two supplied modules. I found no BLOCKER or MAJOR defects. The three earlier MINOR findings look fixed in the code. A failure in the diagnostic or failure-receipt write is caught, so the rest of the batch still runs. Only CommerceOrderPiiValidationError becomes a skipped invalid_recipient; decrypt and config errors still fail and retry after the cooldown. Prefix scans are gone: the PostgreSQL encode(sha256(convert_to(vendorId || chr(10) || orderId, 'UTF8')), 'hex') gives the same lowercase hex as Node's createHash over `${vendorId}\\n${orderId}`, and the check is a lookup on the existing primary key. The two earlier MAJOR fixes are still in place: one pair per order through the LATERAL LIMIT 1 plus the order-scoped delivery ID, and the rule updatedAt being no later than the event's createdAt, checked both in SQL and in the guard. There are two remaining MINOR issues. First, the send-time guard treats temporary decrypt or config failures the same as a definitive \"not current\" (false), which goes against its own stated contract. Second, the delivery ID is now predictable, so whether it is safe depends on how createEmailUnsubscribeUrl protects the unsubscribe link; that helper was not supplied. These findings are not evidence that the tests pass. The PostgreSQL 16 checks are still running, and their actual results are what count.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup.ts",
+        "area": "isCurrentCheckoutFollowupDelivery, the final try/catch around revealCommerceOrderPii and createEmailRecipientHash",
+        "issue": "Every error from decrypting or hashing returns false, including temporary key or config failures. This guard is used at send time and by the materializer. False means the reminder is no longer current, so it is suppressed (dispatcher) or marked skipped with 'source_superseded' (materializer). The queue fix keeps a skip for CommerceOrderPiiValidationError only; this guard does not make that distinction.",
+        "evidence": "The docblock says DB failures 'must not silently turn into either a send or permanent drop'. The catch block is a bare `catch { ...; return false; }` with no instanceof CommerceOrderPiiValidationError check. In checkout-followup-queue.ts, `if (!await isCurrentCheckoutFollowupDelivery(...)) { await markSuperseded(); return \"superseded\"; }` turns false into a permanent skipped ledger row.",
+        "impact": "Fail-closed, so nothing is sent by mistake. But during a key-rotation or config outage, emails that are already queued are suppressed at dispatch. A materialization that hits the guard during the same outage is permanently recorded as source_superseded. Since the delivery ID allows one per order, these pending-payment buyers never get their reminder after the outage ends. This is the same kind of 'temporary error becomes permanent drop' problem the materializer fix was meant to prevent.",
+        "recommended_fix": "In the guard, return false only for CommerceOrderPiiValidationError or a hash mismatch. Rethrow, or return a separate 'unavailable' result for, any other decrypt, config or HMAC error. The dispatcher can then defer and retry, and the materializer's outer catch can record status failed, which gets the cooldown. Keep the fixed operational diagnostic.",
+        "required_test": "On real PostgreSQL, run the existing dispatcher with a queued checkout_followup row while revealCommerceOrderPii or the HMAC key setup throws a non-validation error. Assert the row is not finally suppressed and is sent once the config is restored. Also assert the materializer records status 'failed', not 'skipped', when the guard fails for that reason.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "payload body: createEmailUnsubscribeUrl(id), where id comes from checkoutFollowupDeliveryId",
+        "issue": "The delivery ID used to be opaque. It is now an unsalted SHA-256 of vendorId plus newline plus orderId, so anyone who knows both values can compute it. It is passed to createEmailUnsubscribeUrl. If that helper relies on the delivery ID as the secret part of the unsubscribe link, rather than adding its own server-keyed signature, the link can now be forged.",
+        "evidence": "`return `wp18-checkout-${createHash(\"sha256\").update(`${scope.vendorId}\\n${scope.orderId}`).digest(\"hex\")}`` and `取消訂閱：${createEmailUnsubscribeUrl(id)}`. The createEmailUnsubscribeUrl implementation was not supplied, so this is conditional.",
+        "impact": "If the URL is not signed independently, a third party who knows a vendorId and orderId could unsubscribe that buyer. Order IDs are often shown to buyers or in URLs. This would not expose PII, but it would be an unauthorized preference change.",
+        "recommended_fix": "Confirm that createEmailUnsubscribeUrl adds a server-secret signature (HMAC) over the delivery ID and that the unsubscribe handler checks it. If not, sign the token or derive the deterministic ID with a keyed HMAC instead of plain SHA-256. If the ID becomes keyed, the SQL NOT EXISTS check must take the precomputed value as a parameter.",
+        "required_test": "A unit or integration test that builds the unsubscribe URL from a computed wp18-checkout-<sha256> ID without the server secret and asserts the unsubscribe endpoint rejects it.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18321,
+      "expected_duration": 0,
+      "code_surface_area": 8,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

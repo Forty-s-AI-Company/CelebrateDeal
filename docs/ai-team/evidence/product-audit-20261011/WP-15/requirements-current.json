@@ -1,0 +1,74 @@
+{
+  "wp": "WP-15",
+  "status": "READY",
+  "requirements": [
+    {
+      "requirement": "F13 zero-activity dashboard simplified, no query changes",
+      "evidence": [
+        "dashboard-kpis-before.txt",
+        "dashboard-kpis.test.tsx",
+        "run-dashboard-browser.cjs"
+      ],
+      "status": "IMPLEMENTED_TESTED_PENDING_CURRENT_RECEIPT"
+    },
+    {
+      "requirement": "onboarding default collapsed; saved choices retained",
+      "evidence": [
+        "preference-replacements.json",
+        "preference-progress.json",
+        "run-shell-browser.cjs"
+      ],
+      "status": "IMPLEMENTED_TESTED_PENDING_CURRENT_RECEIPT"
+    },
+    {
+      "requirement": "mobile navigation/primary field in first viewport",
+      "evidence": [
+        "run-operations-shell.cjs",
+        "operations-shell-result.json"
+      ],
+      "status": "IMPLEMENTED_TESTED_PENDING_CURRENT_RECEIPT"
+    },
+    {
+      "requirement": "keyboard target sizes and desktop/mobile axe0serious",
+      "evidence": [
+        "run-component-browser.cjs",
+        "run-shell-browser.cjs",
+        "run-operations-shell.cjs"
+      ],
+      "status": "CURRENT_RUN_PENDING"
+    },
+    {
+      "requirement": "plan currency explicitly TWD",
+      "evidence": [
+        "currency-progress.json",
+        "targeted-current.json"
+      ],
+      "status": "PASS_SCOPED"
+    },
+    {
+      "requirement": "independent review of current cumulative patch",
+      "evidence": [
+        "initial-reviewed.json",
+        "followup-reviewed.json"
+      ],
+      "status": "MOBILE_INCREMENT_PENDING"
+    },
+    {
+      "requirement": "canonical assess_acceptance current snapshot",
+      "status": "NOT_RUN"
+    }
+  ],
+  "limits": [
+    "Browser evidence uses real components with synthetic actions/read data, not full logged-in server E2E",
+    "Legacy saved preferences not migrated",
+    "Currency symbol redundancy and repeated default true remain nonblocking review findings",
+    "No product query logic/schema/permissions/payment changes",
+    "No Production/push/deploy"
+  ],
+  "snapshot": "snapshot-current.json",
+  "live_handles": {},
+  "current_checks": "7/7PASS at9819852c",
+  "supplemental_switcher": "6 states PASS including keyboard selection and occlusion",
+  "next": "Remaining external/dependency audit",
+  "acceptance": "acceptance-current.json"
+}

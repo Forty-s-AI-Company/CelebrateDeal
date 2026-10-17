@@ -28,7 +28,7 @@ export async function dispatchLiveStartedLineNotifications(
 ) {
   const live = await db.live.findFirst({
     where: { id: input.liveId, vendorId: input.vendorId, status: "live", startedAt: input.startedAt, endedAt: null },
-    select: { id: true, slug: true, title: true, startedAt: true },
+    select: { id: true, slug: true, title: true, startedAt: true, scheduledAt: true, vendor: { select: { name: true, timezone: true } } },
   });
   if (!live?.startedAt) return { queued: 0, sent: 0, failed: 0 };
 
@@ -38,7 +38,7 @@ export async function dispatchLiveStartedLineNotifications(
       verificationStatus: "VERIFIED",
       form: { vendorId: input.vendorId },
     },
-    select: { id: true },
+    select: { id: true, name: true },
     orderBy: { id: "asc" },
   });
   const viewerUrl = createLiveViewerUrl(live.slug);
@@ -57,6 +57,11 @@ export async function dispatchLiveStartedLineNotifications(
         viewerUrl,
       })],
       dueAt: input.startedAt,
+      templateVariables: {
+        name: submission.name, live_title: live.title, live_url: viewerUrl,
+        live_start_at: new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: live.vendor.timezone }).format(live.scheduledAt),
+        vendor_name: live.vendor.name,
+      },
     });
     if ((queued.status === "queued" || queued.status === "duplicate") && queued.deliveryId) {
       deliveryIds.push(queued.deliveryId);

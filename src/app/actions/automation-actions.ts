@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorOwner } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { AUTOMATION_TRIGGERS, dryRunAutomationRule, materializeAutomationRecipe } from "@/lib/automation-workflow";
+import { AUTOMATION_TRIGGERS, automationRuleReady, automationUsesTrustedProducer, dryRunAutomationRule, materializeAutomationRecipe } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
 
 const PATH = "/settings/automations";
@@ -59,6 +59,9 @@ function parseRule(form: FormData) {
   const trigger = text(form, "trigger");
   const conditionValue = number(form, "conditionValue");
   if (!name || name.length > 120 || !AUTOMATION_TRIGGERS.includes(trigger as typeof AUTOMATION_TRIGGERS[number])) throw new Error("invalid");
+  // The custom form cannot express the guarded follow-up contract. Use the
+  // built-in recipe so alternate actions cannot bypass send-time eligibility.
+  if (automationUsesTrustedProducer(trigger)) throw new Error("invalid");
   const needsThreshold = ["payment_paid", "viewer_watch_progress", "webinar_attended_duration_gte"].includes(trigger);
   const condition = trigger === "payment_paid"
     ? { type: "order_amount_gte", amountCents: Math.round(conditionValue * 100) }
@@ -81,6 +84,7 @@ export async function createAutomationRecipeAction(formData: FormData) {
   const recipe = materializeAutomationRecipe(recipeId, productId);
   if (!recipe) fail(productId ? "invalid_recipe" : "recipe_requires_product");
   if (recipe.actions.some((action) => action.type === "issue_repurchase_voucher")) {
+    if (!productId) fail("recipe_requires_product");
     const validProduct = await getDb().product.findFirst({ where: { id: productId, vendorId: auth.vendor.id, isActive: true }, select: { id: true } });
     if (!validProduct) fail("invalid_product");
   }
@@ -89,6 +93,7 @@ export async function createAutomationRecipeAction(formData: FormData) {
     name: recipe.name,
     description: recipe.description,
     trigger: recipe.trigger,
+    isActive: recipe.isActive && automationRuleReady(recipe),
     condition: recipe.condition as Prisma.InputJsonValue,
     actions: recipe.actions as Prisma.InputJsonArray,
   } });
@@ -101,8 +106,9 @@ export async function dryRunAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
   const id = text(formData, "ruleId");
-  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, condition: true, actions: true, trigger: true } });
+  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, condition: true, actions: true, trigger: true, funnelPageId: true } });
   if (!existing || !AUTOMATION_TRIGGERS.includes(existing.trigger as typeof AUTOMATION_TRIGGERS[number])) fail("not_found");
+  if (automationUsesTrustedProducer(existing.trigger) && !automationRuleReady(existing)) fail("trigger_not_ready");
   const result = dryRunAutomationRule({ condition: existing.condition, actions: existing.actions }, {
     vendorId: auth.vendor.id,
     eventId: "dry-run",
@@ -124,7 +130,7 @@ export async function createAutomationRuleAction(formData: FormData) {
   try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && error.message === "no_action" ? "no_action" : "invalid_rule"); }
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: auth.vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
-  const created = await getDb().automationRule.create({ data: { vendorId: auth.vendor.id, name: parsed.name, trigger: parsed.trigger, condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });
+  const created = await getDb().automationRule.create({ data: { vendorId: auth.vendor.id, name: parsed.name, trigger: parsed.trigger, isActive: automationRuleReady(parsed), condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });
   await writeAuditLog({ vendorId: auth.vendor.id, actorId: auth.user.id, actorLabel: auth.member.role, action: "create_automation_rule", targetType: "AutomationRule", targetId: created.id, after: auditSnapshot(created) });
   revalidatePath(PATH);
   redirect(`${PATH}?updated=created`);
@@ -135,9 +141,23 @@ export async function toggleAutomationRuleAction(formData: FormData) {
   const auth = await requireVendorOwner();
   const id = text(formData, "ruleId");
   if (!id) fail("invalid_rule");
-  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, isActive: true } });
+  const existing = await getDb().automationRule.findFirst({ where: { id, vendorId: auth.vendor.id }, select: { id: true, isActive: true, trigger: true, condition: true, actions: true, funnelPageId: true, version: true, updatedAt: true } });
   if (!existing) fail("not_found");
-  const updated = await getDb().automationRule.update({
+  if (!existing.isActive && !automationRuleReady(existing)) fail("trigger_not_ready");
+  let updated;
+  if (automationUsesTrustedProducer(existing.trigger)) {
+    if (!existing.isActive && (!Number.isInteger(existing.version) || existing.version < 1 || existing.version >= 2_147_483_647)) fail("rule_changed");
+    // Compare the inspected snapshot before activating it. Reactivation gets a
+    // new version; an old queued snapshot must not revive after disable/enable.
+    const changed = await getDb().automationRule.updateMany({
+      where: { vendorId: auth.vendor.id, id: existing.id, isActive: existing.isActive, version: existing.version, updatedAt: existing.updatedAt },
+      data: { isActive: !existing.isActive, ...(!existing.isActive ? { version: { increment: 1 } } : {}) },
+    });
+    if (changed.count !== 1) fail("rule_changed");
+    // Audit only the fields this compare-and-swap changed; do not copy a stale
+    // updatedAt into the after snapshot.
+    updated = { id: existing.id, isActive: !existing.isActive, version: existing.version + (existing.isActive ? 0 : 1) };
+  } else updated = await getDb().automationRule.update({
     where: { vendorId_id: { vendorId: auth.vendor.id, id: existing.id } },
     data: { isActive: !existing.isActive },
   });

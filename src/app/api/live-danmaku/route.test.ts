@@ -8,7 +8,7 @@ vi.mock("@/lib/api-security", () => ({
   readJsonBody: vi.fn(),
   requireSameOriginRequest: vi.fn(() => null),
 }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
 
 import { GET, POST } from "./route";
 

@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "typecheck", "revision": "sha256:dea2d92799e7883ec7d82470d774abf8fa6f1dc67e0d378b64f1898d35f34bf0", "status": "PASS", "exit_code": 0, "duration_seconds": 18.687}

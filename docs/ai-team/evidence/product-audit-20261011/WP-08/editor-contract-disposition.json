@@ -1,0 +1,5 @@
+{
+  "optional_names": "Retained MINOR: arbitrary external callers could pair explicit ids with omitted names; actual source callers pass both together or neither (funnel-step-pages-editor115,workspace-editor29). Current supported product paths not affected.",
+  "parser": "FunnelPopupSchema.name safeShortText.min1; step collection validates every step; FunnelStep.name string; malformed persisted inputs rejected by existing parser. Do not add duplicate permissive parser in display helper.",
+  "scope": "No new product mutation; final aggregate review requested."
+}

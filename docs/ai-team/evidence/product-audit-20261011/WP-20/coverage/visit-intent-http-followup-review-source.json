@@ -1,0 +1,9 @@
+{
+  "scope": "visit-intent-http-followup",
+  "promptCharacters": 17492,
+  "files": {
+    "src/lib/live-metric-visit-client.ts": "92550082d35ec058b3e119c27fca8e92e8975e2199b74be72d784d8aff0ae282",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "8c0629c4d838688e1f97a6610ec3062cd0abf7dbdc17dc777996989e9b79d45c",
+    "src/lib/live-metric-visit-collection.ts": "2e485be8a61077389fe32ba12e376fda8d215e4f13cd773f5c1a5f9b3d62b6c2"
+  }
+}

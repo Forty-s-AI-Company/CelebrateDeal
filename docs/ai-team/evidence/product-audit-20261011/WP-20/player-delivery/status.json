@@ -1,0 +1,18 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:bf795115a0f914327244b848a8944143f31b69f05afa6c259bdd2f5dd3360650",
+  "tests": {
+    "status": "PASS",
+    "count": 53
+  },
+  "scoped_lint": "PASS",
+  "typecheck": "PASS",
+  "review": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "remaining": [
+    "server anchor and browser monotonic clock alignment",
+    "player and admission release integration",
+    "browser reconciliation"
+  ],
+  "resolved_failure": "transport response-body shadowing fixed and retested"
+}

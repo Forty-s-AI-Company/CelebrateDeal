@@ -1,0 +1,13 @@
+{
+  "status": "INSPECTED",
+  "project": "celebrate-deal-staging",
+  "target": "preview",
+  "state": "READY",
+  "source_type": null,
+  "git_source_type": null,
+  "git_ref": null,
+  "git_sha": null,
+  "commit_sha": null,
+  "public_meta_keys": [],
+  "public_marker_allowlisted_fields": {}
+}

@@ -1,0 +1,14 @@
+{
+  "revision": "sha256:22dd38fa92d9409e8d56cdb8faaac38aac842f164770e3a3e53673af633c81cb",
+  "files": [
+    "src/lib/live-metric-report-reader.ts",
+    "src/lib/live-metric-report-snapshot.ts",
+    "src/lib/live-metric-snapshot-input.ts",
+    "src/lib/live-metric-report-job.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "status": "PASS",
+  "checks": 151,
+  "fixtureFix": "checkoutIdentityHash matches existing 43-character database constraint",
+  "remaining": "order invalidation, completion provenance, audit producer, independent review"
+}

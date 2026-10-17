@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+  "checks": {
+    "unconfiguredPlaybackPreserved": "PASS",
+    "committedBeforeSourceAndLostReplyRetained": "PASS",
+    "canonicalSessionBindingIdempotentAndBounded": "PASS",
+    "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+    "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+    "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+    "boundSessionUpdatesCannotChangeIdentityAnchorOrExceedIntake": "PASS",
+    "timestamptzCatalogAndNonUtcBoundUpdates": "PASS",
+    "intakeEpochLossAndSessionBindingImmutable": "PASS",
+    "unexpectedColumnGrantRejectedAndProbeRoleCleaned": "PASS",
+    "admissionDeletionRetainsIntakeVersionCascadeCleans": "PASS"
+  },
+  "browser": {
+    "sessionRequests": 1,
+    "intervals": 9,
+    "terminal": true,
+    "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+    "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

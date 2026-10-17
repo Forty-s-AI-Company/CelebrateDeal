@@ -1,0 +1,25 @@
+{
+  "user": "核准 WP-11 本機修正",
+  "scope": [
+    "src/lib/trusted-entry-rate-limit.ts",
+    "src/lib/trusted-entry-rate-limit.test.ts",
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/api/automation/vouchers/redeem/route.ts",
+    "src/app/r/[code]/route.ts",
+    "src/app/api/live-admission/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts",
+    "src/app/api/automation/vouchers/redeem/route.test.ts",
+    "src/app/r/[code]/route.test.ts",
+    "src/app/api/live-admission/route.test.ts"
+  ],
+  "writer": "main",
+  "environment": "local synthetic only",
+  "protected_hashes": {
+    "src/lib/rate-limit.ts": "afb85a865dbfa6bcffc50d4b9e1842d76856543d46ab0558d8237f041190c5ba",
+    "prisma/schema.prisma": "5c8b2a0ae3cf5efdd6d64baf3ee49d6aebc5d3fe64f58934e0104a85e2e4349b",
+    "src/app/api/payments/checkout/route.ts": "a34e1394afd8938796a26536268aeec24dea129acd19a1b8f6eb773354b33fe2",
+    "src/app/api/payments/checkout/recovery/route.ts": "59060fabc9b4189f86911571f1f1f1d1fd27b494dad302befbbcf94059b19384",
+    "src/app/api/payments/checkout/admission/route.ts": "05a98bea6a26140b8114c76154d97e5c71e5300756d8d24f05f9fd32cc5f4d4e",
+    "src/app/api/checkout/upsell/route.ts": "e2060e9730c67e9c7b72b4b16616fd358521c9a831b754702b7c12393207f41d"
+  }
+}

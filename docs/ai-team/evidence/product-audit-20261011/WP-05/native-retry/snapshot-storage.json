@@ -1,0 +1,1 @@
+{"root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal", "files": ["prisma/schema.prisma", "prisma/migrations/20261011_registration_form_retry_draft/migration.sql", "src/lib/registration-form-retry.ts", "src/lib/registration-form-retry.test.ts"], "revision": "sha256:05c71e57581e30875dddd3eebd0552e484b64a805a209a3582272565e8d8b4f8"}

@@ -1,0 +1,203 @@
+{
+  "attempts": [
+    {
+      "status": "INVALID_REVIEW",
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "exitCode": 0
+    },
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 20000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR defects in the code supplied. I only reviewed the code text; I didn't run anything, so this says nothing about whether tests pass. The GET readiness check reuses the same authorizer as POST, runs it a second time to recheck, never returns identity, issues no nonce and writes nothing to the tables shown. POST still enforces everything on its own, so a wrong readiness answer can't let in data that POST would refuse. The four findings below only affect whether readiness gives the right answer: timestamp comparisons that depend on the database session's time zone (this can wrongly deny ready), a missing intake condition and a copied eligibility query that can drift from POST, retryable conflicts reported as permanent 403s, and write-intent row locks taken by a hint-only GET. I can't check the authorizer's omitted lines, the canonical reader/verification code, the controller, transport, delivery, media or clock code, or the known whole-WP blockers, and none of them are certified here.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-readiness.ts",
+        "area": "active-state SQL: registration verifiedAt mismatch predicate and open-session expiry predicate",
+        "issue": "Some timestamp comparisons depend on the database session's time zone, while other comparisons in the same query use explicit UTC.",
+        "evidence": "`g.\"verifiedAt\" IS DISTINCT FROM f.\"verifiedAt\" AT TIME ZONE 'UTC'` turns one side into timestamptz, while g.\"verifiedAt\" is converted using the session TimeZone (the default for a Prisma DateTime is timestamp(3) without time zone). `s.\"expiresAt\">clock_timestamp()` has no UTC normalization, unlike `a.\"expiresAt\">clock_timestamp() AT TIME ZONE 'UTC'`.",
+        "impact": "If the session TimeZone isn't UTC, every existing matching registration counts as mismatched, so readiness is permanently false and qualified recovery never starts. The open-session count can also be off by the time-zone offset. This fails closed, so it affects availability and accuracy, not authorization.",
+        "recommended_fix": "Compare g.\"verifiedAt\" with f.\"verifiedAt\" directly, or normalize both the same way. Write the open-session expiry check as `s.\"expiresAt\">clock_timestamp() AT TIME ZONE 'UTC'`, matching the column types and POST's predicate.",
+        "required_test": "A DB test that runs readiness with SET TIME ZONE 'America/New_York' (not UTC), an existing registration with the same verifiedAt, and open sessions near expiry. Readiness should match the result under UTC and match POST's result.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-readiness.ts",
+        "area": "active-state EXISTS predicate as a whole",
+        "issue": "The readiness query re-implements POST's eligibility and quota checks in its own raw SQL instead of sharing them. It also leaves out the playback-intake requirement that POST enforces (requirePlaybackIntake/renewPlaybackIntake).",
+        "evidence": "POST calls issueMetricSession(..., { requirePlaybackIntake: true, renewPlaybackIntake: true }). The readiness SQL never refers to intake. It hand-copies the totalPerAdmission, openPerAdmission and totalPerRegistration checks plus the registration-mismatch rule.",
+        "impact": "Readiness can say true when POST will deny the request (for example, a missing or expired intake, or quota rules that later drift apart). That causes repeated denied probe/POST cycles, which only the client's 30s denied-probe limit holds back. Readiness can also say false when POST would succeed, which blocks recovery. POST stays authoritative, so integrity isn't affected.",
+        "recommended_fix": "Move the eligibility and quota predicate into a shared function that both issueMetricSession and readiness use, including the intake condition if readiness is meant to predict POST success. Otherwise, document that the intake gap is intended and confirm that the controller backs off on it.",
+        "required_test": "A parity table test that runs the same fixtures through readiness and POST issuance: no intake, expired intake, each quota at its limit, a registration whose verifiedAt doesn't match, and an expired admission. Readiness true should mean POST doesn't return 403 or 409 for those reasons.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts",
+        "area": "GET catch block",
+        "issue": "Every MetricIngestError code becomes a 403 in GET, including retryable_conflict, which POST maps to 503.",
+        "evidence": "`if (error instanceof LiveChatError || error instanceof MetricIngestError) return json({ ready: false }, 403);`, whereas POST maps retryable_conflict to 503.",
+        "impact": "A temporary conflict is reported as a permanent denial, so the client waits out its 30s denied-probe window instead of retrying sooner.",
+        "recommended_fix": "Map retryable_conflict to 503 in GET, the same way POST does.",
+        "required_test": "A unit test that makes the authorizer or resolveContext throw a MetricIngestError('retryable_conflict') and expects GET to return 503 with { ready: false }.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-readiness.ts",
+        "area": "row locks on FormSubmission/LiveViewerSession",
+        "issue": "A GET that only returns a hint takes FOR NO KEY UPDATE (write-intent) locks on the viewer's FormSubmission and LiveViewerSession rows and can hold them for up to 5s. The lock order relative to POST and ingestion isn't visible in the supplied code.",
+        "evidence": "`FOR NO KEY UPDATE` on both rows inside a 5000ms transaction, at up to 120 requests per minute.",
+        "impact": "These locks can block or slow concurrent verification, admission renewal or issuance for the same viewer. If the order differs from POST, a deadlock surfaces as a 503. Only the viewer's own rows are affected.",
+        "recommended_fix": "Use FOR SHARE (or no locks, since the result is only a hint), or document that the lock order exactly matches issueMetricSession.",
+        "required_test": "A concurrency test that runs readiness and POST issuance and verification updates in parallel for the same viewer, with no deadlock 503s and no added latency beyond the statement timeout.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  }
+}

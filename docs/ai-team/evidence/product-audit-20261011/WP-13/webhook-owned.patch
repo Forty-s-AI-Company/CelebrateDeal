@@ -1,0 +1,249 @@
+--- a/src/lib/line-webhook-events.ts
++++ b/src/lib/line-webhook-events.ts
+@@ -0,0 +1,51 @@
++import type { PrismaClient } from "@prisma/client";
++import { z } from "zod";
++import { lineUserIdHash } from "@/lib/line-credentials";
++
++const Envelope = z.object({ events: z.array(z.unknown()).max(1000) });
++const ConsentEvent = z.object({
++  type: z.enum(["follow", "unfollow"]),
++  timestamp: z.number().int().positive().max(8_640_000_000_000_000),
++  source: z.object({ type: z.literal("user"), userId: z.string().regex(/^U[0-9a-f]{32}$/u) }),
++});
++
++/** Call only after exact raw-body signature verification for this tenant. */
++export async function applyVerifiedLineWebhookEvents(
++  db: Pick<PrismaClient, "lineUserIdentity">,
++  vendorId: string,
++  rawBody: string,
++  now = new Date(),
++) {
++  let body: unknown;
++  try { body = JSON.parse(rawBody); } catch { return { status: "invalid_payload" as const }; }
++  const envelope = Envelope.safeParse(body);
++  if (!envelope.success) return { status: "invalid_payload" as const };
++
++  const events = envelope.data.events.map(value => ConsentEvent.safeParse(value));
++  // Provider and server clocks can differ. Do not acknowledge a future unfollow
++  // and lose it, or clamp its time and break replay protection after re-consent.
++  // A non-2xx response asks the configured provider redelivery to retry later.
++  if (events.some(event => event.success && event.data.type === "unfollow" && event.data.timestamp > now.getTime())) {
++    return { status: "retry_later" as const };
++  }
++
++  for (const event of events) {
++    if (!event.success) continue;
++    // Adding/unblocking an account cannot restore a revoked registration binding.
++    // The existing verified OAuth binding flow is required to grant it again.
++    if (event.data.type === "follow") continue;
++    const occurredAt = new Date(event.data.timestamp);
++    // This conditional update is idempotent. Late redelivery cannot revoke an
++    // explicit binding renewed after the original event; no provider ID is stored.
++    await db.lineUserIdentity.updateMany({
++      where: {
++        vendorId,
++        lineUserIdHash: lineUserIdHash(vendorId, event.data.source.userId),
++        revokedAt: null,
++        linkedAt: { lte: occurredAt },
++      },
++      data: { revokedAt: occurredAt },
++    });
++  }
++  return { status: "accepted" as const };
++}
+--- a/src/lib/line-webhook-events.test.ts
++++ b/src/lib/line-webhook-events.test.ts
+@@ -0,0 +1,52 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { applyVerifiedLineWebhookEvents } from "./line-webhook-events";
++import { lineUserIdHash } from "./line-credentials";
++
++const userId = `U${"a".repeat(32)}`;
++const at = new Date("2026-10-16T01:00:00Z");
++const event = (type = "unfollow", timestamp = at.getTime()) => ({ type, timestamp, source: { type: "user", userId } });
++
++describe("verified LINE consent events", () => {
++  beforeEach(() => vi.stubEnv("CSRF_SECRET", "wp13-synthetic-test-only-key-at-least-32-bytes"));
++  afterEach(() => vi.unstubAllEnvs());
++
++  it("revokes only the tenant/provider identity bound no later than the event", async () => {
++    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
++    await applyVerifiedLineWebhookEvents({ lineUserIdentity: { updateMany } } as never, "vendor-a", JSON.stringify({ events: [event()] }), at);
++    expect(updateMany).toHaveBeenCalledExactlyOnceWith({
++      where: { vendorId: "vendor-a", lineUserIdHash: lineUserIdHash("vendor-a", userId), revokedAt: null, linkedAt: { lte: at } },
++      data: { revokedAt: at },
++    });
++    expect(JSON.stringify(updateMany.mock.calls)).not.toContain(userId);
++    expect(lineUserIdHash("vendor-a", userId)).not.toBe(lineUserIdHash("vendor-b", userId));
++  });
++
++  it("acknowledges follows without creating or restoring a revoked binding", async () => {
++    const updateMany = vi.fn();
++    expect(await applyVerifiedLineWebhookEvents({ lineUserIdentity: { updateMany } } as never, "vendor-a", JSON.stringify({ events: [event("follow")] }), at)).toEqual({ status: "accepted" });
++    expect(updateMany).not.toHaveBeenCalled();
++  });
++
++  it.each(["{", "null", '{"events":{}}', JSON.stringify({ events: Array(1001).fill({}) })])("rejects malformed envelopes without writes", async raw => {
++    const updateMany = vi.fn();
++    expect(await applyVerifiedLineWebhookEvents({ lineUserIdentity: { updateMany } } as never, "vendor-a", raw, at)).toEqual({ status: "invalid_payload" });
++    expect(updateMany).not.toHaveBeenCalled();
++  });
++
++  it("ignores unrelated, malformed and group events without writes", async () => {
++    const updateMany = vi.fn();
++    await applyVerifiedLineWebhookEvents({ lineUserIdentity: { updateMany } } as never, "vendor-a", JSON.stringify({ events: [event("message"), { ...event(), source: { type: "group", userId } }, { ...event(), timestamp: -1 }, { ...event(), source: { type: "user", userId: "other" } }] }), at);
++    expect(updateMany).not.toHaveBeenCalled();
++  });
++
++  it("does not acknowledge future unfollows or write a partial batch before their retry", async () => {
++    const updateMany = vi.fn();
++    expect(await applyVerifiedLineWebhookEvents({ lineUserIdentity: { updateMany } } as never, "vendor-a", JSON.stringify({ events: [event(), event("unfollow", at.getTime()+5000)] }), at)).toEqual({ status: "retry_later" });
++    expect(updateMany).not.toHaveBeenCalled();
++  });
++
++  it("propagates persistence failure so the provider can retry", async () => {
++    const updateMany = vi.fn().mockRejectedValue(new Error("synthetic-db-failure"));
++    await expect(applyVerifiedLineWebhookEvents({ lineUserIdentity: { updateMany } } as never, "vendor-a", JSON.stringify({ events: [event()] }), at)).rejects.toThrow("synthetic-db-failure");
++  });
++});
+--- a/src/app/api/webhooks/line/[vendorId]/route.ts
++++ b/src/app/api/webhooks/line/[vendorId]/route.ts
+@@ -1,4 +1,5 @@
+ import { NextResponse } from "next/server";
++import { applyVerifiedLineWebhookEvents } from "@/lib/line-webhook-events";
+ import { getDb } from "@/lib/db";
+ import { verifyLineSignature } from "@/lib/line-client";
+ import { unprotectLineOfficialAccountCredentials } from "@/lib/line-credentials";
+@@ -13,7 +14,8 @@
+   const { vendorId } = await context.params;
+   if (!vendorId || vendorId.length > 128) return NextResponse.json({ error: "not_found" }, { status: 404 });
+   const account = await getDb().lineOfficialAccount.findUnique({ where: { vendorId } });
+-  if (!account || account.status !== "active") return NextResponse.json({ error: "not_found" }, { status: 404 });
++  // Consent withdrawal must still be recorded while an existing account is paused.
++  if (!account) return NextResponse.json({ error: "not_found" }, { status: 404 });
+ 
+   const rawBody = await request.text();
+   if (Buffer.byteLength(rawBody, "utf8") > MAX_WEBHOOK_BYTES) {
+@@ -29,8 +31,14 @@
+   }
+   if (!valid) return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
+ 
+-  // The current campaign uses push notifications; webhook events are acknowledged
+-  // only after signature validation. Event-specific ingestion can be added without
+-  // weakening this raw-body verification boundary.
++  // Signature verification above remains the only entry to event persistence.
++  try {
++    const result = await applyVerifiedLineWebhookEvents(getDb(), vendorId, rawBody);
++    if (result.status === "invalid_payload") return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
++    if (result.status === "retry_later") return NextResponse.json({ error: "temporarily_unavailable" }, { status: 503 });
++  } catch {
++    // Fixed response only; do not expose provider identifiers or database errors.
++    return NextResponse.json({ error: "temporarily_unavailable" }, { status: 503 });
++  }
+   return NextResponse.json({ ok: true });
+ }
+--- a/src/app/api/webhooks/line/[vendorId]/route.test.ts
++++ b/src/app/api/webhooks/line/[vendorId]/route.test.ts
+@@ -2,8 +2,8 @@
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { protectLineOfficialAccountCredentials } from "@/lib/line-credentials";
+ 
+-const mocks = vi.hoisted(() => ({ findUnique: vi.fn() }));
+-vi.mock("@/lib/db", () => ({ getDb: () => ({ lineOfficialAccount: { findUnique: mocks.findUnique } }) }));
++const mocks = vi.hoisted(() => ({ findUnique: vi.fn(), updateMany: vi.fn() }));
++vi.mock("@/lib/db", () => ({ getDb: () => ({ lineOfficialAccount: { findUnique: mocks.findUnique }, lineUserIdentity: { updateMany: mocks.updateMany } }) }));
+ 
+ import { POST } from "@/app/api/webhooks/line/[vendorId]/route";
+ 
+@@ -12,6 +12,8 @@
+   const secret = "messaging-secret-1234567890";
+ 
+   beforeEach(() => {
++    vi.clearAllMocks();
++    mocks.updateMany.mockResolvedValue({ count: 1 });
+     vi.stubEnv("CSRF_SECRET", "line-webhook-test-secret-that-is-at-least-32-bytes");
+     mocks.findUnique.mockResolvedValue({
+       id: "account-1",
+@@ -55,4 +57,56 @@
+     expect(response.status).toBe(413);
+     expect(mocks.findUnique).not.toHaveBeenCalled();
+   });
++
++  async function signedEvent(payload: string, valid = true) {
++    return POST(new Request("https://example.test/api/webhooks/line/vendor-1", {
++      method: "POST",
++      headers: { "x-line-signature": createHmac("sha256", secret).update(valid ? payload : "different").digest("base64") },
++      body: payload,
++    }), { params: Promise.resolve({ vendorId: "vendor-1" }) });
++  }
++
++  const unfollow = () => JSON.stringify({ events: [{ type: "unfollow", timestamp: Date.now()-1000, source: { type: "user", userId: `U${"b".repeat(32)}` } }] });
++
++  it("applies signed unfollows only after signature verification", async () => {
++    const payload = unfollow();
++    expect((await signedEvent(payload, false)).status).toBe(401);
++    expect(mocks.updateMany).not.toHaveBeenCalled();
++    expect((await signedEvent(payload)).status).toBe(200);
++    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", revokedAt: null }) }));
++  });
++
++  it("returns a fixed retryable failure when consent persistence fails", async () => {
++    mocks.updateMany.mockRejectedValueOnce(new Error("synthetic persistence failure"));
++    const response = await signedEvent(unfollow());
++    expect(response.status).toBe(503);
++    expect(await response.json()).toEqual({ error: "temporarily_unavailable" });
++  });
++
++  it("rejects signed malformed JSON without consent writes", async () => {
++    expect((await signedEvent("{")).status).toBe(400);
++    expect(mocks.updateMany).not.toHaveBeenCalled();
++  });
++
++  it("still records signed withdrawal while an existing account is paused", async () => {
++    const account = await mocks.findUnique();
++    mocks.findUnique.mockResolvedValueOnce({ ...account, status: "inactive" });
++    expect((await signedEvent(unfollow())).status).toBe(200);
++    expect(mocks.updateMany).toHaveBeenCalledTimes(1);
++  });
++
++  it("returns retryable 503 for a signed provider clock ahead of the server", async () => {
++    const raw = JSON.stringify({ events: [{ type: "unfollow", timestamp: Date.now()+5000, source: { type: "user", userId: `U${"b".repeat(32)}` } }] });
++    expect((await signedEvent(raw)).status).toBe(503);
++    expect(mocks.updateMany).not.toHaveBeenCalled();
++  });
++
++  it("converges when a partially applied batch is redelivered after a database failure", async () => {
++    const raw = JSON.stringify({ events: [JSON.parse(unfollow()).events[0], { ...JSON.parse(unfollow()).events[0], source: { type: "user", userId: `U${"c".repeat(32)}` } }] });
++    mocks.updateMany.mockResolvedValueOnce({ count: 1 }).mockRejectedValueOnce(new Error("synthetic second-write failure"));
++    expect((await signedEvent(raw)).status).toBe(503);
++    mocks.updateMany.mockResolvedValue({ count: 0 });
++    expect((await signedEvent(raw)).status).toBe(200);
++    expect(mocks.updateMany).toHaveBeenCalledTimes(4);
++  });
+ });
+--- a/docs/launch/line-notification-operations.md
++++ b/docs/launch/line-notification-operations.md
+@@ -0,0 +1,22 @@
++# LINE 通知的非正式環境驗收
++
++WP-13 的本機收據不代表供應商送達或正式上線。僅使用固定 Sandbox、合成帳號與合成報名資料；不在文件或證據保存憑證、簽章、Cookie 或原始 webhook。
++
++## 啟用前必要條件
++
++- 在指定 Sandbox channel 啟用 Use webhook 及 **Webhook redelivery**。由維運提供不含憑證的設定確認；尚未確認時，外部送達驗收仍為 `WAITING_AUTHORIZATION`。
++- 維持伺服器時鐘同步。簽章正確但事件時間超前的 unfollow 回覆 503，待供應商重送；不回覆假成功，也不改寫事件時間。
++- 503 亦用於暫時性資料庫失敗。批次可能已部分套用，重送透過租戶、使用者雜湊、撤銷狀態與綁定時間的條件更新收斂。重送未啟用或超出供應商重送期間，不能承諾事件不遺失。
++- 檢查報名者已完成原本驗證及 LINE 綁定，並在 Sandbox 證明提醒送達、封鎖後不再送出，以及通知通道選擇生效。這些供應商項目尚未驗證。
++
++## 同意與撤銷語意
++
++unfollow 會撤銷該商家的既有 LINE 綁定；帳號暫停時也記錄撤銷。follow 只表示追蹤或解除封鎖，不會自動清除撤銷紀錄，須重新走既有驗證綁定流程。
++
++事件時間不早於最近一次明確綁定時才撤銷。這會比較 LINE 時鐘與伺服器綁定時間，兩者偏移是待 Sandbox 驗證的限制。資料庫已提交的新綁定不受較早事件重送影響。已進入供應商的發送不能撤回；worker 只在呼叫供應商前檢查最新撤銷狀態。
++
++來源：[LINE 官方 webhook 文件](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)。官方文件說明重送需額外啟用，事件可能重複或不依發生順序到達。
++
++## 回滾
++
++只回復 WP-13 webhook 與 helper 的精確 patch；不回復其他 WP、不清除已記錄的撤銷狀態、不自動重新啟用通知。外部 Sandbox 設定只由其 owner 調整。本輪未建立外部資源。

@@ -1,0 +1,224 @@
+{
+  "completed": false,
+  "finalModel": "claude-sonnet-5-5",
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-sonnet-5-5",
+    "effort": "unknown"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "large",
+      "large_workload": true,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [
+        "ux_ui"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/components/app-shell.tsx",
+        "src/components/landing-pages/funnel-operations-panel.tsx"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/components/app-shell.tsx",
+      "src/components/landing-pages/funnel-operations-panel.tsx"
+    ],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-sonnet-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "針對新增的精簡行動版版面（步驟清單收合、專案切換器 details 包裝）做增量審查。依提供的原始碼片段，未發現 BLOCKER/MAJOR。原生 button/details 的鍵盤切換與 aria-expanded 用法大致正確，桌面 lg:flex 與既有桌面切換器未被改動。剩餘問題多屬 MINOR/NIT：兩個 disclosure 的狀態在選取後不會收合或同步、步驟切換按鈕無障礙名稱內嵌狀態且缺 aria-controls、驗證涵蓋缺口，以及文字與斷點的小幅重複。本審查只依提供片段，未涵蓋完整登入 E2E 與目前仍在執行的 snapshot 檢查，不代表整個 WP 已可交付。",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+        "area": "mobileStepsOpen 狀態與行動版步驟清單 wrapper（約 L54、L229-235）",
+        "issue": "行動版步驟清單展開後，片段中沒有任何程式碼會在選取步驟或其他操作後收合；mobileStepsOpen 只由切換按鈕改變。",
+        "evidence": "diff 只新增 useState(false) 與按鈕 onClick 的 setMobileStepsOpen((open) => !open)，未見步驟選取、新增、移除處理器呼叫 setMobileStepsOpen(false)。步驟選取處理器不在提供的片段內，因此信心度有限。",
+        "impact": "在 375x667 上，使用者展開並選取步驟後，清單仍佔滿視窗，編輯欄位被推到首屏外。這與本次「首個可編輯欄位在 viewport 內」的緊湊目標相反，也只有第一次進入時才成立。",
+        "recommended_fix": "在行動版選取步驟（含導覽切換）後呼叫 setMobileStepsOpen(false)，並在收合後保持焦點於切換按鈕或所選步驟。新增或移除步驟是否要維持展開，請明確決定。",
+        "required_test": "行動 viewport 下：展開清單、選取另一步驟，斷言 aria-expanded 為 false 且首個可編輯欄位仍在 viewport 內；Chromium 與 Firefox 都要跑。",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+        "area": "行動版步驟切換按鈕（約 L229）",
+        "issue": "按鈕的可存取名稱把狀態文字「（展開/收合）」寫進 label，同時又設 aria-expanded，狀態被重複播報。按鈕也未用 aria-controls 關聯被控制區塊，且 label 隨步驟名稱即時變動。",
+        "evidence": "`aria-expanded={mobileStepsOpen} ...>網站步驟：{active?.step.name ?? \"選擇步驟\"}（{mobileStepsOpen ? \"收合\" : \"展開\"}）`；被控制的 div 沒有 id。步驟名稱為空字串時，名稱會變成「網站步驟：（展開）」。",
+        "impact": "螢幕閱讀器可能朗讀「展開，已收合」等重複或矛盾內容。名稱隨狀態與輸入變動，也不利以名稱定位控制項（測試依賴 /^網站步驟：/）。這是無障礙品質問題，不會阻擋鍵盤操作。",
+        "recommended_fix": "使用穩定名稱，例如「網站步驟」，並把目前步驟名稱放在可見文字或 aria-describedby；狀態只交給 aria-expanded，並加上圖示 chevron（aria-hidden）。為清單 wrapper 加 id 並設 aria-controls，空名稱時提供後備文字。",
+        "required_test": "元件或 axe 測試：切換前後 accessible name 不含展開/收合文字、aria-controls 指向存在的元素；清空步驟名稱時按鈕名稱仍有可理解的後備文字。",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/app-shell.tsx",
+        "area": "行動 header 專案 details/summary（L302）",
+        "issue": "details 為不受控，選取專案後不會自動收合，且 summary 標籤用 selectedProjectId 而 WorkspaceProjectSwitcher 內部使用 optimisticProjectId，兩者在 transition 期間可能不一致。",
+        "evidence": "details 沒有 open 狀態或 onToggle 邏輯；summary 為 `projects.find((project) => project.id === selectedProjectId)?.name ?? \"全部專案總覽\"`；切換器的 choose() 只關閉內部 menu（setOpen(false)），並以 optimistic 值顯示。",
+        "impact": "行動版選取專案後，面板（工作區名稱＋切換按鈕）仍佔據首屏高度，直到使用者再次手動收合；等待伺服器持久化期間，summary 與內部按鈕可能顯示不同專案，失敗回復時也可能短暫誤導。",
+        "recommended_fix": "以受控 open 狀態管理 details，在選取完成或路由變更後關閉；或讓 summary 與切換器共用同一個顯示專案狀態（例如把 displayProjectId 往上提或透過 callback 同步）。",
+        "required_test": "行動 viewport 下：開啟 details、開啟專案 menu、選取專案，斷言 details 收合且 summary 顯示新專案名稱；模擬 selectProject 失敗時 summary 與切換器一致回復。",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "validation runner assertion source",
+        "area": "行動 viewport 斷言（details 與步驟切換區塊）",
+        "issue": "驗證涵蓋缺口：行動版 details 內的專案選單從未被開啟或選取，也未檢查 menu 是否被 header 裁切或遮蔽。首屏欄位斷言只檢查邊界，未驗證遮蔽。",
+        "evidence": "測試只對 `header summary` 按 Enter 並檢查 `[data-workspace-switcher]` 的可見性。內部 `role=menu` 為 absolute z-50 且位於新的 details 容器內，沒有任何斷言開啟它。欄位檢查是 `main input:not([type=\"hidden\"])`.first() 加上 bounds.y 與高度，沒有 elementFromPoint 或遮蔽檢查，也沒有確認該 input 就是預期的步驟名稱欄位。此外，`header summary` 為未限定的選擇器，日後 header 新增其他 details 會觸發 strict mode 違規。",
+        "impact": "若 header 為 sticky/overflow 裁切、或選單被其他浮層遮住，仍會通過目前測試而在實機失效。若首個 input 是搜尋框等非預期欄位，欄位斷言也可能假通過。",
+        "recommended_fix": "補測行動版：展開 details、開啟 menu、確認選單項目可見並可用鍵盤選取。以 getByLabel/data-testid 指定步驟名稱欄位，並以 elementFromPoint 確認未被遮蔽。為 summary 加專屬 data-testid，另補 Space 鍵切換。",
+        "required_test": "在 390x844 與 375x667 的 Chromium 與 Firefox：details 展開後開啟 menu，斷言 menuitemradio 在 viewport 內可見並可選取；欄位中心點的 elementFromPoint 屬於目標 input。",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/app-shell.tsx",
+        "area": "summary 內的專案名稱查找與後備文字（L302）",
+        "issue": "專案名稱查找與「全部專案總覽」後備字串在 app-shell 與 WorkspaceProjectSwitcher 重複，且已出現三處以上相同字面值。",
+        "evidence": "switcher 的 `current?.name ?? \"全部專案總覽\"` 與選單項目 `<b>全部專案總覽</b>`，加上 app-shell 新增的 `projects.find(...)?.name ?? \"全部專案總覽\"`。",
+        "impact": "日後修改文案或「找不到專案」的後備行為時容易漏改，造成標籤不一致；屬維護性問題，不影響功能。",
+        "recommended_fix": "抽出共用常數與小型 helper（例如 getProjectLabel(projects, id)）供兩處使用。",
+        "required_test": "單元測試：id 為 null、未知 id、已知 id 時 helper 回傳預期文字。",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+        "area": "響應式斷點（L222-L239）",
+        "issue": "同一份緊湊行動版調整混用 lg 與 sm 斷點：header 與步驟清單在 lg 才切換為桌面樣式，內容區 padding 卻在 sm 就回到 p-7。",
+        "evidence": "header 使用 `px-3 py-2 lg:px-5 lg:py-4`、步驟切換使用 `lg:hidden`/`lg:flex`，內容區使用 `p-3 sm:p-7`。",
+        "impact": "640–1023px 的平板寬度會出現收合步驟但內容區放寬的混合版面，造成視覺不一致，可能影響首屏欄位位置；非阻擋。",
+        "recommended_fix": "統一使用單一斷點（建議 lg）處理緊湊樣式，或明確說明平板寬度的設計意圖；並加入該寬度的 viewport 驗證。",
+        "required_test": "新增 768x1024 viewport 的 snapshot 或首個欄位 bounds 斷言。",
+        "confidence": 0.35
+      }
+    ]
+  }
+}

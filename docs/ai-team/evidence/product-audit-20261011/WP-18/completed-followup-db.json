@@ -1,0 +1,100 @@
+{
+  "status": "PASS",
+  "stage": "trusted-completion-to-existing-email-outbox",
+  "checks": {
+    "actualMetricServicesAndServerClockIntervals": "PASS",
+    "authenticMetricPipelineWithIndependentExpectedValues": "PASS",
+    "realCompletionPublishReloadAndReadyReader": "PASS",
+    "unattributedAndProvisionalSemantics": "PASS",
+    "trueCompletionAndPendingOrderSemantics": "PASS",
+    "actualQueueReceiptFailureRollsBackOutbox": "PASS",
+    "durableCooldownAndMissedJobReplay": "PASS",
+    "nonUtcCandidateAndSourceContract": "PASS",
+    "actualDispatcherConfigRestorationSendsOnce": "PASS",
+    "newPendingOrderAfterQueueStopsDispatch": "PASS",
+    "noDuplicateAcrossRulesAndReports": "PASS",
+    "recipientAndLiveBindingRejected": "PASS",
+    "unclassifiedOrderIsUnavailableNotNoOrder": "PASS",
+    "nonPrimaryPaymentAttributionStopsFollowup": "PASS",
+    "crossLiveSameEmailPrimaryAndSecondaryOrders": "PASS",
+    "videoReplacementCannotReuseOldCompletion": "PASS"
+  },
+  "browser": "NOT_RUN",
+  "remoteCI": "NOT_RUN",
+  "networkEmailTransport": "STUBBED .test recipients only; no SMTP/provider delivery claim",
+  "metricSource": "Actual existing ingress/coverage/worker/projection services; no handwritten completion rows or bypassed guards",
+  "retryClock": "Synthetic scheduling advance only; source server-clock facts remain unchanged",
+  "producers": {
+    "visits": "recorded",
+    "viewing": "recorded",
+    "registrations": "recorded",
+    "orders": "recorded"
+  },
+  "job": {
+    "status": "recorded"
+  },
+  "metrics": {
+    "attendanceRate": {
+      "unit": "percent",
+      "value": 80,
+      "status": "available",
+      "numerator": 4,
+      "denominator": 5
+    },
+    "completionRate": {
+      "unit": "percent",
+      "value": 75,
+      "status": "available",
+      "numerator": 3,
+      "denominator": 4
+    },
+    "registrationRate": {
+      "unit": "percent",
+      "value": 40,
+      "status": "available",
+      "numerator": 4,
+      "denominator": 10
+    },
+    "averageViewingSeconds": {
+      "unit": "seconds",
+      "value": 87.5,
+      "status": "available",
+      "numerator": 350,
+      "denominator": 4
+    },
+    "provisionalConversions": true,
+    "postCompletionOrderRate": {
+      "unit": "percent",
+      "value": 33.33333333333333,
+      "status": "available",
+      "numerator": 1,
+      "denominator": 3
+    },
+    "unattributedRegistrations": 1
+  },
+  "sourceCounts": {
+    "visits": 10,
+    "registrations": 5,
+    "sessions": 4,
+    "intervals": 70
+  },
+  "queueFailureClasses": [
+    {
+      "name": "Error",
+      "code": null,
+      "dbCode": null
+    }
+  ],
+  "initialStatuses": [
+    "queued",
+    "superseded",
+    "failed"
+  ],
+  "receiptFaultTriggered": true,
+  "migrationStatus": "PASS",
+  "migrationCount": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "revision": "sha256:081855c5144d76503e5cba90e681bbcf19374d5b59d2d94e84d5f7825b612b66",
+  "files": [
+    "prisma/seed.ts",
+    "package.json",
+    "scripts/local-database-schema.ts",
+    "scripts/local-database-schema.test.ts",
+    "scripts/check-local-database.ts",
+    "src/lib/course-payment-webhooks.db.test.ts",
+    "src/lib/dashboard-read-model.query-event.db.test.ts",
+    "src/lib/inventory-reservations.db.test.ts",
+    "src/lib/password-reset.db.test.ts",
+    "src/lib/payment-webhooks.db.test.ts",
+    "src/lib/post-purchase-upsell-access.db.test.ts",
+    "src/lib/tenant-ledger-invariants.db.test.ts",
+    "src/app/api/cloudflare/stream-webhook/route.db.test.ts",
+    "scripts/g7-checkout-admission-disposable-qa.mjs",
+    "scripts/g7-commerce-disposable-qa.mjs",
+    "scripts/g7-product-catalog-disposable-qa.mjs",
+    "scripts/merchant-affiliate-policy-browser-qa.mjs",
+    "scripts/merchant-affiliate-policy-disposable-qa.mjs",
+    "scripts/wp121-suite-manifest.json",
+    "scripts/local-database-safety.ts",
+    "scripts/local-database-safety.test.ts",
+    "vitest.config.ts",
+    "docs/launch/local-database-development.md"
+  ],
+  "status": "FINAL_VALIDATION_PENDING",
+  "previous_revision": "sha256:2aa7e3fb1f3db46c924615fb717d95c8fe2d54a2ce9026cb6f96ae0f94a7aa06",
+  "resolved_findings_pending_review": [
+    "MAJOR-1",
+    "MINOR-1",
+    "MINOR-2",
+    "MINOR-3"
+  ]
+}

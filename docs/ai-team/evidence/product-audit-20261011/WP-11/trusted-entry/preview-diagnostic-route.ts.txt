@@ -1,0 +1,23 @@
+import { isIP } from "node:net";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// Temporary same-project Preview probe. No DB/limiter, raw headers, IP output or logging.
+export async function POST(request: Request) {
+  if (process.env.VERCEL !== "1" || process.env.VERCEL_ENV !== "preview"
+    || process.env.VERCEL_PROJECT_ID !== "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn") {
+    return new Response(null, { status: 404 });
+  }
+  const value = request.headers.get("x-vercel-forwarded-for") ?? "";
+  const single = value.length > 0 && value.length <= 128 && !/[\r\n,]/u.test(value);
+  const normalized = value.trim();
+  const valid = single && isIP(normalized) !== 0;
+  // Only documentation-reserved addresses are sent by the bounded runner.
+  const sentinels = ["192.0.2.123", "192.0.2.124", "2001:db8::123"];
+  const equalsSentinel = sentinels.includes(normalized);
+  const includesSentinel = sentinels.some(ip => value.includes(ip));
+  return Response.json({ single, valid, equalsSentinel, includesSentinel,
+    matchesRealIp: valid && normalized === request.headers.get("x-real-ip")?.trim(),
+  }, { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+}

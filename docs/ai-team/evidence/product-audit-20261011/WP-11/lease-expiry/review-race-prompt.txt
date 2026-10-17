@@ -1,0 +1,207 @@
+Read-only critical security re-review of exact revised WP11 repair diff and deterministic DB tests; no tools or edits. Return findings BLOCKER/MAJOR/MINOR/NIT with file,area,issue,evidence,impact,recommended_fix,required_test,confidence. First review had no BLOCKER/MAJOR; two MINOR testing gaps and one NIT duplicated check. All addressed: shared assertViewerCapacity; rejected renewal row expiry unchanged and no replacement cookie; test-only Prisma query extension barrier AFTER both real capacity reads, BEFORE writes forces overlap. Tests race expired/expired and expired/new, exactlyone success, loser viewer_limit_reached, at least3 capacity reads (retry observed), active count1. Six real disposable PostgreSQL tests and existing unit/lint pass. Date only controlled; no actual90second wait; no Production/mail/payment or raw data. Existing release DELETE really deletes rows, not just expires;120/min limit leaves unreleased rows untilTTL. IP topology remains separately pending WP11. All old publication/payment/credit/usage guards unchanged. Review only supplied diff/tests/context, not full product.
+--- before/src/lib/live-quota-admission.ts
++++ after/src/lib/live-quota-admission.ts
+@@ -39,6 +39,7 @@
+ };
+ 
+ type LiveViewerSessionIdentity = {
++  expiresAt: Date;
+   id: string;
+   vendorId: string;
+   liveId: string;
+@@ -126,6 +127,11 @@
+   if (remainingCredits < stopWhenCreditsBelow) {
+     throw new LiveQuotaAdmissionError("credits_below_threshold");
+   }
++}
++
++async function assertViewerCapacity(tx: Prisma.TransactionClient, input: AdmissionInput, maximum: number, now: Date) {
++  const active = await tx.liveViewerSession.count({ where: activeSessionWhere(input.vendorId, input.liveId, now) });
++  if (active >= maximum) throw new LiveQuotaAdmissionError("viewer_limit_reached");
+ }
+ 
+ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: AdmissionInput) {
+@@ -216,11 +222,15 @@
+   const existing = requestedTokenHash
+     ? await tx.liveViewerSession.findUnique({
+         where: { tokenHash: requestedTokenHash },
+-        select: { id: true, vendorId: true, liveId: true },
++        select: { id: true, vendorId: true, liveId: true, expiresAt: true },
+       }) as LiveViewerSessionIdentity | null
+     : null;
+ 
+   if (requestedToken && existing?.vendorId === input.vendorId && existing.liveId === input.liveId) {
++    // 過期租約已釋放名額，恢復前須在同一Serializable交易重新檢查容量。
++    if (existing.expiresAt <= now) {
++      await assertViewerCapacity(tx, input, policy.maxConcurrentViewers, now);
++    }
+     const expiresAt = new Date(now.getTime() + LIVE_VIEWER_SESSION_TTL_MS);
+     await tx.liveViewerSession.update({
+       where: { id: existing.id },
+@@ -229,12 +239,7 @@
+     return { token: requestedToken, expiresAt, reused: true };
+   }
+ 
+-  const activeSessions = await tx.liveViewerSession.count({
+-    where: activeSessionWhere(input.vendorId, input.liveId, now),
+-  });
+-  if (activeSessions >= policy.maxConcurrentViewers) {
+-    throw new LiveQuotaAdmissionError("viewer_limit_reached");
+-  }
++  await assertViewerCapacity(tx, input, policy.maxConcurrentViewers, now);
+ 
+   const token = createLiveViewerToken();
+   const expiresAt = new Date(now.getTime() + LIVE_VIEWER_SESSION_TTL_MS);
+
+UNCHANGED ACTIVE FILTER
+function activeSessionWhere(vendorId: string, liveId: string, now: Date, tokenHash?: string) {
+  return {
+    vendorId,
+    liveId,
+    expiresAt: { gt: now },
+    ...(tokenHash ? { tokenHash: { not: tokenHash } } : {}),
+  };
+}
+
+
+UNCHANGED TRANSACTION WRAPPER
+export async function admitLiveViewer(db: PrismaClient, input: AdmissionInput) {
+  const now = input.now ?? new Date();
+  const transactionInput = { ...input, now };
+
+  // This write must commit independently. If quota or payment admission later
+  // fails, the natural VOD completion marker must remain durable.
+  await reconcileLiveRuntimeState(db, {
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    now,
+  });
+
+  for (let attempt = 1; attempt <= LIVE_ADMISSION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      // Every retry starts a fresh Serializable transaction and re-reads the
+      // live plus all quota state through the transaction callback.
+      return await db.$transaction(
+        (tx) => admitWithinTransaction(tx, transactionInput),
+        { isolationLevel: "Serializable" },
+      );
+    } catch (error) {
+      if (!isPrismaCode(error, "P2034")) throw error;
+      if (attempt === LIVE_ADMISSION_MAX_ATTEMPTS) {
+        throw new LiveQuotaAdmissionError("admission_busy");
+      }
+      // Immediate Serializable retries tend to collide with the same competing
+      // transaction again. This bounded jitter clears that conflict window.
+      await sleep(liveAdmissionRetryDelayMs(
+        attempt,
+        randomInt(0, LIVE_ADMISSION_RETRY_JITTER_MS + 1),
+      ));
+    }
+  }
+
+  throw new LiveQuotaAdmissionError("admission_busy");
+}
+
+
+CURRENT DB TEST
+import type { PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
+import { getDb } from "@/lib/db";
+import { POST, DELETE } from "./route";
+import { resetInMemoryRateLimitForTests } from "@/lib/rate-limit";
+import { admitLiveViewer, hashLiveViewerToken, LIVE_VIEWER_SESSION_TTL_MS } from "@/lib/live-quota-admission";
+
+import { assertLocalTestDatabase } from "../../../../scripts/local-database-safety";
+// 可在本機／CI disposable測試DB重跑，既有guard拒絕正式或互動式DB。
+assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
+const db = getDb();
+const owned: string[] = [];
+const now = new Date("2026-10-12T08:00:00.000Z");
+beforeEach(() => { vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test"); vi.stubEnv("RATE_LIMIT_PROVIDER", "memory"); resetInMemoryRateLimitForTests(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); });
+afterEach(async () => { vi.useRealTimers(); resetInMemoryRateLimitForTests(); await db.vendor.deleteMany({ where: { id: { in: owned.splice(0) } } }); vi.unstubAllEnvs(); });
+afterAll(() => db.$disconnect());
+async function fixture() {
+ const key = `wp11-lease-${randomUUID()}`;
+ const vendor = await db.vendor.create({ data: { name: "Synthetic lease", slug: key, email: key + "@example.test", passwordHash: "synthetic-unused" } }); owned.push(vendor.id);
+ const video = await db.video.create({ data: { vendorId: vendor.id, title: "Synthetic", sourceType: "url", videoUrl: "https://example.test/synthetic-unused.mp4", status: "ready" } });
+ const form = await db.registrationForm.create({ data: { vendorId: vendor.id, slug: key, name: "Synthetic", headline: "Synthetic", fields: [{ key: "name", label: "Name", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }] } });
+ const template = await db.messageTemplate.create({ data: { vendorId: vendor.id, name: "Synthetic", subject: "Synthetic registration", body: "{{name}} {{unsubscribe_url}}" } });
+ const live = await db.live.create({ data: { vendorId: vendor.id, videoId: video.id, formId: form.id, messageTemplateId: template.id, slug: key, title: "Synthetic", streamMode: "live", status: "live", scheduledAt: new Date(+now - 60_000), startedAt: new Date(+now - 60_000), quotaPolicy: { version: 1, affiliateMode: "enabled", maxConcurrentViewers: 1, stopWhenCreditsBelow: 0 } } });
+ return { vendorId: vendor.id, liveId: live.id };
+}
+function request(method: string, payload: { vendorId: string; liveId: string }, value?: string) {
+ return new Request("https://app.example.test/api/live-admission", { method, headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", "x-forwarded-for": "192.0.2.11", ...(value ? { cookie: `celebratedeal_live_viewer=${value}` } : {}) }, body: JSON.stringify(payload) });
+}
+it("rate-limited same-IP release stops counting at exactly the 90-second lease boundary", async () => {
+ const payload = await fixture(); const admitted = await POST(request("POST", payload)); expect(admitted.status).toBe(200);
+ const value = admitted.cookies.get("celebratedeal_live_viewer")!.value;
+ for (let i = 0; i < 120; i++) expect((await DELETE(request("DELETE", payload))).status).toBe(200);
+ expect((await DELETE(request("DELETE", payload, value))).status).toBe(429);
+ expect(await db.liveViewerSession.count({ where: payload })).toBe(1);
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS - 1));
+ expect((await POST(request("POST", payload))).status).toBe(429);
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS));
+ expect((await POST(request("POST", payload))).status).toBe(200);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});
+it("an expired viewer cannot renew past a full viewer cap", async () => {
+ const payload = await fixture(); const admitted = await POST(request("POST", payload)); expect(admitted.status).toBe(200);
+ const value = admitted.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS));
+ expect((await POST(request("POST", payload))).status).toBe(200);
+ const before = await db.liveViewerSession.findUniqueOrThrow({ where: { tokenHash: hashLiveViewerToken(value) } });
+ const rejected = await POST(request("POST", payload, value));
+ expect(rejected.status).toBe(429);
+ expect(rejected.cookies.get("celebratedeal_live_viewer")).toBeUndefined();
+ expect((await db.liveViewerSession.findUniqueOrThrow({ where: { id: before.id } })).expiresAt).toEqual(before.expiresAt);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});
+
+it("valid renewal keeps its slot and an expired renewal can reclaim an empty slot", async () => {
+ const payload = await fixture(); const initial = await POST(request("POST", payload)); expect(initial.status).toBe(200);
+ const value = initial.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS - 1));
+ expect((await POST(request("POST", payload, value))).status).toBe(200);
+ expect(await db.liveViewerSession.count({ where: payload })).toBe(1);
+ vi.setSystemTime(new Date(+now + 2 * LIVE_VIEWER_SESSION_TTL_MS));
+ expect((await POST(request("POST", payload, value))).status).toBe(200);
+ expect(await db.liveViewerSession.count({ where: payload })).toBe(1);
+});
+it("concurrent expired renewals cannot overfill the last slot", async () => {
+ const payload = await fixture(); const a = await POST(request("POST", payload)); expect(a.status).toBe(200);
+ const first = a.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS));
+ const b = await POST(request("POST", payload)); expect(b.status).toBe(200);
+ const second = b.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + 2 * LIVE_VIEWER_SESSION_TTL_MS));
+ const results = await Promise.all([POST(request("POST", payload, first)), POST(request("POST", payload, second))]);
+ expect(results.map(r => r.status).sort()).toEqual([200, 429]);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});
+
+it.each(["expired", "new"])("forces overlapping capacity reads for expired renewal versus %s", async (other) => {
+ const payload = await fixture(); const first = await POST(request("POST", payload)); expect(first.status).toBe(200);
+ const a = first.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS));
+ let b: string | undefined;
+ if (other === "expired") {
+  const second = await POST(request("POST", payload)); expect(second.status).toBe(200);
+  b = second.cookies.get("celebratedeal_live_viewer")!.value;
+  vi.setSystemTime(new Date(+now + 2 * LIVE_VIEWER_SESSION_TTL_MS));
+ }
+ let reads = 0; let release = () => {};
+ const barrier = new Promise<void>(resolve => { release = resolve; });
+ // 真實count完成後才放行寫入，確保兩筆交易都讀到尚有空位。
+ const client = db.$extends({ query: { liveViewerSession: { async count({ args, query }) {
+  const count = await query(args); reads++;
+  if (reads <= 2) { expect(count).toBe(0); if (reads === 2) release(); await barrier; }
+  return count;
+ } } } }) as unknown as PrismaClient;
+ const results = await Promise.allSettled([admitLiveViewer(client, { ...payload, token: a }), admitLiveViewer(client, { ...payload, token: b })]);
+ expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+ const denied = results.find(result => result.status === "rejected");
+ expect(denied?.status === "rejected" && denied.reason.code).toBe("viewer_limit_reached");
+ expect(reads).toBeGreaterThanOrEqual(3);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});

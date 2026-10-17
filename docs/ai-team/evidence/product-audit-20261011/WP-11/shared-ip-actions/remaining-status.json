@@ -1,0 +1,11 @@
+{
+  "original_raw_callers": 26,
+  "api_migrated": 18,
+  "action_helper_migrated": 8,
+  "remaining_raw_nonpayment_callers": 0,
+  "intentional_legacy": "student recipient-only request,4verified identity adapters,trusted wrapper,4excludedpaymentroutes,providerstatus-only",
+  "verified_adapter_tests": 44,
+  "whole_wp_ready": false,
+  "whole_db_session": 85292,
+  "whole_browser_session": 76592
+}

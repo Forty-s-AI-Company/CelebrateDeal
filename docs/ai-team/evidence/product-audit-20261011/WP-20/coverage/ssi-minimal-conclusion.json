@@ -1,0 +1,12 @@
+{
+  "runner_sha256": "d0f45e6a222ad957f8f9d97d3faa207e167a8918086029b37da44a049a8693e6",
+  "lint": "PASS",
+  "confirmed": "With no product triggers, adding status index changes this synchronized Serializable run from20/20 to3/20 at two attempts. Index updates suffice to reproduce serialization failures.",
+  "limitations": [
+    "One paired diagnostic run",
+    "Does not identify all production-table dependency edges",
+    "Does not prove metric trigger has no incremental effect",
+    "Does not satisfy original20/20 acceptance"
+  ],
+  "next": "Evaluate transaction admission before snapshot or a qualified change in delivery semantics; do not remove business indexes or lower isolation simply to pass"
+}

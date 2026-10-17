@@ -5,6 +5,10 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorOwner } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { Prisma } from "@prisma/client";
+import { parseRichMenuDraftContent } from "@/lib/line-rich-menu-draft-content";
+import { richMenuAccountVersion } from "@/lib/line-rich-menu-sync";
+import { findLineAccount } from "@/lib/line-account-routing";
 import {
   parseLineOfficialAccountCredentials,
   protectLineOfficialAccountCredentials,
@@ -15,7 +19,7 @@ const LINE_SETTINGS_PATH = "/settings/line";
 
 export type LineOfficialAccountActionState = {
   status: "idle" | "saved" | "error";
-  error: "invalid_credentials" | "save_failed" | null;
+  error: "invalid_credentials" | "save_failed" | "sync_pending" | null;
 };
 
 export type LineConnectionActionState = {
@@ -69,6 +73,20 @@ function optionalFormText(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+async function ownedAccountsForSave(tx:Prisma.TransactionClient,vendorId:string,accountId:string,credentials:Parameters<typeof protectLineOfficialAccountCredentials>[1]) {
+      const existing = accountId ? await findLineAccount(tx, vendorId, accountId) : null;
+      if (accountId && !existing) throw new Error("invalid_account");
+      const accounts = await tx.lineOfficialAccount.findMany({ where: { vendorId: vendorId } });
+      for (const candidate of accounts) {
+        const old = unprotectLineOfficialAccountCredentials(vendorId, candidate);
+        // Updating credentials may rotate a secret, but cannot change channel identity.
+        if (candidate.id === accountId) {
+          if (old.messagingChannelId !== credentials.messagingChannelId || (old.loginChannelId && old.loginChannelId !== credentials.loginChannelId)) throw new Error("invalid_account");
+        } else if (old.messagingChannelId === credentials.messagingChannelId || (old.loginChannelId && old.loginChannelId === credentials.loginChannelId)) throw new Error("duplicate_channel");
+      }
+  return {existing,accounts};
+}
+
 /** Owner-only mutation; no credential value is returned, logged, or written to audit metadata. */
 export async function saveLineOfficialAccountAction(
   _previous: LineOfficialAccountActionState,
@@ -76,6 +94,9 @@ export async function saveLineOfficialAccountAction(
 ): Promise<LineOfficialAccountActionState> {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
+  const accountId = optionalFormText(formData, "accountId");
+  const displayName = optionalFormText(formData, "displayName");
+  if (accountId.length > 128 || !displayName || displayName.length > 100) return { status: "error", error: "invalid_credentials" };
   const parsed = parseLineOfficialAccountCredentials({
     messagingChannelId: optionalFormText(formData, "messagingChannelId"),
     messagingChannelSecret: optionalFormText(formData, "messagingChannelSecret"),
@@ -88,23 +109,35 @@ export async function saveLineOfficialAccountAction(
   const protectedCredentials = protectLineOfficialAccountCredentials(auth.vendor.id, parsed.data);
   let account: { id: string; status: string; connectedAt: Date };
   try {
-    account = await getDb().lineOfficialAccount.upsert({
-      where: { vendorId: auth.vendor.id },
-      create: {
-        vendorId: auth.vendor.id,
-        ...protectedCredentials,
-        status: "active",
-      },
-      update: {
-        ...protectedCredentials,
-        status: "active",
-        connectedAt: new Date(),
-        lastValidatedAt: null,
-      },
-      select: { id: true, status: true, connectedAt: true },
-    });
-  } catch {
-    return { status: "error", error: "save_failed" };
+    account = await getDb().$transaction(async tx=>{
+      const {existing,accounts} = await ownedAccountsForSave(tx,auth.vendor.id,accountId,parsed.data);
+      const draft = existing ? await tx.lineRichMenuDraft.findFirst({where:{vendorId:auth.vendor.id,lineOfficialAccountId:existing.id}}) : null;
+      const content=draft&&parseRichMenuDraftContent(draft.menu);
+      if(draft&&!content)throw new Error("line_sync_pending");
+      const publication=content?.publication;
+      if(publication?.status==="syncing")throw new Error("line_sync_pending");
+      if(publication?.status==="uncertain") {
+        // An expired provider value may be rotated for the SAME channel so an
+        // unknown result can be reconciled. A channel switch stays blocked.
+        const old=existing;
+        if(!old||unprotectLineOfficialAccountCredentials(auth.vendor.id,old).messagingChannelId!==parsed.data.messagingChannelId)throw new Error("line_sync_pending");
+      }
+      const data = { ...protectedCredentials, displayName, status: "active", connectedAt: new Date(), lastValidatedAt: null };
+      const select = { id: true, status: true, connectedAt: true } as const;
+      const saved = existing
+        ? await tx.lineOfficialAccount.update({ where: { vendorId_id: { vendorId: auth.vendor.id, id: existing.id } }, data, select })
+        : await tx.lineOfficialAccount.create({ data: { vendorId: auth.vendor.id, ...data, isDefault: accounts.length === 0 }, select });
+      // Preserve a pre-integration draft when the merchant adds their first account.
+      if (!existing && accounts.length === 0) await tx.lineRichMenuDraft.updateMany({ where: { vendorId: auth.vendor.id, lineOfficialAccountId: null }, data: { lineOfficialAccountId: saved.id } });
+      if(draft&&content&&publication) {
+        const next={...publication,status:publication.status==="uncertain"?"uncertain" as const:"outdated" as const,accountVersion:richMenuAccountVersion({id:saved.id,...protectedCredentials})};
+        const changed=await tx.lineRichMenuDraft.updateMany({where:{id:draft.id,vendorId:auth.vendor.id,revision:draft.revision,menu:{equals:draft.menu as Prisma.InputJsonValue}},data:{revision:{increment:1},menu:{...content,publication:next} as Prisma.InputJsonValue}});
+        if(changed.count!==1)throw new Error("line_sync_pending");
+      }
+      return saved;
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  } catch(error) {
+    return { status: "error", error: error instanceof Error&&error.message==="line_sync_pending"?"sync_pending":"save_failed" };
   }
 
   await writeAuditLog({
@@ -132,8 +165,10 @@ export async function testLineOfficialAccountAction(
 ): Promise<LineConnectionActionState> {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
+  const accountId = optionalFormText(formData, "accountId");
+  if (!accountId || accountId.length > 128) return { status: "error", error: "not_configured", bot: null };
   const account = await getDb().lineOfficialAccount.findUnique({
-    where: { vendorId: auth.vendor.id },
+    where: { vendorId_id: { vendorId: auth.vendor.id, id: accountId } },
     select: {
       id: true,
       messagingChannelIdEncrypted: true,
@@ -148,10 +183,11 @@ export async function testLineOfficialAccountAction(
   try {
     const credentials = unprotectLineOfficialAccountCredentials(auth.vendor.id, account);
     const bot = await fetchLineBotInfo(credentials.messagingAccessToken);
-    await getDb().lineOfficialAccount.update({
-      where: { vendorId: auth.vendor.id },
+    const validated = await getDb().lineOfficialAccount.updateMany({
+      where: { vendorId: auth.vendor.id, id: account.id, messagingChannelIdEncrypted:account.messagingChannelIdEncrypted, messagingChannelSecretEncrypted:account.messagingChannelSecretEncrypted, messagingAccessTokenEncrypted:account.messagingAccessTokenEncrypted, loginChannelIdEncrypted:account.loginChannelIdEncrypted, loginChannelSecretEncrypted:account.loginChannelSecretEncrypted },
       data: { lastValidatedAt: new Date() },
     });
+    if(validated.count !== 1) return {status:"error",error:"connection_failed",bot:null};
     revalidatePath(LINE_SETTINGS_PATH);
     return { status: "validated", error: null, bot };
   } catch {

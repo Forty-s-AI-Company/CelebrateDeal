@@ -1,0 +1,10 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-ingress-gateway.ts": "e0e82cea866b5e3cc25c4e880581f71bc3f184ce11ec4d779f16f9f7965867da",
+    "src/lib/live-metric-ingress-gateway.test.ts": "08b92821b750109d6c5c328716998e02f98da0c96823b40dc9612308f9d6a27c",
+    "src/lib/live-metric-coverage-reader.ts": "707e9e7e71b68081650c870fc1b6fc18672bb40546d61f772007ccb9754a07cf",
+    "src/lib/live-metric-coverage-reader.test.ts": "d4b852c6217542032a78c16b924a5e103aa9a8281aefb49edc3b8442e23b913c"
+  },
+  "supplied": "gateway receipt/getter/scope clone/close plus existing admission order; complete reader; new tests",
+  "promptChars": 17099
+}

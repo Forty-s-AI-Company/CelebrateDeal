@@ -1,0 +1,93 @@
+{
+  "at": "2026-10-16T04:12:59.250347+00:00",
+  "subtask_status": "READY",
+  "whole_wp14": "IN_PROGRESS",
+  "source_revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+  "changed_files": [
+    "src/lib/webinar-calendar.ts",
+    "src/lib/webinar-calendar.test.ts",
+    "src/components/webinar-calendar-download.tsx",
+    "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+    "src/lib/landing-page-service.ts",
+    "src/components/landing-page-workspace.tsx",
+    "tests/e2e/wp17-quick-webinar.spec.ts",
+    "src/components/quick-webinar-form.tsx",
+    "src/components/quick-webinar-form.test.tsx"
+  ],
+  "actual_results": [
+    "Optional future-webinar public thank-you ICS download; only public Live title, UTC schedule and public broadcast entry. No recipient, access grant, media URL, attendee/organizer or invented alarm.",
+    "Preview blocked; client rechecks schedule. UI tells user to import, choose calendar reminders and manually update changed events; Email verification remains required.",
+    "Existing max200Live title and longvalid step path supported; RFC5545 CRLF/UTF8byte folding/TEXT escaping.",
+    "Quick creation and calendar action disabled until hydration through existing useSyncExternalStore pattern; pending/completed/idempotency/project/verified-method rules unchanged."
+  ],
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "tests": 26,
+      "includes": "calendar, shared rendering, existing verification/session security and quick form readiness/reset"
+    },
+    "resource_regression": {
+      "status": "PASS",
+      "tests": 22
+    },
+    "build_typecheck": {
+      "status": "PASS",
+      "receipt": "calendar-build.json"
+    },
+    "lint": {
+      "status": "PASS",
+      "exit_code": 0,
+      "warnings": 1,
+      "scope": "Final10source, preexisting intentional native new-intent navigation warning"
+    },
+    "actual_browser": {
+      "status": "PASS",
+      "cases": 2,
+      "receipt": "calendar-browser.json",
+      "scope": "Actual ICS Blob download/content; stillUNVERIFIED afterdownload; normalEmailverification/queuedconfirmation/realWebMplayback; freshUUID/secondresource and pending-methodblock kept, no skipped assertions."
+    },
+    "axe": {
+      "status": "PASS",
+      "scans": 6,
+      "scope": "Merchant newaccount, public registration desktop/mobile, thankyou desktop/mobile, broadcast;0serious/critical"
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS",
+      "migrations": 131
+    },
+    "actual_calendar_client_import": "NOT_RUN",
+    "actual_calendar_reminder_delivery": "NOT_RUN",
+    "actual_LINE_provider_delivery": "NOT_RUN",
+    "A_B_experiment": "WAITING_AUTHORIZATION"
+  },
+  "review": {
+    "models": [
+      "claude-sonnet-5-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-5-5"
+    ],
+    "effort": "unknown",
+    "blocker_major": 0,
+    "remaining_minor": 3,
+    "remaining_nit": 1,
+    "limits": "Error branches/client preview and posthydration emptylibrary not comprehensively exercised; direct fresh-ID assertion timing risk; calendar-client reimport semantics not certified. Existing strict date-parser dependency is not a present defect; negative invalid/extendedyear checks pass."
+  },
+  "failures_preserved": {
+    "next_build": "Initial internal length exception; generated cache archived, cause unconfirmed. Two later product-version buildsPASS.",
+    "browser": "Before readiness guards, secondcreation produced no second resource with valid project/method, and one diagnostic run advanced to calendar button with no download. Bounded diagnostics retained, source guards added; final unchanged acceptance flow2/2PASS.",
+    "lint": "Intermediate synchronous setState-in-effect rejected; replaced with existing snapshot pattern, no rule weakening."
+  },
+  "unfinished": [
+    "Original WP13 andWP17 full dependencies",
+    "LINE actual Sandbox delivery",
+    "A/B experiment approval, metric/traffic inputs and actual experiment comparison",
+    "Calendar app import/reminder delivery not tested or claimed"
+  ],
+  "safety": "Independent worktree, synthetic fixtures and local disposablePG only; no original dirty checkout operations, secrets, Production, push or deploy.",
+  "sources": [
+    "https://www.rfc-editor.org/rfc/rfc5545",
+    "https://playwright.dev/docs/navigations#hydration"
+  ]
+}

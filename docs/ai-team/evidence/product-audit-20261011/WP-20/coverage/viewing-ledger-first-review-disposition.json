@@ -1,0 +1,29 @@
+{
+  "reviewSeverityCounts": {
+    "MAJOR": 6,
+    "MINOR": 7,
+    "NIT": 4
+  },
+  "reviewObserved": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "status": "REVISED_AFTER_FINDINGS; NOT_READY",
+  "localFixes": [
+    "Whole-row JSON no-op comparison captures progress and future columns",
+    "Definer/STABLE provenance function reads epoch/counts under row_security off",
+    "Per-session any-event overlap preserves issuance after lifetime changes",
+    "Owner-qualified source trigger guard plus hardened pg_catalog,pg_temp search path",
+    "Source session/interval no-truncate guards",
+    "Explicit recorded_only counts and primary-only audit"
+  ],
+  "existingGuards": "Session id/vendor/live/version updates rejected by existing wp20_metric_scope_update, runtime negative probe passed",
+  "trustBoundary": "Database migration/function owner is trusted. Immutability is not claimed against a superuser/table owner that can alter DDL; production non-owner credential/role validation remains NOT_VERIFIED. No production settings modified.",
+  "unresolvedRelease": [
+    "Full WP incomplete",
+    "Original Serializable20 remains7/20 FAIL (7 successes,13 failures)",
+    "Populated117-to118 upgrade and runtime role deployment unverified",
+    "Load/Prisma drift/catalog full checks pending"
+  ]
+}

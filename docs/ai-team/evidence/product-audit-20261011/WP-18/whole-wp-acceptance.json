@@ -1,0 +1,7 @@
+{
+  "status": "BLOCKED",
+  "blockers": [
+    "required_check_unverified:WP04-prerequisite"
+  ],
+  "revision": "sha256:d980a258e9342e086ee014d2222a6eb269acba1f8fda056835d833313ee37838"
+}

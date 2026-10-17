@@ -1,0 +1,16 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "files": {
+    "scripts/wp20-payment-callback-deadlock-disposable.mjs": "207915148be0554ca994989e0d3bf06724deb74b0785b67e68eadf91d246ac27",
+    "scripts/wp20-payment-callback-deadlock-probe.mjs": "c1e8335aeefcbb317574cb03438bf0ecf4360249d4a94f2ddbeee195730761c0",
+    "scripts/wp20-order-upgrade-snapshot-disposable.mjs": "10b1802c6c90239ae92c74a3e2fda7de0ab7ccc075c26cd13c4b09c3666a6741",
+    "prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql": "45bd7e46e84160c5d2c3bd64367487f1831574b81f77423f2e085d120914185a"
+  },
+  "callback": "payment-callback-deadlock-117-db.json",
+  "upgradeBefore": "order-upgrade-snapshot-116-failure.json",
+  "upgradeAfter": "order-upgrade-snapshot-117-db.json",
+  "typecheck": "payment-callback-deadlock-typecheck.json",
+  "callbackReview": "payment-callback-deadlock-review-disposition.json",
+  "upgradeReview": "RUNNING",
+  "originalSynchronized20": "FAIL_7_OF_20_NOT_RERUN"
+}

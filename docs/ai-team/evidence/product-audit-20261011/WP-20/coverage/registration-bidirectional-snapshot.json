@@ -1,0 +1,14 @@
+{
+  "hashes": {
+    "src/lib/live-metric-registration-source-audit.ts": "573b63b5f2e54d98d8c40c172d781c7f6c1cfb19e542a1b254a6170726b7c4c4",
+    "src/lib/live-metric-registration-source-audit.test.ts": "92aa2d814b7d007da9f8769f8488e0c5bf0e428a0194b65c327df149aaf530e6",
+    "scripts/wp20-registration-source-concurrency.mjs": "5c8c4a207c01f3aaa1adf3ef163521626f6d0eaf270515c6f71af3907c620f79",
+    "scripts/wp20-payment-retry-disposable.mjs": "28091b45b74b024843811e4490a4f363259b98d8ed5e4d766d31b218baf266af"
+  },
+  "unit": "10 PASS",
+  "lint": "source wrapper/test PASS",
+  "db": "21 forward sources plus1 reverse projection in same summary PASS",
+  "largeBidirectionalRun": "NOT_RUN",
+  "proofWriter": "NOT_IMPLEMENTED",
+  "review": "PENDING"
+}

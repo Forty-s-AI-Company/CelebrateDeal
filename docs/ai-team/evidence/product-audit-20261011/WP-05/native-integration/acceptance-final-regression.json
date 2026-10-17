@@ -1,0 +1,8 @@
+{
+  "status": "BLOCKED",
+  "blockers": [
+    "final_reviewer_not_qualified",
+    "independent_review_unverified"
+  ],
+  "revision": "sha256:84adebec22219bf698d6a1ebcf27dda1c945f7e1eb2556afb7362a8485e32637"
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "receipt": "review-final-cli.json",
+    "status": "SUCCESS",
+    "preserved": true,
+    "note": "Historical findings and remediation retained; current acceptance uses review-volume-cli.json. Aggregate CPU risk remains open."
+  },
+  {
+    "receipt": "review-integrated-cli.json",
+    "status": "SUCCESS",
+    "preserved": true,
+    "note": "Historical findings and remediation retained; current acceptance uses review-volume-cli.json. Aggregate CPU risk remains open."
+  },
+  {
+    "receipt": "review-rational-cli.json",
+    "status": "SUCCESS",
+    "preserved": true,
+    "note": "Historical findings and remediation retained; current acceptance uses review-volume-cli.json. Aggregate CPU risk remains open."
+  },
+  {
+    "receipt": "review-scaled-cli.json",
+    "status": "SUCCESS",
+    "preserved": true,
+    "note": "Historical findings and remediation retained; current acceptance uses review-volume-cli.json. Aggregate CPU risk remains open."
+  },
+  {
+    "receipt": "review-bounded-cli.json",
+    "status": "SUCCESS",
+    "preserved": true,
+    "note": "Historical findings and remediation retained; current acceptance uses review-volume-cli.json. Aggregate CPU risk remains open."
+  }
+]

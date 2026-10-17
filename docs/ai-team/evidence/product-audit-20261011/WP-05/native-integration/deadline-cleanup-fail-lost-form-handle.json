@@ -1,0 +1,22 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "cleanup": true,
+  "stage": "fixture",
+  "errorType": "Error",
+  "assertion": {},
+  "failureLine": "26",
+  "cleanupOwnedFormCount": 1,
+  "cleanupRowCounts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}

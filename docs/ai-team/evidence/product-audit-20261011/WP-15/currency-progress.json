@@ -1,0 +1,19 @@
+{
+  "status": "PARTIAL_VERIFIED",
+  "scope": "WP15 plan currency only",
+  "changed_files": [
+    "src\\app\\(app)\\billing\\plans\\page.tsx",
+    "src/app/(app)/billing/plans/page.test.tsx"
+  ],
+  "validation": {
+    "exact_reverse_copy_proof": "PASS: removing display helper and reverting call names exactly reproduces before source",
+    "targeted_tests": "PASS 18 / 2 files",
+    "eslint": "PASS",
+    "browser_a11y": "NOT_RUN",
+    "independent_review": "NOT_RUN"
+  },
+  "initial_failure": "One existing assertion expected old currency string; updated to require explicit TWD and same numeric amount, rerun passed",
+  "source_sha256": "ae8fd745cd38183a3789fa65834833901c7df86bd6abb9406f3cefcd721ab3fe",
+  "billing_behavior": "Unchanged by exact source comparison",
+  "next": "onboarding default initialization scope; full WP15 browser and review"
+}

@@ -1,0 +1,24 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "cleanup": true,
+  "step": "expired-draft",
+  "controls": [
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "role": null,
+      "label": "開啟最新消息",
+      "inMain": false
+    }
+  ],
+  "stage": "chromium:root:closed",
+  "errorType": "AssertionError",
+  "errorCode": "ERR_ASSERTION",
+  "assertion": {
+    "operator": "strictEqual",
+    "actual": 1,
+    "expected": 0
+  },
+  "failureLine": "48"
+}

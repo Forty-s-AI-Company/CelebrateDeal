@@ -1,0 +1,142 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 20,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "registrationVendorCascade": {
+    "status": "PASS",
+    "vendorDeleted": true,
+    "metricOrphans": 0,
+    "sourceOrphans": 0
+  },
+  "registrationTruncateProtection": {
+    "status": "PASS",
+    "cases": [
+      {
+        "table": "FormSubmission",
+        "rejected": true
+      },
+      {
+        "table": "Live",
+        "rejected": true
+      },
+      {
+        "table": "RegistrationForm",
+        "rejected": true
+      },
+      {
+        "table": "LiveMetricRegistration",
+        "rejected": true
+      }
+    ]
+  },
+  "matchedRegistrationAudit": {
+    "status": "PASS",
+    "mutationProtection": {
+      "status": "PASS",
+      "captureImmutable": "PASS",
+      "captureUnique": "PASS",
+      "registrationUnique": "PASS",
+      "projectionDeleteInvalidates": "PASS"
+    },
+    "matchedBothDirections": "PASS",
+    "stableDigest": "PASS",
+    "revokedSourceDetected": "PASS",
+    "privateProofPublish": "PASS",
+    "emptySourceProof": "PASS",
+    "auditToPublishRace": "PASS",
+    "revisionToInsertRace": "PASS",
+    "staleProofRejected": "PASS",
+    "projectionProofLifecycle": "PASS",
+    "coverage": "complete before revoke; unknown after revoke"
+  },
+  "registrationSourceConcurrency": {
+    "status": "PASS",
+    "submitted": 20,
+    "committed": 20,
+    "concurrentMs": 239,
+    "snapshotIsolation": "PASS",
+    "nextSnapshotSeesLateSource": "PASS",
+    "oldFormRowsRemainVisible": "PASS",
+    "reverseProjectionAudit": "PASS",
+    "bidirectionalSummary": "PASS",
+    "scope": "ReadCommitted concurrent calls; not synchronized Serializable payment acceptance"
+  },
+  "sourceInvalidation": [
+    {
+      "field": "verificationStatus",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "verifiedAt",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "formId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveFormId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    }
+  ],
+  "linkedFormOwnership": "REJECTED_BY_FOREIGN_KEY",
+  "noVideoMetricOwnership": "REJECTED_BY_IMMUTABLE_VERSION",
+  "roleSafeRevision": "PASS",
+  "revisionSnapshotConcurrency": "PASS",
+  "orderSourceAudit": {
+    "status": "PASS",
+    "tenantLedgerProtection": {
+      "status": "PASS",
+      "apiRolesDenied": 3,
+      "immutableUpdate": "PASS",
+      "immutableDelete": "PASS",
+      "truncateRejected": "PASS",
+      "leastPrivilegeCount": "PASS"
+    },
+    "matchedOrders": 20,
+    "boundedEnumeration": "PASS",
+    "unattributedTenantRevision": "PASS",
+    "stableDigest": "PASS",
+    "tenantSnapshotConcurrency": "PASS",
+    "overflowRejected": "PASS",
+    "readOnlyRequired": true,
+    "exclusionsVisible": true,
+    "sourceOrders": 20,
+    "missingProjectionsVisible": true,
+    "missingAttributionVisible": true,
+    "foreignScopeRejected": true,
+    "pagination": "PASS",
+    "coverage": "unknown"
+  },
+  "counts": {
+    "payments": 20,
+    "orders": 20,
+    "entitlements": 20
+  }
+}

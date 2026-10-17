@@ -1,0 +1,20 @@
+{
+  "status": "READY_SUBTASK_ONLY",
+  "whole_wp_status": "INCOMPLETE",
+  "scope": "Approved pure 90percent completion and inclusive7day noncancelled established order rules",
+  "revision": "sha256:a92bef3dae8434b97cae81c50f7ea60101888fe3d084f62e320d6e03e3156ec1",
+  "checks": {
+    "targeted": "PASS:37",
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "independent_review": "REVIEW_COMPLETED:no findings",
+    "acceptance": "READY"
+  },
+  "remaining": [
+    "Verified viewing intervals and first completion time",
+    "Authorized identity linkage and product integration",
+    "Unapproved metric denominators remain draft"
+  ],
+  "completed_wp": 7,
+  "total_wp": 20
+}

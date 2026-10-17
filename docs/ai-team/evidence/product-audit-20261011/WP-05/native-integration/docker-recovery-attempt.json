@@ -1,0 +1,1 @@
+{"status_before": "stopped", "start_command": "docker desktop start --timeout60", "start_exit_code": 0, "start_message": "Docker Desktop is already running", "container_inspect_exit_code": 1, "container_inspect_message": "Docker Desktop is unable to start", "usable": false, "no_restart_or_recreate": true}

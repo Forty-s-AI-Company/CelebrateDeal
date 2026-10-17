@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "httpStatus": 307,
+  "expectedDestination": true,
+  "skeletonAbsent": true
+}

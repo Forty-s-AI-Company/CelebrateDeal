@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; visitor files/tests and evidence. Independent review required; observed implementation unknown.

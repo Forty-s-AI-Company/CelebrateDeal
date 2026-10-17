@@ -1,0 +1,19 @@
+{
+  "unit_session": 61142,
+  "unit_exit": 0,
+  "unit_chunk": "725c17",
+  "unit_passed": 72,
+  "typecheck_session": 11358,
+  "typecheck_exit": 0,
+  "typecheck_chunk": "3a4888",
+  "all10source_lint_session": 21008,
+  "all10source_lint_exit": 0,
+  "all10source_lint_chunk": "476e28",
+  "final_heading_assertion_lint_exit": 0,
+  "final_heading_assertion_lint_chunk": "37652a",
+  "integration_kind": "Unit-level ORM WHERE contracts and pure/rendered states; no actual DB/provider integration",
+  "actual_db": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "build": "NOT_RUN",
+  "remote_ci": "NOT_RUN"
+}

@@ -331,13 +331,14 @@ async function main() {
       cloudflareLiveInputUid: "demo_live_input_uid",
       quotaPolicy: { maxConcurrentViewers: 500, stopWhenCreditsBelow: 300 },
       products: {
+        // Nested rows inherit the composite tenant/live relation from this Live.
+        // Supplying vendorId here conflicts with Prisma's nested create input.
         create: products.map((product, index) => ({
-          vendorId: vendor.id,
           productId: product.id,
           sortOrder: index + 1,
           offerLabel: index === 0 ? "主打組合" : "加購推薦",
           isPinned: index === 0,
-        })),
+        } satisfies Prisma.LiveProductUncheckedCreateWithoutLiveInput)),
       },
     },
   });

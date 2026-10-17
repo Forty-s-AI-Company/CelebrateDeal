@@ -1,0 +1,13 @@
+{
+  "sourceHashes": {
+    "src/app/api/payments/checkout/route.ts": "1d40145681021dc7c692906a678f58f81332106c395474963818a5f819520bf7",
+    "src/app/api/payments/checkout/route.test.ts": "6a65b2c95440621ce261156cdd607c861cdae95df67d760af1dc00d88e6eb5d2",
+    "src/lib/email-delivery.ts": "aa145a3a0e3cfee7bfda28f52848520800cc2fb9440b4c65376d64a8b138d95c",
+    "src/lib/email-delivery.test.ts": "e6dd06bb30990089f3d31132bf20ea5adce4eb58680adb3f9ad1cd8e488bdbf0",
+    "src/lib/checkout-followup.ts": "53a8ca3c4e8d802ea9a1ef6bbbed826e59a976a3585773b837a7d5558db5a44d",
+    "src/lib/checkout-followup.test.ts": "6eb4b77cc2662cec5e0df98ee0c65256f03ddb6b63416b8cab0b7fd4c7e0e528"
+  },
+  "supplied": "full current domain module and all snapshot/dispatch types and runtime claim prefix; exact existing global client/await/late-call context",
+  "contextChars": 12087,
+  "dbEvidence": "checkout-event-db.json PASS9checks/131migrations/cleanup"
+}

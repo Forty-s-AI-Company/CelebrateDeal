@@ -1,0 +1,207 @@
+{
+  "completed": false,
+  "review": {
+    "summary": "I reviewed only the five files you supplied. I found no BLOCKER issues. The locked SQL in issueMetricVisitPage does what the claims say: the owner looked up outside the transaction is only a hint, then the exact Live/Form/vendor/isActive and project vendor+published state is rechecked under FOR SHARE OF l,f inside the transaction that takes the advisory lock. The visit row commits before its nonce is returned to the browser, and the context check uses DB time. There are three MINOR issues and one NIT. (1) The connection() guard that is meant to stop build-time issuance is not in the supplied wrapper, so whether it exists depends on callers that weren't supplied. (2) The wrapper only checks that the IDs are present, not their format, so a malformed ID throws a ZodError and breaks the page instead of returning the original child. (3) The webinar helper rejects only the 'missing' and 'expired' states, and it only checks that some thank-you step exists, not that this step's target is the thank-you step. (4) NIT: the child's position in the tree changes depending on whether the page is tracked. No findings here does not certify tests, callers, the browser protocol, Next.js build/caching behaviour, or deployed state.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/metric-registration-visit.tsx",
+        "area": "withMetricRegistrationVisit, before issueMetricRegistrationPage",
+        "issue": "The wrapper that writes to the DB doesn't call `await connection()` (or any other dynamic-rendering opt-in) before issuing. The claim that 'connection() prevents build-time issuance' is not backed by any supplied file.",
+        "evidence": "The function checks the formId, liveId and env presence, then calls getDb() and issueMetricRegistrationPage directly. 'next/server' connection is not imported. The callers were not supplied.",
+        "impact": "If any caller is statically prerendered or cached with ISR, a visit row is written at build or revalidate time. The cached HTML would then carry one eventId shared by many visitors, and a browser could later prepare and record a visit against a shared nonce. That breaks the one-render-expectation-per-page model.",
+        "recommended_fix": "Call `await connection()` inside withMetricRegistrationVisit, after the cheap checks and before getDb(), so the guard does not depend on every caller remembering it.",
+        "required_test": "Build or prerender test: rendering a page that uses the wrapper must create no LiveMetricVisitPage row at build time, and two requests must get different eventIds.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-registration-page.ts",
+        "area": "Scope.parse before try; wrapper's scope check",
+        "issue": "The wrapper's 'cheap exact scope check' only tests that formId and liveId are truthy. An ID that fails the regex makes Scope.parse throw a ZodError outside the try, so the page throws instead of returning the original child.",
+        "evidence": "In metric-registration-visit.tsx the only check is `!scope.formId||!scope.liveId`. In live-metric-registration-page.ts, `Scope.parse(value)` runs before `try{`. By contrast, resolveMetricVisitContext uses safeParse and maps failure to SCOPE_UNAVAILABLE.",
+        "impact": "A public registration page can fail to render with an unhandled ZodError for a scope that should just be treated as unavailable. This contradicts 'unavailable scope returns original child with no collector'.",
+        "recommended_fix": "Use Scope.safeParse and return null on failure, or check the same ID regex in the wrapper before any DB access.",
+        "required_test": "Unit test: calling the wrapper with a 129-character or invalid-character formId or liveId returns the child unchanged, makes no DB calls and throws nothing.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-registration-surface.ts",
+        "area": "metricWebinarRegistrationScope status and thank-you checks",
+        "issue": "Eligibility uses a denylist: it rejects only status 'missing' and 'expired', so any other non-valid webinar state is counted. The thank-you requirement is met by any thank-you step in the flow, not by this registration step's configured target.",
+        "evidence": "`return status.status==='missing'||status.status==='expired'?{}:...` and `state.flow.steps.some(value=>value.type==='webinar_thank_you_page')`.",
+        "impact": "If getFunnelWebinarState has (or later gains) other states such as invalid or misconfigured waiting/live/replay settings, or if the registration step points somewhere other than the thank-you step, those page renders could still be counted as registration visits. The canonical live recheck does not cover funnel-level settings.",
+        "recommended_fix": "Allowlist only the states known to be valid for registration (for example waiting/live/replay). Check that this step's configured success target resolves to a webinar_thank_you_page.",
+        "required_test": "Unit tests: every non-allowlisted status returns {}, and a flow whose thank-you step exists but isn't this step's target returns {}.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/metric-registration-visit.tsx",
+        "area": "return values (child vs fragment)",
+        "issue": "The child's position in the tree depends on whether the page is tracked: it is returned bare when untracked and as the second fragment element when tracked.",
+        "evidence": "`if(!page)return child;` versus `<><LiveMetricVisit .../>{child}</>`.",
+        "impact": "On an RSC refresh or server-action re-render of the same route where tracking flips (quota full, version expired), React remounts the client form subtree and can lose typed input or retry state. This works against 'preserves original child/retry context'.",
+        "recommended_fix": "Always return the same shape, for example `<>{page?<LiveMetricVisit key=... .../>:null}{child}</>` on every path after the cheap checks, or on all paths.",
+        "required_test": "Client reconciliation test: a refresh that switches between tracked and untracked keeps the form's input state.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "payment",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "exitCode": 3
+    },
+    {
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  }
+}

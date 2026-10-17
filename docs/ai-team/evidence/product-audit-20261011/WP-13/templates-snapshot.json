@@ -1,0 +1,16 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/components/message-template-form-client.tsx",
+    "src/components/message-template-form.test.tsx",
+    "src/lib/message-template.ts",
+    "src/lib/line-notification.ts",
+    "src/lib/line-notification-materializer.ts",
+    "src/lib/line-notification-materializer.test.ts",
+    "src/lib/line-live-started.ts",
+    "src/lib/line-live-started.test.ts",
+    "src/lib/line-webinar-template.ts",
+    "src/lib/line-webinar-template.test.ts"
+  ],
+  "revision": "sha256:25db39dca621e11af50febb6d0fd6a4b2f53142027333270344cee1ef58deea0"
+}

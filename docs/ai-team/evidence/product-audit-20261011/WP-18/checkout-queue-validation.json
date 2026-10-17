@@ -1,0 +1,140 @@
+{
+  "updated_at": "2026-10-15T22:24:40.842879+00:00",
+  "status": "IMPLEMENTED_PARTIAL_WP18_NOT_READY",
+  "sourceHashes": {
+    "src/lib/checkout-followup-queue.ts": "ba0c77ed8e8fc9e749c11f13100c9b755a7f78df11b9aa38ee486bed6a414d10",
+    "src/lib/checkout-followup-queue.test.ts": "1baa2e53f79b0ae0824da56f2cc7a42289617ab2dc3ca278adc892d1b6a8d595",
+    "src/lib/checkout-followup.ts": "871d52ab9b84e33755ec4640df5f722a0bef351bbb671a985f19024426fda921",
+    "src/lib/checkout-followup.test.ts": "c1ea460ccaf13591e83718be5b3228c35c21a919c1b0cea2d27aac6def2f6e32",
+    "src/lib/email-delivery.ts": "adc69927c1ddf83b9400ef3179d10a95c618fcc44867e419082477176f232752",
+    "src/lib/email-delivery.test.ts": "701100fedf8dbc7758a8d72bd65cb64322d8170e383d97117484efa6b5239702",
+    "src/app/api/jobs/email-deliveries/route.ts": "f8cb8411f6b95437801a8bbd818f998e95bf7c5de7d9d50ac9c8ed58810dd60a",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "f66999f0d4f16b6a91c1f0e1bc7204fa1102750dec54ff2cd1b2e8fa585efe34"
+  },
+  "reviewSourceApplicability": "Exact reviewed8files or byte-proven line-ending-only equivalence; see checkout-queue-line-ending-equivalence.json. No product semantic changes after final review.",
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "tests": 175,
+      "files": 5,
+      "evidence": "checkout-queue-unit.json"
+    },
+    "unsubscribeExistingContract": {
+      "status": "PASS",
+      "tests": 10,
+      "files": 2,
+      "evidence": "checkout-queue-unsubscribe.json"
+    },
+    "actualPostgres": {
+      "status": "PASS",
+      "checks": 16,
+      "evidence": "checkout-queue-db.json",
+      "emailNetworkTransport": "STUBBED fixed .test recipients; no provider delivery claim"
+    },
+    "typecheck": {
+      "status": "PASS",
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "session": 8754
+    },
+    "scopedLint": {
+      "status": "PASS",
+      "files": [
+        "src/lib/checkout-followup-queue.ts",
+        "src/lib/checkout-followup-queue.test.ts",
+        "src/lib/checkout-followup.ts",
+        "src/lib/checkout-followup.test.ts",
+        "src/lib/email-delivery.ts",
+        "src/lib/email-delivery.test.ts",
+        "src/app/api/jobs/email-deliveries/route.ts",
+        "src/app/api/jobs/email-deliveries/route.test.ts"
+      ],
+      "exitCode": 0,
+      "session": 86285
+    },
+    "diffCheck": {
+      "status": "PASS",
+      "command": "git -c core.whitespace=cr-at-eol diff --check"
+    },
+    "wholeWP18Gate": "NOT_RUN",
+    "checkoutHttpBrowserE2E": "NOT_RUN",
+    "axe": "NOT_RUN",
+    "SMTP_LINE_SMS_providerDelivery": "NOT_RUN",
+    "remoteCI": "NOT_RUN",
+    "loadBenchmark": "NOT_RUN"
+  },
+  "reviews": [
+    {
+      "evidence": "checkout-queue-review.json",
+      "terminal": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 2,
+        "MINOR": 2,
+        "NIT": 0
+      }
+    },
+    {
+      "evidence": "checkout-queue-fixed-review.json",
+      "terminal": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 3,
+        "NIT": 0
+      }
+    },
+    {
+      "evidence": "checkout-queue-final-review.json",
+      "terminal": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 2,
+        "NIT": 0
+      }
+    }
+  ],
+  "findingDispositions": {
+    "first2MAJOR": "Fixed once-per-order delivery PK and rule current-configuration updatedAt before event. Actual multiple-rules/version-replay/activation tests PASS.",
+    "first2MINOR": "Fixed untried-first priority, terminal skipped receipt and explicit UTC timestamp casts; actual Asia/Taipei connection confirmed.",
+    "second3MINOR": "Fixed isolated failure-ledger errors; indexed deterministic outboxPK without schema/index addition; explicit schema-invalid recipient skipped once.",
+    "finalMINOR1": "RETAINED known send-time crypto/config failure fail-closed permanent superseded tradeoff from previous checkout guard review OptionB. Fixed diagnostic remains. Recovery after configuration restoration not proven; must resolve/document before whole-WP18 acceptance. Materializer decrypt/protect failures occur before guard and remain retryable.",
+    "finalMINOR2": "Conditional finding disproved by existing independently HMAC-signed unsubscribe helper and verify-before-DB endpoint; ID is not authorization. Existing10 PII/unsubscribe tests PASS. Original finding retained unmodified."
+  },
+  "failedAttempts": {
+    "unitInitial": "19 failed:18 fixtures used too-short synthetic encryption seed;1 expected old response shape. Fixtures/expectation corrected without weakening product validators.",
+    "firstPG": "FAIL after6passing checks: Object.create(PrismaClient) fault-injection wrapper interfered with original transaction method. Replaced fixture-only wrapper with explicit delegated methods; original-method identity asserted, no product change. Original evidence retained in checkout-queue-db-first-attempt*.json.",
+    "reviewInput": "Sensitive-pattern harness rejected then >20k canonical input rejected before model execution; preserved receipts; supplied bounded domain scope without test auth harness. No router/framework changes."
+  },
+  "ownership": "root sole writer; independent efb8b7e9 worktree; maxParallel1/maxDepth1/parentDepth0; external reviews sequential read-only",
+  "originalGoalProgress": {
+    "complete": 9,
+    "total": 20,
+    "percent": 45
+  },
+  "remaining": [
+    "Trusted completed-viewer source and not-ordered send-time checks",
+    "Recovery for failed best-effort checkout observation when no durable candidate was recorded; present materializer recovers stored facts/missed job runs only",
+    "Send-time unavailable crypto/config retry semantics before whole acceptance",
+    "Activate new triggers/templates only once trusted paths accepted",
+    "LINE enqueue/Sandbox according to existing capability; do not claim provider delivery",
+    "CheckoutHTTP+realDB E2E/axe, WP04 dependency and wholeWP18 canonical acceptance"
+  ],
+  "safety": "No .env/production secrets/customer data reads; synthetic owned loopback PG cleaned; no external provider send/push/deploy/schema edits"
+}

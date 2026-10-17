@@ -1,0 +1,39 @@
+Bounded test-only followup at sha256:0eb64a757ce97284112940713b59fe381a4228dc0f718f34d894b81a771efa1a. Last source review0BLOCKER/MAJOR. Current product copy unchanged. Corrected previous two testMINORs: exact90percent and7day assertions in identified rule paragraph, blanket no metric numbers restored everywhere outside onlythatparagraph. Review the actual current test below, no tools. Output canonical JSON summary/findings only, severity must BLOCKER/MAJOR/MINOR/NIT. Remaining prior copyambiguityNIT accepted; no new productcalculation. Existing purecontract tests37PASS with exact90 and7day boundary incl invaliddata; not supplied to this bounded review. Supplied approval already includes sameviewer sameversion uniqueintervals and noncancelled establishedorders per accepted purecontract; remainingdenominator choices notapproved.
+it.each(["existing activity", "no activity"])("keeps unsupported core metrics unavailable with %s", async (scenario) => {
+  if (scenario === "no activity") {
+    mocks.analyticsFindMany.mockReset().mockResolvedValue([]);
+    mocks.formSubmissionCount.mockReset().mockResolvedValue(0);
+  }
+  const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
+  const section = html.split('<section class="mb-6" aria-labelledby="core-metric-availability-title">')[1]?.split('<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">')[0];
+  expect(section).toBeDefined();
+  for (const label of ["報名率", "到場率", "完看率", "平均觀看時長", "看完下單率"]) expect(section).toContain(label);
+  expect(section?.match(/尚不可計算/g)).toHaveLength(5);
+  // Rule thresholds are descriptions, never calculated metric values.
+  const metricValues = [...(section?.matchAll(/<p class="mt-2 font-medium text-slate-700">(.*?)<\/p>/g) ?? [])].map((match) => match[1]);
+  expect(metricValues).toEqual(Array(5).fill("尚不可計算"));
+  const rule = section?.match(/<p[^>]*data-metric-rule="approved"[^>]*>(.*?)<\/p>/)?.[1];
+  expect(rule).toContain("同一位觀眾在同一影片版本實際看過的不重複區間達 90% 才算完看");
+  expect(rule).toContain("該觀眾首次完看後 7 天內成立且未取消的訂單，不等同已付款");
+  const valuesAndReasons = section?.replace(/<p[^>]*data-metric-rule="approved"[^>]*>.*?<\/p>/, "");
+  expect(valuesAndReasons).not.toMatch(/\d+(?:\.\d+)?(?:%| 秒)/);
+  expect(section).not.toContain("完看標準與");
+  expect(section).toContain("不重複訪客數");
+  expect(section).toContain("完成觀看與同一位觀眾");
+});
+
+UNCHANGED CURRENT RENDER
+      <section className="mb-6" aria-labelledby="core-metric-availability-title">
+        <h2 id="core-metric-availability-title" className="text-lg font-semibold text-slate-950">場次核心指標</h2>
+        <p className="mt-1 text-sm text-slate-600">各指標的資料與計算方式完整就緒後才會顯示數值。</p>
+        <p className="mt-2 text-sm text-slate-600" data-metric-rule="approved">
+          {`已確認的完看與下單條件：同一位觀眾在同一影片版本實際看過的不重複區間達 ${COMPLETION_PERCENT}% 才算完看；快轉跳過不計、重看同區間不重複計算。看完下單採該觀眾首次完看後 ${POST_COMPLETION_ORDER_WINDOW_MS / (24 * 60 * 60 * 1000)} 天內成立且未取消的訂單，不等同已付款。`}
+        </p>
+        <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {pendingCoreMetrics.map((metric) => <Card key={metric.label}>
+            <h3 className="font-semibold text-slate-950">{metric.label}</h3>
+            <p className="mt-2 font-medium text-slate-700">尚不可計算</p>
+            <p className="mt-2 text-sm text-slate-600">{metric.reason}</p>
+          </Card>)}
+        </div>
+      </section>

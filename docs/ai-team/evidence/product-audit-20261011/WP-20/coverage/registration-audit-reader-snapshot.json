@@ -1,0 +1,14 @@
+{
+  "hashes": {
+    "src/lib/live-metric-registration-audit.ts": "e382cea181df6cf4a6d900b16cb01565c0af285c0e4b2e4357d7313c2d20c0dc",
+    "src/lib/live-metric-registration-audit.test.ts": "2b9927416acf27cc3fb42534414af8f992c7623c091d6cd0d32731440e09cac2",
+    "scripts/wp20-completion-load-disposable.mjs": "476eab82dc784809e93011dd1e94e8624a546ae2db4a64dc34adaa671a966206"
+  },
+  "unitTests": 3,
+  "unit": "PASS",
+  "lint": "PASS reader/test before runner addition",
+  "db": "PASS first500 of50000 missing-capture rows and foreign-tenant rejection",
+  "coverageCertification": "NOT_IMPLEMENTED",
+  "typecheck": "NOT_RUN",
+  "review": "PENDING"
+}

@@ -1,0 +1,190 @@
+Read-only focused attribution followup. No tools/edits. Only concrete BLOCKER/MAJOR/MINOR/NIT. Prior two native/SSR MAJORs were confirmed resolved by your previous repair review. Remaining findings: (A) proposed MAJOR omitted submitted context in /form was a partial-excerpt false premise: this existing route independently calls verifiedRegistrationSubmission and replaces the form with submittedVerificationMessage. Full current source below. It never relied on retry.submitted for that route. (B) duplicate query legacy fallback now uses getAll and drops arrays consistently; full helper below plus exact call. Review these facts, not unrelated refactoring. Native/JS transport metadata eligibility still checked by unchanged API; no LINE feature expansion. Unit/static/DB checks are rerunning against latest revision; browser tests in progress. No pass claims for uncompleted runs.
+
+src/app/form/[slug]/page.tsx
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+import { registrationRetryBoundary, verifiedRegistrationSubmission } from "@/components/registration-retry-boundary";
+import type { Metadata, Viewport } from "next";
+import Image from "next/image";
+import { notFound } from "next/navigation";
+
+import { FORM_SUBMISSION_VERIFICATION_MESSAGE, LeadForm } from "@/components/lead-form";
+import { PromoVideoPlayer } from "@/components/promo-video-player";
+import { RichTextContent } from "@/components/rich-text-content";
+import { getPublicRegistrationForm } from "@/lib/public-registration-form";
+
+type PublicFormPageProps = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<RegistrationAttributionQuery & { submitted?: string; liveId?: string; registrationRetry?: string }>;
+};
+
+function submittedVerificationMessage(successMessage: string) {
+  return (
+    <div className="grid gap-3" role="status" aria-live="polite">
+      <p className="rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-800">{successMessage}</p>
+      <p className="rounded-lg border border-emerald-100 bg-white p-4 text-sm leading-6 text-emerald-800">{FORM_SUBMISSION_VERIFICATION_MESSAGE}</p>
+    </div>
+  );
+}
+
+export async function generateMetadata({ params }: Pick<PublicFormPageProps, "params">): Promise<Metadata> {
+  const { slug } = await params;
+  const form = await getPublicRegistrationForm(slug);
+  if (!form) {
+    return {
+      title: "報名頁不存在",
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const title = form.seoTitle || form.headline;
+  const description = form.seoDescription || form.description || undefined;
+  return {
+    title,
+    description,
+    robots: { index: true, follow: true },
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      ...(form.heroImageUrl ? { images: [form.heroImageUrl] } : {}),
+    },
+  };
+}
+
+export async function generateViewport({ params }: Pick<PublicFormPageProps, "params">): Promise<Viewport> {
+  const { slug } = await params;
+  const form = await getPublicRegistrationForm(slug);
+  return form?.themeColor ? { themeColor: form.themeColor } : {};
+}
+
+export default async function PublicFormPage({ params, searchParams }: PublicFormPageProps) {
+  const { slug } = await params;
+  const query = await searchParams;
+  let form = await getPublicRegistrationForm(slug);
+  if (!form) notFound();
+
+  // 指定場次必須屬於這張公開表單，避免連結失效時誤報另一場。
+  if (query.liveId) {
+    const selected = form.sessions.find((session) => session.id === query.liveId);
+    if (!selected) notFound();
+    form = { ...form, sessions: [selected] };
+  }
+
+  const withRetry = await registrationRetryBoundary({ formId: form.id, sourcePath: `/form/${slug}`, attributionQuery: query, retry: query.registrationRetry });
+  const verifiedSubmission = await verifiedRegistrationSubmission(form.id, `/form/${slug}`, query.submitted);
+  const themeColor = form.themeColor ?? "#2563eb";
+  const style = { "--registration-theme": themeColor } as React.CSSProperties;
+
+  return withRetry(
+    <main className="relative min-h-screen overflow-hidden bg-slate-100 px-4 py-8 sm:px-6" style={style}>
+      {form.backgroundImageUrl ? (
+        <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden="true">
+          <Image src={form.backgroundImageUrl} alt="" fill unoptimized sizes="100vw" className="object-cover" />
+        </div>
+      ) : null}
+      <section className="relative z-10 mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+        {form.heroImageUrl ? (
+          <Image src={form.heroImageUrl} alt="" width={1280} height={640} unoptimized className="aspect-[2/1] w-full object-cover" priority />
+        ) : null}
+        <div className="grid gap-6 p-5 sm:p-8">
+          <header className="grid gap-2">
+            <p className="text-sm font-semibold" style={{ color: "var(--registration-theme)" }}>{form.vendor.name}</p>
+            <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{form.headline}</h1>
+            {form.description ? <p className="whitespace-pre-line text-sm leading-7 text-slate-600">{form.description}</p> : null}
+          </header>
+
+          {form.promoVideo ? (
+            <section className="grid gap-2" aria-labelledby="registration-promo-video-title">
+              <h2 id="registration-promo-video-title" className="text-sm font-bold text-slate-900">活動預告</h2>
+              <PromoVideoPlayer src={form.promoVideo.videoUrl} title={form.promoVideo.title} />
+            </section>
+          ) : null}
+
+          {form.stickyText ? <p className="rounded-xl border-l-4 border-[var(--registration-theme)] bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-700">{form.stickyText}</p> : null}
+          {form.bodyContent ? <section className="text-sm leading-7 text-slate-700" aria-label="活動內容"><RichTextContent value={form.bodyContent} /></section> : null}
+          {form.notice ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900" role="note">{form.notice}</p> : null}
+
+          {!form.fields ? (
+            <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              這張表單的欄位設定需要商家重新確認，目前暫停接收資料。
+            </div>
+          ) : verifiedSubmission ? (
+            submittedVerificationMessage(form.successMessage)
+          ) : (
+            <LeadForm
+              formId={form.id}
+              fields={form.fields}
+              sessions={form.sessions}
+              submitLabel={form.submitLabel}
+              successMessage={form.successMessage}
+              redirectTo={`/form/${form.slug}`}
+              themeColor={themeColor}
+            />
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+
+src/lib/registration-attribution.ts
+import { z } from "zod";
+
+// 只驗證傳遞格式；歸因資格與跨租戶檢查仍由提交 API 決定。
+export const RegistrationAttributionSchema = z.object({
+  referralCode: z.string().min(1).max(80).optional(),
+  shareCode: z.string().regex(/^tls1\.[A-Za-z0-9_-]{32,155}$/u).max(160).optional(),
+  landingPageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u).optional(),
+}).strict();
+export type RegistrationAttribution = z.infer<typeof RegistrationAttributionSchema>;
+export type RegistrationAttributionQuery = { ref?: string | string[]; share?: string | string[]; lp?: string | string[] };
+
+/** 無效或重複 query 不建立來源聲明；原生與 JS 使用同一份 server metadata。 */
+export function registrationAttribution(query: RegistrationAttributionQuery = {}): RegistrationAttribution {
+  const result: RegistrationAttribution = {};
+  const mappings = [["ref", "referralCode"], ["share", "shareCode"], ["lp", "landingPageId"]] as const;
+  for (const [queryKey, field] of mappings) {
+    const parsed = RegistrationAttributionSchema.shape[field].safeParse(query[queryKey]);
+    if (parsed.success && parsed.data !== undefined) result[field] = parsed.data;
+  }
+  return result;
+}
+
+/** URLSearchParams 與 Next searchParams 對重複參數採相同的拒收規則。 */
+export function registrationAttributionFromSearchParams(query: URLSearchParams): RegistrationAttribution {
+  const scalar = (key: string) => {
+    const values = query.getAll(key);
+    return values.length === 1 ? values[0] : values;
+  };
+  return registrationAttribution({ ref: scalar("ref"), share: scalar("share"), lp: scalar("lp") });
+}
+
+
+src/lib/registration-attribution.test.ts
+import { describe, expect, it } from "vitest";
+import { registrationAttribution, registrationAttributionFromSearchParams } from "./registration-attribution";
+
+describe("registration attribution transport", () => {
+  it("maps supported scalar query fields without treating them as authorization", () => {
+    expect(registrationAttribution({ ref: "synthetic-ref", share: `tls1.${"a".repeat(32)}`, lp: "synthetic-page" })).toEqual({ referralCode: "synthetic-ref", shareCode: `tls1.${"a".repeat(32)}`, landingPageId: "synthetic-page" });
+  });
+  it("omits duplicates, malformed identities and oversized values", () => {
+    expect(registrationAttribution({ ref: ["one", "two"], share: "invalid", lp: "../other" })).toEqual({});
+    expect(registrationAttribution({ ref: "x".repeat(81), share: `tls1.${"a".repeat(156)}`, lp: "a".repeat(129) })).toEqual({});
+    expect(registrationAttribution()).toEqual({});
+  });
+});
+
+it("legacy browser query rejects repeated values like server searchParams", () => {
+  expect(registrationAttributionFromSearchParams(new URLSearchParams("ref=a&ref=b&lp=x&lp=y"))).toEqual({});
+  expect(registrationAttributionFromSearchParams(new URLSearchParams("ref=a&lp=x"))).toEqual(registrationAttribution({ ref: "a", lp: "x" }));
+});
+
+
+LeadForm submit source selection
+      // 舊有無 boundary 的互動式 caller 只在事件中讀網址，避免 SSR 初始畫面分歧。
+      const query = new URLSearchParams(window.location.search);
+      const source = attributionFields(attribution ?? registrationAttributionFromSearchParams(query));
+      const response = await postRegistrationSubmission(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode: source.referralCode || null, shareCode: source.shareCode, landingPageId: source.landingPageId }));
+

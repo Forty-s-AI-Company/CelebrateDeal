@@ -1,0 +1,39 @@
+{
+  "status": "FOLLOWUP_RESPONSE_COMPLETED_NOT_ACCEPTANCE",
+  "priorMajor": "WITHDRAWN in followup; actual claim terminalizes exhausted rows; real DB proves next tick progresses",
+  "severityCounts": {
+    "MINOR": 3,
+    "NIT": 3
+  },
+  "executionProvider": "agy_wrapper",
+  "observed": {
+    "source": "not_reported",
+    "effort": "unknown",
+    "model": "unknown"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5-high",
+    "effort": "model-default",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "attempts": [
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper"
+    }
+  ],
+  "sourceHashesMatch": true,
+  "reviewQualification": "Observed model unknown; do not infer requested slug was actual execution. Not sufficient for model-qualified READY.",
+  "remainingFindings": [
+    "Stale-claim branch not specifically exercised in this scheduler harness; prior source invalidation evidence not claimed as new test.",
+    "Report and version expiry tested together; independent version-expiry discrimination remains unverified.",
+    "Compatibility inputOrderTenantRevision intentionally uses window revision after114 migration; do not restore tenant-wide invalidation without design/regression review.",
+    "Foreign-tenant positive control absent; mixed-scope rejection and untouched real foreign report verified.",
+    "Unexpected rejection and normal job failure share failed counter.",
+    "Barrier timeout unhandled-rejection failure-path test not executed."
+  ],
+  "fullWp": "INCOMPLETE; original synchronized20 still7/20 FAIL"
+}

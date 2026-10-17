@@ -1,0 +1,36 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+  "checks": {
+    "unconfiguredPlaybackPreserved": "PASS",
+    "committedBeforeSourceAndLostReplyRetained": "PASS",
+    "canonicalSessionBindingIdempotentAndBounded": "PASS",
+    "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+    "sameBrowserIntakeSessionAnchorRenewedAndRevisionAdvanced": "PASS",
+    "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+    "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+    "boundSessionUpdatesCannotChangeIdentityAnchorOrExceedIntake": "PASS",
+    "timestamptzCatalogAndNonUtcBoundUpdates": "PASS",
+    "intakeEpochLossAndSessionBindingImmutable": "PASS",
+    "unexpectedColumnGrantRejectedAndProbeRoleCleaned": "PASS",
+    "expiredSessionAndIntakeCannotResurrectAfterAdmissionRenewal": "PASS",
+    "renewalCounterCannotBeForged": "PASS",
+    "renewalWaitingAcrossOldExpiryRollsBack": "PASS",
+    "databaseRejectsUnboundClosedExpiredAndShortenedLeases": "PASS",
+    "existingSessionGuardRejectsReopeningClosedSession": "PASS",
+    "concurrentCanonicalRenewalsSerializeAndExtendOnlyOnce": "PASS",
+    "admissionDeletionRetainsIntakeVersionCascadeCleans": "PASS"
+  },
+  "browser": {
+    "sessionRequests": 2,
+    "intervals": 7,
+    "terminal": true,
+    "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+    "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

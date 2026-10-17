@@ -1,0 +1,214 @@
+{
+  "review": {
+    "summary": "I reviewed only the four files you supplied. I found no BLOCKER or MAJOR defects. The host matches its stated design: it never runs two cycles at once, waits the cadence after each cycle, stops before the next enqueue, tick or job, and awaits any in-flight transaction or worker. It also sends a rotating, shrinking job and admission budget to each tick, keeps partial counts when it halts, and logs only aggregate counts. The tick's selection is read-only, time-limited and leaves claiming to the existing atomic DB-clock claim. I found four MINOR hardening gaps and one NIT: (1) the launcher's canonical-path check skips most of the host's own build outputs; (2) the config-file checks don't confirm a regular file, can be raced, and compare the dotenv prefix case-sensitively; (3) the build's dependency allowlist is a regex that matches only double-quoted literal requires; (4) stream errors, stdin EOF and a failed disconnect are not handled, which can leave an orphaned host or print raw diagnostics; (5) the terminal status and cycle count can be slightly misleading. This does not certify the modules you didn't supply, the worker build, the rerun of the final TypeScript builder, test or release success, or the whole WP.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "scripts/run-metric-report-host.mjs",
+        "area": "artifact verification loop before require(hostPath)",
+        "issue": "The real-path and regular-file check covers only six artifacts: the host .cjs plus the five worker-shared files. The host .cjs then loads ten more compiled modules from .metric-worker through relative require, and none of them are checked: live-metric-report-queue, scheduler, job, lease, snapshot, reader, completion-store, coverage-reader, coverage and snapshot-input.",
+        "evidence": "The loop lists ['live-metric-report-host.cjs','live-metric-worker.js','live-metric-executor.js','live-core-metrics-read-model.js','live-viewing-evidence.js','live-metric-contract.js'], while build-metric-report-host.mjs writes all 11 `names` entries to .metric-worker as .js/.cjs files and the host requires them transitively.",
+        "impact": "The claim of 'fixed project build artifacts, canonical path checks' holds for only part of the code the process runs. If one of the unchecked modules is a symlink, junction or non-file entry, it is loaded without being caught. These modules include the queue, claim and lease code that writes to the DB.",
+        "recommended_fix": "Check the same full name list the build emits, preferably from one shared constant or a fixed manifest written by the builder. Also apply the same check to the worker build's outputs that the host loads.",
+        "required_test": "Startup test: replace .metric-worker/live-metric-report-queue.js (and separately live-metric-report-job.js) with a symlink to an identical copy. The launcher must emit only startup_failed and must not connect any job or worker.",
+        "confidence": 0.85
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/run-metric-report-host.mjs",
+        "area": "config path validation (extname/basename/lstat/stat/readFileSync)",
+        "issue": "The config checks have three gaps. (a) They never confirm the path is a regular file. (b) They race: lstat, stat and readFileSync are three separate path lookups, and readFileSync reads the whole file no matter what size stat reported. (c) The '.env' prefix test is case-sensitive, but paths on win32 are case-insensitive.",
+        "evidence": "`fs.lstatSync(configPath).isSymbolicLink()||fs.statSync(configPath).size>32768` is followed by `fs.readFileSync(configPath,'utf8')`. There is no isFile() check, no read through a held file descriptor, and no length limit on the read. `path.basename(configPath).startsWith('.env')` accepts '.ENV.json' and '.Env.json'.",
+        "impact": "A FIFO named *.json (stat size 0) makes startup block forever instead of failing closed. A file that is swapped or grows after the stat is read in full, which breaks the 32KiB limit. A dotenv-named config with different casing gets past the stated rejection on Windows. The impact is limited because the config path is OS-owned and local, and errors are sanitized.",
+        "recommended_fix": "Open the file once, using O_NOFOLLOW where the platform supports it. Call fstat on the descriptor and require isFile() and size <= 32768. Read at most 32769 bytes through that descriptor and reject anything over the limit. Compare the basename case-insensitively, for example `/^\\.env/i`.",
+        "required_test": "Unit tests: a FIFO named cfg.json fails fast with startup_failed (POSIX); '.ENV.json' is rejected; a 40KiB file is rejected; a directory named x.json is rejected.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/build-metric-report-host.mjs",
+        "area": "require allowlist regex over transpiled output",
+        "issue": "The dependency gate scans only for `require(\"literal\")` with double quotes. It misses three cases: single-quoted requires (TS can keep the source's quote style, and direct require calls pass through unchanged), requires with a non-literal or template argument, and other ways of loading code. Separately, every `node:` builtin is allowed, including node:child_process and node:vm.",
+        "evidence": "`result.outputText.matchAll(/require\\(\"([^\"]+)\"\\)/gu)` treats a module as clean when nothing matches. `!match[1].startsWith('node:')` lets any builtin through. The unsupplied sources (queue, job, lease, readers, coverage) go through this same gate.",
+        "impact": "A reviewed source file could pick up a runtime dependency without the build failing, for example a single-quoted import or a node:child_process call. The build would still report 'Metric host build complete' even though the claimed 'explicit reviewed require allowlist' was bypassed.",
+        "recommended_fix": "Walk the TypeScript AST, or the output text, for every `require(` call and every import/export specifier. Reject any argument that isn't a string literal in the allowlist, whatever its quote style. Replace the blanket node: prefix with an explicit list, e.g. node:crypto, node:perf_hooks, node:timers/promises, node:worker_threads and whatever else the reviewed sources actually need.",
+        "required_test": "Build test with a temporary fixture source containing `require('fs')`, `require(name)` and `import('node:child_process')`. The build must throw 'Metric host dependency not allowed' each time and write no outputs.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/run-metric-report-host.mjs",
+        "area": "stdin/stdout stream lifecycle and finally/$disconnect",
+        "issue": "Four gaps. (1) process.stdin and process.stdout have no 'error' listeners. (2) stdin 'end' (the parent closing the control pipe) does not stop the host. (3) If `db.$disconnect()` rejects inside finally, the rejection escapes the sanitized catch. (4) Signal handlers use `once`, so a second SIGINT ends the process immediately.",
+        "evidence": "Only `process.stdin.on('data',onInput)` is registered. Output is written with console.log and no stdout error handling. The finally block runs `if(db)await db.$disconnect();` at top level with no try/catch. Signals are registered with `process.once('SIGINT',stop)`.",
+        "impact": "If the supervising parent dies, stdout EPIPE or a stdin error becomes an uncaught exception. The process then exits abruptly, without awaiting the active transaction or worker (the DB rollback and lease expiry still recover), and Node prints a raw stack trace, which goes against 'only startup_failed / aggregate output'. If the parent closes stdin without writing a stop line, an orphaned host can keep creating windows and running jobs for up to 10000 cycles with cadence up to 1 hour.",
+        "recommended_fix": "Add 'error' handlers on process.stdin and process.stdout that call stop() and ignore later writes. Treat stdin 'end' or 'close' as a stop request, or document that EOF is ignored on purpose. Wrap `$disconnect` in try/catch so it fails silently with a nonzero exit code. Decide explicitly whether a second signal should force exit, and document that choice.",
+        "required_test": "Child-process tests: (a) close the child's stdin with no stop line, then expect a 'stopped' terminal output once the current work is awaited, or whatever behavior is documented; (b) destroy the stdout pipe mid-cycle, then confirm no raw stack output and that the active transaction finishes before exit; (c) inject a $disconnect rejection, then expect no raw diagnostic.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-report-host.ts",
+        "area": "cycle accounting and terminal status in run()",
+        "issue": "A cycle cut short by an abort or by the admission budget still increments `cycles`, and observe() reports it like a full cycle. If the abort arrives after the final cycle's work is done, the run reports 'stopped' rather than 'completed'.",
+        "evidence": "`cycles++` and observe() run unconditionally once the inner loops break on `!admitted()`. The final status is `signal.aborted ? \"stopped\" : \"completed\"`, which is evaluated after the loop.",
+        "impact": "These are aggregate operator metrics only, but they can overstate how many full cycles ran or understate a clean completion. Committed data is not affected.",
+        "recommended_fix": "Add a `partial`/`interrupted` flag to the per-cycle result, or count partial cycles separately. Report 'completed' when index reached maxCycles, even if the signal aborted afterwards.",
+        "required_test": "Unit test with stubbed enqueue/tick: abort during cycle 1's enqueue loop, then assert the cycle is reported as partial. Abort after the last cycle's observe, then assert the status is 'completed'.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "agy_discovery_process_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 4,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "exitCode": -1,
+      "status": "IDLE_TIMEOUT"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "status": "SUCCESS"
+    }
+  ],
+  "claude_cli_discovery_status": "SUCCESS"
+}

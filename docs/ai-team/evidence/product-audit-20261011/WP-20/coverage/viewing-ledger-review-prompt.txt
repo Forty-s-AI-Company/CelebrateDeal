@@ -1,0 +1,224 @@
+Independent readonly Critical Migration/Permission deep review. Return BLOCKER/MAJOR/MINOR/NIT findings with area/evidence/impact/recommended_fix/required_test/confidence. Do not execute tools or modify files. New migration118 provides private persisted viewing issuance/mutation provenance and a COUNT-based revision. No positive coverage, no production access, no historical backfill. Epoch is triggered only for newly INSERTed versions. Existing versions remain without epoch; pre-epoch windows unknown. Session deletion retains tombstone until parent version deletion. Session ID reuse after deletion is prohibited by issued-only unique index. Session progress-only update is skipped because interval INSERT writes the event atomically; independent interval deletion is prohibited by existing product guard, while session deletion emits removed. Caller/browser cannot supply proof or coverage. New provenance tables/functions are not public API. Review source security, source completeness, immutability, triggers, FK cascade/RLS/ACL, commit-order revision semantics, read-only snapshot digest, migration safety and correctness. Source summary only, not acceptance: real disposable118 migrations and unit32 passed. Raw facts not exported. Full WP still incomplete, synchronized20 remains7/20 FAIL. Review scope: FULL new migration and both models; changed context/query/result blocks of existing audit; harness receipt only, not harness source review. Existing audit pagination/classifier unchanged from prior review; do not pretend to re-review omitted code.
+
+FULL MIGRATION118
+-- Private provenance only. No backfill, positive coverage, or collection enablement.
+-- New versions get a server-clock ledger epoch. Existing versions stay unknown.
+CREATE TABLE public."LiveMetricViewingEpoch" (
+ "vendorId" TEXT NOT NULL, "liveId" TEXT NOT NULL, "versionId" TEXT NOT NULL,
+ "startedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+ PRIMARY KEY ("vendorId","liveId","versionId"),
+ CONSTRAINT "LiveMetricViewingEpoch_version_fkey" FOREIGN KEY ("vendorId","liveId","versionId")
+  REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION
+);
+CREATE TABLE public."LiveMetricViewingSource" (
+ id BIGSERIAL PRIMARY KEY,
+ "vendorId" TEXT NOT NULL, "liveId" TEXT NOT NULL, "versionId" TEXT NOT NULL,
+ "sessionId" TEXT NOT NULL, "registrationId" TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK (kind IN ('issued','state','interval','removed')),
+ "anchorAt" TIMESTAMPTZ(3) NOT NULL, "expiresAt" TIMESTAMPTZ(3) NOT NULL,
+ "recordedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+ CONSTRAINT "LiveMetricViewingSource_range_check" CHECK ("anchorAt"<"expiresAt"),
+ -- Intentionally no session/registration FK: deletion must retain its tombstone.
+ CONSTRAINT "LiveMetricViewingSource_version_fkey" FOREIGN KEY ("vendorId","liveId","versionId")
+  REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION
+);
+CREATE INDEX "LiveMetricViewingSource_scope_idx" ON public."LiveMetricViewingSource"("vendorId","liveId","versionId");
+CREATE INDEX "LiveMetricViewingSource_window_idx" ON public."LiveMetricViewingSource"("vendorId","liveId","versionId",kind,"anchorAt");
+-- A deleted issuance cannot be silently re-created under the same session id.
+CREATE UNIQUE INDEX "LiveMetricViewingSource_issued_key" ON public."LiveMetricViewingSource"("vendorId","liveId","versionId","sessionId") WHERE kind='issued';
+
+CREATE FUNCTION public.wp20_metric_viewing_immutable() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+BEGIN
+ IF TG_OP='INSERT' THEN
+  IF pg_trigger_depth()<2 THEN
+   RAISE EXCEPTION 'viewing provenance requires source trigger' USING ERRCODE='23514';
+  END IF;
+  IF TG_TABLE_NAME='LiveMetricViewingEpoch' THEN NEW."startedAt":=date_trunc('milliseconds',clock_timestamp());
+  ELSE NEW."recordedAt":=date_trunc('milliseconds',clock_timestamp()); END IF;
+  RETURN NEW;
+ END IF;
+ IF TG_OP='DELETE' AND NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=OLD."versionId"
+   AND "vendorId"=OLD."vendorId" AND "liveId"=OLD."liveId") THEN RETURN OLD; END IF;
+ RAISE EXCEPTION 'viewing provenance is immutable' USING ERRCODE='23514';
+END $$;
+CREATE TRIGGER "LiveMetricViewingEpoch_immutable" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricViewingEpoch"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_viewing_immutable();
+CREATE TRIGGER "LiveMetricViewingSource_immutable" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricViewingSource"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_viewing_immutable();
+CREATE TRIGGER "LiveMetricViewingEpoch_no_truncate" BEFORE TRUNCATE ON public."LiveMetricViewingEpoch"
+ FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+CREATE TRIGGER "LiveMetricViewingSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricViewingSource"
+ FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+
+CREATE FUNCTION public.wp20_metric_viewing_epoch() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET row_security=off AS $$
+BEGIN
+ IF TG_RELID<>'public."LiveMetricVersion"'::regclass OR TG_OP<>'INSERT' THEN
+  RAISE EXCEPTION 'invalid viewing epoch source' USING ERRCODE='23514';
+ END IF;
+ INSERT INTO public."LiveMetricViewingEpoch"("vendorId","liveId","versionId") VALUES(NEW."vendorId",NEW."liveId",NEW.id);
+ RETURN NULL;
+END $$;
+CREATE TRIGGER "LiveMetricVersion_viewing_epoch" AFTER INSERT ON public."LiveMetricVersion"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_viewing_epoch();
+
+CREATE FUNCTION public.wp20_metric_viewing_source() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET row_security=off SET timezone='UTC' AS $$
+DECLARE s public."LiveMetricSession"%ROWTYPE; event_kind TEXT;
+BEGIN
+ IF TG_RELID='public."LiveMetricSession"'::regclass THEN
+  IF TG_OP='UPDATE' AND (NEW.id,NEW."vendorId",NEW."liveId",NEW."versionId",NEW."registrationId",NEW."admissionSessionId",
+    NEW."anchorAt",NEW."expiresAt",NEW."closedAt",NEW."finalSequence",NEW.complete) IS NOT DISTINCT FROM
+   (OLD.id,OLD."vendorId",OLD."liveId",OLD."versionId",OLD."registrationId",OLD."admissionSessionId",
+    OLD."anchorAt",OLD."expiresAt",OLD."closedAt",OLD."finalSequence",OLD.complete) THEN
+   -- Stored interval INSERT emits its own event atomically with progress.
+   RETURN NULL;
+  END IF;
+  IF TG_OP='DELETE' THEN s:=OLD; event_kind:='removed';
+  ELSE s:=NEW; event_kind:=CASE WHEN TG_OP='INSERT' THEN 'issued' ELSE 'state' END; END IF;
+ ELSIF TG_RELID='public."LiveMetricInterval"'::regclass AND TG_OP='INSERT' THEN
+  SELECT * INTO STRICT s FROM public."LiveMetricSession" WHERE id=NEW."sessionId"
+   AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" AND "versionId"=NEW."versionId";
+  event_kind:='interval';
+ ELSE RAISE EXCEPTION 'invalid viewing event source' USING ERRCODE='23514'; END IF;
+ -- Parent version deletion owns whole-scope retention. Do not resurrect it.
+ IF NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=s."versionId"
+   AND "vendorId"=s."vendorId" AND "liveId"=s."liveId") THEN RETURN NULL; END IF;
+ INSERT INTO public."LiveMetricViewingSource"("vendorId","liveId","versionId","sessionId","registrationId",kind,"anchorAt","expiresAt")
+ VALUES(s."vendorId",s."liveId",s."versionId",s.id,s."registrationId",event_kind,s."anchorAt",s."expiresAt");
+ RETURN NULL;
+END $$;
+CREATE TRIGGER "LiveMetricSession_viewing_source" AFTER INSERT OR UPDATE OR DELETE ON public."LiveMetricSession"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_viewing_source();
+-- Interval UPDATE/independent DELETE are already prohibited. Parent session
+-- deletion records removed above before its intervals disappear by cascade.
+CREATE TRIGGER "LiveMetricInterval_viewing_source" AFTER INSERT ON public."LiveMetricInterval"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_viewing_source();
+
+-- COUNT is a snapshot revision. Sequence allocation is NOT a commit watermark.
+CREATE FUNCTION public.wp20_metric_viewing_revision(vendor_id TEXT,live_id TEXT,version_id TEXT) RETURNS BIGINT
+LANGUAGE sql STABLE STRICT SECURITY DEFINER SET search_path=pg_catalog SET row_security=off AS $$
+ SELECT count(*) FROM public."LiveMetricViewingSource" WHERE "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+$$;
+ALTER TABLE public."LiveMetricViewingEpoch" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."LiveMetricViewingSource" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."LiveMetricViewingEpoch",public."LiveMetricViewingSource" FROM PUBLIC;
+REVOKE ALL ON SEQUENCE public."LiveMetricViewingSource_id_seq" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_viewing_immutable(),public.wp20_metric_viewing_epoch(),public.wp20_metric_viewing_source(),public.wp20_metric_viewing_revision(text,text,text) FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON public."LiveMetricViewingEpoch",public."LiveMetricViewingSource" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricViewingSource_id_seq" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_viewing_immutable(),public.wp20_metric_viewing_epoch(),public.wp20_metric_viewing_source(),public.wp20_metric_viewing_revision(text,text,text) FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+
+FULL NEW PRISMA MODELS (Version has viewingEpoch optional and viewingSource array relations)
+/// Private server-triggered provenance; no historical epoch backfill.
+model LiveMetricViewingEpoch {
+  vendorId String
+  liveId String
+  versionId String
+  startedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricViewingEpoch_version_fkey")
+  @@id([vendorId, liveId, versionId])
+}
+
+/// Insert-only events retain removed session identities until version deletion.
+model LiveMetricViewingSource {
+  id BigInt @id @default(autoincrement())
+  vendorId String
+  liveId String
+  versionId String
+  sessionId String
+  registrationId String
+  kind String
+  anchorAt DateTime @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  recordedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricViewingSource_version_fkey")
+  @@index([vendorId, liveId, versionId], map: "LiveMetricViewingSource_scope_idx")
+  @@index([vendorId, liveId, versionId, kind, anchorAt], map: "LiveMetricViewingSource_window_idx")
+}
+
+
+
+AUDIT CHANGED TYPE
+type Context = { isolation: string; readOnly: string; sourceRevision: bigint; registrationRevision: bigint; durationMs: number | null;
+  viewingRevision: bigint; epochStartedAt: Date | null; issuedCount: bigint; removedCount: bigint };
+
+
+AUDIT CHANGED CONTEXT AND DIGEST FORMAT
+const [context] = await tx.$queryRaw<Context[]>(Prisma.sql`
+        SELECT current_setting('transaction_isolation') AS isolation,current_setting('transaction_read_only') AS "readOnly",
+          v."sourceRevision",public.wp20_metric_registration_revision(v."vendorId",v."liveId") AS "registrationRevision",v."durationMs",
+          public.wp20_metric_viewing_revision(v."vendorId",v."liveId",v.id) AS "viewingRevision",e."startedAt" AS "epochStartedAt",
+          (SELECT count(*) FROM "LiveMetricViewingSource" x WHERE x."vendorId"=v."vendorId" AND x."liveId"=v."liveId" AND x."versionId"=v.id
+            AND x.kind='issued' AND x."anchorAt"<${scope.endAt} AND x."expiresAt">${scope.startAt}) AS "issuedCount",
+          (SELECT count(*) FROM "LiveMetricViewingSource" x WHERE x."vendorId"=v."vendorId" AND x."liveId"=v."liveId" AND x."versionId"=v.id
+            AND x.kind='removed' AND x."anchorAt"<${scope.endAt} AND x."expiresAt">${scope.startAt}) AS "removedCount"
+        FROM "LiveMetricVersion" v JOIN "Live" l ON l.id=v."liveId" AND l."vendorId"=v."vendorId"
+        LEFT JOIN "LiveMetricViewingEpoch" e ON e."vendorId"=v."vendorId" AND e."liveId"=v."liveId" AND e."versionId"=v.id
+        WHERE v.id=${scope.versionId} AND v."vendorId"=${scope.vendorId} AND v."liveId"=${scope.liveId}
+          AND v."collectionStartedAt"<=${scope.startAt} AND v."expiresAt">=${scope.endAt} AND ${scope.endAt}<=clock_timestamp()`);
+      if (!context) return { status: "unavailable" as const, reason: "scope_or_window_unavailable" as const };
+      if (context.isolation !== "repeatable read" || context.readOnly !== "on") throw new Error("Viewing audit requires read-only repeatable-read");
+      const digest = createHash("sha256").update(JSON.stringify({ format: "viewing-source-inspection-v2", ...scope }));
+      
+
+AUDIT CHANGED RESULT/DIGEST
+return { status: "enumerated" as const, coverage: "unknown" as const, sourceRevision: context.sourceRevision,
+            registrationRevision: context.registrationRevision, sessionCount, intervalCount, outcomes,
+            viewingRevision: context.viewingRevision,
+            // Epoch proves when logging began, not that playback intake or
+            // browser delivery was complete. Removed issuances stay visible.
+            issuance: { epochStartedAt: context.epochStartedAt, history: context.epochStartedAt !== null && scope.startAt >= context.epochStartedAt
+              ? "ledger_enabled" as const : "unknown" as const, issuedCount: context.issuedCount, removedCount: context.removedCount },
+            digest: digest.update(JSON.stringify([context.sourceRevision.toString(),context.registrationRevision.toString(),
+              context.viewingRevision.toString(),context.epochStartedAt,context.issuedCount.toString(),context.removedCount.toString()])).digest("hex") };
+        }
+        
+
+DISPOSABLE DB RECEIPT (harness source not supplied)
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Persistent viewing issuance/mutation ledger with private inspection; no positive coverage",
+  "sameScopeRegistrationFk": "VALIDATED_NOT_DEFERRABLE",
+  "results": {
+    "sessionCount": 3,
+    "intervalCount": 2,
+    "openVisible": true,
+    "emptyClosedVisible": true,
+    "pageSizeIndependentDigest": true,
+    "repeatableReadSnapshot": true,
+    "freshSnapshotSeesClose": true,
+    "revocationVisible": true,
+    "partialBudgetDiscarded": true,
+    "foreignScopeDenied": true,
+    "coverage": "unknown"
+  },
+  "ledger": {
+    "newVersionEpoch": true,
+    "preEpochWindowUnknown": true,
+    "issued3Interval2State3Events": true,
+    "noOpNoEvent": true,
+    "deletionTombstoneRetained": true,
+    "revisionAndDigestChange": true,
+    "immutableUpdateDeleteTruncate": true,
+    "forgedDirectInsertRejected": true,
+    "reusedSessionIdRejected": true,
+    "rollbackAtomic": true,
+    "commitOrderUsesCount": true,
+    "unprivilegedRoleDenied": true,
+    "parentVersionCascadeNoOrphans": true
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

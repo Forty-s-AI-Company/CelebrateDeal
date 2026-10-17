@@ -1,0 +1,7 @@
+{
+  "src/lib/live-metric-registration-audit.ts": "e382cea181df6cf4a6d900b16cb01565c0af285c0e4b2e4357d7313c2d20c0dc",
+  "src/lib/live-metric-registration-source-audit.ts": "52f30f71fccda16caa06e2f1baed1cdf528e0dfd4066d07dfaabc7e2ecfefb54",
+  "prisma/migrations/20261015170000_live_metric_registration_source_revision/migration.sql": "eb68607fb32cf08d423f830437cddc93611518ad0ce1562da2ab755e9abc7f17",
+  "scripts/wp20-registration-source-concurrency.mjs": "d5f43b455ab295b1e5dfae6b4f9d2f990ce516c3737f9708e0ea5547d4ea5df4",
+  "prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql": "2a957cba8644fc3def9211ca56dc672a6d9017cc47d295d54a1ef19dccb51cb8"
+}

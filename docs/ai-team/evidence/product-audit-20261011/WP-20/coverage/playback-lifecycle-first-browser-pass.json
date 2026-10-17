@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Owned loopback synthetic DB and recorded VOD; fixture authorization, not signed Next HTTP",
+  "checks": {
+    "unverifiedReadinessWritesNoMetrics": "PASS",
+    "realBrowserVerificationRecoveryAndReplayWithoutReload": "PASS",
+    "oldUnmatchedIntakeRetainedAndDistinctNewSessionAnchors": "PASS"
+  },
+  "browser": {
+    "sourceRequests": 3,
+    "sessionRequests": 3,
+    "readinessRequests": 3,
+    "expectedAuthorizationRefusals": 1,
+    "intervals": [
+      6,
+      5
+    ],
+    "sameMediaSource": true,
+    "cadenceWaitMs": 30100
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

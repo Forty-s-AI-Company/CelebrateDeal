@@ -28,7 +28,8 @@ import {
 } from "@/lib/mfa";
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { entryRateLimitHeaders } from "@/lib/entry-rate-limit-headers";
 import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "@/lib/mfa-enrollment";
 import { regenerateMfaRecoveryCodes } from "@/lib/mfa-recovery-regeneration";
 
@@ -52,12 +53,7 @@ function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") 
 }
 
 function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  return rateLimitHeaders;
+  return entryRateLimitHeaders(headerStore);
 }
 
 export async function loginAction(formData: FormData) {

@@ -1,0 +1,117 @@
+{
+  "status": "PASS",
+  "scope": "Real client components and app CSS, synthetic server-action/report adapters; not authenticated full-app E2E",
+  "checks": [
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "small-mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "small-mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    }
+  ],
+  "cleanup": true,
+  "measurements": [
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "fieldBounds": {
+        "x": 645,
+        "y": 332,
+        "width": 322,
+        "height": 40
+      },
+      "height": 900
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "fieldBounds": {
+        "x": 29,
+        "y": 621.890625,
+        "width": 332,
+        "height": 40
+      },
+      "height": 844
+    },
+    {
+      "engine": "chromium",
+      "viewport": "small-mobile",
+      "fieldBounds": {
+        "x": 29,
+        "y": 614,
+        "width": 317,
+        "height": 40
+      },
+      "height": 667
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "fieldBounds": {
+        "x": 645,
+        "y": 332,
+        "width": 322,
+        "height": 40
+      },
+      "height": 900
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "fieldBounds": {
+        "x": 29,
+        "y": 623.4000244140625,
+        "width": 332,
+        "height": 40
+      },
+      "height": 844
+    },
+    {
+      "engine": "firefox",
+      "viewport": "small-mobile",
+      "fieldBounds": {
+        "x": 29,
+        "y": 615.5,
+        "width": 317,
+        "height": 40
+      },
+      "height": 667
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "status": "PASS",
+  "existingTemplates": [
+    {
+      "id": "webinar-broadcast",
+      "unchanged": true,
+      "sha256": "4e38b3b4b355a30ea8fe3383b9057e0303a48b85eb41807333bf52b821475e76"
+    },
+    {
+      "id": "webinar-thank-you",
+      "unchanged": true,
+      "sha256": "ebc8f9ebef0ecf13783dc8fc21919aa5352276155aa5cb910bcd540de1231860"
+    },
+    {
+      "id": "webinar-registration",
+      "unchanged": true,
+      "sha256": "f799e861357605914964099cb912f07fb742373464277d7360da8006d0780023"
+    },
+    {
+      "id": "sell-product-checkout",
+      "unchanged": true,
+      "sha256": "dc6de6a4cceae768858b99847bcaebb50d5b1325ce81e5fa4e0130dc5612a2c6"
+    },
+    {
+      "id": "sell-simple-checkout",
+      "unchanged": true,
+      "sha256": "840e3c9c4f922ddd5a8caefb3efe23b864b946b21a33d72ed4cc5cf06b658d2c"
+    },
+    {
+      "id": "sell-content-subscription",
+      "unchanged": true,
+      "sha256": "32e34e74c6c84349e90f27f0f40b24d9e6aa87245357633cc47ad17a22ec5554"
+    },
+    {
+      "id": "audience-volunteer",
+      "unchanged": true,
+      "sha256": "9d04bfeab3b4bde0da6d7530ae8d0fad97eca7b3fbfc8364570b2b58f0dce491"
+    },
+    {
+      "id": "audience-charity-event",
+      "unchanged": true,
+      "sha256": "24905e8812d7e1bc0c0995fde04aaac2accc6b1668baab5f382cf4378dd3cdde"
+    },
+    {
+      "id": "audience-environment",
+      "unchanged": true,
+      "sha256": "8c442f8baeb7e3992f8840a6af60a1875880a937d8bae8a2119dc66882b073b1"
+    },
+    {
+      "id": "custom-privacy",
+      "unchanged": true,
+      "sha256": "fcf0fff2ca5e29e84b655283bf94e73ee01cce80b0500fc2e85236a497d07fc7"
+    },
+    {
+      "id": "custom-terms",
+      "unchanged": true,
+      "sha256": "c4e3e0ae31415626b39be24d746312fc9a501567fbcc046d3ac7a014a52cbaad"
+    },
+    {
+      "id": "custom-brand-info",
+      "unchanged": true,
+      "sha256": "501ee9bf16676addc1132a53e4417cfabd25f6da2ac04e194c607b643bb9d49c"
+    }
+  ],
+  "newTemplateCount": 6,
+  "scope": "Exact prior12metadata and built node content; fixed synthetic prefix, no DB/provider/network"
+}

@@ -1,0 +1,1 @@
+root sole writer; depth=0; dispatch=0; automatic_spawn=false. Scope: visitor proof helper/tests and this evidence. Auth independent review required; observed implementation model unknown. No route/cookie activation or production access.

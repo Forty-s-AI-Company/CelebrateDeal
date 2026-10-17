@@ -1,0 +1,9 @@
+{
+  "promptCharacters": 19214,
+  "files": {
+    "scripts/wp20-next-runtime-probe.mjs": "24eb586481b7cf77945be83a1d0ee7ec3bf2adb42c7f32af59b3bfbef68acc0d"
+  },
+  "suppliedRanges": {
+    "scripts/wp20-next-runtime-probe.mjs": "Except credential declaration lines 44,45"
+  }
+}

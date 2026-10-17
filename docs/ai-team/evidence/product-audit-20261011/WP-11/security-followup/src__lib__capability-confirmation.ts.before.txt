@@ -1,0 +1,71 @@
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { NextResponse } from "next/server";
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { readFormDataBody } from "@/lib/api-security";
+
+const TTL_SECONDS = 300;
+const FIELD = /^[A-Za-z0-9_-]{43}$/u;
+const PRIVATE_HEADERS = { "Cache-Control": "private, no-store", "Referrer-Policy": "strict-origin", "X-Robots-Tag": "noindex, nofollow", "X-Content-Type-Options": "nosniff" };
+type ConfirmationKind = "portal" | "voucher";
+function context(path: string, kind: ConfirmationKind = "portal") {
+  const action = new URL(path, getCanonicalAppUrl());
+  const secure = action.protocol === "https:";
+  if (!secure && (process.env.NODE_ENV === "production" || !["localhost", "127.0.0.1", "[::1]"].includes(action.hostname))) throw new Error("Confirmation requires HTTPS outside local development.");
+  return { action, secure, name: `${secure ? "__Host-" : ""}celebratedeal_${kind === "voucher" ? "voucher" : "access"}_confirmation` };
+}
+function digest(values: string[]) { return createHash("sha256").update(JSON.stringify(values)).digest("base64url"); }
+function escape(value: string) { return value.replace(/[&<>"']/gu, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)); }
+
+/** 預覽不建立登入狀態；短效 challenge 同時綁定瀏覽器、連結及確認入口。 */
+export function capabilityConfirmation(path: string, capability: string, vendorName = "學員中心", kind: ConfirmationKind = "portal") {
+  const { action, secure, name } = context(path, kind);
+  const title = kind === "voucher" ? "確認使用優惠券" : "確認登入學員中心";
+  const button = kind === "voucher" ? "確認並前往結帳" : "確認登入";
+  const explanation = kind === "voucher" ? "確認後會前往結帳頁，尚不會付款。若這不是你要使用的優惠券，請關閉此頁。" : "按下確認後，才會使用這封信的登入連結。若不是你提出的登入要求，請關閉此頁。";
+  const nonce = randomBytes(32).toString("base64url");
+  const issued = String(Date.now());
+  const response = new NextResponse(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="referrer" content="strict-origin"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,sans-serif;background:#f8fafc;color:#0f172a;margin:0}main{max-width:32rem;margin:10vh auto;padding:2rem}button{font:inherit;background:#0f172a;color:white;border:0;border-radius:.5rem;padding:.8rem 1.2rem;cursor:pointer}button:focus-visible{outline:3px solid #2563eb;outline-offset:4px}</style></head><body><main><h1>${title}</h1><p>商家：${escape(vendorName)}</p><p>${explanation}</p><form method="post" action="${escape(action.href)}"><input type="hidden" name="capability" value="${escape(capability)}"><input type="hidden" name="confirmation" value="${nonce}"><input type="hidden" name="issued" value="${issued}"><button type="submit">${button}</button></form></main></body></html>`, {
+    headers: { ...PRIVATE_HEADERS, "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action ${action.origin}; frame-ancestors 'none'; base-uri 'none'` },
+  });
+  response.cookies.set(name, digest([nonce, issued, capability, action.href]), { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: TTL_SECONDS });
+  return response;
+}
+
+/** 不依賴 forwarded host；明示來源須等於 canonical origin。 */
+export function isCapabilityConfirmationOrigin(request: Request, path: string) {
+  const { action } = context(path);
+  if (request.method !== "POST") return false;
+  let incoming: string;
+  try { incoming = new URL(request.headers.get("origin") ?? request.headers.get("referer") ?? "").origin; } catch { return false; }
+  const site = request.headers.get("sec-fetch-site");
+  return incoming === action.origin && (!site || site === "same-origin");
+}
+
+/** 短效表單值必須與此瀏覽器 HttpOnly challenge 完全一致。 */
+export async function readCapabilityConfirmationDetails(request: Request, path: string, kind: ConfirmationKind = "portal"): Promise<{ capability: string; nonce: string; issued: string } | null> {
+  const { action, name } = context(path, kind);
+  if (!isCapabilityConfirmationOrigin(request, path)) return null;
+  const form = await readFormDataBody(request, 8192);
+  if (!form || ["capability", "confirmation", "issued"].some((key) => form.getAll(key).length !== 1)) return null;
+  const capability = form.get("capability"), nonce = form.get("confirmation"), issued = form.get("issued");
+  if (typeof capability !== "string" || !capability || capability.length > 2048 || typeof nonce !== "string" || !FIELD.test(nonce) || typeof issued !== "string" || !/^\d{13}$/u.test(issued)) return null;
+  const age = Date.now() - Number(issued);
+  if (age < 0 || age >= TTL_SECONDS * 1000) return null;
+  const matches = (request.headers.get("cookie") ?? "").split(";").map((part) => part.trim()).filter((part) => part.startsWith(`${name}=`));
+  if (matches.length !== 1) return null;
+  const stored = matches[0].slice(name.length + 1);
+  if (!FIELD.test(stored)) return null;
+  const expected = digest([nonce, issued, capability, action.href]);
+  return timingSafeEqual(Buffer.from(stored), Buffer.from(expected)) ? { capability, nonce, issued } : null;
+}
+
+/** 登入呼叫端沿用只取 capability 的介面。 */
+export async function readCapabilityConfirmation(request: Request, path: string, kind: ConfirmationKind = "portal") {
+  return (await readCapabilityConfirmationDetails(request, path, kind))?.capability ?? null;
+}
+
+export function clearCapabilityConfirmation(response: NextResponse, path: string, kind: ConfirmationKind = "portal") {
+  const { name, secure } = context(path, kind);
+  response.cookies.set(name, "", { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 0 });
+  return response;
+}

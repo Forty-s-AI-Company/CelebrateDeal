@@ -1,0 +1,13 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:081855c5144d76503e5cba90e681bbcf19374d5b59d2d94e84d5f7825b612b66",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "scope": "WP-07 implementation in preceding completed Desktop turns, verified current files; not full Goal completion."
+}

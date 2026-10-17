@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; runner and owned disposable PostgreSQL; no production access.

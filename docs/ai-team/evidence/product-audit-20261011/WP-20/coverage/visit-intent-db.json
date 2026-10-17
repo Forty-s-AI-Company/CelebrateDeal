@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "checks": {
+    "preparationAndEightConcurrentRetriesOneUncountedExpectation": "PASS",
+    "foreignScopeIdentityTakeoverAndRollbackRejected": "PASS",
+    "lostResponseRetryDoesNotDuplicateFactsAndUnansweredIntentRemains": "PASS",
+    "lowerUpperMixedUuidOneIntentAndOneActualVisit": "PASS",
+    "immutableExpectationAndVisitorRetentionServerTimestampNonUtc": "PASS",
+    "rlsPrivateAclAndUnprivilegedRoleDenied": "PASS",
+    "actualContextProofCompositionMissingIntentAndLostCookieRollbackAndIdempotentVisit": "PASS",
+    "vendorCascadeNoOrphans": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-visit-intent.ts": "fc9811588bff24dbc35e0bc93780922c8934dbba931db1267ec9dbde2307ec01",
+    "src/lib/live-metric-visit-collection.ts": "2e485be8a61077389fe32ba12e376fda8d215e4f13cd773f5c1a5f9b3d62b6c2",
+    "src/lib/live-metric-visit-client.ts": "92550082d35ec058b3e119c27fca8e92e8975e2199b74be72d784d8aff0ae282",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "8c0629c4d838688e1f97a6610ec3062cd0abf7dbdc17dc777996989e9b79d45c",
+    "prisma/schema.prisma": "62916748199ff007905cdd062251da387e5e7346f17b83a4aa92f6b8bd767372",
+    "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": "796bca8ab59add3a0ed8c1bccd2dab1e45e233ade50b8344ec2275dd89d77e82"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 123
+}

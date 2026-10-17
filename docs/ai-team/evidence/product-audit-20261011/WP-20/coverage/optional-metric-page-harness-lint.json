@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "sourceHashes": {
+    "scripts/wp20-optional-metric-page-probe.mjs": "dade6cbede5b7b76e9fc7f1a9241ca0a3503bfb21869199b3439f389b62307e2",
+    "scripts/wp20-optional-metric-page-disposable.mjs": "cb05a4af1d9acc187cd17ca4b1977eccb501a6dfb1be448e57694162c30c818d"
+  }
+}

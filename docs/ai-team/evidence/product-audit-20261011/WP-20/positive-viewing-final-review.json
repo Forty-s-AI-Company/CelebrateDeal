@@ -1,0 +1,194 @@
+{
+  "accepted": false,
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "completed": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "finalModel": "claude-opus-5-5",
+  "review": {
+    "summary": "I found no BLOCKER. The previous MAJOR (parent cascade) looks addressed as long as the parent FK columns are NOT NULL and the parent scope always matches the child's. If they aren't, a direct delete of a sealed session or interval gets past the seal check. Separately, a re-publish could keep failing as `conflict` because `proofId` doesn't include the source revisions. One condition checked against anchorAt can be skipped if that column is nullable. Passing tests don't cover these edge cases. The full five-golden run, the 1M load test and the browser checks are still not finished.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "wp20_metric_ingress_visit_frontier (SQL)",
+        "area": "DELETE branch, Session/Interval parent-missing checks",
+        "issue": "The 'parent missing' test also requires the parent's vendor/live/version to match the child, and has no NULL guard. If `registrationId` or `sessionId` is NULL, or the parent's scope is different, NOT EXISTS is true while the real FK parent still exists. A direct DELETE then returns before the seal check.",
+        "evidence": "`IF NOT EXISTS(SELECT 1 FROM LiveMetricRegistration WHERE id=OLD.registrationId AND vendorId=... AND versionId=...) THEN RETURN OLD`. The Interval branch is built the same way. Neither checks `OLD.<fk> IS NOT NULL`. Registration revision is keyed only by (vendor, live), which suggests registration scope may not include the version.",
+        "impact": "Sealed viewing facts could be erased directly with no trigger-depth trick, which undoes the immutability fix.",
+        "recommended_fix": "Allow the delete only when `OLD.fk IS NOT NULL AND NOT EXISTS(SELECT 1 FROM parent WHERE id=OLD.fk)`, so the check matches the FK exactly. Enforce scope separately with a composite FK or CHECK.",
+        "required_test": "Real PG: after the seal, a direct DELETE of a session with a NULL registrationId, or whose registration has a different scope, must be rejected. The same goes for an interval whose session has a mismatched scope.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "live-metric viewing publisher",
+        "area": "proofId computation and ON CONFLICT handling",
+        "issue": "`proofId` hashes only the run, the receipt and the audit digest. The stored row also binds sourceRevision and the viewing/intake/registration revisions. If a revision changes but the digest doesn't, the publisher gets the same id, the existing-row comparison fails, and it returns `conflict`.",
+        "evidence": "`createHash(...).update(JSON.stringify(['viewing-coverage-v1',run,receipt,audit.digest]))`. The match check then compares sourceRevision, viewingRevision, intakeRevision and registrationRevision.",
+        "impact": "Re-publishing after a ledger or revision change (for example, after an erasure) may be blocked for good, and that run's viewing coverage can never be re-certified.",
+        "recommended_fix": "Add startAt, endAt, sourceRevision and the three revisions to the hash, converting bigints to strings. Alternatively, show that the audit digest already covers them.",
+        "required_test": "Publish, then change only a ledger revision while the digest stays the same, then publish again. The second publish must record a new proof, not return `conflict`.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "session interval violation SQL",
+        "area": "intervals CTE first_start check",
+        "issue": "The new check `i.first_start<s.\"anchorAt\"` has no NULL guard on anchorAt. If anchorAt is nullable, the comparison returns NULL and the violation is silently skipped.",
+        "evidence": "`OR (coalesce(i.n,0)>0 AND (i.first_start IS NULL OR i.first_start<s.\"anchorAt\"))`. first_start is NULL-checked but anchorAt is not.",
+        "impact": "A session with intervals but no anchor could pass as contiguous. This only matters if the column is nullable.",
+        "recommended_fix": "Add `OR s.\"anchorAt\" IS NULL` to the violation, or confirm anchorAt is NOT NULL in the schema.",
+        "required_test": "Real PG: a session with anchorAt NULL and at least one interval must be classified as a violation.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 14000,
+      "expected_duration": 0,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "exitCode": 3
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "agy_discovery_status": "DISCOVERY_VERIFIED"
+}

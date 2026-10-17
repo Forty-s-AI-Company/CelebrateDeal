@@ -1,0 +1,11 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:b6b968942d23d310ddcd14d0b21421be37451080f4c5da545cce8fd2c7c15358",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "scope": "WP-03 public policy publication"
+}

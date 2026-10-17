@@ -1,0 +1,49 @@
+{
+  "status": "FINDINGS_OPEN",
+  "observed_model": "claude-opus-5-5",
+  "previousPreUpgradeSnapshotFinding": "Reviewer confirms fixed for tested RR/payment-write schedule",
+  "severityCounts": {
+    "BLOCKER": 0,
+    "MAJOR": 1,
+    "MINOR": 4,
+    "NIT": 0
+  },
+  "items": [
+    {
+      "index": 1,
+      "area": "upgrade lock/batch cost",
+      "severity": "MAJOR",
+      "status": "PARTIALLY_ADDRESSED_PENDING_REVIEW",
+      "note": "Added30s statement timeout; populated load and lock/WAL evidence still pending"
+    },
+    {
+      "index": 2,
+      "area": "privilege/RLS correctness",
+      "severity": "MINOR",
+      "status": "PARTIALLY_ADDRESSED_PENDING_REVIEW",
+      "note": "Added top-level row_security=off and expected/touched count guard; forced-RLS test pending"
+    },
+    {
+      "index": 3,
+      "area": "test fidelity",
+      "severity": "MINOR",
+      "status": "OPEN",
+      "note": ""
+    },
+    {
+      "index": 4,
+      "area": "scenario coverage",
+      "severity": "MINOR",
+      "status": "OPEN",
+      "note": ""
+    },
+    {
+      "index": 5,
+      "area": "production side effects",
+      "severity": "MINOR",
+      "status": "OPEN",
+      "note": "Production checks are NOT_AUTHORIZED and only apply before a separately authorized deployment"
+    }
+  ],
+  "note": "Review predates latest bounds/count guard; full WP not READY"
+}

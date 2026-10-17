@@ -1,0 +1,11 @@
+{
+  "revision": "sha256:ba827b701c23d7e595a96a03247fab6976f90f720e0d91fecb0866bdc8d48e47",
+  "files": [
+    "src/lib/live-metric-registration-capture.ts",
+    "prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "db_checks": 144,
+  "migrations": 100,
+  "dedicated_deadlock_regression": "NOT_RUN"
+}

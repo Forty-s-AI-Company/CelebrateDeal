@@ -1,0 +1,19 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "passed": 0,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 97,
+    "failure": {
+      "category": "The \"string\" argument must be of type string. Received type object (null)",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

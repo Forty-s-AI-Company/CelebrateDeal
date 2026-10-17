@@ -1,0 +1,54 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+  "checks": {
+    "unconfiguredPlaybackPreserved": "PASS",
+    "committedBeforeSourceAndLostReplyRetained": "PASS",
+    "canonicalSessionBindingIdempotentAndBounded": "PASS",
+    "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+    "sameBrowserIntakeSessionAnchorRenewedAndRevisionAdvanced": "PASS",
+    "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+    "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+    "sameSnapshotIntakesSessionsQuotaLossAndSharedBudget": "PASS",
+    "concurrentNewIntakeInvisibleWithinRrThenChangesNextDigest": "PASS",
+    "rlsFilteredIntakesCannotMasqueradeAsEmpty": "PASS",
+    "boundSessionUpdatesCannotChangeIdentityAnchorOrExceedIntake": "PASS",
+    "timestamptzCatalogAndNonUtcBoundUpdates": "PASS",
+    "intakeEpochLossAndSessionBindingImmutable": "PASS",
+    "unexpectedColumnGrantRejectedAndProbeRoleCleaned": "PASS",
+    "expiredSessionAndIntakeCannotResurrectAfterAdmissionRenewal": "PASS",
+    "renewalCounterCannotBeForged": "PASS",
+    "renewalWaitingAcrossOldExpiryRollsBack": "PASS",
+    "databaseRejectsUnboundClosedExpiredAndShortenedLeases": "PASS",
+    "existingSessionGuardRejectsReopeningClosedSession": "PASS",
+    "concurrentCanonicalRenewalsSerializeAndExtendOnlyOnce": "PASS",
+    "admissionDeletionRetainsIntakeVersionCascadeCleans": "PASS"
+  },
+  "browser": {
+    "sessionRequests": 2,
+    "intervals": 9,
+    "terminal": true,
+    "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+    "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+  },
+  "intakeInspection": {
+    "count": 65,
+    "quotaLosses": 1,
+    "outcomes": {
+      "future_intake": 1,
+      "pending_session": 61,
+      "missing_session": 0,
+      "identity_mismatch": 0,
+      "outside_cohort": 0,
+      "open_session": 2,
+      "incomplete_session": 0,
+      "closed_session": 1
+    },
+    "coverage": "unknown"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "status": "FAIL",
+  "committed": 5,
+  "expected": 20,
+  "update_failures": 33,
+  "commit_failures": 1,
+  "reason": "UNCONFIRMED",
+  "classification_correction": "Initial deadlock label matched generic Prisma write conflict or deadlock message; it is not proof of a database deadlock. Matcher narrowed to exact deadlock detected for future runs. Original receipt retained.",
+  "next": "Use query-level SQLSTATE detail or sanitized server diagnostic on owned disposable PG; current Prisma P2034 lacks actual serialization cause."
+}

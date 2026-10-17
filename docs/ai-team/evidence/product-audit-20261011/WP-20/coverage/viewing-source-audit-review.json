@@ -1,0 +1,201 @@
+{
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "exitCode": 0,
+      "status": "INVALID_REVIEW",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "completed": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR issues in the supplied source. The inspection is read-only, uses repeatable-read, and checks scope against vendor, live and version IDs. It returns no PII, and every enumerated result keeps coverage set to unknown. Delivery closure is kept separate from video completion, and partial results are thrown away when a budget runs out. There are four MINOR findings. One is that a session can disappear from the results without being reported. Another is that the time budget doesn't count all the database time, so a slow run can fail with an error instead of returning 'unavailable'. The other two are gaps in the unit tests. The real-database receipt is sanitized evidence from a harness I didn't review, so it doesn't count as source review. Nothing here changes the synchronized20 result (still 7/20 FAIL) or the incomplete fullWP status. Session-issuance closure and the write-time source fence are still future work.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-viewing-source-audit.ts",
+        "area": "page query: JOIN \"LiveMetricRegistration\" g ... AND g.\"versionId\"=s.\"versionId\"",
+        "issue": "The registration join is an INNER JOIN on four columns. A session whose registration is missing or doesn't match is silently left out of the results instead of being counted as identity_mismatch.",
+        "evidence": "The doc comment promises to 'Inspect all overlapping issued sessions'. But identityCurrent is only computed when the registration join succeeds. If it fails, the session is not counted in sessionCount or outcomes.",
+        "impact": "If foreign keys or the schema allow this mismatch, a deficient session disappears from the inspection. That undercounts deficient sessions and quietly changes the digest.",
+        "recommended_fix": "LEFT JOIN the registration and treat a missing or mismatched one as identityCurrent=false. Alternatively, record in the source that a database constraint guarantees the join always succeeds.",
+        "required_test": "A real-DB fixture with a session whose registration is mismatched or missing (if the schema allows it), asserting it is counted as identity_mismatch.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-viewing-source-audit.test.ts",
+        "area": "appendInterval coverage",
+        "issue": "No unit test covers any of the interval rejection checks in appendInterval.",
+        "evidence": "The tests only feed well-formed intervals. Nothing exercises a sequence gap, a wall-clock overlap (start < previous end), end <= start, end > expiresAt, null or negative media values, or mediaEndMs > durationMs. The interval_gap tests pass a hand-built summary instead.",
+        "impact": "If one of these checks regresses, malformed intervals could be classified as closed_contiguous without any test failing.",
+        "recommended_fix": "Add audit-level tests that send each malformed interval through auditMetricViewingSources and assert outcomes.interval_gap=1.",
+        "required_test": "A parameterized test with one row per rejection check, plus a durationMs=null case.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-viewing-source-audit.ts",
+        "area": "limits.milliseconds / transaction timeout 30000",
+        "issue": "The time budget starts after the context query and is only checked between pages, so it doesn't cover all database time. The context query (up to 5s), the allowed budget (up to 23s) and one last page query (up to 5s) add up to about 33s, which is more than the 30s transaction timeout.",
+        "evidence": "The budget clock (performance.now) starts after the context query. Each statement can run for up to 5s because of statement_timeout. Only error 57014 is mapped to an 'unavailable' result.",
+        "impact": "A run near the limit can fail with a Prisma transaction-timeout error instead of returning the bounded {unavailable, limit_exceeded} result. It still fails closed, so no wrong certificate is produced.",
+        "recommended_fix": "Start the clock before the first query, or cap milliseconds so that the context query, the budget and one page query fit inside the transaction timeout.",
+        "required_test": "Use mocked time to show the budget check returns 'unavailable' before the transaction timeout. Also unit-test that error 57014 maps to query_cancelled.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-viewing-source-audit.test.ts",
+        "area": "client() mock / pagination test",
+        "issue": "The mock database ignores the cursor condition and returns pages that were written in advance, so the unit tests don't prove that keyset pagination is correct.",
+        "evidence": "$queryRaw returns pages[index++] no matter what the SQL contains. The test supplies 'second' twice, and the code relies on the database to drop the overlapping peek row. The only evidence that the cursor works is the unreviewed real-DB receipt (pageSizeIndependentDigest).",
+        "impact": "Skipped or duplicated rows at page boundaries would only be caught by the harness, not by the unit tests.",
+        "recommended_fix": "Make the mock check that the cursor values it receives match the last row of the previous page. Alternatively, put the real-DB pagination check in the reviewed scope.",
+        "required_test": "A mock test asserting the cursor values on page N+1 equal the last row of page N.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 14000,
+      "expected_duration": 45,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  }
+}

@@ -1,0 +1,230 @@
+Read-only ordinary UI review of exact WP05 integration diff and source excerpts. No tools, edits or execution. Return BLOCKER/MAJOR/MINOR/NIT findings with file/area, evidence, impact, recommended_fix, required_test and confidence. Do not claim full source/security review. Snapshot sha256:5931f68ad85e66cd62974a2a3bc229f7e5ebf764decfa385dfbce7b817e5e278. Requirement: native POST errors return303 to source page with visible error and retained fields; consistent aria-live in three consumers. Existing success/availability gates must remain. Browser evidence:24 cases, form/partner/generic funnel root+step/webinar root+step, Chromium+Firefox JS/noJS,400-refill-correct-success-1row-draftclear-noMail; JS axe0serious/critical. Extra form native403/404/429 tested,503 actual route+DB tested, browser503 and humanAT NOT_RUN. Root loading streaming hid result HTML without JS, so root and partner loading special files renamed to ordinary components; other public routes now wait for full HTML without inherited skeleton; app/checkout own loading unchanged. Assess this broader tradeoff and error/success/navigation regressions. Security helper reviewed separately.
+
+FILE src/components/registration-retry-boundary.tsx
+import { cookies, headers } from "next/headers";
+import type { ReactNode } from "react";
+import { getDb } from "@/lib/db";
+import { readRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName } from "@/lib/registration-form-retry";
+import { RegistrationRetryProvider } from "@/components/registration-retry-context";
+
+/** 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。 */
+export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted }: {
+  formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string;
+}) {
+  const failed = typeof retry === "string" && ["400", "403", "404", "429", "503", "unavailable"].includes(retry);
+  let draft = null;
+  if (failed && retry !== "unavailable" && formId) {
+    const jar = await cookies();
+    const host = (await headers()).get("host") ?? "";
+    const capability = jar.get(registrationRetryCookieName(registrationRetrySecureCookies(host)))?.value;
+    try { draft = await readRegistrationRetryDraft(getDb(), { capability, formId, sourcePath }); } catch { /* 明示未保留，不送出敏感診斷。 */ }
+  }
+  return function RetryBoundary(children: ReactNode) {
+    return <RegistrationRetryProvider value={{ formId, sourcePath, draft, failed, submitted: submitted === "verification_required" }}>{children}</RegistrationRetryProvider>;
+  };
+}
+
+
+FILE src/components/registration-retry-context.tsx
+"use client";
+import { createContext, useContext, type ReactNode } from "react";
+import type { RegistrationRetryDraft } from "@/lib/registration-form-retry";
+import { formSubmissionErrorMessage } from "@/lib/registration-submission-client";
+type RetryState = { formId?: string; sourcePath: string; draft: RegistrationRetryDraft | null; failed: boolean; submitted?: boolean };
+const Context = createContext<RetryState | null>(null);
+export function RegistrationRetryProvider({ value, children }: { value: RetryState; children: ReactNode }) {
+  return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+export function useRegistrationRetry(formId: string) {
+  const state = useContext(Context);
+  if (!state || state.formId !== formId) return null;
+  return { ...state, message: state.failed ? state.draft ? formSubmissionErrorMessage(state.draft.status) : "這次資料未能送出，且未能保留欄位；請重新填寫後再試。" : "" };
+}
+
+
+FILE src/components/lead-form.tsx
+--- before/src/components/lead-form.tsx
++++ after/src/components/lead-form.tsx
+@@ -2,0 +3 @@
++import { useRegistrationRetry } from "@/components/registration-retry-context";
+@@ -90 +91 @@
+-  themeColor = "#f97316",
++  themeColor = "#c2410c",
+@@ -101,2 +102,3 @@
+-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+-  const [errorMessage, setErrorMessage] = useState("");
++  const retry = useRegistrationRetry(formId);
++  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
++  const [errorMessage, setErrorMessage] = useState(retry?.message ?? "");
+@@ -119 +121 @@
+-        [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "redirectTo"].includes(key)),
++        [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "redirectTo", "__registrationReturnPath"].includes(key)),
+@@ -144 +146 @@
+-        <LineLoginButton request={{ mode: "registration", redirectPath: window.location.pathname }}>
++        <LineLoginButton request={{ mode: "registration", redirectPath: retry?.sourcePath ?? (typeof window === "undefined" ? "/" : window.location.pathname) }}>
+@@ -153,0 +156 @@
++      {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
+@@ -156 +159 @@
+-      {redirectTo ? <input type="hidden" name="redirectTo" value={redirectTo} /> : null}
++      {redirectTo || retry?.sourcePath ? <input type="hidden" name="redirectTo" value={redirectTo ?? retry?.sourcePath} /> : null}
+@@ -165 +168 @@
+-                  <input type="radio" name="liveId" value={session.id} required defaultChecked={index === 0} className="h-4 w-4 accent-[var(--registration-form-theme)]" />
++                  <input type="radio" name="liveId" value={session.id} required defaultChecked={retry?.draft?.liveId && sessions.some((item) => item.id === retry.draft?.liveId) ? session.id === retry.draft.liveId : index === 0} className="h-4 w-4 accent-[var(--registration-form-theme)]" />
+@@ -180,0 +184 @@
++            defaultValue={retry?.draft?.answers[field.key] ?? ""}
+
+
+FILE src/components/landing-pages/funnel-page-document-renderer.tsx
+--- before/src/components/landing-pages/funnel-page-document-renderer.tsx
++++ after/src/components/landing-pages/funnel-page-document-renderer.tsx
+@@ -1,0 +2 @@
++import { useRegistrationRetry } from "@/components/registration-retry-context";
+@@ -299,2 +300,3 @@
+-  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+-  const [message, setMessage] = useState("");
++  const retry = useRegistrationRetry(submission.form.id);
++  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
++  const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
+@@ -324,2 +326,8 @@
+-  return <form aria-label={label} aria-busy={status === "submitting"} onSubmit={submit} className="space-y-4">
+-    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
++  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting"} onSubmit={submit} className="space-y-4">
++    <input type="hidden" name="formId" value={submission.form.id} />
++    <input type="hidden" name="landingPageId" value={submission.landingPageId ?? ""} />
++    <input type="hidden" name="funnelStepId" value={submission.funnelStepId ?? ""} />
++    <input type="hidden" name="liveId" value={submission.liveId ?? ""} />
++    <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
++    {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
++    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
+
+
+FILE src/components/landing-pages/funnel-webinar-experience.tsx
+--- before/src/components/landing-pages/funnel-webinar-experience.tsx
++++ after/src/components/landing-pages/funnel-webinar-experience.tsx
+@@ -1,0 +2,2 @@
++import { useRegistrationRetry } from "@/components/registration-retry-context";
++import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+@@ -43,10 +45 @@
+-      {step.type === "webinar_registration_page" && ready && thankYou ? <form method="post" action="/api/form-submissions" className="mt-4 grid gap-3" onSubmit={preview ? (event) => event.preventDefault() : undefined}>
+-        <input type="hidden" name="formId" value={resource.form.id} />
+-        <input type="hidden" name="liveId" value={resource.live.id} />
+-        <input type="hidden" name="landingPageId" value={source.landingPageId} />
+-        <input type="hidden" name="funnelStepId" value={source.stepId} />
+-        <input type="hidden" name="redirectTo" value={path(thankYou.path)} />
+-        {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
+-        <button disabled={preview} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : resource.form.submitLabel}</button>
+-        <p className="text-sm text-slate-600">送出後請至 Email 完成確認，才會列入正式名單。</p>
+-      </form> : null}
++      {step.type === "webinar_registration_page" && ready && thankYou ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
+@@ -58,0 +52,18 @@
++
++function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
++  resource: WebinarExperienceResource; source: ReturnType<typeof funnelSourceFields>; redirectTo: string; preview: boolean;
++}) {
++  const retry = useRegistrationRetry(resource.form.id);
++  return <form method="post" action="/api/form-submissions" className="mt-4 grid gap-3" onSubmit={preview ? (event) => event.preventDefault() : undefined}>
++        {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
++        <input type="hidden" name="formId" value={resource.form.id} />
++        <input type="hidden" name="liveId" value={resource.live.id} />
++        <input type="hidden" name="landingPageId" value={source.landingPageId} />
++        <input type="hidden" name="funnelStepId" value={source.stepId} />
++        <input type="hidden" name="redirectTo" value={redirectTo} />
++        {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
++        <RegistrationSubmissionFeedback pending={false} errorMessage={retry?.message ?? ""} />
++        <button disabled={preview} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : resource.form.submitLabel}</button>
++        <p className="text-sm text-slate-600">送出後請至 Email 完成確認，才會列入正式名單。</p>
++      </form>;
++}
+
+
+FILE src/app/form/[slug]/page.tsx
+--- before/src/app/form/[slug]/page.tsx
++++ after/src/app/form/[slug]/page.tsx
+@@ -0,0 +1 @@
++import { registrationRetryBoundary } from "@/components/registration-retry-boundary";
+@@ -12 +13 @@
+-  searchParams: Promise<{ submitted?: string; liveId?: string }>;
++  searchParams: Promise<{ submitted?: string; liveId?: string; registrationRetry?: string }>;
+@@ -67,0 +69 @@
++  const withRetry = await registrationRetryBoundary({ formId: form.id, sourcePath: `/form/${slug}`, retry: query.registrationRetry });
+@@ -71 +73 @@
+-  return (
++  return withRetry(
+
+
+FILE src/app/p/[slug]/page.tsx
+--- before/src/app/p/[slug]/page.tsx
++++ after/src/app/p/[slug]/page.tsx
+@@ -0,0 +1 @@
++import { registrationRetryBoundary } from "@/components/registration-retry-boundary";
+@@ -5 +6 @@
+-export default async function PublicPartnerFunnelPage({ params }: { params: Promise<{ slug: string }> }) {
++export default async function PublicPartnerFunnelPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams?: Promise<{ registrationRetry?: string; submitted?: string }> }) {
+@@ -9 +10,3 @@
+-  return <TeamFunnelPublicPage view={view} />;
++  if (view.state !== "ready") return <TeamFunnelPublicPage view={view} />;
++  const withRetry = await registrationRetryBoundary({ formId: view.state === "ready" ? view.page?.webinar?.registration?.formId : undefined, sourcePath: `/p/${slug}`, retry: (await searchParams)?.registrationRetry, submitted: (await searchParams)?.submitted });
++  return withRetry(<TeamFunnelPublicPage view={view} />);
+
+
+FILE src/app/lp/[slug]/page.tsx
+--- before/src/app/lp/[slug]/page.tsx
++++ after/src/app/lp/[slug]/page.tsx
+@@ -0,0 +1 @@
++import { registrationRetryBoundary } from "@/components/registration-retry-boundary";
+@@ -35 +36,2 @@
+-export default async function PublicLandingPage({ params }: { params: Promise<{ slug: string }> }) {
++export default async function PublicLandingPage({ params, searchParams }: { searchParams?: Promise<{ registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string }> }) {
++  const query = await searchParams ?? {};
+@@ -37,0 +40 @@
++  const withRetry = await registrationRetryBoundary({ formId: page.submissionForm?.id ?? page.webinar?.form.id, sourcePath: `/lp/${page.slug}`, retry: query.registrationRetry, submitted: query.submitted });
+@@ -49 +52 @@
+-    if (page.content.flow.goal === "webinar") return <FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />;
++    if (page.content.flow.goal === "webinar") return withRetry(<FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+@@ -54 +57 @@
+-    return <PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
++    return withRetry(<PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+@@ -56,2 +59,2 @@
+-  if (!isPageDocument(page.content)) return <LandingPageRenderer content={page.content} context={page.context} />;
+-  return <PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />;
++  if (!isPageDocument(page.content)) return withRetry(<LandingPageRenderer content={page.content} context={page.context} />);
++  return withRetry(<PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />);
+
+
+FILE src/app/lp/[slug]/[stepPath]/page.tsx
+--- before/src/app/lp/[slug]/[stepPath]/page.tsx
++++ after/src/app/lp/[slug]/[stepPath]/page.tsx
+@@ -0,0 +1 @@
++import { registrationRetryBoundary } from "@/components/registration-retry-boundary";
+@@ -32 +33 @@
+-export default async function PublicFunnelStepPage({ params }: { params: Promise<{ slug: string; stepPath: string }> }) {
++export default async function PublicFunnelStepPage({ params, searchParams }: { searchParams?: Promise<{ registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string; stepPath: string }> }) {
+@@ -37,0 +39,2 @@
++  const query = await searchParams ?? {};
++  const withRetry = await registrationRetryBoundary({ formId: page.submissionForm?.id ?? page.webinar?.form.id, sourcePath: `/lp/${slug}/${stepPath}`, retry: query.registrationRetry, submitted: query.submitted });
+@@ -45 +48 @@
+-  if (steps.flow.goal === "webinar") return <FunnelWebinarExperience state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />;
++  if (steps.flow.goal === "webinar") return withRetry(<FunnelWebinarExperience state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+@@ -51 +54 @@
+-  return <PublicFunnelDocument document={rendered} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
++  return withRetry(<PublicFunnelDocument document={rendered} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+
+
+FILE src/app/registration-error/page.tsx
+import Link from "next/link";
+export default function RegistrationErrorPage() {
+  return <main className="mx-auto max-w-xl p-8"><h1 className="text-2xl font-bold">報名資料未能送出</h1><p role="alert" className="mt-4">無法安全確認原報名頁，這次未儲存填寫內容。請回到原活動頁重新填寫。</p><Link href="/" className="mt-6 inline-block underline">回首頁</Link></main>;
+}
+
+
+# 原生無JavaScript必要範圍
+
+瀏覽器失敗證據：303已回到原頁，草稿1筆、回填訊息1筆、欄位1筆皆存在，但訊息無法變為可見。根層loading.tsx的Suspense streaming會等待JavaScript切換hidden內容；與原生無JS要求衝突。
+
+主代理唯一writer；先確認這2個loading檔沒有既有diff，將根loading與/p局部loading重新命名為非特殊元件檔，保留原視覺元件及root測試斷言。protected(app)／checkout等各自loading不動。這會讓其他原本只繼承根loading的公開頁等待完整HTML而不顯示全站skeleton；需要回歸與獨立審查，不假裝影響只限form。
+
+src/app/loading.tsx -> src/app/root-loading.tsx
+src/app/p/[slug]/loading.tsx -> src/app/p/[slug]/loading-shell.tsx
+src/app/loading.test.tsx 只更新import，原斷言保留。
+
+沒有改權限、DB或發布閘門。若新證據否定根因，再反向此精確rename，不使用全域restore。

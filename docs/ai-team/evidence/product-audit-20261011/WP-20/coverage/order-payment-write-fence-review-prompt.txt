@@ -1,0 +1,343 @@
+Independent Critical Payment/Migration follow-up. Review only supplied immutable text, no tools. Return schema JSON summary/findings, max5 findings and total under5000 chars. Each finding severity BLOCKER/MAJOR/MINOR/NIT. Earlier review115: BLOCKER RR snapshot after SHARE wait; MAJOR deadlock order and missing composite FK; MINOR in-flight upgrade and RLS. Real RR regression reproduced FAIL under115. New116 no-op metadata UPDATE makes real MVCC write conflict on affected payments; payment fact/source triggers short-circuit unchanged inputs. row_security=off; BEGIN/table writer drain/version bump/COMMIT. Do not assume these prove all correctness. Focus whether RR/mixed isolation defect is addressed; assess regressions. Existing deadlock and populated upgrade tests not completed, original20 synchronized Serializable gate still open; do not claim whole WP ready. Code retry in test is verification of fresh-snapshot recovery, not altered product payment retry policy. Original gate still requires20/20 with2 attempts. Identify supplied-dependency disputes explicitly; do not invent absent constraints. Existing function ACL preserved under CREATE OR REPLACE (migration115 revokes PUBLIC/API roles).
+
+FILE prisma/migrations/20261016040000_live_metric_order_payment_write_fence/migration.sql
+1: -- Lock-only serialization is insufficient for a pre-existing RR snapshot.
+2: -- Drain old writers and replace the function atomically before expiring proofs.
+3: BEGIN;
+4: SET LOCAL lock_timeout='5s';
+5: LOCK TABLE public."PaymentTransaction",public."CommerceOrder" IN SHARE ROW EXCLUSIVE MODE;
+6: CREATE OR REPLACE FUNCTION public.wp20_metric_order_payment_lock() RETURNS trigger
+7: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET row_security=off AS $$
+8: DECLARE facts JSONB; payment_row RECORD;
+9: BEGIN
+10:  IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."CommerceOrder"'::regclass THEN
+11:   RAISE EXCEPTION 'invalid order payment lock relation' USING ERRCODE='23514';
+12:  END IF;
+13:  IF TG_OP='UPDATE' AND (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt")
+14:   IS NOT DISTINCT FROM (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt") THEN RETURN NEW; END IF;
+15:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+16:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+17:  FOR payment_row IN SELECT p."vendorId",p.id FROM public."PaymentTransaction" p WHERE EXISTS (
+18:   SELECT 1 FROM jsonb_array_elements(facts) f
+19:   WHERE p.id=f->>'primaryPaymentTransactionId' AND p."vendorId"=f->>'vendorId'
+20:  ) ORDER BY p."vendorId",p.id LOOP
+21:   -- Write the same value to create a new MVCC tuple without changing payment
+22:   -- facts. Existing payment source triggers ignore unchanged facts. A payment
+23:   -- writer with an older RR/Serializable snapshot must abort with 40001.
+24:   UPDATE public."PaymentTransaction" p SET metadata=p.metadata
+25:    WHERE p."vendorId"=payment_row."vendorId" AND p.id=payment_row.id;
+26:  END LOOP;
+27:  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+28:  RETURN NEW;
+29: END $$;
+30: -- CREATE OR REPLACE preserves the revoked function ACL from migration115.
+31: UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1;
+32: COMMIT;
+
+
+FILE prisma/migrations/20261016030000_live_metric_order_payment_serialization/migration.sql
+1: -- Serialize changes to the payment/window relation with payment metadata writes.
+2: -- SHARE conflicts with UPDATE's NO KEY UPDATE lock; KEY SHARE would not suffice.
+3: CREATE FUNCTION public.wp20_metric_order_payment_lock() RETURNS trigger
+4: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+5: DECLARE facts JSONB;
+6: BEGIN
+7:  IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."CommerceOrder"'::regclass THEN
+8:   RAISE EXCEPTION 'invalid order payment lock relation' USING ERRCODE='23514';
+9:  END IF;
+10:  IF TG_OP='UPDATE' AND (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt")
+11:   IS NOT DISTINCT FROM (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt") THEN RETURN NEW; END IF;
+12:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+13:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+14:  PERFORM p.id FROM public."PaymentTransaction" p WHERE EXISTS (
+15:   SELECT 1 FROM jsonb_array_elements(facts) f
+16:   WHERE p.id=f->>'primaryPaymentTransactionId' AND p."vendorId"=f->>'vendorId'
+17:  ) ORDER BY p."vendorId",p.id FOR SHARE OF p;
+18:  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+19:  RETURN NEW;
+20: END $$;
+21: CREATE TRIGGER "CommerceOrder_metric_payment_lock" BEFORE INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+22:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_payment_lock();
+23: REVOKE ALL ON FUNCTION public.wp20_metric_order_payment_lock() FROM PUBLIC;
+24: DO $$ DECLARE api_role TEXT; BEGIN
+25:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+26:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+27:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_payment_lock() FROM %I',api_role);
+28:   END IF;
+29:  END LOOP;
+30: END $$;
+31: -- Previously issued proofs might have crossed the unsafe commit ordering.
+32: UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1;
+
+
+FILE prisma/migrations/20261016010000_live_metric_order_window_source/migration.sql
+1: -- Window-scoped append-only source, initially side-by-side with legacy fences.
+2: -- Consumers must use a new proof format before switching; no legacy proof backfill.
+3: CREATE TABLE public."LiveMetricOrderWindowSource" (
+4:  id BIGSERIAL PRIMARY KEY,
+5:  "vendorId" TEXT NOT NULL REFERENCES public."Vendor"(id) ON DELETE CASCADE ON UPDATE NO ACTION,
+6:  "orderCreatedAt" TIMESTAMP(3) NOT NULL
+7: );
+8: CREATE INDEX "LiveMetricOrderWindowSource_scope_idx" ON public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt");
+9: CREATE FUNCTION public.wp20_metric_order_window_changed() RETURNS trigger
+10: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+11: DECLARE facts JSONB;
+12: BEGIN
+13:  IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+14:   RAISE EXCEPTION 'invalid order window source relation' USING ERRCODE='23514';
+15:  END IF;
+16:  IF TG_OP='UPDATE' THEN
+17:   IF TG_TABLE_NAME='CommerceOrder' THEN
+18:    IF (NEW.id,NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status)
+19:     IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status) THEN RETURN NULL; END IF;
+20:   ELSE
+21:    IF (NEW.id,NEW."vendorId",NEW.metadata) IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD.metadata) THEN RETURN NULL; END IF;
+22:   END IF;
+23:  END IF;
+24:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+25:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+26:  IF TG_TABLE_NAME='CommerceOrder' THEN
+27:   INSERT INTO public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt")
+28:    SELECT DISTINCT v.id,(f->>'createdAt')::timestamp(3)
+29:    FROM jsonb_array_elements(facts) f JOIN public."Vendor" v ON v.id=f->>'vendorId'
+30:    ORDER BY v.id,(f->>'createdAt')::timestamp(3);
+31:  ELSE
+32:   -- Payments without an established order have no window yet. The later order
+33:   -- INSERT/link emits its own event even if payment metadata is missing.
+34:   INSERT INTO public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt")
+35:    SELECT DISTINCT o."vendorId",o."createdAt" FROM public."CommerceOrder" o
+36:    JOIN jsonb_array_elements(facts) f ON o."primaryPaymentTransactionId"=f->>'id' AND o."vendorId"=f->>'vendorId'
+37:    JOIN public."Vendor" v ON v.id=o."vendorId"
+38:    ORDER BY o."vendorId",o."createdAt";
+39:  END IF;
+40:  RETURN NULL;
+41: END $$;
+42: CREATE TRIGGER "CommerceOrder_metric_window_revision" AFTER INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+43:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_window_changed();
+44: CREATE TRIGGER "PaymentTransaction_metric_window_revision" AFTER INSERT OR UPDATE OR DELETE ON public."PaymentTransaction"
+45:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_window_changed();
+46: CREATE FUNCTION public.wp20_metric_order_window_revision(vendor_id TEXT,window_start TIMESTAMPTZ,window_end TIMESTAMPTZ) RETURNS BIGINT
+47: LANGUAGE sql STABLE STRICT SECURITY DEFINER SET search_path=pg_catalog SET row_security=off AS $$
+48:  SELECT count(*) FROM public."LiveMetricOrderWindowSource" WHERE "vendorId"=vendor_id
+49:   AND "orderCreatedAt">=(window_start AT TIME ZONE 'UTC') AND "orderCreatedAt"<(window_end AT TIME ZONE 'UTC')
+50: $$;
+51: CREATE TRIGGER "LiveMetricOrderWindowSource_immutable" BEFORE UPDATE OR DELETE ON public."LiveMetricOrderWindowSource"
+52:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_immutable();
+53: CREATE TRIGGER "LiveMetricOrderWindowSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricOrderWindowSource"
+54:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+55: ALTER TABLE public."LiveMetricOrderWindowSource" ENABLE ROW LEVEL SECURITY;
+56: REVOKE ALL ON TABLE public."LiveMetricOrderWindowSource" FROM PUBLIC;
+57: REVOKE ALL ON SEQUENCE public."LiveMetricOrderWindowSource_id_seq" FROM PUBLIC;
+58: REVOKE ALL ON FUNCTION public.wp20_metric_order_window_changed(),public.wp20_metric_order_window_revision(text,timestamptz,timestamptz) FROM PUBLIC;
+59: DO $$ DECLARE api_role TEXT; BEGIN
+60:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+61:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+62:    EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricOrderWindowSource" FROM %I',api_role);
+63:    EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricOrderWindowSource_id_seq" FROM %I',api_role);
+64:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_window_changed(),public.wp20_metric_order_window_revision(text,timestamptz,timestamptz) FROM %I',api_role);
+65:   END IF;
+66:  END LOOP;
+67: END $$;
+
+
+FILE prisma/migrations/20261016000000_live_metric_order_identity_revision/migration.sql
+1: -- IDs participate in keyset/digest and payment joins; fence ID-only updates too.
+2: CREATE OR REPLACE FUNCTION public.wp20_metric_order_tenant_changed() RETURNS trigger
+3: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+4: DECLARE old_vendor TEXT; new_vendor TEXT; target TEXT;
+5: BEGIN
+6:  IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+7:   RAISE EXCEPTION 'invalid tenant order source relation' USING ERRCODE='23514';
+8:  END IF;
+9:  IF TG_OP='UPDATE' THEN
+10:   IF TG_TABLE_NAME='CommerceOrder' THEN
+11:    IF (NEW.id,NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status)
+12:     IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status) THEN RETURN NULL; END IF;
+13:   ELSE
+14:    IF (NEW.id,NEW."vendorId",NEW.metadata) IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD.metadata) THEN RETURN NULL; END IF;
+15:   END IF;
+16:  END IF;
+17:  IF TG_OP<>'INSERT' THEN old_vendor:=OLD."vendorId"; END IF;
+18:  IF TG_OP<>'DELETE' THEN new_vendor:=NEW."vendorId"; END IF;
+19:  FOR target IN SELECT DISTINCT value FROM unnest(ARRAY[old_vendor,new_vendor]) value WHERE value IS NOT NULL ORDER BY value LOOP
+20:   INSERT INTO public."LiveMetricOrderTenantSource"("vendorId") SELECT id FROM public."Vendor" WHERE id=target;
+21:  END LOOP;
+22:  RETURN NULL;
+23: END $$;
+
+
+FILE scripts/wp20-order-window-link-race.mjs
+1: import assert from 'node:assert/strict';
+2: /** Require real lock contention, not sleeps or an assumed transaction ordering. */
+3: export async function verifyOrderWindowLinkRace(db,scope,payment,{nextStart,nextEnd}) {
+4:  const revision=async(start,end)=>(await db.$queryRawUnsafe(
+5:   'SELECT public.wp20_metric_order_window_revision($1,$2::timestamptz,$3::timestamptz) AS revision',scope.vendorId,start,end))[0].revision;
+6:  const [original]=await db.$queryRawUnsafe('SELECT id FROM "CommerceOrder" WHERE "vendorId"=$1 AND "primaryPaymentTransactionId"=$2',scope.vendorId,payment.id);
+7:  assert.ok(original);
+8:  const relink=async tx=>{
+9:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1',original.id);
+10:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,'outside-window-liveness-order');
+11:  };
+12:  const restore=()=>db.$transaction(async tx=>{
+13:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1','outside-window-liveness-order');
+14:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,original.id);
+15:   await tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:payment.metadata}});
+16:  },{timeout:15000});
+17:  const schedules=[];
+18:  const levels=['ReadCommitted','RepeatableRead','Serializable'];
+19:  for(const leaderIsolation of levels) for(const followerIsolation of levels) for(const first of ['payment','relink']) {
+20:   const initial=await revision(scope.startAt,scope.endAt),laterInitial=await revision(nextStart,nextEnd);
+21:   let release,started,following;
+22:   const gate=new Promise(resolve=>{release=resolve;});
+23:   const ready=new Promise(resolve=>{started=resolve;});
+24:   const update=tx=>tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:{...payment.metadata,syntheticLinkRace:first}}});
+25:   const leader=db.$transaction(async tx=>{
+26:    await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+27:    const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');
+28:    await (first==='payment'?update(tx):relink(tx));
+29:    started(pid.pid);await gate;
+30:   },{isolationLevel:leaderIsolation,timeout:15000});
+31:   // Attach rejection handling immediately; the main path still asserts success.
+32:   leader.catch(()=>{});
+33:   try {
+34:    const leaderPid=await Promise.race([ready,leader.then(()=>{throw new Error('leader-ended-before-ready');})]);
+35:    let followerReady;
+36:    const followerPidPromise=new Promise(resolve=>{followerReady=resolve;});
+37:    following=db.$transaction(async tx=>{
+38:     await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+39:     const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');followerReady(pid.pid);
+40:     await (first==='payment'?relink(tx):update(tx));
+41:    },{isolationLevel:followerIsolation,timeout:15000});
+42:    following.catch(()=>{});
+43:    const followerPid=await Promise.race([followerPidPromise,following.then(()=>{throw new Error('follower-ended-before-ready');})]);
+44:    let blocked=false;
+45:    for(let attempt=0;attempt<60;attempt++) {
+46:     const [state]=await db.$queryRawUnsafe('SELECT $1::integer=ANY(pg_blocking_pids($2::integer)) AS blocked',leaderPid,followerPid);
+47:     if(state.blocked){blocked=true;break;}
+48:     await db.$queryRawUnsafe('SELECT pg_sleep(0.025)::text');
+49:    }
+50:    assert.equal(blocked,true,'payment/link writers must serialize before publishing inconsistent relation');
+51:    release();await leader;
+52:    const followerResult=await following.then(()=>({status:'committed'}),error=>({status:'rejected',code:error?.meta?.code??error?.code}));
+53:    if(followerResult.status==='rejected') {
+54:     assert.ok(['40001','P2034'].includes(followerResult.code),'only serialization aborts qualify for a fresh-snapshot retry');
+55:     await db.$transaction(tx=>first==='payment'?relink(tx):update(tx),{isolationLevel:followerIsolation,timeout:15000});
+56:    }
+57:    assert.ok(await revision(scope.startAt,scope.endAt)>initial);
+58:    assert.ok(await revision(nextStart,nextEnd)>laterInitial);
+59:    const [linked]=await db.$queryRawUnsafe(`SELECT p.metadata->>'syntheticLinkRace' AS marker FROM "CommerceOrder" o
+60:     JOIN "PaymentTransaction" p ON p.id=o."primaryPaymentTransactionId" AND p."vendorId"=o."vendorId"
+61:     WHERE o.id=$1 AND o."vendorId"=$2`,'outside-window-liveness-order',scope.vendorId);
+62:    assert.equal(linked?.marker,first);
+63:    schedules.push({first,leaderIsolation,followerIsolation,status:'PASS',blockingObserved:true,followerResult});
+64:   } finally {release();await Promise.allSettled([leader,...(following?[following]:[])]);await restore();}
+65:  }
+66:  // A bounded lock timeout must roll back the entire attempted relink.
+67:  const beforeTimeout=await revision(scope.startAt,scope.endAt),laterBeforeTimeout=await revision(nextStart,nextEnd);
+68:  await db.$transaction(async holder=>{
+69:   await holder.$queryRawUnsafe('SELECT id FROM "PaymentTransaction" WHERE id=$1 FOR NO KEY UPDATE',payment.id);
+70:   await assert.rejects(db.$transaction(async contender=>{
+71:    await contender.$executeRawUnsafe("SET LOCAL lock_timeout='150ms'");
+72:    await relink(contender);
+73:   },{timeout:5000}),error=>error?.meta?.code==='55P03');
+74:   const [stillLinked]=await db.$queryRawUnsafe('SELECT "primaryPaymentTransactionId" AS payment FROM "CommerceOrder" WHERE id=$1',original.id);
+75:   const [destination]=await db.$queryRawUnsafe('SELECT "primaryPaymentTransactionId" AS payment FROM "CommerceOrder" WHERE id=$1','outside-window-liveness-order');
+76:   assert.equal(stillLinked.payment,payment.id);
+77:   assert.equal(destination.payment,null);
+78:   assert.equal(await revision(scope.startAt,scope.endAt),beforeTimeout);
+79:   assert.equal(await revision(nextStart,nextEnd),laterBeforeTimeout);
+80:  },{timeout:10000});
+81:  // Once the blocker releases, a fresh transaction can relink and be restored.
+82:  try {await db.$transaction(relink,{timeout:10000});}
+83:  finally {await restore();}
+84:  // Keep a RepeatableRead payment snapshot from before a committed relink.
+85:  // Hold its commit after UPDATE to observe whether that commit invalidates the
+86:  // destination window, or rejects the stale snapshot with a serialization error.
+87:  let releaseLeader,leaderReady,releaseFollower,followerDone;
+88:  const leaderGate=new Promise(resolve=>{releaseLeader=resolve;});
+89:  const leaderSignal=new Promise(resolve=>{leaderReady=resolve;});
+90:  const followerGate=new Promise(resolve=>{releaseFollower=resolve;});
+91:  const followerSignal=new Promise(resolve=>{followerDone=resolve;});
+92:  const rrLeader=db.$transaction(async tx=>{
+93:   await relink(tx);const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');leaderReady(pid.pid);await leaderGate;
+94:  },{timeout:15000});rrLeader.catch(()=>{});
+95:  let rrFollower,rrOutcome;
+96:  try {
+97:   const leaderPid=await Promise.race([leaderSignal,rrLeader.then(()=>{throw new Error('leader-ended-before-ready');})]);
+98:   let readyPid;const pidSignal=new Promise(resolve=>{readyPid=resolve;});
+99:   rrFollower=db.$transaction(async tx=>{
+100:    await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+101:    const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');readyPid(pid.pid);
+102:    await tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:{...payment.metadata,syntheticRrRace:1}}});
+103:    followerDone();await followerGate;
+104:   },{isolationLevel:'RepeatableRead',timeout:15000});rrFollower.catch(()=>{});
+105:   const followerPid=await Promise.race([pidSignal,rrFollower.then(()=>{throw new Error('follower-ended-before-ready');})]);
+106:   let blocked=false;
+107:   for(let attempt=0;attempt<60;attempt++){
+108:    const [state]=await db.$queryRawUnsafe('SELECT $1::integer=ANY(pg_blocking_pids($2::integer)) AS blocked',leaderPid,followerPid);
+109:    if(state.blocked){blocked=true;break;}await db.$queryRawUnsafe('SELECT pg_sleep(0.025)::text');
+110:   }
+111:   assert.equal(blocked,true);releaseLeader();await rrLeader;
+112:   const result=await Promise.race([followerSignal.then(()=>({status:'updated'})),rrFollower.then(()=>({status:'committed'}),error=>({status:'rejected',code:error?.meta?.code??error?.code}))]);
+113:   rrOutcome=result;
+114:   if(result.status==='rejected')assert.ok(['40001','P2034'].includes(result.code));
+115:   else {
+116:    const beforeCommit=await revision(nextStart,nextEnd);
+117:    releaseFollower();await rrFollower;
+118:    assert.ok(await revision(nextStart,nextEnd)>beforeCommit,'RepeatableRead payment commit must invalidate destination window');
+119:   }
+120:  } finally {releaseLeader();releaseFollower();await Promise.allSettled([rrLeader,...(rrFollower?[rrFollower]:[])]);await restore();}
+121:  return {status:'PASS',schedules,repeatableReadRace:'PASS',repeatableReadOutcome:rrOutcome,lockTimeoutRollback:'PASS',recoveryAfterLockRelease:'PASS',oldWindowInvalidated:true,newWindowInvalidated:true,committedMetadataVisible:true};
+122: }
+
+
+DEPENDENCY prisma/migrations/20260808110000_g7_04_commerce_orders/migration.sql
+263: CREATE INDEX "ShippingFulfillment_trackingNumber_idx" ON "ShippingFulfillment"("trackingNumber");
+264: CREATE INDEX "CommerceEntitlement_vendorId_status_expiresAt_idx" ON "CommerceEntitlement"("vendorId", "status", "expiresAt");
+265: CREATE INDEX "ServiceFulfillment_vendorId_status_scheduledAt_idx" ON "ServiceFulfillment"("vendorId", "status", "scheduledAt");
+266: 
+267: ALTER TABLE "CommerceOrder"
+268: ADD CONSTRAINT "CommerceOrder_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+269: ALTER TABLE "CommerceOrder"
+270: ADD CONSTRAINT "CommerceOrder_primaryPayment_tenant_fkey" FOREIGN KEY ("vendorId", "primaryPaymentTransactionId") REFERENCES "PaymentTransaction"("vendorId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
+271: 
+272: ALTER TABLE "CommerceOrderItem"
+
+
+DEPENDENCY prisma/migrations/20261014120000_live_metric_evidence/migration.sql
+240:       AND (NEW."videoId" IS NULL OR EXISTS (SELECT 1 FROM public."Video" v WHERE v."id"=NEW."videoId" AND v."vendorId"=NEW."vendorId"))) THEN
+241:       RAISE EXCEPTION 'metric source must belong to its live' USING ERRCODE='23514';
+242:     END IF;
+243:     RETURN NEW;
+244:   END IF;
+245:   IF (NEW."id", NEW."vendorId", NEW."liveId", NEW."videoId", NEW."mode", NEW."fingerprint", NEW."durationMs")
+246:     IS DISTINCT FROM (OLD."id", OLD."vendorId", OLD."liveId", OLD."videoId", OLD."mode", OLD."fingerprint", OLD."durationMs") THEN
+247:     RAISE EXCEPTION 'metric version identity is immutable' USING ERRCODE = '23514';
+248:   END IF;
+249:   IF OLD."collectionStartedAt" IS NOT NULL AND NEW."collectionStartedAt" IS DISTINCT FROM OLD."collectionStartedAt" THEN
+250:     RAISE EXCEPTION 'metric collection origin is immutable' USING ERRCODE = '23514';
+251:   END IF;
+252:   NEW."sourceRevision" := OLD."sourceRevision" + 1;
+253:   RETURN NEW;
+254: END $$;
+255: CREATE TRIGGER "LiveMetricVersion_revision" BEFORE INSERT OR UPDATE ON "LiveMetricVersion"
+256:   FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_version_update();
+257: 
+258: CREATE FUNCTION public.wp20_metric_report_invalidate() RETURNS trigger
+259: LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+260: BEGIN
+261:   UPDATE public."LiveMetricReport" SET "status" = 'stale', "result" = NULL,
+262:     "leaseOwner" = NULL, "leaseExpiresAt" = NULL
+263:   WHERE "vendorId" = NEW."vendorId" AND "liveId" = NEW."liveId" AND "versionId" = NEW."id"
+264:     AND "inputRevision" <> NEW."sourceRevision" AND "status" <> 'stale';
+265:   RETURN NULL;
+266: END $$;
+267: CREATE TRIGGER "LiveMetricVersion_invalidate_reports" AFTER UPDATE ON "LiveMetricVersion"
+268:   FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_report_invalidate();
+269: 
+270: CREATE FUNCTION public.wp20_metric_scope_update() RETURNS trigger
+271: LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+
+
+SANITIZED REAL DB EVIDENCE
+{"status": "PASS", "linkRace": {"status": "PASS", "schedules": [{"first": "payment", "leaderIsolation": "ReadCommitted", "followerIsolation": "ReadCommitted", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "committed"}}, {"first": "relink", "leaderIsolation": "ReadCommitted", "followerIsolation": "ReadCommitted", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "committed"}}, {"first": "payment", "leaderIsolation": "ReadCommitted", "followerIsolation": "RepeatableRead", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "40001"}}, {"first": "relink", "leaderIsolation": "ReadCommitted", "followerIsolation": "RepeatableRead", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "P2034"}}, {"first": "payment", "leaderIsolation": "ReadCommitted", "followerIsolation": "Serializable", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "40001"}}, {"first": "relink", "leaderIsolation": "ReadCommitted", "followerIsolation": "Serializable", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "P2034"}}, {"first": "payment", "leaderIsolation": "RepeatableRead", "followerIsolation": "ReadCommitted", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "committed"}}, {"first": "relink", "leaderIsolation": "RepeatableRead", "followerIsolation": "ReadCommitted", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "committed"}}, {"first": "payment", "leaderIsolation": "RepeatableRead", "followerIsolation": "RepeatableRead", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "40001"}}, {"first": "relink", "leaderIsolation": "RepeatableRead", "followerIsolation": "RepeatableRead", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "P2034"}}, {"first": "payment", "leaderIsolation": "RepeatableRead", "followerIsolation": "Serializable", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "40001"}}, {"first": "relink", "leaderIsolation": "RepeatableRead", "followerIsolation": "Serializable", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "P2034"}}, {"first": "payment", "leaderIsolation": "Serializable", "followerIsolation": "ReadCommitted", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "committed"}}, {"first": "relink", "leaderIsolation": "Serializable", "followerIsolation": "ReadCommitted", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "committed"}}, {"first": "payment", "leaderIsolation": "Serializable", "followerIsolation": "RepeatableRead", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "40001"}}, {"first": "relink", "leaderIsolation": "Serializable", "followerIsolation": "RepeatableRead", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "P2034"}}, {"first": "payment", "leaderIsolation": "Serializable", "followerIsolation": "Serializable", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "40001"}}, {"first": "relink", "leaderIsolation": "Serializable", "followerIsolation": "Serializable", "status": "PASS", "blockingObserved": true, "followerResult": {"status": "rejected", "code": "P2034"}}], "repeatableReadRace": "PASS", "repeatableReadOutcome": {"status": "rejected", "code": "P2034"}, "lockTimeoutRollback": "PASS", "recoveryAfterLockRelease": "PASS", "oldWindowInvalidated": true, "newWindowInvalidated": true, "committedMetadataVisible": true}, "cleanup": {"container": "PASS", "tempRoot": "PASS"}, "networkAttempts": 0}

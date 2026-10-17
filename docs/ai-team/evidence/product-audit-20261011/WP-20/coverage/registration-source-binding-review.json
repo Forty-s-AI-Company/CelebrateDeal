@@ -1,0 +1,206 @@
+{
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I reviewed only the three supplied files and found no BLOCKER or MAJOR defects in this scope.\n\nWhat I checked:\n- **Trigger order:** the new trigger, `LiveMetricVisitPage_binding_guard`, sorts before the existing `LiveMetricVisitPage_guard`, so it runs first.\n- **Lock order:** both triggers take the same advisory lock, so the second take succeeds immediately. The new trigger then share-locks the Live and form rows before the existing guard share-locks the version row.\n- **CHECK constraint:** I found no case where a NULL makes it pass when it should fail.\n- **Immutability:** both new columns are covered by the existing whole-row comparison on UPDATE.\n- **Defaults:** older writers get 'unknown', and no existing rows are backfilled.\n- **History:** there is no foreign key on `sourceFormId`, so changing the form does not erase historical evidence.\n- **Errors:** unexpected failures still propagate.\n\nFindings:\n1. **MINOR (API default):** if a caller omits `expectedForm`, the page is permanently recorded as 'viewer' instead of 'unknown'.\n2. **MINOR (lost-page marker):** when the 10,000-page limit is hit, the permanent loss marker can land on a viewer or unknown row. A dropped registration page is then invisible to a reader that only looks at registration rows.\n3. **MINOR (migration):** the migration takes its locks in the opposite order from the issuer, which can deadlock with in-flight issuers or hit the 5s lock timeout. It rolls back cleanly, but deploys may need retries.\n4. **NIT:** a race where the project is unpublished between the issuer's check and the trigger causes a page-render error instead of quietly skipping tracking.\n\nNot covered:\n- The known MAJOR about public request exhaustion and lock availability is still open. I didn't re-report it.\n- I can't certify callers, the visit-context resolver, the registration reader, the existing Migration125 guard, the version table's update guard, `FORCE ROW LEVEL SECURITY` (RLS) on Live/RegistrationForm, tests, roles, or deployment.\n- No terminal test receipts were supplied, so no test results are claimed.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "issueMetricVisitPage signature and INSERT source selection (expectedForm?: ...; ${form?'registration':'viewer'})",
+        "issue": "If a caller omits the optional expectedForm argument, the page is permanently stored as a positive 'viewer' row instead of a neutral 'unknown' one.",
+        "evidence": "`const form=expectedForm===undefined?null:...` then INSERT uses `${form?'registration':'viewer'}`. The existing whole-row guard makes sourceKind immutable once written. The reviewed scope does not include the callers.",
+        "impact": "A registration-page caller that is missed, or added later, and forgets the argument writes registration renders as 'viewer' rows. They are silently and permanently left out of the registration denominator, which is the error the task says must never happen. Because the rows are immutable, this cannot be fixed afterwards.",
+        "recommended_fix": "Make the source a required discriminated union, e.g. `{kind:'viewer'} | {kind:'registration', formId}`, with no default. The compiler then forces every caller to declare the kind. Alternatively, store 'unknown' when no kind is supplied.",
+        "required_test": "Type-level or compile test showing a call without an explicit source fails to compile. Disposable-DB probe confirming viewer and registration call sites store the expected sourceKind/sourceFormId.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "Quota-full branch (ORDER BY \"issuedAt\",\"eventId\" LIMIT 1 FOR UPDATE; UPDATE ... SET \"lossAt\")",
+        "issue": "The permanent loss marker goes on the oldest page in the version, whatever its sourceKind. A registration render dropped at the 10,000-page limit can therefore be recorded only on a viewer or unknown row.",
+        "evidence": "The gap-row selection does not filter by sourceKind, and the 10,000-page limit is counted across all kinds. The described registration reader joins only pages with sourceKind='registration' and a non-null sourceFormId.",
+        "impact": "A registration-only reader or future completeness proof would not see that registration renders were dropped, so the denominator could be undercounted with no visible gap. The current Migration125 fail-closed guard prevents positive coverage claims today, so the risk is latent.",
+        "recommended_fix": "Treat any non-null lossAt in a version as a gap for every source-specific report, documented and enforced in the reader. Alternatively, record loss per source in an additive way without changing existing rows.",
+        "required_test": "Disposable probe: fill a version with viewer pages up to the limit, then issue a registration page. Assert it returns null and that the registration report or proof path flags the version-level loss instead of reporting a clean denominator.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016140000_live_metric_registration_visit_source/migration.sql",
+        "area": "ALTER TABLE ... (ACCESS EXCLUSIVE on LiveMetricVisitPage) followed by UPDATE public.\"LiveMetricVersion\" SET \"sourceRevision\"=...",
+        "issue": "The migration locks the page table and then the version rows. The issuer and page guard lock in the opposite order: version row (FOR SHARE) first, then insert into the page table.",
+        "evidence": "In the issuer, resolveMetricVisitContext or the existing guard share-locks the LiveMetricVersion row before the INSERT needs a ROW EXCLUSIVE lock on LiveMetricVisitPage. The migration holds ACCESS EXCLUSIVE on LiveMetricVisitPage and then needs a row lock on every LiveMetricVersion row, which conflicts with FOR SHARE.",
+        "impact": "If issuers are running during the migration, it can deadlock or hit the 5s lock_timeout. Everything rolls back atomically, so nothing is corrupted, but the deploy may fail and need retries, and some issuers may get PERSISTENCE_UNAVAILABLE errors.",
+        "recommended_fix": "Do the sourceRevision UPDATE (version row locks) before the ALTER TABLE so the order matches the issuer. Alternatively, take an explicit table lock on LiveMetricVersion before the page table, or run the migration in a quiesced window.",
+        "required_test": "Disposable-DB concurrency probe: hold an issuer transaction after it has the version FOR SHARE lock, run the migration, and assert it either completes after the issuer commits or fails cleanly within lock_timeout without a deadlock.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "NIT",
+        "file": "prisma/migrations/20261016140000_live_metric_registration_visit_source/migration.sql",
+        "area": "wp20_metric_visit_page_source_guard: LEFT JOIN SalesProject without a lock; error code 23514",
+        "issue": "If the project is unpublished between the issuer's own form check and the INSERT, the trigger raises 23514. The issuer turns that into a thrown PERSISTENCE_UNAVAILABLE error instead of the null 'collection unavailable' result.",
+        "evidence": "The issuer does not lock the SalesProject row, and under READ COMMITTED each statement sees a fresh snapshot. The catch block returns null only for SCOPE_UNAVAILABLE, LIFETIME_UNAVAILABLE, the expired-page error, and P2090, so 23514 is rethrown.",
+        "impact": "A narrow race makes a registration page render fail instead of rendering without tracking. This fails safe (nothing is mislabeled or lost silently) and the publication race is explicitly not certified, so the impact is availability only.",
+        "recommended_fix": "Optionally lock the SalesProject row with KEY SHARE/SHARE in both the issuer and the trigger, or document that this error during an unpublish race is expected.",
+        "required_test": "Disposable probe: interleave an unpublish between the issuer's check and the INSERT, and assert the documented outcome (error or null) with no page row committed.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "accepted": false,
+  "reviewed": true,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "normalized_status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "completed": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli"
+}

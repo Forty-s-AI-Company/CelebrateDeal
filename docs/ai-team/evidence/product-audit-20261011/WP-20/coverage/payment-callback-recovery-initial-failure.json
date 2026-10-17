@@ -1,0 +1,12 @@
+{
+  "status": "FAIL",
+  "stage": "concurrent-callbacks",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual signed callback handler and retry service, disposable DB and synthetic digital orders; direct Request invocation, no remote provider",
+  "errorCode": "P1001"
+}

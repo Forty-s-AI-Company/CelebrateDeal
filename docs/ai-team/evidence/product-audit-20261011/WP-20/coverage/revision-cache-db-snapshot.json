@@ -1,0 +1,13 @@
+{
+  "files": {
+    "scripts/wp20-payment-retry-disposable.mjs": "6032897162ddf6abe7f8808e9e8d2a1b088b4766a84d0ca69276a5739649d2ee",
+    "src/lib/live-metric-report-reader.ts": "9289f2902bb1314fd8fefa85222601d64ffacd7cda65064ff91f309b5b708236",
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql": "d597be8abcdc049cdcbf1d79dc73d038b09acac065a10881dff94606e25b8645"
+  },
+  "lint": "PASS",
+  "limitations": [
+    "No valid report lease fixture in this check",
+    "Not a performance benchmark",
+    "Independent review pending"
+  ]
+}

@@ -36,7 +36,7 @@ describe("LINE notification outbox", () => {
   it("queues one encrypted delivery for a linked identity", async () => {
     const create = vi.fn().mockResolvedValue({ id: "delivery-1" });
     const db = {
-      lineOfficialAccount: { findUnique: vi.fn().mockResolvedValue({ id: "account-1", status: "active" }) },
+      lineOfficialAccount: { findFirst: vi.fn().mockResolvedValue({ id: "account-1", status: "active" }) },
       lineUserIdentity: { findUnique: vi.fn().mockResolvedValue({ id: "identity-1", revokedAt: null }) },
       lineDelivery: { create, findUnique: vi.fn() },
     };
@@ -53,9 +53,9 @@ describe("LINE notification outbox", () => {
     expect(JSON.stringify(payload)).not.toContain("佣金已入帳");
     expect(db.lineUserIdentity.findUnique).toHaveBeenCalledWith({
       where: {
-        vendorId_subjectType_subjectId: {
+        vendorId_lineOfficialAccountId_subjectType_subjectId: {
           vendorId: "vendor-1",
-          subjectType: "promoter",
+          lineOfficialAccountId:"account-1", subjectType: "promoter",
           subjectId: "affiliate-1",
         },
       },
@@ -80,21 +80,23 @@ describe("LINE notification outbox", () => {
     const messages = [buildCommissionLineMessage({ amountCents: 5_000, currency: "TWD", orderNumber: null })];
     const due = {
       id: deliveryId,
-      vendorId: "vendor-1",
+      vendorId: "vendor-1", lineOfficialAccountId:"account-1",
       status: "queued",
       attemptCount: 0,
       maxAttempts: 5,
       payloadEncrypted: encryptSensitiveValue(JSON.stringify(messages), `line-delivery:vendor-1:${deliveryId}`),
       account,
-      identity: { vendorId: "vendor-1", revokedAt: null, lineUserIdEncrypted: protectLineProfileValue("vendor-1", "userId", "U123") },
+      identity: { vendorId: "vendor-1",lineOfficialAccountId:"account-1",subjectType:"promoter",subjectId:"affiliate-1", revokedAt: null, lineUserIdEncrypted: protectLineProfileValue("vendor-1", "userId", "U123") },
     };
     const db = {
+      lineOfficialAccount:{findFirst:vi.fn().mockResolvedValue({id:"account-1",status:"active"})},
       lineDelivery: {
         findMany: vi.fn().mockResolvedValue([due]),
         findFirst: vi.fn().mockResolvedValue(due),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
+    Object.assign(db, {$transaction:async(callback:(tx:typeof db)=>unknown)=>callback(db)});
     const client = new MockLineMessagingClient();
     const results = await processDueLineDeliveries(db as never, () => client, new Date("2026-09-05T00:00:00Z"));
     expect(results).toEqual([{ id: deliveryId, status: "sent" }]);
@@ -117,19 +119,20 @@ describe("LINE notification outbox", () => {
   it("suppresses an already queued delivery when the account is disabled before send", async () => {
     const due = {
       id: "123e4567-e89b-42d3-a456-426614174001",
-      vendorId: "vendor-1",
+      vendorId: "vendor-1", lineOfficialAccountId:"account-1",
       status: "queued",
       attemptCount: 0,
       maxAttempts: 5,
       payloadEncrypted: "unused",
       account: { vendorId: "vendor-1", status: "disabled" },
-      identity: { vendorId: "vendor-1", revokedAt: null, lineUserIdEncrypted: "unused" },
+      identity: { vendorId: "vendor-1",lineOfficialAccountId:"account-1",subjectType:"promoter",subjectId:"affiliate-1", revokedAt: null, lineUserIdEncrypted: "unused" },
     };
-    const db = { lineDelivery: {
+    const db = { lineOfficialAccount:{findFirst:vi.fn().mockResolvedValue({id:"account-1",status:"active"})},lineDelivery: {
       findMany: vi.fn().mockResolvedValue([due]),
       findFirst: vi.fn().mockResolvedValue(due),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     } };
+    Object.assign(db, {$transaction:async(callback:(tx:typeof db)=>unknown)=>callback(db)});
     const client = new MockLineMessagingClient();
     await expect(processDueLineDeliveries(db as never, () => client, new Date("2026-09-05T00:00:00Z")))
       .resolves.toEqual([{ id: "123e4567-e89b-42d3-a456-426614174001", status: "suppressed" }]);
@@ -142,9 +145,10 @@ describe("LINE notification outbox", () => {
 
   it("treats a concurrent, tenant-scoped claim as unavailable without looking up or sending the delivery", async () => {
     const db = {
+      lineOfficialAccount:{findFirst:vi.fn().mockResolvedValue({id:"account-1",status:"active"})},
       lineDelivery: {
         findMany: vi.fn().mockResolvedValue([{
-          id: "delivery-1", vendorId: "vendor-1", status: "queued", attemptCount: 0,
+          id: "delivery-1", vendorId: "vendor-1", status: "queued", attemptCount: 0, identity:{subjectType:"promoter",subjectId:"affiliate-1"},
         }]),
         findFirst: vi.fn(),
         updateMany: vi.fn()
@@ -153,6 +157,7 @@ describe("LINE notification outbox", () => {
       },
     };
 
+    Object.assign(db, {$transaction:async(callback:(tx:typeof db)=>unknown)=>callback(db)});
     await expect(processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), new Date("2026-09-05T00:00:00Z")))
       .resolves.toEqual([{ id: "delivery-1", status: "claimed_elsewhere" }]);
     expect(db.lineDelivery.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
@@ -168,6 +173,7 @@ describe("LINE notification outbox", () => {
 
   it("limits lease recovery and due selection to an explicit vendor and delivery IDs", async () => {
     const db = {
+      lineOfficialAccount:{findFirst:vi.fn().mockResolvedValue({id:"account-1",status:"active"})},
       lineDelivery: {
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -189,7 +195,7 @@ describe("LINE notification outbox", () => {
   });
 
   it("rejects a delivery-ID-only scope because it cannot establish tenant ownership", async () => {
-    const db = { lineDelivery: { findMany: vi.fn(), updateMany: vi.fn() } };
+    const db = { lineOfficialAccount:{findFirst:vi.fn().mockResolvedValue({id:"account-1",status:"active"})},lineDelivery: { findMany: vi.fn(), updateMany: vi.fn() } };
     await expect(processDueLineDeliveries(db as never, () => new MockLineMessagingClient(), new Date(), {
       deliveryIds: ["delivery-1"],
     })).rejects.toThrow("LINE delivery ID scopes require a vendor ID.");
@@ -200,7 +206,7 @@ describe("LINE notification outbox", () => {
   it("records a retry-key conflict as sent because LINE already accepted the request", async () => {
     const due = {
       id: "123e4567-e89b-42d3-a456-426614174009",
-      vendorId: "vendor-1",
+      vendorId: "vendor-1", lineOfficialAccountId:"account-1",
       status: "failed",
       attemptCount: 1,
       maxAttempts: 5,
@@ -216,14 +222,15 @@ describe("LINE notification outbox", () => {
           loginChannelSecret: null,
         }),
       },
-      identity: { vendorId: "vendor-1", revokedAt: null, lineUserIdEncrypted: protectLineProfileValue("vendor-1", "userId", "U123") },
+      identity: { vendorId: "vendor-1",lineOfficialAccountId:"account-1",subjectType:"promoter",subjectId:"affiliate-1", revokedAt: null, lineUserIdEncrypted: protectLineProfileValue("vendor-1", "userId", "U123") },
     };
     const updates = vi.fn().mockResolvedValue({ count: 1 });
-    const db = { lineDelivery: {
+    const db = { lineOfficialAccount:{findFirst:vi.fn().mockResolvedValue({id:"account-1",status:"active"})},lineDelivery: {
       findMany: vi.fn().mockResolvedValue([due]),
       findFirst: vi.fn().mockResolvedValue(due),
       updateMany: updates,
     } };
+    Object.assign(db, {$transaction:async(callback:(tx:typeof db)=>unknown)=>callback(db)});
     const client = new MockLineMessagingClient(new LineMessagingError("already accepted", 409));
 
     await expect(processDueLineDeliveries(db as never, () => client, new Date("2026-09-05T00:00:00Z")))

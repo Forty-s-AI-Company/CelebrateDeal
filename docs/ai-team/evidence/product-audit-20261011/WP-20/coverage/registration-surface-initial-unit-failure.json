@@ -1,0 +1,10 @@
+{
+  "status": "FAIL",
+  "testsPassed": 29,
+  "testsFailed": 1,
+  "terminalChunk": "dc641c",
+  "rootCause": "Legacy webinar retry test fixture supplies form-only resource; new metric surface helper dereferenced missing live. Fix helper to conservatively skip incomplete resource, preserve existing fixture/assertions.",
+  "sourceHashes": {
+    "src/lib/live-metric-registration-surface.ts": "42a315b3ff805818ef579c9b8bc5cd7907136fa7bc276cf6fbf4b60073db66ba"
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "reviewed": true,
+  "accepted": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "attempts": [
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "plan_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration"
+      ],
+      "important_findings": true,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 30,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "plan_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "QUOTA_EXHAUSTED",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "I reviewed WP-09 using only the evidence text supplied for revision sha256:efda4ef6…3027. The five scoped files' contents were not provided, so I could not check the code itself or confirm any hash. On scope, WP-09 can be marked complete without overstating WP-17. It depends on the pinned local WP-17 revision (sha256:9562f738…f8dd7), which covers one-entry creation, generated pages, public registration, Email verification and synthetic playback. WP-17 scheduler and external reminder delivery remain open, and WP-09 does not close them. I found no blocking problems with that scope boundary. Two issues remain. (1) MAJOR: the browser, axe, migration and cleanup evidence is not tied to this revision or to the scoped file hashes; only the unit, lint and TypeScript checks are stated to have run 'at this revision'. (2) MINOR: the no-false-promises copy check may be narrower than what users actually see, because it checks template data while copy can also come from the webinar component and the post-registration pages. Neither issue suggests WP-09 overstates whole WP-17. An empty or short findings list does not certify that tests passed or that the work is ready to release.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "tests/e2e/wp09-sales-templates.spec.ts",
+        "area": "Acceptance evidence: browser publish/lead submission, 12 axe scans, 131 migrations and cleanup",
+        "issue": "The browser, axe, migration and cleanup evidence is not tied to the reviewed revision or to the scoped file hashes. Only the unit, scoped lint and full TypeScript checks are stated to pass 'at this revision'.",
+        "evidence": "The supplied evidence says six templates were applied, published and submitted, and that 12 desktop/mobile axe scans passed, but gives no revision or file hash for those runs. In contrast, 'Current unit, scoped lint and full TypeScript checks pass at this revision' is explicitly tied to the revision. The current test file was also changed (it adds the persistent negative-copy guard), so some files did change after the original template work. A browser run done before that change cannot be assumed to match revision efda4ef6…3027.",
+        "impact": "WP-09's acceptance could rest on browser and accessibility runs from an earlier state of funnel-template-gallery.ts, funnel-webinar-experience.tsx or the e2e spec. That breaks the requirement that evidence be tied to a revision, and it means a later change to the WP-17 pin could not be reliably checked against the evidence.",
+        "recommended_fix": "Record the run's revision (efda4ef6…3027) and the SHA-256 of all five scoped files, plus the WP-17 pin 9562f738…f8dd7, in the browser/axe/migration evidence. If the run was not done at this revision, rerun wp09-sales-templates.spec.ts with the 12 axe scans and the migration/cleanup step at this revision.",
+        "required_test": "Rerun or re-attest tests/e2e/wp09-sales-templates.spec.ts (6 templates × desktop/mobile axe, publish and synthetic lead submission, 131 migrations and cleanup) against disposable PostgreSQL. The output must record the source revision, the scoped file hashes and the WP-17 READY snapshot hash.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/funnel-template-gallery.test.ts",
+        "area": "Negative-copy guard for the three new webinar registration templates",
+        "issue": "The guard is described as checking only template content. Copy shown by funnel-webinar-experience.tsx (for example confirmation or post-registration states) and localized synonyms for the forbidden promises may not be covered.",
+        "evidence": "The evidence says the guard checks that the three templates have no generic form, have exactly one native #webinar-registration action, and contain no LINE, SMS, settlement, automatic-send/reminder or guaranteed-receipt promises. Nothing says the same check covers copy from the scoped webinar component or the e2e-rendered public page, or which terms and languages the match uses.",
+        "impact": "Copy shown after registration, or wording in another language or phrasing, could still promise reminders or delivery. That would suggest WP-17 scheduler or external delivery is available when it is still open, without failing the guard.",
+        "recommended_fix": "Apply the same forbidden-promise check to the copy funnel-webinar-experience.tsx actually renders for the three templates (registration and success states). Make sure the term list includes the product's display-language equivalents (e.g., SMS, reminder, automatic sending, payment/checkout, guaranteed delivery wording). Do not widen the check to other templates or build a shared framework.",
+        "required_test": "In funnel-webinar-experience.test.tsx, render the three new webinar templates through registration success and check that the rendered text contains none of the forbidden-promise terms, including localized equivalents. Optionally run the same check on the published public page in wp09-sales-templates.spec.ts.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "QUOTA_EXHAUSTED",
+  "finalModel": "claude-opus-5-5"
+}

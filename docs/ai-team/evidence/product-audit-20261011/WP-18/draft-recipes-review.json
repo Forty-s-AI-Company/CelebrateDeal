@@ -1,0 +1,181 @@
+{
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_process_status": "SUCCESS",
+  "completed": false,
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 13412,
+      "expected_duration": 0,
+      "code_surface_area": 6,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "review": {
+    "summary": "The draft gating works for the two pending triggers. Recipes and crafted custom rules that use viewer_completed or checkout_incomplete are created inactive. The server blocks turning them on, while still allowing existing active ones to be turned off. Dispatch and dry-run stop early with trigger_not_ready, and the UI hides the pending triggers from the custom select. The diff does not change the owner, tenant or CSRF checks: lookups stay scoped by vendorId under requireVendorOwner and assertServerActionSecurity. The old recipes still create active rules.\n\nThere is one real gap. The gate checks the trigger, not the email template or condition. The new checkout_followup and completed_followup templates are accepted on any trigger that is already live, and those rules are created active. That allows the unchecked sends this increment is meant to prevent. For example, a \"your checkout is incomplete\" email could go to a customer who just paid. Separately, the two new conditions are accepted on live triggers but can never match there, so they create active rules that look valid and never fire. These findings are based on the supplied hunks only. They don't certify that tests or a release pass.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/automation-workflow.ts",
+        "area": "AutomationActionSchema send_email_notification template enum (~L80); createAutomationRuleAction isActive (automation-actions.ts ~L128); dispatchAutomationEvent gate (~L417)",
+        "issue": "The draft-only templates checkout_followup and completed_followup are only kept unsendable by the trigger check. The template enum accepts them on any trigger, so a custom rule on a live trigger (e.g. payment_paid, form_registered, consultation_booked) with condition 'always' and template checkout_followup passes the schema. It is created with isActive=automationTriggerReady(trigger)=true, and dispatch only checks the trigger, so the email is sent.",
+        "evidence": "The template z.enum now includes no_show_followup, completed_followup and checkout_followup with no link to any trigger. createAutomationRuleAction sets isActive from the trigger alone. dispatchAutomationEvent only returns early when !automationTriggerReady(event.trigger). EMAIL_COPY.checkout_followup tells the customer they have an unpaid order.",
+        "impact": "The send-time paid/cancelled checks for checkout follow-ups are explicitly not built yet. Even so, a checkout_followup email ('您的結帳尚未完成') can be sent, for example to a customer who just paid on payment_paid, or a completed_followup email to people who never attended. This breaks the increment's goal of no unintended sends and reaches customers. A crafted request is enough, whether or not the UI template select lists the new templates.",
+        "recommended_fix": "Link the draft templates to their triggers. Option 1: in the schema or in createAutomationRuleAction, reject (or force inactive) any rule that uses checkout_followup or completed_followup unless the trigger is the matching draft trigger. Option 2: add an automationTemplateReady() check at dispatch and toggle-activation time that rejects these templates until their send-time checks are accepted. Use no new framework; a small check next to automationTriggerReady is enough.",
+        "required_test": "A crafted createAutomationRuleAction call with trigger=payment_paid, condition always, and action send_email_notification with template checkout_followup (and completed_followup) is rejected or saved inactive and cannot be toggled on. Dispatching payment_paid against such a rule written directly to the DB sends nothing.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/automation-workflow.ts",
+        "area": "AutomationConditionSchema new members (~L44) and automationConditionMatches (~L237-244)",
+        "issue": "completed_and_not_ordered and order_pending_payment are accepted with any trigger, but they only ever match viewer_completed and checkout_incomplete. A custom rule that pairs either condition with a live trigger is created active, passes validation, and can never fire.",
+        "evidence": "The schema members have no trigger coupling. The matcher requires event.trigger === 'viewer_completed' / 'checkout_incomplete'. createAutomationRuleAction sets isActive from the trigger only.",
+        "impact": "Owners can save active rules that look valid but silently never run, and the rule list labels them '已完成觀看且尚未下單' / '訂單仍待付款'. This is confusing but does not send anything.",
+        "recommended_fix": "In the rule-create validation, require completed_and_not_ordered to pair with viewer_completed and order_pending_payment to pair with checkout_incomplete, and return an invalid_rule error otherwise.",
+        "required_test": "createAutomationRuleAction with trigger payment_paid and condition order_pending_payment (and form_no_show with completed_and_not_ordered) returns invalid_rule and creates no row.",
+        "confidence": 0.7
+      }
+    ]
+  }
+}

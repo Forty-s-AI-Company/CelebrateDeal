@@ -1,0 +1,12 @@
+[
+  "src/components/public-policy.tsx",
+  "src/components/public-policy.test.tsx",
+  "src/lib/public-policy-content.ts",
+  "src/app/policies/page.tsx",
+  "src/app/policies/page.test.tsx",
+  "src/app/policies/[slug]/page.tsx",
+  "src/app/policies/[slug]/page.test.tsx",
+  "src/app/support/page.tsx",
+  "src/app/support/page.test.tsx",
+  "tests/e2e/wp03-public-presentation.spec.ts"
+]

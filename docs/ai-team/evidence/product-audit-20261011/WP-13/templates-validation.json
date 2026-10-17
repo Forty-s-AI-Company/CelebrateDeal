@@ -1,0 +1,62 @@
+{
+  "at": "2026-10-16T02:04:29.729038+00:00",
+  "subtask_status": "READY",
+  "whole_wp13_status": "IN_PROGRESS",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "implementation_observed_model": "unknown",
+  "implementation_observed_effort": "unknown",
+  "source_revision": "sha256:25db39dca621e11af50febb6d0fd6a4b2f53142027333270344cee1ef58deea0",
+  "changed_files": [
+    "src/components/message-template-form-client.tsx",
+    "src/components/message-template-form.test.tsx",
+    "src/lib/message-template.ts",
+    "src/lib/line-notification.ts",
+    "src/lib/line-notification-materializer.ts",
+    "src/lib/line-notification-materializer.test.ts",
+    "src/lib/line-live-started.ts",
+    "src/lib/line-live-started.test.ts",
+    "src/lib/line-webinar-template.ts",
+    "src/lib/line-webinar-template.test.ts"
+  ],
+  "source_hashes": {
+    "src/components/message-template-form-client.tsx": "e76d43ad74825de23a18ad015ada45af8de17a99079f075ca838dbeb63bf8ef4",
+    "src/components/message-template-form.test.tsx": "14e0a5b9f1ec1cf14f9ca425df63100ea2398b9228c3fdf2c5dd6fc22a55df5b",
+    "src/lib/message-template.ts": "259f55586012e3d01852fbcf254b04a76955fa8af6d7c815e375d6c932e45aeb",
+    "src/lib/line-notification.ts": "57070a8be35115510cdd072dd2572a7f094b692d70c002437ea19014ea2f8e2b",
+    "src/lib/line-notification-materializer.ts": "f12d53a89fb97e3f940a1aea3a74bfbf8b32de0ab8d8a5e3321e27a1892832d6",
+    "src/lib/line-notification-materializer.test.ts": "5abde279e6085bb4d66463fb3b34f7344f7a034c4c7ea83a606654a31ffebebe",
+    "src/lib/line-live-started.ts": "423cdb17a4bcd0d4fce4ab09ef29b47732f4789eb52aad49bf63b1af7befc2c7",
+    "src/lib/line-live-started.test.ts": "2b51fa270feaab7bc7686e0c9d6b9c1a67aa6b84098b34c8238ebb83c87a3f20",
+    "src/lib/line-webinar-template.ts": "a51290f81c73b6dccb4ba143df50b6da84b7a39a94e105cc076e8adc7f72e721",
+    "src/lib/line-webinar-template.test.ts": "3ebdc62d2d9cdb9345296e01cdd7e4f5cfe6ccb9ddbb74d49ffb90ce78676c65"
+  },
+  "unit_tests": 96,
+  "unit_files": 8,
+  "actual_disposable_pg_checks": 13,
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "review_observed_models": [
+    "claude-opus-5-5",
+    "claude-opus-5-5",
+    "claude-opus-5-5"
+  ],
+  "review_observed_effort": "unknown",
+  "review_latest_blocker_major": 0,
+  "review_latest_minor": 1,
+  "review_scope": "Initial transport candidate severity schema invalid; canonical full6 review then finalaffected3 review plus unchanged3proof. Each actual model verified from CLI terminal, no aliases assumed.",
+  "retained_limitations": [
+    "URL plus CJK trailing text without whitespace can prevent packing; latestMINOR retained",
+    "First observation of an unprocessed binding may confirm when linked after saved template; no verified historical Production cutover",
+    "Changing confirmation template skips pre-save bindings; UI explicitly discloses this conservative behavior",
+    "Actual public Next/browser login/form flow and Sandbox LINE delivery not performed in this subtask",
+    "WP04 scheduler, provider configuration/recipient and redelivery confirmation still deferred"
+  ],
+  "next_action": "WP13 Rich Menu synchronization local source/acceptance gap; retain original Sandbox end-to-end delivery requirements.",
+  "safety": "Independent worktree only; owned loopback disposable database and offline MockLineMessagingClient; no schema/router/shared runner/product-payment changes; no push/deploy or original dirty tree operations."
+}

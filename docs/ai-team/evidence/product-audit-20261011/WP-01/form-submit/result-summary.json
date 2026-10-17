@@ -1,0 +1,14 @@
+{
+  "status": "VALIDATION_COMPLETED",
+  "whole_wp_acceptance": "NOT_RUN",
+  "revision": "sha256:b6133a5651789c22c497e8a860d5786d1428e0ebe65700cbf0e5cff4d3d20a84",
+  "browser_checks": [
+    "Chromium PASS",
+    "Firefox PASS"
+  ],
+  "prior_failures_preserved": true,
+  "firefox_navigation_flake_root_cause": "unknown",
+  "product_changes_this_turn": [],
+  "external_delivery": "NOT_RUN",
+  "fixtures_restored": true
+}

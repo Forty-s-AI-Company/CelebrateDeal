@@ -1,0 +1,53 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ findUnique: vi.fn(), updateMany: vi.fn(), limited: vi.fn() }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ automationVoucherGrant: { findUnique: mocks.findUnique, updateMany: mocks.updateMany } }) }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limited }));
+vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
+import { GET, POST } from "./route";
+import { hashInteractionBearer } from "@/lib/live-interaction";
+const capability = "A".repeat(43), entry = "https://app.example.test/api/automation/vouchers/redeem";
+const fixture = () => ({ id: "grant-1", vendorId: "vendor-1", productId: "product-1", usedOrderId: null, expiresAt: new Date(Date.now() + 60_000), vendor: { name: "合成商家" } });
+async function preview() {
+  const response = await GET(new Request(`${entry}?token=${capability}`)); const html = await response.text();
+  const fields = new URLSearchParams(); for (const key of ["capability", "confirmation", "issued"]) fields.set(key, html.match(new RegExp(`name="${key}" value="([^"]*)"`))![1]);
+  return { fields, cookie: response.headers.get("set-cookie")!.split(";")[0] };
+}
+function confirm(p: Awaited<ReturnType<typeof preview>>, origin = "https://app.example.test", url = entry) { return new Request(url, { method: "POST", headers: { origin, cookie: p.cookie }, body: p.fields }); }
+afterEach(() => vi.unstubAllEnvs());
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", "synthetic-voucher-retry-key-only-20261012"); vi.clearAllMocks(); mocks.limited.mockResolvedValue(null); mocks.findUnique.mockResolvedValue(fixture()); mocks.updateMany.mockResolvedValue({ count: 1 }); });
+describe("voucher preview and explicit exchange", () => {
+  it.each(["https://app.example.test", "http://localhost:31047"])("GET from %s does not rotate or create a checkout cookie", async (origin) => {
+    const response = await GET(new Request(`${origin}/api/automation/vouchers/redeem?token=${capability}`));
+    expect(response.status).toBe(200); expect(await response.text()).toContain("確認並前往結帳"); expect(mocks.updateMany).not.toHaveBeenCalled();
+    expect(response.headers.get("set-cookie")).not.toContain("celebratedeal_automation_voucher=");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+  it("rotates only on confirmed POST and retains the canonical checkout cookie contract", async () => {
+    const p = await preview(); const response = await POST(confirm(p, undefined, "http://localhost:31047/api/automation/vouchers/redeem"));
+    expect(response.status).toBe(303); expect(response.headers.get("location")).toBe("https://app.example.test/checkout/vendor-1/product-1");
+    const issued = response.cookies.get("celebratedeal_automation_voucher")!;
+    expect(issued.value).not.toBe(capability); expect(issued.httpOnly).toBe(true); expect(issued.secure).toBe(true); expect(issued.path).toBe("/");
+    expect(mocks.updateMany).toHaveBeenCalledWith({ where: { id: "grant-1", vendorId: "vendor-1", productId: "product-1", claimTokenHash: hashInteractionBearer(capability), usedOrderId: null, expiresAt: { gt: expect.any(Date) } }, data: { claimTokenHash: hashInteractionBearer(issued.value) } });
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+  it("rejects cross-origin, missing-cookie and replaced capabilities without a write", async () => {
+    const p = await preview(); expect((await POST(confirm(p, "https://evil.example"))).status).toBe(403);
+    expect((await POST(confirm({ ...p, cookie: "" }))).status).toBe(403);
+    p.fields.set("capability", "B".repeat(43)); expect((await POST(confirm(p))).status).toBe(403); expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+  it("does not issue a checkout cookie when a concurrent exchange already won", async () => {
+    const p = await preview(); mocks.updateMany.mockResolvedValue({ count: 0 }); mocks.findUnique.mockResolvedValueOnce(fixture()).mockResolvedValue(null); const response = await POST(confirm(p));
+    expect(response.status).toBe(410); expect(response.cookies.get("celebratedeal_automation_voucher")).toBeUndefined();
+  });
+  it.each(["missing", "used", "expired"])("refuses %s grants on preview and confirmation", async (kind) => {
+    const p = await preview(); mocks.findUnique.mockResolvedValue(kind === "missing" ? null : { ...fixture(), ...(kind === "used" ? { usedOrderId: "order-1" } : { expiresAt: new Date(0) }) });
+    expect((await GET(new Request(`${entry}?token=${capability}`))).status).toBe(410);
+    expect((await POST(confirm(p))).status).toBe(410); expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+  it("rejects malformed links and rate-limited requests before database work", async () => {
+    expect((await GET(new Request(`${entry}?token=short`))).status).toBe(400); expect(mocks.findUnique).not.toHaveBeenCalled();
+    mocks.limited.mockResolvedValue(new Response(null, { status: 429 }));
+    expect((await GET(new Request(`${entry}?token=${capability}`))).status).toBe(429);
+    expect((await POST(new Request(entry, { method: "POST" }))).status).toBe(429); expect(mocks.findUnique).not.toHaveBeenCalled();
+  });
+});

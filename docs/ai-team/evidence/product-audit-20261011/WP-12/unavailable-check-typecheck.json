@@ -1,0 +1,13 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+  "name": "typecheck",
+  "status": "PASS",
+  "exit_code": 0,
+  "details": {
+    "session": 59717,
+    "exit": 0,
+    "chunk": "9e299e"
+  }
+}

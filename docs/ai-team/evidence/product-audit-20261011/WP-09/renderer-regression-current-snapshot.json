@@ -1,0 +1,19 @@
+{
+  "files": [
+    "src/lib/funnel-template-gallery.ts",
+    "src/lib/funnel-template-gallery.test.ts",
+    "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx"
+  ],
+  "sourceHashes": {
+    "src/lib/funnel-template-gallery.ts": "9089d29903badf9e62186e980b0d1c3ec636cead2ffb63ca7c0f66dc0bd3e2fa",
+    "src/lib/funnel-template-gallery.test.ts": "8cf6b05ce2d319e384559a2f83aca109e186e2a9c223dda66c531587bb204547",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "1ec73a1fab9f2d7e65edbbb6c5315c71b6f853cc7489a65f77245d7dd5f9b077",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx": "3a08bb2074cfa1633031c094ef274dc3032b07be046c5721066d1ccedeec0501"
+  },
+  "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+  "review_coverage": {
+    "gallery": "final-review-source.json and final-review.json",
+    "renderer": "../WP-14/calendar-review-source.json and calendar-review.json"
+  }
+}

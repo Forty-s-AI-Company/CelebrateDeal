@@ -7,6 +7,6 @@ describe("dashboard KPI loading", () => {
     const html = renderToStaticMarkup(<DashboardKpisLoading />);
     expect(html).toContain('data-dashboard-scope="kpis-shell"');
     expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("正在載入 Dashboard KPI");
+    expect(html).toContain("正在載入營運總覽關鍵指標");
   });
 });

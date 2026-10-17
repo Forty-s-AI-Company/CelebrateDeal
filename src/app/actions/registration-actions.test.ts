@@ -5,7 +5,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: as
 vi.mock("@/lib/auth", () => ({ AUTH_COOKIE: "auth", LEGACY_VENDOR_COOKIE: "legacy", createUserSession: mocks.session, sessionCookieOptions: () => ({ httpOnly: true }) }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "http://127.0.0.1:31027" }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.limit }));
 vi.mock("@/lib/password", () => ({ hashPasswordAsync: mocks.hash }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction }) }));
 import { registerAction } from "./registration-actions";
@@ -20,7 +20,7 @@ describe("workspace registration boundaries", () => {
   expect(mocks.hash).toHaveBeenCalledWith("synthetic password");
   expect(mocks.user).toHaveBeenCalledWith({data:{name:"Owner",email:"owner@example.test",passwordHash:"synthetic-hash"}});
   expect(mocks.member).toHaveBeenCalledWith({data:{vendorId:"vendor-1",userId:"user-1",role:"owner",status:"active"}});
-  expect(mocks.preference).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce();
+  expect(mocks.preference).toHaveBeenCalledWith({data:expect.objectContaining({taskPanelCollapsed:true})}); expect(mocks.preference).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce();
   expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]);
   expect(mocks.set).toHaveBeenCalledWith("auth","synthetic-session",{httpOnly:true});
  });

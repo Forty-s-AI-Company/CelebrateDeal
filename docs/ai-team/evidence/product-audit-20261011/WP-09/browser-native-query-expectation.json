@@ -1,0 +1,31 @@
+{
+  "status": "FAIL",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic demo checkout. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "six sales/course templates apply through owner UI, publish and collect synthetic leads; desktop/mobile axe",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(page).toHaveURL(expected) failed\n\nExpected pattern: /submitted=verification_required/u\nTimeout: 30000ms\n\nCall log:\n  - Expect \"toHaveURL\" with timeout 30000ms\n"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "stats": {
+    "startTime": "2026-10-15T23:58:47.753Z",
+    "duration": 43024.122,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 131
+}

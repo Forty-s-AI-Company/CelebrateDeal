@@ -1,0 +1,239 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "deep_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "deep_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "completed": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "review": {
+    "summary": "Read-only UI review of the supplied WP05 diff and excerpts only. This is not a full source, security or release review, and the security helper is out of scope. No blocking defects are evident in the shown code. The biggest risk is the app-wide loading change: renaming the root loading.tsx removes pending UI and loading-boundary prefetch for every public route that has no loading file of its own. The 24 browser cases don't cover those other routes, and a narrower route-group approach was not ruled out. Smaller issues: stale or shareable URL query state can show a false success (with the form disabled) or a false error. Hidden metadata fields may now reach JS answer payloads in the funnel renderer. One-time server-rendered errors are probably not announced by screen readers, which humanAT (NOT_RUN) would need to confirm. The retry formId may be picked wrongly on webinar branches. Path encoding of sourcePath is inconsistent. The renamed loading components are now unused, but their test still passes. Several conclusions depend on code not shown, such as the API redirect logic, the funnel submit handler and the lead-form feedback markup; their confidence values reflect that.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/app/loading.tsx -> src/app/root-loading.tsx (and src/app/p/[slug]/loading.tsx -> loading-shell.tsx)",
+        "area": "Route-level loading boundary removal (app-wide)",
+        "issue": "The fix for no-JS form errors removes the root Suspense/loading boundary for every public route without its own loading.tsx, not just the three registration routes.",
+        "evidence": "The plan says other public routes now wait for full HTML with no inherited skeleton. Only app/ and checkout keep their own loading. Browser evidence covers only form/partner/generic funnel/webinar routes. No regression cases cover other public routes.",
+        "impact": "With JS, client-side navigation to these routes shows no pending UI, so slow DB-backed pages look frozen after a click. Next.js prefetch of dynamic routes stops at the first loading boundary, so without it Link prefetch gives no instant shell and every navigation waits a full server round trip. The perceived performance and UX regression goes beyond the authorized WP05 scope. It is also true that removing streaming fixes hidden content for no-JS users on all routes, so this is a real tradeoff that hasn't been measured.",
+        "recommended_fix": "Narrow the change: move /form, /lp and /p (the registration-bearing routes) into a route group with no loading.tsx, and keep the original loading.tsx for the other public routes in a sibling group. Alternatively, record an explicit product decision accepting the app-wide change, backed by regression evidence. Treat any wider no-JS streaming fix as a separate scope proposal.",
+        "required_test": "Navigation regression on a sample of non-registration public routes (Chromium/Firefox, JS) with slow-network or slow-DB throttling: check that pending feedback appears or the decision is recorded. Repeat the no-JS 400-refill cases on the narrowed route group.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/loading.test.tsx / src/app/root-loading.tsx / src/app/p/[slug]/loading-shell.tsx",
+        "area": "Renamed special files",
+        "issue": "After the rename, root-loading.tsx and loading-shell.tsx are ordinary components that nothing imports as route boundaries. loading.test.tsx still passes against them.",
+        "evidence": "The test only had its import updated and keeps its original assertions. Next.js only treats files named loading.tsx as route boundaries.",
+        "impact": "A green test now gives false assurance that a loading UI exists. The files are dead code unless something else renders them.",
+        "recommended_fix": "Either wire the components into the narrowed route-group loading.tsx (see the previous finding) or delete them and change the test to assert that no root loading boundary exists, as intended.",
+        "required_test": "A test or build check that asserts whether the route tree has a loading boundary for the intended segments.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/registration-retry-boundary.tsx; src/app/lp/[slug]/page.tsx; src/app/lp/[slug]/[stepPath]/page.tsx; src/app/p/[slug]/page.tsx",
+        "area": "submitted / registrationRetry query driving initial UI state",
+        "issue": "The URL alone drives the success state (submitted=verification_required) and the error state (registrationRetry=...). The state persists on reload and Back, and anyone can share it.",
+        "evidence": "In lead-form and the funnel renderer, the initial state is `retry?.submitted ? \"success\"` and the funnel inputs are `disabled={... status === \"success\"}`. `failed` is true for any whitelisted retry value, even when no draft exists, and then shows a 'not retained' error.",
+        "impact": "A registrant who copies the landing-page URL after a native success shares a link that shows a false success with the form disabled, which can cost funnel registrations. A refresh after a JS success, or opening a link with ?registrationRetry=400, shows a stale error.",
+        "recommended_fix": "Base success and error on a one-time server flash (the existing retry cookie or a submission cookie) rather than the query string alone. With JS, remove the query via history.replaceState after the first render. Don't disable inputs on a success state that came only from the query.",
+        "required_test": "Open /lp/{slug}?submitted=verification_required in a fresh session: the form must be usable. Reload after JS success and after a draft is cleared: no stale error or success.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "~L326-333 new hidden inputs vs JS submit handler",
+        "issue": "The form now contains hidden formId, landingPageId, funnelStepId, liveId, redirectTo and __registrationReturnPath fields. Unlike lead-form, the diff shows no matching change that filters these out of the JS answer payload.",
+        "evidence": "lead-form explicitly adds \"__registrationReturnPath\" to its FormData exclusion list. The funnel renderer's submit() (outside the shown hunk) is unchanged. If it builds answers from FormData, these keys are included.",
+        "impact": "The JS path may store routing metadata as answers, or be rejected by strict validation. The '1row' browser check would not catch extra answer keys.",
+        "recommended_fix": "Confirm how submit() builds the payload. If it uses FormData, exclude the hidden metadata keys, as lead-form does.",
+        "required_test": "JS submission on a generic funnel root and step: check that the persisted answers contain only the configured field keys.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/lead-form.tsx; src/components/landing-pages/funnel-page-document-renderer.tsx; src/components/landing-pages/funnel-webinar-experience.tsx",
+        "area": "Error feedback rendered on initial load after 303",
+        "issue": "After a native 303 the error appears in the initial HTML. aria-live and role=alert regions present at load are generally not announced, no focus is moved, and fields aren't linked with aria-invalid/aria-describedby. Also, only the webinar consumer visibly uses the shared RegistrationSubmissionFeedback; the shown diff doesn't confirm that lead-form and the funnel renderer use the same live-region markup.",
+        "evidence": "Webinar uses `<RegistrationSubmissionFeedback pending={false} errorMessage={retry?.message ?? \"\"} />`. The other two consumers only seed state, and their rendering of the message isn't in the diff. axe passed, but humanAT is NOT_RUN.",
+        "impact": "No-JS screen-reader users may not learn that the submission failed, which partly defeats the 'visible error' requirement for assistive tech. Announcements may also differ across the three consumers.",
+        "recommended_fix": "Use the same feedback component in all three consumers. For server-rendered errors, also add an error summary near the top or before the submit button, set aria-invalid/aria-describedby on the affected fields, and (with JS) move focus to the error on mount when retry.failed.",
+        "required_test": "Screen-reader check (NVDA+Firefox, VoiceOver+Safari) after a native 400 on each consumer. A DOM assertion that all three render the identical live-region markup.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/lp/[slug]/page.tsx; src/app/lp/[slug]/[stepPath]/page.tsx",
+        "area": "formId selection for registrationRetryBoundary",
+        "issue": "A single formId (`page.submissionForm?.id ?? page.webinar?.form.id`) is chosen for every branch. The webinar branch, however, renders resource.form.id.",
+        "evidence": "useRegistrationRetry returns null when state.formId !== formId, so the webinar form then omits __registrationReturnPath.",
+        "impact": "If a webinar-goal page also has a submissionForm with a different id, native errors fall back to the generic /registration-error page and the fields are lost.",
+        "recommended_fix": "Compute formId per branch: page.webinar.form.id for the webinar goal, page.submissionForm.id otherwise.",
+        "required_test": "A webinar-goal fixture that also has a submissionForm: native 400 must return to the source step with fields refilled.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/lp/[slug]/[stepPath]/page.tsx; src/app/lp/[slug]/page.tsx",
+        "area": "sourcePath construction",
+        "issue": "sourcePath is built from unencoded values that don't match each other: the raw params slug/stepPath in the step page versus page.slug at the root. redirectTo, by contrast, uses encodeURIComponent(page.slug).",
+        "evidence": "Step page: `sourcePath: `/lp/${slug}/${stepPath}``. Root page: `/lp/${page.slug}`. redirectTo: `/lp/${encodeURIComponent(page.slug)}/...`.",
+        "impact": "For non-ASCII or case-normalized slugs or step paths, the hidden return path or draft key may not match the path the server validates, which sends users to the generic error page or loses the refill.",
+        "recommended_fix": "Build sourcePath from the canonical page.slug and the canonical step path, encoded the same way as redirectTo.",
+        "required_test": "A native 400 on a funnel with a non-ASCII slug and step path: returns to the same page with the draft refilled.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/lead-form.tsx",
+        "area": "L159 redirectTo hidden input",
+        "issue": "`redirectTo ?? retry?.sourcePath` keeps an empty-string redirectTo while the guard uses `||`. Also, defaulting redirectTo to sourcePath changes the native success destination for forms that had none before.",
+        "evidence": "`{redirectTo || retry?.sourcePath ? <input ... value={redirectTo ?? retry?.sourcePath} /> : null}`",
+        "impact": "Edge case: an empty redirectTo posts an empty value, and native success behavior differs from before for forms without a redirectTo.",
+        "recommended_fix": "Use `redirectTo || retry?.sourcePath`, and confirm the intended success destination.",
+        "required_test": "Native success on /form/{slug} with and without a configured redirectTo.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "claude_cli_discovery_status": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "attempts": [
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  }
+}

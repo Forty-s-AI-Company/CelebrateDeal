@@ -1,0 +1,12 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "files": {
+    "prisma/migrations/20261016030000_live_metric_order_payment_serialization/migration.sql": "2ab70d10756f1a44f41699f9a48be7ce475979a0648b668cf1bce75e309bbf40",
+    "scripts/wp20-order-window-link-race.mjs": "3516cc11057975b2720617ce720814faa5bddd07f4a6df56c7abe136f07b219a"
+  },
+  "lint": "PASS",
+  "integration": "order-payment-serialization-db.json",
+  "review": "PENDING",
+  "originalSerializableGate": "NOT_RERUN_PREVIOUS_FAIL",
+  "oldProofInvalidation": "migration increments sourceRevision; populated upgrade test pending"
+}

@@ -1,0 +1,16 @@
+{
+  "files": {
+    "prisma/migrations/20261015200000_live_metric_registration_projection_revision/migration.sql": "e5edc706c57a4b28fa2d3121222439a604dadb3dd4e76f5720d6863f407c72c2",
+    "src/lib/live-metric-registration-coverage.ts": "f03819b61fde47ef57f94b2ff28f3283a09538b9dd79d8efd85b9e4d39139fec",
+    "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656",
+    "scripts/wp20-registration-matched-audit.mjs": "fc12466da66d0e06bca1c16fe9a5dbdb6271c2a573819231ab872ff50109b187",
+    "scripts/wp20-registration-proof-mutation-probe.mjs": "98919ec6fa68c85442146333b9389d92b6853b65a63bce87367f89c22f31bd51",
+    "scripts/wp20-registration-truncate-probe.mjs": "7525bd547a372a914c45c48f8d0850dcbe9d10a799d69187034b117e31b6592d",
+    "prisma/migrations/20261014120000_live_metric_evidence/migration.sql": "c679cf9282a70cf31dd79d4a006eede7ccae6aec728afcbcc37d4a44e6b0b608"
+  },
+  "dependencyExcerpt": {
+    "file": "prisma/migrations/20261014120000_live_metric_evidence/migration.sql",
+    "start": 269,
+    "end": 350
+  }
+}

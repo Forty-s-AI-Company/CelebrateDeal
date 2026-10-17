@@ -1,0 +1,635 @@
+Bounded WP11 nonpayment API Critical follow-up. Prior observed Opus review found no BLOCKER/MAJOR, one MINOR shared-IP GET capacity. Now32viewer target,1200/min separateGET bucket, actual2s client polling; client honors429/503 Retry-After on both GET and scriptedPOST with abort cleanup. FullWP remains incomplete (8raw action/helpers and existingidentity callers remain), deployment not enabled. Do not certify unavailable wholeWP or commercialUpstash evidence. Review exact final deltas and tests; unchanged trusted limiter previously independentlyaccepted. Snapshot sha256:eed68cf31c4a80f6123aee2ccb30ecf1a383ea811d1160f726c9c4852e60f48b
+
+--- src/app/api/affiliate-attribution/direct-entry/route.ts before
++++ src/app/api/affiliate-attribution/direct-entry/route.ts
+@@ -1,8 +1,8 @@
+ import { NextResponse } from "next/server";
+ import { requireSameOriginRequest } from "@/lib/api-security";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import {
+   ATTRIBUTION_COOKIE,
+   attributionCookieOptions,
+ } from "@/lib/team-funnel-attribution";
+ import { PLATFORM_REFERRAL_COOKIE, platformReferralCookieOptions } from "@/lib/platform-referral";
+
+--- src/app/api/affiliate-clicks/route.ts before
++++ src/app/api/affiliate-clicks/route.ts
+@@ -1,10 +1,10 @@
+ import { NextResponse } from "next/server";
+ import { z } from "zod";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+ import { getDb } from "@/lib/db";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { allowsLegacyAffiliateAttribution, defaultAffiliateCode } from "@/lib/live-quota-policy";
+ import {
+   ATTRIBUTION_COOKIE,
+   VISITOR_COOKIE,
+   attributionCookieOptions,
+
+--- src/app/api/analytics/route.ts before
++++ src/app/api/analytics/route.ts
+@@ -7,11 +7,11 @@
+   hasActiveLiveViewerSession,
+   hashLiveViewerToken,
+   liveViewerTokenFromRequest,
+ } from "@/lib/live-quota-admission";
+ import { captureProductEvent } from "@/lib/product-analytics";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const AnalyticsId = z.string().min(1).max(128);
+ const AnalyticsSlug = z.string().min(1).max(160);
+ const ReferralCode = z.string().min(1).max(80).regex(/^[A-Za-z0-9_-]+$/).nullable().optional();
+ const analyticsBase = {
+
+--- src/app/api/auth/line/callback/route.ts before
++++ src/app/api/auth/line/callback/route.ts
+@@ -1,11 +1,11 @@
+ import { NextResponse } from "next/server";
+ import { AUTH_COOKIE, createUserSession, sessionCookieOptions } from "@/lib/auth";
+ import { getCanonicalAppUrl } from "@/lib/app-url";
+ import { getDb } from "@/lib/db";
+ import { completeLineLogin, LineFetchLoginProvider } from "@/lib/line-login";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ function resultRedirect(path: string, status: "linked" | "authenticated" | "error") {
+   const url = new URL(path, getCanonicalAppUrl());
+   url.searchParams.set("line", status);
+   return NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store" } });
+
+--- src/app/api/auth/line/start/route.ts before
++++ src/app/api/auth/line/start/route.ts
+@@ -9,11 +9,11 @@
+ import {
+   FORM_SUBMISSION_LINE_BINDING_COOKIE,
+   verifyFormSubmissionLineBindingToken,
+ } from "@/lib/form-submission-line-binding-session";
+ import { beginLineLogin, type LineLoginSubjectType } from "@/lib/line-login";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const StartRequest = z.discriminatedUnion("mode", [
+   z.object({ mode: z.literal("user"), redirectPath: z.string().max(1_024).default("/dashboard") }).strict(),
+   z.object({ mode: z.literal("buyer"), grantId: z.string().min(1).max(128), redirectPath: z.string().max(1_024).default("/support/orders") }).strict(),
+   z.object({ mode: z.literal("registration"), redirectPath: z.string().max(1_024).default("/verify-registration") }).strict(),
+
+--- src/app/api/auth/password-reset/confirm/route.ts before
++++ src/app/api/auth/password-reset/confirm/route.ts
+@@ -1,10 +1,10 @@
+ import { NextResponse } from "next/server";
+ import { z } from "zod";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+ import { consumePasswordResetToken } from "@/lib/password-reset";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const PasswordResetConfirm = z.object({
+   token: z.string().min(24),
+   password: z.string().min(12).max(160),
+ });
+
+--- src/app/api/auth/password-reset/request/route.ts before
++++ src/app/api/auth/password-reset/request/route.ts
+@@ -1,11 +1,11 @@
+ import { NextResponse } from "next/server";
+ import { z } from "zod";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+ import { getCanonicalAppUrl } from "@/lib/app-url";
+ import { schedulePasswordResetLink } from "@/lib/password-reset";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const PasswordResetRequest = z.object({
+   email: z.string().email(),
+ });
+ 
+
+--- src/app/api/form-submissions/route.ts before
++++ src/app/api/form-submissions/route.ts
+@@ -5,11 +5,11 @@
+ import { z } from "zod";
+ import type { Prisma } from "@prisma/client";
+ import { readFormDataBody, readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+ import { getDb } from "@/lib/db";
+ import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import {
+   attributionCookieFromRequest,
+   liveShareCodeFromRequest,
+   recordLeadAttribution,
+   referralCodeFromRequest,
+
+--- src/app/api/form-submissions/verify/route.ts before
++++ src/app/api/form-submissions/verify/route.ts
+@@ -12,11 +12,11 @@
+   FORM_SUBMISSION_CHAT_SESSION_COOKIE,
+   formSubmissionChatSessionCookieOptions,
+ } from "@/lib/form-submission-chat-session";
+ import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
+ import { captureOperationalError } from "@/lib/monitoring";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const VerificationForm = z.object({
+   token: z.string().min(1).max(320),
+ }).strict();
+ 
+
+--- src/app/api/live-danmaku/route.ts before
++++ src/app/api/live-danmaku/route.ts
+@@ -1,10 +1,10 @@
+ import { z } from "zod";
+ import { getCurrentAuth } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { hasActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
+ import { CardScopeSchema } from "@/lib/interaction-card-contract";
+ import { CardError } from "@/lib/interaction-card";
+ import { readDanmaku, setDanmaku } from "@/lib/live-danmaku";
+ 
+
+--- src/app/api/live-danmaku/scripted/route.ts before
++++ src/app/api/live-danmaku/scripted/route.ts
+@@ -1,9 +1,9 @@
+ import { getCurrentAuth } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { CardError } from "@/lib/interaction-card";
+ import { ScriptedCommandSchema } from "@/lib/scripted-roles-contract";
+ import { commandWarmup, instructorWarmup } from "@/lib/scripted-roles";
+ 
+ const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
+
+--- src/app/api/live-interactions/route.ts before
++++ src/app/api/live-interactions/route.ts
+@@ -16,11 +16,11 @@
+ import {
+   hasActiveLiveViewerSession,
+   hashLiveViewerToken,
+   liveViewerTokenFromRequest,
+ } from "@/lib/live-quota-admission";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+ import { decryptSensitiveValue } from "@/lib/sensitive-data";
+ import { normalizeLiveQuestionBody, normalizeLiveQuestionDisplayName } from "@/lib/live-question";
+ import { FLASH_SALE_COOKIE, FlashSaleUnavailableError, resolveFlashSaleQuote, resolveFlashSaleTerms } from "@/lib/live-flash-sale";
+ 
+@@ -212,10 +212,14 @@
+     prizeName: metadata.kind === "lucky_draw" ? (metadata.prizeName ?? null) : null,
+   };
+ }
+ 
+ export async function GET(request: Request) {
++  // Polling every 2s: 32 viewers behind one IP use at most 992 requests/min
++  // including their initial reads. Keep headroom and a separate read bucket.
++  const limited = await checkRateLimit(request, "live-interactions-read", 1_200, 60_000);
++  if (limited) return limited;
+   const url = new URL(request.url);
+   const vendorId = url.searchParams.get("vendorId") ?? "";
+   const liveId = url.searchParams.get("liveId") ?? "";
+   if (!Identifier.safeParse(vendorId).success || !Identifier.safeParse(liveId).success) {
+     return NextResponse.json({ error: "Invalid interaction scope" }, { status: 400 });
+
+--- src/app/api/live-interactions/cards/route.ts before
++++ src/app/api/live-interactions/cards/route.ts
+@@ -1,9 +1,9 @@
+ import { getCurrentAuth } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { hasActiveLiveViewerSession, hashLiveViewerToken, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
+ import { CardAnswerSchema, CardCommandSchema, CardScopeSchema } from "@/lib/interaction-card-contract";
+ import { answerCard, CardError, commandCard, instructorCards, viewerCardSnapshot, cardTimelineCapability } from "@/lib/interaction-card";
+ 
+ function json(value: unknown, status = 200) { return Response.json(value, { status, headers: { "Cache-Control": "private, no-store" } }); }
+
+--- src/app/api/live-media/route.ts before
++++ src/app/api/live-media/route.ts
+@@ -1,10 +1,10 @@
+ import { z } from "zod";
+ import { getCurrentAuth } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { hasActiveLiveViewerSession, hashLiveViewerToken, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
+ import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
+ import { mediaOrigin, mediaPath, startMediaSession, stopMediaSession } from "@/lib/live-media-provider";
+ import { cleanupMediaSessions } from "@/lib/live-media-cleanup";
+ 
+
+--- src/app/api/live-playback-source/route.ts before
++++ src/app/api/live-playback-source/route.ts
+@@ -2,11 +2,11 @@
+ import { NextResponse } from "next/server";
+ import { requireSameOriginRequest } from "@/lib/api-security";
+ import { getDb } from "@/lib/db";
+ import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
+ import { resolveLivePlaybackSource } from "@/lib/live-playback-source";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const PlaybackSourceQuery = z.object({
+   vendorId: z.string().min(1).max(128),
+   liveId: z.string().min(1).max(128),
+ }).strict();
+
+--- src/app/api/live-presenter/route.ts before
++++ src/app/api/live-presenter/route.ts
+@@ -1,9 +1,9 @@
+ import { getCurrentAuth } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import { DEFAULT_PRESENTER_LAYOUT, PresenterLayoutSchema, liveOrientation } from "@/lib/presenter-layout";
+ import { Prisma } from "@prisma/client";
+ import { mediaOrigin } from "@/lib/live-media-provider";
+ import { z } from "zod";
+ 
+
+--- src/app/api/security/csp-report/route.ts before
++++ src/app/api/security/csp-report/route.ts
+@@ -1,8 +1,8 @@
+ import { NextResponse } from "next/server";
+ import { readTextBody } from "@/lib/api-security";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const MAX_CSP_REPORT_BYTES = 16 * 1024;
+ 
+ export async function POST(request: Request) {
+   const limited = await checkRateLimit(request, "csp-report", 120, 60_000);
+
+--- src/app/api/stream-usage/route.ts before
++++ src/app/api/stream-usage/route.ts
+@@ -1,11 +1,11 @@
+ import { NextResponse } from "next/server";
+ import { z } from "zod";
+ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
+ import { getDb } from "@/lib/db";
+ import { hasActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
+-import { checkRateLimit } from "@/lib/rate-limit";
++import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ import {
+   recordStreamUsageLedgerEntry,
+   StreamUsageValidationError,
+   STREAM_USAGE_MAX_HEARTBEAT_SECONDS,
+ } from "@/lib/stream-usage";
+
+--- src/components/live-advanced-interactions.tsx before
++++ src/components/live-advanced-interactions.tsx
+@@ -40,12 +40,21 @@
+ function metadata(value: unknown): AdvancedInteractionMetadata | null {
+   if (!value || typeof value !== "object" || Array.isArray(value) || !("kind" in value)) return null;
+   return value as AdvancedInteractionMetadata;
+ }
+ 
++/** Keep server backoff bounded to the browser timer range, without tight retries. */
++export function interactionRetryDelay(response: Response) {
++  if (response.status !== 429 && response.status !== 503) return 2_000;
++  const value = response.headers.get("Retry-After")?.trim() ?? "";
++  const milliseconds = /^\d+$/u.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now();
++  return Number.isFinite(milliseconds) && milliseconds > 0
++    ? Math.min(2_147_483_647, Math.max(2_000, milliseconds)) : 30_000;
++}
++
+ class InteractionRequestError extends Error {
+-  constructor(public status: number) {
++  constructor(public status: number, public retryDelay = 2_000) {
+     super(status === 409 ? "這個互動已結束，或你已經參加過了。" : "互動連線暫時忙碌，請再試一次。");
+   }
+ }
+ 
+ async function interactionRequest(body: Record<string, unknown>, signal?: AbortSignal) {
+@@ -53,11 +62,11 @@
+     method: "POST",
+     signal,
+     headers: { "content-type": "application/json", "x-celebratedeal-client": "web" },
+     body: JSON.stringify(body),
+   });
+-  if (!response.ok) throw new InteractionRequestError(response.status);
++  if (!response.ok) throw new InteractionRequestError(response.status, interactionRetryDelay(response));
+   return await response.json() as { run?: PublicRun | null };
+ }
+ 
+ function WinnerReveal({ run }: { run: PublicRun }) {
+   const isWinner = run.winnerIsViewer;
+@@ -151,10 +160,11 @@
+     // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
+     const controller = new AbortController();
+     const { signal } = controller;
+     let timer: number;
+     async function refresh() {
++      let retryDelay = 2_000;
+       try {
+         let scriptedRun: PublicRun | null = null;
+         if (scriptedEvent) {
+           try {
+             const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
+@@ -162,26 +172,31 @@
+           } catch (error) {
+             if (error instanceof InteractionRequestError && error.status === 401) {
+               if (!signal.aborted) setAdmissionLost(true);
+               return;
+             }
++            if (error instanceof InteractionRequestError && (error.status === 429 || error.status === 503)) {
++              retryDelay = error.retryDelay;
++              return;
++            }
+             // 排定事件已結束或暫時失敗，仍讀取手動互動與精選問題。
+           }
+         }
+         if (signal.aborted) return;
+         const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
+         if (signal.aborted) return;
+         if (response.status === 401) { setAdmissionLost(true); return; }
++        retryDelay = interactionRetryDelay(response);
+         if (!response.ok) return;
+         const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
+         if (signal.aborted) return;
+         setRun(scriptedRun ?? payload.runs?.[0] ?? null);
+         setSpotlight(payload.spotlight ?? null);
+       } catch {
+         // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
+       } finally {
+-        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), 2_000);
++        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), retryDelay);
+       }
+     }
+     timer = window.setTimeout(() => void refresh(), 0);
+     return () => {
+       controller.abort();
+
+SOURCE src/lib/nonpayment-entry-rate-limit.test.ts
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetInMemoryRateLimitForTests } from "@/lib/rate-limit";
+
+const sideEffects = vi.hoisted(() => ({ db: vi.fn(() => { throw new Error("Unexpected database access"); }), auth: vi.fn(async () => null) }));
+vi.mock("@/lib/db", () => ({ getDb: sideEffects.db }));
+vi.mock("@/lib/auth", () => ({ getCurrentAuth: sideEffects.auth }));
+
+// Exercise real route -> trusted resolver -> actual memory limiter. No limiter mock.
+const cases = [
+  { path: "api/affiliate-attribution/direct-entry", method: "POST", limit: 60, load: () => import("@/app/api/affiliate-attribution/direct-entry/route") },
+  { path: "api/affiliate-clicks", method: "POST", limit: 60, load: () => import("@/app/api/affiliate-clicks/route") },
+  { path: "api/analytics", method: "POST", limit: 120, load: () => import("@/app/api/analytics/route") },
+  { path: "api/auth/line/callback", method: "GET", limit: 30, load: () => import("@/app/api/auth/line/callback/route") },
+  { path: "api/auth/line/start", method: "POST", limit: 15, load: () => import("@/app/api/auth/line/start/route") },
+  { path: "api/auth/password-reset/confirm", method: "POST", limit: 10, load: () => import("@/app/api/auth/password-reset/confirm/route") },
+  { path: "api/auth/password-reset/request", method: "POST", limit: 5, load: () => import("@/app/api/auth/password-reset/request/route") },
+  { path: "api/form-submissions", method: "POST", limit: 10, load: () => import("@/app/api/form-submissions/route") },
+  { path: "api/form-submissions/verify", method: "POST", limit: 20, load: () => import("@/app/api/form-submissions/verify/route") },
+  { path: "api/live-danmaku", method: "GET", limit: 120, load: () => import("@/app/api/live-danmaku/route") },
+  { path: "api/live-danmaku", method: "POST", limit: 120, load: () => import("@/app/api/live-danmaku/route") },
+  { path: "api/live-danmaku/scripted", method: "GET", limit: 90, load: () => import("@/app/api/live-danmaku/scripted/route") },
+  { path: "api/live-danmaku/scripted", method: "POST", limit: 90, load: () => import("@/app/api/live-danmaku/scripted/route") },
+  { path: "api/live-interactions", method: "GET", limit: 1200, load: () => import("@/app/api/live-interactions/route") },
+  { path: "api/live-interactions", method: "POST", limit: 60, load: () => import("@/app/api/live-interactions/route") },
+  { path: "api/live-interactions/cards", method: "GET", limit: 120, load: () => import("@/app/api/live-interactions/cards/route") },
+  { path: "api/live-interactions/cards", method: "POST", limit: 120, load: () => import("@/app/api/live-interactions/cards/route") },
+  { path: "api/live-media", method: "POST", limit: 90, load: () => import("@/app/api/live-media/route") },
+  { path: "api/live-playback-source", method: "GET", limit: 120, load: () => import("@/app/api/live-playback-source/route") },
+  { path: "api/live-presenter", method: "GET", limit: 60, load: () => import("@/app/api/live-presenter/route") },
+  { path: "api/live-presenter", method: "POST", limit: 60, load: () => import("@/app/api/live-presenter/route") },
+  { path: "api/security/csp-report", method: "POST", limit: 120, load: () => import("@/app/api/security/csp-report/route") },
+  { path: "api/stream-usage", method: "POST", limit: 120, load: () => import("@/app/api/stream-usage/route") },
+] as const;
+
+function request(path: string, method: string, attempt: number, trusted: boolean) {
+  const value = new Request(`https://app.example.test/${path}`, {
+    method,
+    headers: {
+      origin: "https://app.example.test",
+      "x-celebratedeal-client": "web",
+      "content-type": "application/json",
+      "cf-connecting-ip": `203.0.113.${attempt % 250 + 1}`,
+      "x-forwarded-for": `198.51.100.${attempt % 250 + 1}`,
+      "x-real-ip": `192.0.2.${attempt % 250 + 1}`,
+      "x-vercel-forwarded-for": `192.0.2.${attempt % 250 + 1}`,
+    },
+    ...(method === "POST" ? { body: "{}" } : {}),
+  });
+  // An adapter-provided property, never a browser-controlled header.
+  if (trusted) Object.defineProperty(value, "ip", { value: "192.0.2.200" });
+  return value;
+}
+
+beforeEach(() => {
+  vi.stubEnv("NODE_ENV", "test");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+  vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+  vi.stubEnv("ENTRY_CLIENT_IP_TRUST_MODE", "runtime");
+  vi.stubEnv("ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE", "node");
+  resetInMemoryRateLimitForTests();
+  vi.clearAllMocks();
+});
+afterEach(() => { resetInMemoryRateLimitForTests(); vi.unstubAllEnvs(); });
+
+describe.each(cases)("nonpayment source boundary $method $path", ({ path, method, limit, load }) => {
+  it("rejects forged forwarding metadata before auth or database effects", async () => {
+    const route = await load();
+    const handler = (route as Record<string, (r: Request) => Promise<Response>>)[method];
+    const response = await handler(request(path, method, 1, false));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Request source unavailable" });
+    expect(response.headers.get("Retry-After")).toBe("30");
+    expect(sideEffects.db).not.toHaveBeenCalled();
+    expect(sideEffects.auth).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original threshold with trusted identity despite forged header rotation", async () => {
+    const route = await load();
+    const handler = (route as Record<string, (r: Request) => Promise<Response>>)[method];
+    for (let index = 0; index < limit; index++) {
+      const response = await handler(request(path, method, index, true));
+      expect([429, 503]).not.toContain(response.status);
+    }
+    vi.clearAllMocks();
+    const response = await handler(request(path, method, limit, true));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "Too many requests" });
+    expect(Number(response.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(sideEffects.db).not.toHaveBeenCalled();
+    expect(sideEffects.auth).not.toHaveBeenCalled();
+  });
+});
+
+// Capacity contract: 32 independent viewers sharing one trusted source, 2s polling.
+it("allows a minute of 32-viewer polling on one source without exhausting the read bucket", async () => {
+  const { GET } = await import("@/app/api/live-interactions/route");
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    const start = Date.now();
+    for (let tick = 0; tick < 30; tick++) {
+      vi.setSystemTime(start + tick * 2_000);
+      const responses = await Promise.all(Array.from({ length: 32 }, (_, viewer) =>
+        GET(request("api/live-interactions", "GET", viewer, true))));
+      // Invalid synthetic scopes exit after admission limiting, before database work.
+      // 400 proves the source limiter allowed all 32 calls in each polling round.
+      expect(responses.every(response => response.status === 400)).toBe(true);
+    }
+    expect(sideEffects.db).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
+});
+
+SOURCE src/components/live-advanced-interactions.polling.test.tsx
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+
+const hooks = vi.hoisted(() => ({ effects: [] as Array<() => void | (() => void)> }));
+vi.mock("react", async (original) => ({
+  ...await original<typeof import("react")>(),
+  useState: <T,>(value: T | (() => T)) => [typeof value === "function" ? (value as () => T)() : value, vi.fn()],
+  useRef: <T,>(value: T) => ({ current: value }),
+  useMemo: <T,>(factory: () => T) => factory(),
+  useEffect: (effect: () => void | (() => void)) => { hooks.effects.push(effect); },
+}));
+import { interactionRetryDelay, LiveAdvancedInteractions } from "./live-advanced-interactions";
+
+let cleanup: Array<() => void> = [];
+beforeEach(() => {
+  vi.useFakeTimers();
+  hooks.effects = [];
+  vi.stubGlobal("window", { setTimeout, clearTimeout });
+});
+afterEach(() => {
+  cleanup.forEach(fn => fn()); cleanup = [];
+  vi.useRealTimers(); vi.unstubAllGlobals();
+});
+
+function mountPolling(scripted: boolean) {
+  const wrapper = LiveAdvancedInteractions({ vendorId: "synthetic-vendor", liveId: "synthetic-live", enabled: true, currentSeconds: 1,
+    events: scripted ? [{ id: "synthetic-event", eventType: "poll", triggerSec: 0, title: "Synthetic", metadata: { kind: "poll", durationSec: 60 } }] : [],
+  })!;
+  // Execute the actual component effects with a deterministic hook/timer harness.
+  const child = wrapper.props.children as ReactElement<Record<string, unknown>>;
+  (child.type as (props: Record<string, unknown>) => unknown)(child.props);
+  for (const effect of hooks.effects) { const stop = effect(); if (stop) cleanup.push(stop); }
+}
+
+describe("interaction polling backoff", () => {
+  it.each([429, 503])("honors Retry-After for GET %i and cancels on unmount", async (status) => {
+    const fetchMock = vi.fn(async () => new Response(null, { status, headers: { "Retry-After": "60" } }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    cleanup.forEach(fn => fn()); cleanup = [];
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each([429, 503])("backs off scripted POST %i without immediately polling GET", async (status) => {
+    const fetchMock = vi.fn(async () => new Response(null, { status, headers: { "Retry-After": "30" } }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(true);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toEqual(["/api/live-interactions", expect.objectContaining({ method: "POST" })]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it("retains the normal two-second poll after successful responses", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ runs: [], spotlight: null }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(false);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each([null, "garbage", "-1", "0"])("uses a safe fallback for invalid retry value %s", (header) => {
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: header === null ? {} : { "Retry-After": header } }))).toBe(30_000);
+  });
+  it("supports dates and prevents timer overflow or sub-poll retries", () => {
+    vi.setSystemTime(new Date("2026-10-14T00:00:00Z"));
+    expect(interactionRetryDelay(new Response(null, { status: 429, headers: { "Retry-After": "Wed, 14 Oct 2026 00:01:00 GMT" } }))).toBe(60_000);
+    expect(interactionRetryDelay(new Response(null, { status: 429, headers: { "Retry-After": "1" } }))).toBe(2_000);
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: { "Retry-After": "9999999999" } }))).toBe(2_147_483_647);
+  });
+});
+
+SOURCE src/lib/trusted-entry-rate-limit.ts
+import { NextResponse } from "next/server";
+import { checkRateLimit as checkLegacyRateLimit, getRateLimitProviderId } from "./rate-limit";
+import { getRequestClientIp, normalizeClientIp, type ClientIpTrustConfig } from "./request-client-ip";
+import { rateLimitRequestWithIdentity } from "./live-chat-request-security";
+
+type EntryIpTrustConfig = ClientIpTrustConfig | {
+  trustMode: "vercel-native";
+  deploymentSource: "vercel";
+};
+
+/** Entry trust is explicit; a storage/WAF provider never selects a proxy. */
+export function entryIpTrustConfig(env: NodeJS.ProcessEnv = process.env): EntryIpTrustConfig {
+  const trustMode = env.ENTRY_CLIENT_IP_TRUST_MODE;
+  const deploymentSource = env.ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE;
+  if (trustMode === "vercel-native") {
+    // Explicit Preview-only rollout. Runtime metadata is server-side, never headers.
+    const expectedProject = env.ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID;
+    const verified = deploymentSource === "vercel"
+      && env.ENTRY_CLIENT_IP_TOPOLOGY === "direct-vercel"
+      && env.VERCEL === "1" && env.VERCEL_ENV === "preview"
+      && Boolean(expectedProject) && expectedProject === env.VERCEL_PROJECT_ID
+      && env.RATE_LIMIT_PROVIDER === "upstash_redis";
+    return verified ? { trustMode, deploymentSource: "vercel" }
+      : { trustMode: "none", deploymentSource: "none" };
+  }
+  if (trustMode === "runtime" && deploymentSource === "node") {
+    return { trustMode, deploymentSource };
+  }
+  if ((trustMode === "cloudflare" && deploymentSource === "cloudflare")
+    || (trustMode === "trusted-proxy" && deploymentSource === "vercel")) {
+    return { trustMode, deploymentSource, ingressSecret: env.ENTRY_CLIENT_IP_INGRESS_SECRET };
+  }
+  return { trustMode: "none", deploymentSource: "none" };
+}
+
+/** Native IPv6 sources share a /64 bucket; mapped IPv4 shares its IPv4 bucket. */
+function nativeBucketIdentity(value: string | null) {
+  const ip = normalizeClientIp(value);
+  if (!ip || !ip.includes(":")) return ip;
+  const [head, tail] = ip.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left
+    : [...left, ...Array<string>(8 - left.length - right.length).fill("0"), ...right];
+  const words = groups.map(group => Number.parseInt(group, 16));
+  if (words.slice(0, 5).every(word => word === 0) && words[5] === 0xffff) {
+    return [words[6]! >> 8, words[6]! & 255, words[7]! >> 8, words[7]! & 255].join(".");
+  }
+  return `${words.slice(0, 4).map(word => word.toString(16)).join(":")}::`;
+}
+
+/** Only WP11 callers opt in. Keep the original body untouched for redemption. */
+export async function checkRateLimit(
+  request: Request, key: string, limit: number, windowMs: number,
+  config: EntryIpTrustConfig = entryIpTrustConfig(),
+) {
+  const native = config.trustMode === "vercel-native";
+  // No fallback: direct Vercel traffic cannot rely on Cloudflare WAF or per-instance memory.
+  const ip = native
+    ? (entryIpTrustConfig().trustMode === "vercel-native" && getRateLimitProviderId() === "upstash_redis"
+      ? nativeBucketIdentity(request.headers.get("x-vercel-forwarded-for")) : null)
+    : getRequestClientIp(request, config);
+  if (!ip) {
+    return NextResponse.json({ error: "Request source unavailable" }, {
+      status: 503,
+      headers: { "Retry-After": "30", "Cache-Control": "no-store" },
+    });
+  }
+  return checkLegacyRateLimit(rateLimitRequestWithIdentity(request, ip), native ? `entry-vercel-native:${key}` : key, limit, windowMs);
+}
+
+Existing20route tests only change limiter mock import, assertions unchanged; existing component tests unchanged. New sharedsource test uses invalid scopes after limiter and before DB: capacity test, not whole business integration. Existingreal wrapper+request resolver remote evidence unchanged. Prior full-source trust review evidence9f742df8 and APIreview-cli preserved. No Production or actualsecretvalues. Local/E2E owned ingress configuration must be supplied explicitly; defaultnone failsclosed.

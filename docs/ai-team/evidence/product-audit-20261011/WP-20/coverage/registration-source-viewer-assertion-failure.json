@@ -1,0 +1,55 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-visit-page.ts": "a868e378619f5d935db9b33c2ab5aa47cf9c673e7152b6121c42e21bd6a5ad10",
+    "src/lib/live-metric-registration-page.ts": "0a2f82c24e5474d5572dadff9a2379dae602e6fa9dd56817b970b13a17f784aa",
+    "src/lib/live-metric-registration-surface.ts": "31b1bf0294e204d94da06551a994e07464f28467863b19ac7dc8997bc078f5f9",
+    "src/components/metric-registration-visit.tsx": "6c2fec244c6954c36f90c7e2fab8d47b1ca52d4b32441e23392fa7abd653ae08",
+    "src/app/form/[slug]/page.tsx": "22a155575ecf4018f3a93afb52fc88c0f9d19a9896ec87aa8f1587b82b7006d9",
+    "src/app/lp/[slug]/page.tsx": "aff02c3513a89b924db80fdad1f500e2cd97d742531d4863c2a4f4541df98163",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "595b3bd30ecc3668376cf937697c1d5c12a3cf6f6822aa2b663d026b3b05a1fa",
+    "scripts/wp20-visit-page-disposable.mjs": "54f8c5ceb2ac2926dd90a103fb25789b30286c3810379e7b395e3aa053e7ba8f",
+    "src/lib/live-metric-report-reader.ts": "fb7de4c38bdb8531f7dd71565aa8db77ed23f3f1ec0c1153367a9c46dd27c097",
+    "src/app/(viewer)/live/[slug]/page.tsx": "bd793dca18bda5e5ae7698565df29fa5d52973b37e0620157af36ee511c27eed",
+    "src/lib/live-metric-visit-page.test.ts": "2ad0ea49db707e2e9ad72139597cede6dfd65d9c4f124b956dd7c176b5f391b4",
+    "src/lib/live-metric-registration-page.test.ts": "93a243af279ae01f98484bc200cbb95b06a4081e08a84c2eb4fff189aafe7053",
+    "src/lib/live-metric-registration-surface.test.ts": "0b0c9d40b724228790587fce7d1c806bc3473ca0bdba369e6826a93296db5fed",
+    "src/lib/live-metric-visit-intent.test.ts": "e7b54e6ce2ac31dd6788a9dd155b45ed05b0f9895ca474fb149ec956db66302d",
+    "src/lib/live-metric-visit-client.test.ts": "5cd45d4eb8bc0f1b5471a819f150e145f88a87d7d426b93edac66f5feb2d4812",
+    "src/lib/live-metric-visit-collection.test.ts": "63f99a4a859c50576282a6446dd12be690f34aff714d5dee2c6598d77750f6b6",
+    "src/lib/live-metric-visit.test.ts": "f2f59fa5a89db7c86f8056e3e8220c879a25870a8c932a2f9d7a9e03eaeb2e6a",
+    "src/lib/live-metric-visitor.test.ts": "057ef25d921fdfc31dc0baef10912bc869e3390427111943eedfb01f741038af",
+    "src/lib/live-metric-visit-context.test.ts": "6e243a7b2b1f4461460438887b6bde7915f91aad2ef863538d56819cbcfcc224",
+    "src/components/metric-registration-visit.test.tsx": "c0908b4fb5eb1b32523df185c84c08da77839bf0fc736a88addc11418310df9c",
+    "src/app/form/[slug]/page.test.tsx": "23ae011c529049f04e5eb24a7c8762b2c1f9cb14e6b3d1414ce5590a5ef953a0",
+    "src/app/lp/[slug]/page.test.tsx": "744b537a69cc975a0dc584811b5f0f1958b2851b2e1a56fc0f596154253803c0",
+    "src/app/(viewer)/live/[slug]/page.test.tsx": "bba37ae8e256c8d6e7da16ae76d349e65ef34ecc0e7f3655e80d2b0d7497bbbf",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.test.ts": "fd77ac8314c4937c5e9f1b37be8eea2300e9c8cef64d747c9cc2d793470aecc9",
+    "src/lib/public-registration-form.test.ts": "10fdba78bf3889033ab54c379910dab08466ce144385a3e7e3bc349f013436bc",
+    "src/lib/landing-page-service.test.ts": "8adaedcb9674bac5d971839ba6868f834571bc4f32030783476181fbbe2c0e4d",
+    "src/lib/live-metric-report-reader.test.ts": "767e2aa6a1a4a18f83e99e7dda286837758cf4e3524880fdfd3a9a01eada06f9",
+    "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+    "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+    "prisma/schema.prisma": "8fde2a574d43003da79053e065c0bb8d4e35601b25c7fb5b6eeda19525acd5a5",
+    "prisma/migrations/20261016140000_live_metric_registration_visit_source/migration.sql": "1da4c6bfb4152ab1d1fe4151a02f7075ebfb461aff9523d4b25fbbbe5200f06f"
+  },
+  "checks": {
+    "unit": {
+      "status": "FAIL",
+      "exitCode": 1,
+      "testsPassed": null,
+      "diagnostics": [
+        " FAIL  src/app/(viewer)/live/[slug]/page.test.tsx > waits for request-time rendering and durable page issuance before exposing the event to the collector",
+        "AssertionError: expected \"vi.fn()\" to be called with arguments: [ Anything, \u2026(1) ]"
+      ]
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "status": "FAIL"
+}

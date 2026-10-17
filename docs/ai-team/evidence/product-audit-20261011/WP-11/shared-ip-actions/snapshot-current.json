@@ -1,0 +1,31 @@
+{
+  "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+  "files": [
+    "src/app/actions.mfa-db.test.ts",
+    "src/app/actions.test.ts",
+    "src/app/actions/auth-security-actions.ts",
+    "src/app/actions/buyer-support-actions.test.ts",
+    "src/app/actions/buyer-support-actions.ts",
+    "src/app/actions/consultation-actions.test.ts",
+    "src/app/actions/consultation-actions.ts",
+    "src/app/actions/registration-actions.db.test.ts",
+    "src/app/actions/registration-actions.test.ts",
+    "src/app/actions/registration-actions.ts",
+    "src/app/actions/source-rate-limit.integration.test.ts",
+    "src/app/actions/student-portal-actions-boundary.test.ts",
+    "src/app/actions/student-portal-actions.test.ts",
+    "src/app/actions/student-portal-actions.ts",
+    "src/app/actions/vendor-member-actions.ts",
+    "src/app/api/form-submissions/route.test.ts",
+    "src/lib/entry-rate-limit-headers.test.ts",
+    "src/lib/entry-rate-limit-headers.ts",
+    "src/lib/live-chat-request-security.ts",
+    "src/lib/mfa-recovery-regeneration.ts",
+    "src/lib/rate-limit-boundary.test.ts",
+    "src/lib/rate-limit.ts",
+    "src/lib/registration-form-retry-response.test.ts",
+    "src/lib/registration-form-retry-response.ts",
+    "src/lib/request-client-ip.ts",
+    "src/lib/trusted-entry-rate-limit.ts"
+  ]
+}

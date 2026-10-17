@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "stage": "negative-guards",
+  "checks": {
+    "actualHmacIntakeSessionIntervalAndTerminalClose": "PASS",
+    "actualPrivateViewingProducerPublished": "PASS",
+    "actualSameSnapshotLeaseReaderAcceptsViewing": "PASS",
+    "closedDeliveryDoesNotWaitForLeaseExpiry": "PASS",
+    "nullAndStaleRevisionProofsRejected": "PASS",
+    "sealedViewingSourcesCannotBeChangedOrDeleted": "PASS",
+    "registrationRevocationAndRestoreNeverReviveOldProof": "PASS",
+    "registrationSubmissionLiveAndVendorCascadesSucceed": "PASS",
+    "versionCascadeRemovesProofFactsAndLedgers": "PASS",
+    "eligibilityHasNoExpiryOnlyClockTransition": "PASS"
+  },
+  "browser": "NOT_RUN",
+  "fullFiveMetrics": "NOT_RUN",
+  "migrationStatus": "PASS",
+  "migrationCount": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

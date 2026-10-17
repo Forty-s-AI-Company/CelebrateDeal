@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(async () => null),
 }));
 
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 
 import { POST } from "./route";
 

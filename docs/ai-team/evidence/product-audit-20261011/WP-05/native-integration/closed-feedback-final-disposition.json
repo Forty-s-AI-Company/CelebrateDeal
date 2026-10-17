@@ -1,0 +1,10 @@
+{
+  "ordering_minor": "resolved with direct tests plus negative mutation",
+  "branch_test_minor": "resolved; headers mock and real boundary with mocked draft/receipt matrix verified",
+  "nonstring_nit": "rejected with schema evidence: Answers values z.string max2000; no new data types accepted",
+  "independent_review": "closed-test-followup-reviewed.json",
+  "observed_model": "claude-sonnet-5-5",
+  "remaining_test_nits": "Known low-impact fixture shape/title and per-loop mock-state hygiene; no delivery blocker per reviewer",
+  "validation": "unit/lint PASS; deliberate pre-gate mutation fails2tests; exact source restored",
+  "real_db_browser": "BLOCKED_ENVIRONMENT: Docker Desktop start reports already running, inspect still unable to start"
+}

@@ -1,0 +1,20 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "files": {
+    "src/lib/database-write-conflict.ts": "bf0cd8026c1155489a911381593307b0b867a09a54b82101826a37c92513f299",
+    "src/lib/database-write-conflict.test.ts": "debec4f7e49ea8d9ba67afd17044cc8a5638def19401eb3c465b2e3089d0cbc3",
+    "src/lib/payment-webhook-conflict-retry.test.ts": "2063b22f961edf532130472f74c03c04fc70a8a27fd86040bfd9a30f2d64b6b8",
+    "src/lib/inventory-reservations.ts": "50da18905cc2f99a6d117d15d9410d676b5c90d4421d0f06c76cd10f0b25df3f",
+    "src/lib/payment-webhooks.ts": "4aed60d2813e26068cc5c3391611235f8c72a48e20bcaf4070a67ea7e8903371",
+    "scripts/wp20-order-payment-deadlock.mjs": "470defc421cac690749c5bcbc51c77c1f5242270832144b23e7514530d93559e",
+    "scripts/wp20-order-window-source-probe.mjs": "f073658de49a482fccaed85bf5d3ef52451ae2ad93c845ee4b155caf2f563861",
+    "scripts/wp20-order-coverage-guard-probe.mjs": "a615160103d9b6e0dea8bab09ba049966113a412a422f4716f6c36aad13e2bbf",
+    "scripts/wp20-payment-retry-disposable.mjs": "3c52d526f410d00674524805b0bba158f0365d4299e8c6e54fcf006af96cdb33"
+  },
+  "unit": "order-payment-deadlock-unit.json",
+  "db": "order-payment-deadlock-db.json",
+  "callbackRegression": "order-payment-deadlock-callback-regression.json",
+  "review": "PENDING",
+  "originalSynchronized20": "FAIL_7_OF_20_UNCHANGED",
+  "note": "DB deadlock tests retry explicitly; callback recovery regression does not force a callback deadlock"
+}

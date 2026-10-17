@@ -1,0 +1,46 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-ingress-proof.ts": "0f705bd92ad4317506f2341c7722bcbacc03110f80043723b5893f46ead8165a",
+    "src/lib/live-metric-ingress-gateway.ts": "0a8145b00203d685c531b6a2409753807f2cb9c7320d23ecd362465b21e465f5",
+    "src/lib/live-metric-visit-page.ts": "dc9ee47bf4072a0195e7dc7c3846a7b43b653df6cb9e31ea4c36b3e070d5399b",
+    "src/lib/live-metric-registration-page.ts": "cdc90bde00a361485a10e0080161debd1ecc8f05dbf7330029ffe64d10e50fba",
+    "src/lib/live-metric-playback-intake.ts": "d64cb0f5e5488ba4107293435553477da8399fdbc72ee0153c0b5930ad48a2f6",
+    "src/components/metric-registration-visit.tsx": "76af1a5af88ec7df64c133b6925d14aece6498dcb85b97fbfda0b717021af850",
+    "src/app/form/[slug]/page.tsx": "d34f790b8a67c0bd4588331f9f16ab47040fe84ba19f90dac38244f2f3252cd3",
+    "src/app/lp/[slug]/page.tsx": "eee88146ee9eba3c9b956faeca43f0adac7dea2e6d2f287e03f803a673b95fb7",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "976a42dea4f97572e811feb4d37381b34caa3866f4e8f04137e35c791df57720",
+    "src/app/(viewer)/live/[slug]/page.tsx": "8c72f5b0f55a234b080a588ee9c392ebd9a1dd394af6adc39b31832c47dd24f6",
+    "src/app/api/live-playback-source/route.ts": "6243c6675ca4b8a6a789914c6ae7ff44dd1e645aac74ac4ef9b5ac1ea5e5795e",
+    "src/lib/live-metric-ingress-proof.test.ts": "5273b48f28ca53a3072796bc476f2249a62e87fa65adf7450bee23a3991213ee",
+    "src/lib/live-metric-ingress.test.ts": "67c903fd35038431f0a28aea80f849b83936d6560b6dcc67ae13ba6c32aafce0",
+    "src/lib/live-metric-visit-page.test.ts": "6f7dfd9febb43838ff969747bd182e8761f215cabba719542fee8e0d483c0c88",
+    "src/lib/live-metric-registration-page.test.ts": "93a243af279ae01f98484bc200cbb95b06a4081e08a84c2eb4fff189aafe7053",
+    "src/lib/live-metric-playback-intake.test.ts": "e49a948335c1c654d022fd6ff36d6c7d120ed28c467587e38f9dd566044b0665",
+    "src/components/metric-registration-visit.test.tsx": "1087da17cdf711f941d8213761191037af36787c604e7b139bba57569619efd7",
+    "src/app/form/[slug]/page.test.tsx": "32d13095cafcd0138ea2198c1a0610f70bee58e9b22574a329df055feacd3a1e",
+    "src/app/lp/[slug]/page.test.tsx": "423a4a7ee78e4e7fe1e2269824e2fd8a325d2fd0366f250e1af01755bbb3abfb",
+    "src/app/(viewer)/live/[slug]/page.test.tsx": "86fe9bef5948f19fff12f78ce6b3b7307911df55315c35e60d8451d6887300e2",
+    "src/app/api/live-playback-source/route.test.ts": "471d57ec62e172e5ad3cfe2dd1e3f8c6c9c37532f2c2334057b1cb621cb2f7d8",
+    "prisma/schema.prisma": "504ebc9b3776a4804918c80e1701a2bd3fe6466f9cbd2ea189c32135add694a7",
+    "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql": "2c8affc73f23d8069bb8e91feb66f07eeebef4d1027f86275794d7297a8a752b",
+    "scripts/wp20-ingress-binding-disposable.mjs": "cdb449ec7f5fa322a94772c8e89160330cfc8b5f5dcea4c3ea3c9fb2a8cbdbb0",
+    "src/lib/live-metric-ingress-source.ts": "197af2ea54aecb4413c7d914c8f8b033f4a6d14e7e6eb1e8910aabd587fabe26",
+    "src/lib/live-metric-ingress-source.test.ts": "d392aed0a1a47bd3b2721830079826e4e4bf676cedd84fa741675f00177b1473"
+  },
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 113
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "status": "PASS"
+}

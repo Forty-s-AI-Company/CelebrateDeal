@@ -34,8 +34,8 @@ describe("live-started LINE dispatch", () => {
   it("uses tenant-scoped registrations, stable per-viewer keys, and a scoped eager worker", async () => {
     const startedAt = new Date("2026-09-07T12:00:00.000Z");
     const db = {
-      live: { findFirst: vi.fn().mockResolvedValue({ id: "live-1", slug: "safe-live", title: "安全直播", startedAt }) },
-      formSubmission: { findMany: vi.fn().mockResolvedValue([{ id: "submission-1" }, { id: "submission-2" }]) },
+      live: { findFirst: vi.fn().mockResolvedValue({ id: "live-1", slug: "safe-live", title: "安全直播", startedAt, scheduledAt: startedAt, vendor: { name: "合成商家", timezone: "Asia/Taipei" } }) },
+      formSubmission: { findMany: vi.fn().mockResolvedValue([{ id: "submission-1", name: "甲" }, { id: "submission-2", name: "乙" }]) },
     };
 
     await expect(dispatchLiveStartedLineNotifications(db as never, {

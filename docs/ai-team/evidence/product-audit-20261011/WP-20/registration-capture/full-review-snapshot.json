@@ -1,0 +1,24 @@
+{
+  "files": [
+    "src/lib/live-metric-registration-capture.ts",
+    "src/lib/live-metric-registration-reconcile.ts",
+    "src/lib/live-metric-registration-pass.ts",
+    "src/lib/form-submission-verification-domain.ts",
+    "src/lib/live-metric-version.ts",
+    "src/lib/live-metric-session.ts",
+    "src/app/api/form-submissions/route.ts",
+    "src/app/api/jobs/live-metric-registrations/route.ts",
+    "prisma/migrations/20261015100000_live_metric_registration_capture/migration.sql"
+  ],
+  "contextFilesWithExcerpts": [
+    "prisma/schema.prisma",
+    "prisma/migrations/20261014120000_live_metric_evidence/migration.sql",
+    "src/lib/api-security.ts"
+  ],
+  "revision": "sha256:bf6fd775965d729bc909d6f31d568106296d265118fd1d7e65484ef0313f939b",
+  "executionProvider": "claude_cli",
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "depth": 0,
+  "dispatchCount": 1
+}

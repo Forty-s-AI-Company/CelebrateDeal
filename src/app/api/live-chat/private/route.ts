@@ -3,12 +3,11 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { chatSessionTokenFromRequest, LiveChatError } from "@/lib/live-chat";
-import { liveChatIpTrustConfig, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
+import { getLiveChatClientIp, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { createPrivateViewerChat, listPrivateViewerChat } from "@/lib/live-private-chat";
 import { PrivateViewerChatPost, PrivateViewerChatQuery } from "@/lib/live-private-chat-contract";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { getRequestClientIp } from "@/lib/request-client-ip";
 
 const headers = { "Cache-Control": "private, no-store", "CDN-Cache-Control": "no-store", "Vary": "Cookie", "X-Content-Type-Options": "nosniff" };
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
@@ -17,8 +16,8 @@ const Post = PrivateViewerChatPost.extend({ csrfToken: z.string().min(1).max(512
 async function security(request: Request, write: boolean) {
   const denied = requireSameOriginRequest(request, { requireClientHeader: true });
   if (denied) return { response: noStore(denied), ipAddress: null };
-  const ipAddress = getRequestClientIp(request, liveChatIpTrustConfig());
-  if (write && !ipAddress) return { response: json({ error: "Private chat unavailable" }, 403), ipAddress: null };
+  const ipAddress = getLiveChatClientIp(request);
+  if (!ipAddress) return { response: json({ error: "Request source unavailable" }, write ? 403 : 503), ipAddress: null };
   const limited = await checkRateLimit(rateLimitRequestWithIdentity(request, ipAddress), write ? "private-live-chat-write" : "private-live-chat-read", 60, 60_000);
   return { response: limited ? noStore(limited) : null, ipAddress };
 }

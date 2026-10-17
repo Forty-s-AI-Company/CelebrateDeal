@@ -21,6 +21,9 @@ const cspReportOnly = [
 const disableSentryAutoUpload = process.env.SENTRY_DISABLE_AUTO_UPLOAD === "true";
 
 const nextConfig: NextConfig = {
+  // Rich Menu image stays capped at 1,000,000 bytes in the action. Leave room
+  // for its bounded menu JSON and multipart metadata at the framework boundary.
+  experimental: { serverActions: { bodySizeLimit: "2mb" } },
   // Browser-only component QA can run beside a developer's active Next server
   // without sharing its build lock or cache.
   ...(process.env.FUNNEL_ELEMENTS_E2E === "true" ? { distDir: ".next-funnel-elements" } : {}),

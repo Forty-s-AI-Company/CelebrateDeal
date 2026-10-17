@@ -1,0 +1,15 @@
+{
+  "runnerSha256": "581af242ec5ce450eecfa080b5b2e00bcc347160de2b647b58edaeab1f3b1bd7",
+  "adapterSha256": "0537fe0317c8bea3c440856a5f34b6c3338427117c5fec5cfbfe165e946e00c0",
+  "forcedLockTimeout": "PASS: SQLSTATE55P03, elapsed<8000ms, zero persisted rows, success after lock release",
+  "overall": "FAIL: original20-way gate7/20",
+  "lintRunner": "PASS",
+  "review": "completion-followup-review.json",
+  "remaining": [
+    "large cohort load runtime",
+    "DB detoast before metadata budget",
+    "trusted coverage producer",
+    "deployed scheduler",
+    "original contention acceptance"
+  ]
+}

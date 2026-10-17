@@ -1,0 +1,278 @@
+Read-only Critical follow-up, no edits, schema findings only. Snapshot sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305. Prior review no BLOCKER/MAJOR,5MINOR/2NIT. New fix restricts proxy preflight to document paths<=3segments: checkout/play untouched. Current tests/lint/tsc/strict+semanticbrowser PASS,axe0; do not claim reviewer ran tests. Prior concerns: non-/lp guard already exists; original public route refuses system steps. Merchant static validation vs runtime parity assess below. Autosave reads, streaming redirects and informational navigation catch remain nonblocking followups unless concrete risk found. Original schema/project payment gate unchanged. Query parity tested real action. No deployment. csrf field cosmetic alias only. Loader retains original visibility checks; false skips only presentation reads. Other UI/action fixes preserved from original review. Output remaining findings, disposition prior concerns using provided context.
+
+FILE src/proxy.ts
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+
+import { LINEAGE_PAYLOAD } from "@/lib/preview-lineage";
+import { FUNNEL_VISITOR_COOKIE, isFunnelVisitorId } from "@/lib/funnel-runtime-visitor";
+
+const MARKER_PATH = "/__celebratedeal_wp187_fingerprint.json";
+const JSON_HEADERS = Object.freeze({
+  "Cache-Control": "no-store, max-age=0",
+  "Content-Type": "application/json; charset=utf-8",
+  "X-Content-Type-Options": "nosniff",
+});
+
+function markerResponse(method: string): Response {
+  if (method !== "GET" && method !== "HEAD") {
+    return new Response(null, {
+      status: 405,
+      headers: { Allow: "GET, HEAD" },
+    });
+  }
+
+  return new Response(method === "HEAD" ? null : JSON.stringify(LINEAGE_PAYLOAD), {
+    status: 200,
+    headers: JSON_HEADERS,
+  });
+}
+
+export async function proxy(request: NextRequest): Promise<Response> {
+  // The App Router treats folders beginning with `_` as private; this exact
+  // proxy matcher keeps the public marker contract available at its URL.
+  if (request.nextUrl.pathname === MARKER_PATH) return markerResponse(request.method);
+  if (!request.nextUrl.pathname.startsWith("/lp/")) return NextResponse.next();
+
+  const existingVisitorId = cookieValue(request.headers.get("cookie"), FUNNEL_VISITOR_COOKIE);
+  const visitorId = isFunnelVisitorId(existingVisitorId) ? existingVisitorId : crypto.randomUUID();
+  // 僅檢查公開文件；checkout／play 子路由保留各自的解析與安全檢查。
+  const isDocumentPath = request.nextUrl.pathname.split("/").filter(Boolean).length <= 3;
+  if (isDocumentPath && (request.method === "GET" || request.method === "HEAD")) {
+    try {
+      // 限 /lp；在根 loading 開始串流前決定 HTTP 狀態。其他入口不載入 DB 模組。
+      const { publicLandingPageStatus } = await import("@/lib/public-landing-page-status");
+      if (await publicLandingPageStatus(request.nextUrl.pathname, visitorId) === 404) return publicUnavailable(request.method, 404);
+    } catch {
+      return publicUnavailable(request.method, 503);
+    }
+  }
+  if (isFunnelVisitorId(existingVisitorId)) return NextResponse.next();
+
+  // Server Components cannot set cookies. Inject the generated pseudonym into
+  // this request as well as the response so the first SSR decision and the
+  // browser's next request use the same non-authorizing identifier.
+  const headers = new Headers(request.headers);
+  headers.set("cookie", replaceCookie(request.headers.get("cookie"), FUNNEL_VISITOR_COOKIE, visitorId));
+  const response = NextResponse.next({ request: { headers } });
+  response.cookies.set(FUNNEL_VISITOR_COOKIE, visitorId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: request.nextUrl.protocol === "https:",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  return response;
+}
+
+/** 靜態匿名錯誤頁；不得插入 path、商家原因或資料庫錯誤。 */
+function publicUnavailable(method: string, status: 404 | 503) {
+  const title = status === 404 ? "404" : "暫時無法開啟頁面";
+  const message = status === 404 ? "找不到此頁面。" : "請稍後再試。";
+  return new Response(method === "HEAD" ? null : `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title></head><body><main><h1>${title}</h1><p>${message}</p></main></body></html>`, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store, max-age=0", "X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex", ...(status === 503 ? { "Retry-After": "30" } : {}) },
+  });
+}
+
+function cookieValue(header: string | null, name: string) {
+  const prefix = `${name}=`;
+  const value = header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(prefix))?.slice(prefix.length);
+  if (!value) return null;
+  try { return decodeURIComponent(value); } catch { return null; }
+}
+
+function replaceCookie(header: string | null, name: string, value: string) {
+  const prefix = `${name}=`;
+  const replacement = `${prefix}${encodeURIComponent(value)}`;
+  const values = header?.split(";").map((part) => part.trim()).filter(Boolean) ?? [];
+  const retained = values.filter((part) => !part.startsWith(prefix));
+  return [...retained, replacement].join("; ");
+}
+
+export const config = {
+  matcher: ["/__celebratedeal_wp187_fingerprint\\.json", "/lp/:path*"],
+};
+
+FILE src/lib/public-landing-page-status.ts
+import { loadPublicLandingPage } from "@/lib/landing-page-service";
+import { resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
+import { getPublicFunnelPage } from "@/lib/funnel-public-page";
+
+/** 串流前純讀檢查；不發事件、不公開拒絕原因、不快取可用性。 */
+export async function publicLandingPageStatus(pathname: string, visitorId: string): Promise<200 | 404> {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] !== "lp" || segments.length < 2 || segments.length > 3) return 404;
+  let slug: string;
+  let stepPath: string | undefined;
+  try {
+    slug = decodeURIComponent(segments[1]);
+    stepPath = segments[2] ? decodeURIComponent(segments[2]) : undefined;
+  } catch { return 404; }
+  // 執行完整既有公開判斷，只省略與 HTTP 狀態無關的展示資料。
+  const page = await loadPublicLandingPage(slug, undefined, false);
+  if (!page) return 404;
+  if (!("pages" in page.content)) return stepPath ? 404 : 200;
+  const steps = page.content;
+  const requested = stepPath
+    ? steps.flow.steps.find((step) => step.path === stepPath && !step.isSystem)
+    : steps.flow.steps.find((step) => !step.isSystem);
+  if (!requested || !getPublicFunnelPage(steps, requested.path)) return 404;
+  const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: requested.id, visitorId });
+  if (!runtime || runtime.decision.status === "unavailable") return 404;
+  if (runtime.decision.status !== "render") return 200; // 截止與合法轉址仍交公開 route 呈現。
+  const renderedStepId = runtime.decision.renderedStepId;
+  const rendered = steps.flow.steps.find((step) => step.id === renderedStepId);
+  return rendered && getPublicFunnelPage(steps, rendered.path) ? 200 : 404;
+}
+
+FILE src/app/(app)/landing-pages/[id]/page.tsx
+import { notFound } from "next/navigation";
+import { LandingPageWorkspace } from "@/components/landing-page-workspace";
+import { getLandingPageForEditor, getLandingPagePublicationStatus, LandingPageNotFoundError, LandingPageScopeError, type LandingPageStoredContent } from "@/lib/landing-page-service";
+import { requireVendorManager } from "@/lib/auth";
+import { CSRF_FIELD_NAME, getCsrfToken } from "@/lib/csrf";
+import { getActiveFunnelStepPage, switchFunnelStep, type FunnelStepPages } from "@/lib/funnel-step-pages";
+
+function isFunnelStepPages(content: LandingPageStoredContent): content is FunnelStepPages {
+  return "pages" in content && "activeStepId" in content && "flow" in content;
+}
+
+export default async function EditLandingPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ step?: string }> }) {
+  const { id } = await params;
+  const query = await searchParams;
+  await requireVendorManager();
+  const data = await getLandingPageForEditor(id).catch((error: unknown) => { if (error instanceof LandingPageNotFoundError || error instanceof LandingPageScopeError) notFound(); throw error; });
+  const publication = await getLandingPagePublicationStatus(id).catch((error: unknown) => {
+    if (error instanceof LandingPageNotFoundError || error instanceof LandingPageScopeError) notFound();
+    return { available: false, message: "尚無法確認公開網址狀態，請重新整理後再查看。", projectHref: "/projects", missing: [] };
+  });
+  const persistedContent = data.page.content;
+  if (!persistedContent) return <p role="alert">這個頁面的內容格式需要修復，已保留原始資料。</p>;
+  const page = data.page;
+  let content = persistedContent;
+  let returnHref: string | undefined;
+  if (isFunnelStepPages(content)) {
+    const requested = query.step?.trim();
+    const switched = requested ? switchFunnelStep(content, requested) : null;
+    if (switched?.ok) content = switched.state;
+    const active = getActiveFunnelStepPage(content);
+    if (active) returnHref = `/landing-pages/${page.id}/operations?step=${encodeURIComponent(active.step.id)}&tab=configuration`;
+  }
+  return <LandingPageWorkspace initialPublication={publication} key={`${page.id}-${query.step ?? "default"}`} returnHref={returnHref} commerceProducts={data.commerceProducts} page={{ id: page.id, name: page.name, slug: page.slug, status: page.status, revision: page.revision, content, formId: page.formId, liveId: page.liveId, versions: page.versions.map(({ version }) => ({ version })) }} webinarResources={data.webinarResources} forms={data.forms} lives={data.lives} csrfName={CSRF_FIELD_NAME} csrfField={await getCsrfToken()} />;
+}
+
+Original route before JSX
+import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
+import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { cache } from "react";
+import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
+import { getCsrfToken } from "@/lib/csrf";
+import { getNextPublicFunnelStepPath, getPublicFunnelPage } from "@/lib/funnel-public-page";
+import { FUNNEL_VISITOR_COOKIE, recordPublicFunnelVisit, resolveFunnelVisitorId, resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
+import { loadPublicLandingPage } from "@/lib/landing-page-service";
+import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
+
+export const dynamic = "force-dynamic";
+const load = cache(loadPublicLandingPage);
+
+async function resolve(slug: string, stepPath: string) {
+  const page = await load(slug);
+  const steps = page ? parseFunnelStepPages(page.content) : null;
+  const document = steps ? getPublicFunnelPage(steps, stepPath) : null;
+  return { page, document, steps };
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string; stepPath: string }> }): Promise<Metadata> {
+  const { slug, stepPath } = await params;
+  const { document } = await resolve(slug, stepPath);
+  if (!document) return { title: "頁面不存在", robots: { index: false, follow: false } };
+  const seo = document.settings.seo;
+  const title = seo.title || document.name;
+  return { title, description: seo.description, keywords: seo.keywords, authors: seo.author ? [{ name: seo.author }] : undefined, robots: seo.hideFromSearch ? { index: false, follow: false } : undefined, openGraph: { title, description: seo.description, ...(seo.socialImage ? { images: [seo.socialImage] } : {}) } };
+}
+
+export default async function PublicFunnelStepPage({ params }: { params: Promise<{ slug: string; stepPath: string }> }) {
+  const { slug, stepPath } = await params;
+  const { page, document, steps } = await resolve(slug, stepPath);
+  if (!document) notFound();
+  const step = steps?.flow.steps.find((candidate) => candidate.path === stepPath);
+  if (!page || !steps || !step || step.isSystem) notFound();
+  const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
+  const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: step.id, visitorId });
+  if (!runtime || runtime.decision.status === "unavailable") notFound();
+  if (runtime.decision.status === "closed") return <PublicFunnelClosed />;
+  if (runtime.decision.status === "redirect") redirect(`/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(runtime.decision.path)}`);
+  const decision = runtime.decision;
+  await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
+Merchant diagnostic published branch (prior branches guard manager, scoped page/project, unpublished prerequisites)
+  if (page.status !== "published") return { available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
+  let reason = "公開頁目前無法開啟，請檢查發布資源。";
+  const publicPage = await loadPublicLandingPage(page.slug, (value) => { reason = value; });
+  if (publicPage && publicPage.id !== pageId) return { available: false, message: "公開網址與目前頁面的發布版本不一致，請確認網址與發布版本。", projectHref, missing: [] };
+  if (publicPage && "pages" in publicPage.content) {
+    const steps = publicPage.content;
+    const operations = parseFunnelOperations(page.operations);
+    if (!operations || !funnelOperationsReferencesValid(page.operations, steps.flow.steps)) {
+      return { available: false, message: "Funnel 的 A/B 或截止設定無效，公開步驟可能回傳 404；請到 Funnel 管理修正。", projectHref, missing: [{ label: "檢查 Funnel 管理設定", href: `/landing-pages/${encodeURIComponent(pageId)}/operations` }] };
+    }
+    if (!steps.flow.steps.some((step) => !step.isSystem) || steps.flow.steps.some((step) => !step.isSystem && !steps.pages[step.id])) {
+      return { available: false, message: "已發布版本缺少可公開的步驟頁面，請補齊後重新發布。", projectHref, missing: [] };
+    }
+    if (operations.deadline.enabled && operations.deadline.expiresAt && new Date(operations.deadline.expiresAt) <= new Date()) {
+      return { available: true, message: "專案與 Funnel 均已發布，但活動已截止；公開頁依設定顯示截止訊息或轉向其他步驟。", projectHref, missing: [] };
+    }
+  }
+  return { available: Boolean(publicPage), message: publicPage ? "專案與 Funnel 均已發布，公開頁目前可開啟。" : reason, projectHref, missing: [] };
+}
+
+Runtime decisions
+export function decidePublicFunnelRuntime(input: {
+  pageId: string;
+  requestedStepId: string;
+  steps: readonly FunnelStep[];
+  operations: FunnelOperations | null;
+  visitorId: string;
+  now?: Date;
+}): FunnelRuntimeDecision {
+  const requested = input.steps.find((step) => step.id === input.requestedStepId && !step.isSystem);
+  if (!requested || !input.operations || !isFunnelVisitorId(input.visitorId)) return { status: "unavailable" };
+  const deadline = resolveFunnelDeadline({ steps: input.steps, requestedStepId: requested.id, operations: input.operations, now: input.now });
+  if (deadline.status !== "render") return deadline;
+
+  const assignment = assignFunnelExperiment(input.pageId, input.operations.experiment, input.visitorId);
+  if (!assignment || !input.operations.experiment || requested.id !== input.operations.experiment.controlStepId) {
+    return { status: "render", requestedStepId: requested.id, renderedStepId: requested.id, experiment: null };
+  }
+  const renderedStepId = assignment.arm === "control"
+    ? input.operations.experiment.controlStepId
+    : input.operations.experiment.variantStepId;
+  const rendered = input.steps.find((step) => step.id === renderedStepId && !step.isSystem);
+  return rendered
+    ? { status: "render", requestedStepId: requested.id, renderedStepId: rendered.id, experiment: assignment, progressionExcludedStepId: input.operations.experiment.variantStepId }
+    : { status: "unavailable" };
+}
+
+/** Evaluates a persisted deadline before any public form or checkout write. */
+export function resolveFunnelDeadline(input: {
+  steps: readonly FunnelStep[];
+  requestedStepId: string;
+  operations: FunnelOperations | null;
+  now?: Date;
+}): Extract<FunnelRuntimeDecision, { status: "render" | "closed" | "redirect" | "unavailable" }> {
+  const requested = input.steps.find((step) => step.id === input.requestedStepId && !step.isSystem);
+  if (!requested || !input.operations) return { status: "unavailable" };
+  const deadline = input.operations.deadline;
+  const expiresAt = deadline.enabled && deadline.expiresAt ? new Date(deadline.expiresAt) : null;
+  if (deadline.enabled && (!expiresAt || Number.isNaN(expiresAt.getTime()))) return { status: "unavailable" };
+  if (!expiresAt || (input.now ?? new Date()) < expiresAt) return { status: "render", requestedStepId: requested.id, renderedStepId: requested.id, experiment: null };
+  if (deadline.behavior === "closed") return { status: "closed" };
+  const target = input.steps.find((step) => !step.isSystem && step.path === deadline.redirectPath);
+  if (!target || target.id === requested.id) return target?.id === requested.id
+    ? { status: "render", requestedStepId: requested.id, renderedStepId: requested.id, experiment: null }
+    : { status: "closed" };
+  return { status: "redirect", path: target.path };
+}
+

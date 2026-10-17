@@ -1,0 +1,18 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/lib/capability-confirmation.ts",
+    "src/lib/capability-confirmation.test.ts",
+    "src/lib/automation-voucher-exchange.ts",
+    "src/lib/automation-voucher-exchange.db.test.ts",
+    "src/app/api/automation/vouchers/redeem/route.ts",
+    "src/app/api/automation/vouchers/redeem/route.test.ts",
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts",
+    "src/app/r/[code]/route.ts",
+    "src/app/r/[code]/route.test.ts",
+    "src/app/api/live-admission/route.ts",
+    "src/app/api/live-admission/route.test.ts"
+  ],
+  "revision": "sha256:54fa3da2143362985758cbe0bbd440f08603299fd5e9b461fa0d28c13aa80b5c"
+}

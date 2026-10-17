@@ -1,0 +1,25 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:e1c48cd7a975bb03b1947fe915ad28c6455a72a2feb832f73e76201b4fd6a9f2",
+  "targeted": {
+    "status": "PASS",
+    "count": 105
+  },
+  "scoped_lint": "PASS_BEFORE_FIXTURE_ONLY_CHANGE",
+  "typecheck": "PASS_BEFORE_FIXTURE_ONLY_CHANGE",
+  "database": {
+    "status": "PASS",
+    "checks": 121,
+    "migrations": 97,
+    "cleanup": "PASS"
+  },
+  "review": "NOT_RUN_PROVIDER_PREVIOUSLY_RATE_LIMITED",
+  "browser": "NOT_RUN",
+  "scope": "Atomic stale lease compare-and-delete, not independent per-tab lease ownership",
+  "remaining": [
+    "cross-tab shared ownership semantics",
+    "independent Auth review",
+    "browser reconciliation",
+    "timing uncertainty persistence/report semantics"
+  ]
+}

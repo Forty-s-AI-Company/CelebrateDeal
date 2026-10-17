@@ -1,0 +1,11 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "files": {
+    "scripts/wp20-order-payment-fence-facts.mjs": "e6b5cfdf67b7b8f76880901084942270d3dab9d96a6da42b7e235554b21107a2",
+    "scripts/wp20-order-window-source-probe.mjs": "e4a4d8010f1c62ce4a816423422eb9cd28cc57324f6b3306798103e2b3e2f787"
+  },
+  "lint": "PASS",
+  "integration": "order-payment-fence-nonblocking-db.json",
+  "review": "PENDING_FOLLOWUP",
+  "scope": "Owned disposable schema; no external CDC inspected"
+}

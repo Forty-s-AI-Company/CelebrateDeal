@@ -1,0 +1,37 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Private scoped scheduler with real isolated worker; synthetic disposable database only",
+  "results": {
+    "defaultOneJobBound": "PASS",
+    "remainingQueueProcessed": "PASS",
+    "duplicateTickNoExecution": "PASS",
+    "realWorker": "PASS",
+    "unknownRemainsUnavailable": "PASS",
+    "activeLeaseExcluded": "PASS",
+    "foreignVersionExcluded": "PASS",
+    "barrierCompetingTicksExactlyOneExecution": "PASS",
+    "expiredLeaseRecoveredOldFinishRejected": "PASS",
+    "exhaustedHeadTerminalizedNextTickProgresses": "PASS",
+    "futureWindowRejectedByCreateGuard": "PASS",
+    "expiredReportAndVersionExcluded": "PASS",
+    "realForeignTenantMixedScopesExcluded": "PASS",
+    "exactSingleInvokerSignatureRevokedPublicAclAndWindowBody": "PASS",
+    "originalCrossWindowInvalidationReproducedAndRolledBack": "PASS",
+    "differentWindowRevisionsRemainIndependent": "PASS",
+    "concurrentEnqueueCreatesExactlyOneGeneration": "PASS",
+    "changedWindowReplacedWithoutInvalidatingOtherReadyWindow": "PASS",
+    "failedGenerationDoesNotResetAttemptCap": "PASS",
+    "nonUtcFailedAndReadyGenerationParity": "PASS",
+    "foreignFutureAndPreCollectionQueueInputsDenied": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-report-queue.ts": "2738221865bf56c4e13c3ccb52ab8d3404342906bb48702cf3184ba73d4e6450",
+    "prisma/migrations/20261016100000_live_metric_report_queue_window/migration.sql": "aec54f350d6aa63cac1bd731cc4d1b9f5c921cb26f76d1731ac1f64889450d66"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 122
+}

@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextResponse } from "next/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tx = {
   live: { findFirst: vi.fn(), updateMany: vi.fn() },
@@ -30,8 +31,9 @@ const runtimeReadyContent = {
 };
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { DELETE, POST } from "@/app/api/live-admission/route";
 
 function request(method: "POST" | "DELETE" = "POST", payload = { vendorId: "vendor-1", liveId: "live-1" }, cookie?: string) {
@@ -43,12 +45,14 @@ function request(method: "POST" | "DELETE" = "POST", payload = { vendorId: "vend
       "x-celebratedeal-client": "web",
       ...(cookie ? { cookie } : {}),
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(method === "DELETE" ? { ...payload, lease: { id: "session-1", expiresAtMs: 1000 } } : payload),
   });
 }
 
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(checkRateLimit).mockResolvedValue(null);
   db.live.findFirst.mockResolvedValue({ id: "live-1", vendorId: "vendor-1", ...runtimeReadyContent });
   db.live.updateMany.mockResolvedValue({ count: 0 });
   tx.live.findFirst.mockResolvedValue({
@@ -72,12 +76,12 @@ beforeEach(() => {
 });
 
 describe("POST /api/live-admission", () => {
-  it("admits a viewer and returns only a generic success body", async () => {
+  it("admits a viewer and returns non-secret lease metadata", async () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual({ ok: true });
+    expect(body).toEqual({ ok: true, lease: { id: "session-1", expiresAtMs: expect.any(Number) } });
     expect(response.headers.getSetCookie().join("\n")).toContain("HttpOnly");
     expect(JSON.stringify(body)).not.toContain("token");
   });
@@ -193,11 +197,35 @@ describe("POST /api/live-admission", () => {
 describe("DELETE /api/live-admission", () => {
   it("releases the server-side session by hashed cookie token", async () => {
     const token = "B".repeat(43);
-    const response = await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${token}`));
+    const releaseRequest = request("DELETE", undefined, `celebratedeal_live_viewer=${token}`);
+    const response = await DELETE(new Request(releaseRequest.url, { method: "DELETE", headers: releaseRequest.headers, body: JSON.stringify({ vendorId: "vendor-1", liveId: "live-1", lease: { id: "session-1", expiresAtMs: 1000 } }) }));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
     expect(db.liveViewerSession.deleteMany).toHaveBeenCalledOnce();
     expect(JSON.stringify(db.liveViewerSession.deleteMany.mock.calls)).not.toContain(token);
   });
+});
+
+it.each([429, 503])("DELETE propagates limiter %i before releasing a session", async (status) => {
+  const limited = NextResponse.json({ error: "synthetic_limiter" }, { status, headers: { "Retry-After": "30" } }); vi.mocked(checkRateLimit).mockResolvedValue(limited);
+  const response = await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${"A".repeat(43)}`));
+  expect(response).toBe(limited); expect(db.liveViewerSession.deleteMany).not.toHaveBeenCalled();
+  expect(checkRateLimit).toHaveBeenCalledWith(expect.any(Request), "live-admission-release", 120, 60_000);
+});
+it("rejects cross-origin DELETE before rate-limiter or database work", async () => {
+  const r = request("DELETE"); r.headers.set("origin", "https://evil.example");
+  expect((await DELETE(r)).status).toBe(403); expect(checkRateLimit).not.toHaveBeenCalled(); expect(db.liveViewerSession.deleteMany).not.toHaveBeenCalled();
+});
+it("enforces the actual memory-provider release limit without changing the admission bucket", async () => {
+  vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+  const real = await vi.importActual<typeof import("@/lib/trusted-entry-rate-limit")>("@/lib/trusted-entry-rate-limit"); vi.mocked(checkRateLimit).mockImplementation((request, key, limit, windowMs) => {
+    // Synthetic transport supplies the socket address; headers are not trusted.
+    Object.defineProperty(request, "ip", { value: "127.0.0.1" });
+    return real.checkRateLimit(request, key, limit, windowMs, { trustMode: "runtime", deploymentSource: "node" });
+  });
+  for (let i = 0; i < 120; i++) expect((await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${"A".repeat(43)}`))).status).toBe(200);
+  expect((await DELETE(request("DELETE", undefined, `celebratedeal_live_viewer=${"A".repeat(43)}`))).status).toBe(429);
+  expect(db.liveViewerSession.deleteMany).toHaveBeenCalledTimes(120);
+  expect((await POST(request())).status).toBe(200);
 });

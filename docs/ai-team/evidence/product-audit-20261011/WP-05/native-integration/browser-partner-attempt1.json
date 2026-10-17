@@ -1,0 +1,29 @@
+{
+  "checks": [
+    {
+      "engine": "chromium",
+      "javascript": false,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    }
+  ],
+  "status": "FAIL",
+  "cleanup": false,
+  "currentStep": "error-message",
+  "__registrationReturnPathPresent": true,
+  "originMatches": true,
+  "lastSubmissionStatus": 400,
+  "failedStage": "chromium:js",
+  "errorType": "AssertionError",
+  "errorCode": "ERR_ASSERTION",
+  "lastPath": "/p/wp05-partner-1791806756273",
+  "retryState": null,
+  "errorMessageCount": 1,
+  "retentionFailureCount": 0,
+  "fieldCount": 1,
+  "draftCount": 0,
+  "cleanupError": "P2003"
+}

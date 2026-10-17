@@ -11,8 +11,7 @@ import {
 } from "@/lib/live-chat";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { liveChatIpTrustConfig, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
-import { getRequestClientIp } from "@/lib/request-client-ip";
+import { getLiveChatClientIp, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
 
 const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" };
 const MAX_QUERY_LENGTH = 2_048;
@@ -64,9 +63,9 @@ async function securityGate(request: Request, key: string, requireTrustedClientI
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return { response: noStore(sameOrigin), clientIp: null };
 
-  const clientIp = getRequestClientIp(request, liveChatIpTrustConfig());
-  if (requireTrustedClientIp && !clientIp) {
-    return { response: json({ error: "Unable to use live chat" }, 403), clientIp: null };
+  const clientIp = getLiveChatClientIp(request);
+  if (!clientIp) {
+    return { response: json({ error: "Request source unavailable" }, requireTrustedClientIp ? 403 : 503), clientIp: null };
   }
 
   const limited = await checkRateLimit(

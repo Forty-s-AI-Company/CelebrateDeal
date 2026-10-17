@@ -1,0 +1,14 @@
+{
+  "status": "FAIL",
+  "stage": "assert-lifecycle",
+  "scope": "Owned loopback synthetic DB and recorded VOD; fixture authorization, not signed Next HTTP",
+  "checks": {
+    "unverifiedReadinessWritesNoMetrics": "PASS"
+  },
+  "errorType": "AssertionError",
+  "errorCode": "ASSERTION_OR_SERVICE_ERROR",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

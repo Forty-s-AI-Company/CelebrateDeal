@@ -1,0 +1,232 @@
+Independent readonly Critical Migration/Permission review, no tools or modifications. Report BLOCKER/MAJOR/MINOR/NIT with file/area/evidence/impact/recommended_fix/required_test/confidence. Full new119 migration and intake service implementation are supplied; the one-line Input schema declaration is omitted: it is strict Zod vendor/live id regex1..128 and43-char base64url admission credential, not browser identity. Session binding excerpt is supplied; existing session authorizer still resolves and revalidates verified viewer plus exact active admission and server version/lifetime. HTTP session endpoint now explicitly sets requirePlaybackIntake:true; request schema still only strict UUID. Client accepts server UUID/timestamps and starts the existing collector with that UUID, with NO local fallback; untracked URL still plays. Cap64 per version/admission persists one permanent loss boundary before returning an untracked URL; loss marks additional untracked playback through VERSION retention, not revocation/fulfilment of the old nonce. intake revision=count rows+count loss markers. No covered proof or producer here. Source transaction locks live/admission/video/version, re-resolves context and rechecks admission/expiry before commit. Shared context locks disabled version rows too; new-version epoch INSERT serializes on Live. No history backfill. Scope is private foundation, full WP/release/old synchronized20 still NOT_READY,7 successes13failures unchanged. Deployed runtime role, TTL renewal and in-place verification recovery, signed Next HTTP browser auth, live captureStream/WHEP, populated upgrades/load remain UNVERIFIED. Fresh119 DB plus generated-VOD browser private adapter pass: exact server nonce,1session9intervalsclosed; fixture authorizer is synthetic, not signed HTTP end-to-end. Do not claim complete release or full source review of excerpts. Keep response concise.
+
+FULL119SQL
+BEGIN;
+SET LOCAL lock_timeout='5s';
+SET LOCAL statement_timeout='30s';
+-- No backfill: earlier versions cannot certify pre-intake history.
+ALTER TABLE public."LiveMetricVersion" ADD COLUMN "playbackIntakeStartedAt" TIMESTAMPTZ(3);
+CREATE FUNCTION public.wp20_metric_playback_epoch() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,pg_temp AS $$
+BEGIN
+ IF TG_OP='INSERT' THEN
+  -- Serialize new protocol epochs with in-flight playback source decisions.
+  PERFORM 1 FROM public."Live" WHERE id=NEW."liveId" AND "vendorId"=NEW."vendorId" FOR UPDATE;
+  NEW."playbackIntakeStartedAt":=date_trunc('milliseconds',clock_timestamp());
+ ELSIF NEW."playbackIntakeStartedAt" IS DISTINCT FROM OLD."playbackIntakeStartedAt" THEN
+  RAISE EXCEPTION 'playback intake epoch is immutable' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricVersion_playback_epoch" BEFORE INSERT OR UPDATE ON public."LiveMetricVersion"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_playback_epoch();
+CREATE TABLE public."LiveMetricPlaybackIntake" (
+ id TEXT PRIMARY KEY CHECK (id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
+ "vendorId" TEXT NOT NULL,"liveId" TEXT NOT NULL,"versionId" TEXT NOT NULL,"admissionSessionId" TEXT NOT NULL,
+ "issuedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT date_trunc('milliseconds',clock_timestamp()),
+ "expiresAt" TIMESTAMPTZ(3) NOT NULL,
+ "lossAt" TIMESTAMPTZ(3),
+ CONSTRAINT "LiveMetricPlaybackIntake_range_check" CHECK ("issuedAt"<"expiresAt"),
+ CONSTRAINT "LiveMetricPlaybackIntake_scope_key" UNIQUE ("vendorId","liveId","versionId",id),
+ CONSTRAINT "LiveMetricPlaybackIntake_version_fkey" FOREIGN KEY ("vendorId","liveId","versionId")
+  REFERENCES public."LiveMetricVersion"("vendorId","liveId",id) ON DELETE CASCADE ON UPDATE NO ACTION
+ -- No admission FK: release/deletion must not erase an unanswered expectation.
+);
+CREATE INDEX "LiveMetricPlaybackIntake_admission_idx" ON public."LiveMetricPlaybackIntake"("vendorId","liveId","admissionSessionId");
+CREATE INDEX "LiveMetricPlaybackIntake_window_idx" ON public."LiveMetricPlaybackIntake"("vendorId","liveId","versionId","issuedAt");
+CREATE FUNCTION public.wp20_metric_playback_intake_guard() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp SET row_security=off SET timezone='UTC' AS $$
+DECLARE expiry TIMESTAMPTZ;
+BEGIN
+ IF TG_OP='DELETE' AND NOT EXISTS(SELECT 1 FROM public."LiveMetricVersion" WHERE id=OLD."versionId"
+  AND "vendorId"=OLD."vendorId" AND "liveId"=OLD."liveId") THEN RETURN OLD; END IF;
+ IF TG_OP='UPDATE' AND OLD."lossAt" IS NULL AND NEW."lossAt" IS NOT NULL
+  AND (to_jsonb(NEW)-'lossAt') IS NOT DISTINCT FROM (to_jsonb(OLD)-'lossAt') THEN
+  -- One permanent loss boundary bounds storage when a collector reaches quota.
+  NEW."lossAt":=date_trunc('milliseconds',clock_timestamp()); RETURN NEW;
+ END IF;
+ IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'playback intake is immutable' USING ERRCODE='23514'; END IF;
+ IF NEW."lossAt" IS NOT NULL THEN RAISE EXCEPTION 'new intake cannot forge loss time' USING ERRCODE='23514'; END IF;
+ IF current_setting('transaction_isolation')<>'read committed' THEN
+  RAISE EXCEPTION 'playback intake requires read committed' USING ERRCODE='23514';
+ END IF;
+ PERFORM 1 FROM public."Live" WHERE id=NEW."liveId" AND "vendorId"=NEW."vendorId" FOR SHARE;
+ PERFORM 1 FROM public."LiveViewerSession" WHERE id=NEW."admissionSessionId" AND "liveId"=NEW."liveId" AND "vendorId"=NEW."vendorId" FOR NO KEY UPDATE;
+ PERFORM 1 FROM public."LiveMetricVersion" WHERE id=NEW."versionId" AND "liveId"=NEW."liveId" AND "vendorId"=NEW."vendorId" FOR SHARE;
+ NEW."issuedAt":=date_trunc('milliseconds',clock_timestamp());
+ SELECT LEAST(v."expiresAt",a."expiresAt" AT TIME ZONE 'UTC') INTO expiry
+ FROM public."LiveMetricVersion" v JOIN public."Live" l ON l.id=v."liveId" AND l."vendorId"=v."vendorId" AND l."videoId" IS NOT DISTINCT FROM v."videoId"
+ JOIN public."LiveViewerSession" a ON a."vendorId"=v."vendorId" AND a."liveId"=v."liveId"
+ WHERE v.id=NEW."versionId" AND v."vendorId"=NEW."vendorId" AND v."liveId"=NEW."liveId" AND a.id=NEW."admissionSessionId"
+  AND v."collectionEnabled" AND v."collectionStartedAt"<=NEW."issuedAt";
+ IF expiry IS NULL OR NEW."expiresAt">expiry OR NEW."expiresAt"<=NEW."issuedAt" THEN
+  RAISE EXCEPTION 'playback intake scope or lifetime invalid' USING ERRCODE='23514';
+ END IF;
+ IF (SELECT count(*) FROM public."LiveMetricPlaybackIntake" WHERE "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId"
+  AND "versionId"=NEW."versionId" AND "admissionSessionId"=NEW."admissionSessionId")>=64 THEN
+  RAISE EXCEPTION 'playback intake limit reached' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricPlaybackIntake_guard" BEFORE INSERT OR UPDATE OR DELETE ON public."LiveMetricPlaybackIntake"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_playback_intake_guard();
+CREATE TRIGGER "LiveMetricPlaybackIntake_no_truncate" BEFORE TRUNCATE ON public."LiveMetricPlaybackIntake"
+ FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+ALTER TABLE public."LiveMetricSession" ADD COLUMN "intakeId" TEXT;
+ALTER TABLE public."LiveMetricSession" ADD CONSTRAINT "LiveMetricSession_intake_fkey" FOREIGN KEY ("vendorId","liveId","versionId","intakeId")
+ REFERENCES public."LiveMetricPlaybackIntake"("vendorId","liveId","versionId",id) ON DELETE NO ACTION ON UPDATE NO ACTION;
+CREATE UNIQUE INDEX "LiveMetricSession_intake_key" ON public."LiveMetricSession"("vendorId","liveId","versionId","intakeId");
+CREATE FUNCTION public.wp20_metric_session_intake_guard() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp SET row_security=off AS $$
+BEGIN
+ IF TG_OP='UPDATE' THEN
+  IF NEW."intakeId" IS DISTINCT FROM OLD."intakeId" THEN RAISE EXCEPTION 'session intake binding is immutable' USING ERRCODE='23514'; END IF;
+ ELSIF NEW."intakeId" IS NOT NULL THEN
+  IF NOT EXISTS(SELECT 1 FROM public."LiveMetricPlaybackIntake" i WHERE i.id=NEW."intakeId" AND i."vendorId"=NEW."vendorId"
+    AND i."liveId"=NEW."liveId" AND i."versionId"=NEW."versionId" AND i."admissionSessionId"=NEW."admissionSessionId"
+    AND NEW."anchorAt">=i."issuedAt" AND NEW."expiresAt"<=i."expiresAt") THEN
+   RAISE EXCEPTION 'session intake scope or lifetime invalid' USING ERRCODE='23514';
+  END IF;
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER "LiveMetricSession_intake_guard" BEFORE INSERT OR UPDATE ON public."LiveMetricSession"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_session_intake_guard();
+CREATE FUNCTION public.wp20_metric_playback_intake_revision(vendor_id TEXT,live_id TEXT,version_id TEXT) RETURNS BIGINT
+LANGUAGE sql STABLE STRICT SECURITY DEFINER SET search_path=pg_catalog SET row_security=off AS $$
+ SELECT count(*)+count("lossAt") FROM public."LiveMetricPlaybackIntake" WHERE "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+$$;
+ALTER TABLE public."LiveMetricPlaybackIntake" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public."LiveMetricPlaybackIntake" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_playback_epoch(),public.wp20_metric_playback_intake_guard(),public.wp20_metric_session_intake_guard(),public.wp20_metric_playback_intake_revision(text,text,text) FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON public."LiveMetricPlaybackIntake" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_playback_epoch(),public.wp20_metric_playback_intake_guard(),public.wp20_metric_session_intake_guard(),public.wp20_metric_playback_intake_revision(text,text,text) FROM %I',api_role);
+  END IF;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+  WHERE c.oid='public."LiveMetricPlaybackIntake"'::regclass AND a.grantee<>c.relowner)
+ OR EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+  WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('wp20_metric_playback_epoch','wp20_metric_playback_intake_guard','wp20_metric_session_intake_guard','wp20_metric_playback_intake_revision') AND a.grantee<>p.proowner)
+ THEN RAISE EXCEPTION 'unexpected playback intake privileges' USING ERRCODE='23514'; END IF;
+END $$;
+COMMIT;
+
+
+SERVICE excluding Input declaration
+import { randomUUID } from "node:crypto";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { hashLiveViewerToken } from "./live-quota-admission";
+import { resolveLivePlaybackSource } from "./live-playback-source";
+import { resolveMetricPlaybackContext } from "./live-metric-version";
+import { MetricIngestError } from "./live-metric-ingestion";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+
+/** Playback authorization stays canonical. An enabled collection version gets
+ * a durable expectation BEFORE the URL leaves the server. Lost replies remain
+ * unmatched intake; no retry fabricates acknowledgement or positive coverage.
+ * Never persist the admission credential, URL or viewer personal information.
+ */
+export async function resolveTrackedLivePlaybackSource(db: Pick<PrismaClient, "$transaction">, value: z.infer<typeof Input>) {
+  const input = Input.parse(value);
+  return db.$transaction(async tx => {
+    await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "Live" WHERE id=${input.liveId} AND "vendorId"=${input.vendorId} FOR SHARE`);
+    const [admission] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT id FROM "LiveViewerSession" WHERE "tokenHash"=${hashLiveViewerToken(input.token)}
+        AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId}
+        AND "expiresAt">clock_timestamp() AT TIME ZONE 'UTC' FOR NO KEY UPDATE`);
+    if (!admission) return null;
+    const assertActive = async (expiresAt: Date | null) => {
+      const [state] = await tx.$queryRaw<{ active: boolean }[]>(Prisma.sql`SELECT EXISTS (
+        SELECT 1 FROM "LiveViewerSession" WHERE id=${admission.id} AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId}
+          AND "expiresAt">clock_timestamp() AT TIME ZONE 'UTC'
+          AND (${expiresAt}::timestamptz IS NULL OR ${expiresAt}::timestamptz>clock_timestamp())) AS active`);
+      if (!state?.active) throw new MetricIngestError("not_authorized");
+    };
+    // Locks and version selection use the same order as session issuance.
+    const context = await resolveMetricPlaybackContext(tx, input);
+    const [{ now }] = await tx.$queryRaw<{ now: Date }[]>(Prisma.sql`SELECT date_trunc('milliseconds',clock_timestamp()) AS now`);
+    const source = await resolveLivePlaybackSource(tx, { ...input, now });
+    if (!source) return null;
+    // Re-resolve after source reads, including runtime boundaries that can pass
+    // without a row mutation. No stale version/source response may be released.
+    const current = await resolveMetricPlaybackContext(tx, input);
+    if (!context && !current) { await assertActive(null); return source; }
+    if (!context) return null;
+    if (!current || current.versionId !== context.versionId) return null;
+    const [usage] = await tx.$queryRaw<{ total: number }[]>(Prisma.sql`SELECT count(*)::int AS total FROM "LiveMetricPlaybackIntake"
+      WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${current.versionId} AND "admissionSessionId"=${admission.id}`);
+    if (usage.total >= 64) {
+      // Preserve playback at the bound, but persist a permanent gap before
+      // returning an untracked URL. Later coverage cannot call this complete.
+      const [gap] = await tx.$queryRaw<{ id: string; lossAt: Date | null }[]>(Prisma.sql`SELECT id,"lossAt" FROM "LiveMetricPlaybackIntake"
+        WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${current.versionId} AND "admissionSessionId"=${admission.id}
+        ORDER BY "issuedAt",id LIMIT 1 FOR UPDATE`);
+      if (!gap) throw new Error("Playback intake unavailable");
+      if (!gap.lossAt) await tx.$executeRaw(Prisma.sql`UPDATE "LiveMetricPlaybackIntake" SET "lossAt"=clock_timestamp() WHERE id=${gap.id}`);
+      await assertActive(current.expiresAt);
+      return source;
+    }
+    const metricRequestId = randomUUID();
+    await tx.$executeRaw(Prisma.sql`INSERT INTO "LiveMetricPlaybackIntake"
+      (id,"vendorId","liveId","versionId","admissionSessionId","expiresAt")
+      SELECT ${metricRequestId},${input.vendorId},${input.liveId},${current.versionId},${admission.id},
+        LEAST(${current.expiresAt}::timestamptz,a."expiresAt" AT TIME ZONE 'UTC')
+      FROM "LiveViewerSession" a WHERE a.id=${admission.id} AND a."vendorId"=${input.vendorId} AND a."liveId"=${input.liveId}
+        AND a."expiresAt">clock_timestamp() AT TIME ZONE 'UTC'`);
+    // INSERT ... SELECT must not silently return a URL with no expectation.
+    const [stored] = await tx.$queryRaw<{ id: string; issuedAt: Date; expiresAt: Date }[]>(Prisma.sql`SELECT id,"issuedAt","expiresAt" FROM "LiveMetricPlaybackIntake" WHERE id=${metricRequestId}`);
+    if (!stored) throw new Error("Playback intake unavailable");
+    await assertActive(stored.expiresAt);
+    return { ...source, metricRequestId, metricIssuedAtMs: +stored.issuedAt, metricExpiresAtMs: +stored.expiresAt };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+}
+
+SESSION NEW BINDING (after final server auth and DB-clock revalidation)
+let intakeId: string | null = null;
+    if (options.requirePlaybackIntake) {
+      const [intake] = await tx.$queryRaw<{ id: string; expiresAt: Date }[]>(Prisma.sql`SELECT id,"expiresAt" FROM "LiveMetricPlaybackIntake"
+        WHERE id=${request.requestId.toLowerCase()} AND "vendorId"=${identity.vendorId} AND "liveId"=${identity.liveId}
+          AND "versionId"=${context.versionId} AND "admissionSessionId"=${identity.admissionId}
+          AND "issuedAt"<=${now} AND "expiresAt">${now} FOR SHARE`);
+      if (!intake) throw new MetricIngestError("not_authorized");
+      intakeId = intake.id;
+      source.expiresAt = new Date(Math.min(+source.expiresAt, +intake.expiresAt));
+    }
+    if (+source.expiresAt <= +now) throw new MetricIngestError("not_authorized");
+    let session = existing[0];
+    if (session) {
+      if (options.requirePlaybackIntake && session.intakeId !== intakeId) throw new MetricIngestError("not_authorized");
+      
+
+DB RECEIPT (reported, harness not supplied)
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+  "checks": {
+    "unconfiguredPlaybackPreserved": "PASS",
+    "committedBeforeSourceAndLostReplyRetained": "PASS",
+    "canonicalSessionBindingIdempotentAndBounded": "PASS",
+    "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+    "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+    "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+    "intakeEpochLossAndSessionBindingImmutable": "PASS",
+    "admissionDeletionRetainsIntakeVersionCascadeCleans": "PASS"
+  },
+  "browser": {
+    "sessionRequests": 1,
+    "intervals": 9,
+    "terminal": true,
+    "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+    "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

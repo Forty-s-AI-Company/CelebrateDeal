@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "checks": [
+    "actual_route_database_browser",
+    "two_tabs_one_visitor_two_visits",
+    "cached_retry_no_extra_visit",
+    "http_only_cookie_hidden",
+    "cross_origin_denied"
+  ],
+  "cleanup": "PASS",
+  "excluded": [
+    "deployment_rate_limiter",
+    "Next_server_routing",
+    "remote_TLS"
+  ],
+  "httpStatuses": [
+    200,
+    200,
+    200,
+    200,
+    403
+  ],
+  "clientStatuses": [
+    {
+      "first": "recorded",
+      "retry": "recorded"
+    },
+    {
+      "first": "recorded",
+      "retry": "recorded"
+    }
+  ]
+}

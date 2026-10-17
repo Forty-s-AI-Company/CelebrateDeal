@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "exit_code": 0,
+  "scope": "Baseline plus cumulative WP11 source only; isolated build without dotenv or real service credentials",
+  "diagnostics": {
+    "missing_database_configuration": false,
+    "missing_app_url": false,
+    "type_error": false,
+    "module_not_found": false,
+    "compile_failure": false
+  },
+  "raw_output_persisted": false
+}

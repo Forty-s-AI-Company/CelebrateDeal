@@ -1,0 +1,40 @@
+{
+  "status": "RESOLVED_BY_ACTION_NOT_ACCEPTED_AS_WP_COMPLETE",
+  "reviewer": {
+    "provider": "claude_cli",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "review_receipts": [
+      "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-review-20261016.json",
+      "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-rereview-20261016.json"
+    ]
+  },
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "issue": "The non-sandbox payment stop condition was already met or presumed met.",
+      "disposition": "RESOLVED",
+      "evidence": "Both exact Preview deployments were removed with exit code 0; post-removal inspect returned nonzero and confirmed absence."
+    },
+    {
+      "severity": "MINOR",
+      "issue": "The observed edge deny was not a controlled or proven persistent protection.",
+      "disposition": "RESOLVED",
+      "evidence": "The evidence now labels it observed-only and both deployments were removed instead of relying on the deny."
+    },
+    {
+      "severity": "MINOR",
+      "issue": "Alias inventory lacked explicit team scope and time.",
+      "disposition": "RESOLVED",
+      "evidence": "The scoped command and UTC timestamp are recorded; subsequent deployment removal makes alias absence no longer a live safety dependency."
+    },
+    {
+      "severity": "NIT",
+      "issue": "Local link cleanup and NOT_RUN inventory were incomplete.",
+      "disposition": "RESOLVED",
+      "evidence": "The generated env file and verified in-worktree .vercel metadata were removed without reading env contents; data isolation, runtime verification and Deployment Protection status are explicitly NOT_RUN."
+    }
+  ],
+  "acceptance": "NOT_REQUESTED",
+  "reason": "WP-04 remains incomplete. The Preview lifecycle evidence is retained as partial historical proof and is not a canonical READY claim."
+}

@@ -1,0 +1,200 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:87e3142d62891cab55d2460277886d78dad041d0942f1087fe75ef0c86bd6b19",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/lib/capability-confirmation.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/lib/automation-voucher-exchange.ts",
+      "src/lib/automation-voucher-exchange.db.test.ts",
+      "src/app/api/automation/vouchers/redeem/route.ts",
+      "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts",
+      "src/app/r/[code]/route.ts",
+      "src/app/r/[code]/route.test.ts",
+      "src/app/api/live-admission/route.ts",
+      "src/app/api/live-admission/route.test.ts"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "src/app/api/automation/vouchers/redeem/route.ts",
+      "src/app/api/live-admission/route.test.ts",
+      "src/app/api/live-admission/route.ts",
+      "src/app/portal/[vendorSlug]/access/route.test.ts",
+      "src/app/portal/[vendorSlug]/access/route.ts",
+      "src/app/r/[code]/route.test.ts",
+      "src/app/r/[code]/route.ts",
+      "src/lib/automation-voucher-exchange.db.test.ts",
+      "src/lib/automation-voucher-exchange.ts",
+      "src/lib/capability-confirmation.test.ts",
+      "src/lib/capability-confirmation.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "accepted": false,
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR issues in the supplied snapshot (sha256:87e3142d…bc6b19). Two MINOR availability issues are in the WP11 rate-limit changes. Neither blocks delivery.\n\n**Confirmation cookie fix (src/lib/capability-confirmation.ts):** the change addresses the earlier finding.\n- The cookie value is now an HMAC-SHA256 using a key derived only for this purpose (`capability-confirmation-cookie-v1`), so someone who captures the form body can't rebuild the cookie.\n- The digested fields (nonce, issued time, capability, action URL) are serialized with JSON, so different field values can't produce the same input.\n- The cookie format check (exactly 43 base64url characters) runs before the constant-time comparison, so the comparison never sees unequal lengths.\n- Exactly one matching cookie is required.\n- The TTL, origin, Sec-Fetch-Site, `__Host-`, HttpOnly and SameSite settings are unchanged.\n- If neither CSRF_SECRET nor JOB_SECRET is set, the helper fails closed.\n- One operational side effect: confirmation pages issued in the 5 minutes before deploy will return 403 after it. Users just reload; this isn't a defect.\n\n**Referral GET (src/app/r/[code]/route.ts):** the 60/min limit now runs before any database access, as claimed.\n\n**Live-admission DELETE (src/app/api/live-admission/route.ts):** it checks same-origin and the client header first, then applies its own 120/min release limit before reading the body or touching the database. The POST limit bucket stays separate.\n\n**Not reviewed:** I didn't evaluate the IP parser or forwarded-header trust, which you marked WAITING_AUTHORIZATION. The per-IP limits below depend on them. I didn't run or confirm any tests, and an empty or short findings list doesn't confirm test or release success.\n\n**Out of scope, no finding raised:** DELETE has no try/catch around releaseLiveViewer, unlike POST. That's existing behavior.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/app/r/[code]/route.ts",
+        "area": "GET lines 11-13 (checkRateLimit early return)",
+        "issue": "When the referral limiter trips or fails closed, a top-level browser visit gets the limiter's raw 429/503 response instead of being redirected to /billing/plans.",
+        "evidence": "`const limited = await checkRateLimit(request, \"platform-referral-entry\", 60, 60_000); if (limited) return limited;` runs before any redirect. This route is a GET link people open from shared referral URLs, and per-IP keying (whose trust model is explicitly uncertified) puts many users behind one NAT/CGNAT/campus egress in the same bucket.",
+        "impact": "Real prospects behind a shared IP, or everyone during a limiter-provider outage that returns 503, land on an error page instead of the plans page. That breaks the referral link and loses the conversion. The protection goal (no unbounded click writes) doesn't require blocking the navigation itself.",
+        "recommended_fix": "When `limited` is set, skip recordPlatformReferralClick and do NOT set or clear the referral cookie (leave any existing attribution alone). Still issue NextResponse.redirect to /billing/plans, e.g. with no referral flag or a neutral flag, and add Retry-After/no-store headers as needed. The DB write stays rate-limited while the navigation degrades gracefully.",
+        "required_test": "Route unit/HTTP test: request 61 within the window and a simulated provider 503 both return a 3xx to /billing/plans, call recordPlatformReferralClick zero times, and send no Set-Cookie for PLATFORM_REFERRAL_COOKIE. Requests 1-60 behave as before.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/live-admission/route.ts",
+        "area": "DELETE lines ~59-61 (live-admission-release limiter)",
+        "issue": "If a release is rate-limited, the viewer's admission slot isn't released and stays held until the lease expires. Release calls bunch up when many viewers behind one IP leave together.",
+        "evidence": "Admissions from one IP can be spread over several minutes at up to 120/min. Releases happen in a burst at session end (page close / end of class), and anything above 120/min from that IP gets a 429 before releaseLiveViewer runs. Unload-time release requests are typically fire-and-forget and are not retried.",
+        "impact": "Held slots can temporarily use up the vendor's concurrent-viewer quota, so later legitimate viewers get 429/503 until the leases expire. How long this lasts depends on the lease TTL, which isn't visible in this snapshot.",
+        "recommended_fix": "Confirm that the lease TTL/heartbeat expiry bounds the leak to an acceptable window and document it. Otherwise key the release limiter on the viewer token, or IP+token, rather than IP alone, or allow a higher burst for release. A token-bound release only frees that viewer's own slot, so it's low-risk to allow more generously.",
+        "required_test": "HTTP test: admit N>120 viewers from one IP, spread across windows, then release all of them within one minute. Assert either that every slot is released or that held slots expire within the documented lease TTL, and that a new admission succeeds after that bound.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS"
+    }
+  ],
+  "status": "REVIEW_COMPLETED",
+  "completed": false,
+  "reviewed": true,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  }
+}

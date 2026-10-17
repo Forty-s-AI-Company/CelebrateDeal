@@ -1,0 +1,205 @@
+{
+  "reviewed": true,
+  "claude_cli_discovery_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "review": {
+    "summary": "I re-checked the four earlier findings against the supplied gateway code and the HTTP test excerpt. All four look resolved. (1) Each handler is now tracked from before admission through to its database settlement, and close() keeps draining until no handlers remain, with a 15s failure deadline. The finally() cleanup runs before Promise.all resolves, so the loop ends and catches handlers that settle late. If stopping the run fails, close() still drains everything and then throws, so the run is never reported as closed. (2) An admission that committed but lost its acknowledgement now shows up in admissionFailures, and pendingFrames is a real database count. The lost-acknowledgement test shows {admissionFailures:1, pendingFrames:1}. (3) Upstream statuses outside 200–599 now become 502 and are settled as responded/502, and the test checks this. (4) When the settlement rollback is simulated, the result is settlementFailures=1 with the frame left pending, never invented as absent. I found no BLOCKER or MAJOR defects in the supplied scope. I have four smaller items: (a) the gateway does not check the Host or Origin headers, so a web page in a browser on the same machine could inject frames into the synthetic run; (b) the failure counters mix different causes; (c) close() reports no counters when it fails; (d) two settlement paths still have no test in this excerpt. This review does not certify that tests passed, that responses reached a browser, that source data is complete, or that the gateway is ready for production. 'finish' only means the response was handed to the kernel.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-gateway.ts",
+        "area": "handle(): route lookup / server request entry (allowed.get(`${request.method} ${request.url}`))",
+        "issue": "Inbound requests are not checked for an expected Host or Origin. Any page open in a browser on the validation host can send requests to the gateway and create admitted frames. It can send cross-origin simple GET/POST requests (no-cors) to http://127.0.0.1:<port>, or use DNS rebinding.",
+        "evidence": "The only gate is closing plus the method/path manifest lookup. The gateway overwrites Host before forwarding but never compares the inbound Host to `127.0.0.1:${address.port}`, and it never inspects Origin or Sec-Fetch-Site. Admission happens before anything that could tell an owned harness client apart from a browser-originated request.",
+        "impact": "Frames not produced by the synthetic harness can be committed into the M1/M2 synthetic evidence run. This inflates responded or interrupted counts, can use up the 10,000-frame cap, and contaminates the metrics the user authorised. The ephemeral port reduces the risk but does not remove it, because local ports can be scanned. This is separate from the documented lack of an authenticated source binding: it is a cheap integrity guard for the current synthetic use.",
+        "recommended_fix": "Before admission, reject with 403 or 421, without admitting, any request whose Host is not exactly `127.0.0.1:<gateway port>`. Also reject requests that carry an Origin header or a Sec-Fetch-Site value other than none or same-origin, unless the harness explicitly allows it. Keep the check ahead of admitMetricIngress so rejected requests create no frames.",
+        "required_test": "Disposable-DB HTTP test: send a manifest path with Host: evil.example:<port>, and separately with Origin: http://evil.example. Assert a non-2xx status, upstream forwarded count unchanged, and zero new LiveMetricIngressFrame rows for the run.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-ingress-gateway.ts",
+        "area": "handle() admission catch; server createServer handle().catch",
+        "issue": "The failure counters mix different causes. admissionFailures counts expected post-stop rejections (admissions still waiting when stopMetricIngressRun serialises) together with lost commit acknowledgements whose outcome is unknown. Separately, any unexpected exception in handle() is counted as settlementFailures even when no settlement was attempted.",
+        "evidence": "`catch { admissionFailures++; ... }` treats every admit error the same. `handle(...).catch(() => { settlementFailures++; ... })` attributes all handler errors to settlement.",
+        "impact": "An operator can misread a clean shutdown with in-flight admissions as an unknown-commit failure, or misread a non-database handler error as a settlement rollback. pendingFrames is still read from the database, so this cannot create false coverage. It only makes failure diagnosis less precise.",
+        "recommended_fix": "Split the counters, for example admissionRejectedAfterStop vs admissionUnknown, and handlerErrors vs settlementFailures. Alternatively, document that admissionFailures includes expected rejections during shutdown.",
+        "required_test": "Start an admission, call close() while admission is blocked behind the stop lock, and assert which counter increments and that pendingFrames is 0.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-ingress-gateway.ts",
+        "area": "close(): stopFailed throw and drain-deadline rejection",
+        "issue": "When stopping the run fails or the drain deadline expires, close() rejects with a plain Error and returns no counters or pending count.",
+        "evidence": "`if (stopFailed) throw new Error('Metric ingress database stop failed')` runs before the pendingFrames query. The deadline rejection skips it too, so settlementFailures and admissionFailures cannot be retrieved.",
+        "impact": "The failure outcome is correctly conservative, but the evidence receipt loses the diagnostic counts needed to explain the failed shutdown.",
+        "recommended_fix": "Throw an error that carries {settlementFailures, admissionFailures, stopFailed, drainTimedOut}. Optionally attempt a best-effort pending count before throwing.",
+        "required_test": "Inject a stop failure and assert that close() rejects with an error that exposes the counters.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "HTTP test excerpt",
+        "area": "Lost-ack / forced-close / bad-status cases",
+        "issue": "The supplied excerpt still does not exercise two paths. First: admission succeeds, then the gateway is closing or the client has gone, so the frame is settled 'interrupted' and a 503 is sent. Second: the upstream connection fails before headers (for example connection refused), so the gateway sends 502 and the frame is settled 'responded'/502 by the gateway.",
+        "evidence": "The excerpt covers a lost acknowledgement (admission throws), a forced close with a hung upstream, a simulated settlement rollback, and a status ≥600 mapped to 502. No case closes the gateway while an admission is awaiting commit, and no case points the gateway at an unreachable upstream port.",
+        "impact": "These settlement branches are unverified against the real database. A regression could leave frames pending or settle them incorrectly unnoticed. The pendingFrames report would still flag pending frames, so the impact is limited.",
+        "recommended_fix": "Add two disposable-DB cases. (1) Block admission with a wrapper, call close() or abort the client, then release, and assert the frame is 'interrupted' with pendingFrames 0. (2) Start the gateway with a closed upstream port and assert a 502 response and a persisted responded/502 frame.",
+        "required_test": "The two cases described in recommended_fix, run against the owned, marked disposable PG.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "status": "RATE_LIMITED"
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "permission",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5"
+}

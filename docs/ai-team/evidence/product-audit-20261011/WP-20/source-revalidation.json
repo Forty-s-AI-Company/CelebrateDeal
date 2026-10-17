@@ -1,0 +1,30 @@
+{
+  "sources": [
+    {
+      "path": "src/app/api/analytics/route.ts",
+      "current_sha256": "914ad278e53f1228ebc1a235ddef40303d1486b3e9f72ce3da6ce7761a771d53",
+      "unchanged_from_inventory": true
+    },
+    {
+      "path": "src/components/live-playback.tsx",
+      "current_sha256": "04a655c5161cce5d7092eeefcd348cc8ec37852eab725743410027666dc24dde",
+      "unchanged_from_inventory": true
+    },
+    {
+      "path": "src/lib/stream-usage.ts",
+      "current_sha256": "192a79010eba132d4bdfe2d71d986f4540f9cc5be76fb8d293bd063e884d38c7",
+      "unchanged_from_inventory": true
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "current_sha256": "5c8b2a0ae3cf5efdd6d64baf3ee49d6aebc5d3fe64f58934e0104a85e2e4349b",
+      "unchanged_from_inventory": false
+    },
+    {
+      "path": "src/app/(app)/lives/[id]/analytics/page.tsx",
+      "current_sha256": "3d23c6ae9bbe34f68ded61c8089bb1c124c8ffa1b5c95c0a5c94306c6b847c55",
+      "unchanged_from_inventory": false
+    }
+  ],
+  "scope": "Code hashes only; no database/customer/secret access"
+}

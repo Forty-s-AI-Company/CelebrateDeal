@@ -8,6 +8,7 @@ vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
 vi.mock("@/lib/automation-workflow", () => ({ automationCustomerKeyHash: mocks.hash }));
 vi.mock("@/lib/email-delivery-pii", () => ({ protectEmailDeliveryPayload: mocks.protect }));
 vi.mock("@/lib/student-portal-auth", () => ({ createStudentPortalAccessToken: mocks.createToken, clearStudentPortalSessionCookie: mocks.clearCookie }));

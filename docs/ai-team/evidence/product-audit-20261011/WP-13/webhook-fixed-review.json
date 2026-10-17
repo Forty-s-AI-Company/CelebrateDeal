@@ -1,0 +1,165 @@
+{
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "permission",
+        "security",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 8000,
+      "expected_duration": 30,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "finalModel": "claude-opus-5-5",
+  "status": "REVIEW_COMPLETED",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS"
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "review": {
+    "summary": "I re-checked the repaired MAJOR and the logic it touches. The fix holds. A signed, parseable unfollow with a timestamp later than server `now` now returns `retry_later` before any `updateMany`, and the route maps that to 503. The original event time is never clamped, and a redelivered event is applied with that time. Replay is still guarded by the conditional update (`revokedAt: null`, `linkedAt <= occurredAt`), so a late redelivery can't revoke a binding renewed after the event. Follow events never restore permission. Removing the paused-account gate still leaves the account-exists check and exact raw-body HMAC verification as the only way to write events, and missing or undecryptable credentials still fail closed with 401. The operations document correctly treats the configured provider redelivery as not yet verified and doesn't count it as delivered. I found one MINOR, non-blocking issue in the repaired path: one future-dated unfollow holds back the whole batch, and nothing records that this is happening. No BLOCKER or MAJOR defects were found. This review is not evidence that any tests passed or that the release is ready.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/line-webhook-events.ts",
+        "area": "applyVerifiedLineWebhookEvents: future-unfollow pre-check (events.some(...) > now.getTime()) and src/app/api/webhooks/line/[vendorId]/route.ts retry_later branch",
+        "issue": "If any single unfollow in the batch has a future timestamp, the whole batch gets a 503. That holds back every other valid unfollow in the same delivery. There is no clock-skew tolerance (even 1 ms ahead triggers it), and the server records nothing when it returns 503 for retry_later, so a lasting clock problem cannot be seen.",
+        "evidence": "The pre-check returns { status: \"retry_later\" } for the whole batch when any one successfully parsed unfollow has timestamp > now.getTime(). The route returns a 503 with a fixed body and no log or metric. The operations document says the system depends on clock sync and provider redelivery, but gives no way to detect that a channel keeps getting 503.",
+        "impact": "Normally the skew is small and redelivery fixes it, so this is not a correctness defect. But if the server clock falls well behind LINE's clock, every batch that contains an unfollow keeps getting 503 until LINE stops redelivering. All consent withdrawals in those batches are then lost, and nothing in the system shows it happened. The worker could keep sending to users who have withdrawn consent with no warning.",
+        "recommended_fix": "Keep the current semantics (no clamping, no partial acknowledgement). Add a fixed-text log or metric for retry_later that contains no identifiers, for example the vendorId's tenant-scoped counter and the skew in ms. Optionally treat a skew larger than the redelivery window as an operational alarm. Do not add a schema or an inbox.",
+        "required_test": "Unit test: a batch with one future unfollow plus one current unfollow returns retry_later and makes zero updateMany calls. After `now` moves forward, redelivering the same batch revokes both with their original timestamps. Route test: retry_later produces a 503 and the non-identifying skew signal is emitted.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "reviewed": true,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "completed": false,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "execution_provider": "claude_cli"
+}

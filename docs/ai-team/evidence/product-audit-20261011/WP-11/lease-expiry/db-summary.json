@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "passed": 6,
+  "failed": 0,
+  "test_names": [
+    "rate-limited same-IP release stops counting at exactly the 90-second lease boundary",
+    "an expired viewer cannot renew past a full viewer cap",
+    "valid renewal keeps its slot and an expired renewal can reclaim an empty slot",
+    "concurrent expired renewals cannot overfill the last slot",
+    "forces overlapping capacity reads for expired renewal versus expired",
+    "forces overlapping capacity reads for expired renewal versus new"
+  ],
+  "coverage_limit": "Request-handler + real PostgreSQL integration with controlled Date; no real network transport or wall-clock waiting",
+  "negative_control": "ReadCommitted mutation not run; deterministic barrier asserts two initial zero reads and at least one retry read"
+}

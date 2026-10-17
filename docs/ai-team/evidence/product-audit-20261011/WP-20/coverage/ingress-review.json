@@ -1,0 +1,239 @@
+{
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the files you supplied: the migration SQL, src/lib/live-metric-ingress.ts, its unit tests, and the schema excerpt. I did not find a blocker in the SQL itself, based on reading it.\n\n**What reads correctly:**\n- **Lock order:**\n  - Admission locks the parent version, then the run row, then recounts frames in a fresh read-committed statement.\n  - Stop and settlement never lock the parent version.\n  - Opening a run takes an exclusive lock on the version, then checks the current sources.\n  - Version-delete cascades run version → run → frame.\n  - I found no lock-order cycle among these paths.\n- **NULL handling:** A database with no comment fails the marker check. The `NOT FOUND` checks are correct.\n- **Locked-out callers:** The trigger function is SECURITY DEFINER with a pinned search_path, and every table reference is schema-qualified. RLS plus revoked grants cover PUBLIC, anon, authenticated and service_role.\n- **Cascade delete:** The direct-delete guard should still let the canonical version cascade through, because the deleted parent row is no longer visible when the cascade runs.\n- **Prisma names:** Constraint and index names match Prisma's defaults.\n\n**What I found:**\n1. **MAJOR – the database guarantees are untested.** No supplied test runs the triggers against a real database. The claims about bounded counts, stop racing admission, cascade-only deletion, blocked TRUNCATE, primary/read-committed only, and DB-owned timestamps are therefore unverified.\n2. **MINOR – a commit failure leaves an unsettleable frame.** If a commit succeeds on the server but the reply is lost, the frame is never returned to the caller and stays pending forever.\n3. **MINOR – contention hazard for a future gateway.** Every admission serializes on one run row, recounts all frames, and holds a share lock that blocks updates to the version row. This only matters once a gateway is added.\n4. **MINOR – blocked TRUNCATE may break test resets.** The TRUNCATE triggers also fire on `TRUNCATE ... CASCADE` from parent tables, which could break existing reset scripts for the disposable database.\n5. **NIT – three small points:**\n   - The expiry check passes if `expiresAt` can be NULL.\n   - Admission does not check `collectionEnabled`, though opening a run does.\n   - The input-rejection test claims rejection \"before persistence\" but never asserts that.\n\nThis is not sign-off on the app wiring, the gateway, source fences, coverage, or the open public quota/form MAJOR. The tests' pass status and replica behavior can't be inferred from reading the code.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-metric-ingress.test.ts",
+        "area": "whole file (all tests mock $transaction/$queryRaw)",
+        "issue": "No supplied test runs the migration's trigger guarantees against a real database. The unit tests only check zod parsing and mocked promise ordering.",
+        "evidence": "database() returns vi.fn mocks for $queryRaw/$transaction. No test covers: concurrent last-slot admission vs admissionLimit; stop committing while an admission waits on the run lock; direct DELETE/TRUNCATE rejected while version/vendor cascade succeeds; non-read-committed or replica rejection; marker absent; source rows present at open; client-supplied openedAt/admittedAt/settledAt/stoppedAt/outcome being overwritten; double settlement; a second run on the same version.",
+        "impact": "The safety claims of this foundation are unproven: bounded count under row lock, the stop/admission serialization, the cascade-only retention guard, and DB-owned clocks. A regression in the PL/pgSQL (for example the visibility assumption in the DELETE guard during a cascade) would not be caught. A future gateway would then rest on unverified invariants.",
+        "recommended_fix": "Add an integration suite that runs only against the marked, owned, loopback disposable DB, uses two real connections for race cases, and asserts each trigger branch and error code 23514.",
+        "required_test": "Disposable-DB integration tests: (1) limit=1 with two concurrent admits gives exactly one frame and one 'exhausted' error; (2) admit holding the run lock while stop runs, then stop's stoppedAt is later and the next admit gets 'closed'; (3) DELETE on Frame/Run directly raises and DELETE on LiveMetricVersion removes all rows; (4) TRUNCATE raises; (5) REPEATABLE READ insert raises; (6) open with an existing VisitPage row raises; (7) explicit outcome/timestamps on INSERT are overwritten; (8) a second settle returns 0 rows.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress.ts",
+        "area": "admitMetricIngress / transaction()",
+        "issue": "If the commit succeeds on the server but the client sees an error (lost connection or ack), the frame stays pending forever. The caller never receives frameId, so it cannot settle the frame as 'interrupted'.",
+        "evidence": "frameId is generated client-side before the transaction, but on rejection it is not attached to the error. settleMetricIngress requires frameId. The guard keeps pending rows permanently.",
+        "impact": "The census gains phantom pending admissions. They cannot be told apart from forwarded-but-unanswered requests, which distorts later analysis of unanswered requests. This is conservative for coverage but permanent noise.",
+        "recommended_fix": "On admission failure, include the frameId in a typed error (or return it with a status), so the caller can try settle('interrupted'). That call is harmless if the insert never committed, because it returns 0 rows.",
+        "required_test": "Unit test: when the mocked $transaction rejects after the callback, the error exposes the frameId. Integration test: settling an uncommitted frameId fails cleanly, and settling a committed one moves it to 'interrupted'.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql",
+        "area": "wp20_metric_ingress_guard Frame INSERT branch (FOR SHARE on version, FOR UPDATE on run, count(*))",
+        "issue": "Hazard for a future gateway: every admission serializes on one run row, recounts up to 10000 frames, and holds a share lock that blocks UPDATEs on LiveMetricVersion. The 5s statement_timeout then turns contention into admission errors.",
+        "evidence": "'SELECT ... FROM LiveMetricVersion ... FOR SHARE' conflicts with any UPDATE of the version row, including collectionEnabled or expiresAt changes and source writers that lock the version FOR UPDATE. 'FOR UPDATE' on the run plus 'SELECT count(*) ... WHERE runId' runs on every admission. The helper sets statement_timeout to 5000.",
+        "impact": "No caller exists yet. Once the gateway admits every public request, a burst would queue behind one row lock with O(n) recounts. Version admin updates could also stall. If the gateway fails closed, this becomes a public availability regression.",
+        "recommended_fix": "Before wiring a gateway: use FOR KEY SHARE on the version, which still blocks delete or key change and keeps the cascade lock order. Consider a trigger-maintained admitted counter on the run instead of count(*). Load-test with the chosen gateway failure policy.",
+        "required_test": "Disposable-DB concurrency test with N parallel admitters plus a concurrent version UPDATE, measuring lock waits and timeouts. Re-run the cascade-delete vs admission race after any lock-mode change.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql",
+        "area": "LiveMetricIngressRun_no_truncate / LiveMetricIngressFrame_no_truncate",
+        "issue": "The BEFORE TRUNCATE triggers also fire when the tables are truncated through TRUNCATE ... CASCADE on LiveMetricVersion or its ancestors. Existing test or reset helpers for the disposable DB that truncate tables will now fail.",
+        "evidence": "PostgreSQL fires the TRUNCATE triggers of every table included by CASCADE. The guard raises unconditionally for TG_OP='TRUNCATE'.",
+        "impact": "Integration-test cleanup that previously used TRUNCATE CASCADE could start failing after this migration. That could lead someone to disable the triggers as a workaround.",
+        "recommended_fix": "Search the existing test and reset helpers for TRUNCATE on metric, version or vendor tables, and switch them to DELETE on the version (the canonical cascade) or to drop and recreate the schema. Document that TRUNCATE is unsupported.",
+        "required_test": "Run the existing integration-test reset path against a migrated disposable DB and confirm it succeeds without bypassing the triggers.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql",
+        "area": "guard: 'IF NOT FOUND OR lifetime<=clock_timestamp()' and 'IF lifetime<=clock_timestamp() OR ...'",
+        "issue": "If LiveMetricVersion.expiresAt can be NULL, both expiry comparisons evaluate to NULL and the expiry check is skipped, so open and admit succeed for a version with no expiry.",
+        "evidence": "NULL <= ts gives NULL. 'FALSE OR NULL' gives NULL, which IF treats as false. The model excerpt does not show whether expiresAt is NOT NULL.",
+        "impact": "A run on a version without an expiry would admit until it hits the limit or is stopped. That may differ from the intent of time-bounded collection.",
+        "recommended_fix": "Confirm that expiresAt is NOT NULL. Otherwise write 'lifetime IS NULL OR lifetime<=clock_timestamp()' (or the intended NULL policy explicitly).",
+        "required_test": "Disposable-DB test with a NULL expiresAt, if the schema allows it, asserting the intended open/admit result.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "NIT",
+        "file": "prisma/migrations/20261016150000_live_metric_ingress_census/migration.sql",
+        "area": "guard Frame INSERT branch vs Run INSERT branch",
+        "issue": "Opening a run requires collectionEnabled, but admission does not re-check it. After collection is disabled, an open run keeps admitting frames.",
+        "evidence": "The Run INSERT lookup includes 'AND \"collectionEnabled\"'. The Frame INSERT lookup filters only on id, vendorId and liveId.",
+        "impact": "Frames may record requests while source collection is off. Analysts may misread these as requests that should have produced source rows.",
+        "recommended_fix": "Either document this as intended (the census counts ingress regardless of collection state), or add the collectionEnabled condition to the admission lookup.",
+        "required_test": "Disposable-DB test: open a run, disable collection, admit, and assert the documented behavior.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-ingress.test.ts",
+        "area": "it.each 'rejects unbounded or unrecognized census inputs before persistence'",
+        "issue": "The test name says inputs are rejected before persistence, but it only asserts that the call rejects. It never checks that $transaction or $queryRaw was not called.",
+        "evidence": "The action uses an inline database() whose mocks are not inspected. The only assertion is `rejects.toThrow()`.",
+        "impact": "A regression that validates after the transaction starts, or that relies on the DB to reject, would still pass.",
+        "recommended_fix": "Capture the mocks for each case and assert expect(db.$transaction).not.toHaveBeenCalled().",
+        "required_test": "Same test cases with an added assertion that $transaction has zero calls.",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

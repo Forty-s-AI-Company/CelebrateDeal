@@ -1,0 +1,19 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+  "status": "PASS",
+  "independent": true,
+  "role": "senior_review",
+  "model": "claude-sonnet-5-5",
+  "observed_model": "claude-sonnet-5-5",
+  "observed_effort": "unknown",
+  "lineage": [
+    "review-cli.json"
+  ],
+  "scope_files": [
+    "src/lib/registration-submission-client.ts",
+    "src/lib/registration-submission-client.test.ts"
+  ],
+  "limitations": "Two NIT observations retained; no fresh browser run for this copy-only change."
+}

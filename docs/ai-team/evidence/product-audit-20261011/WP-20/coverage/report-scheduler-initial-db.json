@@ -1,0 +1,9 @@
+{
+  "status": "FAIL",
+  "stage": "fixtures",
+  "scope": "Private scoped scheduler with real isolated worker; synthetic disposable database only",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

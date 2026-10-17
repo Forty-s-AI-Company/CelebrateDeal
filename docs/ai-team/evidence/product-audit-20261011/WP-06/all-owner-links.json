@@ -1,0 +1,5 @@
+{
+  "status": "FAIL",
+  "reason": "Inventory queried before sidebar ready; zero links; command exit 1",
+  "results": []
+}

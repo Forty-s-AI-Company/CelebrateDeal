@@ -1,0 +1,75 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-actual-browser-pg-axe",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-browser.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-actual-browser-pg-axe-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-build",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-build.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-build-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-typecheck",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-browser-exec-checks.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-typecheck-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "ab-browser-lint",
+      "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "ab-browser-exec-checks.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-lint-receipt.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+    "status": "TOOL_BLOCKED",
+    "independent": true,
+    "role": "senior_review",
+    "model": "unknown",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "reason": "Final helper review failed twice with NETWORK_TRANSIENT. Earlier two qualified Sonnet5.5 reviews do not cover latest fixture/browser-fetch/diagnostic changes; no false final approval.",
+    "receipts": [
+      "ab-browser-review.json",
+      "ab-browser-fixed-review.json",
+      "ab-browser-built-review.json",
+      "ab-browser-final-review.json"
+    ],
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-14\\ab-browser-review-status.json"
+  },
+  "findings": []
+}

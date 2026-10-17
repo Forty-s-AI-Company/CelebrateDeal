@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { consumePasswordResetToken } from "@/lib/password-reset";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 const PasswordResetConfirm = z.object({
   token: z.string().min(24),

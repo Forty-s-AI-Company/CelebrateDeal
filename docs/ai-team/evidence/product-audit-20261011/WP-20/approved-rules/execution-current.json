@@ -1,0 +1,11 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:a92bef3dae8434b97cae81c50f7ea60101888fe3d084f62e320d6e03e3156ec1",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\approved-rules\\execution-current.json"
+}

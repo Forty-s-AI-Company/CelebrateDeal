@@ -1,0 +1,109 @@
+{
+  "status": "AGY_DISCOVERY_REQUIRED",
+  "execution": "recommendation_only",
+  "task_id": null,
+  "signals": {
+    "task_type": "qa",
+    "complexity": "medium",
+    "risk": "medium",
+    "risk_score": 0,
+    "engineering_profile": "medium",
+    "large_workload": false,
+    "risk_categories": [],
+    "important_findings": false,
+    "required_capabilities": [],
+    "task_type_floor": "low",
+    "complexity_requirement": "medium",
+    "risk_requirement": "medium",
+    "size_requirement": "low",
+    "changed_files": [],
+    "context_size": 0,
+    "expected_duration": 0,
+    "code_surface_area": 0,
+    "production_impact": "low",
+    "security_impact": "low",
+    "data_integrity_impact": "low"
+  },
+  "task_type": "qa",
+  "difficulty": "medium",
+  "requested_team": "ai-team-pro",
+  "team": "ai-team-pro",
+  "escalated": false,
+  "selected_model": "gemini_high",
+  "fallback_events": [
+    {
+      "model": "gemini_high",
+      "reason": "discovery_required"
+    }
+  ],
+  "fallback_chain": [
+    "sol",
+    "luna"
+  ],
+  "limits": {
+    "max_agent_depth": 1,
+    "max_parallel_agents": 1,
+    "max_writers": 1,
+    "max_readonly_helpers": 1,
+    "max_dispatches_per_task": 4,
+    "max_attempts_per_model": 1,
+    "max_external_attempts": 2,
+    "automatic_spawn": false
+  },
+  "spawn_count": 0,
+  "review_plan": [
+    {
+      "role": "senior_review",
+      "required": true,
+      "fallback_events": [],
+      "status": "planned",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    }
+  ],
+  "escalation_reasons": [],
+  "astra_reason": null,
+  "source_revision": "sha256:b6133a5651789c22c497e8a860d5786d1428e0ebe65700cbf0e5cff4d3d20a84",
+  "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "snapshot_files": [
+    "src/app/api/form-submissions/route.ts",
+    "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "src/lib/email-delivery.ts",
+    "src/lib/automation-workflow.ts",
+    "src/lib/funnel-runtime.ts",
+    "src/lib/landing-page-service.ts",
+    "docs/ai-team/evidence/product-audit-20261011/WP-01/form-submit/browser.cjs"
+  ],
+  "required_checks": [],
+  "requested": {
+    "model_key": "gemini_high",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown",
+    "source": "not_executed"
+  },
+  "provider_availability": "NOT_CHECKED",
+  "provider_failure_category": "AGY_RUNTIME_ERROR",
+  "review_scope_files": [
+    "docs/ai-team/evidence/product-audit-20261011/WP-01/form-submit/browser.cjs",
+    "src/app/api/form-submissions/route.ts",
+    "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "src/lib/automation-workflow.ts",
+    "src/lib/email-delivery.ts",
+    "src/lib/funnel-runtime.ts",
+    "src/lib/landing-page-service.ts"
+  ],
+  "self_review": false,
+  "finding_escalation": "senior_review"
+}

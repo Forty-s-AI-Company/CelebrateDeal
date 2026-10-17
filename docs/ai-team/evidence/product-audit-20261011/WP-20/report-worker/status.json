@@ -1,0 +1,25 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:d934d6bcad50084d3a7b7bcc7514d11654df784c7c2c94481fd52eccdf3da1dc",
+  "targeted": {
+    "status": "PASS",
+    "count": 5
+  },
+  "scoped_lint": "PASS",
+  "typecheck": "PASS_SERVICE_SOURCE_UNCHANGED",
+  "database": {
+    "status": "PASS",
+    "checks": 122,
+    "migrations": 97,
+    "cleanup": "PASS"
+  },
+  "review": "NOT_RUN",
+  "implemented": "Guarded claim/finish adapter with strict aggregate validation",
+  "remaining": [
+    "bounded snapshot reader",
+    "isolated CPU executor",
+    "job scheduler",
+    "page read adapter",
+    "independent review"
+  ]
+}

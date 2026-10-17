@@ -1,0 +1,18 @@
+[
+  {
+    "sha256": "e7e4951f6d5a1c2444608f1634d7cb4b9b60ab92176e0beefe55415f77f5d97e",
+    "path": "src/components/quick-webinar-form.tsx"
+  },
+  {
+    "sha256": "418465d07457081c91ca8cd88bc715dbaf8a96691361051ba93f411670210b57",
+    "path": "src/components/quick-webinar-form.test.tsx"
+  },
+  {
+    "sha256": "ade802e609e6e2148d2833b5333271b28c11d1bcb0ea4595719feda4fc64e13d",
+    "path": "src/components/webinar-calendar-download.tsx"
+  },
+  {
+    "sha256": "3d91171de1edc294716c99ed638e291a4d11c46fff7aab1d8dd6b9a2e1739ba6",
+    "path": "tests/e2e/wp17-quick-webinar.spec.ts"
+  }
+]

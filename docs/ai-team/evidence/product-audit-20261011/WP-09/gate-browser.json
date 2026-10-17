@@ -1,0 +1,9 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "browser",
+  "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+  "status": "PASS",
+  "exit_code": 0,
+  "detail": "browser.json session61480 exit0; six UIapply/publish/unverified submissions;12axe; fragment target exactly1; reused directbuild.json same product source"
+}

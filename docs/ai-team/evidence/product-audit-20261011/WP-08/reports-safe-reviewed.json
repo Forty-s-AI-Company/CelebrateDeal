@@ -1,0 +1,176 @@
+{
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "payment",
+        "security",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I reviewed only the supplied excerpts and found no BLOCKER or MAJOR defects. Persisted values, routing values and API values stay unchanged: the tab keys, step-type values, report filter keys and enum keys used for status lookups all keep their original identifiers. Business calculations are also unchanged: conversion-rate math, drop-off and the raw cents amounts. Status labels fall back to \"未知狀態\" for unknown values instead of guessing success, and the experiment arm is checked before its label is looked up. I found one MINOR issue: the step-type picker uses its own hard-coded labels, and they already disagree with the shared label map for Webinar steps. I also found one NIT: the expiry wording varies within the deadline section. This review covers the excerpts only. It does not certify the tests or the release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+        "area": "lines 36-41 (stepTypeOptions) vs funnel-display-labels funnelStepLabels/funnelGoalLabels",
+        "issue": "The step-type picker has its own hard-coded labels instead of using funnelStepLabels, which line 4 already imports. The two sets of labels no longer match: the picker uses 網路研討會報名頁/感謝頁/播放頁 and leaves the group name as the English \"Webinar\". The shared map uses 線上講座報名頁/感謝頁/播放頁, and funnelGoalLabels.webinar is 線上講座.",
+        "evidence": "Line 40: { group: \"Webinar\", items: [{ value: \"webinar_registration_page\", label: \"網路研討會報名頁\" }, ...] }. Helper: webinar_registration_page: \"線上講座報名頁\", webinar: \"線上講座\".",
+        "impact": "Users see two different names for the same step type: one when adding or replacing a step, and another wherever funnelStepLabels is shown. One group heading is also left untranslated. Keeping two copies of these labels means future edits will keep drifting apart. Stored values are not affected.",
+        "recommended_fix": "Build the item labels from funnelStepLabels[value]. Localize the group names consistently, for example 線上講座 for Webinar, or move the group names into the shared helper too.",
+        "required_test": "Add a unit test that every stepTypeOptions item label equals funnelStepLabels[item.value] and that no group name is untranslated English. Add a component test that the Webinar group shows 線上講座 labels.",
+        "confidence": 0.85
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+        "area": "lines 310-311 (deadline settings copy)",
+        "issue": "The deadline section uses two different words for the same redirect: 過期導向 in the field label and 到期導向頁 in the help text.",
+        "evidence": "Line 310: \"過期導向\"; line 311: \"到期導向頁可繼續閱讀\".",
+        "impact": "This is a small wording inconsistency. Users may briefly wonder whether the two terms mean different things. It does not change any behavior.",
+        "recommended_fix": "Pick one term (e.g., 到期導向) and use it in both places.",
+        "required_test": "Update the existing deadline-settings render or text snapshot so it checks the single term.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli"
+    }
+  ],
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  }
+}

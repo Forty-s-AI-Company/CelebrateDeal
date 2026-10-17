@@ -1,0 +1,45 @@
+{
+  "status": "COMPLETE",
+  "work_package": "WP-12",
+  "selected_branch": "UNAVAILABLE_PRESENTATION",
+  "owner_decision": "Display that automatic electronic invoicing is not yet available; do not enable an invoice provider and do not claim tax exemption.",
+  "dependency_disposition": {
+    "wp04": "NOT_APPLICABLE_TO_SELECTED_BRANCH",
+    "reason": "No scheduler, invoice adapter, provider, schema or payment-flow file is changed or executed. WP-04 remains mandatory for any future automatic-issuance branch."
+  },
+  "current_source": {
+    "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+    "hashes_match_canonical_snapshot": true,
+    "files": {
+      "src/app/(app)/billing/electronic-invoices/page.tsx": "7309b675888fca112aeec653d8bac2f56a6a715ee1442f0cf824502aa370b3cf",
+      "src/app/(app)/billing/electronic-invoices/page.test.tsx": "a662df12c4a639b15b5edd1f12bf78ba0251ccf92a4e98e32e0fa1db68c6e041",
+      "src/components/checkout-invoice-fields.tsx": "6e34eb82e71ba9451dbb0cee50f8a45875d752a3bfa17200eba6a85f66ea9ea1",
+      "src/components/checkout-invoice-fields.test.tsx": "76f2441f2fdeb392568499ee23f7ebdf10b60d0050752c9486b7a28161c9330e"
+    }
+  },
+  "acceptance": {
+    "status": "READY",
+    "evidence": "docs/ai-team/evidence/product-audit-20261011/WP-12/unavailable-acceptance.json",
+    "checks": "60 targeted tests across 9 files, typecheck, lint and protected-source preservation",
+    "critical_review": "Qualified independent review observed claude-opus-5-5 with no BLOCKER or MAJOR finding"
+  },
+  "dependency_review": {
+    "status": "REVIEW_COMPLETED",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "blocker_major": 0,
+    "evidence": "docs/ai-team/evidence/product-audit-20261011/WP-12/unavailable-dependency-review-20261016.json"
+  },
+  "future_enablement_guard": [
+    "A future invoice adapter, scheduler or provider enablement is a new reviewed change and must restore the WP-04 to WP-12 handoff.",
+    "Future enablement requires Sandbox issuance, retry and writeback integration evidence plus an independent Billing review.",
+    "Existing queued request records must not be issued automatically until an explicit reviewed backlog policy chooses issue, expire or merchant reconfirmation.",
+    "No automated issuance, provider activation or tax-exemption claim exists in the completed unavailable branch."
+  ],
+  "not_run_because_out_of_scope": [
+    "invoice provider Sandbox issuance",
+    "invoice scheduler",
+    "automatic issuance, void or allowance",
+    "production or staging payment operation"
+  ]
+}

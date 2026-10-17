@@ -1,0 +1,206 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "accepted": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5",
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "reviewed": true,
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "I reviewed only the WP18 delayed-checkout materializer (src/lib/checkout-followup-queue.ts) and its guard (src/lib/checkout-followup.ts), using the dispatcher and job behaviour as you described it. Several things hold up: tenant binding across the event, order, payment and rule joins; candidate source checks (system actor, fixed dedup key and event type); locking each event with SKIP LOCKED while a unique outbox key blocks replays; writing the queued email and the completed log in one transaction; fixed, PII-free error messages; and no money or schema changes. There are 2 MAJOR and 2 MINOR findings. (1) The send-once key includes the rule id and rule version, so one pending checkout can be emailed once per matching rule or rule version. (2) The 'no retroactive new rules' check uses only the rule's createdAt, so a rule activated or edited later still applies to older checkouts. (3) Candidates that keep failing come back first in the queue every 5 minutes, which can starve newer ones; candidates rejected as 'superseded' or 'invalid' write no log or cooldown, so a persistent mismatch would also be retried at the front of the queue on every run. (4) The raw SQL compares timestamp columns with Date parameters, which may depend on the database session time zone. This should be confirmed in the Postgres check already underway. I'm not claiming any test passes; the 102 passing tests and the Postgres check were reported by you and I didn't run anything.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "candidate SQL: JOIN \"AutomationRule\" r ON r.\"vendorId\" = e.\"vendorId\" … NOT EXISTS EmailDelivery/AutomationExecutionLog keyed on orderId:r.id:r.version; key built by checkoutFollowupDeliveryKey (checkout-followup.ts)",
+        "issue": "The send-once check works per order, rule and rule version, not per checkout. If a vendor has two active rules that both match, or one rule changes version while the order is still inside the 7-day window, the same pending checkout gets a separate EmailDelivery row (and email) for each.",
+        "evidence": "The rule join uses only vendorId, with no DISTINCT or per-order limit. The key is 'wp18-checkout-v1:'||orderId||':'||r.id||':'||r.version, and both NOT EXISTS checks match that exact key. Nothing checks whether a delivery already exists for the same order under another rule or version. The send-time guard (isCurrentCheckoutFollowupDelivery) also checks only its own key. If a rule edit raises the version in place, the old queued key fails the guard, but any email already sent is not taken into account, so a new key is created and another email goes out.",
+        "impact": "Buyers with an unpaid checkout can get repeated 'checkout not finished' emails. That is unsafe repeat sending in a payment-adjacent flow and works against the fixed one-reminder recipe.",
+        "recommended_fix": "Allow at most one reminder per (vendorId, orderId). Options: exclude any existing EmailDelivery or completed log whose idempotencyKey starts with 'wp18-checkout-v1:'||orderId||':'; pick one rule per event in SQL (DISTINCT ON (e.id) ORDER BY r.createdAt, r.id); or recheck for any prior delivery for the order inside the transaction while the event row is locked.",
+        "required_test": "Postgres integration tests: (a) two active rules that both match the same vendor give exactly one EmailDelivery per order across repeated runs; (b) after a delivery is queued or sent, raising the rule version (or adding a second matching rule) adds no second delivery for that order.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "candidate SQL: r.\"createdAt\" <= e.\"createdAt\"; mirrored in checkout-followup.ts isCurrentCheckoutFollowupDelivery: rule.createdAt > event.createdAt",
+        "issue": "The 'no retroactive new rules' check uses only the rule's creation time. A rule created earlier but switched on later, or later edited to trigger on checkout_incomplete or to use the checkout_followup action, applies to every pending checkout from up to 7 days back.",
+        "evidence": "Both the SQL and the guard compare only createdAt. Neither checks isActive, condition, actions, trigger, or the version-change time against the time the event was observed. Editing or activating a rule does not change its createdAt.",
+        "impact": "Turning on or changing a rule turns existing unpaid checkouts into a retroactive recipient list, which is exactly what the fixed recipe prohibits.",
+        "recommended_fix": "In both the SQL and the send-time guard, compare the time the rule's current active configuration took effect (for example r.\"updatedAt\", or a dedicated activation or version timestamp if one exists) against e.\"createdAt\". If none can be trusted, reject any rule where updatedAt > event.createdAt.",
+        "required_test": "Tests: a rule created before the event but inactive, then activated after the event, sends nothing; a rule edited (trigger, actions or version) after the event sends nothing; a rule that hasn't changed since before the event still queues. Run at both the materializer and the send-time guard.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "RETRY_MS cooldown + ORDER BY e.\"createdAt\", e.id, r.id LIMIT; results 'superseded'/'claimed_elsewhere'/'invalid_snapshot' write no log",
+        "issue": "The queue can be starved. Candidates that keep failing (for example, buyer details that can't be decrypted) come back with a fixed 5-minute cooldown, still sorted oldest first. If the job runs every 5 minutes or less often, those candidates fill each batch for up to 7 days. Candidates rejected as 'superseded' or 'invalid_snapshot' write no log, so any lasting mismatch between the SQL filter and the JS guard puts them back at the front of the queue with no cooldown.",
+        "evidence": "The cooldown filter is l.\"startedAt\" > retryBefore, with no backoff and no attempt limit. Ordering ignores earlier failures. Only the catch branch writes a log row with status failed; the 'superseded' and 'invalid_snapshot' paths return without writing anything.",
+        "impact": "If limit or more persistent failures exist (for example after a key rotation), newer real candidates can wait days or age out of the 7-day window without a reminder. Each retry also triggers another monitoring event. Nothing is sent wrongly, but delivery is delayed or skipped.",
+        "recommended_fix": "Sort candidates that have never been tried ahead of ones that already failed (LEFT JOIN the log, then ORDER BY its startedAt NULLS FIRST, then createdAt). Add exponential backoff or a maximum attempt count that ends in a terminal 'skipped' state. Write a short cooldown log for superseded and invalid results too.",
+        "required_test": "Test with limit = N, N candidates whose decryption always fails, and 1 valid newer candidate. Run at intervals of at least RETRY_MS and confirm the valid candidate is queued within a bounded number of runs. Also confirm a persistently 'superseded' pair doesn't keep its place at the front of the queue.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup-queue.ts",
+        "area": "candidate SQL comparisons e.\"createdAt\" <= ${matureBefore} / >= ${oldest} / l.\"startedAt\" > ${retryBefore}",
+        "issue": "The raw SQL compares timestamp columns with JS Date parameters. If the columns are timestamp without time zone and Postgres treats the parameter as timestamptz, the result depends on the database session's TimeZone. For example, an Asia/Taipei session would shift the 30-minute wait, the 7-day window and the 5-minute retry cooldown by the UTC offset.",
+        "evidence": "Prisma's ORM reads in the JS guard return correct UTC values, but the $queryRaw filters rely on how Postgres casts the parameter. The send-time guard would reject sends that are too early, but those rows would come back as unlogged 'superseded' results (see the starvation finding), and the cooldown and window filters would be off.",
+        "impact": "Wasted batch slots and wrong timing for cooldown and maturity selection on non-UTC database sessions. The JS guard still prevents early sends.",
+        "recommended_fix": "Cast the parameters explicitly to the column type (for example ${matureBefore}::timestamp(3) if columns are stored as UTC without a time zone), or pin the session TimeZone to UTC, and confirm this in the Postgres check that is underway.",
+        "required_test": "Postgres integration test with the session TimeZone set to a non-UTC zone (for example SET TIME ZONE 'Asia/Taipei'): an event 29 minutes old isn't selected, one 31 minutes old is, one 7 days + 1 minute old is excluded, and a failure retried after 4 minutes is excluded.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "concurrency",
+        "payment",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 17643,
+      "expected_duration": 0,
+      "code_surface_area": 8,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

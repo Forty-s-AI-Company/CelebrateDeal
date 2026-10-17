@@ -1,0 +1,14 @@
+{
+  "hashes": {
+    "prisma/migrations/20261015170000_live_metric_registration_source_revision/migration.sql": "eb68607fb32cf08d423f830437cddc93611518ad0ce1562da2ab755e9abc7f17",
+    "scripts/wp20-metric-source-invalidation.mjs": "ec5bf28820c0ee17afa1c94c0cc4128f4b6aad3190a9cdf7d62aacdf4a95be28"
+  },
+  "db": "105 migrations PASS; uncaptured verified source insertion/deletion increases revision in5 fixtures; existing invalidation and payment retry checks PASS",
+  "lint": "PASS",
+  "review": "PENDING",
+  "concurrentSubmissionRegression": "NOT_RUN",
+  "limitations": [
+    "Version row revision updates introduce serialization on same live; measure concurrency",
+    "No durable coverage proof writer yet"
+  ]
+}

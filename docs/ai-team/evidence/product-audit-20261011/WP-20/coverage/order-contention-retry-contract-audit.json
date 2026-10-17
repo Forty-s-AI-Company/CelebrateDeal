@@ -1,0 +1,14 @@
+{
+  "status": "IN_PROGRESS",
+  "confirmed": [
+    "Synthetic contention runner and processPaymentWebhook both use two attempts for P2034/P2002",
+    "Synthetic contention runner uses Serializable like actual payment transaction",
+    "Trigger-disabled diagnostic also failed in prior receipts; new trigger alone is not proven root cause"
+  ],
+  "limitations": [
+    "Synthetic direct order cancellation does not execute the full payment service",
+    "Successful durable recovery does not satisfy first-burst 20/20 assertion",
+    "Index page predicate locks observed but complete SSI dependency cycle remains unproven"
+  ],
+  "next": "Capture sanitized PostgreSQL serialization failure reason at each attempt to distinguish pivot/commit conflicts before changing transaction design"
+}

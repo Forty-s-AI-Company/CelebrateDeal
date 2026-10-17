@@ -1,0 +1,47 @@
+{
+  "status": "FAIL",
+  "scope": "Actual POST route and memory limiter over local HTTP; invalid payload only; no database, Next server, or cloud deployment",
+  "checks": [
+    {
+      "case": "proxy-rotating-untrusted-ip",
+      "status": "FAIL",
+      "requests": 121,
+      "invalidPayloadResponses": 0,
+      "limitedResponses": 0,
+      "expectedFinalStatus": 429,
+      "actualFinalStatus": 503
+    },
+    {
+      "case": "direct-rotating-untrusted-ip",
+      "status": "FAIL",
+      "requests": 121,
+      "invalidPayloadResponses": 0,
+      "limitedResponses": 0,
+      "expectedFinalStatus": 429,
+      "actualFinalStatus": 503
+    }
+  ],
+  "cleanup": true,
+  "sources": {
+    "src/lib/api-security.ts": "1bceb476f99925d8570f5f8bcfc834f128a4a76213a335f4c1eb93f6e5159c75",
+    "src/lib/live-quota-policy.ts": "5164e3cfa7ad4708b78faafc8aa1d810f94a0e669376b3327b4cc33b6220b535",
+    "src/lib/live-publish-readiness.ts": "28855b23642839e8bcf4077b41077bbc7789e893942c62ae1a5094725489479a",
+    "src/lib/live-video-readiness.ts": "2d7f48468ced15b3f4c8803e3116231cd822f2d1e238f31f8f7570a239d1b55e",
+    "src/lib/message-template.ts": "e9e41df9ccf2af0090638c907618524fc85379171c744e9ca3d136fae0ffd61d",
+    "src/lib/registration-form-fields.ts": "06a3de929de678de8a1025ca1f608eb79b75d746138cdd6a93af6b777bc6c285",
+    "src/lib/live-runtime-readiness.ts": "e77a52efe27c9286f070cc6a671d138786d2f15da4adfcb250eaca6137f6e60c",
+    "src/lib/live-runtime-state.ts": "7bdbb4deae47f11c19d8a1f80a4141de32fa05e73b4e1a9de4f38af63157ff1f",
+    "src/lib/sellable-live.ts": "f299163254743cd979108001eb031d61e38ceaff3e683abf25ce5a765332a688",
+    "src/lib/payment-method-reference.ts": "fbc1fff19051b7014c77750d32e80560dc32374ead9b7a19e7506e4fbdcf956a",
+    "src/lib/stream-quota.ts": "e2e5979da9b727f63585069dc83b8d35947a46a9275fa2045b13eb5bc0fcd2ed",
+    "src/lib/live-quota-admission.ts": "878e62c5d3bf106132cfc5246876d34a0d9964a417822afd946e4fdd80b10035",
+    "src/lib/db.ts": "264cc461660b464ec89fe3f84d9a04b66a939cbd9ffbd1f67f9ae9d301579686",
+    "src/lib/rate-limit.ts": "afb85a865dbfa6bcffc50d4b9e1842d76856543d46ab0558d8237f041190c5ba",
+    "src/lib/request-client-ip.ts": "5d41f878d65c5698a467b74b736d9fc1aba6ff326a7121079162bfb77fe14189",
+    "src/lib/app-url.ts": "4b6aa6c5fcbf1c89eace2b8a420f33143ccf446dadcc2aca84192b73dfcbdae6",
+    "src/lib/live-chat-request-security.ts": "ce34d51f9de420c200a43d0a9f5fae125aeacca5fd178387142a2b802fd97d48",
+    "src/lib/trusted-entry-rate-limit.ts": "72f4f9d69c268ef769ba4811ff18959cbb61280c1a13b24bba6db441f5faf255",
+    "src/app/api/live-admission/route.ts": "3787a0bb2786bf6be4bc07bf1288ea589835f41687fa9040ef85a3390a719bfb"
+  },
+  "lineage_note": "This file was overwritten by a post-change run with missing new trust settings. Historical121x400 baseline is documented in route-transport-finding.md and prior handoff, not represented by this receipt. Current configured run lives in trusted-entry/route-transport-result.json."
+}

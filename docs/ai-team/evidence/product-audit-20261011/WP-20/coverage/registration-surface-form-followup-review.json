@@ -1,0 +1,174 @@
+{
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true,
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "payment",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR defects in the three files you supplied, and one MINOR finding, which is better treated as a scope proposal. This review covers only those three files. It does not cover issueMetricVisitPage, the locked SQL recheck, LiveMetricVisit, registrationRetryBoundary, the funnel/webinar callers, tests, or deployed state, and none of the test results in the task text were verified here.\n\nChecks against the stated requirements, all matching:\n- **Form page cheap gates:** active form scope is only set when fields are valid and no verified submission exists (`form.fields&&!verifiedSubmission`). The live ID is only set when exactly one server-resolved session exists. An explicit liveId must match a loader session or the page returns notFound, so there is no arbitrary first session and no fan-out.\n- **Wrapper order:** a strict zod safeParse (rejects extra or malformed IDs, returns null) and the keyring presence check both run before connection() and getDb(). An unavailable scope returns the original child with no collector.\n- **Tree shape:** the output is always a Fragment, with the collector or null in slot 0 and the child in slot 1. The retry boundary still wraps the whole composite.\n- **Error handling:** failures propagate. A MetricVisitorError is rethrown, and any other error becomes PERSISTENCE_UNAVAILABLE.\n- **Client props:** only vendorId, liveId and eventId reach the client.\n- **Other:** generateMetadata and generateViewport do not issue anything. The form-owner lookup before the transaction is used only as a hint for vendorId.\n\nThings I could not confirm from the supplied text:\n- That issueMetricVisitPage rechecks form, live, vendor, isActive, and project vendor and published state under SHARE locks.\n- That a stale binding returns null or throws instead of issuing.\n- That the collector event is only emitted after commit.\n- That funnel and webinar counting use runtime.renderedStepId.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "area": "page.tsx PublicFormPage return (withMetricRegistrationVisit call) and metric-registration-visit.tsx lines issuing via issueMetricRegistrationPage",
+        "file": "src/app/form/[slug]/page.tsx",
+        "issue": "Anyone can now trigger metric page issuance just by requesting the public, search-indexed form page. This exposes the known quota-exhaustion and serialization limitations more directly, and a metrics failure now takes down the lead-capture page.",
+        "evidence": "generateMetadata sets robots index:true and the page needs no authentication. Every GET that reaches a form with valid fields and exactly one session runs a DB transaction through issueMetricVisitPage. The task text says that transaction takes a same-live advisory lock, has a 10000-per-version quota, and writes a permanent loss marker when the quota is full. Errors are rethrown as MetricVisitorError and are not caught inside withRetry, so the form page errors out. Before this change, issuance only ran on admitted/live surfaces.",
+        "impact": "Crawlers, link-preview bots or a scripted GET loop could use up the per-version page quota. That would permanently mark the denominator as lossy, even though counting stays fail-closed. During a burst of traffic (for example, after an email blast), lock waits or pool exhaustion would show an error page instead of the registration form, so lead submissions could be lost. The task already discloses cap exhaustion and serialized pool availability as limitations, and says failures should propagate. The new part is that unauthenticated, pre-registration traffic can now hit them.",
+        "recommended_fix": "Handle this as a scope proposal, not a fix inside this task. Options: document that the existing quota and serialization limitation now applies to anonymous traffic; consider rate-limiting issuance or deferring it to the browser prepare step; or decide whether issuance failure on a form page should drop the collector instead of failing the page. Do not change this without owner approval, because propagation was requested explicitly.",
+        "required_test": "On the disposable loopback DB, simulate repeated anonymous GETs to a tracked form until the quota fills, and confirm the loss marker appears with no positive completeness. Run a concurrent burst against the same live, and record how often the form renders versus how often PERSISTENCE_UNAVAILABLE causes an error page.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3
+    },
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "execution_provider": "claude_cli",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  }
+}

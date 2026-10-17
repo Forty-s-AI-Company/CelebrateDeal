@@ -1,0 +1,125 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "scope": "Attribution repair only; all tool sessions completed.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\execution-attribution-repair.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "lineage": [
+      "attribution-repair-reviewed.json",
+      "attribution-followup-reviewed.json"
+    ],
+    "scope_detail": "Only current attribution repair, original native/SSR MAJOR resolution and duplicate-query followup. Does not certify entire WP05 or other review parts.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\review-attribution-repair-receipt.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 13.938,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-attribution\\unit.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 7.078,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-attribution\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 18.844,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-attribution\\typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "submission-invariant",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.062,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-attribution\\submission-invariant.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "postgresql",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.485,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-attribution\\postgresql.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "attribution-success",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 24.906,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-attribution\\browser-success.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "attribution-partner-success",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 20.344,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\checks-attribution\\browser-partner-success.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-attribution-chromium",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.688,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\browser-attribution-chromium-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser-attribution-firefox",
+      "revision": "sha256:d085b260c34beedd1077be45ef3c83c85fae0a0279012b23108e63c45d9895bb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 19.734,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\native-integration\\browser-attribution-firefox-receipt.json"
+    }
+  ],
+  "findings": [],
+  "scope": "WP05 attribution repair only"
+}

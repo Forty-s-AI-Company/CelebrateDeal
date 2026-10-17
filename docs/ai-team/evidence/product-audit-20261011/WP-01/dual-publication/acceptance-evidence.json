@@ -1,0 +1,154 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\execution-final.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "lineage": [
+      "review-cli.json",
+      "prestream-review-cli.json",
+      "prestream-final-review-cli.json"
+    ],
+    "scope_files": [
+      "src/lib/landing-page-service.ts",
+      "src/app/actions/landing-page-actions.ts",
+      "src/components/landing-page-workspace.tsx",
+      "src/app/(app)/landing-pages/[id]/page.tsx",
+      "src/lib/landing-page-service.test.ts",
+      "src/app/actions/landing-page-actions.test.ts",
+      "src/app/(app)/landing-pages/[id]/page.test.tsx",
+      "src/proxy.ts",
+      "src/proxy.test.ts",
+      "src/lib/public-landing-page-status.ts",
+      "src/lib/public-landing-page-status.test.ts"
+    ],
+    "limitations": "No BLOCKER/MAJOR. Source excerpts; reviewer did not run tests. Nonblocking autosave/read cost, redirect streaming and navigation-catch followups retained. Full WP01 not accepted.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\review-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "crlf-aware-diff",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.078,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\crlf-aware-diff.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "gate-invariant",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.266,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\gate-invariant.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.657,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "parser-invariants",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.563,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\parser-invariants.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "semantic-browser",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.313,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\semantic-browser.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict-browser",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.281,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\strict-browser.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "targeted-tests",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 8.078,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\targeted-tests.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.297,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\dual-publication\\prestream-final-checks\\typecheck.json"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "Merchant diagnostic (getLandingPagePublicationStatus, published branch)",
+      "area": "deadline check: `operations.deadline.enabled && operations.deadline.expiresAt && new Date(...) <= new Date()`",
+      "issue": "The static diagnostic doesn't match how the runtime handles an enabled deadline whose expiresAt is missing or can't be parsed.",
+      "evidence": "resolveFunnelDeadline returns `{status:'unavailable'}` when `deadline.enabled && (!expiresAt || Number.isNaN(expiresAt.getTime()))`. publicLandingPageStatus maps that to 404 for every non-system step. In the diagnostic, a missing expiresAt short-circuits the condition to false, and `new Date('invalid') <= new Date()` is also false (NaN). Either way the code falls through to `available: true, '\u516c\u958b\u9801\u76ee\u524d\u53ef\u958b\u555f'`. This only applies if parseFunnelOperations / funnelOperationsReferencesValid accept that shape, and their code was not supplied.",
+      "impact": "A merchant would see 'the public page can be opened' while every public step returns 404. They get no prompt to fix the deadline settings under Funnel \u7ba1\u7406.",
+      "recommended_fix": "In the diagnostic, if `operations.deadline.enabled` and expiresAt is missing or `Number.isNaN(new Date(expiresAt).getTime())`, return the existing 'A/B \u6216\u622a\u6b62\u8a2d\u5b9a\u7121\u6548' unavailable message with the operations link. Better still, run decidePublicFunnelRuntime / resolveFunnelDeadline against the first non-system step so the diagnostic and runtime share one source of truth.",
+      "required_test": "Unit test: a published funnel with `deadline.enabled=true` and expiresAt missing or `'not-a-date'` (if parseFunnelOperations accepts it). Assert the diagnostic returns `available:false` and that publicLandingPageStatus returns 404. If parseFunnelOperations already rejects this shape, add a test that proves it and close this finding.",
+      "confidence": 0.45,
+      "disposition": "rejected_with_reason",
+      "reason": "Existing FunnelOperationsSchema rejects enabled deadline with null/missing/invalid ISO expiresAt; parser-invariants PASS. Diagnostic parse failure returns unavailable."
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/lib/public-landing-page-status.ts",
+      "area": "`if (!(\"pages\" in page.content)) ...; const steps = page.content;`",
+      "issue": "The preflight duck-types funnel content with `\"pages\" in content`, but the original route validates it with `parseFunnelStepPages(page.content)`. The two checks can disagree on malformed published content.",
+      "evidence": "The original route builds steps with `parseFunnelStepPages(page.content)` and calls notFound() when it returns null. The preflight uses page.content directly and dereferences `steps.flow.steps`. If the content has `pages` but a bad or missing `flow`, the TypeError is caught by the proxy's `catch { return publicUnavailable(..., 503) }`.",
+      "impact": "Persistently malformed published funnel content would return a lasting 503 with Retry-After, where the original route returns 404. Crawlers and monitors would see a transient outage instead of a missing page. If loadPublicLandingPage already returns validated FunnelStepPages, there is no impact.",
+      "recommended_fix": "In publicLandingPageStatus, use `const steps = parseFunnelStepPages(page.content)`. Return 404 when it is null and a step path is present. For the root path, keep the same non-funnel 200 behaviour as the root route.",
+      "required_test": "Unit test publicLandingPageStatus with a mocked loadPublicLandingPage returning `{pages:{}}` without `flow`. Assert 404 (not a throw or 503). Add a proxy-level test asserting the HTTP status matches the original route for the same fixture.",
+      "confidence": 0.35,
+      "disposition": "rejected_with_reason",
+      "reason": "Existing loadPublicLandingPage runs parseFunnelStepPages / parsePageDocument / parseLandingPageContent before returning. All reject malformed {pages:{}}; parser-invariants PASS. The helper never receives that shape from the real loader."
+    }
+  ]
+}

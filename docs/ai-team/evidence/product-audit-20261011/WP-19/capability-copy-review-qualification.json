@@ -1,0 +1,17 @@
+{
+  "kind": "review",
+  "source": "agy_wrapper",
+  "revision": "sha256:1d0210443a26e42be9b81339142d86d657de521b4ac710e434cb77e070a2c1a1",
+  "status": "PASS",
+  "independent": true,
+  "role": "senior_review",
+  "model": "gemini-3.8-flash-high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "model_source": "canonical resolved/discovered slug, AGY terminal does not report actual model; not claimed as observed",
+  "provider_receipt": "capability-copy-readable-fallback-review.json",
+  "source_receipt": "capability-copy-combined-review-source.json",
+  "finding_count": 0,
+  "fallback_route": "capability-copy-fallback-review-route.json",
+  "gpt_final_verdict": false
+}

@@ -1,0 +1,10 @@
+{
+  "revision": "sha256:d26c6383764171ea27d6aa3d34516cf64121041b90b79f7436093700e3aa0178",
+  "files": [
+    "prisma/migrations/20261015120000_live_metric_coverage_audit/migration.sql",
+    "src/lib/live-metric-coverage.ts",
+    "src/lib/live-metric-coverage-reader.ts",
+    "src/lib/live-metric-report-snapshot.ts",
+    "src/lib/live-metric-report-reader.ts"
+  ]
+}

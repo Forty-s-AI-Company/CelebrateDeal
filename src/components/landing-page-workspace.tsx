@@ -1,5 +1,7 @@
 "use client";
 
+import type { LandingPagePublicationStatus } from "@/lib/landing-page-service";
+
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspaceEditor } from "@/components/landing-pages/workspace-editor";
@@ -76,7 +78,7 @@ function normalizeCommerceProducts(products?: FunnelCommerceProduct[]) { return 
 // This legacy-compatible workspace still handles publish history, previews,
 // webinar bindings, and three persisted content schemas at one boundary.
 // eslint-disable-next-line complexity
-export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref }: { commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string }) {
+export function LandingPageWorkspace({ initialPublication, page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref }: { initialPublication?: LandingPagePublicationStatus; commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string }) {
   const commerceProducts = normalizeCommerceProducts(products);
   const router = useRouter();
   const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
@@ -90,6 +92,8 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const [dirty, setDirty] = useState(!page);
   const [valid, setValid] = useState(initial.valid);
   const [message, setMessage] = useState("");
+  const [publicationResult, setPublicationResult] = useState<{ source: typeof initialPublication; value: typeof initialPublication }>();
+  const publication = publicationResult && publicationResult.source === initialPublication ? publicationResult.value : initialPublication;
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
   const [exitQueued, setExitQueued] = useState(false);
@@ -135,6 +139,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         setMessage(result.message);
         if (result.status !== "success") { setExitQueued(false); return; }
         if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }
+        if (result.publication) setPublicationResult({ source: initialPublication, value: result.publication });
         if (operation === "publish") setPublished(true);
         if (operation === "unpublish") setPublished(false);
         if (operation === "save" || operation === "create") setDirty(false);
@@ -162,7 +167,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     if (inFlight.current) {
       if (pendingOperation.current === "save") {
         setExitQueued(true);
-        setMessage("儲存完成後會返回原本的 Configuration。");
+        setMessage("儲存完成後會返回原本的頁面設定。");
       }
       return;
     }
@@ -177,7 +182,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const blocked = workspaceBlocked({ pending, stepPending, valid, name, slug });
   return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
     <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
-      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回 Configuration" : "返回"}</button>
+      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回頁面設定" : "返回"}</button>
       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name}</p>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>Undo</button>
@@ -195,7 +200,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     <section aria-labelledby="landing-page-settings" className={`${settingsOpen ? "block" : "hidden"} mb-5 rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6`}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Page setup</p><h2 id="landing-page-settings" className="mt-1 text-lg font-bold tracking-tight text-slate-950">頁面設定</h2><p className="mt-1 text-sm text-slate-500">先確認頁面資訊，再開始編排招生內容。</p></div>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "已發布頁面" : "草稿頁面") : "新頁面"}</span>
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "Funnel 已發布（公開狀態見下方）" : "草稿頁面") : "新頁面"}</span>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">頁面名稱<input disabled={pending} aria-label="頁面名稱" className={inputClass} value={name} maxLength={160} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></label>
@@ -204,6 +209,12 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">活動場次<select disabled={pending} aria-label="活動場次" className={inputClass} value={liveId} onChange={(e) => { setLiveId(e.target.value); setDirty(true); }}><option value="">由報名表提供場次選擇</option>{lives.map((live) => <option key={live.id} value={live.id}>{live.title}</option>)}</select></label>
       </div>
     </section>
+        {publication ? <section aria-label="公開網址狀態" role="status" className={`col-span-full rounded-lg border p-3 text-sm text-slate-900 ${publication.available ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+          <p>{publication.message}</p>
+          {publication.missing.length ? <ul className="mt-2 list-disc pl-5">{publication.missing.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
+          {!publication.available ? <a className="mt-2 inline-block underline" href={publication.projectHref}>前往專案檢查與發布</a> : null}
+        </section> : null}
+
     <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); setDirty(true); }} />
     {!forms.length ? <p className="rounded-lg bg-amber-50 p-3 text-sm">目前沒有啟用中的報名表。可先建立頁面內容，再到報名管理建立表單。</p> : null}
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
@@ -237,7 +248,7 @@ function resolveWebinarResource(resources: FunnelWebinarResources | undefined, l
   const video = resources?.lives.find((item) => item.id === liveId);
   const form = resources?.forms.find((item) => item.id === formId);
   if (!video?.videoReady || !video.videoId || !live || !form || live.formId !== formId) return undefined;
-  return { form, live: { id: live.id, slug: live.slug, videoId: video.videoId, videoTitle: video.videoTitle ?? "活動影片" } };
+  return { form, live: { id: live.id, slug: live.slug, title: live.title, videoId: video.videoId, videoTitle: video.videoTitle ?? "活動影片" } };
 }
 function WebinarWorkspaceSettings({ content, pending, resources, lives, liveId, onValidityChange, onChange, onSelect }: {
   content: LandingPageStoredContent; pending: boolean; resources?: FunnelWebinarResources; lives: NonNullable<LandingPageRenderContext["live"]>[]; liveId: string;

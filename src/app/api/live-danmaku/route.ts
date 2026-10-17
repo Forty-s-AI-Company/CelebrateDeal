@@ -2,7 +2,7 @@ import { z } from "zod";
 import { getCurrentAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { hasActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { CardScopeSchema } from "@/lib/interaction-card-contract";
 import { CardError } from "@/lib/interaction-card";

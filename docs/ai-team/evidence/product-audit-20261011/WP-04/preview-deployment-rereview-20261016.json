@@ -1,0 +1,203 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "execution_provider": "claude_cli",
+  "claude_cli_discovery_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "plan_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 20,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "permission",
+        "production_data",
+        "security",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "plan_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "QUOTA_EXHAUSTED",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "review": {
+    "summary": "I re-reviewed the WP-04 Preview deployment evidence (.vercelignore, vercel.json, the staging scheduler setup doc and preview-deployment-20261016.json). Several things are represented honestly:\n- The deployment-time source-manifest gap is stated, and no hash was produced after the fact.\n- Packaging is labelled TARGETED_PASS, with an explicit statement that full local-to-remote route comparison was not done.\n- The firewall cause is recorded as unknown (EDGE_MITIGATION_BLOCKED, 402), without guessing a cause or bypassing it.\n- The superseded deployment is permanently excluded.\n- Runtime, scheduler, delivery and isolation work stays PARTIAL or NOT_RUN and is never marked PASS.\n\nFour issues remain:\n- **MAJOR:** One removal trigger, \"deployment can reach non-sandbox payment operations\", appears already met by the recorded staging PayUni live-payment config, yet it is framed as a possible future event.\n- **MINOR:** \"keep_edge_denied\" is presented as a policy the team controls, but the deny rule is unidentified and the team cannot see or manage it.\n- **MINOR:** The alias evidence doesn't record the command's scope, limit or time.\n- **NIT:** The local link cleanup and the not_run list are incomplete or inconsistent.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-20261016.json",
+        "area": "stop_conditions.remove_preview_if[2] vs environment_preflight.payment_boundary; md 復原 section stop-condition paragraph",
+        "issue": "One of the removal triggers ('the deployment can reach non-sandbox payment operations') is treated as something that might happen later. But the evidence itself says the Preview was built with the staging configuration (CONFIG_PRESENT), and that staging uses PayUni's live (non-sandbox) payment flow. So the trigger looks already met, or at least never checked, yet removal_not_executed=true and the deployment is kept READY without any explanation.",
+        "evidence": "payment_boundary: 'Staging payment still uses the configured PayUni flow and is outside this isolation proof.' The md says the human confirmed staging and production both use PayUni live payment. The md lists 'staging 仍使用 PayUni 正式金流' as a current condition, then lists '若有人…讓 Preview 可觸及非 Sandbox 付款操作' as a hypothetical removal trigger. Nothing records an evaluation of this trigger.",
+        "impact": "A READY Preview that can apparently start live payments, with data isolation NOT_RUN, is being kept even though the stated policy says to remove it. The only barrier is an edge deny nobody has identified. A reader could wrongly conclude no stop condition is currently met.",
+        "recommended_fix": "Record this trigger's status explicitly: MET, or UNVERIFIED but presumed met from the config. Then either (a) remove the Preview under the stated policy, or (b) write down a human-approved exception explaining why it is retained, noting that the edge deny is the only compensating control. Reword the md so the payment condition is not described as only a future action.",
+        "required_test": "Evidence review: the JSON has a per-trigger evaluated status, and the md and JSON agree on whether the payment trigger is met and what action follows.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-20261016.json",
+        "area": "stop_conditions.keep_edge_denied; http_verification.firewall_inventory",
+        "issue": "keep_edge_denied=true reads like a protection the team controls and will keep in place. But the mitigation rule is unidentified, the firewall can't be viewed on the current plan (402), and the deny was seen once from one region (hkg1). Every removal trigger depends on someone deliberately relaxing protection. None covers the deny going away on its own or applying only to some regions.",
+        "evidence": "'The exact mitigation rule could not be identified because read-only firewall overview returned plan permission error 402.' All five 403s come from a single check in hkg1. Every remove_preview_if entry describes an active change (alias assigned, protection relaxed, deployment selected as a target).",
+        "impact": "If the unknown mitigation stops applying, or never applied outside this region, the Preview could become reachable without anyone acting, and no stop condition would fire.",
+        "recommended_fix": "Say explicitly that the deny is not under project control and is not shown to persist or to apply in every region. Add a removal trigger along the lines of 'any request to the deployment returns a response without X-Vercel-Mitigated: deny'. Record whether Vercel Deployment Protection is enabled for Preview as a separate control.",
+        "required_test": "Evidence review confirms the persistence caveat and the observation-based trigger are present, and that Deployment Protection status is recorded or marked NOT_RUN.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-20261016.json",
+        "area": "alias_inventory",
+        "issue": "The NO_MATCHING_ALIAS result has no scope flag, result limit/pagination, or timestamp recorded. The md says the worktree was not linked and other commands used an explicit --scope, but the alias command is recorded as plain 'vercel alias ls'. That command can list a different default scope or return only a truncated page.",
+        "evidence": "checked_with: 'vercel alias ls'. Elsewhere the md stresses '使用明確 project ID／team scope'.",
+        "impact": "'No alias' is a key stop-condition fact, and as recorded it could be a false negative.",
+        "recommended_fix": "Record the exact command with --scope a25814740s-projects, the limit/pagination used (or the total count returned), and the UTC time. Alternatively, record the deployment's own alias list from a scoped, read-only deployment inspect.",
+        "required_test": "Evidence review: the alias record shows the scoped command, completeness of the listing, and the time.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-20261016.json",
+        "area": "local_link_cleanup; not_run; source_state.scope",
+        "issue": "There are three small consistency gaps. (1) The link cleanup only mentions removing .env.local. It doesn't say whether the .vercel/ link metadata was removed, and the md deployment section doesn't mention the link at all, even though an earlier section says no link was created. (2) Data isolation and runtime route verification are not in the not_run list, though elsewhere they are NOT_RUN or blocked. (3) The phrases '20-WP implementation changes' and the md's '未提交完整狀態' suggest completeness that the evidence doesn't support: 10/20 WPs are done and there is no upload manifest.",
+        "evidence": "local_link_cleanup.detail mentions only .env.local. Data isolation appears only as environment_preflight.data_isolation: 'NOT_RUN'. The md says '部署來源是目前獨立 Goal worktree 的未提交完整狀態'.",
+        "impact": "Small risk that readers think the link state is clean, or that the evidence covers more than it does. It doesn't change the PARTIAL status.",
+        "recommended_fix": "State what happened to .vercel/ after linking and mention the link in the md. Add 'data isolation verification' and 'runtime route verification (edge blocked)' to not_run. Reword the source scope to 'uncommitted worktree state at upload time (contents not manifested)'.",
+        "required_test": "Evidence review only.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "agy_discovery_status": "QUOTA_EXHAUSTED"
+}

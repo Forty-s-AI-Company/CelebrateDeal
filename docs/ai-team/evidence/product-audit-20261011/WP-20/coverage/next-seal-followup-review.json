@@ -1,0 +1,184 @@
+{
+  "normalized_status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "reviewed": true,
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "provider": "agy_wrapper"
+    },
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ],
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "completed": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_process_status": "SUCCESS",
+  "review": {
+    "summary": "I rechecked the four original issues against the supplied increment. Nothing new rises to BLOCKER or MAJOR. (1) The original MAJOR (the late GET could pass without the seal doing anything) is resolved. The code admits a second interrupted control frame. After the gateway stops and before the seal, a direct signed GET for that frame through the real Next server adds a fourth page. That shows the same path writes when nothing blocks it. After the seal, the late frame's GET adds nothing. The SQL permission check flips from true to false, a trusted raw INSERT is rejected with 23514, and a test that removes the seal rule inside a rolled-back transaction lets the INSERT through. The only difference between the control request and the late request is the seal. The HTTP-path rejection is still inferred from that comparison rather than seen directly, which is an acceptable leftover gap. (2) The MINOR timing issue is resolved for the late GET. The seal commits before that request is sent, so a delayed write would also be rejected, and counts are checked again after stopNext. For the control frame, a delayed write could only make the test fail, never pass falsely. (3) The unmatched-frame count and includesLate now come from the database. The Postgres lowercase alias `includeslate` matches the assertion. (4) Cleanup steps in finally are now wrapped. Failures are recorded and set the status to FAIL instead of throwing past `return receipt`. Two new issues are below: the late GET checks only the HTTP status, not that the normal form rendered, and the task header's counters are out of date. This is a scoped review only. It does not certify that tests pass, the release, or the whole app, and Goal stays NOT_READY.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "source-seal block: signedGet helper",
+        "issue": "The task expects the late signed GET to return 'HTTP200 normal form', but signedGet checks only status 200 and a body-size limit. It never checks that the registration form actually rendered.",
+        "evidence": "signedGet: `assert.equal(response.status,200); ... for await(const chunk of response.body){bytes+=chunk.length;assert.ok(bytes<=16*1024*1024);} return response.status;` The body content is never examined. The receipt stores only `lateHttpStatus`.",
+        "impact": "If the source write is rejected after the seal and the page shows an error or fallback state but still returns 200, the check passes. The claim that a sealed source fails open to the normal form, without changing what the user sees, is not proven.",
+        "recommended_fix": "For both the control and late requests, read the body as bounded text and assert a fixed marker from the seeded form, such as the headline 'Synthetic runtime form' and the name/email field labels. Also assert that the error-page markers are absent. Record only a boolean result in the receipt.",
+        "required_test": "Run the probe and confirm that the control and late GETs both report formRendered=true. As a negative check, temporarily point the request at a missing slug, or make the page throw inside the owned mirror only, and confirm the check fails.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "source-seal block counters vs task integration statement",
+        "issue": "The task header still says one unforwarded frame, a seal of 4 frames/3 pages/0 intakes, and a source count of 3. The code, and the 'Current fix' text, use two interrupted frames, a seal of 5/4/0, and pages:4.",
+        "evidence": "Header: 'seal frozen counters4 frames/3 pages/0 intakes ... source count remains3'. Code: `assert.deepEqual([frozen.frameCount,frozen.pageCount,frozen.playbackCount],[5,4,0])` and `counts()=={pages:4,...}`.",
+        "impact": "Evidence or goal notes that copy the header would misstate what the receipt proves. This does not change runtime behavior.",
+        "recommended_fix": "Update the integration statement and any evidence notes to: 5 frames, 4 pages including the pre-seal control, 0 intakes, and 3 visits/intents.",
+        "required_test": "Check the docs for consistency: the evidence summary counters must match the receipt's sourceSeal frameCount, pageCount and playbackCount.",
+        "confidence": 0.85
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

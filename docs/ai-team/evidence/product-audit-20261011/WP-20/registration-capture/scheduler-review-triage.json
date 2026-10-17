@@ -1,0 +1,35 @@
+{
+  "status": "REVIEW_RECEIVED_NOT_FULL_ACCEPTANCE",
+  "source_revision": "sha256:5f1891035c24f14d7af273d18938abcf5f0609f4e925d3136d0849122766433b",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "counts": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 3,
+    "NIT": 2
+  },
+  "decisions": [
+    {
+      "finding": "MINOR timeout/concurrency",
+      "decision": "Validate against existing disposable materialization concurrency evidence; add slow-second-page cursor test. Do not increase deadline without runtime budget analysis."
+    },
+    {
+      "finding": "MINOR receipt validation",
+      "decision": "Confirmed from reconcile producer: budget_exhausted requires processed < take; batch_complete with hasMore requires processed == take; recorded must equal processed minus retryable minus terminalGaps. Implement with realistic page fixtures next."
+    },
+    {
+      "finding": "MINOR test coverage",
+      "decision": "Reviewer scope omitted existing disposable integration checks; supply them in follow-up. Check deterministic deadline-break unit coverage separately."
+    },
+    {
+      "finding": "NIT cursor monotonicity",
+      "decision": "Do not compare JS lexical order to PostgreSQL collation. Document bounded cycle detection and server keyset ordering."
+    },
+    {
+      "finding": "NIT observability",
+      "decision": "Retain for scheduler integration; not a full-goal blocker."
+    }
+  ],
+  "remaining_review": "Capture, verification, session identity and migration remain outside this bounded review; full previous review truncated."
+}

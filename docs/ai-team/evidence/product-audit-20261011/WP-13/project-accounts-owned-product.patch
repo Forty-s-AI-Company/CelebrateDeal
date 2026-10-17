@@ -1,0 +1,1012 @@
+--- /dev/null
++++ b/prisma/migrations/20261016190000_project_line_accounts/migration.sql
+@@ -0,0 +1,38 @@
++-- Preserve the former single account as the default. No credentials are decrypted.
++ALTER TABLE "LineOfficialAccount" ADD COLUMN "displayName" TEXT NOT NULL DEFAULT 'LINE 官方帳號', ADD COLUMN "isDefault" BOOLEAN NOT NULL DEFAULT false;
++UPDATE "LineOfficialAccount" SET "isDefault" = true;
++DROP INDEX "LineOfficialAccount_vendorId_key";
++CREATE UNIQUE INDEX "LineOfficialAccount_one_default_per_vendor" ON "LineOfficialAccount" ("vendorId") WHERE "isDefault";
++
++ALTER TABLE "SalesProject" ADD COLUMN "lineOfficialAccountId" TEXT;
++ALTER TABLE "LineUserIdentity" ADD COLUMN "lineOfficialAccountId" TEXT;
++ALTER TABLE "LineLoginState" ADD COLUMN "lineOfficialAccountId" TEXT, ADD COLUMN "accountVersion" TEXT;
++ALTER TABLE "LineRichMenuDraft" ADD COLUMN "lineOfficialAccountId" TEXT;
++UPDATE "SalesProject" p SET "lineOfficialAccountId" = a.id FROM "LineOfficialAccount" a WHERE p."vendorId" = a."vendorId";
++UPDATE "LineUserIdentity" i SET "lineOfficialAccountId" = a.id FROM "LineOfficialAccount" a WHERE i."vendorId" = a."vendorId";
++UPDATE "LineRichMenuDraft" d SET "lineOfficialAccountId" = a.id FROM "LineOfficialAccount" a WHERE d."vendorId" = a."vendorId";
++-- Pending states predate account pinning: require a fresh, verified consent flow.
++UPDATE "LineLoginState" SET "consumedAt" = CURRENT_TIMESTAMP WHERE "consumedAt" IS NULL;
++UPDATE "LineUserIdentity" SET "revokedAt" = COALESCE("revokedAt", CURRENT_TIMESTAMP) WHERE "lineOfficialAccountId" IS NULL;
++ALTER TABLE "LineUserIdentity" ADD CONSTRAINT "LineUserIdentity_unbound_revoked_check" CHECK ("lineOfficialAccountId" IS NOT NULL OR "revokedAt" IS NOT NULL);
++CREATE UNIQUE INDEX "LineUserIdentity_unbound_subject_key" ON "LineUserIdentity" ("vendorId", "subjectType", "subjectId") WHERE "lineOfficialAccountId" IS NULL;
++DROP INDEX "LineDelivery_vendorId_idempotencyKey_key";
++CREATE UNIQUE INDEX "LineDelivery_vendorId_lineOfficialAccountId_idempotencyKey_key" ON "LineDelivery" ("vendorId", "lineOfficialAccountId", "idempotencyKey");
++DROP INDEX "LineUserIdentity_vendorId_lineUserIdHash_key";
++DROP INDEX "LineUserIdentity_vendorId_subjectType_subjectId_key";
++CREATE UNIQUE INDEX "LineUserIdentity_vendorId_lineOfficialAccountId_subjectType_s_key" ON "LineUserIdentity" ("vendorId", "lineOfficialAccountId", "subjectType", "subjectId");
++CREATE INDEX "LineUserIdentity_vendorId_lineOfficialAccountId_lineUserIdHash_idx" ON "LineUserIdentity" ("vendorId", "lineOfficialAccountId", "lineUserIdHash");
++CREATE UNIQUE INDEX "LineUserIdentity_vendorId_lineOfficialAccountId_id_key" ON "LineUserIdentity" ("vendorId", "lineOfficialAccountId", id);
++DROP INDEX "LineRichMenuDraft_vendorId_key";
++CREATE UNIQUE INDEX "LineRichMenuDraft_vendorId_lineOfficialAccountId_key" ON "LineRichMenuDraft" ("vendorId", "lineOfficialAccountId");
++CREATE UNIQUE INDEX "LineRichMenuDraft_unbound_per_vendor" ON "LineRichMenuDraft" ("vendorId") WHERE "lineOfficialAccountId" IS NULL;
++
++ALTER TABLE "SalesProject" ADD CONSTRAINT "SalesProject_vendorId_lineOfficialAccountId_fkey" FOREIGN KEY ("vendorId", "lineOfficialAccountId") REFERENCES "LineOfficialAccount" ("vendorId", id) ON DELETE NO ACTION ON UPDATE CASCADE;
++ALTER TABLE "LineUserIdentity" ADD CONSTRAINT "LineUserIdentity_vendorId_lineOfficialAccountId_fkey" FOREIGN KEY ("vendorId", "lineOfficialAccountId") REFERENCES "LineOfficialAccount" ("vendorId", id) ON DELETE NO ACTION ON UPDATE CASCADE;
++ALTER TABLE "LineLoginState" ADD CONSTRAINT "LineLoginState_vendorId_lineOfficialAccountId_fkey" FOREIGN KEY ("vendorId", "lineOfficialAccountId") REFERENCES "LineOfficialAccount" ("vendorId", id) ON DELETE NO ACTION ON UPDATE CASCADE;
++ALTER TABLE "LineRichMenuDraft" ADD CONSTRAINT "LineRichMenuDraft_vendorId_lineOfficialAccountId_fkey" FOREIGN KEY ("vendorId", "lineOfficialAccountId") REFERENCES "LineOfficialAccount" ("vendorId", id) ON DELETE NO ACTION ON UPDATE CASCADE;
++ALTER TABLE "LineDelivery" DROP CONSTRAINT "LineDelivery_vendorId_lineUserIdentityId_fkey";
++ALTER TABLE "LineDelivery" ADD CONSTRAINT "LineDelivery_vendorId_lineOfficialAccountId_lineUserIdentityId_fkey" FOREIGN KEY ("vendorId", "lineOfficialAccountId", "lineUserIdentityId") REFERENCES "LineUserIdentity" ("vendorId", "lineOfficialAccountId", id) ON DELETE NO ACTION ON UPDATE CASCADE;
++
++ALTER TABLE "LineDelivery" DROP CONSTRAINT "LineDelivery_vendorId_lineOfficialAccountId_fkey";
++ALTER TABLE "LineDelivery" ADD CONSTRAINT "LineDelivery_vendorId_lineOfficialAccountId_fkey" FOREIGN KEY ("vendorId", "lineOfficialAccountId") REFERENCES "LineOfficialAccount" ("vendorId", id) ON DELETE NO ACTION ON UPDATE CASCADE;
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -176,8 +176,8 @@
+   livePrivateChatMessages          LivePrivateChatMessage[]
+   liveNotificationRules            LiveNotificationRule[]
+   emailSuppressions                EmailSuppression[]
+-  lineRichMenuDraft                 LineRichMenuDraft?
+-  lineOfficialAccount              LineOfficialAccount?
++  lineRichMenuDraft                 LineRichMenuDraft[]
++  lineOfficialAccount              LineOfficialAccount[]
+   lineUserIdentities               LineUserIdentity[]
+   lineLoginStates                  LineLoginState[]
+   lineDeliveries                   LineDelivery[]
+@@ -796,7 +796,9 @@
+ /// channel identifiers, is encrypted at rest with a vendor/field-specific AES-GCM key.
+ model LineOfficialAccount {
+   id                              String    @id @default(cuid())
+-  vendorId                        String    @unique
++  vendorId                        String
++  displayName                     String    @default("LINE 官方帳號")
++  isDefault                       Boolean   @default(false)
+   messagingChannelIdEncrypted     String
+   messagingChannelSecretEncrypted String
+   messagingAccessTokenEncrypted   String
+@@ -810,6 +812,10 @@
+ 
+   vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+   deliveries LineDelivery[]
++  projects SalesProject[]
++  identities LineUserIdentity[]
++  loginStates LineLoginState[]
++  richMenuDrafts LineRichMenuDraft[]
+ 
+   @@unique([vendorId, id])
+   @@index([status, updatedAt])
+@@ -821,6 +827,7 @@
+ model LineUserIdentity {
+   id                    String    @id @default(cuid())
+   vendorId              String
++  lineOfficialAccountId String?
+   subjectType           String
+   subjectId             String
+   lineUserIdHash        String
+@@ -835,10 +842,12 @@
+   updatedAt             DateTime  @updatedAt
+ 
+   vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++  account LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
+   deliveries LineDelivery[]
+ 
+-  @@unique([vendorId, subjectType, subjectId])
+-  @@unique([vendorId, lineUserIdHash])
++  @@unique([vendorId, lineOfficialAccountId, subjectType, subjectId])
++  @@index([vendorId, lineOfficialAccountId, lineUserIdHash])
++  @@unique([vendorId, lineOfficialAccountId, id])
+   @@unique([vendorId, id])
+   @@index([vendorId, subjectType, revokedAt])
+   @@index([revokedAt, lastMaterializedAt])
+@@ -849,6 +858,8 @@
+ model LineLoginState {
+   id                    String    @id @default(cuid())
+   vendorId              String
++  lineOfficialAccountId String?
++  accountVersion        String?
+   stateHash             String    @unique
+   nonceHash             String
+   codeVerifierEncrypted String
+@@ -860,6 +871,7 @@
+   createdAt             DateTime  @default(now())
+ 
+   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++  account LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
+ 
+   @@index([vendorId, expiresAt, consumedAt])
+ }
+@@ -887,11 +899,11 @@
+   updatedAt             DateTime  @updatedAt
+ 
+   vendor         Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+-  account        LineOfficialAccount @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: Restrict)
+-  identity       LineUserIdentity    @relation(fields: [vendorId, lineUserIdentityId], references: [vendorId, id], onDelete: Restrict)
++  account        LineOfficialAccount @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
++  identity       LineUserIdentity    @relation(fields: [vendorId, lineOfficialAccountId, lineUserIdentityId], references: [vendorId, lineOfficialAccountId, id], onDelete: NoAction)
+   sourceTemplate MessageTemplate?    @relation(fields: [vendorId, sourceTemplateId], references: [vendorId, id], onDelete: Restrict)
+ 
+-  @@unique([vendorId, idempotencyKey])
++  @@unique([vendorId, lineOfficialAccountId, idempotencyKey])
+   @@index([status, nextAttemptAt, claimedAt])
+   @@index([vendorId, trigger, createdAt])
+   @@index([lineUserIdentityId, createdAt])
+@@ -3861,6 +3873,7 @@
+ model SalesProject {
+   id                String             @id @default(cuid())
+   vendorId          String
++  lineOfficialAccountId String?
+   name              String
+   slug              String
+   mode              SalesWorkspaceMode
+@@ -3872,6 +3885,7 @@
+   updatedAt         DateTime           @updatedAt
+ 
+   vendor        Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++  lineOfficialAccount LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
+   products      SalesProjectProduct[]
+   customers     SalesProjectCustomer[]
+   landingPages  LandingPage[]
+@@ -4112,13 +4126,17 @@
+ // Drafts are tenant-owned configuration, separate from any external publication state.
+ model LineRichMenuDraft {
+   id        String   @id @default(cuid())
+-  vendorId  String   @unique
++  vendorId  String
++  lineOfficialAccountId String?
+   menu      Json
+   revision  Int      @default(1)
+   createdAt DateTime @default(now())
+   updatedAt DateTime @updatedAt
+ 
+   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++  account LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
++
++  @@unique([vendorId, lineOfficialAccountId])
+ }
+ 
+ /// Purpose is part of the signed capability and the persisted consume guard.
+--- a/src/app/(app)/projects/[id]/page.tsx
++++ b/src/app/(app)/projects/[id]/page.tsx
+@@ -4,11 +4,14 @@
+ import { Badge, ButtonLink, Card, PageHeader, SubmitButton } from "@/components/ui";
+ import { requireVendorManagerContext } from "@/lib/auth";
+ import { getDb } from "@/lib/db";
++import { selectProjectLineAccountAction } from "@/app/actions/project-line-actions";
+ 
+-export default async function ProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; published?: string }> }) {
++export default async function ProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; published?: string; lineSaved?:string; lineError?:string }> }) {
+   const { vendor } = await requireVendorManagerContext(); const { id } = await params;
+   const query = await searchParams;
+   const project = await getDb().salesProject.findFirst({ where: { id, vendorId: vendor.id }, include: { _count: { select: { products: true, customers: true, forms: true, lives: true, consultations: true, orders: true } } } });
+   if (!project) notFound();
+-  return <><PageHeader title={project.name} description={`目前資料範圍：${vendor.name} / ${project.name}`} action={<Badge tone={project.status === "published" ? "green" : "blue"}>{project.status === "published" ? "已發布" : "草稿"}</Badge>} />{query.error === "not_ready" ? <p role="alert" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">發布前請完成有效價格商品、漏斗頁、付款方式，以及目前專案的直播或可預約諮詢流程。</p> : null}{query.published ? <p role="status" className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">專案已發布，可以取得分享連結。</p> : null}<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[["商品與方案",project._count.products,"/products"],["專案客戶",project._count.customers,"/customers"],["漏斗頁",project._count.forms,"/forms"],["直播",project._count.lives,"/lives"],["預約服務",project._count.consultations,"/consultations"],["訂單",project._count.orders,"/orders"]].map(([label,value,href]) => <Card key={String(label)}><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold text-slate-950">{value}</p><ButtonLink href={String(href)} tone="secondary">開啟</ButtonLink></Card>)}</div>{project.status !== "published" ? <Card className="mt-6"><h2 className="font-semibold text-slate-950">準備發布</h2><p className="mt-2 text-sm text-slate-600">系統會再次檢查商品、漏斗、付款與主要銷售流程，不會用手動勾選冒充完成。</p><form action={publishSalesProjectAction} className="mt-4"><CsrfField /><input type="hidden" name="projectId" value={project.id} /><SubmitButton pendingChildren="檢查並發布中…">檢查並發布</SubmitButton></form></Card> : null}</>;
++  const accounts = await getDb().lineOfficialAccount.findMany({where:{vendorId:vendor.id,OR:[{status:"active"},...(project.lineOfficialAccountId?[{id:project.lineOfficialAccountId}]:[])]},orderBy:{displayName:"asc"},select:{id:true,displayName:true,status:true}});
++  const lineSettings = <Card className="mt-6 space-y-3"><h2 className="font-semibold">課程 LINE 官方帳號</h2><p className="text-sm text-slate-600">選擇此課程用於學員綁定與通知的官方帳號。其他課程可共用同一個帳號。更換後，學員需綁定新帳號才能收到通知。</p>{query.lineSaved?<p role="status">LINE 帳號選擇已儲存。</p>:null}{query.lineError?<p role="alert">目前無法更換。請確認帳號仍可使用；若有通知正在送出，請稍後再試。</p>:null}<form action={selectProjectLineAccountAction} className="flex flex-wrap items-center gap-3"><CsrfField/><input type="hidden" name="projectId" value={project.id}/><label htmlFor="project-line-account">官方帳號</label><select id="project-line-account" name="accountId" defaultValue={project.lineOfficialAccountId??""} className="min-h-11 rounded border px-3"><option value="">尚未選擇（不發送此課程 LINE 通知）</option>{accounts.map(account=><option key={account.id} value={account.id} disabled={account.status!=="active"}>{account.displayName}{account.status!=="active"?"（已停用）":""}</option>)}</select><SubmitButton pendingChildren="儲存中…">儲存選擇</SubmitButton></form><ButtonLink href="/settings/line" tone="secondary">管理／新增官方帳號（商家擁有者）</ButtonLink></Card>;
++  return <><PageHeader title={project.name} description={`目前資料範圍：${vendor.name} / ${project.name}`} action={<Badge tone={project.status === "published" ? "green" : "blue"}>{project.status === "published" ? "已發布" : "草稿"}</Badge>} />{query.error === "not_ready" ? <p role="alert" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">發布前請完成有效價格商品、漏斗頁、付款方式，以及目前專案的直播或可預約諮詢流程。</p> : null}{query.published ? <p role="status" className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">專案已發布，可以取得分享連結。</p> : null}<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[["商品與方案",project._count.products,"/products"],["專案客戶",project._count.customers,"/customers"],["漏斗頁",project._count.forms,"/forms"],["直播",project._count.lives,"/lives"],["預約服務",project._count.consultations,"/consultations"],["訂單",project._count.orders,"/orders"]].map(([label,value,href]) => <Card key={String(label)}><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold text-slate-950">{value}</p><ButtonLink href={String(href)} tone="secondary">開啟</ButtonLink></Card>)}</div>{project.status !== "published" ? <Card className="mt-6"><h2 className="font-semibold text-slate-950">準備發布</h2><p className="mt-2 text-sm text-slate-600">系統會再次檢查商品、漏斗、付款與主要銷售流程，不會用手動勾選冒充完成。</p><form action={publishSalesProjectAction} className="mt-4"><CsrfField /><input type="hidden" name="projectId" value={project.id} /><SubmitButton pendingChildren="檢查並發布中…">檢查並發布</SubmitButton></form></Card> : null}{lineSettings}</>;
+ }
+--- a/src/app/(app)/settings/line/page.tsx
++++ b/src/app/(app)/settings/line/page.tsx
+@@ -6,6 +6,8 @@
+ import { getCsrfToken } from "@/lib/csrf";
+ import { getDb } from "@/lib/db";
+ import { parseRichMenuDraftContent,richMenuPublicationView } from "@/lib/line-rich-menu-draft-content";
++import Link from "next/link";
++import { notFound } from "next/navigation";
+ 
+ function maskIdentityId(identityId: string) {
+   if (identityId.length <= 8) return `***${identityId.slice(-4)}`;
+@@ -18,19 +20,22 @@
+   order_paid: "訂單付款",
+ };
+ 
+-export default async function LineSettingsPage() {
++async function loadLineSettings(vendorId:string,requestedAccountId:string|undefined) {
++  const accounts = await getDb().lineOfficialAccount.findMany({
++      where: { vendorId: vendorId },
++      orderBy: [{isDefault:"desc"},{createdAt:"asc"}],
++      select: { id: true, displayName:true, isDefault:true, status: true, connectedAt: true, lastValidatedAt: true },
++    });
++  const account = requestedAccountId === "new" ? null : requestedAccountId ? accounts.find(item=>item.id===requestedAccountId) ?? null : accounts[0] ?? null;
++  if(requestedAccountId && requestedAccountId !== "new" && !account) notFound();
++  const draft = account ? await getDb().lineRichMenuDraft.findFirst({where:{vendorId:vendorId,lineOfficialAccountId:account.id},select:{id:true,revision:true,menu:true}}) : null;
++  return {accounts,account,draft};
++}
++
++export default async function LineSettingsPage({searchParams}: {searchParams?:Promise<{accountId?:string}>}) {
+   const auth = await requireVendorOwner();
+-  const [csrfToken, account, draft] = await Promise.all([
+-    getCsrfToken(),
+-    getDb().lineOfficialAccount.findUnique({
+-      where: { vendorId: auth.vendor.id },
+-      select: { id: true, status: true, connectedAt: true, lastValidatedAt: true },
+-    }),
+-    getDb().lineRichMenuDraft.findUnique({
+-      where: { vendorId: auth.vendor.id },
+-      select: { id: true, revision: true, menu: true },
+-    }),
+-  ]);
++  const query = await searchParams;
++  const [csrfToken,{accounts,account,draft}] = await Promise.all([getCsrfToken(),loadLineSettings(auth.vendor.id,query?.accountId)]);
+   const parsedMenu = draft ? parseRichMenuDraftContent(draft.menu) : null;
+   const deliveries = account
+     ? await getDb().lineDelivery.findMany({
+@@ -48,22 +53,33 @@
+         },
+       })
+     : [];
+-  const webhookUrl = `${getCanonicalAppUrl()}/api/webhooks/line/${encodeURIComponent(auth.vendor.id)}`;
++  const webhookUrl = account ? `${getCanonicalAppUrl()}/api/webhooks/line/${encodeURIComponent(auth.vendor.id)}/${encodeURIComponent(account.id)}` : "";
+   return (
+     <div className="space-y-6">
+       <PageHeader title="LINE 整合" description="管理官方帳號推播與 LINE Login。憑證只會加密儲存，不會在頁面重新顯示。" />
++      <section className="space-y-3 rounded-lg border p-5">
++        <h2 className="font-semibold">官方帳號清單</h2>
++        <p className="text-sm text-slate-600">帳號只需新增一次，各課程 Project 可選擇同一個帳號。學員的 LINE Login 用於綁定通知身份；官方帳號串接仍需在 LINE 後台設定通道。Messaging API 與 LINE Login 通道請建立在同一個 Provider，並將 Login 通道連結此官方帳號。</p>
++        <a href="https://manager.line.biz/" target="_blank" rel="noreferrer" className="inline-block underline">登入 LINE 官方帳號後台</a>
++        <form method="get" className="flex flex-wrap gap-2"><label>管理帳號 <select name="accountId" defaultValue={account?.id ?? "new"} className="min-h-11 rounded border px-3">{accounts.map(item=><option key={item.id} value={item.id}>{item.displayName}{item.isDefault?"（預設）":""}</option>)}<option value="new">新增官方帳號</option></select></label><button className="rounded border px-4" type="submit">開啟</button></form>
++        <Link href="/settings/line?accountId=new" className="inline-block underline">新增官方帳號</Link>
++      </section>
+       <LineOfficialAccountForm
++        key={account?.id ?? "new"}
++        accountId={account?.id}
++        displayName={account?.displayName}
+         csrfToken={csrfToken}
+         connected={account?.status === "active"}
+         webhookUrl={webhookUrl}
+         lastValidatedAt={account?.lastValidatedAt?.toLocaleString("zh-TW") ?? null}
+       />
+-      {draft && !parsedMenu ? <p role="alert">選單草稿格式無法載入，請聯絡管理員協助處理；原始草稿已保留。</p> : <LineRichMenuStudio
+-        key={draft?`${draft.id}:${draft.revision}`:"new"}
++      {draft && !parsedMenu ? <p role="alert">選單草稿格式無法載入，請聯絡管理員協助處理；原始草稿已保留。</p> : account ? <LineRichMenuStudio
++        accountId={account.id}
++        key={`${account.id}:${draft?.id??"new"}:${draft?.revision??0}`}
+         csrfToken={csrfToken}
+         connected={account?.status==="active"}
+         existing={draft && parsedMenu ? { id: draft.id, revision: draft.revision, menu: parsedMenu.menu,publication:richMenuPublicationView(parsedMenu.publication) } : null}
+-      />}
++      /> : null}
+       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
+         <div className="mb-4">
+           <h2 className="text-lg font-semibold">推播紀錄</h2>
+--- a/src/app/actions/line-actions.ts
++++ b/src/app/actions/line-actions.ts
+@@ -8,6 +8,7 @@
+ import { Prisma } from "@prisma/client";
+ import { parseRichMenuDraftContent } from "@/lib/line-rich-menu-draft-content";
+ import { richMenuAccountVersion } from "@/lib/line-rich-menu-sync";
++import { findLineAccount } from "@/lib/line-account-routing";
+ import {
+   parseLineOfficialAccountCredentials,
+   protectLineOfficialAccountCredentials,
+@@ -72,6 +73,20 @@
+   return typeof value === "string" ? value.trim() : "";
+ }
+ 
++async function ownedAccountsForSave(tx:Prisma.TransactionClient,vendorId:string,accountId:string,credentials:Parameters<typeof protectLineOfficialAccountCredentials>[1]) {
++      const existing = accountId ? await findLineAccount(tx, vendorId, accountId) : null;
++      if (accountId && !existing) throw new Error("invalid_account");
++      const accounts = await tx.lineOfficialAccount.findMany({ where: { vendorId: vendorId } });
++      for (const candidate of accounts) {
++        const old = unprotectLineOfficialAccountCredentials(vendorId, candidate);
++        // Updating credentials may rotate a secret, but cannot change channel identity.
++        if (candidate.id === accountId) {
++          if (old.messagingChannelId !== credentials.messagingChannelId || (old.loginChannelId && old.loginChannelId !== credentials.loginChannelId)) throw new Error("invalid_account");
++        } else if (old.messagingChannelId === credentials.messagingChannelId || (old.loginChannelId && old.loginChannelId === credentials.loginChannelId)) throw new Error("duplicate_channel");
++      }
++  return {existing,accounts};
++}
++
+ /** Owner-only mutation; no credential value is returned, logged, or written to audit metadata. */
+ export async function saveLineOfficialAccountAction(
+   _previous: LineOfficialAccountActionState,
+@@ -79,6 +94,9 @@
+ ): Promise<LineOfficialAccountActionState> {
+   await assertServerActionSecurity(formData);
+   const auth = await requireVendorOwner();
++  const accountId = optionalFormText(formData, "accountId");
++  const displayName = optionalFormText(formData, "displayName");
++  if (accountId.length > 128 || !displayName || displayName.length > 100) return { status: "error", error: "invalid_credentials" };
+   const parsed = parseLineOfficialAccountCredentials({
+     messagingChannelId: optionalFormText(formData, "messagingChannelId"),
+     messagingChannelSecret: optionalFormText(formData, "messagingChannelSecret"),
+@@ -92,7 +110,8 @@
+   let account: { id: string; status: string; connectedAt: Date };
+   try {
+     account = await getDb().$transaction(async tx=>{
+-      const draft=await tx.lineRichMenuDraft.findUnique({where:{vendorId:auth.vendor.id}});
++      const {existing,accounts} = await ownedAccountsForSave(tx,auth.vendor.id,accountId,parsed.data);
++      const draft = existing ? await tx.lineRichMenuDraft.findFirst({where:{vendorId:auth.vendor.id,lineOfficialAccountId:existing.id}}) : null;
+       const content=draft&&parseRichMenuDraftContent(draft.menu);
+       if(draft&&!content)throw new Error("line_sync_pending");
+       const publication=content?.publication;
+@@ -100,24 +119,16 @@
+       if(publication?.status==="uncertain") {
+         // An expired provider value may be rotated for the SAME channel so an
+         // unknown result can be reconciled. A channel switch stays blocked.
+-        const old=await tx.lineOfficialAccount.findUnique({where:{vendorId:auth.vendor.id}});
++        const old=existing;
+         if(!old||unprotectLineOfficialAccountCredentials(auth.vendor.id,old).messagingChannelId!==parsed.data.messagingChannelId)throw new Error("line_sync_pending");
+       }
+-      const saved = await tx.lineOfficialAccount.upsert({
+-      where: { vendorId: auth.vendor.id },
+-      create: {
+-        vendorId: auth.vendor.id,
+-        ...protectedCredentials,
+-        status: "active",
+-      },
+-      update: {
+-        ...protectedCredentials,
+-        status: "active",
+-        connectedAt: new Date(),
+-        lastValidatedAt: null,
+-      },
+-      select: { id: true, status: true, connectedAt: true },
+-      });
++      const data = { ...protectedCredentials, displayName, status: "active", connectedAt: new Date(), lastValidatedAt: null };
++      const select = { id: true, status: true, connectedAt: true } as const;
++      const saved = existing
++        ? await tx.lineOfficialAccount.update({ where: { vendorId_id: { vendorId: auth.vendor.id, id: existing.id } }, data, select })
++        : await tx.lineOfficialAccount.create({ data: { vendorId: auth.vendor.id, ...data, isDefault: accounts.length === 0 }, select });
++      // Preserve a pre-integration draft when the merchant adds their first account.
++      if (!existing && accounts.length === 0) await tx.lineRichMenuDraft.updateMany({ where: { vendorId: auth.vendor.id, lineOfficialAccountId: null }, data: { lineOfficialAccountId: saved.id } });
+       if(draft&&content&&publication) {
+         const next={...publication,status:publication.status==="uncertain"?"uncertain" as const:"outdated" as const,accountVersion:richMenuAccountVersion({id:saved.id,...protectedCredentials})};
+         const changed=await tx.lineRichMenuDraft.updateMany({where:{id:draft.id,vendorId:auth.vendor.id,revision:draft.revision,menu:{equals:draft.menu as Prisma.InputJsonValue}},data:{revision:{increment:1},menu:{...content,publication:next} as Prisma.InputJsonValue}});
+@@ -154,8 +165,10 @@
+ ): Promise<LineConnectionActionState> {
+   await assertServerActionSecurity(formData);
+   const auth = await requireVendorOwner();
++  const accountId = optionalFormText(formData, "accountId");
++  if (!accountId || accountId.length > 128) return { status: "error", error: "not_configured", bot: null };
+   const account = await getDb().lineOfficialAccount.findUnique({
+-    where: { vendorId: auth.vendor.id },
++    where: { vendorId_id: { vendorId: auth.vendor.id, id: accountId } },
+     select: {
+       id: true,
+       messagingChannelIdEncrypted: true,
+@@ -170,10 +183,11 @@
+   try {
+     const credentials = unprotectLineOfficialAccountCredentials(auth.vendor.id, account);
+     const bot = await fetchLineBotInfo(credentials.messagingAccessToken);
+-    await getDb().lineOfficialAccount.update({
+-      where: { vendorId: auth.vendor.id },
++    const validated = await getDb().lineOfficialAccount.updateMany({
++      where: { vendorId: auth.vendor.id, id: account.id, messagingChannelIdEncrypted:account.messagingChannelIdEncrypted, messagingChannelSecretEncrypted:account.messagingChannelSecretEncrypted, messagingAccessTokenEncrypted:account.messagingAccessTokenEncrypted, loginChannelIdEncrypted:account.loginChannelIdEncrypted, loginChannelSecretEncrypted:account.loginChannelSecretEncrypted },
+       data: { lastValidatedAt: new Date() },
+     });
++    if(validated.count !== 1) return {status:"error",error:"connection_failed",bot:null};
+     revalidatePath(LINE_SETTINGS_PATH);
+     return { status: "validated", error: null, bot };
+   } catch {
+--- a/src/app/actions/line-rich-menu-actions.ts
++++ b/src/app/actions/line-rich-menu-actions.ts
+@@ -10,6 +10,7 @@
+ import { parseRichMenuDraftContent,richMenuPublicationLocked,richMenuPublicationView,saveRichMenuDraftContent,type RichMenuPublicationView } from "@/lib/line-rich-menu-draft-content";
+ import { reconcileLineRichMenuDraft,syncLineRichMenuDraft } from "@/lib/line-rich-menu-sync";
+ import { LINE_RICH_MENU_IMAGE_LIMIT,LINE_RICH_MENU_PLACEHOLDERS,type RichMenuLinks } from "@/lib/line-rich-menu-publication";
++import { findLineAccount } from "@/lib/line-account-routing";
+ 
+ const ReferenceSchema = z.object({
+   id: z.string().min(1).max(128),
+@@ -45,12 +46,12 @@
+ }
+ 
+ 
+-async function editDraft(reference:DraftReference|null,vendorId:string,intent:"save"|"delete",formData:FormData):Promise<RichMenuActionState> {
++async function editDraft(reference:DraftReference|null,vendorId:string,intent:"save"|"delete",formData:FormData,accountId:string):Promise<RichMenuActionState> {
+   const fail=(error:RichMenuActionState["error"]):RichMenuActionState=>({status:"error",error,reference});
+   const invalid=()=>fail("invalid_input");
+   let result:RichMenuActionState;
+     const db = getDb();
+-    const current=reference?await db.lineRichMenuDraft.findFirst({where:{vendorId:vendorId,...reference}}):null;
++    const current=reference?await db.lineRichMenuDraft.findFirst({where:{vendorId:vendorId,lineOfficialAccountId:accountId,...reference}}):null;
+     const content=current&&parseRichMenuDraftContent(current.menu);
+     if(reference&&(!current||!content))return fail("conflict");
+     if(content&&richMenuPublicationLocked(content.publication))return {...fail("locked"),publication:richMenuPublicationView(content.publication)};
+@@ -70,9 +71,9 @@
+         if (updated.count !== 1) return fail("conflict");
+         result = { status: "saved", error: null, reference: { id: reference.id, revision: reference.revision + 1 },publication:content?.publication?{...richMenuPublicationView(content.publication)!,status:"outdated"}:null };
+       } else {
+-        // A unique vendor key makes simultaneous first saves conflict instead of creating orphan drafts.
++        // Each account has one draft; simultaneous first saves must conflict.
+         const created = await db.lineRichMenuDraft.create({
+-          data: { vendorId: vendorId, menu }, select: { id: true, revision: true },
++          data: { vendorId: vendorId, lineOfficialAccountId:accountId, menu }, select: { id: true, revision: true },
+         });
+         result = { status: "saved", error: null, reference: created };
+       }
+@@ -103,8 +104,11 @@
+ 
+   let result: RichMenuActionState;
+   try {
++    const accountId = formData.get("accountId");
++    if (typeof accountId !== "string" || !accountId || accountId.length > 128 || !await findLineAccount(getDb(),vendor.id,accountId)) return fail("not_configured");
++    if (reference && !await getDb().lineRichMenuDraft.findFirst({where:{vendorId:vendor.id,lineOfficialAccountId:accountId,...reference},select:{id:true}})) return fail("conflict");
+     if(intent==="sync"||intent==="reconcile")return reference?await publishIntent(formData,intent,reference,{vendorId:vendor.id,actorId:auth.user.id}):invalid();
+-    result=await editDraft(reference,vendor.id,intent,formData);
++    result=await editDraft(reference,vendor.id,intent,formData,accountId);
+     if(result.status==="error")return result;
+   } catch (error) {
+     if(intent==="sync"||intent==="reconcile") {
+--- /dev/null
++++ b/src/app/actions/project-line-actions.ts
+@@ -0,0 +1,37 @@
++"use server";
++
++import { Prisma } from "@prisma/client";
++import { redirect } from "next/navigation";
++import { revalidatePath } from "next/cache";
++import { requireVendorManagerContext } from "@/lib/auth";
++import { assertServerActionSecurity } from "@/lib/csrf";
++import { getDb } from "@/lib/db";
++
++/** Managers may select an owner-configured account; credentials stay owner-only. */
++export async function selectProjectLineAccountAction(formData: FormData) {
++  await assertServerActionSecurity(formData);
++  const { vendor, auth } = await requireVendorManagerContext();
++  const projectId = formData.get("projectId");
++  const accountId = formData.get("accountId");
++  if (typeof projectId !== "string" || !projectId || projectId.length > 128 || typeof accountId !== "string" || accountId.length > 128) redirect("/projects");
++  const path = `/projects/${encodeURIComponent(projectId)}`;
++  try {
++    await getDb().$transaction(async tx => {
++      const project = await tx.salesProject.findFirst({where:{id:projectId,vendorId:vendor.id}});
++      if (!project) throw new Error("not_found");
++      const account = accountId ? await tx.lineOfficialAccount.findFirst({where:{id:accountId,vendorId:vendor.id,status:"active"},select:{id:true}}) : null;
++      if (accountId && !account) throw new Error("not_found");
++      if (project.lineOfficialAccountId === (account?.id ?? null)) return;
++      // Do not change routing while a push through the old account is in flight.
++      // Conservatively includes other Projects sharing this account; the existing
++      // worker recovers expired leases before switching can be retried.
++      if (project.lineOfficialAccountId && await tx.lineDelivery.findFirst({where:{vendorId:vendor.id,lineOfficialAccountId:project.lineOfficialAccountId,status:"sending"},select:{id:true}})) throw new Error("sending");
++      await tx.salesProject.update({where:{vendorId_id:{vendorId:vendor.id,id:project.id}},data:{lineOfficialAccountId:account?.id ?? null}});
++      await tx.auditLog.create({data:{vendorId:vendor.id,actorId:auth.user.id,action:"select_project_line_account",targetType:"SalesProject",targetId:project.id,before:{lineOfficialAccountId:project.lineOfficialAccountId},after:{lineOfficialAccountId:account?.id ?? null}}});
++    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
++  } catch {
++    redirect(`${path}?lineError=unavailable`);
++  }
++  revalidatePath(path);
++  redirect(`${path}?lineSaved=1`);
++}
+--- a/src/app/api/auth/line/callback/route.ts
++++ b/src/app/api/auth/line/callback/route.ts
+@@ -1,5 +1,7 @@
+ import { NextResponse } from "next/server";
+-import { AUTH_COOKIE, createUserSession, sessionCookieOptions } from "@/lib/auth";
++import { AUTH_COOKIE, createUserSession, getCurrentAuth, sessionCookieOptions } from "@/lib/auth";
++import { cookies } from "next/headers";
++import { LINE_LOGIN_BROWSER_COOKIE, lineLoginBrowserCookieOptions } from "@/lib/line-login-browser-binding";
+ import { getCanonicalAppUrl } from "@/lib/app-url";
+ import { getDb } from "@/lib/db";
+ import { completeLineLogin, LineFetchLoginProvider } from "@/lib/line-login";
+@@ -8,7 +10,9 @@
+ function resultRedirect(path: string, status: "linked" | "authenticated" | "error") {
+   const url = new URL(path, getCanonicalAppUrl());
+   url.searchParams.set("line", status);
+-  return NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store" } });
++  const response=NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store" } });
++  response.cookies.set(LINE_LOGIN_BROWSER_COOKIE,"",{...lineLoginBrowserCookieOptions(),maxAge:0});
++  return response;
+ }
+ 
+ export async function GET(request: Request) {
+@@ -18,7 +22,9 @@
+   const state = url.searchParams.get("state") ?? "";
+   const code = url.searchParams.get("code") ?? "";
+   try {
+-    const result = await completeLineLogin(getDb(), new LineFetchLoginProvider(), { state, code });
++    const browserBinding=(await cookies()).get(LINE_LOGIN_BROWSER_COOKIE)?.value;
++    const auth=await getCurrentAuth();
++    const result = await completeLineLogin(getDb(), new LineFetchLoginProvider(), { state, code, browserBinding, currentUserId:auth?.user.id });
+     if (result.identity.subjectType === "buyer_order" || result.identity.subjectType === "buyer_registration") {
+       return resultRedirect(result.redirectPath, "linked");
+     }
+--- a/src/app/api/auth/line/start/route.ts
++++ b/src/app/api/auth/line/start/route.ts
+@@ -11,6 +11,7 @@
+   verifyFormSubmissionLineBindingToken,
+ } from "@/lib/form-submission-line-binding-session";
+ import { beginLineLogin, type LineLoginSubjectType } from "@/lib/line-login";
++import { LINE_LOGIN_BROWSER_COOKIE, lineLoginBrowserCookieOptions } from "@/lib/line-login-browser-binding";
+ import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+ 
+ const StartRequest = z.discriminatedUnion("mode", [
+@@ -81,7 +82,9 @@
+       subjectId,
+       redirectPath: parsed.data.redirectPath,
+     });
+-    return NextResponse.json({ authorizationUrl: result.authorizationUrl }, { headers: { "Cache-Control": "no-store" } });
++    const response = NextResponse.json({ authorizationUrl: result.authorizationUrl }, { headers: { "Cache-Control": "no-store" } });
++    response.cookies.set(LINE_LOGIN_BROWSER_COOKIE,result.browserBinding,lineLoginBrowserCookieOptions());
++    return response;
+   } catch {
+     return NextResponse.json({ error: "line_login_unavailable" }, { status: 503 });
+   }
+--- /dev/null
++++ b/src/app/api/webhooks/line/[vendorId]/[accountId]/route.ts
+@@ -0,0 +1,2 @@
++// Both legacy/default and account-specific URLs share the same signature gate.
++export { POST } from "../route";
+--- a/src/app/api/webhooks/line/[vendorId]/route.ts
++++ b/src/app/api/webhooks/line/[vendorId]/route.ts
+@@ -3,17 +3,19 @@
+ import { getDb } from "@/lib/db";
+ import { verifyLineSignature } from "@/lib/line-client";
+ import { unprotectLineOfficialAccountCredentials } from "@/lib/line-credentials";
++import { findLineAccount } from "@/lib/line-account-routing";
+ 
+ const MAX_WEBHOOK_BYTES = 1_000_000;
+ 
+-export async function POST(request: Request, context: { params: Promise<{ vendorId: string }> }) {
++export async function POST(request: Request, context: { params: Promise<{ vendorId: string; accountId?: string }> }) {
+   const contentLength = Number(request.headers.get("content-length") ?? "0");
+   if (!Number.isFinite(contentLength) || contentLength > MAX_WEBHOOK_BYTES) {
+     return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
+   }
+-  const { vendorId } = await context.params;
++  const { vendorId, accountId } = await context.params;
+   if (!vendorId || vendorId.length > 128) return NextResponse.json({ error: "not_found" }, { status: 404 });
+-  const account = await getDb().lineOfficialAccount.findUnique({ where: { vendorId } });
++  if (accountId !== undefined && (!accountId || accountId.length > 128)) return NextResponse.json({ error: "not_found" }, { status: 404 });
++  const account = await findLineAccount(getDb(), vendorId, accountId);
+   // Consent withdrawal must still be recorded while an existing account is paused.
+   if (!account) return NextResponse.json({ error: "not_found" }, { status: 404 });
+ 
+@@ -33,7 +35,7 @@
+ 
+   // Signature verification above remains the only entry to event persistence.
+   try {
+-    const result = await applyVerifiedLineWebhookEvents(getDb(), vendorId, rawBody);
++    const result = await applyVerifiedLineWebhookEvents(getDb(), vendorId, rawBody, new Date(), account.id);
+     if (result.status === "invalid_payload") return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
+     if (result.status === "retry_later") return NextResponse.json({ error: "temporarily_unavailable" }, { status: 503 });
+   } catch {
+--- a/src/components/line-official-account-form.tsx
++++ b/src/components/line-official-account-form.tsx
+@@ -18,11 +18,15 @@
+   connected,
+   webhookUrl,
+   lastValidatedAt,
++  accountId,
++  displayName,
+ }: {
+   csrfToken: string;
+   connected: boolean;
+   webhookUrl: string;
+   lastValidatedAt: string | null;
++  accountId?: string;
++  displayName?: string;
+ }) {
+   const [state, action, pending] = useActionState(saveLineOfficialAccountAction, initialState);
+   const [connectionState, connectionAction, connectionPending] = useActionState(testLineOfficialAccountAction, initialConnectionState);
+@@ -35,7 +39,7 @@
+           {connected ? "目前已綁定；更新時請重新填入完整憑證。" : "填入 LINE Developers Console 提供的通道憑證。"}
+         </p>
+       </div>
+-      <div className="grid gap-2 rounded-md border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
++      {accountId ? <div className="grid gap-2 rounded-md border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
+         <h3 className="font-semibold text-slate-900">Webhook 設定</h3>
+         <p>
+           請在{" "}
+@@ -54,10 +58,12 @@
+             複製網址
+           </button>
+         </div>
+-        <p className="text-xs text-slate-600">路徑已綁定此商家，請勿與其他商家共用；在 LINE 後台完成 Verify 後再測試連線。</p>
+-      </div>
++        <p className="text-xs text-slate-600">網址專屬於此官方帳號；共用此帳號的課程使用同一個網址。請在 LINE 後台完成 Verify。</p>
++      </div> : <p className="text-sm text-slate-600">儲存後可在帳號清單選取此帳號，取得專屬 Webhook 網址。</p>}
+       <form action={action} className="grid gap-4" autoComplete="off">
+         <input type="hidden" name="_csrf" value={csrfToken} />
++        <input type="hidden" name="accountId" value={accountId ?? ""} />
++        <label className="grid gap-1 text-sm font-medium">帳號名稱<input className={inputClass} name="displayName" defaultValue={displayName ?? ""} required maxLength={100} placeholder="例如：課程學員服務" /></label>
+         <label className="grid gap-1 text-sm font-medium">
+           Messaging Channel ID
+           <input className={inputClass} name="messagingChannelId" required maxLength={128} inputMode="numeric" />
+@@ -95,6 +101,7 @@
+           </div>
+           <form action={connectionAction}>
+             <input type="hidden" name="_csrf" value={csrfToken} />
++            <input type="hidden" name="accountId" value={accountId ?? ""} />
+             <SubmitButton disabled={connectionPending || !connected} pendingChildren="測試中…">測試連線</SubmitButton>
+           </form>
+         </div>
+--- a/src/components/line-rich-menu-studio.tsx
++++ b/src/components/line-rich-menu-studio.tsx
+@@ -26,7 +26,7 @@
+ }
+ 
+ /** Preview cells never navigate to user-provided URLs or contact LINE. */
+-export function LineRichMenuStudio({ csrfToken, existing,connected=false }: { csrfToken: string; existing: RichMenuDraftView | null;connected?:boolean }) {
++export function LineRichMenuStudio({ csrfToken, existing,connected=false,accountId }: { csrfToken: string; existing: RichMenuDraftView | null;connected?:boolean;accountId?:string }) {
+   const [menu, setMenu] = useState<LineRichMenu>(() => existing?.menu ?? createRichMenuTemplate("golden-6"));
+   const initial: RichMenuActionState = {
+     status: "idle", error: null, reference: existing ? { id: existing.id, revision: existing.revision } : null,
+@@ -46,6 +46,7 @@
+     <p className="mt-1 text-sm text-muted-foreground">先設定並儲存草稿，再上傳圖片、填入可公開的連結，手動同步至此商家的 LINE 官方帳號。同步會更換官方帳號的預設圖文選單。</p>
+     <form action={action} className="mt-5 space-y-4">
+       <input type="hidden" name="_csrf" value={csrfToken} />
++      <input type="hidden" name="accountId" value={accountId} />
+       <input type="hidden" name="id" value={state.reference?.id ?? ""} />
+       <input type="hidden" name="revision" value={state.reference?.revision ?? 0} />
+       <input type="hidden" name="menu" value={JSON.stringify(menu)} />
+--- a/src/lib/automation-workflow.ts
++++ b/src/lib/automation-workflow.ts
+@@ -233,7 +233,7 @@
+ 
+ type AutomationDb = Pick<
+   PrismaClient,
+-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery"
++  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "salesProject" | "formSubmission" | "commerceOrder"
+ >;
+ 
+ type ParsedRule = {
+--- /dev/null
++++ b/src/lib/line-account-routing.ts
+@@ -0,0 +1,33 @@
++import { createHash } from "node:crypto";
++import type { LineOfficialAccount, PrismaClient } from "@prisma/client";
++
++export type LineAccountRoutingDatabase = Pick<PrismaClient, "lineOfficialAccount" | "salesProject" | "formSubmission" | "commerceOrder">;
++
++/** An explicit account never falls back to another account or another tenant. */
++export function findLineAccount(db: Pick<PrismaClient, "lineOfficialAccount">, vendorId: string, accountId?: string) {
++  return db.lineOfficialAccount.findFirst({ where: { vendorId, ...(accountId ? { id: accountId } : { isDefault: true }) } });
++}
++
++/** Resolve from authoritative domain records, never a posted project/account ID. */
++export async function resolveSubjectLineAccount(db: LineAccountRoutingDatabase, vendorId: string, subjectType: string, subjectId: string) {
++  let projectId: string | null = null;
++  if (subjectType === "buyer_registration") {
++    const row = await db.formSubmission.findFirst({ where: { id: subjectId, form: { vendorId } }, select: { form: {select:{projectId:true}}, live:{select:{vendorId:true,projectId:true}} } });
++    if (!row) return null;
++    if (row.live && (row.live.vendorId !== vendorId || (row.form.projectId && row.live.projectId && row.form.projectId !== row.live.projectId))) return null;
++    projectId = row.live?.projectId ?? row.form.projectId;
++  } else if (subjectType === "buyer_order") {
++    const row = await db.commerceOrder.findFirst({ where: { id: subjectId, vendorId }, select: { projectId: true } });
++    if (!row) return null;
++    projectId = row.projectId;
++  } else if (!["user", "promoter", "login"].includes(subjectType)) return null;
++  if (!projectId) return findLineAccount(db, vendorId);
++  const project = await db.salesProject.findFirst({ where: { id: projectId, vendorId }, select: { lineOfficialAccountId: true } });
++  // A new/unconfigured project must not silently send through the default account.
++  return project?.lineOfficialAccountId ? findLineAccount(db, vendorId, project.lineOfficialAccountId) : null;
++}
++
++/** Pins pending OAuth to the exact encrypted credentials; rotation requires restart. */
++export function lineLoginAccountVersion(account: Pick<LineOfficialAccount, "id" | "loginChannelIdEncrypted" | "loginChannelSecretEncrypted">) {
++  return createHash("sha256").update(JSON.stringify([account.id, account.loginChannelIdEncrypted, account.loginChannelSecretEncrypted])).digest("hex");
++}
+--- /dev/null
++++ b/src/lib/line-login-browser-binding.ts
+@@ -0,0 +1,13 @@
++import { createHash, timingSafeEqual } from "node:crypto";
++import { getCanonicalAppUrl } from "./app-url";
++
++export const LINE_LOGIN_BROWSER_COOKIE = "celebrate_line_oauth";
++export function lineLoginBrowserBinding(state:string) {
++  return createHash("sha256").update(state).digest("hex");
++}
++export function matchesLineLoginBrowser(state:string,binding:string|undefined) {
++  return typeof binding === "string" && /^[a-f0-9]{64}$/u.test(binding) && timingSafeEqual(Buffer.from(binding),Buffer.from(lineLoginBrowserBinding(state)));
++}
++export function lineLoginBrowserCookieOptions() {
++  return {httpOnly:true,sameSite:"lax" as const,secure:new URL(getCanonicalAppUrl()).protocol==="https:",path:"/api/auth/line",maxAge:600};
++}
+--- a/src/lib/line-login.ts
++++ b/src/lib/line-login.ts
+@@ -7,6 +7,8 @@
+   unprotectLineOfficialAccountCredentials,
+ } from "@/lib/line-credentials";
+ import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
++import { lineLoginAccountVersion, resolveSubjectLineAccount, type LineAccountRoutingDatabase } from "@/lib/line-account-routing";
++import { lineLoginBrowserBinding, matchesLineLoginBrowser } from "./line-login-browser-binding";
+ 
+ const LINE_AUTHORIZE_URL = "https://access.line.me/oauth2/v2.1/authorize";
+ const LINE_TOKEN_URL = "https://api.line.me/oauth2/v2.1/token";
+@@ -17,7 +19,7 @@
+ export const LINE_LOGIN_SUBJECT_TYPES = ["user", "promoter", "buyer_order", "buyer_registration", "login"] as const;
+ export type LineLoginSubjectType = typeof LINE_LOGIN_SUBJECT_TYPES[number];
+ 
+-type LineLoginDatabase = Pick<PrismaClient, "$transaction" | "lineOfficialAccount" | "lineLoginState" | "lineUserIdentity">;
++type LineLoginDatabase = LineAccountRoutingDatabase & Pick<PrismaClient, "$transaction" | "lineLoginState" | "lineUserIdentity">;
+ 
+ export type LineLoginProfile = {
+   userId: string;
+@@ -112,7 +114,7 @@
+   if (!input.vendorId || !input.subjectId || !LINE_LOGIN_SUBJECT_TYPES.includes(input.subjectType)) {
+     throw new Error("Invalid LINE Login subject.");
+   }
+-  const account = await db.lineOfficialAccount.findUnique({ where: { vendorId: input.vendorId } });
++  const account = await resolveSubjectLineAccount(db, input.vendorId, input.subjectType, input.subjectId);
+   if (!account || account.status !== "active" || !account.loginChannelIdEncrypted || !account.loginChannelSecretEncrypted) {
+     throw new Error("LINE Login is not configured.");
+   }
+@@ -127,6 +129,8 @@
+     data: {
+       id: stateId,
+       vendorId: input.vendorId,
++      lineOfficialAccountId: account.id,
++      accountVersion: lineLoginAccountVersion(account),
+       stateHash: stateHash(state),
+       nonceHash: stateHash(nonce),
+       codeVerifierEncrypted: encryptSensitiveValue(`${codeVerifier}:${nonce}`, verifierPurpose(input.vendorId, stateId)),
+@@ -152,23 +156,25 @@
+     // add-friend prompt as part of the same consent flow.
+     bot_prompt: "aggressive",
+   }).toString();
+-  return { authorizationUrl: authorizationUrl.toString() };
++  return { authorizationUrl: authorizationUrl.toString(), browserBinding: lineLoginBrowserBinding(state) };
+ }
+ 
+ export async function completeLineLogin(
+   db: LineLoginDatabase,
+   provider: LineLoginProvider,
+-  input: { state: string; code: string },
++  input: { state: string; code: string; browserBinding?:string; currentUserId?:string },
+   now = new Date(),
+ ) {
+   if (!OAUTH_VALUE.test(input.state) || !input.code || input.code.length > 4_096) throw new Error("Invalid LINE Login callback.");
++  if (!matchesLineLoginBrowser(input.state,input.browserBinding)) throw new Error("LINE Login browser binding is invalid.");
+   const attempt = await db.lineLoginState.findUnique({
+     where: { stateHash: stateHash(input.state) },
+     include: { vendor: { select: { id: true } } },
+   });
+   if (!attempt || attempt.consumedAt || attempt.expiresAt <= now) throw new Error("LINE Login callback expired.");
+-  const account = await db.lineOfficialAccount.findUnique({ where: { vendorId: attempt.vendorId } });
+-  if (!account || !account.loginChannelIdEncrypted || !account.loginChannelSecretEncrypted) throw new Error("LINE Login is not configured.");
++  if (attempt.subjectType === "user" && input.currentUserId !== attempt.subjectId) throw new Error("LINE Login session changed.");
++  const account = await resolveSubjectLineAccount(db, attempt.vendorId, attempt.subjectType, attempt.subjectId);
++  if (!account || account.status !== "active" || account.id !== attempt.lineOfficialAccountId || lineLoginAccountVersion(account) !== attempt.accountVersion || !account.loginChannelIdEncrypted || !account.loginChannelSecretEncrypted) throw new Error("LINE Login is not configured.");
+   const credentials = unprotectLineOfficialAccountCredentials(attempt.vendorId, account);
+   if (!credentials.loginChannelId || !credentials.loginChannelSecret) throw new Error("LINE Login is not configured.");
+   const codeVerifier = decryptSensitiveValue(attempt.codeVerifierEncrypted, verifierPurpose(attempt.vendorId, attempt.id));
+@@ -188,6 +194,8 @@
+   });
+ 
+   return db.$transaction(async (tx) => {
++    const currentAccount = await resolveSubjectLineAccount(tx, attempt.vendorId, attempt.subjectType, attempt.subjectId);
++    if (!currentAccount || currentAccount.status !== "active" || currentAccount.id !== account.id || lineLoginAccountVersion(currentAccount) !== attempt.accountVersion) throw new Error("LINE Login account changed.");
+     const consumed = await tx.lineLoginState.updateMany({
+       where: { id: attempt.id, consumedAt: null, expiresAt: { gt: now } },
+       data: { consumedAt: now },
+@@ -195,22 +203,25 @@
+     if (consumed.count !== 1) throw new Error("LINE Login callback already consumed.");
+     const lookupHash = lineUserIdHash(attempt.vendorId, profile.userId);
+     if (attempt.subjectType === "login") {
+-      const identity = await tx.lineUserIdentity.findUnique({
+-        where: { vendorId_lineUserIdHash: { vendorId: attempt.vendorId, lineUserIdHash: lookupHash } },
++      const identities = await tx.lineUserIdentity.findMany({
++        where: { vendorId: attempt.vendorId, lineOfficialAccountId: account.id, lineUserIdHash: lookupHash, subjectType: "user", revokedAt: null }, take: 2,
+       });
++      const identity = identities.length === 1 ? identities[0] : null;
+       if (!identity || identity.revokedAt) throw new Error("LINE Login identity is not linked.");
+       return { identity, redirectPath: attempt.redirectPath, login: true as const };
+     }
+     const identity = await tx.lineUserIdentity.upsert({
+       where: {
+-        vendorId_subjectType_subjectId: {
++        vendorId_lineOfficialAccountId_subjectType_subjectId: {
+           vendorId: attempt.vendorId,
++          lineOfficialAccountId: account.id,
+           subjectType: attempt.subjectType,
+           subjectId: attempt.subjectId,
+         },
+       },
+       create: {
+         vendorId: attempt.vendorId,
++        lineOfficialAccountId: account.id,
+         subjectType: attempt.subjectType,
+         subjectId: attempt.subjectId,
+         lineUserIdHash: lookupHash,
+@@ -226,6 +237,8 @@
+         pictureUrlEncrypted: profile.pictureUrl ? protectLineProfileValue(attempt.vendorId, "pictureUrl", profile.pictureUrl) : null,
+         linkedAt: now,
+         revokedAt: null,
++        lastMaterializedAt: null,
++        materializationCursor: null,
+       },
+     });
+     return { identity, redirectPath: attempt.redirectPath, login: false as const };
+--- a/src/lib/line-notification-materializer.ts
++++ b/src/lib/line-notification-materializer.ts
+@@ -13,6 +13,7 @@
+ const MATERIALIZE_LIMIT = 100;
+ type LineMaterializationDatabase = Pick<PrismaClient,
+   | "lineOfficialAccount"
++  | "salesProject"
+   | "lineUserIdentity"
+   | "lineDelivery"
+   | "formSubmission"
+--- a/src/lib/line-notification.ts
++++ b/src/lib/line-notification.ts
+@@ -6,6 +6,7 @@
+ import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+ import { LINE_WEBINAR_TEMPLATE_TRIGGERS } from "@/lib/message-template";
+ import { buildLineWebinarMessages, findLineWebinarTemplate, lineWebinarTemplateFingerprint, type LineWebinarVariables } from "@/lib/line-webinar-template";
++import { resolveSubjectLineAccount, type LineAccountRoutingDatabase } from "@/lib/line-account-routing";
+ 
+ export const LINE_NOTIFICATION_TRIGGERS = [
+   "registration_confirmed",
+@@ -18,8 +19,8 @@
+ ] as const;
+ export type LineNotificationTrigger = typeof LINE_NOTIFICATION_TRIGGERS[number];
+ 
+-type LineNotificationDatabase = Pick<PrismaClient, "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery">;
+-type LineWebinarDeliveryDatabase = LineNotificationDatabase & Pick<PrismaClient, "messageTemplate" | "formSubmission">;
++type LineNotificationDatabase = LineAccountRoutingDatabase & Pick<PrismaClient, "lineUserIdentity" | "lineDelivery">;
++type LineWebinarDeliveryDatabase = LineNotificationDatabase & Pick<PrismaClient, "$transaction" | "messageTemplate" | "formSubmission">;
+ type LineClientFactory = (accessToken: string) => LineMessagingClient;
+ export type LineDeliveryProcessingScope = {
+   /** Limits a worker invocation to one tenant without changing global cron behavior. */
+@@ -141,14 +142,13 @@
+   if (!LINE_NOTIFICATION_TRIGGERS.includes(input.trigger) || !input.idempotencyKey || input.idempotencyKey.length > 255) {
+     throw new Error("Invalid LINE notification.");
+   }
+-  const [account, identity] = await Promise.all([
+-    db.lineOfficialAccount.findUnique({ where: { vendorId: input.vendorId }, select: { id: true, status: true } }),
+-    db.lineUserIdentity.findUnique({
+-      where: { vendorId_subjectType_subjectId: { vendorId: input.vendorId, subjectType: input.subjectType, subjectId: input.subjectId } },
++  const account = await resolveSubjectLineAccount(db, input.vendorId, input.subjectType, input.subjectId);
++  if (!account || account.status !== "active") return { status: "not_linked" as const };
++  const identity = await db.lineUserIdentity.findUnique({
++      where: { vendorId_lineOfficialAccountId_subjectType_subjectId: { vendorId: input.vendorId, lineOfficialAccountId: account.id, subjectType: input.subjectType, subjectId: input.subjectId } },
+       select: { id: true, revokedAt: true },
+-    }),
+-  ]);
+-  if (!account || account.status !== "active" || !identity || identity.revokedAt) return { status: "not_linked" as const };
++    });
++  if (!identity || identity.revokedAt) return { status: "not_linked" as const };
+   let messages = input.messages;
+   let sourceTemplateId = input.sourceTemplateId ?? null;
+   let templateFingerprint: string | null = null;
+@@ -187,7 +187,7 @@
+   } catch (error) {
+     if (!isUniqueConflict(error)) throw error;
+     const existing = await db.lineDelivery.findUnique({
+-      where: { vendorId_idempotencyKey: { vendorId: input.vendorId, idempotencyKey: input.idempotencyKey } },
++      where: { vendorId_lineOfficialAccountId_idempotencyKey: { vendorId: input.vendorId, lineOfficialAccountId: account.id, idempotencyKey: input.idempotencyKey } },
+       select: { id: true },
+     });
+     return { status: "duplicate" as const, deliveryId: existing?.id ?? null };
+@@ -204,6 +204,10 @@
+ }
+ 
+ type CurrentLineDelivery = Prisma.LineDeliveryGetPayload<{ include: { identity: true } }>;
++type DeliveryWithAccount = Prisma.LineDeliveryGetPayload<{include:{account:true;identity:true}}>;
++function hasDeliveryConsent(current:DeliveryWithAccount|null):current is DeliveryWithAccount {
++  return Boolean(current && current.vendorId === current.account.vendorId && current.vendorId === current.identity.vendorId && current.lineOfficialAccountId === current.identity.lineOfficialAccountId && current.account.status === "active" && !current.identity.revokedAt);
++}
+ 
+ async function checkWebinarDeliverySource(db: LineWebinarDeliveryDatabase, current: CurrentLineDelivery, fingerprint: string | null, now: Date) {
+   if (!(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(current.trigger)) return null;
+@@ -257,7 +261,13 @@
+   });
+   const results: Array<{ id: string; status: "sent" | "failed" | "exhausted" | "suppressed" | "claimed_elsewhere" }> = [];
+   for (const delivery of due) {
+-    const claim = await db.lineDelivery.updateMany({
++    let claim: {count:number};
++    try {
++    claim = await db.$transaction(async tx => {
++      // This Serializable read participates in the Project switch transaction.
++      // A switch either precedes this claim, or observes an in-flight push.
++      await resolveSubjectLineAccount(tx, delivery.vendorId, delivery.identity.subjectType, delivery.identity.subjectId);
++      return tx.lineDelivery.updateMany({
+       where: {
+         id: delivery.id,
+         vendorId: delivery.vendorId,
+@@ -265,7 +275,11 @@
+         attemptCount: delivery.attemptCount,
+       },
+       data: { status: "sending", claimedAt: now, attemptCount: { increment: 1 }, nextAttemptAt: null },
+-    });
++      });
++    }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
++    } catch {
++      results.push({id:delivery.id,status:"claimed_elsewhere"}); continue;
++    }
+     if (claim.count !== 1) {
+       results.push({ id: delivery.id, status: "claimed_elsewhere" });
+       continue;
+@@ -274,13 +288,7 @@
+       where: { id: delivery.id, vendorId: delivery.vendorId },
+       include: { account: true, identity: true },
+     });
+-    if (
+-      !current
+-      || current.vendorId !== current.account.vendorId
+-      || current.vendorId !== current.identity.vendorId
+-      || current.account.status !== "active"
+-      || current.identity.revokedAt
+-    ) {
++    if (!hasDeliveryConsent(current)) {
+       await db.lineDelivery.updateMany({
+         where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
+         data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: "line_consent_unavailable" },
+@@ -289,6 +297,11 @@
+       continue;
+     }
+     try {
++      const selectedAccount = await resolveSubjectLineAccount(db, current.vendorId, current.identity.subjectType, current.identity.subjectId);
++      if (!selectedAccount || selectedAccount.id !== current.lineOfficialAccountId || selectedAccount.status !== "active") {
++        await db.lineDelivery.updateMany({ where: { id: current.id, vendorId: current.vendorId, status: "sending" }, data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: "line_project_account_changed" } });
++        results.push({ id: current.id, status: "suppressed" }); continue;
++      }
+       const payload = safePayload(decryptSensitiveValue(current.payloadEncrypted, deliveryPurpose(current.vendorId, current.id)));
+       const suppression = await checkWebinarDeliverySource(db, current, payload.templateFingerprint, now);
+       if (suppression) {
+--- a/src/lib/line-rich-menu-sync.ts
++++ b/src/lib/line-rich-menu-sync.ts
+@@ -4,6 +4,7 @@
+ import { unprotectLineOfficialAccountCredentials } from "@/lib/line-credentials";
+ import { prepareLineRichMenuPublication,publishPreparedLineRichMenu,type RichMenuLinks } from "@/lib/line-rich-menu-publication";
+ import { RichMenuPublicationRecordSchema,parseRichMenuDraftContent,richMenuPublicationLocked,richMenuPublicationView,type RichMenuPublicationRecord } from "@/lib/line-rich-menu-draft-content";
++import { findLineAccount } from "@/lib/line-account-routing";
+ 
+ type Db=Pick<PrismaClient,"$transaction"|"lineRichMenuDraft"|"lineOfficialAccount">;
+ type Reference={id:string;revision:number};
+@@ -33,13 +34,14 @@
+   if(!checkedLinks.success)return output("invalid_input",reference,content.publication);
+   const prepared=await prepareLineRichMenuPublication(content.menu,image,checkedLinks.data);
+   if(prepared.status!=="ready")return output(prepared.status==="invalid_menu"?"invalid_input":prepared.status,reference,content.publication);
+-  const account=await db.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++  if (!row.lineOfficialAccountId) return output("not_configured",reference,content.publication);
++  const account=await findLineAccount(db,context.vendorId,row.lineOfficialAccountId);
+   if(!account||account.status!=="active")return output("not_configured",reference,content.publication);
+   const started=new Date();let publication:RichMenuPublicationRecord=RichMenuPublicationRecordSchema.parse({attemptId:randomUUID(),status:"syncing",fingerprint:prepared.publication.fingerprint,accountId:account.id,accountVersion:version(account),sourceRevision:reference.revision,startedAt:started.toISOString(),expiresAt:new Date(started.getTime()+120_000).toISOString(),stage:"check_current",remoteMenuId:null,previousMenuId:null,previousDefaultKnown:false,confirmedAt:null,links:checkedLinks.data});
+   const active={id:reference.id,revision:reference.revision+1};
+   try {
+     const claimed=await db.$transaction(async tx=>{
+-      const currentAccount=await tx.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++      const currentAccount=await findLineAccount(tx,context.vendorId,account.id);
+       if(!currentAccount||currentAccount.status!=="active"||version(currentAccount)!==publication.accountVersion)return false;
+       const changed=await tx.lineRichMenuDraft.updateMany({where:{...reference,vendorId:context.vendorId,menu:{equals:json(row.menu)}},data:{revision:{increment:1},menu:json({...content,publication})}});
+       if(changed.count!==1)return false;
+@@ -56,7 +58,7 @@
+   }
+   async function isCurrent() {
+     if(Date.now()>=Date.parse(publication.expiresAt)||!await current())return false;
+-    const latest=await db.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++    const latest=await findLineAccount(db,context.vendorId,publication.accountId);
+     return Boolean(latest&&latest.status==="active"&&version(latest)===publication.accountVersion);
+   }
+   let result;
+@@ -93,7 +95,8 @@
+   const content=row&&parseRichMenuDraftContent(row.menu),record=content?.publication;
+   if(!row||!content||!record||reference.revision>2_147_483_644)return output("conflict",reference);
+   if(record.status!=="uncertain"&&!(record.status==="syncing"&&Date.now()>Date.parse(record.expiresAt)))return output("locked",reference,record);
+-  const account=await db.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++  if (!row.lineOfficialAccountId) return output("not_configured",reference,record);
++  const account=await findLineAccount(db,context.vendorId,row.lineOfficialAccountId);
+   if(!account||account.status!=="active"||account.id!==record.accountId||version(account)!==record.accountVersion)return output("not_configured",reference,record);
+   const active={id:row.id,revision:row.revision+1};
+   const reserved={...record,status:"syncing" as const,expiresAt:new Date(Date.now()+120_000).toISOString()};
+@@ -107,7 +110,7 @@
+   } catch { /* Keep unknown remote outcomes locked; no provider diagnostic is persisted. */ }
+   try {
+     const changed=await db.$transaction(async tx=>{
+-      const latest=await tx.lineOfficialAccount.findUnique({where:{vendorId:context.vendorId}});
++      const latest=await findLineAccount(tx,context.vendorId,account.id);
+       if(!latest||version(latest)!==record.accountVersion)return false;
+       const updated=await tx.lineRichMenuDraft.updateMany({where:{...active,vendorId:context.vendorId,menu:{equals:json({...content,publication:reserved})}},data:{revision:{increment:1},menu:json({...content,publication})}});
+       if(updated.count!==1)return false;
+--- a/src/lib/line-webhook-events.ts
++++ b/src/lib/line-webhook-events.ts
+@@ -15,7 +15,10 @@
+   vendorId: string,
+   rawBody: string,
+   now = new Date(),
++  accountId?: string,
+ ) {
++  // A verified signature still needs an explicit account boundary.
++  if (!accountId) return { status: "invalid_payload" as const };
+   let body: unknown;
+   try { body = JSON.parse(rawBody); } catch { return { status: "invalid_payload" as const }; }
+   const envelope = Envelope.safeParse(body);
+@@ -40,6 +43,7 @@
+     await db.lineUserIdentity.updateMany({
+       where: {
+         vendorId,
++        lineOfficialAccountId: accountId,
+         lineUserIdHash: lineUserIdHash(vendorId, event.data.source.userId),
+         revokedAt: null,
+         linkedAt: { lte: occurredAt },

@@ -1,0 +1,15 @@
+{
+  "files": {
+    "prisma/migrations/20261015200000_live_metric_registration_projection_revision/migration.sql": "e5edc706c57a4b28fa2d3121222439a604dadb3dd4e76f5720d6863f407c72c2",
+    "scripts/wp20-registration-vendor-cascade.mjs": "6ee337ab87e9efad2f4e92534863a436a377b0baa4ae613416c06357a2db6f4e",
+    "scripts/wp20-registration-truncate-probe.mjs": "7525bd547a372a914c45c48f8d0850dcbe9d10a799d69187034b117e31b6592d",
+    "scripts/wp20-registration-proof-mutation-probe.mjs": "98919ec6fa68c85442146333b9389d92b6853b65a63bce87367f89c22f31bd51",
+    "scripts/wp20-payment-retry-disposable.mjs": "00b4c4f4284bf82237c452c543ec8f3230f9c40e04a91e6ab2af98f05d8c1714",
+    "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656",
+    "docs/launch/wp20-coverage-producer-contract.md": "269f7568101844e35e9a8aef859d45123266769401ea4510a1679852dbbd084b"
+  },
+  "database": "PASS",
+  "lint": "PASS",
+  "unitTests": 4,
+  "reviewFinalPatch": "NOT_RUN"
+}

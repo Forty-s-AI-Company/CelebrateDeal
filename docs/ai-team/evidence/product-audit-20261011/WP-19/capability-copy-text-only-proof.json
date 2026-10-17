@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "product_files": [
+    "src/app/(app)/messages/templates/page.tsx",
+    "src/app/(app)/messages/templates/new/page.tsx",
+    "src/app/(app)/messages/templates/[id]/edit/page.tsx"
+  ],
+  "method": "Exact baseline plus declared literal replacements equals current source; no query/control/validator changes.",
+  "new_tests_added": 0,
+  "existing_assertion_updated": true
+}

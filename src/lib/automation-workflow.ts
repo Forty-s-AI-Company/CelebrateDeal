@@ -5,7 +5,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
-import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { createEmailUnsubscribeUrl, protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import {
   buildAutomationLineMessage,
   enqueueLineNotification,
@@ -20,8 +20,36 @@ export const AUTOMATION_TRIGGERS = [
   "consultation_booked",
   "consultation_no_show",
   "form_no_show",
+  "viewer_completed",
+  "checkout_incomplete",
 ] as const;
 export type AutomationTrigger = typeof AUTOMATION_TRIGGERS[number];
+
+/** Dedicated producers re-read real completion/order facts and use guarded
+ * outbox types. Generic events and merchant-supplied booleans cannot replace them. */
+export function automationUsesTrustedProducer(trigger: string) {
+  return trigger === "viewer_completed" || trigger === "checkout_incomplete";
+}
+
+export function automationTriggerReady(trigger: string) {
+  return AUTOMATION_TRIGGERS.includes(trigger as AutomationTrigger);
+}
+
+/** Only the exact contract consumed by a trusted producer is activatable. */
+export function automationRuleReady(input: { trigger: string; condition: unknown; actions: unknown; funnelPageId?: string | null }) {
+  if (!automationTriggerReady(input.trigger)) return false;
+  const rule = parseAutomationRule({ id: "readiness", condition: input.condition, actions: input.actions });
+  if (!rule) return false;
+  if (automationUsesTrustedProducer(input.trigger)) {
+    const completed = input.trigger === "viewer_completed";
+    return input.funnelPageId == null && rule.condition.type === (completed ? "completed_and_not_ordered" : "order_pending_payment")
+      && rule.actions.length === 1 && rule.actions[0].type === "send_email_notification"
+      && rule.actions[0].template === (completed ? "completed_followup" : "checkout_followup");
+  }
+  if (rule.condition.type === "completed_and_not_ordered" || rule.condition.type === "order_pending_payment") return false;
+  return !rule.actions.some(action => action.type === "send_email_notification"
+    && (action.template === "completed_followup" || action.template === "checkout_followup"));
+}
 
 export function automationCustomerKeyHash(vendorId: string, email: string) {
   const normalized = email.trim().toLowerCase();
@@ -32,6 +60,8 @@ export function automationCustomerKeyHash(vendorId: string, email: string) {
 }
 
 const AutomationConditionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("completed_and_not_ordered") }).strict(),
+  z.object({ type: z.literal("order_pending_payment") }).strict(),
   z.object({ type: z.literal("always") }).strict(),
   z.object({ type: z.literal("order_amount_gte"), amountCents: z.number().int().min(1) }).strict(),
   z.object({ type: z.literal("watch_seconds_gte"), seconds: z.number().int().min(1).max(86_400) }).strict(),
@@ -66,7 +96,7 @@ const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("add_customer_tag"), tag: z.string().trim().min(1).max(50) }).strict(),
   z.object({
     type: z.literal("send_email_notification"),
-    template: z.enum(["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay"]),
+    template: z.enum(["consultation_confirmation", "class_reminder", "repurchase_followup", "webinar_replay", "no_show_followup", "completed_followup", "checkout_followup"]),
   }).strict(),
 ]).refine((action) => action.type !== "issue_repurchase_voucher" || action.discountType !== "percentage" || action.discountValue <= 99, {
   message: "Percentage vouchers must remain below 100%.",
@@ -78,6 +108,24 @@ export type AutomationCondition = z.infer<typeof AutomationConditionSchema>;
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
 
 export const AUTOMATION_RECIPES = [
+  {
+    id: "followup_no_show", name: "未到場追銷", createAsDraft: true,
+    description: "報名未到場時，以 Email 提供活動回放；建立後先停用，可確認內容再啟用。",
+    trigger: "form_no_show", condition: { type: "always" },
+    actions: [{ type: "send_email_notification", template: "no_show_followup" }],
+  },
+  {
+    id: "followup_completed_no_order", name: "看完未下單追銷", createAsDraft: true,
+    description: "建立後先停用；啟用後，依實際完看與未下單紀錄寄送 Email 提醒。",
+    trigger: "viewer_completed", condition: { type: "completed_and_not_ordered" },
+    actions: [{ type: "send_email_notification", template: "completed_followup" }],
+  },
+  {
+    id: "followup_checkout_incomplete", name: "結帳未完成追銷", createAsDraft: true,
+    description: "建立後先停用；啟用後，結帳超過 30 分鐘且仍待付款時寄送 Email 提醒，每張訂單最多一封。",
+    trigger: "checkout_incomplete", condition: { type: "order_pending_payment" },
+    actions: [{ type: "send_email_notification", template: "checkout_followup" }],
+  },
   {
     id: "high_intent_chaser",
     name: "高意向追單漏斗",
@@ -124,6 +172,7 @@ export const AUTOMATION_RECIPES = [
   id: string;
   name: string;
   description: string;
+  createAsDraft?: boolean;
   trigger: AutomationTrigger;
   condition: unknown;
   actions: readonly unknown[];
@@ -142,7 +191,7 @@ export function materializeAutomationRecipe(recipeId: string, productId?: string
     return action;
   });
   const parsed = parseAutomationRule({ id: recipe.id, condition: raw.condition, actions });
-  return parsed ? { name: recipe.name, description: recipe.description, trigger: recipe.trigger, condition: parsed.condition, actions: parsed.actions } : null;
+  return parsed ? { name: recipe.name, description: recipe.description, trigger: recipe.trigger, condition: parsed.condition, actions: parsed.actions, isActive: !("createAsDraft" in recipe && recipe.createAsDraft) } : null;
 }
 
 export function maskAutomationTarget(value: string | null | undefined) {
@@ -174,6 +223,9 @@ export type AutomationEvent = {
   currency?: string;
   watchSecondsTotal?: number;
   hasPurchased?: boolean;
+  hasOrdered?: boolean;
+  watchCompleted?: boolean;
+  orderStatus?: string;
   recipientEmail?: string;
   consultationUrl?: string;
   webinarUrl?: string;
@@ -181,7 +233,7 @@ export type AutomationEvent = {
 
 type AutomationDb = Pick<
   PrismaClient,
-  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery"
+  "automationRule" | "automationExecutionLog" | "automationVoucherGrant" | "customerTagAssignment" | "product" | "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery" | "emailDelivery" | "salesProject" | "formSubmission" | "commerceOrder"
 >;
 
 type ParsedRule = {
@@ -201,6 +253,14 @@ export function parseAutomationRule(input: { id: string; version?: number; condi
 
 export function automationConditionMatches(condition: AutomationCondition, event: AutomationEvent) {
   if (condition.type === "always") return true;
+  if (condition.type === "completed_and_not_ordered") {
+    return event.trigger === "viewer_completed" && typeof event.liveId === "string" && event.liveId.length > 0
+      && event.watchCompleted === true && event.hasOrdered === false;
+  }
+  if (condition.type === "order_pending_payment") {
+    return event.trigger === "checkout_incomplete" && event.subjectType === "buyer_order"
+      && event.orderStatus === "pending_payment";
+  }
   if (condition.type === "order_amount_gte") {
     return event.trigger === "payment_paid" && (event.orderAmountCents ?? -1) >= condition.amountCents;
   }
@@ -212,8 +272,11 @@ export function automationConditionMatches(condition: AutomationCondition, event
 }
 
 export function dryRunAutomationRule(input: { condition: unknown; actions: unknown }, event: AutomationEvent) {
+  if (!automationTriggerReady(event.trigger)) return { status: "trigger_not_ready" as const, conditionMatched: false, actionTypes: [] as string[] };
   const rule = parseAutomationRule({ id: "dry-run", condition: input.condition, actions: input.actions });
   if (!rule) return { status: "invalid_rule" as const, conditionMatched: false, actionTypes: [] as string[] };
+  if (!automationRuleReady({ trigger: event.trigger, condition: rule.condition, actions: rule.actions })) return { status: "trigger_not_ready" as const, conditionMatched: false, actionTypes: [] as string[] };
+  if (automationUsesTrustedProducer(event.trigger)) return { status: "trusted_source_required" as const, conditionMatched: false, actionTypes: [] as string[] };
   const conditionMatched = automationConditionMatches(rule.condition, event);
   return {
     status: conditionMatched ? "would_dispatch" as const : "would_skip" as const,
@@ -255,6 +318,9 @@ function replaceArtifacts(value: string | null | undefined, artifacts: { voucher
 }
 
 const EMAIL_COPY = {
+  no_show_followup: { subject: "錯過活動？這裡有回放資訊", body: "您報名的活動已結束，可由下方連結查看回放資訊與可用期限：\n{{webinar_url}}" },
+  completed_followup: { subject: "活動結束後的下一步", body: "謝謝您參與活動！若仍在考慮，可回到活動頁查看方案內容與相關說明：\n{{webinar_url}}" },
+  checkout_followup: { subject: "您的結帳尚未完成", body: "您有一筆仍待付款的訂單。如需繼續，請回到原結帳頁確認目前狀態與付款方式；若不再需要，可忽略此提醒。請勿因本通知重複建立訂單。" },
   consultation_confirmation: { subject: "1 對 1 諮詢預約確認", body: "您的諮詢已預約成功。請將時間加入行事曆，並由下方連結進入：\n{{consultation_url}}" },
   class_reminder: { subject: "課程即將開始", body: "課程即將開始，請由下方連結進入：\n{{webinar_url}}" },
   repurchase_followup: { subject: "為您保留的專屬優惠", body: "謝謝您的參與，專屬優惠請由下方連結領取：\n{{voucher_url}}" },
@@ -321,10 +387,11 @@ async function executeAction(
     if (!event.recipientEmail) return { type: action.type, status: "recipient_not_linked" } as const;
     const id = deterministicActionId(executionLogId, actionIndex);
     const copy = EMAIL_COPY[action.template];
+    const body = replaceArtifacts(copy.body, artifacts) ?? copy.body;
     const protectedPayload = protectEmailDeliveryPayload({
       recipientEmail: event.recipientEmail,
       subject: copy.subject,
-      body: replaceArtifacts(copy.body, artifacts) ?? copy.body,
+      body: action.template === "no_show_followup" ? `${body}\n\n取消訂閱：${createEmailUnsubscribeUrl(id)}` : body,
     }, { vendorId: event.vendorId, deliveryId: id });
     try {
       await db.emailDelivery.create({ data: {
@@ -369,6 +436,8 @@ async function executeAction(
  * execution log and cannot issue a second voucher, tag, or LINE outbox row.
  */
 export async function dispatchAutomationEvent(db: AutomationDb, event: AutomationEvent) {
+  if (automationUsesTrustedProducer(event.trigger)) return [{ ruleId: "__scope__", status: "trusted_source_required" }];
+  if (!automationTriggerReady(event.trigger)) return [{ ruleId: "__scope__", status: "trigger_not_ready" }];
   if ((event.trigger === "viewer_watch_progress" || event.trigger === "webinar_attended_duration_gte") && !event.liveId) {
     return [{ ruleId: "__scope__", status: "missing_live_scope" }];
   }
@@ -390,6 +459,10 @@ export async function dispatchAutomationEvent(db: AutomationDb, event: Automatio
     const rule = parseAutomationRule(storedRule);
     if (!rule) {
       results.push({ ruleId: storedRule.id, status: "invalid_rule" });
+      continue;
+    }
+    if (!automationRuleReady({ trigger: event.trigger, condition: rule.condition, actions: rule.actions })) {
+      results.push({ ruleId: rule.id, status: "trigger_not_ready" });
       continue;
     }
     const matched = automationConditionMatches(rule.condition, event);

@@ -1,0 +1,190 @@
+{
+  "completed": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "exitCode": 3
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true,
+  "claude_cli_discovery_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the supplied source reader, candidate SQL and claim/retry path. Most of the requested fixes are in place:\n- Input filters (identity regex, key length, rule-version range, completion-time regex and window) run before DISTINCT ON and LIMIT.\n- The candidate CTE is MATERIALIZED, with a 5s statement timeout, a 1s lock timeout and a 10s transaction timeout.\n- The source picks the newest valid report on its own and does not depend on the pruned reference reportId. Version and projection filters run before the report is ranked.\n- The source transaction pins the time zone to UTC.\n- A null-hash order with no attributable buyer_order payment attempt makes the source unavailable.\n- The dispatcher keeps the full claimed row, including idempotencyKey and recipientHash, and maps FollowupSourceUnavailableError to the existing failed/exhausted retry with a cap of 5.\n\nI found three issues:\n1. **MAJOR — cross-live orders are missed.** A legacy order with no customer-key hash, paid from another live's submission using the same email, is not counted as an order. The follow-up email can therefore go to someone who already bought.\n2. **MAJOR (depends on column types / DB default time zone) — the candidate transaction does not pin UTC.** The source does, so if the database's default time zone isn't UTC, the candidate query can return different results from the source.\n3. **MINOR — the jsonb/numeric guards rely on SQL evaluation order, which PostgreSQL does not guarantee.** A malformed projection row could make the whole query fail.\n\nThings I left alone because they are by design or out of scope:\n- The vendor-wide fail-closed rule for unattributable orders is the stated design. Its availability cost (one legacy unattributable order makes follow-ups unavailable for the whole vendor) is worth a separate scope proposal, but I'm not calling it a defect.\n- The per-submission duplicate-recipient limitation and the materializer retry-ceiling limitation are kept as instructed.\n\nThis review doesn't certify the orphan/non-primary-payment PostgreSQL checks, which are still running.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "readCompletedFollowupSource (order/attribution query)",
+        "area": "`exists` subquery, buyer_order payment branch: `payment.metadata->>'sourceLiveId'=${ref.liveId}` and `buyer.\"liveId\"=${ref.liveId}`",
+        "issue": "The order check is inconsistent across its two branches. Orders that carry a customer-key hash match across the whole vendor (`o.\"automationCustomerKeyHash\"=${customerKey}` has no live filter). But orders with a NULL hash only match when their buyer_order payment points to a submission on this same live. A NULL-hash order whose payment points to the same email's submission on another live of the vendor fails the exists check. Because that payment is attributable, it also is not marked attributionUnknown.",
+        "evidence": "exists branch 2 requires `payment.metadata->>'sourceLiveId'=${ref.liveId}` and `buyer.\"liveId\"=${ref.liveId}`. The `attributionUnknown` NOT EXISTS is satisfied by any attributable buyer_order attempt on any vendor live (`buyer.\"liveId\"=attempt.metadata->>'sourceLiveId'` joined to any vendor Live). So that order gives exists=false and attributionUnknown=false, and the reader returns `eligible`.",
+        "impact": "A customer who already bought (through a legacy, unhashed order placed via another live) gets a 'completed and not ordered' follow-up email. This is a wrong customer-facing email and violates the rule's condition. The result also depends on whether the order was hashed, which is arbitrary for the customer.",
+        "recommended_fix": "Make the attributed-payment branch vendor-wide like the hash branch. Drop the `sourceLiveId=${ref.liveId}` and `buyer.\"liveId\"=${ref.liveId}` filters, keep the vendor-scoped form/Live joins and the normalized email match, and require `buyer.\"liveId\"=payment.metadata->>'sourceLiveId'`. If live-scoped semantics are intended instead, scope the customerKey branch the same way and document it.",
+        "required_test": "PostgreSQL integration test: vendor V, lives A and B. Recipient completed on A. A non-draft CommerceOrder with automationCustomerKeyHash NULL has a buyer_order PaymentTransaction (primary and, separately, orderNumber-only) whose metadata points to the same email's FormSubmission on live B. Expect `ineligible`. Control: a different email on B gives `eligible`.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MAJOR",
+        "file": "processDueCompletedFollowups (candidate SQL)",
+        "area": "Transaction prelude `set_config('statement_timeout'...),set_config('lock_timeout'...)` and predicates `g.\"verifiedAt\"=candidate.\"verifiedAt\" AT TIME ZONE 'UTC'`, `r.\"createdAt\">=...::timestamptz`, `r.\"expiresAt\">clock_timestamp()`",
+        "issue": "The UTC pin was applied only in the source reader (`set_config('TimeZone','UTC',true)`). The candidate transaction uses the same time-zone-sensitive expressions but leaves the session TimeZone unset. Prisma DateTime columns default to timestamp-without-time-zone. Comparing such a naive column to a timestamptz value (the AT TIME ZONE result, a ::timestamptz parameter, or clock_timestamp()) converts the column using the session TimeZone.",
+        "evidence": "The source reader runs `SELECT current_setting('transaction_isolation'), set_config('TimeZone','UTC',true)`. The candidate transaction runs only `set_config('statement_timeout','5000',true),set_config('lock_timeout','1000',true)`, then evaluates `g.\"verifiedAt\"=candidate.\"verifiedAt\" AT TIME ZONE 'UTC'` and the createdAt/expiresAt comparisons. The retry gate, by contrast, converts explicitly with `AT TIME ZONE 'UTC'`.",
+        "impact": "If the DB or role default TimeZone isn't UTC and either verifiedAt column is naive, the equality never matches, so no follow-ups are ever selected (silent outage). The 7-day createdAt cutoff and the expiry checks also shift by the UTC offset. The candidate set then no longer matches what the source reader accepts.",
+        "recommended_fix": "Add `set_config('TimeZone','UTC',true)` to the candidate transaction's set_config statement, the same way as in the source reader. Alternatively, make every comparison in the candidate SQL explicitly time-zone-normalized.",
+        "required_test": "PostgreSQL integration test that runs processDueCompletedFollowups with the DB/role default `TimeZone='Asia/Taipei'` (and another non-UTC zone) on a fixture that is eligible under UTC. Expect the same candidate (vendor, live, submission, report, rule, version) as under UTC, and a report created just inside the 7-day window to be included.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "readCompletedFollowupSource / processDueCompletedFollowups",
+        "area": "`p.\"rowCount\"=jsonb_array_length(p.rows)` in the `current` and `rows` queries; `(c.value->>'firstCompletedAtMs') ~ '^[0-9]{1,16}$' AND (...)::numeric ...` in both queries and in the candidate rule LATERAL",
+        "issue": "The type guards rely on the order of AND evaluation, which PostgreSQL does not guarantee (it orders quals by cost). jsonb_array_length on a non-array raises an error, and in the `current` query it has no jsonb_typeof guard. The numeric cast of a non-numeric `firstCompletedAtMs` (string, boolean or object) can run before the regex check.",
+        "evidence": "The candidate's CROSS JOIN uses `CASE WHEN jsonb_typeof(p.rows)='array'`, which shows malformed projections were anticipated, but the `current` EXISTS uses `jsonb_array_length(p.rows)` unguarded. The regex guard and the `::numeric` casts sit as sibling AND conjuncts and inside the LATERAL rule predicate. The dispatcher rethrows any error that isn't FollowupSourceUnavailableError after the row was claimed as `sending`.",
+        "impact": "One malformed projection row can make the whole candidate batch fail for every vendor. In dispatch, it can leave a claimed delivery in `sending` without the controlled failed/exhausted transition, instead of a fail-closed unavailable/ineligible result.",
+        "recommended_fix": "Wrap the guards in CASE so evaluation order is forced. For example: `CASE WHEN jsonb_typeof(p.rows)='array' THEN jsonb_array_length(p.rows) END = p.\"rowCount\"`, and `CASE WHEN (c.value->>'firstCompletedAtMs') ~ '^[0-9]{1,16}$' THEN (c.value->>'firstCompletedAtMs')::numeric END` in every comparison and in the LATERAL. Optionally map SQL data errors in the source read to FollowupSourceUnavailableError.",
+        "required_test": "PostgreSQL tests with a projection whose `rows` is a JSON object, and with an element whose `firstCompletedAtMs` is a string ('abc') or boolean. The candidate query must still return the other valid candidates without error. readCompletedFollowupSource must return unavailable/ineligible without a SQL error, and dispatch must finalize the delivery as failed/exhausted rather than leaving it in `sending`.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "payment"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 19823,
+      "expected_duration": 0,
+      "code_surface_area": 8,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "accepted": false,
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

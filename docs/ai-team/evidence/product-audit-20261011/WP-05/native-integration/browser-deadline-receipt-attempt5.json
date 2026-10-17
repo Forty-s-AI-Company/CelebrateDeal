@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "browser-deadline", "revision": "sha256:bc043d77402d2a690c60b307f2920d0ec910df3f2db9064e5778f7033e46e19d", "status": "FAIL", "exit_code": 1, "duration_seconds": 47.687}

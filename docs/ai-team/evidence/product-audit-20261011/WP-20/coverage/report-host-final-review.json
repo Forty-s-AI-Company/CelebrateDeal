@@ -1,0 +1,182 @@
+{
+  "claude_cli_discovery_status": "SUCCESS",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 5,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "cross_module",
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 4,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "completed": false,
+  "accepted": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "INVALID_REVIEW"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "reviewed": true,
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "I reviewed the six supplied files at their current state. I found no BLOCKER or MAJOR defects. The listed fixes are in the code. Signal, stdin and stdout handlers are registered before startup, and the signal handlers stay registered until the terminal record is written. @prisma/client is loaded through a require anchored at the root package.json. Before writing, the builder rejects a noncanonical output directory, unknown entries (including node_modules), and linked or non-file entries, and it never deletes anything. At runtime the artifact names must match the catalog exactly. The two enqueue/scheduler admission checks set the partial flag only when they skip remaining work. I found two MINOR issues. First, after a scheduler tick, the partial flag can still be set because time ran out even when the only deferral came from the per-cycle job cap. Second, runtime verification checks artifact names but not their contents, so a build interrupted mid-write would still pass. I did not run any tests, so an empty or MINOR-only result does not confirm that tests or the release pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-report-host.ts",
+        "area": "scheduler loop, line `if (tick.deferred > 0 && !admitted()) result.partial = true;`",
+        "issue": "After a tick, the partial flag is set whenever the tick deferred any work and the admission window has closed. It doesn't check why the work was deferred. If the tick used up the remaining jobsPerCycle budget and deferred extra queued jobs only because of that cap, the cycle is still marked partial whenever the admission window happens to close during that final tick. Elsewhere, a cap stop is not partial: the `result.attempted >= config.jobsPerCycle` break never sets it.",
+        "evidence": "The check runs right after `result.attempted += tick.attempted`, and it doesn't test whether `result.attempted < config.jobsPerCycle`. So a deferral caused by the job cap, together with time running out after the final tick, still sets partial. That is the elapsed-time-after-final-tick behaviour the fix says was removed.",
+        "impact": "The partial flag sent to cycle observers is inconsistent: the same cap-limited cycle is reported as complete or partial depending on timing. It also affects completedFinalCycle, so an abort that arrives after such a final cycle is reported as 'stopped' instead of 'completed'. Only reporting is affected; no data or safety.",
+        "recommended_fix": "Set partial after a tick only when the remaining work was skipped because of admission, not the cap. For example: `if (tick.deferred > 0 && result.attempted < config.jobsPerCycle && !admitted())`. Alternatively, have the scheduler tick report a reason for deferral (admission/abort vs cap) and set partial only for admission or abort.",
+        "required_test": "Unit test using a fake clock. jobsPerCycle=1, one scope with 2 queued jobs, and the tick takes longer than the remaining admission time while running the single allowed job. Assert partial=false, and that an abort after the cycle gives status 'completed'. Add a second test where the tick defers because of admission with attempted < jobsPerCycle, and assert partial=true.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/build-metric-report-host.mjs",
+        "area": "output write loop (`for(const [name,source] of compiled)fs.writeFileSync(...)`) together with scripts/metric-report-host-runtime.mjs verifyMetricHostArtifacts",
+        "issue": "The builder overwrites each artifact in place, one at a time, with a non-atomic writeFileSync. Runtime verification checks only that the entry names match the catalog exactly and that each entry is a regular, unlinked file. It doesn't check contents or confirm that all files come from the same build. A build that fails or is killed partway through can leave truncated files, or a mix of old and new artifacts, that still pass verification.",
+        "evidence": "In verifyMetricHostArtifacts, the non-incomplete path only compares the names from readdir against ARTIFACTS and runs realpath/lstat isFile checks. The builder doesn't use temp-file-plus-rename writes or a manifest or hash.",
+        "impact": "The launcher can load an inconsistent or truncated set of host and worker modules. The usual result is a 'startup_failed' terminal, or incompatible module versions running against the disposable DB. Impact is limited because the build runs in an owned, nonproduction workspace and a rebuild fixes it.",
+        "recommended_fix": "Write each artifact to a temporary name in the same directory, then rename it into place. Write a manifest (artifact name → sha256) last, and have the runtime verify the manifest against the files before calling require. Alternatively, build into a fresh sibling directory and swap it in with an atomic rename.",
+        "required_test": "Builder contract test: simulate a failure after the first artifact is written, then confirm that runtime verification rejects the directory or reports it as incomplete. Runtime test: change one byte in a cataloged artifact and assert that the launcher emits a sanitized 'startup_failed' terminal.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  }
+}

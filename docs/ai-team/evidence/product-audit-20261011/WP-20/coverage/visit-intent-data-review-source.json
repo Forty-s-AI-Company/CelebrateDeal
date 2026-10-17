@@ -1,0 +1,9 @@
+{
+  "files": {
+    "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": "796bca8ab59add3a0ed8c1bccd2dab1e45e233ade50b8344ec2275dd89d77e82",
+    "src/lib/live-metric-visit-collection.ts": "59efc50a657ec112f736c447e4d86792f56fc0d748b8f1182c361ef81f814999",
+    "src/lib/live-metric-visit-intent.ts": "13376bab10c2d914d7261693d82019c17a5b2c3b1f2fa85621db1e7875f50e02"
+  },
+  "scope": "visit-intent-data",
+  "promptCharacters": 16399
+}

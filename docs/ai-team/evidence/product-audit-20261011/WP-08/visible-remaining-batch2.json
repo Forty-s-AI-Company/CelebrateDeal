@@ -1,0 +1,172 @@
+[
+  {
+    "file": "src/components/landing-pages/funnel-commerce-element.tsx",
+    "line": 20,
+    "text": "付款方式會在金流商安全頁面提供。CelebrateDeal 不在此收集卡號；付款設定未就緒時不會建立付款。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 83,
+    "text": "https:// 或 /path 或 #anchor"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "line": 90,
+    "text": "網址只接受 HTTPS、同源路徑或頁面錨點；不會在編輯器內執行自訂程式碼。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 11,
+    "text": "收集 Email，預設建立名單頁與感謝頁流程。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 58,
+    "text": "/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 58,
+    "text": "autumn-launch"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "新台幣 TWD"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "美元 USD"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "歐元 EUR"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "line": 59,
+    "text": "日圓 JPY"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-list.tsx",
+    "line": 51,
+    "text": "/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 253,
+    "text": "/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 269,
+    "text": "公開網址：/lp/"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 304,
+    "text": "Asia/Taipei"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "line": 333,
+    "text": "只列出伺服器驗證網站來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "line": 429,
+    "text": "原始 HTML 已在 sandbox 隔離預覽"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 34,
+    "text": "自訂 HTML"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 34,
+    "text": "reCAPTCHA"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "line": 251,
+    "text": "Affiliate："
+  },
+  {
+    "file": "src/components/landing-pages/funnel-popup-preview.tsx",
+    "line": 160,
+    "text": "找不到可預覽的 Popup。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-popup-preview.tsx",
+    "line": 307,
+    "text": "關閉 Popup"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "line": 30,
+    "text": "找不到 Webinar 頁面。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "line": 83,
+    "text": "送出後請至 Email 完成確認，才會列入正式名單。"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "line": 14,
+    "text": "Webinar 排程"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "line": 15,
+    "text": "Webinar 排程與重播"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "line": 16,
+    "text": "選擇既有活動與報名表，並在活動 Studio 確認來源影片。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 18,
+    "text": "前往外部 HTTPS 網址"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 23,
+    "text": "外部 HTTPS 網址"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 48,
+    "text": "2XL"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 48,
+    "text": "4XL"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 71,
+    "text": "Elements · 基本內容"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 72,
+    "text": "Elements · 版面配置"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 73,
+    "text": "Blocks · Webinar 轉換"
+  },
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "line": 90,
+    "text": "倒數計時＋報名 CTA"
+  }
+]

@@ -1,0 +1,114 @@
+Review corrected copy and tests. Output canonical JSON summary and findings only. Each severity MUST be BLOCKER, MAJOR, MINOR, or NIT. No medium/low. Prior response had invalid severities and is NOT accepted. Copy-only scope; no query/auth/event changes. Keep five metrics unavailable. Remaining denominator choices notapproved, only90percent and7days ruleapproved. Review exact current diff below.
+diff --git "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\rule-display\\before\\src\\app\\(app)\\lives\\[id]\\analytics\\page.tsx.txt" "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\app\\(app)\\lives\\[id]\\analytics\\page.tsx"
+index c2c1141c..8f32220a 100644
+--- "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\rule-display\\before\\src\\app\\(app)\\lives\\[id]\\analytics\\page.tsx.txt"
++++ "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\app\\(app)\\lives\\[id]\\analytics\\page.tsx"
+@@ -3,6 +3,7 @@ import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
+ import { requireVendorManagerContext } from "@/lib/auth";
+ import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
+ import { getDb } from "@/lib/db";
++import { COMPLETION_PERCENT, POST_COMPLETION_ORDER_WINDOW_MS } from "@/lib/live-metric-contract";
+ import { getSalesProjectScope } from "@/lib/sales-project-scope";
+ import { formatDateTime } from "@/lib/format";
+ import { realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
+@@ -18,7 +19,7 @@ import {
+ const pendingCoreMetrics = [
+   { label: "報名率", reason: "缺少報名頁的不重複訪客數，尚未能計算報名比例。" },
+   { label: "到場率", reason: "同一報名者與到場紀錄尚未完整連結。" },
+-  { label: "完看率", reason: "完看標準與每位觀眾的完成紀錄尚未就緒。" },
++  { label: "完看率", reason: "每位觀眾的實際觀看區間與首次完看時間尚未就緒。" },
+   { label: "平均觀看時長", reason: "每位觀眾的有效觀看時間與重複觀看計算方式尚未就緒。" },
+   { label: "看完下單率", reason: "完成觀看與同一位觀眾的下單紀錄尚未完整連結。" },
+ ] as const;
+@@ -276,7 +277,10 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{
+       />
+       <section className="mb-6" aria-labelledby="core-metric-availability-title">
+         <h2 id="core-metric-availability-title" className="text-lg font-semibold text-slate-950">場次核心指標</h2>
+-        <p className="mt-1 text-sm text-slate-600">資料與統計口徑就緒後才會顯示數值。</p>
++        <p className="mt-1 text-sm text-slate-600">各指標的資料與計算方式完整就緒後才會顯示數值。</p>
++        <p className="mt-2 text-sm text-slate-600" data-metric-rule="approved">
++          {`已確認的完看與下單條件：同一位觀眾在同一影片版本實際看過的不重複區間達 ${COMPLETION_PERCENT}% 才算完看；快轉跳過不計、重看同區間不重複計算。看完下單採該觀眾首次完看後 ${POST_COMPLETION_ORDER_WINDOW_MS / (24 * 60 * 60 * 1000)} 天內成立且未取消的訂單，不等同已付款。`}
++        </p>
+         <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+           {pendingCoreMetrics.map((metric) => <Card key={metric.label}>
+             <h3 className="font-semibold text-slate-950">{metric.label}</h3>
+diff --git "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\rule-display\\before\\src\\app\\(app)\\lives\\[id]\\analytics\\page.test.tsx.txt" "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\app\\(app)\\lives\\[id]\\analytics\\page.test.tsx"
+index 451a84ad..90b873bc 100644
+--- "a/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\rule-display\\before\\src\\app\\(app)\\lives\\[id]\\analytics\\page.test.tsx.txt"
++++ "b/C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\src\\app\\(app)\\lives\\[id]\\analytics\\page.test.tsx"
+@@ -237,7 +237,12 @@ it.each(["existing activity", "no activity"])("keeps unsupported core metrics un
+   expect(section).toBeDefined();
+   for (const label of ["報名率", "到場率", "完看率", "平均觀看時長", "看完下單率"]) expect(section).toContain(label);
+   expect(section?.match(/尚不可計算/g)).toHaveLength(5);
+-  expect(section).not.toMatch(/\d+(?:\.\d+)?(?:%| 秒)/);
++  // Rule thresholds are descriptions, never calculated metric values.
++  const metricValues = [...(section?.matchAll(/<p class="mt-2 font-medium text-slate-700">(.*?)<\/p>/g) ?? [])].map((match) => match[1]);
++  expect(metricValues).toEqual(Array(5).fill("尚不可計算"));
++  expect(section).toContain("90");
++  expect(section).toContain("天內成立且未取消的訂單，不等同已付款");
++  expect(section).not.toContain("完看標準與");
+   expect(section).toContain("不重複訪客數");
+   expect(section).toContain("完成觀看與同一位觀眾");
+ });
+
+PURE CONTRACT
+/** Approved WP20 rules only. Callers must supply verified, same-person,
+ * same-tenant, same-session/content-version facts. This module does not join
+ * identities, infer missing events, or decide any metric denominator.
+ */
+export const COMPLETION_PERCENT = 90;
+export const POST_COMPLETION_ORDER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+type Unavailable = { status: "unavailable"; reason: "missing_data" | "invalid_data" };
+export type MediaInterval = Readonly<{ startMs: number; endMs: number }>;
+
+/** Intervals describe actually played media positions, not seek endpoints.
+ * null means incomplete/unknown evidence; [] means a known empty history.
+ * Replaying the same positions cannot increase unique coverage.
+ */
+export function evaluateVideoCompletion(
+  durationMs: number | null,
+  intervals: readonly MediaInterval[] | null,
+): Unavailable | { status: "available"; coveredMs: number; completed: boolean } {
+  if (durationMs == null || intervals == null) return { status: "unavailable", reason: "missing_data" };
+  if (!Number.isSafeInteger(durationMs) || durationMs <= 0 || !Array.isArray(intervals) || Array.from(intervals).some((interval) =>
+    !interval || typeof interval !== "object"
+    || !Number.isSafeInteger(interval.startMs) || !Number.isSafeInteger(interval.endMs)
+    || interval.startMs < 0 || interval.endMs < interval.startMs || interval.endMs > durationMs)) {
+    return { status: "unavailable", reason: "invalid_data" };
+  }
+  const sorted = [...intervals].sort((a, b) => a.startMs - b.startMs);
+  let coveredMs = 0;
+  let end = 0;
+  for (const interval of sorted) {
+    coveredMs += Math.max(0, interval.endMs - Math.max(end, interval.startMs));
+    end = Math.max(end, interval.endMs);
+  }
+  // Integer arithmetic avoids rounding a below-threshold viewer up to 90%.
+  const completed = BigInt(coveredMs) * BigInt(100) >= BigInt(durationMs) * BigInt(COMPLETION_PERCENT);
+  return { status: "available", coveredMs, completed };
+}
+
+export type EstablishedOrderFact = Readonly<{
+  establishedAtMs: number | null;
+  cancelled: boolean | null;
+}>;
+
+/** Completion time must come from verified first threshold-crossing evidence;
+ * a total coverage number alone cannot establish when completion occurred.
+ * The 7-day boundary is inclusive, using elapsed UTC milliseconds, not dates.
+ * This is order eligibility, not paid conversion or mature cohort reporting.
+ */
+export function evaluatePostCompletionOrder(
+  firstCompletedAtMs: number | null,
+  order: EstablishedOrderFact,
+): Unavailable | { status: "available"; qualifies: boolean } {
+  if (firstCompletedAtMs == null || order == null || order.establishedAtMs == null || order.cancelled == null) {
+    return { status: "unavailable", reason: "missing_data" };
+  }
+  if (typeof order.cancelled !== "boolean" || ![firstCompletedAtMs, order.establishedAtMs].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000)) {
+    return { status: "unavailable", reason: "invalid_data" };
+  }
+  const elapsed = order.establishedAtMs - firstCompletedAtMs;
+  return { status: "available", qualifies: !order.cancelled && elapsed >= 0 && elapsed <= POST_COMPLETION_ORDER_WINDOW_MS };
+}

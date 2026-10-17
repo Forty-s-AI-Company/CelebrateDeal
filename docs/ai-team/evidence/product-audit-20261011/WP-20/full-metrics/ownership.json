@@ -1,0 +1,30 @@
+{
+  "writer": "root",
+  "files": [
+    "src/lib/live-core-metrics-read-model.ts",
+    "src/lib/live-core-metrics-read-model.test.ts",
+    "src/lib/live-viewing-evidence.ts",
+    "src/lib/live-viewing-evidence.test.ts"
+  ],
+  "snapshot_files": [
+    "src/lib/live-core-metrics-read-model.ts",
+    "src/lib/live-core-metrics-read-model.test.ts",
+    "src/lib/live-metric-contract.ts",
+    "src/lib/live-viewing-evidence.ts",
+    "src/lib/live-viewing-evidence.test.ts",
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\full-metrics\\performance-check.mjs",
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\full-metrics\\reference-viewing.mjs",
+    "docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\full-metrics\\performance-jitter-before-scale.json"
+  ],
+  "depth": 0,
+  "automatic_spawn": false,
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "selected_model": "sol",
+  "reasoning_effort": "high",
+  "observed_model": "unknown",
+  "review": "Sonnet ordinary business-logic final review; no Auth/Permission/Migration changes in pure helper scope",
+  "review_count_authorization": "User explicitly removed review-count limit for this conversation; each additional review follows concrete corrections",
+  "rollback": "Remove only four new product modules and scoped evidence; preserve previous WP changes.",
+  "production": "NOT_AUTHORIZED"
+}

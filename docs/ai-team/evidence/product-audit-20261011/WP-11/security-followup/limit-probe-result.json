@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "route": "referral-get",
+      "allowed": 60,
+      "nextStatus": 429
+    },
+    {
+      "route": "live-admission-delete",
+      "allowed": 120,
+      "nextStatus": 429,
+      "postBucketIndependent": true
+    }
+  ],
+  "stage": "release"
+}

@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "wp02-disposable-postgresql", "revision": "sha256:d6b020bc229aad6bf76d6d5532a440eecc219d7519fcaac6c902a109685bb3d0", "status": "FAIL", "exit_code": 1, "duration_seconds": 18.172}

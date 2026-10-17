@@ -1,0 +1,17 @@
+{
+  "hashes": {
+    "prisma/migrations/20261015170000_live_metric_registration_source_revision/migration.sql": "fea7c962d49e054787d0a496ab8ec722c6bf1f6124c2805ed7c363f0c8e79fbc",
+    "prisma/schema.prisma": "ecfddcd5219bfbe7f02d733b136fc188da6e4db00a538bf931ff51c72a36d9d9",
+    "src/lib/live-metric-registration-audit.ts": "c5de6687d6513cedc213606edae05889e1fb253cf5270540c7eb131a467c7878",
+    "src/lib/live-metric-registration-source-audit.ts": "5d7f943df24903f4d5b69c4ffb0969a57af0d2591692b0e03b47070884833511",
+    "scripts/wp20-registration-source-concurrency.mjs": "8fca421f4e7f1f286218a8bbce182d4ab3802ce18cb18d4f2c06746cbef3ca7f",
+    "scripts/wp20-metric-source-invalidation.mjs": "39fa5d625f435d3f8ac4b06b8d37db6eb0236b628703454726f75366f666dc44"
+  },
+  "db": "105 migrations PASS;20 concurrent submissions190ms;RRlate source snapshot checks PASS",
+  "tests": 6,
+  "unit": "PASS",
+  "lint": "PASS",
+  "review": "PENDING",
+  "schemaValidate": "NOT_RUN",
+  "proofReportBinding": "NOT_IMPLEMENTED;coverage remains unknown"
+}

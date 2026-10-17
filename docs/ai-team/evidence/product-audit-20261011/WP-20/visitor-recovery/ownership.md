@@ -1,0 +1,2 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; visitor sources/tests and evidence; independent Auth review required.
+Scope extended: scripts/wp20-metric-persistence-disposable.mjs new owned DB recovery case; root sole writer.

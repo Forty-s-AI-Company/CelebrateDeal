@@ -3,7 +3,7 @@ import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { schedulePasswordResetLink } from "@/lib/password-reset";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 const PasswordResetRequest = z.object({
   email: z.string().email(),

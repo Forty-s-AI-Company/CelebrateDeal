@@ -1,0 +1,8 @@
+{
+  "runnerHash": "cefb33f343dfc6edaf25e30a4cf517700aa0473a19c557f80965bd0b48393513",
+  "result": "PASS: real UNVERIFIED -> initial capture -> VERIFIED -> registration, forward/reverse matched, stable digest, revocation detected",
+  "migrationCount": 106,
+  "lint": "PASS",
+  "coverage": "unknown",
+  "proofWriter": "NOT_IMPLEMENTED"
+}

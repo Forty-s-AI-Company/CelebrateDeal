@@ -1,0 +1,15 @@
+{
+  "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+  "files": [
+    "src/app/(app)/billing/electronic-invoices/page.tsx",
+    "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+    "src/components/checkout-invoice-fields.tsx",
+    "src/components/checkout-invoice-fields.test.tsx"
+  ],
+  "hashes": {
+    "src/app/(app)/billing/electronic-invoices/page.tsx": "7309b675888fca112aeec653d8bac2f56a6a715ee1442f0cf824502aa370b3cf",
+    "src/app/(app)/billing/electronic-invoices/page.test.tsx": "a662df12c4a639b15b5edd1f12bf78ba0251ccf92a4e98e32e0fa1db68c6e041",
+    "src/components/checkout-invoice-fields.tsx": "6e34eb82e71ba9451dbb0cee50f8a45875d752a3bfa17200eba6a85f66ea9ea1",
+    "src/components/checkout-invoice-fields.test.tsx": "76f2441f2fdeb392568499ee23f7ebdf10b60d0050752c9486b7a28161c9330e"
+  }
+}

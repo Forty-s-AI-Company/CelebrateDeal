@@ -1,0 +1,11 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "calendar-lint",
+  "revision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+  "status": "PASS",
+  "exit_code": 0,
+  "source_receipt": "desktop_exec_session36172",
+  "warnings": 1,
+  "scope": "Final10source scoped ESLint, existing intentional full-navigation warning, no suppression or threshold changes."
+}

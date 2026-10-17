@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "typecheck", "revision": "sha256:33d1a779ad9945eb2d444c7449e0fd67a6ed276146dac69ca38cb931050d3569", "status": "FAIL", "exit_code": 2, "duration_seconds": 18.812}

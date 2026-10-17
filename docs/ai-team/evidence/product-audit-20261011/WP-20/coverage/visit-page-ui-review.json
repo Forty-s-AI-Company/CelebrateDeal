@@ -1,0 +1,195 @@
+{
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the three supplied files. I found no blocker in the parts I could see. Inside the transaction, the issue path inserts the row, resolves the context again, compares the version, and re-reads the row before returning the eventId. If any of that fails, the transaction rolls back and no nonce is exposed. The page awaits connection() before doing per-request work, keeps the existing public availability and readiness gates, and adds the collector only when a page row was issued. I found three lower-severity issues: (1) The page checks runtime with the app clock, but the issue helper checks with the DB clock and only treats two error codes as a normal skip. Other expected unavailability codes may turn a renderable page into a 500. (2) Every anonymous render now writes an immutable row inside a locked transaction. Nothing limits or prunes those rows, so table growth and lock contention can become page outages. (3) The collector does not catch a rejected collect(). I could not check the omitted parts: the context, visitor, intent and record helpers; the public prepare/collect wiring, including the requirePage=true check before visitor provisioning; the SQL migration, RLS, ACL and cascade; the tests; FullWP20; and deployed, CDN or cache behaviour. None of these are certified, and this review is not a test or release PASS.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "issueMetricVisitPage catch block; page.tsx metricPage gating",
+        "issue": "Only the SCOPE_UNAVAILABLE and LIFETIME_UNAVAILABLE MetricVisitorError codes return null. Every other error, including expected business-state codes the context helper may raise (runtime or readiness unavailable, fingerprint changed), is rewritten to PERSISTENCE_UNAVAILABLE and thrown. The page decides whether to call the helper using the app-clock serverNow (runtime.state !== 'unavailable'). The helper checks runtime and readiness against the DB clock.",
+        "evidence": "if(error instanceof MetricVisitorError&&['SCOPE_UNAVAILABLE','LIFETIME_UNAVAILABLE'].includes(error.code))return null; throw new MetricVisitorError('PERSISTENCE_UNAVAILABLE'); page: runtime = resolveLiveRuntime(..., serverNow) where serverNow = new Date().",
+        "impact": "Clock skew at the replay-expiry or start boundary, or a concurrent live edit between the page read and the issue transaction, can turn a page that could render normally into a 500 error page. The task allows throwing only on unexpected DB failure. Whether this happens depends on which codes the omitted context helper throws.",
+        "recommended_fix": "List the expected non-persistence codes from resolveMetricVisitContext and return null (render without a collector, no nonce) for runtime, readiness or context-changed states. Reserve PERSISTENCE_UNAVAILABLE for real DB or transaction failures. Alternatively, document that the helper only ever throws the two listed codes.",
+        "required_test": "Disposable-DB test: make the app clock see the replay as available while the DB clock sees it as expired, or change the live between the page read and the issue call. Assert the page renders without LiveMetricVisit and without a 500, and that no LiveMetricVisitPage row is committed.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "issueMetricVisitPage transaction / page render path",
+        "issue": "Every anonymous GET of a public live page now runs a write transaction that locks the Live, Video and version rows (version-first, through the context helper) and inserts a row. Direct DELETE is denied and rows are kept until the version is deleted. Nothing limits how many page rows are issued and nothing prunes expired rows. Any failure, including the 5 s statement or lock timeout, throws and fails the page.",
+        "evidence": "INSERT INTO \"LiveMetricVisitPage\" on every render where the keyring is set and runtime is available; the transaction has statement_timeout 5000, timeout 10000, maxWait 5000; failures are converted to a thrown PERSISTENCE_UNAVAILABLE. The task states the rows are immutable until version deletion, and HTTP rate controls apply only to the collect endpoint.",
+        "impact": "Crawler, bot or flood traffic grows the table with no bound, by design never counted. If the helper takes exclusive version locks, concurrent renders queue on the same row and timeouts become public-page 500s, so a metrics outage becomes a page outage. Severity depends on the lock mode in the omitted helper.",
+        "recommended_fix": "Scope proposal: confirm the helper uses FOR SHARE or FOR KEY SHARE, not FOR UPDATE, on the version row for page issue. Add a privileged retention job, or allow deleting expired rows, with owner approval. Consider a render-side rate or sampling guard. The fail-closed throw is owner-specified, so keep it unless the owner decides otherwise.",
+        "required_test": "Concurrent page-issue test on a disposable DB (for example 50 parallel issues on one version). Assert no lock-timeout failures within budget, and measure the row growth rate.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/live-metric-visit.tsx",
+        "area": "collect() / void collect() and the setTimeout retry",
+        "issue": "collect() awaits client.collect() with no try/catch. If the client ever rejects instead of returning a status, the result is an unhandled promise rejection and no retry happens.",
+        "evidence": "async function collect(){ const result = await client.collect(); ... } void collect(); timer = setTimeout(() => { void collect(); }, ...)",
+        "impact": "Collection may stop silently and unhandled-rejection noise may appear in the browser, but only if the omitted client contract allows rejection. Visit counts are not inflated.",
+        "recommended_fix": "Wrap the await in try/catch and treat a throw as a retryable failure, or document and test that createMetricVisitClient().collect never rejects.",
+        "required_test": "Unit test: mock client.collect to reject. Assert there is no unhandled rejection and the bounded retry or stop behaviour holds.",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_process_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false
+}

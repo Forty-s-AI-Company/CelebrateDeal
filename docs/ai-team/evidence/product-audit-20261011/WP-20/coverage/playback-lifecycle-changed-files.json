@@ -1,0 +1,25 @@
+{
+  "scope": "Lifecycle incremental scope; not full Goal diff",
+  "files": {
+    "src/lib/live-metric-request-authorization.ts": "5cd9fb5075b37877c87fe91ded8f9ebf8b62ec087e82c9effb9df305ccb3cf83",
+    "src/lib/live-metric-readiness.ts": "6414e8fbc6bd3a7018352718a2d8f5a0509c26f63e5d1f11d771597c7f829598",
+    "src/lib/live-metric-readiness.test.ts": "5febdfdf4ed20903c45b4f21f6b1888c14c98fde63c968ce5961d93c261173c7",
+    "src/lib/live-metric-playback-controller.ts": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906",
+    "src/lib/live-metric-playback-controller.test.ts": "dd3f0cc8e9e58e5dfb805525683e751840ee7bc3785d6739ecfab40ad18a3339",
+    "src/lib/live-metric-collector.ts": "76d26ab4f86dbe663c42f26a0cc3073a108054b4b4246aae1b7042de37239892",
+    "src/components/live-playback.tsx": "6e0db35efa12731960f0757380b3bd27ca5726b243004021982e304a18608ba8",
+    "src/components/live-playback.test.tsx": "2dfa4e0de4b4dc1a819277df37ff49880f96a886e3c03e7bbe5efd819b41a3ad",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": "25b609221abeca4b53b43058cdd628a1cf59c60ac378030023396144db050e4e",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.test.ts": "4baffc060b1535af80e866f3b84f0fb0f301181db1cada191cabbe5502f7d2bd",
+    "scripts/wp20-playback-lifecycle-disposable.mjs": "1b916ceb1a3f9c5f3a206287bfddc38bb160328b6c561ea32740fab50739f763",
+    ".ai-team/reports/wp20-renewal-validate.py": "70188d42984f60313f4f99e536503e8d79e9028881167d8f5154c798fa8dc932",
+    ".ai-team/reports/wp20-playback-lifecycle-review.ps1": "307e71039b2f9e9dbbbadfdbb3eaff89e5f72424f001944f32edb84e32c5f59b",
+    ".ai-team/reports/wp20-playback-lifecycle-followup.ps1": "154f331f819f3a64464dc47b4f523fc53dc06bc72381b386082692a647d6e72e",
+    ".ai-team/reports/wp20-playback-lifecycle-checkpoint.py": "8bd22ac016d977d20dfafca250fda3555b9340765dcd3da2a8629fa475ea3681",
+    "docs/launch/product-audit-20261012-handoff.md": "e7f99754aab3b4f52d8ac6d75e920a023b15f656c497f1f13cc22dcbd0c01938",
+    "docs/launch/product-audit-20261011-progress.md": "820c80b8ec45e094a7a7d09b2d06cc53fde6f85717cd11c15295df02093dc85e",
+    "docs/launch/wp20-coverage-producer-contract.md": "09a8f0db657a0a9b85ffc00386ed6b9e2997ba72debff291da98af5b4f7bc17c",
+    ".ai-team/state/goal-state.json": "3852d3792271fb3781310c5ad129d414019df3b267d1a5b94df4f185d4c05e16",
+    ".ai-team/logs/goal-progress.md": "fad7fcfbc7d75ecf2a58bf411ab6d8f477ce9126ed584351763c150ee69b911b"
+  }
+}

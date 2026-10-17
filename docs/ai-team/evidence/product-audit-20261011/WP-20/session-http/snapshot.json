@@ -1,0 +1,13 @@
+{
+  "revision": "sha256:3ece3b1012a2bdb41c64f768e2a1f19f43958e30fd2867f3927a042ab5a9c17b",
+  "files": [
+    "src/lib/live-metric-session.ts",
+    "src/lib/live-metric-version.ts",
+    "src/lib/live-metric-version.test.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.test.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs",
+    "src/lib/live-runtime-state.ts",
+    "src/lib/live-metric-session.test.ts"
+  ]
+}

@@ -20,6 +20,7 @@ function testDatabase() {
   });
   const account = { id: "account-1", vendorId: "vendor-1", status: "active", ...credentials };
   const tx = {
+    lineOfficialAccount: { findFirst: vi.fn().mockResolvedValue(account) },
     lineLoginState: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     lineUserIdentity: {
       findUnique: vi.fn().mockResolvedValue(identity),
@@ -27,7 +28,7 @@ function testDatabase() {
     },
   };
   const db = {
-    lineOfficialAccount: { findUnique: vi.fn().mockResolvedValue(account) },
+    lineOfficialAccount: { findFirst: vi.fn().mockResolvedValue(account) },
     lineLoginState: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         savedAttempt = { ...data, consumedAt: null, vendor: { id: "vendor-1" } };
@@ -84,7 +85,7 @@ describe("LINE Login lifecycle", () => {
         pictureUrl: "https://profile.line-scdn.net/example",
       }),
     };
-    const result = await completeLineLogin(runtime.db as never, provider, { state, code: "authorization-code" });
+    const result = await completeLineLogin(runtime.db as never, provider, { state, code: "authorization-code", browserBinding:started.browserBinding });
 
     expect(result).toMatchObject({ redirectPath: "/affiliate", login: false });
     expect(runtime.tx.lineLoginState.updateMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -121,5 +122,35 @@ describe("LINE Login lifecycle", () => {
       redirectUri: "https://celebratedeal.example/api/auth/line/callback",
       codeVerifier: "verifier-1", nonce: "nonce-1",
     })).rejects.toThrow("identity verification failed");
+  });
+
+  it("rejects a switched account before exchanging the OAuth code",async()=>{
+    const runtime=testDatabase();
+    const started=await beginLineLogin(runtime.db as never,{vendorId:"vendor-1",subjectType:"promoter",subjectId:"affiliate-1",redirectPath:"/affiliate"});
+    const account=await runtime.db.lineOfficialAccount.findFirst();
+    runtime.db.lineOfficialAccount.findFirst.mockResolvedValue({...account,id:"account-2"});
+    const provider={exchangeCode:vi.fn()};
+    await expect(completeLineLogin(runtime.db as never,provider,{state:new URL(started.authorizationUrl).searchParams.get("state")!,code:"synthetic",browserBinding:started.browserBinding})).rejects.toThrow("not configured");
+    expect(provider.exchangeCode).not.toHaveBeenCalled();expect(runtime.tx.lineUserIdentity.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rechecks account ownership after the provider roundtrip before consuming or binding",async()=>{
+    const runtime=testDatabase();
+    const started=await beginLineLogin(runtime.db as never,{vendorId:"vendor-1",subjectType:"promoter",subjectId:"affiliate-1",redirectPath:"/affiliate"});
+    runtime.tx.lineOfficialAccount.findFirst.mockResolvedValueOnce(null);
+    const provider={exchangeCode:vi.fn().mockResolvedValue({userId:"U-synthetic",displayName:null,pictureUrl:null})};
+    await expect(completeLineLogin(runtime.db as never,provider,{state:new URL(started.authorizationUrl).searchParams.get("state")!,code:"synthetic",browserBinding:started.browserBinding})).rejects.toThrow("account changed");
+    expect(runtime.tx.lineLoginState.updateMany).not.toHaveBeenCalled();expect(runtime.tx.lineUserIdentity.upsert).not.toHaveBeenCalled();
+  });
+  it.each([undefined,"0".repeat(64)])("rejects a callback from another browser without consuming state",async browserBinding=>{
+    const runtime=testDatabase();const started=await beginLineLogin(runtime.db as never,{vendorId:"vendor-1",subjectType:"promoter",subjectId:"affiliate-1",redirectPath:"/affiliate"});
+    const provider={exchangeCode:vi.fn()};
+    await expect(completeLineLogin(runtime.db as never,provider,{state:new URL(started.authorizationUrl).searchParams.get("state")!,code:"synthetic",browserBinding})).rejects.toThrow("browser binding");
+    expect(runtime.db.lineLoginState.findUnique).not.toHaveBeenCalled();expect(runtime.tx.lineLoginState.updateMany).not.toHaveBeenCalled();expect(provider.exchangeCode).not.toHaveBeenCalled();
+  });
+  it("requires the original authenticated user for a user binding",async()=>{
+    const runtime=testDatabase();const started=await beginLineLogin(runtime.db as never,{vendorId:"vendor-1",subjectType:"user",subjectId:"user-a",redirectPath:"/dashboard"});
+    const provider={exchangeCode:vi.fn()};
+    await expect(completeLineLogin(runtime.db as never,provider,{state:new URL(started.authorizationUrl).searchParams.get("state")!,code:"synthetic",browserBinding:started.browserBinding,currentUserId:"user-b"})).rejects.toThrow("session changed");expect(provider.exchangeCode).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,8 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-visit-reconciliation.ts": "274abfde0a78ccfbe4038fd45a385b819b1cf4ba3b63aa6149512ebd7c12ac36",
+    "src/lib/live-metric-visit-reconciliation.test.ts": "81648ff17106a82e0d23197361d475f743cbffef731ad49ae60b7e020606661c"
+  },
+  "supplied": "updated integration, complete new helper functions, fixture and new tests; original gap classifiers unchanged and not supplied",
+  "promptChars": 23892
+}

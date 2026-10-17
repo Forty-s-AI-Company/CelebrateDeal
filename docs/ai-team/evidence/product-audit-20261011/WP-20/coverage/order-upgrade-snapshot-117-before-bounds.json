@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Owned disposable source-fence upgrade reproduction; no report completeness claim",
+  "versionBumped": true,
+  "oldSnapshotWriteAborted": true,
+  "writeCode": "P2034",
+  "destinationRevisionIncreased": false,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "prisma/schema.prisma": "1e989cf1874b18d5b84f732f0a93bd52ff870bdacaa4e868937f6dd9a48a7f66",
+  "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql": "dde5c89f1739f46eaab8eee9be0a6b2f520a15ecea36f7fef1056e360eff30f1"
+}

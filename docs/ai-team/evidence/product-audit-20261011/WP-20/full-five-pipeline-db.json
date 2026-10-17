@@ -1,0 +1,72 @@
+{
+  "status": "PASS",
+  "stage": "full-five-metric-reconciliation",
+  "checks": {
+    "actualMetricServicesAndServerClockIntervals": "PASS",
+    "allFiveNonzeroMetricsMatchIndependentExpectedValues": "PASS",
+    "realCompletionPublishReloadAndReadyReader": "PASS",
+    "unattributedAndProvisionalSemantics": "PASS"
+  },
+  "browser": "NOT_RUN",
+  "remoteCI": "NOT_RUN",
+  "producers": {
+    "visits": "recorded",
+    "viewing": "recorded",
+    "registrations": "recorded",
+    "orders": "recorded"
+  },
+  "job": {
+    "status": "recorded"
+  },
+  "metrics": {
+    "attendanceRate": {
+      "unit": "percent",
+      "value": 60,
+      "status": "available",
+      "numerator": 3,
+      "denominator": 5
+    },
+    "completionRate": {
+      "unit": "percent",
+      "value": 66.66666666666666,
+      "status": "available",
+      "numerator": 2,
+      "denominator": 3
+    },
+    "registrationRate": {
+      "unit": "percent",
+      "value": 40,
+      "status": "available",
+      "numerator": 4,
+      "denominator": 10
+    },
+    "averageViewingSeconds": {
+      "unit": "seconds",
+      "value": 83.33333333333333,
+      "status": "available",
+      "numerator": 250,
+      "denominator": 3
+    },
+    "provisionalConversions": true,
+    "postCompletionOrderRate": {
+      "unit": "percent",
+      "value": 50,
+      "status": "available",
+      "numerator": 1,
+      "denominator": 2
+    },
+    "unattributedRegistrations": 1
+  },
+  "sourceCounts": {
+    "visits": 10,
+    "registrations": 5,
+    "sessions": 3,
+    "intervals": 50
+  },
+  "migrationStatus": "PASS",
+  "migrationCount": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

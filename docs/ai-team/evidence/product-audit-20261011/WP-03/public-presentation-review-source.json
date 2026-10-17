@@ -1,0 +1,16 @@
+{
+  "sourceHashes": {
+    "src/components/public-policy.tsx": "1aa3bb1eb0ef265eff45a086a42b6938174fa8f03c5e89c3e32bcec44db3bbeb",
+    "src/components/public-policy.test.tsx": "33ccd3ba30f1ea015cb6ea69ce84c5b7b981abfef52d8a74067cb345cfbab289",
+    "src/lib/public-policy-content.ts": "d427462f2c7f4f232a92e99fe95a5e422da6265e72c6ddf4cc7650c656b73ddf",
+    "src/app/policies/page.tsx": "3bb4376a43af5ad36dea4d61b45e7e740f0a5c1029c50ee43902c47100302c18",
+    "src/app/policies/page.test.tsx": "a1e4c81abbf4cad1cab37de360779323eff231eade9b3a90d6e677a4bd5bd552",
+    "src/app/policies/[slug]/page.tsx": "1a89a9b89aadf3aa080fd7e8baa43d64d057982ed38dd3264e814dd323be1726",
+    "src/app/policies/[slug]/page.test.tsx": "882c63fc9aa06635e8ceeab8ce1d7a0f5994b2cb8e2354b2f421d481129648a1",
+    "src/app/support/page.tsx": "cdf6dd63a0e2b8ccb5dcd1ecf05ff7413a3113066f0d7ade215e67c8420e4bd8",
+    "src/app/support/page.test.tsx": "2bddeb47ac0d3570d8b314f2d0005de5a90f0fd589f5852eca8a654745e2f91e",
+    "tests/e2e/wp03-public-presentation.spec.ts": "44f568ddbfc90ef9a61f1eced7f001ed32202b37744b47bdcec9c9d2001e4c95"
+  },
+  "contextChars": 24754,
+  "coverage": "Full5current product files and5test files; existing internal policy literal and other capability/merchant-guide callers remain unchanged."
+}

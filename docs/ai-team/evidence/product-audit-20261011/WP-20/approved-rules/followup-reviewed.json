@@ -1,0 +1,167 @@
+{
+  "review": {
+    "summary": "複審目前完整原始碼與測試:先前 MAJOR(cancelled 為 undefined 或非布林時可能被判定為符合)已確實修復。`== null` 先擋缺值,再以 `typeof boolean` 擋非布林,且 cancelled 驗證先於 elapsed 計算。對畸形輸入的順序為 `Array.isArray` 短路後才呼叫 `.some`,`null`/`undefined`/`0`/`{}`/`[]` 等項目與非陣列都會回傳 unavailable 而不拋例外。BigInt 整數比較、區間聯集、7 天含邊界、UTC 毫秒差、cancelled 加缺證據時保守回傳 unavailable,皆與已核准規則一致。發現 1 項 MINOR:稀疏陣列(含空洞)會通過驗證,隨後在排序後的迴圈中拋出 TypeError,違反『畸形輸入不拋例外』的契約。無 BLOCKER/MAJOR。此審查不代表測試或型別檢查已通過(typecheck 尚在進行),亦不代表完整 WP20 完成。",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "live-metric-contract.ts",
+        "area": "evaluateVideoCompletion 的 intervals.some 驗證與其後 [...intervals].sort / for 迴圈",
+        "issue": "稀疏陣列(如 new Array(3) 或 [ , {startMs:0,endMs:10}])會繞過畸形區間驗證,之後在迴圈中以 undefined 存取 .endMs 而拋出 TypeError,而非回傳 invalid_data。",
+        "evidence": "Array.prototype.some 會跳過空洞,因此 `!interval` 檢查從不針對空洞執行。`[...intervals]` 會把空洞展開成 undefined;sort 將 undefined 排到最後且不呼叫比較函式;`for (const interval of sorted)` 讀取 `interval.startMs` 時對 undefined 拋 TypeError。目前測試只涵蓋 [null]、[undefined]、[0],未涵蓋空洞;[undefined] 為具體元素,不會觸發此路徑。",
+        "impact": "純函式在畸形輸入下拋例外,而非回傳 unavailable;與『執行期邊界驗證、不拋例外』的修復意圖不一致。若 adapter 呼叫端未包 try/catch,單一壞資料可能中斷整批計算。實際觸發需 adapter 產生稀疏陣列,機率低。",
+        "recommended_fix": "以不跳過空洞的方式驗證,例如先 `const copy = Array.from(intervals)`(空洞變 undefined)再對 copy 做 `.some`/排序;或用 for 迴圈索引逐一檢查;或在 some 前加入 `Object.keys(intervals).length !== intervals.length` 檢查。之後一律使用已驗證過的 copy。",
+        "required_test": "新增測試:`evaluateVideoCompletion(1000, new Array(3))` 與 `evaluateVideoCompletion(1000, [ , {startMs:0,endMs:10}])` 皆須回傳 `{status:'unavailable',reason:'invalid_data'}` 且不拋例外。",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "accepted": false,
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-sonnet-5-5"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-sonnet-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "large",
+      "large_workload": true,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/lib/live-metric-contract.ts",
+        "src/lib/live-metric-contract.test.ts"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/lib/live-metric-contract.test.ts",
+      "src/lib/live-metric-contract.ts"
+    ],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "reviewed": true,
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-sonnet-5-5",
+    "effort": "unknown"
+  },
+  "completed": false,
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  }
+}

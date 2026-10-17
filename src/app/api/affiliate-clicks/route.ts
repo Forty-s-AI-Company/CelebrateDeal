@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import { allowsLegacyAffiliateAttribution, defaultAffiliateCode } from "@/lib/live-quota-policy";
 import {
   ATTRIBUTION_COOKIE,

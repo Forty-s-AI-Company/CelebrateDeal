@@ -1,0 +1,184 @@
+{
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "review": {
+    "summary": "I reviewed two files: src/lib/live-metric-ingress-proof.ts and src/lib/live-metric-ingress-gateway.ts. I found no BLOCKER or MAJOR defects in this code.\n\nWhat holds up in the proof module:\n- The HMAC check uses a domain prefix, a fixed 32-byte signature, a constant-time compare and a length-bounded header.\n- The payload schema is strict and must match the run scope and the method/target/kind the server expects.\n- When the profile is enabled, a missing or bad header fails. A valid header returns a binding but grants no viewer access.\n\nWhat holds up in the gateway:\n- It accepts only exact manifest targets.\n- It checks the Host header and rejects cross-origin requests and unsafe Sec-Fetch-Site values.\n- It strips client-supplied x-celebratedeal-metric-* headers before adding its own, and strips them from responses too.\n- It settles each frame exactly once, as finished or interrupted.\n- Shutdown runs in order: stop admission, close the server, drain handlers, count pending frames. A failed stop is reported as a failure.\n\nThe two MINOR findings below are about how far the header can be trusted and about the upstream Host/Origin check; neither blocks delivery.\n\nNot reviewed or covered:\n- The two omitted credential lines (the proof factory's run/secret assignment and the source input schema).\n- The database migration, triggers and foreign keys, and admitMetricIngress/settleMetricIngress/stopMetricIngressRun.\n- The Next.js route call sites and the server's computation of the expected target.\n\nAlready-known gaps, unchanged by this review:\n- The public quota/form-failure MAJOR is still open.\n- Browser no-JavaScript requests, lost replies and open sessions remain gaps.\n- Upstream startup, the source-writer fence and completeness of the request universe are still unproven.\n\nAn empty findings list would not have meant tests passed or the release is ready.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-proof.ts",
+        "area": "createMetricIngressAttestor.issue/verify (signed payload fields)",
+        "issue": "The signed frame header covers only run scope, frameId, kind, method and target. It has no expiry and no link to the request body. Once the database writes a source for the frame, the header is used up. If no source is written (for example a GET whose handler never reaches a writer, or a request that fails before writing), the same header still verifies on the upstream for the rest of the run.",
+        "evidence": "In issue(), the payload is { ...run, ...context.data, frameId, format: 1 }. verify() checks only the HMAC and that these fields equal run plus the expected values; it has no time or body field. The module comment says the database must enforce single source binding, so single use depends entirely on a source being written.",
+        "impact": "Anything that sees a gateway-issued header (the upstream process or a loopback local actor) can send it again directly to the upstream, which listens on loopback. Each replay passes verifyMetricIngressFromRequest for the same route. If any code treats a valid header as proof the request came through the gateway, without a database frame-consumption write, replays can inflate or misattribute metrics. This is limited to an owned loopback test run.",
+        "recommended_fix": "Treat the header only as an input to the database write that consumes the frame, never as evidence by itself. Document this at each call site. Optionally, have the database reject a frame once it is no longer pending, and add an issued-at time with a short maximum age to the payload.",
+        "required_test": "In a disposable DB: send a request through the gateway to a route that does not write a source, capture the header, and replay it directly to the upstream. Assert that no metric or source evidence is created. Repeat for a source-writing route and assert the second binding is rejected.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-gateway.ts",
+        "area": "handle(): headers.host rewrite / Origin pass-through",
+        "issue": "The gateway only lets through an Origin equal to the gateway's own address (http://127.0.0.1:<gatewayPort>). It then overwrites Host with 127.0.0.1:<upstreamPort> and adds no X-Forwarded-Host. If the existing same-origin checks in Next compare Origin to Host, legitimate browser POSTs through the gateway will fail. Someone may then be tempted to weaken those canonical checks to make it work.",
+        "evidence": "origin !== `http://${expectedHost}` is rejected (expectedHost is the gateway port). Later, headers.host = `127.0.0.1:${port}` uses the upstream port, while Origin is forwarded unchanged by forwardedHeaders.",
+        "impact": "Measurements become unreliable: browser form or landing POSTs through the controlled profile may be rejected with 403 upstream. They would be recorded as 'responded' with an error status rather than real traffic, or would push someone to relax the canonical same-origin rules. Authorization itself is not weakened.",
+        "recommended_fix": "Keep the canonical same-origin check unchanged. Either send the original Host header upstream (it is already validated as expectedHost) or set a single, gateway-controlled X-Forwarded-Host that the upstream trusts only from loopback. Check this against how the Next same-origin helper works.",
+        "required_test": "In a loopback integration test, send a POST with Origin set to the gateway's address through the gateway to a form route. Assert the upstream same-origin check passes. Assert that a cross-origin Origin is still rejected at the gateway (403) and that a request sent directly upstream without the frame header fails when the profile is enabled.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false
+}

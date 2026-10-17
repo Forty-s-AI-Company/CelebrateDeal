@@ -1,0 +1,18 @@
+{
+  "status": "FIXED_PENDING_REVIEW",
+  "addressed": [
+    "merchant-wide generation narrowed to vendor/live; unrelated-live held-lock test passes",
+    "draft order and non buyer_order/missing-attribution source paths filtered",
+    "generation report locks changed to FOR SHARE",
+    "failed attempt_limit report status preserved"
+  ],
+  "remaining": [
+    "same-live Serializable retries and multi-row write amplification",
+    "synthetic non-owner writer role compatibility",
+    "dependency invalidation verification",
+    "large order pagination plan",
+    "independent review of this revision"
+  ],
+  "prior_review": "order-binding-review-result.json",
+  "noProductionAccess": true
+}

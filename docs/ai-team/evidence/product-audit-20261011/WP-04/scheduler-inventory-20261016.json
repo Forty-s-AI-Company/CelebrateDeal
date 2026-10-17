@@ -1,0 +1,29 @@
+{
+  "at": "2026-10-15T21:02:15.042453+00:00",
+  "status": "INVENTORY_COMPLETE",
+  "wp": "WP-04",
+  "requested_team": "ai-team-pro",
+  "sourceHashes": {
+    "vercel.json": "8c371473d0a98f8075300b3b070ae60d6e9f09dd6a25f3a23ce9e8d62e95341b",
+    "vercel.staging.json": "77b0ff5914cf45bae257276c8bb0c011f71bc3209b3fae0552ad65ff7d0c9bea",
+    "docs/launch/staging-cron-operations.md": "06210052ae06dddea927633cbb7a073ec6cce2861780a78364effb35c2a36a7e",
+    "src/app/api/jobs/email-deliveries/route.ts": "fb6b05b7c8208e1d22dcaf3cbbf36a7c8ff3dffa5b6d99e9cb3ea3d18511a366",
+    "src/app/api/jobs/email-deliveries/scheduler-config.test.ts": "218683335d59e0fe697681448c7dd3d9e32fd0a35356eb9fe4bd3db69d0663b9",
+    "src/app/api/cron/line-notifications/route.ts": "baa71c8f2927a894fccb922e41f915cce8d18f52afb376295b7401bdb5a9f7d3"
+  },
+  "artifact": "docs/launch/wp04-staging-scheduler-setup-20261016.md",
+  "observations": {
+    "stagingLocalCrons": [],
+    "githubWorkflowSchedulesFound": false,
+    "coordinator": "POST /api/jobs/email-deliveries",
+    "coordinatorAlsoRunsLine": true,
+    "http200MeansDeliveryConfirmed": false
+  },
+  "externalSchedulerInventory": "NOT_RUN",
+  "externalRegistration": "NOT_RUN",
+  "heartbeat": "NOT_RUN",
+  "deliveryE2E": "NOT_RUN",
+  "remoteEnvironmentIsolation": "NOT_VERIFIED",
+  "ownerInputs": "New decisions recorded2026-10-16; no repeated provider/channel choice question",
+  "productCodeChanged": false
+}

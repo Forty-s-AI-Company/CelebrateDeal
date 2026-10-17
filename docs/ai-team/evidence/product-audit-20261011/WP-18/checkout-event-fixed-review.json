@@ -1,0 +1,175 @@
+{
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR defects in the recipient-binding repair. The guard fails closed before any query or decryption if the trigger key is missing or malformed, if recipientHash isn't a 43-character string, if vendorId is invalid, or if a required database model is missing. It decrypts the buyer only after the pending owned order, the system-created candidate event and the active checkout_followup rule (exact version, not funnel-scoped) are confirmed. Shipping data is passed as null, it compares hashes with the existing createEmailRecipientHash helper, and it doesn't log or store any personal data. The claimed-delivery type requires both the key and the hash, and the legacy identity type keeps both optional; callers that omit them are handled by the fail-closed checks. tryRecordCheckoutFollowupCandidate cannot throw because its catch blocks are nested, so the checkout response and amount don't change. One MINOR finding: decryption, binding or format failures in revealCommerceOrderPii, or a missing buyer email, aren't handled. They propagate like a temporary database error, and the decrypt-binding mismatch path isn't tested. The full checkout HTTP flow and browser/Sandbox delivery were not run, and an empty findings list wouldn't certify tests or release readiness. WP18 stays IN_PROGRESS.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "checkout follow-up guard (isCurrentCheckoutFollowupDelivery)",
+        "area": "revealCommerceOrderPii / createEmailRecipientHash call at end of isCurrentCheckoutFollowupDelivery",
+        "issue": "Decryption, binding or format failures of the buyer data (a damaged or wrong-tenant envelope, a key/version mismatch, or a missing buyer.email) aren't handled. They are thrown out of the send-time guard after dispatchEmailDelivery has already marked the delivery as 'sending'. The guard's own comment only intends to let temporary database failures propagate. These failures are permanent and should fail closed, not be treated like a temporary error. The decrypt-binding mismatch path also has no test.",
+        "evidence": "The guard calls revealCommerceOrderPii({buyerEncrypted: order.buyerEncryptedEnvelope, ...}, {vendorId, orderId}) and then reads pii.buyer.email with no guard. dispatchEmailDelivery awaits isCurrentEmailDeliverySnapshot after the updateMany that sets status 'sending', with no try/catch shown. The reported database checks cover wrong-recipient and cross-tenant cases, but cross-tenant is rejected earlier by the pendingOrderWhere vendor filter, so the decryption-binding rejection itself isn't exercised.",
+        "impact": "No email is sent in this case, so it fails safe for privacy. But a permanently undecryptable or email-less order leaves the outbox row stuck in 'sending', or it is retried repeatedly by whatever recovers stale claims, instead of being finalized as config_superseded. Thrown errors may also reach generic monitoring with crypto error details. No plaintext is expected, but this isn't verified here.",
+        "recommended_fix": "Leave the three database reads (Promise.all) able to throw as they do now. Wrap only the decrypt step and the email/hash comparison so that a decryption/binding exception, or a buyer.email that is missing or not a string, returns false and the delivery is finalized as superseded. Don't log the error object or any buyer fields.",
+        "required_test": "Unit test: give the guard a pending order whose buyerEncryptedEnvelope was encrypted for a different vendor/order binding (or is malformed), plus a valid event, rule and 43-character hash. The guard should return false, and dispatchEmailDelivery should finalize as config_superseded without calling the provider. Add a second case where the decrypted buyer has no email. Keep the existing test that a database read rejection still propagates.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "execution_provider": "claude_cli",
+  "agy_discovery_process_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 18,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "payment",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 14812,
+      "expected_duration": 0,
+      "code_surface_area": 6,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper",
+      "exitCode": 3
+    },
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "claude_cli_discovery_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "accepted": false,
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  }
+}

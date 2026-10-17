@@ -1,0 +1,14 @@
+[
+  {
+    "severity": "MINOR",
+    "file": "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+    "area": "new it.each test, section extraction (html.split(...)[1]?.split(...)[0])",
+    "issue": "The section extraction depends on an exact markup string for the next existing activity grid, but the test never asserts that this end delimiter exists. If the activity grid class or markup changes, split()[0] silently returns the entire remainder of the page. The `not.toMatch(/\\d+(?:\\.\\d+)?(?:%| 秒)/)` and `尚不可計算` count-of-5 assertions would then run over unrelated page content, giving either false failures or a vacuous section.",
+    "evidence": "The end delimiter is the literal '<div class=\"grid gap-4 md:grid-cols-2 xl:grid-cols-5\">'. The new inner grid is 'mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5', so it does not match, and the test depends on a separate existing grid having exactly the old class string. Nothing in the supplied diff checks that the delimiter is present in the HTML.",
+    "impact": "Low. This is a test-maintenance and false-positive/negative risk, not a product defect. A future unrelated class change could produce a confusing failure or weaken the 'no numeric values' guard.",
+    "recommended_fix": "Assert that the end delimiter is present, for example by splitting once and checking the parts length, or by extracting the section with a stable data-testid or an id-bounded helper. Optionally assert each metric's own reason text next to its label, not only two shared substrings.",
+    "required_test": "Confirm the extracted section is bounded: it contains exactly five `<h3>` metric labels and no activity-grid content. Re-run the new it.each cases for both 'existing activity' and 'no activity'.",
+    "confidence": 0.55,
+    "disposition": "unresolved"
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "checks": {
+    "nullParentKeysImpossible": "PASS",
+    "crossScopeParentImpossible": "PASS",
+    "anchorNotNull": "PASS"
+  },
+  "constraints": [
+    {
+      "table": "LiveMetricSession",
+      "parent": "LiveMetricRegistration",
+      "key": "registrationId",
+      "notNull": true,
+      "validated": true,
+      "deferrable": false,
+      "scope": "vendorId/liveId/versionId/id"
+    },
+    {
+      "table": "LiveMetricInterval",
+      "parent": "LiveMetricSession",
+      "key": "sessionId",
+      "notNull": true,
+      "validated": true,
+      "deferrable": false,
+      "scope": "vendorId/liveId/versionId/id"
+    }
+  ],
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

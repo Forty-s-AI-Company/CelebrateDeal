@@ -1,0 +1,10 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:f232a4fdee800192ab45c3f865947b309759a4f777bec62f48fa4bf8c4965ef5",
+  "shell_dashboard_a11y": "PASS4 states desktop/mobile Chromium/Firefox; real AppShell+DashboardLoading and CSS, synthetic boundary adapters",
+  "puck_block_review": "MAJOR closed by scoped independent review; nonblocking baseline/consumer context MINOR addressed with explicit efb8b7e9 proof script and registerVariants body in dashboard review",
+  "proof": "verify-puck-block-copy.py and puck-block-reproducible-proof.json, exact6string replacements only",
+  "dashboard_review": "COMPLETED, observed claude-opus-5-5 effort unknown; no BLOCKER/MAJOR. Remaining English error text and spacing MINOR require disposition; style-only NITs retained.",
+  "remaining": "dashboard/copy result and final coverage consolidation/gate",
+  "product_changes": []
+}

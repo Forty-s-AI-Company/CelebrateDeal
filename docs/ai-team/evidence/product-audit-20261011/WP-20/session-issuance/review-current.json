@@ -1,0 +1,8 @@
+{
+  "observed_model": "claude-opus-5-5",
+  "exit_code": 0,
+  "review_output": "{\"summary\":\"I found no unresolved Critical or Major auth flaws in the supplied issueMetricSession code. The visitor fix is right: a supplied visitor must be in the same vendor, live and version scope. An existing registration's visitor is never overwritten, and a null visitor stays null. Cross-tenant visitors are denied. A changed verification time still fails closed, as intended, and it only stops metric collection, not playback. The locks on live, submission, admission and version cover the source checks. Concurrent registration under read committed works because insert-on-conflict-do-nothing is followed by a fresh select. Session IDs hash every server identity plus the request ID, so a request ID can't be replayed across tenants or keys. The final authorization check runs after all blocking work, and the code checks that its identity matches the first one. Timestamp handling is correct: legacy timestamps are converted with AT TIME ZONE 'UTC', and 'now' is cut to milliseconds. One behaviour is fail-closed rather than a flaw: if a version's expiry is shortened, retrying an existing session with the same request ID gets not_authorized instead of a shorter expiry, but a new request ID works. I'm not reporting things you already explained, such as the admission row not being tied to a submission.\",\"findings\":[]}",
+  "status": "SUCCESS",
+  "observed_effort": "unknown",
+  "process_status": "SUCCESS"
+}

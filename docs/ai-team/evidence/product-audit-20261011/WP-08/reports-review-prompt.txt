@@ -1,0 +1,148 @@
+Independent read-only scoped review of WP08 report UI localization. EXCERPTS only; no repository tools. Review label/status-domain correctness, preserve identifiers and business calculations. Do not infer missing declarations from omitted ranges. Report BLOCKER/MAJOR/MINOR/NIT. 79 tests and52componentbrowser/a11y states passed; no full-app certification. Existing amount formatting uses cents unchanged by WP08; flag only if newly changed.
+
+FILE src/components/landing-pages/funnel-operations-panel.tsx lines1-65 EXACT EXCERPT
+1: "use client";
+2: 
+3: import { useEffect, useRef, useState } from "react";
+4: import { funnelTabKeys, funnelTabLabels, funnelGoalLabels, funnelStepLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel } from "./funnel-display-labels";
+5: import Link from "next/link";
+6: import { useRouter } from "next/navigation";
+7: import { ExternalLink, Eye, MoreHorizontal, Pencil, Plus, Settings, X } from "lucide-react";
+8: import { landingPageAction } from "@/app/actions/landing-page-actions";
+9: import { readFunnelOperations, updateFunnelOperations } from "@/app/actions/funnel-operations-actions";
+10: import { FunnelAutomationSettings } from "@/components/landing-pages/funnel-automation-settings";
+11: import { FunnelTemplateGalleryPicker } from "@/components/landing-pages/funnel-template-gallery-picker";
+12: import { type FunnelOperations, type FunnelExperiment } from "@/lib/funnel-operations";
+13: import type { FunnelOperationsEditor, FunnelReports } from "@/lib/funnel-operations-service";
+14: import type { FunnelStepType } from "@/lib/funnel-flow";
+15: import { instantiateFunnelTemplate, listFunnelTemplateGallery } from "@/lib/funnel-template-gallery";
+16: import {
+17:   addFunnelStepPage,
+18:   getActiveFunnelStepPage,
+19:   moveFunnelStepPage,
+20:   removeFunnelStepPage,
+21:   renameFunnelStepPage,
+22:   replaceFunnelStepPage,
+23:   setFunnelStepPathPage,
+24:   switchFunnelStep,
+25:   type FunnelStepPages,
+26: } from "@/lib/funnel-step-pages";
+27: 
+28: const tabs = funnelTabKeys;
+29: type Tab = typeof tabs[number];
+30: const control = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:opacity-50";
+31: const button = `${control} cursor-pointer font-semibold hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-300`;
+32: type SettingsState = Pick<FunnelOperationsEditor, "name" | "slug" | "currency" | "operations">;
+33: type Steps = FunnelOperationsEditor["steps"];
+34: type EditableStepType = Exclude<FunnelStepType, "inactive_page">;
+35: 
+36: const stepTypeOptions: Array<{ group: string; items: Array<{ value: EditableStepType; label: string }> }> = [
+37:   { group: "銷售", items: [{ value: "sales_page", label: "銷售頁" }, { value: "order_form", label: "訂單表單" }, { value: "upsell", label: "加購頁" }, { value: "downsell", label: "降價加購頁" }, { value: "thank_you_page", label: "感謝頁" }] },
+38:   { group: "名單", items: [{ value: "opt_in_page", label: "名單頁" }, { value: "opt_in_thank_you_page", label: "名單感謝頁" }, { value: "inline_form", label: "內嵌表單" }, { value: "popup_form", label: "彈出表單" }, { value: "link_in_bio", label: "個人簡介連結頁" }] },
+39:   { group: "資訊", items: [{ value: "info_page", label: "資訊頁" }, { value: "contact_us_page", label: "聯絡我們" }] },
+40:   { group: "Webinar", items: [{ value: "webinar_registration_page", label: "網路研討會報名頁" }, { value: "webinar_thank_you_page", label: "網路研討會感謝頁" }, { value: "webinar_broadcast_page", label: "網路研討會播放頁" }] },
+41: ];
+42: 
+43: function editableSteps(content: FunnelStepPages): Steps {
+44:   return content.flow.steps.filter((step) => !step.isSystem).map(({ id, name, path }) => ({ id, name, path }));
+45: }
+46: 
+47: // One management surface coordinates the seven tabs and atomic step actions;
+48: // splitting its state across sibling owners would make revision conflicts harder to guard.
+49: // eslint-disable-next-line complexity
+50: export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfToken }: { initial: FunnelOperationsEditor; initialStepId: string; csrfName: string; csrfToken: string }) {
+51:   const router = useRouter();
+52:   const initialContent = { ...initial.content, activeStepId: initialStepId };
+53:   const [editor, setEditor] = useState(initial);
+54:   const [content, setContent] = useState<FunnelStepPages>(initialContent);
+55:   const [reports, setReports] = useState<FunnelReports | null>(null);
+56:   const [reportError, setReportError] = useState(false);
+57:   const [reportRequest, setReportRequest] = useState(0);
+58:   const [tab, setTab] = useState<Tab>("Configuration");
+59:   const [dirty, setDirty] = useState(false);
+60:   const [message, setMessage] = useState("");
+61:   const [settingsOpen, setSettingsOpen] = useState(false);
+62:   const [addOpen, setAddOpen] = useState(false);
+63:   const [changeTemplate, setChangeTemplate] = useState(false);
+64:   const [newStepName, setNewStepName] = useState("新步驟");
+65:   const [newStepPath, setNewStepPath] = useState("new-step");
+FILE src/components/landing-pages/funnel-operations-panel.tsx lines310-337 EXACT EXCERPT
+310:     {value.behavior === "redirect" ? <label className="grid gap-1 text-sm">過期導向<select className={control} value={value.redirectPath} onChange={(event) => onChange({ ...value, redirectPath: event.target.value })}><option value="">請選擇已發布步驟</option>{steps.slice(1).map((step) => <option key={step.id} value={step.path}>{step.name} · {step.path}</option>)}</select></label> : null}
+311:     <p className="text-sm text-slate-600">截止瞬間即生效，公開頁及提交／結帳均由伺服器判定。到期導向頁可繼續閱讀，不能繼續提交或結帳。</p>
+312:   </div>;
+313: }
+314: 
+315: function ReportSettings({ tab, editor, reports, reportError, retry, onChange }: { tab: "Stats" | "Leads" | "Sales"; editor: FunnelOperationsEditor; reports: FunnelReports | null; reportError: boolean; retry: () => void; onChange: (operations: FunnelOperations) => void }) {
+316:   const key = tab.toLowerCase() as "stats" | "leads" | "sales";
+317:   const filter = editor.operations.reports[key];
+318:   function change(patch: Partial<typeof filter>) { onChange({ ...editor.operations, reports: { ...editor.operations.reports, [key]: { ...filter, ...patch } } }); }
+319:   return <div className="space-y-4">
+320:     <div className="flex flex-wrap gap-3"><label className="grid gap-1 text-sm">報表步驟<select className={control} value={filter.stepId} onChange={(event) => change({ stepId: event.target.value })}><option value="">全部步驟</option>{editor.steps.map((step) => <option key={step.id} value={step.id}>{step.name}</option>)}</select></label><label className="grid gap-1 text-sm">最近天數<input className={control} type="number" min={1} max={90} value={filter.days} onChange={(event) => change({ days: Number(event.target.value) })} /></label></div>
+321:     <p className="text-sm text-slate-600">儲存後套用篩選條件。來源紀錄唯讀。{reports ? `以下為已儲存條件的結果，更新時間：${reports.generatedAt}。` : null}</p>
+322:     {reports ? tab === "Stats" ? <StatsReport reports={reports} /> : tab === "Leads" ? <LeadsReport reports={reports} editor={editor} /> : <SalesReport reports={reports} editor={editor} /> : reportError ? <p role="alert">報表暫時無法載入。<button type="button" className="ml-2 underline" onClick={retry}>重試</button></p> : <p role="status">報表載入中…</p>}
+323:   </div>;
+324: }
+325: function StatsReport({ reports }: { reports: FunnelReports }) {
+326:   return <div className="overflow-auto"><p className="mb-3 text-sm">瀏覽次數為伺服器公開頁交付紀錄，包含重新整理；步驟轉換為同一匿名訪客依序到達下一步，非成交。未取得匿名識別的瀏覽不計入。</p>{reports.statsTruncated ? <p role="alert">已達 10,000 筆上限，以下為部分資料，請縮短日期範圍。</p> : null}
+327:     <table className="w-full text-left text-sm"><thead><tr>{["步驟", "瀏覽次數", "訪客", "報名次數", "步驟轉換", "流失人數"].map((label) => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{reports.stats.map((row) => <tr key={row.stepId} className="border-t"><td className="p-2">{row.name}</td><td>{row.pageViews}</td><td>{row.visitors}</td><td>{row.submissions}</td><td>{row.conversionRate === null ? "—" : `${(row.conversionRate * 100).toFixed(1)}% (${row.conversions})`}</td><td>{row.dropOff ?? "—"}</td></tr>)}</tbody></table>
+328:     <div className="mt-4">{reports.experiments.map((row) => <p key={`${row.id}-${row.arm}`} className="text-sm">實驗 {row.id} · {row.arm === "control" || row.arm === "variant" ? experimentArmLabels[row.arm] : "未知組別"} · 瀏覽次數 {row.pageViews} · 報名次數 {row.submissions}</p>)}</div>
+329:     <details className="mt-4"><summary>檢視來源事件編號（前 20 筆）</summary>{reports.sources.map((source) => <p key={source.id} className="break-all font-mono text-xs">{source.id} · {source.stepId} · {source.createdAt}</p>)}</details>
+330:   </div>;
+331: }
+332: function LeadsReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
+333:   return <div className="overflow-auto"><p className="mb-3 text-sm">只列出伺服器驗證網站來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。</p>{reports.leadsTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["網站", "步驟", "時間", "報名編號", "驗證狀態"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.leads.map((row) => <tr className="border-t" key={row.id}><td className="p-2">{editor.name}</td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "無法辨識的步驟"}</td><td>{row.createdAt}</td><td className="font-mono">{row.submissionId}</td><td>{reportStatusLabel(row.verificationStatus, "verification")}</td></tr>)}</tbody></table>{!reports.leads.length ? <p className="p-3">此範圍尚無可信提交紀錄。</p> : null}</div>;
+334: }
+335: function SalesReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
+336:   return <div className="overflow-auto"><p className="mb-3 text-sm">來源為訂單與付款紀錄的已付款資料，排除測試訂單；退款另列，不將不同幣別相加。</p>{reports.salesTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["訂單", "步驟", "付款時間", "幣別", "已付／退款（分）", "訂單／付款狀態", "付款編號"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.sales.map((row) => <tr className="border-t" key={row.id}><td className="p-2"><span>{row.orderNumber}</span><small className="block">{row.id}</small></td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "無法辨識的步驟"}</td><td>{row.paidAt}</td><td>{row.currency}</td><td>{row.paidAmountCents} / {row.refundedAmountCents}</td><td>{reportStatusLabel(row.status, "order")} / {reportStatusLabel(row.paymentStatus, "payment")}</td><td className="font-mono">{row.paymentId}</td></tr>)}</tbody></table>{!reports.sales.length ? <p className="p-3">此範圍尚無已付款訂單。</p> : null}</div>;
+337: }
+Complete helper:
+import type { PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
+import type { FormSubmissionVerificationStatus } from "@prisma/client";
+import type { CommerceOrderStatus } from "@/lib/commerce-order-domain";
+import type { FunnelExperiment } from "@/lib/funnel-operations";
+import type { FunnelGoal, FunnelStepType } from "@/lib/funnel-flow";
+
+// 僅顯示層對照；儲存、路由與 API 使用原本的識別值。
+export const funnelTabKeys = ["Configuration", "Automation Rules", "A/B test", "Stats", "Leads", "Sales", "Deadline settings"] as const;
+export const funnelTabLabels = {
+  Configuration: "頁面設定", "Automation Rules": "自動化規則", "A/B test": "A/B 測試",
+  Stats: "成效統計", Leads: "報名名單", Sales: "銷售紀錄", "Deadline settings": "截止設定",
+} satisfies Record<typeof funnelTabKeys[number], string>;
+export const funnelGoalLabels = {
+  audience: "建立名單", sell: "銷售商品", custom: "自訂流程", webinar: "線上講座",
+} satisfies Record<FunnelGoal, string>;
+export const funnelStepLabels = {
+  sales_page: "銷售頁", order_form: "訂單表單", upsell: "加購頁", downsell: "降價加購頁", thank_you_page: "感謝頁",
+  opt_in_page: "名單頁", opt_in_thank_you_page: "名單感謝頁", inline_form: "內嵌表單", popup_form: "彈出表單", link_in_bio: "個人簡介連結頁",
+  info_page: "資訊頁", contact_us_page: "聯絡我們", webinar_registration_page: "線上講座報名頁",
+  webinar_thank_you_page: "線上講座感謝頁", webinar_broadcast_page: "線上講座播放頁", inactive_page: "停用頁",
+} satisfies Record<FunnelStepType, string>;
+export const experimentStatusLabels = { draft: "草稿", running: "進行中", stopped: "已停止", winner: "已選定勝出組別" } satisfies Record<FunnelExperiment["status"], string>;
+export const experimentArmLabels = { control: "對照組", variant: "測試組" } satisfies Record<NonNullable<FunnelExperiment["winner"]>, string>;
+
+const verificationStatusLabels = { UNVERIFIED: "尚未驗證", VERIFIED: "已驗證" } satisfies Record<FormSubmissionVerificationStatus, string>;
+const orderStatusLabels = {
+  draft: "草稿", pending_payment: "待付款", paid: "已付款", payment_failed: "付款失敗", expired: "付款逾期",
+  cancelled: "已取消", partially_refunded: "部分退款", refunded: "已退款",
+} satisfies Record<CommerceOrderStatus, string>;
+// 交易狀態目前是後端字串欄位；遇到未支援值明示未知，不推測為成功。
+const paymentStatusLabels = { pending: "待付款", paid: "已付款", failed: "付款失敗", refunded: "已退款", partially_refunded: "部分退款", cancelled: "已取消", expired: "付款逾期", dispute_opened: "付款爭議處理中", dispute_released: "付款爭議已解除", dispute_lost: "付款爭議敗訴" } satisfies Record<PaymentWebhookEventType | "pending" | "cancelled" | "expired", string>;
+export function reportStatusLabel(value: string, domain: "order" | "verification" | "payment"): string {
+  const labels: Readonly<Record<string, string>> = domain === "order" ? orderStatusLabels : domain === "verification" ? verificationStatusLabels : paymentStatusLabels;
+  return Object.hasOwn(labels, value) ? labels[value] : "未知狀態";
+}
+
+/** 下拉選單顯示名稱；value 保留原識別值，重名與未命名項目仍可區分。 */
+export function referenceOptions(ids: readonly string[], names: Readonly<Record<string, string>> | undefined, kind: "步驟" | "彈出視窗") {
+  const labels = ids.map((id, index) => {
+    const name = names && Object.hasOwn(names, id) ? names[id].replace(/[\u200b\ufeff]/gu, "").trim() : "";
+    return name || `未命名${kind} ${index + 1}`;
+  });
+  const counts = new Map<string, number>();
+  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+  const options = ids.map((value, index) => ({ value, label: counts.get(labels[index])! > 1 ? `${labels[index]}（第 ${index + 1} 項）` : labels[index] }));
+  // 自訂名稱也可能包含系統後綴；整組加上唯一位置前綴，避免再次碰撞。
+  return new Set(options.map((option) => option.label)).size === options.length
+    ? options
+    : options.map((option, index) => ({ ...option, label: `${index + 1}. ${option.label}` }));
+}

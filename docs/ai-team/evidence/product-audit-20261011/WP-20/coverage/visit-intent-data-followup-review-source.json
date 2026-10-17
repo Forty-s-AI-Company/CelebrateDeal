@@ -1,0 +1,10 @@
+{
+  "promptCharacters": 19096,
+  "files": {
+    "src/lib/live-metric-visit-intent.ts": "13376bab10c2d914d7261693d82019c17a5b2c3b1f2fa85621db1e7875f50e02",
+    "src/lib/live-metric-visit.ts": "19e7dd39d0e5e963de06e200effe8099c2777471a1fa8430fe677b642065e08f",
+    "src/lib/live-metric-visit-collection.ts": "0e6a3102d28fbbea3c38ac5f698829b887ecb5dfb93f02b948ef270838ee662d",
+    "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": "796bca8ab59add3a0ed8c1bccd2dab1e45e233ade50b8344ec2275dd89d77e82"
+  },
+  "scope": "visit-intent-data-followup"
+}

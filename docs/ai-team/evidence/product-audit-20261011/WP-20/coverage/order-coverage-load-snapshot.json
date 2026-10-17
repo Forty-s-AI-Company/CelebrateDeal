@@ -1,0 +1,5 @@
+{
+  "scripts/wp20-order-coverage-load-disposable.mjs": "cd9f3e7c832d7992e50ef3a14afae59651909e83bf35cc5f4466c1b8e52fca3b",
+  "src/lib/live-metric-coverage-reader.ts": "f95cb851306533ad6d10d9fbd4f771d308a026e9b1125b1699f7577f2d93766c",
+  "src/lib/live-metric-report-reader.ts": "508146e6a68c0001ffd7ec874b383ea3ac4880363e7bf8205d9382a0b80fa147"
+}

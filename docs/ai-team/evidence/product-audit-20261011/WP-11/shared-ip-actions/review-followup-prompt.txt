@@ -1,0 +1,427 @@
+Critical follow-up of same8WP11sourcecallers. Currentrevision sha256:b730c6b39a3d0774b58b7d682dceeb06477975a837bbf7c304fa659db0058655. Productcodeunchanged from priorreview(noBLOCKER/MAJOR). Addedrepository ASTsecurityboundary regression testasrecommended alternative to oneintegrationtestpercaller. Itallows legacy onlyexplicitpaymentexceptions, normalizedmetadataadapters, headerlessrecipientalias. Rejectsnewrawlegacycallers/functionescape. PriorMINOR2conditionalnonlimiterconsumer: confirmedprivatebuilders usedonlysource limiter; originalaudit/sessionmetadatareads remain unchanged. BelowALLcheckRateLimitcallsitecontexts andbuilder references, especiallyauth/mfaregen/retrywhichpriorreviewdidnotcheck. Readthatnoneisheaderlesssubject-only; studentrecipientremainsexplicitlegacy. NITsharedlivechatproofname acceptedcompatibilityconstraint; noheadernamechange. WholeWP/browser/deploymentnotcertified.
+
+CALLER src/app/actions/auth-security-actions.ts
+50:     return fallback;
+51:   }
+52:   return value;
+53: }
+54: 
+55: function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
+56:   return entryRateLimitHeaders(headerStore);
+57: }
+58: 
+59: export async function loginAction(formData: FormData) {
+60:   await assertServerActionSecurity(formData);
+61:   const email = normalizedEmail(text(formData, "email"));
+62:   const password = text(formData, "password");
+63:   const headerStore = await headers();
+64:   const rateLimitRequest = new Request(getCanonicalAppUrl(), {
+65:     headers: forwardedRequestHeaders(headerStore),
+66:   });
+67: 
+68:   const loginSourceLimit = getLoginSourceLimit(process.env);
+69:   const sourceRateLimited = await checkRateLimit(
+70:     rateLimitRequest,
+71:     "login-source",
+72:     loginSourceLimit,
+73:     LOGIN_RATE_LIMIT_WINDOW_MS,
+74:   );
+75:   if (sourceRateLimited) {
+76:     redirect(`/login?error=${sourceRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+77:   }
+78: 
+79:   const sourceEmailRateLimited = await checkRateLimit(
+80:     rateLimitRequest,
+81:     `login-source-email:${email}`,
+82:     LOGIN_SOURCE_EMAIL_LIMIT,
+83:     LOGIN_RATE_LIMIT_WINDOW_MS,
+84:   );
+85:   if (sourceEmailRateLimited) {
+86:     redirect(`/login?error=${sourceEmailRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+87:   }
+88: 
+89:   const auth = await authenticateUser(email, password);
+90:   if (!auth) {
+91:     await writeAuditLog({ actorLabel: "anonymous", action: "login_failed", targetType: "Auth", targetId: email, after: { email } });
+171: 
+172: export async function requestPasswordResetAction(formData: FormData) {
+173:   await assertServerActionSecurity(formData);
+174:   const headerStore = await headers();
+175:   const appUrl = getCanonicalAppUrl();
+176:   const rateLimited = await checkRateLimit(
+177:     new Request(appUrl, { headers: forwardedRequestHeaders(headerStore) }),
+178:     "password-reset-request",
+179:     5,
+180:     60_000,
+181:   );
+182:   if (rateLimited) {
+183:     redirect(`/password-reset/request?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+184:   }
+185:   const email = normalizedEmail(text(formData, "email"));
+186:   if (!email) redirect("/password-reset/request?error=invalid");
+187:   schedulePasswordResetLink({
+188:     email,
+189:     appUrl,
+223:   const next = safeInternalPath(text(formData, "next", "/admin/billing/dashboard"));
+224:   const code = text(formData, "code");
+225:   if (!auth.user.mfaFactor) redirect(withMfaReturnPath("/mfa/setup", next));
+226: 
+227:   const headerStore = await headers();
+228:   const rateLimited = await checkRateLimit(
+229:     new Request(getCanonicalAppUrl(), { headers: forwardedRequestHeaders(headerStore) }),
+230:     `mfa-verification:${auth.user.id}`,
+231:     5,
+232:     60_000,
+233:   );
+234:   if (rateLimited) redirect(`/mfa/verify?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}&next=${encodeURIComponent(next)}`);
+235: 
+236:   const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
+237:   const recoveryCodes = await getDb().userRecoveryCode.findMany({ where: { userId: auth.user.id, usedAt: null } });
+238:   const recoveryCodeMatches = await Promise.all(recoveryCodes.map((recoveryCode) => verifyRecoveryCodeAsync(code, recoveryCode.codeHash)));
+239:   const matchedRecoveryCode = recoveryCodes.find((_, index) => recoveryCodeMatches[index]);
+240:   if (!verifyTotpCode(secret, code) && !matchedRecoveryCode) {
+241:     await writeAuditLog({ vendorId: auth.vendor?.id ?? null, actorId: auth.user.id, actorLabel: auth.member?.role ?? auth.user.platformRole, action: "mfa_verify_failed", targetType: "UserMfaFactor", targetId: auth.user.id });
+279:   // Gate the action itself before token creation or any mail-provider work.
+280:   if (!isPasswordResetSmokeEnabled()) redirect(`${destination}?error=password_reset_smoke_unavailable`);
+281:   const headerStore = await headers();
+282:   const appUrl = getCanonicalAppUrl();
+283:   if (!isAllowedSmokeTestRecipient(auth.user.email)) redirect(`${destination}?error=password_reset_smoke_recipient`);
+284:   const rateLimited = await checkRateLimit(
+285:     new Request(appUrl, { headers: forwardedRequestHeaders(headerStore) }),
+286:     `password-reset-smoke:${auth.user.id}`,
+287:     3,
+288:     15 * 60 * 1000,
+289:   );
+290:   if (rateLimited) redirect(`${destination}?error=${rateLimited.status === 429 ? "password_reset_smoke_rate_limited" : "password_reset_smoke_unavailable"}`);
+291:   let sent = false;
+292:   try {
+293:     await sendPasswordResetLink({ email: auth.user.email, appUrl, ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: headerStore.get("user-agent") });
+294:     await writeAuditLog({ vendorId: auth.vendor?.id ?? null, actorId: auth.user.id, actorLabel: auth.member?.role ?? auth.user.platformRole, action: "password_reset_smoke_email_sent", targetType: "User", targetId: auth.user.id, after: auditSnapshot({ email: auth.user.email }) });
+295:     sent = true;
+296:   } catch {
+297:     await writeAuditLog({ vendorId: auth.vendor?.id ?? null, actorId: auth.user.id, actorLabel: auth.member?.role ?? auth.user.platformRole, action: "password_reset_smoke_email_failed", targetType: "User", targetId: auth.user.id, after: auditSnapshot({ email: auth.user.email }) });
+CALLER src/app/actions/buyer-support-actions.ts
+43: async function publicRequest() {
+44:   const headerStore = await headers();
+45:   const host = headerStore.get("host") ?? "localhost";
+46:   const proto = host.includes("localhost") || host.startsWith("127.") ? "http" : "https";
+47:   return new Request(`${proto}://${host}/support/requests`, {
+48:     headers: entryRateLimitHeaders(headerStore),
+49:   });
+50: }
+51: 
+52: async function allowPublicSupportMutation(grantId: string) {
+53:   const provider = getRateLimitProviderStatus();
+54:   if (process.env.NODE_ENV === "production" && (!provider.durable || !provider.configured)) return false;
+55:   const request = await publicRequest();
+56:   const [globalLimit, grantLimit] = await Promise.all([
+57:     checkRateLimit(request, "buyer-support-global", 30, 60_000),
+58:     checkRateLimit(request, `buyer-support-grant:${grantId}`, 10, 60_000),
+59:   ]);
+60:   return !globalLimit && !grantLimit;
+61: }
+62: 
+63: export async function createBuyerSupportCaseAction(formData: FormData) {
+64:   await assertServerActionSecurity(formData);
+65:   const grantId = Identifier.safeParse(text(formData, "grantId"));
+66:   const intakeKey = RequestKey.safeParse(text(formData, "intakeKey"));
+67:   const category = Category.safeParse(text(formData, "category"));
+68:   const summary = text(formData, "summary");
+69:   if (
+70:     !grantId.success
+CALLER src/app/actions/consultation-actions.ts
+99:   // The Prisma client can lag the schema during a staged migration. Keep this
+100:   // boundary narrow; the production client remains the only runtime database.
+101:   return getDb() as unknown as ConsultationDatabase;
+102: }
+103: 
+104: async function publicBookingRequest() {
+105:   const incoming = await headers();
+106:   const forwarded = entryRateLimitHeaders(incoming);
+107:   return new Request(getCanonicalAppUrl(), { headers: forwarded });
+108: }
+109: 
+110: function text(formData: FormData, key: string) {
+111:   const value = formData.get(key);
+112:   return typeof value === "string" ? value.trim() : "";
+113: }
+114: 
+115: function optionalText(formData: FormData, key: string) {
+116:   const value = text(formData, key);
+117:   return value || null;
+118: }
+536:     clientEmail: text(formData, "clientEmail"),
+537:     clientPhone: text(formData, "clientPhone"),
+538:     answers: rawAnswers,
+539:   });
+540:   if (!parsed.success) return { status: "unavailable" };
+541:   const limited = await checkRateLimit(await publicBookingRequest(), `consultation-booking:${parsed.data.eventId}`, 8, 15 * 60 * 1000);
+542:   if (limited) return { status: "unavailable" };
+543:   const database = db();
+544:   const result = await reserveConsultationBooking(database, parsed.data);
+545:   if (result.status === "booked") {
+546:     const booking = await database.consultationBooking.findFirst?.({
+547:       where: { id: result.booking.id, eventId: parsed.data.eventId },
+548:       select: { id: true, vendorId: true, meetingUrl: true },
+549:     });
+550:     if (booking) {
+551:       await dispatchAutomationEvent(getDb(), {
+552:         vendorId: booking.vendorId,
+553:         eventId: `consultation-booked:${booking.id}`,
+CALLER src/app/actions/registration-actions.ts
+25:   await assertServerActionSecurity(formData);
+26:   const parsed = RegistrationInput.safeParse({ name: formData.get("name"), workspaceName: formData.get("workspaceName"), email: formData.get("email"), password: formData.get("password") });
+27:   if (!parsed.success) redirect("/register?error=invalid");
+28:   const input = parsed.data;
+29:   const incoming = await headers();
+30:   const forwarded = entryRateLimitHeaders(incoming);
+31:   const limited = await checkRateLimit(new Request(getCanonicalAppUrl(), { headers: forwarded }), "registration-source", 4, 15 * 60 * 1000);
+32:   if (limited) redirect(`/register?error=${limited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+33:   const passwordHash = await hashPasswordAsync(input.password);
+34:   const slugBase = input.workspaceName.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80) || "workspace";
+35:   let created: { userId: string; vendorId: string };
+36:   try {
+37:     // Ownership, onboarding state and audit become visible together or roll back together.
+38:     created = await getDb().$transaction(async (tx) => {
+39:       const user = await tx.user.create({ data: { name: input.name, email: input.email, passwordHash } });
+40:       const vendor = await tx.vendor.create({ data: { name: input.workspaceName, slug: `${slugBase}-${randomUUID()}`, email: input.email, passwordHash } });
+41:       await tx.vendorMember.create({ data: { vendorId: vendor.id, userId: user.id, role: "owner", status: "active" } });
+42:       await tx.userOnboardingPreference.create({ data: { userId: user.id, vendorId: vendor.id, questionnaireStep: 0, taskPanelCollapsed: true } });
+43:       await tx.auditLog.create({ data: { vendorId: vendor.id, actorId: user.id, actorLabel: "owner", action: "registration_completed", targetType: "User", targetId: user.id } });
+CALLER src/app/actions/student-portal-actions.ts
+29: function value(formData: FormData, key: string) {
+30:   const entry = formData.get(key);
+31:   return typeof entry === "string" ? entry : "";
+32: }
+33: 
+34: async function sourceRequest() {
+35:   const incoming = await headers();
+36:   const forwarded = entryRateLimitHeaders(incoming);
+37:   return new Request(getCanonicalAppUrl(), { headers: forwarded });
+38: }
+39: 
+40: const genericSentMessage = "如果這個 Email 有可存取的內容，我們已寄出 15 分鐘有效的安全連結。";
+41: 
+42: export async function requestMagicLinkAction(
+43:   _previous: StudentPortalActionState,
+44:   formData: FormData,
+45: ): Promise<StudentPortalActionState> {
+46:   await assertServerActionSecurity(formData);
+47:   const locale=normalizeStudentPortalLocale(value(formData,"locale"));
+48:   const t=(text:string)=>portalText(locale,text);
+50:   const vendorSlug = SlugInput.safeParse(value(formData, "vendorSlug"));
+51:   if (!email.success || !vendorSlug.success) {
+52:     return { status: "invalid", message: t("請確認 Email 格式後再試一次。") };
+53:   }
+54: 
+55:   const limited = await checkRateLimit(await sourceRequest(), "student-portal-magic-link", 10, 15 * 60 * 1000);
+56:   if (limited) return { status: "rate_limited", message: t("申請次數較多，請稍後再試。") };
+57: 
+58:   const db = getDb();
+59:   const vendor = await db.vendor.findUnique({
+60:     where: { slug: vendorSlug.data },
+61:     select: { id: true, slug: true, name: true, senderName: true, supportEmail: true, contactUrl: true },
+62:   });
+63:   if (!vendor) return { status: "sent", message: t(genericSentMessage) };
+64: 
+65:   const customerKeyHash = automationCustomerKeyHash(vendor.id, email.data);
+66:   // A second bucket intentionally uses no client-provided forwarding headers.
+67:   // This keeps one tenant/student identity bounded even if XFF is spoofed.
+68:   const recipientLimited = await checkRecipientRateLimit(
+69:     new Request(getCanonicalAppUrl()),
+70:     `student-portal-magic-link-recipient:${vendor.id}:${customerKeyHash}`,
+71:     3,
+72:     15 * 60 * 1000,
+73:   );
+74:   if (recipientLimited) return { status: "rate_limited", message: t("申請次數較多，請稍後再試。") };
+75:   const [orderCount, bookingCount, voucherCount] = await Promise.all([
+76:     db.commerceOrder.count({ where: { vendorId: vendor.id, automationCustomerKeyHash: customerKeyHash, status: { in: ["paid", "partially_refunded", "refunded"] } } }),
+77:     db.consultationBooking.count({ where: { vendorId: vendor.id, customerKeyHash } }),
+78:     db.automationVoucherGrant.count({ where: { vendorId: vendor.id, customerKeyHash } }),
+79:   ]);
+80:   if (orderCount + bookingCount + voucherCount === 0) return { status: "sent", message: t(genericSentMessage) };
+CALLER src/app/actions/vendor-member-actions.ts
+45:   const role = text(formData, "role", "accountant");
+46:   if (!email || !name || !MEMBER_ROLES.has(role)) redirect("/settings/security?error=member_invalid");
+47: 
+48:   const headerStore = await headers();
+49:   const appUrl = getCanonicalAppUrl();
+50:   const rateLimitHeaders = entryRateLimitHeaders(headerStore);
+51:   const rateLimited = await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000);
+52:   if (rateLimited) redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
+53: 
+54:   const db = getDb();
+55:   const existingUser = await db.user.findUnique({
+56:     where: { email },
+57:     select: { id: true, email: true, name: true, platformRole: true, status: true },
+58:   });
+59:   if (existingUser?.platformRole && existingUser.platformRole !== "none") redirect("/settings/security?error=platform_user");
+60:   if (existingUser && existingUser.status !== "active") {
+61:     // Tenant owners may restore membership in their own vendor, but only the platform may reactivate a globally suspended user account.
+62:     redirect("/settings/security?error=inactive_user");
+63:   }
+147:   });
+148:   if (member?.status !== "active" || member.userId === auth.user.id || member.user.platformRole !== "none") redirect("/settings/security?error=member_invitation_resend_invalid");
+149: 
+150:   const headerStore = await headers();
+151:   const appUrl = getCanonicalAppUrl();
+152:   const rateLimitHeaders = entryRateLimitHeaders(headerStore);
+153:   const rateLimited = await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000);
+154:   if (rateLimited) redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
+155: 
+156:   let invitationSent = false;
+157:   try {
+158:     invitationSent = Boolean(await sendPasswordResetLink({
+159:       email: member.user.email,
+160:       appUrl,
+161:       ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+162:       userAgent: headerStore.get("user-agent"),
+163:     }));
+164:   } catch {}
+165:   await writeAuditLog({
+CALLER src/lib/mfa-recovery-regeneration.ts
+18: function formText(formData: FormData, key: string) {
+19:   const value = formData.get(key);
+20:   return typeof value === "string" ? value.trim() : "";
+21: }
+22: 
+23: function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
+24:   return entryRateLimitHeaders(headerStore);
+25: }
+26: 
+27: export type MfaRecoveryRegenerationResult =
+28:   | { ok: true; destination: string }
+29:   | {
+30:     ok: false;
+31:     destination: string;
+32:     error: "mfa_required" | "recovery_rate_limited" | "recovery_unavailable" | "mfa_code";
+33:   };
+34: 
+35: /**
+36:  * Performs the complete recovery-code replacement independently from a
+44:   const auth = await requireAuth();
+45:   const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+46:   if (!auth.user.mfaFactor) return { ok: false, destination, error: "mfa_required" };
+47: 
+48:   const headerStore = await headers();
+49:   const rateLimited = await checkRateLimit(
+50:     new Request(getCanonicalAppUrl(), { headers: forwardedRequestHeaders(headerStore) }),
+51:     `mfa-recovery-regeneration:${auth.user.id}`,
+52:     3,
+53:     15 * 60 * 1000,
+54:   );
+55:   if (rateLimited) {
+56:     return {
+57:       ok: false,
+58:       destination,
+59:       error: rateLimited.status === 429 ? "recovery_rate_limited" : "recovery_unavailable",
+60:     };
+61:   }
+62: 
+CALLER src/lib/registration-form-retry-response.ts
+41:   const target = new URL(sourcePath, registrationRetryOrigin(request));
+42:   const errorStatus = ([400, 403, 404, 429, 503].includes(status) ? status : 503) as 400 | 403 | 404 | 429 | 503;
+43:   let saved: string | null = null;
+44:   try {
+45:     // 另設草稿寫入額度，避免主提交被限流後仍可無限新增密文。
+46:     const limited = await checkRateLimit(request, "registration-retry-draft", 10, 60_000);
+47:     if (!limited && data) {
+48:       const allowed = await eligibleDraftFields(String(data.get("formId") ?? ""));
+49:       const answers: Record<string, string> = {};
+50:       let valid = Boolean(allowed);
+51:       for (const [key, value] of data.entries()) {
+52:         if (REGISTRATION_FORM_RESERVED_FIELDS.has(key)) continue;
+53:         if (!allowed?.has(key) || typeof value !== "string" || Object.hasOwn(answers, key)) { valid = false; break; }
+54:         Object.defineProperty(answers, key, { value, enumerable: true });
+55:       }
+56:       if (valid) saved = await saveRegistrationRetryDraft(getDb(), {
+57:         formId: String(data.get("formId") ?? ""), sourcePath, answers,
+58:         attribution: registrationAttribution({ ref: typeof data.get("referralCode") === "string" ? String(data.get("referralCode")) : undefined, share: typeof data.get("shareCode") === "string" ? String(data.get("shareCode")) : undefined, lp: typeof data.get("landingPageId") === "string" ? String(data.get("landingPageId")) : undefined }),
+SOURCE src/lib/entry-rate-limit-headers.ts
+import { LIVE_CHAT_INGRESS_PROOF_HEADER } from "./request-client-ip";
+
+/** Carry only resolver metadata; copying a header never grants it trust. */
+export function entryRateLimitHeaders(incoming: Pick<Headers, "get">) {
+  const forwarded = new Headers();
+  for (const name of [
+    "cf-connecting-ip", "x-forwarded-for", "x-real-ip", "x-vercel-forwarded-for",
+    LIVE_CHAT_INGRESS_PROOF_HEADER,
+  ]) {
+    const value = incoming.get(name);
+    // Preserve malformed/empty values so the resolver can fail closed.
+    if (value !== null) forwarded.set(name, value);
+  }
+  return forwarded;
+}
+
+SOURCE src/lib/rate-limit-boundary.test.ts
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
+import { expect, it } from "vitest";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const legacyModule = resolve(root, "lib/rate-limit");
+const paymentExceptions = new Set([
+  "app/api/payments/checkout/route.ts", "app/api/payments/checkout/admission/route.ts",
+  "app/api/payments/checkout/recovery/route.ts", "app/api/checkout/upsell/route.ts",
+]);
+const normalizedCallers = new Set([
+  "app/api/live-chat/instructor/route.ts", "app/api/live-chat/messages/route.ts",
+  "app/api/live-chat/private/route.ts", "app/api/live-purchase-broadcasts/route.ts",
+  "lib/trusted-entry-rate-limit.ts",
+]);
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return entry.isFile() && /\.tsx?$/u.test(entry.name) && !/\.(?:test|d)\.tsx?$/u.test(entry.name) ? [path] : [];
+  });
+}
+
+// Security boundary: future source limiters cannot silently bypass the trusted resolver.
+// Payment behavior is explicitly outside WP11. Subject-only and normalized callers
+// remain supported, but their argument shape must not reintroduce raw requests.
+it("permits legacy limiting only for documented payment, normalized, or recipient-only callers", () => {
+  const violations: string[] = [];
+  for (const path of sourceFiles(root)) {
+    const name = relative(root, path).replaceAll("\\", "/");
+    const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
+    const legacyBindings = new Set<string>();
+    for (const statement of file.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      const specifier = statement.moduleSpecifier.text;
+      const target = specifier.startsWith("@/") ? resolve(root, specifier.slice(2)) : resolve(dirname(path), specifier);
+      if (target !== legacyModule) continue;
+      const bindings = statement.importClause?.namedBindings;
+      if (!bindings || !ts.isNamedImports(bindings)) { violations.push(`${name}: opaque legacy import`); continue; }
+      for (const binding of bindings.elements) {
+        if ((binding.propertyName ?? binding.name).text === "checkRateLimit") legacyBindings.add(binding.name.text);
+      }
+    }
+    if (!legacyBindings.size || paymentExceptions.has(name)) continue;
+    function visit(node: ts.Node) {
+      if (ts.isIdentifier(node) && legacyBindings.has(node.text) && !ts.isImportSpecifier(node.parent)) {
+        const call = node.parent;
+        if (!ts.isCallExpression(call) || call.expression !== node) {
+          violations.push(`${name}: legacy function escaped its checked call`);
+        } else {
+          const request = call.arguments[0];
+          const normalized = normalizedCallers.has(name) && request && ts.isCallExpression(request)
+            && ts.isIdentifier(request.expression) && request.expression.text === "rateLimitRequestWithIdentity";
+          const recipient = name === "app/actions/student-portal-actions.ts" && node.text === "checkRecipientRateLimit"
+            && request && ts.isNewExpression(request) && ts.isIdentifier(request.expression)
+            && request.expression.text === "Request" && request.arguments?.length === 1;
+          if (!normalized && !recipient) violations.push(`${name}: unverified legacy request`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(file);
+  }
+  expect(violations).toEqual([]);
+});
+
+PRIORREADONLYREVIEW
+{"summary":"I reviewed only the supplied incremental WP11 diff and helper sources. I found no BLOCKER or MAJOR security defects.\n\n**What the diff does correctly**\n- Seven of the eight changed `checkRateLimit` imports now route through `trusted-entry-rate-limit`. The eighth, the student recipient limiter, intentionally stays on the legacy limiter as `checkRecipientRateLimit`. The keys, limits and windows in the visible call sites are unchanged.\n- `entryRateLimitHeaders` copies only the five resolver fields, including the ingress proof. It keeps empty and malformed values, so the resolver still fails closed: an empty `cf-connecting-ip` is rejected, and repeated headers joined with commas are rejected by `canonicalizeIp`.\n- A copied header never grants trust on its own:\n  - Cloudflare and trusted-proxy modes need a valid proof checked with `timingSafeEqual`.\n  - Trusted-proxy mode also requires `x-real-ip` to match the first `x-forwarded-for` hop.\n  - Runtime mode returns 503 for server actions because there is no `request.ip`.\n  - Vercel-native mode re-checks the Preview-only environment gate from `process.env` and requires Upstash.\n- The student recipient limiter still uses a headerless `Request` with a key built on the server (vendor id plus customer hash). The integration test runs the real resolver, memory store and recipient limiter. It shows untrusted sources are rejected before password hashing, database writes or vendor lookup, the 4th request from a new trusted IP is blocked, and another recipient is not affected.\n- Buyer support still gets provider status from the legacy module. No database, schema or payment code changed, and no audit IP fields changed.\n\n**Not checked**\n- The diff shows only the import swaps for the `checkRateLimit` call sites in `auth-security-actions.ts`, `mfa-recovery-regeneration.ts` and `registration-form-retry-response.ts`. Whether any of them uses a headerless, subject-only bucket was not checked; such a bucket would now always return 503. Someone should confirm this by reading the files.\n\nThis review does not show that tests pass, the whole WP is complete, or that the database, browser, remote or Production behaviour is correct.","findings":[{"severity":"MINOR","file":"src/app/actions/source-rate-limit.integration.test.ts","area":"Coverage of callers (auth-security, buyer-support, consultation, vendor-member x2, MFA regeneration, registration retry)","issue":"Only registerAction and requestMagicLinkAction are tested with the real resolver and headers. Per the task notes, the other existing tests only mock the limiter module. So nothing checks that the other callers import the trusted helper and pass entryRateLimitHeaders (including the proof header) to it.","evidence":"The integration test imports only ./student-portal-actions and ./registration-actions. The task says the other existing tests only changed their limiter module mocks.","impact":"Some regressions would pass the test suite: a caller going back to @/lib/rate-limit, or building headers without the proof field. Such a regression would quietly reintroduce source limiting based on spoofable XFF (or the earlier header handling), or make a caller always return 503.","recommended_fix":"Add a small test that runs each remaining action with the real trusted helper and synthetic headers. Alternatively, add a static/import contract test that asserts these modules import checkRateLimit only from trusted-entry-rate-limit, except the documented recipient alias.","required_test":"For loginAction, the vendor-member invite and resend actions, the buyer-support mutation, consultation booking, MFA recovery regeneration and the registration retry response: (a) a missing or invalid proof makes the action fail closed before any side effect, and (b) a valid proof with a rotated x-forwarded-for still uses one source bucket.","confidence":0.6},{"severity":"MINOR","file":"src/app/actions/consultation-actions.ts; src/app/actions/student-portal-actions.ts; src/lib/mfa-recovery-regeneration.ts","area":"publicBookingRequest / sourceRequest / forwardedRequestHeaders","issue":"The shared helper no longer forwards some headers that these builders used to copy: user-agent in consultation and student-portal, and x-forwarded-host, x-forwarded-proto and user-agent in MFA regeneration. If any of these Request objects or header sets is used for anything other than the source limiter, that behaviour changes without notice.","evidence":"The removed loops listed \"user-agent\" (consultation, student-portal) and \"x-forwarded-host\", \"x-forwarded-proto\", \"user-agent\" (MFA). entryRateLimitHeaders copies only cf-connecting-ip, x-forwarded-for, x-real-ip, x-vercel-forwarded-for and the proof header. The function bodies that consume these values are not in the supplied scope.","impact":"If the values are only used for the limiter, this is harmless and tightens the copied data. If they also feed audit or session user-agent fields or URL/origin building, those fields would become empty, which contradicts the claim that audit/session metadata is unchanged.","recommended_fix":"Confirm that every consumer of publicBookingRequest(), sourceRequest() and forwardedRequestHeaders() is a checkRateLimit call. If one is not, give that consumer its own read of the needed header and keep the limiter header set minimal.","required_test":"Assert that audit and session records written by the MFA regeneration and consultation booking flows still contain the same user-agent and metadata fields as before the change.","confidence":0.3},{"severity":"NIT","file":"src/lib/entry-rate-limit-headers.ts","area":"LIVE_CHAT_INGRESS_PROOF_HEADER usage","issue":"All entry-point server actions now use the ingress proof header named for live chat (x-celebratedeal-live-chat-ingress), though entry routes are checked against a separate ENTRY_CLIENT_IP_INGRESS_SECRET.","evidence":"entryRateLimitHeaders and trusted-entry-rate-limit both import LIVE_CHAT_INGRESS_PROOF_HEADER from request-client-ip.","impact":"Maintainability only: operators configuring the edge may not realise that login, registration and support depend on a header named for live chat, which raises the risk of a proxy misconfiguration that blocks everything with 503.","recommended_fix":"Export a neutral alias such as INGRESS_PROOF_HEADER (same value) and document that it is shared by the live-chat and entry rate limiters.","required_test":"None beyond the existing header-copy test.","confidence":0.5}]}

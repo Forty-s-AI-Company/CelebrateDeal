@@ -1,0 +1,217 @@
+{
+  "accepted": false,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR issue in the supplied migration or private publisher. I found no path where the application's non-owner role can insert a proof or set the marker. I also found no path that yields false 'covered' coverage, assuming the reader really does recompute the current digest and receipt. That reader-side check is a premise from the task text, not something I verified. The remaining findings are robustness gaps. Most fail closed: they cause unexpected exceptions, permanent incomplete status, or contention, not over-reported coverage. These issues are not owner-DDL tampering. An empty or minor-only list does not certify that tests or release pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016180000_live_metric_visit_coverage/migration.sql",
+        "area": "Visit and VisitIntent ingress-frontier triggers (BEFORE INSERT OR DELETE)",
+        "issue": "The sealed frontier covers only row INSERT and DELETE. A row UPDATE that changes versionId, eventId, visitorId, visitedAt or preparedAt goes through without a check. TRUNCATE does not fire row triggers at all.",
+        "evidence": "CREATE TRIGGER ... BEFORE INSERT OR DELETE ON public.\"LiveMetricVisit\" / \"LiveMetricVisitIntent\". The function has no UPDATE branch and there is no statement-level TRUNCATE trigger.",
+        "impact": "An UPDATE can move a fact or intent into or out of a sealed version, which gets around the claim that 'no direct deletion may erase a sealed denominator'. The reader's digest check probably turns this into fail-closed, but the frontier invariant is not actually enforced unless existing immutability triggers already cover UPDATE and TRUNCATE.",
+        "recommended_fix": "Add UPDATE to both triggers and check both the OLD and NEW scopes. Alternatively, reject any key or time change once a seal exists. Add a BEFORE TRUNCATE statement trigger that rejects when any sealed run exists. If existing triggers already do this, cite them instead.",
+        "required_test": "After the seal, as the app role: UPDATE a Visit's versionId and an Intent's preparedAt, and TRUNCATE both tables. All of these must be rejected with 23514.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016180000_live_metric_visit_coverage/migration.sql",
+        "area": "wp20_metric_ingress_visit_frontier: SELECT id INTO run_key ... FOR SHARE",
+        "issue": "The trigger uses a non-STRICT SELECT INTO with no ORDER BY, so it keeps one arbitrary run when a version has more than one run. It then checks only that run for a seal.",
+        "evidence": "SELECT id INTO run_key FROM \"LiveMetricIngressRun\" WHERE vendor/live/version ... FOR SHARE; IF FOUND AND EXISTS(seal WHERE runId=run_key).",
+        "impact": "If runs are not unique per version, a second unsealed run lets new intents and facts in after an earlier run was sealed or published. Proof and reader checks probably reject the result, but the frontier is still bypassed.",
+        "recommended_fix": "Lock every run for the version and raise if a seal exists for any of them, e.g. PERFORM ... FOR SHARE; IF EXISTS(seal s JOIN run r ... WHERE r.version=...). Alternatively, show that a unique (vendorId,liveId,versionId) constraint exists on the Run table.",
+        "required_test": "With two runs on one version, A sealed and B open: inserting an Intent or Visit must be rejected. Alternatively, a test showing a second run cannot be created.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016180000_live_metric_visit_coverage/migration.sql",
+        "area": "Frontier trigger preamble (isolation check and version FOR SHARE)",
+        "issue": "The trigger runs on every Visit and Intent write for every version, not just synthetic-run versions. It requires READ COMMITTED and takes a version FOR SHARE lock. Any writer that later updates the same version row in the same transaction (for example to bump sourceRevision) upgrades that share lock. That upgrade can deadlock against concurrent writers.",
+        "evidence": "PERFORM 1 FROM \"LiveMetricVersion\" ... FOR SHARE runs unconditionally after the RC check. FOR SHARE conflicts with FOR NO KEY UPDATE. The publisher's sourceRevision compare suggests source writes bump the version row.",
+        "impact": "Existing or production visit ingestion can break: writers using RR or Serializable now error, and concurrent same-version writes can deadlock. Sequential 10-visit tests would not catch this.",
+        "recommended_fix": "Make sure writers update the version row before they insert visits, or have the trigger take the lock that writers later need. Confirm that every existing Visit and Intent writer runs under READ COMMITTED.",
+        "required_test": "Run concurrent Intent and Visit inserts through the real services on one version (including the sourceRevision bump path): no deadlock or RC error.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-coverage.ts",
+        "area": "Second transaction INSERT ... ON CONFLICT (id) DO NOTHING",
+        "issue": "The BEFORE INSERT guard runs proof_ready before ON CONFLICT is resolved. On a retry after a non-source state change (e.g. collectionEnabled turned off, or the DB marker changed), the guard raises 23514 even though the proof row already exists. Separately, the publisher throws on any guard exception instead of returning a typed status.",
+        "evidence": "PostgreSQL fires BEFORE ROW INSERT triggers before arbiter conflict checks. The guard RAISEs when proof_ready is false, and the publisher has no try/catch or existing-row check.",
+        "impact": "An idempotent retry can fail with an exception instead of returning 'recorded'. Callers also get unhandled DB errors instead of 'incomplete' or 'source_changed'.",
+        "recommended_fix": "In the second transaction, first SELECT the row by proofId and return 'recorded' if it exists. Catch SQLSTATE 23514 from the insert and map it to 'incomplete'.",
+        "required_test": "Publish, then disable collectionEnabled and republish: the result must be 'recorded' (or a typed status), not a thrown error. Also test that a guard rejection maps to 'incomplete'.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "prisma/migrations/20261016180000_live_metric_visit_coverage/migration.sql",
+        "area": "wp20_metric_visits_proof_ready frame/page predicates",
+        "issue": "Violation predicates use NULL-unsafe <> and < comparisons, so a NULL column makes the violation test evaluate to NULL (not a violation). Examples: f.\"httpStatus\"<>200, p.\"sourceKind\"<>'registration', i.\"preparedAt\"<p.\"issuedAt\".",
+        "evidence": "A responded form frame with a NULL httpStatus fails none of the OR terms and passes the check.",
+        "impact": "A nullable column would let a malformed row count as successful. This is harmless only if NOT NULL or CHECK constraints already guarantee the values.",
+        "recommended_fix": "Use IS DISTINCT FROM for the status and sourceKind checks, and add explicit IS NULL guards for the timestamps. Alternatively, confirm the NOT NULL constraints.",
+        "required_test": "Insert a responded form frame with a NULL httpStatus (if the schema permits it): proof_ready must return false.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "status": "RATE_LIMITED",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 12000,
+      "expected_duration": 0,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "agy_discovery_process_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5"
+}

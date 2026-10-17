@@ -1,0 +1,8 @@
+{
+  "files": {
+    "src/lib/live-metric-version.ts": "93b1530601d8ac38efba87418bff0093b20d6ca16fea013395b6e514e0cf061f",
+    "src/lib/live-metric-version.test.ts": "716d621e8d02f644ae2a67a327d1a49a1cdcebd6a4e021771ac054aca90e6403"
+  },
+  "status": "PARTIAL_INTAKE_PREPARATION",
+  "review": "NOT_REQUESTED; no endpoint or intake storage implementation yet"
+}

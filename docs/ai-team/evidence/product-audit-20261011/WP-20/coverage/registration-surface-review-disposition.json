@@ -1,0 +1,290 @@
+{
+  "reviews": {
+    "data": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "sourceHashesMatch": false,
+      "omissions": [],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/components/metric-registration-visit.tsx",
+          "area": "withMetricRegistrationVisit, before issueMetricRegistrationPage",
+          "issue": "The wrapper that writes to the DB doesn't call `await connection()` (or any other dynamic-rendering opt-in) before issuing. The claim that 'connection() prevents build-time issuance' is not backed by any supplied file.",
+          "evidence": "The function checks the formId, liveId and env presence, then calls getDb() and issueMetricRegistrationPage directly. 'next/server' connection is not imported. The callers were not supplied.",
+          "impact": "If any caller is statically prerendered or cached with ISR, a visit row is written at build or revalidate time. The cached HTML would then carry one eventId shared by many visitors, and a browser could later prepare and record a visit against a shared nonce. That breaks the one-render-expectation-per-page model.",
+          "recommended_fix": "Call `await connection()` inside withMetricRegistrationVisit, after the cheap checks and before getDb(), so the guard does not depend on every caller remembering it.",
+          "required_test": "Build or prerender test: rendering a page that uses the wrapper must create no LiveMetricVisitPage row at build time, and two requests must get different eventIds.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-registration-page.ts",
+          "area": "Scope.parse before try; wrapper's scope check",
+          "issue": "The wrapper's 'cheap exact scope check' only tests that formId and liveId are truthy. An ID that fails the regex makes Scope.parse throw a ZodError outside the try, so the page throws instead of returning the original child.",
+          "evidence": "In metric-registration-visit.tsx the only check is `!scope.formId||!scope.liveId`. In live-metric-registration-page.ts, `Scope.parse(value)` runs before `try{`. By contrast, resolveMetricVisitContext uses safeParse and maps failure to SCOPE_UNAVAILABLE.",
+          "impact": "A public registration page can fail to render with an unhandled ZodError for a scope that should just be treated as unavailable. This contradicts 'unavailable scope returns original child with no collector'.",
+          "recommended_fix": "Use Scope.safeParse and return null on failure, or check the same ID regex in the wrapper before any DB access.",
+          "required_test": "Unit test: calling the wrapper with a 129-character or invalid-character formId or liveId returns the child unchanged, makes no DB calls and throws nothing.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-registration-surface.ts",
+          "area": "metricWebinarRegistrationScope status and thank-you checks",
+          "issue": "Eligibility uses a denylist: it rejects only status 'missing' and 'expired', so any other non-valid webinar state is counted. The thank-you requirement is met by any thank-you step in the flow, not by this registration step's configured target.",
+          "evidence": "`return status.status==='missing'||status.status==='expired'?{}:...` and `state.flow.steps.some(value=>value.type==='webinar_thank_you_page')`.",
+          "impact": "If getFunnelWebinarState has (or later gains) other states such as invalid or misconfigured waiting/live/replay settings, or if the registration step points somewhere other than the thank-you step, those page renders could still be counted as registration visits. The canonical live recheck does not cover funnel-level settings.",
+          "recommended_fix": "Allowlist only the states known to be valid for registration (for example waiting/live/replay). Check that this step's configured success target resolves to a webinar_thank_you_page.",
+          "required_test": "Unit tests: every non-allowlisted status returns {}, and a flow whose thank-you step exists but isn't this step's target returns {}.",
+          "confidence": 0.4
+        },
+        {
+          "severity": "NIT",
+          "file": "src/components/metric-registration-visit.tsx",
+          "area": "return values (child vs fragment)",
+          "issue": "The child's position in the tree depends on whether the page is tracked: it is returned bare when untracked and as the second fragment element when tracked.",
+          "evidence": "`if(!page)return child;` versus `<><LiveMetricVisit .../>{child}</>`.",
+          "impact": "On an RSC refresh or server-action re-render of the same route where tracking flips (quota full, version expired), React remounts the client form subtree and can lose typed input or retry state. This works against 'preserves original child/retry context'.",
+          "recommended_fix": "Always return the same shape, for example `<>{page?<LiveMetricVisit key=... .../>:null}{child}</>` on every path after the cheap checks, or on all paths.",
+          "required_test": "Client reconciliation test: a refresh that switches between tracked and untracked keeps the form's input state.",
+          "confidence": 0.4
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 3,
+        "NIT": 1
+      },
+      "fallbackEvents": []
+    },
+    "form": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashesMatch": false,
+      "omissions": [],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-registration-page.ts",
+          "area": "issueMetricRegistrationPage: `const scope=Scope.parse(value);` (runs before the try block)",
+          "issue": "A form or live ID that is present but doesn't match the regex makes `Scope.parse` throw a raw ZodError. The error escapes the wrapper and fails the public form page. It should instead count as unavailable scope and return the original child.",
+          "evidence": "`withMetricRegistrationVisit` only checks that the IDs are non-empty before calling issuance. `Scope.parse` sits outside the try/catch, so the ZodError is neither turned into null nor mapped to `MetricVisitorError`. The task says 'unavailable scope returns original child with no collector'.",
+          "impact": "Low likelihood, since IDs come from the DB and are probably cuid/uuid. But if a stored ID is longer than 128 characters or contains other characters, the registration page returns a 500 instead of rendering without metrics. The error type also differs from the stated `MetricVisitorError` contract.",
+          "recommended_fix": "Use `Scope.safeParse` and return null when it fails, so the wrapper returns the child unchanged. Alternatively, check the ID shape in the wrapper before any await. Keep throwing for real data/commit failures.",
+          "required_test": "Unit test: call `withMetricRegistrationVisit` with the keyring set and a formId over 128 characters (or containing '/'). Assert it returns the original child, renders no `LiveMetricVisit`, and makes no DB calls (use a db spy).",
+          "confidence": 0.55
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "fallbackEvents": []
+    },
+    "funnel": {
+      "status": "BLOCKED_SENSITIVE_INPUT",
+      "executionProvider": null,
+      "observed": {
+        "model": "unknown",
+        "source": "not_reported",
+        "effort": "unknown"
+      },
+      "sourceHashesMatch": true,
+      "omissions": [],
+      "findings": [],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 0,
+        "NIT": 0
+      },
+      "fallbackEvents": []
+    },
+    "funnel-sanitized": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "sourceHashesMatch": true,
+      "omissions": [
+        {
+          "reason": "Unchanged consultation CSRF assembly omitted; not reviewed",
+          "line": 45,
+          "file": "src/app/lp/[slug]/page.tsx"
+        },
+        {
+          "reason": "Unchanged consultation CSRF assembly omitted; not reviewed",
+          "line": 56,
+          "file": "src/app/lp/[slug]/[stepPath]/page.tsx"
+        }
+      ],
+      "findings": [
+        {
+          "severity": "MAJOR",
+          "file": "src/components/metric-registration-visit.tsx",
+          "area": "withMetricRegistrationVisit lines 12-18 (issue-on-every-SSR)",
+          "issue": "Every anonymous server render of a tracked registration page runs issuance, including a locked form/live/vendor/project recheck in a transaction. Nothing visible here removes duplicate requests from the same visitor, limits request rate or filters bots. The issuance service is omitted, so it may handle this. If it does not, anyone can use up the shared 10000 cap for a live and trigger the permanent loss marker, and the per-request row locks compete with real registration submissions on the same form/live.",
+          "evidence": "The wrapper calls issueMetricRegistrationPage(getDb(), resolved) on every request once the IDs parse and LIVE_METRIC_VISITOR_KEYRING is set. It passes no visitor/cookie key and no rate-limit context. Both routes are force-dynamic, and the brief says issuance keeps the 10000 cap and a permanent loss marker, with the exact recheck done under locks. Before this change, the cap could only be reached through the live-room flow. Now an unauthenticated GET on a public, shareable URL can reach it, including link-preview crawlers, prefetches and reloads.",
+          "impact": "About 10000 cheap unauthenticated requests could permanently mark a live's visitor metric as lossy. Even normal heavy traffic (crawlers, reloads) could reach the cap early. Row locks taken on each page view could also add delay or lock timeouts to the form submission path under load.",
+          "recommended_fix": "Before treating this as accepted behaviour, confirm that issuance reuses one record per visitor/owner hint (for example, keyed on the existing funnel visitor cookie) and does not take locks the submission path needs, or uses a short lock timeout. Otherwise, pass the resolved visitorId to issuance and reuse its record, or limit issuance per visitor per live so repeated anonymous GETs cannot use up the permanent cap.",
+          "required_test": "DB test: N repeated renders of the same tracked registration page from the same visitor cookie, and from no cookie, must not use up the cap linearly, or must hit a documented limit. A concurrency test must show that issuance does not block or time out concurrent registration submission on the same form/live.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/components/metric-registration-visit.tsx",
+          "area": "lines 15-17 (await connection/getDb/issue without isolation)",
+          "issue": "An error from getDb() or issuance (lock timeout, failure inside the bounded transaction, keyring parse error) is not caught in the wrapper. It propagates and replaces the whole public registration page with an error boundary. 'Fail closed' should mean no metric is recorded, not that the registration page is unavailable.",
+          "evidence": "There is no try/catch around `await issueMetricRegistrationPage(getDb(),resolved)`. Both routes `await withMetricRegistrationVisit(...)` directly inside `withRetry(...)`, so the exception happens before the child is returned. The brief requires that existing published load/runtime/deadline/retry behaviour be preserved.",
+          "impact": "A failure in the metrics subsystem alone, such as lock contention, makes the registration page fail. That blocks registrations, which are the business path this feature is only meant to observe.",
+          "recommended_fix": "Unless issuance is confirmed to return null for every unexpected failure, catch errors around getDb/issuance in the wrapper. Log them with only primitive fields (no secret or URL) and return compose(child, null), so the same Fragment/slot shape is kept and the metric fails closed instead of the page.",
+          "required_test": "Unit test: make issueMetricRegistrationPage (and getDb) throw. Assert the wrapper resolves to the same Fragment with a null first slot and the unchanged child, and that the routes still render the registration form.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-registration-surface.ts",
+          "area": "hasMetricRegistrationForm lines 10-22; call sites in both routes",
+          "issue": "The classifier runs on every generic funnel request before the wrapper checks whether metrics are configured. It assumes `node.overrides` always exists, that `node.visible` is a real boolean (not optional with a default of true), and that getFunnelNodeDefinition always returns a definition for every node type, including on stored or legacy documents.",
+          "evidence": "`node.overrides[viewport]` throws if overrides is undefined. `!(override?.visible??node.visible)` treats an undefined `visible` as hidden. `getFunnelNodeDefinition(node.type).children` / `.category` throws if the type is unknown. In both routes, hasMetricRegistrationForm(document) is evaluated unconditionally inside the argument list, before LIVE_METRIC_VISITOR_KEYRING is checked.",
+          "impact": "If stored documents can break these assumptions, a published page that rendered before this change could now fail to render even with metrics switched off. Alternatively, a real lead form could be silently classified as hidden, causing undercounting.",
+          "recommended_fix": "Use the same normalisation and visibility defaulting as the public renderer (or call its shared helper). Guard against missing overrides and unknown definitions by returning false, not throwing. Alternatively, run the classifier only after the wrapper has confirmed metrics are configured.",
+          "required_test": "Classifier unit tests with: nodes missing overrides, nodes with `visible` undefined, an unknown node type, and a legacy document. Assert no exception, and that visibility matches the renderer for each viewport.",
+          "confidence": 0.35
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-registration-surface.ts",
+          "area": "hasMetricRegistrationForm form branch lines 16-19 / container recursion line 20",
+          "issue": "The payment-child exclusion looks only at the form's direct children. The popup-only exclusion relies entirely on popups not being in `document.root`, or on popup container types having no `children` definition. Neither assumption is checked in this code.",
+          "evidence": "`children.some(child=>getFunnelNodeDefinition(child.type).category==='payment')` does not search below the first level. There is no branch for a popup or modal node type, and the code recurses into any node whose definition has `children`. The doc comment says the classifier mirrors the renderer, but the renderer code is not supplied.",
+          "impact": "If a payment node can be nested inside a container within a form, a checkout form is counted as a registration page. If popups are root nodes with container definitions, a popup-only form is counted. Either way, visitor counts would include pages that are outside the agreed scope.",
+          "recommended_fix": "Search the form's whole subtree for payment nodes, using the renderer's own rule. Explicitly exclude popup/modal container types, or document and assert that popups are stored outside `root`.",
+          "required_test": "Classifier cases: a form with a payment node nested one container deep returns false; a form inside a popup/modal node (in whatever structure the editor actually saves) returns false; a visible lead form in mobile only returns true.",
+          "confidence": 0.3
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 1,
+        "MINOR": 3,
+        "NIT": 0
+      },
+      "fallbackEvents": []
+    },
+    "data-followup": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashesMatch": true,
+      "omissions": [],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-registration-surface.ts",
+          "area": "metricWebinarRegistrationScope guard (step.isSystem / Live.formId binding)",
+          "issue": "No supplied evidence shows the webinar-funnel path ever produces a tracked visit. The helper rejects any registration step with isSystem set. Downstream, the locked SQL requires Live.formId to equal resource.form.id. If webinar templates create the registration step as a system step, or bind a funnel form that is not the Live's own formId, every webinar registration page silently gets no collector.",
+          "evidence": "The guard includes `step.isSystem` in its early `return {}` conditions. The form gate in live-metric-visit-page.ts joins `f.id=l.\"formId\"`. The reported runs cover standalone-form rejects and the valid path. The only webinar note is that an incomplete-resource fixture is now skipped; no positive webinar issuance result is reported.",
+          "impact": "If either assumption is wrong, the visitor denominator undercounts visits to actual webinar registration pages, which inflates registration conversion. No error or loss marker shows the gap, because a skipped issuance looks the same as being out of scope.",
+          "recommended_fix": "Confirm with the funnel template or step schema that webinar_registration_page steps are created with isSystem=false and that the funnel webinar resource form is the Live's formId. If not, change the guard or binding to match the public renderer's actual registration-step rule. Do not loosen the locked SQL beyond the exact form/live/vendor check.",
+          "required_test": "In a disposable database, build a complete webinar funnel fixture using the real template or creation path, with registration and thank-you steps, a ready Live with an enabled version, and the Live's own form. Assert that metricWebinarRegistrationScope returns {formId, liveId} and that withMetricRegistrationVisit issues exactly one page row and renders the collector. Add a negative test for an isSystem registration step if that is the intended exclusion.",
+          "confidence": 0.3
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "fallbackEvents": []
+    },
+    "form-followup": {
+      "status": "REVIEW_COMPLETED",
+      "executionProvider": "claude_cli",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashesMatch": true,
+      "omissions": [],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "area": "page.tsx PublicFormPage return (withMetricRegistrationVisit call) and metric-registration-visit.tsx lines issuing via issueMetricRegistrationPage",
+          "file": "src/app/form/[slug]/page.tsx",
+          "issue": "Anyone can now trigger metric page issuance just by requesting the public, search-indexed form page. This exposes the known quota-exhaustion and serialization limitations more directly, and a metrics failure now takes down the lead-capture page.",
+          "evidence": "generateMetadata sets robots index:true and the page needs no authentication. Every GET that reaches a form with valid fields and exactly one session runs a DB transaction through issueMetricVisitPage. The task text says that transaction takes a same-live advisory lock, has a 10000-per-version quota, and writes a permanent loss marker when the quota is full. Errors are rethrown as MetricVisitorError and are not caught inside withRetry, so the form page errors out. Before this change, issuance only ran on admitted/live surfaces.",
+          "impact": "Crawlers, link-preview bots or a scripted GET loop could use up the per-version page quota. That would permanently mark the denominator as lossy, even though counting stays fail-closed. During a burst of traffic (for example, after an email blast), lock waits or pool exhaustion would show an error page instead of the registration form, so lead submissions could be lost. The task already discloses cap exhaustion and serialized pool availability as limitations, and says failures should propagate. The new part is that unauthenticated, pre-registration traffic can now hit them.",
+          "recommended_fix": "Handle this as a scope proposal, not a fix inside this task. Options: document that the existing quota and serialization limitation now applies to anonymous traffic; consider rate-limiting issuance or deferring it to the browser prepare step; or decide whether issuance failure on a form page should drop the collector instead of failing the page. Do not change this without owner approval, because propagation was requested explicitly.",
+          "required_test": "On the disposable loopback DB, simulate repeated anonymous GETs to a tracked form until the quota fills, and confirm the loss marker appears with no positive completeness. Run a concurrent burst against the same live, and record how often the form renders versus how often PERSISTENCE_UNAVAILABLE causes an error page.",
+          "confidence": 0.55
+        }
+      ],
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      },
+      "fallbackEvents": []
+    }
+  },
+  "unresolved": [
+    {
+      "severity": "MAJOR",
+      "issue": "Unauthenticated per-render issuance can exhaust the lifetime 10000/version quota and cause permanent collection loss; same-scope locks can affect registration availability.",
+      "status": "OPEN",
+      "next": "Capacity/loss lifecycle and public issuance load design plus real load validation before release; never delete unmatched source to invent completeness."
+    },
+    {
+      "severity": "MINOR",
+      "issue": "Unexpected issuance failure propagates to public registration render.",
+      "status": "OPEN",
+      "next": "Isolate analytics failures only with a durable fail-closed source-loss mechanism; swallowing errors alone would hide missing observations."
+    },
+    {
+      "severity": "MAJOR",
+      "issue": "Recorded sources do not yet distinguish registration pages from viewer pages.",
+      "status": "OPEN",
+      "next": "Persist trusted source classification; exclude viewer/unknown history from registration denominator, no historical source backfill."
+    }
+  ],
+  "initialFixes": [
+    "strict safeParse before DB",
+    "central Next connection boundary",
+    "waiting/live/replay allowlist",
+    "stable Fragment child slot"
+  ],
+  "funnelContextChecks": {
+    "normalization": "landing-page-service.ts parses saved documents; parsePageDocument schema supplies visible/overrides and validates node types/trees. Classifier receives typed normalized documents, not arbitrary saved JSON.",
+    "paymentRule": "funnel-page-document-renderer.ts:393-394 uses exactly checkout-contact or direct payment child. Recursing further would change classification relative to the current renderer.",
+    "popupRule": "PageDocument stores popups separately; classifier traverses only document.root. Popup opening/exposure remains unverified.",
+    "csrfOmission": "Exactly two unchanged consultation assembly lines omitted from Funnel review view. Product/scanner untouched; omitted lines not certified.",
+    "positiveWebinarPath": "After data followup, real createFunnelFlow/createFunnelStepPages produce a non-system registration step; actual helper feeds exact real DB form/live into issuer. Exactly one uncounted page committed, browser protocol subsequently records against it. This is not a full public loader/signed HTTP/RSC test; alternate form/live configurations remain outside this proof."
+  },
+  "wholeWp": "NOT_READY",
+  "readyGate": "NOT_REQUESTED_INCOMPLETE_REQUIREMENTS"
+}

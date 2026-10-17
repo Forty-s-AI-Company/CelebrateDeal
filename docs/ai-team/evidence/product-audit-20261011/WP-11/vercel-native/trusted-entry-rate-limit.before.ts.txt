@@ -1,0 +1,33 @@
+import { NextResponse } from "next/server";
+import { checkRateLimit as checkLegacyRateLimit } from "./rate-limit";
+import { getRequestClientIp, type ClientIpTrustConfig } from "./request-client-ip";
+import { rateLimitRequestWithIdentity } from "./live-chat-request-security";
+
+/** Entry trust is explicit; a storage/WAF provider never selects a proxy. */
+export function entryIpTrustConfig(env: NodeJS.ProcessEnv = process.env): ClientIpTrustConfig {
+  const trustMode = env.ENTRY_CLIENT_IP_TRUST_MODE;
+  const deploymentSource = env.ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE;
+  if (trustMode === "runtime" && deploymentSource === "node") {
+    return { trustMode, deploymentSource };
+  }
+  if ((trustMode === "cloudflare" && deploymentSource === "cloudflare")
+    || (trustMode === "trusted-proxy" && deploymentSource === "vercel")) {
+    return { trustMode, deploymentSource, ingressSecret: env.ENTRY_CLIENT_IP_INGRESS_SECRET };
+  }
+  return { trustMode: "none", deploymentSource: "none" };
+}
+
+/** Only WP11 callers opt in. Keep the original body untouched for redemption. */
+export async function checkRateLimit(
+  request: Request, key: string, limit: number, windowMs: number,
+  config: ClientIpTrustConfig = entryIpTrustConfig(),
+) {
+  const ip = getRequestClientIp(request, config);
+  if (!ip) {
+    return NextResponse.json({ error: "Request source unavailable" }, {
+      status: 503,
+      headers: { "Retry-After": "30", "Cache-Control": "no-store" },
+    });
+  }
+  return checkLegacyRateLimit(rateLimitRequestWithIdentity(request, ip), key, limit, windowMs);
+}

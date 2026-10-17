@@ -1,0 +1,13 @@
+{
+  "files": {
+    "src/lib/optional-metric-page.ts": "06cc6bca42e2f91f948bcd68125321c65bb9dacd9f643fefdf8354fcb9484978",
+    "src/components/metric-registration-visit.tsx": "dc87a6ddf5535d74d0bebd9ee9e6ad49c33d38f4826f6eb4624edb0955b90290",
+    "src/app/(viewer)/live/[slug]/page.tsx": "726e094616b228aef89a3dfde3b3dfb85a32bfb2ae8a32d481f97327d3b1bb50"
+  },
+  "suppliedRanges": {
+    "src/lib/optional-metric-page.ts": "Full file except any explicit credential declaration omissions",
+    "src/components/metric-registration-visit.tsx": "Full file except any explicit credential declaration omissions",
+    "src/app/(viewer)/live/[slug]/page.tsx": "Lines1-55 and126-149 only; unchanged viewer tail omitted"
+  },
+  "promptCharacters": 8783
+}

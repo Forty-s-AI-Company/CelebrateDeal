@@ -1,0 +1,218 @@
+{
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 14442,
+      "expected_duration": 0,
+      "code_surface_area": 6,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "attempts": [
+    {
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "completed": false,
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR defects in the code I was given. Every server action calls assertServerActionSecurity before requireVendorOwner, and every rule and product read or write filters by auth.vendor.id, so CSRF, owner and tenant checks look consistent. Activating a trusted-trigger rule is protected against stale reads: readiness is checked on the snapshot, and the conditional updateMany also matches on vendorId, id, isActive, version and updatedAt. Turning a rule back on increments its version, so jobs queued under the old version cannot fire again. Turning a rule off does not change its version, but the send-time active check is enough to stop it. Forged custom or generic events are blocked in four places: parseRule rejects trusted triggers, the custom form's condition and template allowlists cannot produce the guarded contracts, readiness rejects the guarded condition and templates on non-trusted triggers, and dispatchAutomationEvent returns trusted_source_required before matching any rules. Dry-run checks readiness and returns no numbers for trusted triggers. I have five lower-severity findings: built-in recipes are created active without a readiness check; nothing is shown for how existing (legacy) active trusted-trigger rules are handled; nothing stops duplicate active trusted-trigger rules; the audit log records a stale updatedAt; and the recipe product lookup is unsafe if productId is missing. The PG activation persistence check is still only planned, so this review does not qualify release, and an empty or non-blocking findings list does not certify that tests passed.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "automation-actions.ts",
+        "area": "createAutomationRecipeAction – automationRule.create isActive: recipe.isActive",
+        "issue": "Rules created from built-in recipes take isActive straight from materializeAutomationRecipe and never call automationRuleReady. The custom-rule path does check readiness, and the toggle path checks it before activation.",
+        "evidence": "createAutomationRuleAction uses `isActive: automationRuleReady(parsed)` and the toggle checks readiness before activation, but the recipe path uses `isActive: recipe.isActive` with no check.",
+        "impact": "If a recipe definition drifts from the exact trusted contract (for example an extra action, a different template or a funnelPageId), a rule that is active but not ready gets stored. The producer and send-time checks should still fail closed, but the UI would show an active rule that never sends. This is the only activation path that skips the shared readiness gate.",
+        "recommended_fix": "Use `isActive: recipe.isActive && automationRuleReady({ trigger: recipe.trigger, condition: recipe.condition, actions: recipe.actions, funnelPageId: null })`, or fail with invalid_recipe when a recipe marked active is not ready.",
+        "required_test": "Unit test: every built-in recipe that materializes with isActive=true passes automationRuleReady, and a deliberately non-conforming recipe is stored inactive or rejected.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "automation-actions.ts / automation-workflow.ts",
+        "area": "Compatibility for existing viewer_completed / checkout_incomplete rules",
+        "issue": "Older active rules on the two trusted triggers that were created with arbitrary actions or conditions stay isActive=true. Generic dispatch now refuses them (trusted_source_required) and the trusted producer only accepts the exact contract. The supplied code contains no migration, deactivation or UI marker for them.",
+        "evidence": "dispatchAutomationEvent returns trusted_source_required for these triggers before matching any rules. automationRuleReady requires exactly one send_email_notification action with completed_followup or checkout_followup and funnelPageId == null. The toggle only checks readiness when activating, so non-conforming active rules are left alone.",
+        "impact": "Merchants may see these rules as active while they silently stop running (voucher, LINE or tag actions that used to fire on viewer_completed). Once a merchant disables one, it cannot be re-enabled, which may confuse them. This is a behavior/compatibility issue, not a security issue.",
+        "recommended_fix": "Have the settings UI label active rules that fail readiness as 'inactive – needs rebuild', or add a one-time data check that deactivates and audits non-conforming trusted-trigger rules (no schema change needed). Note this in the release notes.",
+        "required_test": "Seed an older active viewer_completed rule with a voucher action. Confirm generic dispatch skips it, the producer skips it, the UI flags it as not ready, and toggling turns it off and then refuses to turn it back on.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "automation-actions.ts",
+        "area": "createAutomationRecipeAction / toggleAutomationRuleAction – trusted triggers",
+        "issue": "Nothing stops a vendor from having several active rules on the same trusted trigger (submitting the recipe twice, or enabling a second rule).",
+        "evidence": "Neither the recipe creation path nor the toggle activation path checks for an existing active rule with the same trigger and vendorId.",
+        "impact": "Unless the producer or outbox deduplicates per buyer subject across rules, a buyer could receive two or more follow-up emails for the same checkout or completion. That is a payment-adjacent annoyance and an unsubscribe/compliance risk. Whether this happens depends on how producers dedupe, which was not supplied.",
+        "recommended_fix": "Confirm that the producer dedupes per vendor, trigger and subject across rules. If it does not, reject creating or activating a second active trusted-trigger rule for the same vendor (fail('duplicate_trusted_rule')), or make recipe creation idempotent.",
+        "required_test": "Create the checkout follow-up recipe twice, then trigger one incomplete checkout. Expect exactly one claimed or sent email.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "NIT",
+        "file": "automation-actions.ts",
+        "area": "toggleAutomationRuleAction – trusted path `updated = { ...existing, ... }`",
+        "issue": "The audit 'after' snapshot for trusted-trigger toggles is built in memory from the pre-update row, so it keeps the old updatedAt.",
+        "evidence": "`updated = { ...existing, isActive: !existing.isActive, version: existing.version + ... }` is written as the audit 'after' without re-reading the row.",
+        "impact": "The audit trail shows an updatedAt that is not the one stored. Send-time guards compare version and updatedAt, so forensic matching against queued jobs could be misleading.",
+        "recommended_fix": "After a successful updateMany, re-read the row with findFirst({ where: { vendorId, id } }) and use it as the audit 'after', or leave updatedAt out of the synthesized snapshot.",
+        "required_test": "Toggle a trusted rule and confirm the audit 'after' updatedAt and version match the database row.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "automation-actions.ts",
+        "area": "createAutomationRecipeAction – product.findFirst({ where: { id: productId, ... } })",
+        "issue": "productId may be undefined when it reaches the Prisma where clause. Prisma ignores undefined filters, so the query would match any active product belonging to the vendor.",
+        "evidence": "`const productId = text(...) || undefined;` is passed straight to `where: { id: productId, vendorId, isActive: true }`. This is only safe if materializeAutomationRecipe never returns a voucher recipe without a productId, which the supplied code does not show.",
+        "impact": "This is a defense-in-depth gap only. Tenant scoping still holds, but the product check would pass for a voucher recipe that has no product.",
+        "recommended_fix": "Add `if (!productId) fail('recipe_requires_product')` before the lookup, and check the productId inside the voucher action against the product found.",
+        "required_test": "Submit a voucher recipe with an empty productId and expect recipe_requires_product.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "accepted": false
+}

@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "passed": 128,
+  "files": 15,
+  "report": ".ai-team/reports/line-multiaccount-final-unit-tests.json",
+  "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4"
+}

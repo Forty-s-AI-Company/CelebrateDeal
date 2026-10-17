@@ -1,0 +1,55 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "real worker equals canonical calculation",
+      "status": "PASS"
+    },
+    {
+      "name": "real bounded completion worker produces first-crossing candidates",
+      "status": "PASS"
+    },
+    {
+      "name": "completion load 10000 people with 18 intervals each",
+      "status": "PASS"
+    },
+    {
+      "name": "completion load 50000 people with 18 intervals each",
+      "status": "PASS"
+    },
+    {
+      "name": "oversized facts reject before starting worker",
+      "status": "PASS"
+    },
+    {
+      "name": "hard timeout terminates busy calculation and parent stays responsive",
+      "status": "PASS"
+    },
+    {
+      "name": "crash fails closed without synchronous fallback",
+      "status": "PASS"
+    }
+  ],
+  "loadMeasurements": [
+    {
+      "people": 10000,
+      "intervals": 180000,
+      "inputRows": 190000,
+      "elapsedMs": 954,
+      "status": "available",
+      "reason": null,
+      "projectionStatus": "available"
+    },
+    {
+      "people": 50000,
+      "intervals": 900000,
+      "inputRows": 950000,
+      "elapsedMs": 4679,
+      "status": "available",
+      "reason": null,
+      "projectionStatus": "available"
+    }
+  ],
+  "cleanup": "PASS",
+  "scope": "Local isolated worker threads, synthetic facts; no DB or secrets"
+}

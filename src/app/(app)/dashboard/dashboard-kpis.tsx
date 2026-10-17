@@ -1,4 +1,4 @@
-import { Badge, Card } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
 import {
@@ -103,14 +103,17 @@ function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
     { label: "排程留言腳本（設定數）", value: data.scheduledMessageCount, tone: "gray" },
   ] as const;
 
-  return (
+  // Zero activity is a display state, not evidence that the merchant is new.
+  // Preserve every metric behind a keyboard-accessible native disclosure.
+  const hasActivity = kpis.some((kpi) => typeof kpi.value === "number" && kpi.value !== 0)
+    || data.funnel.some((step) => step.count !== 0);
+  const metrics = (
     <>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         {kpis.map((kpi) => (
           <Card key={kpi.label}>
-            <p className="text-sm text-slate-500">{kpi.label}</p>
+            <p className="text-sm text-slate-600">{kpi.label}</p>
             <p className="mt-3 text-3xl font-semibold text-slate-950">{kpi.value}</p>
-            <div className="mt-4"><Badge tone={kpi.tone}>{kpi.label}</Badge></div>
           </Card>
         ))}
       </div>
@@ -132,6 +135,15 @@ function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
         </Card>
       </section>
     </>
+  );
+  if (hasActivity) return metrics;
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white p-4">
+      <summary className="min-h-11 cursor-pointer rounded-md py-3 font-semibold text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-700">
+        目前指標尚無活動資料，展開查看全部指標
+      </summary>
+      <div className="mt-3">{metrics}</div>
+    </details>
   );
 }
 

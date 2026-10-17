@@ -1,0 +1,11 @@
+# Capture transaction isolation remediation
+
+IN_PROGRESS, independent follow-up NOT_RUN. Source/runner revision sha256:6b025eaebc5f0f9beffb7a723ab08b1d3845025eb73445438de80c0b44ceea77.
+
+Implemented a generated private SAVEPOINT around capture, bounded statement/lock waits, rollback/release on SQL failure, restored caller SET LOCAL settings on success/failure. Recoverable failure returns unavailable rather than aborting registration. Failed recovery/expired outer transaction still throws; never claims a dead connection was recovered. Guard/FK rejection maps to scope-unavailable without exposing raw diagnostics. Existing captures are read before INSERT so post-verification repeats preserve original attribution.
+
+Disposable DB139 / migrations100 / lint / TypeScript / container and temp cleanup PASS. Actual SQL trigger rejection and division-by-zero tests prove the same transaction can still write and COMMIT its submission with zero capture rows. Held version FOR UPDATE causes a bounded lock timeout while the valid first submission commits. Settings restored exactly after both error cases. Known and unknown captures are retained on retries after verification. Existing assertions remain.
+
+Review responses: initial MAJOR1 addressed with actual transaction evidence; MAJOR2 failure isolation addressed without grace/bypassing guards (expiry-specific injection still NOT_RUN); MINOR post-verification retries and bounded lock waits addressed. No claim of all findings resolved. Pending: materialization pending/terminal status distinction, clock/precision checks, deletion lifecycle decision/evidence, broader lock-order review, public form/verification/session integration and reconciliation scheduler. Source review receipt services-review.json is immutable and now predates this change; not valid final acceptance for this revision.
+
+Changed files: src/lib/live-metric-registration-capture.ts; scripts/wp20-metric-persistence-disposable.mjs; evidence/handoff/goal checkpoint. Root sole writer, independent worktree, depth0, no new external dispatch; requested/effective ai-team-pro; route-savepoint.json recommendation, observed implementation unknown. No push/deployment. Rollback only this savepoint wrapper/inner-helper retry checks and new runner cases, preserving previous service and storage changes.

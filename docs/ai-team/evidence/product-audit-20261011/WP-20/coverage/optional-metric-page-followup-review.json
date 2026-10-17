@@ -1,0 +1,170 @@
+{
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_process_status": "SUCCESS",
+  "accepted": false,
+  "status": "REVIEW_COMPLETED",
+  "review": {
+    "summary": "I reviewed only the supplied text and ran nothing. The original MINOR is fixed for the review question. optionalMetricPage now logs one fixed warning before returning null: event METRIC_PAGE_OPTIONAL_UNAVAILABLE with code PERSISTENCE_UNAVAILABLE. The warning carries no IDs, routes, headers, exception data or database values. No separate counter was added, but a log pipeline can count this fixed event. The fallback is narrow: it catches only a MetricVisitorError instance with code PERSISTENCE_UNAVAILABLE, and every other error is rethrown. Public authorization still runs before the metric issuer and is not bypassed. On the viewer page that is the live lookup with the public-availability check, plus the runtime state check. On the registration surface it is the scope parse, the keyring check and the entry/ingress binding, including signature resolution through metricIngressFromRequest. All of these sit outside the callback, so their errors propagate. If getDb() throws synchronously inside the callback, the error is caught, is not the matching type, and is rethrown. Hydration and child identity are stable: the fallback renders null in the same place as the collector, so the child form or player stays in the second slot and its identity is unchanged when tracking availability changes. The collector key is unchanged, and no client component, hook or form action was added. Performance is unchanged except for one extra in-memory check, which is negligible. Not certified: the issuer's normalization and context code was not resupplied. If the issuer maps non-availability database faults (for example schema drift or constraint bugs) to PERSISTENCE_UNAVAILABLE, those faults would surface only as this warning. That should be verified in the issuer itself and is noted as a limitation, not a defect in this change. Also not certified: credential declaration lines, the omitted viewer tail, test execution, and whole-app or Goal READY. The NIT about the duplicated issuer call is still open.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "src/components/metric-registration-visit.tsx; src/app/(viewer)/live/[slug]/page.tsx",
+        "area": "optionalMetricPage callback at both call sites",
+        "issue": "The original NIT is still open. Both callers still write the issuer call twice, once with the binding argument and once without (`binding ? issue(db, scope, ..., binding) : issue(db, scope, ...)`).",
+        "evidence": "Registration: `()=>binding?issueMetricRegistrationPage(getDb(),resolved,binding):issueMetricRegistrationPage(getDb(),resolved)`. Viewer: `()=>metricBinding?issueMetricVisitPage(getDb(),{...},{kind:'viewer'},metricBinding):issueMetricVisitPage(getDb(),{...},{kind:'viewer'})`.",
+        "impact": "Maintenance only. If a future scope or argument change is made in one branch but not the other, the bound and unbound paths could silently diverge. There is no runtime, security or data-integrity effect today.",
+        "recommended_fix": "If the issuer's last parameter is optional and does not check how many arguments it received, make one call that passes the binding as possibly undefined, e.g. `issueMetricRegistrationPage(getDb(), resolved, binding)`. Otherwise, keep both calls and add a comment saying the two-argument form is intentional.",
+        "required_test": "Keep the existing unit tests for bound and unbound issuance. Assert that the issuer receives the same scope arguments with the binding present and with it undefined.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

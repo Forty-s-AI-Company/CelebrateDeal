@@ -1,0 +1,73 @@
+{
+  "status": "SCOPED_REVIEW_COMPLETED_FULL_WP_NOT_READY",
+  "serverMajor": "FIXED_AND_REREVIEWED; current120 SQL hash matches observed Opus follow-up; no BLOCKER/MAJOR in structured findings",
+  "serverFollowupCounts": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 4,
+    "NIT": 1
+  },
+  "dispositions": [
+    {
+      "area": "source expiry regression",
+      "result": "REJECTED_FOR_CANONICAL_PATH",
+      "reason": "Canonical admission renewal uses max(DB-observed prior expiry+1, now+90s); session issuance locks admission before source reads, so overlapping canonical renewals serialize. Runtime/version caps can legitimately shrink and must not be ignored. Custom lower context remains fail-closed.",
+      "evidence": [
+        "src/lib/live-quota-admission.ts:235",
+        "src/lib/live-metric-session.ts",
+        "playback-renewal-db.json:concurrentCanonicalRenewalsSerializeAndExtendOnlyOnce"
+      ]
+    },
+    {
+      "area": "closedAt reopening",
+      "result": "EXISTING_GUARD_AND_DB_PROBE",
+      "reason": "Existing wp20_metric_session_guard rejects changing non-NULL closedAt; exact raw SQL closedAt=NULL probe rejects23514.",
+      "evidence": [
+        "prisma/migrations/20261014120000_live_metric_evidence/migration.sql:506",
+        "playback-renewal-db.json:existingSessionGuardRejectsReopeningClosedSession"
+      ]
+    },
+    {
+      "area": "renew without require binding",
+      "result": "ALREADY_REJECTED_AND_TESTED",
+      "reason": "Runtime option validation precedes transaction; this earlier part of issueMetricSession was omitted from supplied excerpts.",
+      "evidence": [
+        "src/lib/live-metric-session.ts:86",
+        "src/lib/live-metric-session.test.ts",
+        "playback-renewal-unit.json"
+      ]
+    },
+    {
+      "area": "renewal churn and ledger growth",
+      "result": "DEFERRED_LOAD_AND_RETENTION_WORK",
+      "reason": "Normal client renews only within30s, same row/counter, route120/min; no hard DB minimum renewal step. Populated load and deployed retention remain unverified."
+    },
+    {
+      "area": "direct SQL lock inversion",
+      "result": "ACCEPTED_DIRECT_WRITE_RETRY_RISK_NOT_TESTED",
+      "reason": "Normal app locks Live/Form/Admission/Version/Session before Intake. Direct owner fixture updates may invert locks and abort40P01, mapped retryable; no integrity bypass claimed. No direct-write concurrency probe performed."
+    },
+    {
+      "area": "client ended/late renewal failure",
+      "result": "FIXED_TESTED_NOT_REREVIEWED",
+      "evidence": [
+        "playback-renewal-unit.json"
+      ]
+    },
+    {
+      "area": "client terminal versus complete",
+      "result": "DESIGN_INTERPRETATION_DOCUMENTED",
+      "reason": "terminal means closed/no more appends, not positive delivery/viewing coverage; actual DB complete remains authoritative. Do not force retries of already closed sessions."
+    },
+    {
+      "area": "client clock drift/foreign-writer counters and malformed JSON/408",
+      "result": "DEFERRED_MINOR; original expiry and server checks remain; no READY claim"
+    }
+  ],
+  "notCertified": [
+    "deployed app role",
+    "full HTTP/auth/helper/harness source",
+    "long-duration/live/WHEP",
+    "full WP acceptance"
+  ]
+}

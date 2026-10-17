@@ -1,0 +1,10 @@
+{
+  "files": {
+    "src/lib/live-metric-registration-surface.ts": "31b1bf0294e204d94da06551a994e07464f28467863b19ac7dc8997bc078f5f9",
+    "src/app/lp/[slug]/page.tsx": "aff02c3513a89b924db80fdad1f500e2cd97d742531d4863c2a4f4541df98163",
+    "src/components/metric-registration-visit.tsx": "6c2fec244c6954c36f90c7e2fab8d47b1ca52d4b32441e23392fa7abd653ae08",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "595b3bd30ecc3668376cf937697c1d5c12a3cf6f6822aa2b663d026b3b05a1fa"
+  },
+  "promptCharacters": 18082,
+  "scope": "registration-surface-funnel"
+}

@@ -1,0 +1,37 @@
+{
+  "at": "2026-10-16T09:35:21.336Z",
+  "revision": "sha256:38a7d87085c381435a13bfd9914fe5eaea21e69359efa180b302061ae9bfa1db",
+  "status": "READY_LOCAL_UNAVAILABLE_PRESENTATION",
+  "branch": "OWNER_SELECTED_UNAVAILABLE_PRESENTATION",
+  "whole_wp_status": "IN_PROGRESS",
+  "original_WP04_prerequisite": "NOT_VERIFIED",
+  "unit": 60,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "preservation": "PASS",
+  "review": {
+    "calls": 2,
+    "observed_models": [
+      "claude-opus-5-5",
+      "claude-opus-5-5"
+    ],
+    "observed_effort": "unknown",
+    "blocker_major": 0,
+    "retained_minor": 1,
+    "retained_nit": 4,
+    "resolved": 2
+  },
+  "changed_files": [
+    "src/app/(app)/billing/electronic-invoices/page.tsx",
+    "src/app/(app)/billing/electronic-invoices/page.test.tsx",
+    "src/components/checkout-invoice-fields.tsx",
+    "src/components/checkout-invoice-fields.test.tsx"
+  ],
+  "browser": "NOT_RUN",
+  "build": "NOT_RUN",
+  "actual_db": "NOT_RUN",
+  "provider_issue_or_mail": "NOT_RUN",
+  "remote_ci": "NOT_RUN",
+  "sms": "EVERY8D+additional_points+unchanged_base_prices;IMPLEMENTATION_DEFERRED_BY_USER",
+  "safety": "Independent worktree, synthetic mocks only; no dotenv/secrets/Production DB/customer-payment data, no provider operations/push/deploy."
+}

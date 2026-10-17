@@ -1,0 +1,206 @@
+{
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "reviewed": true,
+  "agy_discovery_process_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "I reviewed only the supplied increment and its cleanup. The seal helper correctly does the following: it locks the version FOR SHARE and the run FOR UPDATE, requires the run to be stopped, returns the existing seal on retry, and fails closed when the scope doesn't match. The parent harness also fails closed on a non-PASS runtime result, on cleanup failure and on a hash mismatch.\n\nThe main problem is that the new late-GET check can pass without proving anything. Its claim is that an actual Next late signed source cannot append after the seal. The check only shows that the counts didn't change after an HTTP 200. It never shows that the seal was the reason the write was rejected. The same result would come from: the run already being stopped, the proof or IP binding failing on a direct non-gateway request, the write being silently skipped, or the write running asynchronously after the body was drained.\n\nTwo smaller evidence problems:\n- `unmatchedInterruptedFrames` is hard-coded rather than measured.\n- The retry check does not show that the predicate itself becomes false after the seal.\n\nI found no BLOCKER issues. This does not certify the full app. The goal remains NOT_READY.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "source-seal block: lateHeader/lateResponse through checks.actualNextLateSignedSourceCannotAppendAfterSeal",
+        "issue": "The late-GET check can pass without the seal doing anything. There is no control showing the late signed request would have been accepted without the seal, and no evidence that the seal rejected it.",
+        "evidence": "`wp20_metric_ingress_source_allowed(...)` is checked as `true` only before `browser.close()` and `gateway.close()`. `gateway.close()` stops the run (the seal needs `stoppedAt` to be set). The late GET is then sent straight to `upstream`, bypassing the gateway. The only checks are `status===200` and unchanged `counts()`. Nothing checks the predicate after the stop but before the seal, the predicate after the seal, or any rejection reason (seal trigger SQLSTATE or source-module diagnostic). The source path renders 200 either way.",
+        "impact": "`actualNextLateSignedSourceCannotAppendAfterSeal='PASS'` could be produced by other rejections: the stopped run, the proof or edge/IP binding on a direct loopback request, an attestor/key lifecycle tied to the closed gateway, or a swallowed error. A regression that removes or breaks the seal trigger, or the predicate's seal clause, could still produce PASS. That overstates the data-integrity guarantee for the page/intake freeze.",
+        "recommended_fix": "Add discriminating checks: (1) after `gateway.close()` and before `sealMetricIngressSources`, assert the predicate for `late.frameId`/'registration' is still `true`; (2) after the seal, assert the same predicate is `false`; (3) record a bounded rejection reason from the source path (e.g. SQLSTATE/class only) or try a trusted direct SQL page INSERT for `late.frameId` inside a rolled-back savepoint, expecting the seal-trigger SQLSTATE. Rename the check, or downgrade the claim, if a rejection that is specific to the seal cannot be observed.",
+        "required_test": "Mutation run: disable or remove the seal clause in the trigger/predicate in the disposable DB. The late-GET step must then fail (count becomes 4 pages) or the post-seal predicate assertion must fail. With the seal intact, the predicate is true after stop and before seal, false after seal, and a seal-specific rejection is observed.",
+        "confidence": 0.72
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "lateResponse body drain followed immediately by `counts()`",
+        "issue": "The no-append check reads the counts right after the HTTP body is drained, with no proof that the source write has finished.",
+        "evidence": "`for await(const chunk of lateResponse.body)` is followed immediately by `assert.deepEqual(await counts(),{pages:3,...})`. If the page's source write runs after the response (deferred/after-response work, a fire-and-forget promise or a Suspense boundary), an append could land after `counts()` runs.",
+        "impact": "A write that was not blocked but lands late would go unnoticed, so the check could report PASS even though data integrity was violated after the seal.",
+        "recommended_fix": "Base the check on something the source path completes before responding (e.g. a bounded diagnostic or rejection record for the frame). Otherwise, re-check `counts()` and `sealMetricIngressSources` after a bounded settle interval, or after stopping Next, and assert that the values are still unchanged.",
+        "required_test": "With the seal trigger disabled, show that the probe detects the 4th page row deterministically, including when the write is deferred. Then re-assert counts after Next has stopped.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "receipt.sourceSeal construction",
+        "issue": "The receipt reports `unmatchedInterruptedFrames:1` as a fixed literal, not a value measured from the database.",
+        "evidence": "`receipt.sourceSeal={frameCount:frozen.frameCount,pageCount:frozen.pageCount,playbackCount:frozen.playbackCount,unmatchedInterruptedFrames:1}`. Nothing queries the frame outcome for `late.frameId` or confirms it has no page row.",
+        "impact": "The evidence file states a measured-looking fact that was never observed. Later readers may take it as proof that the interrupted frame is kept with no source, which the brief explicitly says must not be assumed.",
+        "recommended_fix": "Derive the value with a scoped query: frames for this run with outcome 'interrupted' and no matching page/intake row. Assert it equals 1 and that it includes `late.frameId`, both after the seal and after the late GET.",
+        "required_test": "Running the probe, the receipt value comes from the DB query and stays 1 after the late GET. A mutation that inserts a page for `late.frameId` makes the assertion fail.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "finally: nodeModulesLink cleanup",
+        "issue": "An `assert` inside `finally` can throw past the `return receipt`, so all runtime cleanup diagnostics are lost.",
+        "evidence": "`if(fs.existsSync(link)){assert.ok(fs.lstatSync(link).isSymbolicLink());fs.unlinkSync(link);...}` has no try/catch, unlike the browser, gateway and Next cleanup steps.",
+        "impact": "The run still fails closed (the parent records innerFailure). However, the runtime receipt, including the cleanup states for browser, gateway and server, is discarded, which makes cleanup failures harder to diagnose.",
+        "recommended_fix": "Wrap it like the other cleanup steps: on failure set `receipt.cleanup.nodeModulesLink='FAIL'` and `receipt.status='FAIL'` without throwing.",
+        "required_test": "Replace the link with a regular file in a disposable mirror. The probe should return a receipt with `nodeModulesLink:'FAIL'` and status FAIL, and the parent should record the runtime receipt.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "normalized_status": "REVIEW_COMPLETED"
+}

@@ -1,0 +1,20 @@
+{
+  "status": "FAIL",
+  "stage": "real-server-clock-intervals",
+  "checks": {},
+  "browser": "NOT_RUN",
+  "remoteCI": "NOT_RUN",
+  "failure": {
+    "stage": "real-server-clock-intervals",
+    "name": "MetricIngestError",
+    "code": "invalid_segment",
+    "dbCode": null,
+    "handlerFailure": null
+  },
+  "migrationStatus": "BLOCKED_OR_FAILED",
+  "migrationCount": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

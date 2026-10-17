@@ -1,0 +1,7 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-visit-reconciliation.ts": "db39ff0eace26525efbbddd3aaf9b99dbfdcd9703ad454e69d5bed4d4b06f466",
+    "src/lib/live-metric-visit-reconciliation.test.ts": "8ac71b63864dca19653838fd5d8ee885cfaf1dd5efdf625ef91addba4862088b"
+  },
+  "supplied": "only final wrong-kind isolated test assertion; product unchanged from followup review"
+}

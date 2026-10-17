@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "verified-identities", "revision": "sha256:02e739d7744fd28466202a52d797d61d1b07315b47e9287a3f1c95d97fd4566f", "status": "PASS", "exit_code": 0, "duration_seconds": 3.843}

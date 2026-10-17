@@ -1,0 +1,183 @@
+{
+  "updated_at": "2026-10-15T23:06:41.274973+00:00",
+  "status": "IMPLEMENTED_PARTIAL_WP18_NOT_READY",
+  "sourceHashes": {
+    "src/lib/checkout-followup.ts": "7638d95b005da0d5c577bf4cfd930f63886bd8e372a53a4642b84fd725e95e93",
+    "src/lib/checkout-followup.test.ts": "814251593b6b734d056089d43a4f7be73e39e721dae959234b664397c5e9f8c3",
+    "src/lib/email-delivery.ts": "3f42bc52eba290fa6de60921f881c0a41330484af965c7594f7abd87cf2499f1",
+    "src/lib/email-delivery.test.ts": "ae6de03c7d827ccfe30ad35df4c4f6b965b298e8142a2aa42be3b9584bb69d46",
+    "src/app/api/jobs/email-deliveries/route.ts": "8a58e97255db6d9129be5b525cac34a38c22e7c6cff208e4527e8592bb05304c",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "173f091543a2d4b4766c670614053668d871f5372a58aa510e6a75619500d357",
+    "src/lib/completed-followup.ts": "c1a918a9b2ef7b54f76f87bf0549957298b4d952db91cc4eeaa9901ec00fbb41",
+    "src/lib/completed-followup.test.ts": "875bad0c9a42f2a63778873305cd737bd653b8871f67a57e023526ff1599a0ac"
+  },
+  "reviewSourceApplicability": "Exact final reviewed snapshot or proven line-ending-only equivalence; no semantic changes after qualified final review. Prior integration reviewed unchanged atomic queue loop; final affected source/candidate fixes reviewed separately.",
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "tests": 112,
+      "files": 4,
+      "evidence": "completed-followup-unit.json"
+    },
+    "checkoutQueueRegression": {
+      "status": "PASS",
+      "tests": 22,
+      "files": 1,
+      "evidence": "completed-checkout-queue-regression.json"
+    },
+    "actualPostgres": {
+      "status": "PASS",
+      "checks": 16,
+      "evidence": "completed-followup-db.json",
+      "scopeClarification": "completed-db-scope-clarification.json",
+      "source": "Actual existing ingress/coverage/isolated worker/completion producer and existing Email dispatcher; no hand-authored completion facts",
+      "emailNetwork": "STUBBED .test recipients; no provider delivery claim",
+      "migrations": 131,
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    },
+    "typecheck": {
+      "status": "PASS",
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "session": 34702
+    },
+    "scopedLint": {
+      "status": "PASS",
+      "files": [
+        "src/lib/checkout-followup.ts",
+        "src/lib/checkout-followup.test.ts",
+        "src/lib/email-delivery.ts",
+        "src/lib/email-delivery.test.ts",
+        "src/app/api/jobs/email-deliveries/route.ts",
+        "src/app/api/jobs/email-deliveries/route.test.ts",
+        "src/lib/completed-followup.ts",
+        "src/lib/completed-followup.test.ts"
+      ],
+      "exitCode": 0,
+      "session": 76126
+    },
+    "diffCheck": "PASS",
+    "wholeWP18Gate": "NOT_RUN",
+    "browserE2E_axe": "NOT_RUN",
+    "remoteCI": "NOT_RUN",
+    "SMTP_LINE_SMS_providerDelivery": "NOT_RUN"
+  },
+  "reviews": [
+    {
+      "file": "completed-source-review.json",
+      "status": "REVIEW_BLOCKED",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown",
+        "source": "not_reported"
+      },
+      "attempts": [
+        {
+          "model": "claude-opus-5-5-high",
+          "status": "RATE_LIMITED",
+          "exitCode": 3,
+          "provider": "agy_wrapper"
+        },
+        {
+          "model": "claude-opus-5-5",
+          "status": "CLAUDE_CLI_RUNTIME_ERROR",
+          "exitCode": 0,
+          "provider": "claude_cli"
+        }
+      ]
+    },
+    {
+      "file": "completed-integration-review.json",
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 3,
+        "MINOR": 3,
+        "NIT": 0
+      }
+    },
+    {
+      "file": "completed-source-focused-review.json",
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 1,
+        "MINOR": 4,
+        "NIT": 0
+      }
+    },
+    {
+      "file": "completed-fixed-review.json",
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 2,
+        "MINOR": 1,
+        "NIT": 0
+      }
+    },
+    {
+      "file": "completed-final-review.json",
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 1,
+        "NIT": 0
+      }
+    }
+  ],
+  "findingDispositions": {
+    "integrationMAJOR1": "SQL excludes malformed IDs/key length and missing/mismatched submission scope before LIMIT; real model submissionId is NOT NULL with cascading FK. Legitimately skipped locks remain replayable; no guard-disabling orphan fixture.",
+    "integrationMAJOR2": "Original source already resolves fresh completion; now drops original-report-row dependency. Current content, source revisions, complete projection and recipient epoch revalidated; actual turnover PG NOT_RUN, source/qualified review and mocked-fresh-reference unit only.",
+    "integrationMAJOR3": "Context gap disproved by actual full-row claim with required keys/hash and real producer->outbox->dispatcher PASS. Hash contract is existing HMACSHA256/base64url43, no novel identity scheme.",
+    "sourceMAJOR": "Any vendor-owned related payment by primary id or orderNumber can establish an order; unclassified NULL-hash non-draft orders make absence unavailable. Real no-primary/non-primary PG checks PASS. No unrelated buyer envelopes decrypted.",
+    "fixedMAJOR1": "Vendor-wide normalized-email attribution consistent with customer-key branch, including other lives and primary/secondary attempts; actual cross-live positive and different-email control PASS.",
+    "fixedMAJOR2": "Candidate and source both SET LOCAL UTC, actual Asia/Taipei connection positive selection/source check PASS.",
+    "fixedMINORjson": "CASE guards every numeric cast/array length independently of SQL qualifier order. Producer guards kept intact; no malformed persisted-row PG claim.",
+    "finalMINOR": "RETAINED conditional legacy/manual Email normalisation difference. Current application writes canonical email via normalizeBlacklistIdentifier in form-submissions route, using same JS trim/lower before stableSubmissionId and persistence. Only application FormSubmission create paths found there. Historical/manual noncanonical data NOT_VERIFIED; no new cleanup/normalisation framework.",
+    "otherKnownLimits": "Per-submission dedup; ordinary public API stableSubmissionId already coalesces same-form/live/canonical-email submissions. Arbitrary legacy duplicate submissions not merged. Materializer retry window7days/cooldown5min; outbox retry cap5. Load not benchmarked."
+  },
+  "failedAttempts": {
+    "wholeSourceReview": "AGY RATE_LIMITED then CLAUDE_CLI_RUNTIME_ERROR, no verified observed model or PASS; later4qualified scoped calls observed actual Opus. No router changes.",
+    "firstPG": "FAIL after actual producer/source checks, insufficient error scope; retained first-attempt receipts.",
+    "diagnosticPG": "FAIL with queued/superseded/duplicate and P2002. Actual product bug: report/rule/version outbox key shared by different recipients. Added submissionId to key and a distinct-recipient unit assertion; receipt fault now triggers and later real PG PASS.",
+    "intermediateUnit": "One mock type mismatch and later set_config matcher ordering were fixed in tests, without weakening source assertions; current tsc/unit PASS."
+  },
+  "scopeReconciliation": "completed-scope-reconciliation.json",
+  "goal": {
+    "complete": 9,
+    "total": 20,
+    "percent": 45
+  },
+  "remaining": [
+    "Enable supported new triggers/templates through dedicated trusted producers; generic dispatch must not bypass guards",
+    "Original3recipe end-to-end flows;Sandbox/LINE enqueue and unsubscribe/dedup requirements",
+    "Required checkout HTTP E2E/axe;WP04 final dependency;wholeWP18 canonical gate"
+  ],
+  "safety": "Independent efb8b7e9 worktree only; original dirty tree read-only instructions/audit only, no modifications; no .env/formal secrets/customer data reads;owned disposable loopback synthetic data; no real sends/push/deployment/schema/metrics writer/router/runner changes",
+  "ownership": "root sole writer; external reviews read-only sequential;parentDepth0/maxDepth1/maxParallel1/automaticSpawnfalse; router advisorySol/xhigh, root observedunknown"
+}

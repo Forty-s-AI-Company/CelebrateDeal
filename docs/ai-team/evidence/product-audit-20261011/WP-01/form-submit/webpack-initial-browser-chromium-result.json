@@ -1,0 +1,38 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "label": "project-unpublished",
+      "httpStatus": 404,
+      "notFoundUi": true,
+      "noindex": true,
+      "authoredContentAbsent": true,
+      "merchantReasonsAbsent": true
+    },
+    {
+      "label": "published-root",
+      "httpStatus": 200,
+      "authoredContent": true,
+      "formVisible": true
+    }
+  ],
+  "axe": [
+    {
+      "label": "merchant-diagnosis",
+      "scope": "[aria-label=\"公開網址狀態\"]",
+      "violations": []
+    },
+    {
+      "label": "published-root",
+      "scope": "whole-page",
+      "violations": []
+    }
+  ],
+  "restored": false,
+  "stage": "actual-form-submit",
+  "errorType": "Error",
+  "assertionCode": null,
+  "stackLocation": "    at submit (WORKTREE\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-01\\form-submit\\browser.cjs:36:556)",
+  "contextRequired": false,
+  "cleanupFailed": true
+}

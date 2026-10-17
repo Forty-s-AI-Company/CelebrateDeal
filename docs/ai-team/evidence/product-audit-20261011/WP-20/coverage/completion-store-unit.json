@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "tests": 7,
+  "scope": "store mocks and projection tests; no actual DB store integration",
+  "files": {
+    "src/lib/live-metric-completion-store.ts": "29e177f55159d480377fc3d84de8805aa2cb3ff62a4968489eb834d030e4d4d5",
+    "src/lib/live-metric-completion-store.test.ts": "12c731265ab5b415abbcfdab37e396749b4e3b9df7d3242c8ead753b5fa9c4dd"
+  },
+  "full_typecheck": "NOT_RUN",
+  "independent_review": "NOT_RUN"
+}

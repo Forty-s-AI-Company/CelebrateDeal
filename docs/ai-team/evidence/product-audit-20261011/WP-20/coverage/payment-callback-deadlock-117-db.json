@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual signed callback with forced database deadlock, one synthetic affiliate order; original synchronized20 gate is separate",
+  "deadlock": {
+    "status": "PASS",
+    "attempts": [
+      {
+        "status": "ABORTED",
+        "retryable": true,
+        "stage": "ORDER_TRANSITION",
+        "deadlock": true,
+        "code": "UNKNOWN"
+      },
+      {
+        "status": "COMMITTED"
+      }
+    ],
+    "callbackBlocked": true,
+    "sideCommitted": true,
+    "httpStatus": 200,
+    "cardinality": {
+      "paymentAudits": 1,
+      "commissions": 1,
+      "ledgerEntries": 1,
+      "processedEvents": 1,
+      "paidOrderEvents": 1
+    }
+  },
+  "counts": {
+    "payments": 1,
+    "orders": 1,
+    "entitlements": 1,
+    "commissions": 1,
+    "ledgerEntries": 1,
+    "events": 1,
+    "paymentAudits": 1
+  }
+}

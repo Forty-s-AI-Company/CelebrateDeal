@@ -1,0 +1,184 @@
+{
+  "reviewed": true,
+  "review": {
+    "summary": "Scope reviewed: only the supplied text. That covers src/lib/live-metric-playback-intake-audit.ts (full), the changed integration excerpts of src/lib/live-metric-viewing-source-audit.ts, and migration 20261016090000_live_metric_private_viewing_pages. The prior MAJOR looks resolved in the supplied text. Both the intake joins and the session/registration/identity/interval joins now run inside SECURITY DEFINER functions with row_security=off. A definer that cannot bypass RLS gets an error instead of partial rows, so neither the session-hidden nor the FormSubmission-hidden case can silently drop rows. Other checks: (1) search_path is pg_catalog,pg_temp with pg_temp last, and all tables are qualified with public. (2) Arguments and the 1–501 limit are checked before the query runs. (3) Access is revoked from PUBLIC and from the anon, authenticated and service_role roles if they exist. (4) The aclexplode check fails if any non-owner, including PUBLIC, still has access. (5) STABLE functions inside the caller's repeatable-read transaction share one snapshot. (6) Both RETURN QUERY column lists match the declared column order. (7) The intake classifier labels whole_version and pre_window_expired correctly, and a permanent quotaLoss stays separate from it. (8) The source digest leaves out asOf. The intake and parent classification digests bind asOf, outcomes, quotaLosses and earliestLossAt. The page and row budgets are shared. I found no BLOCKER or MAJOR. Two conditional MINOR items remain: duplicate keys under the pagination order depend on schema uniqueness that wasn't supplied, and the access boundary depends on a later EXECUTE grant that wasn't reviewed. Not reviewed or certified: the unchanged session classifier, accumulation and catch code, the provenance and intake_revision functions, the Prisma schema and constraints, the test harness, deployed roles and grants, signed HTTP/live/WHEP behaviour, long soak, and FullWP, proof, fences, scheduler and load. Those, plus the original synchronized20 gate result (7 successes, 13 failures), remain NOT_READY. Output stays recorded_only with coverage unknown. This is not all-URL or cohort closure and does not prove a working producer.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016090000_live_metric_private_viewing_pages/migration.sql",
+        "area": "wp20_metric_playback_intake_page LEFT JOIN LiveMetricSession / ORDER BY i.id; wp20_metric_viewing_page ORDER BY s.id,coalesce(i.sequence,-1)",
+        "issue": "Pagination is correct only if the sort keys are unique. The intake page sorts by i.id and resumes with i.id>cursor, but the LEFT JOIN to sessions on intakeId can return several rows per intake if intakeId isn't unique. The viewing page has the same exposure on (sessionId, sequence) for intervals. The supplied migration doesn't create or check either uniqueness rule, and the schema wasn't supplied.",
+        "evidence": "The intake keyset uses only i.id while the session join is one-to-many unless constrained. TS keeps cursor=last.id, so the next page skips any remaining rows with the same i.id. If duplicates straddle a page boundary, the intake's revision is still counted once and can match expectedRevision, while the second session row is never classified or hashed.",
+        "impact": "If those uniqueness rules are missing, an intake with two sessions, or two intervals with the same sequence, can be silently left out of outcomes and the source digest. Duplicates inside one page only inflate the revision and fail closed.",
+        "recommended_fix": "In this migration, check that unique indexes or constraints exist on LiveMetricSession(\"intakeId\") and on LiveMetricInterval(\"sessionId\",sequence), and raise an error if they don't. Alternatively, make the ORDER BY and cursor fully unique (e.g. i.id,s.id) and have the TS code reject repeated keys.",
+        "required_test": "Disposable DB: try to insert two sessions for one intake and two intervals with the same sequence. Either the constraint rejects them, or with pageSize set so the duplicate straddles a page boundary, the audit returns unavailable or counts both rows.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016090000_live_metric_private_viewing_pages/migration.sql",
+        "area": "REVOKE/ACL assertion block; function WHERE clause (no caller-tenant check)",
+        "issue": "The access boundary depends entirely on a later EXECUTE grant that isn't in the supplied scope. The functions accept any vendor/live/version tuple and read with row_security=off, so whichever role is granted EXECUTE can read pseudonymous session, identity and interval data for every tenant. The ACL check runs only at migration time.",
+        "evidence": "There is no GRANT and no check on the intended audit role, and nothing checks the caller's tenant. The task states the deployed role is unverified, and the supplied parent code runs the call under the primary application transaction.",
+        "impact": "If EXECUTE is later granted to the general application or Prisma runtime role rather than a dedicated audit role, any code path on that connection could read data across tenants. This is a deployment and scope risk, not a defect in the authorized task.",
+        "recommended_fix": "Scope proposal: grant EXECUTE only to a dedicated NOLOGIN audit role held by a dedicated login. Add a deploy or startup check that the function ACL equals {owner, audit role}, prosecdef is true, and proconfig still contains the row_security=off and search_path settings.",
+        "required_test": "Deployment check against the real DB role: the general application role gets permission denied on both functions, the audit role can call them, and the ACL check fails if any other grantee appears.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 20000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 0,
+      "provider": "agy_wrapper",
+      "status": "INVALID_REVIEW"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5",
+  "accepted": false,
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  }
+}

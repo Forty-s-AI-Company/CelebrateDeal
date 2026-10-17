@@ -1,0 +1,84 @@
+{
+  "wp": "WP-15",
+  "status": "READY",
+  "revision": "sha256:9819852c9f416fce4e20a7527dbe537bc7004f9a620137daed83d41608f63765",
+  "product_files": [
+    "src/components/app-shell.tsx",
+    "src/app/(app)/dashboard/dashboard-kpis.tsx",
+    "src/app/(app)/layout.tsx",
+    "src/app/actions/registration-actions.ts",
+    "src/app/actions/sales-workspace-actions.ts",
+    "src/app/(app)/billing/plans/page.tsx",
+    "src/components/landing-pages/funnel-operations-panel.tsx"
+  ],
+  "tests": [
+    "src/app/(app)/dashboard/dashboard-kpis.test.tsx",
+    "src/app/(app)/layout.test.tsx",
+    "src/app/actions/registration-actions.test.ts",
+    "src/app/actions/sales-workspace-actions.test.ts",
+    "src/app/(app)/billing/plans/page.test.tsx",
+    "src/app/(app)/billing/plans/page.source-attribution.test.tsx",
+    "src/components/landing-pages/funnel-operations-panel.test.tsx",
+    "src/components/app-shell.test.ts"
+  ],
+  "artifact_scope": "WP-15 evidence directory and launch handoff; see snapshot-current.json for exact validated sources",
+  "validation": "78tests;7requiredchecks;92browserstates plus6supplemental;full loginE2E notrun",
+  "residual_findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "area": "約 L229-L235：新增的步驟清單包裹 div",
+      "issue": "新增的包裹 div 是 `${mobileStepsOpen ? \"flex\" : \"hidden\"} min-h-0 flex-col lg:flex`，沒有 `flex-1`。內層清單原本靠 `min-h-0 flex-1 overflow-auto` 在受限高度的 flex 父層內捲動，現在 flex-1 只作用在包裹層裡面。包裹層會長到內容高度，內層的 overflow-auto 就失去作用。",
+      "evidence": "修改前：`<div className=\"min-h-0 flex-1 divide-y ... overflow-auto\">` 是父層 flex column 的直接子元素。修改後它被包進 `<div className=\"... min-h-0 flex-col lg:flex\">`，而這個包裹層沒有 flex-1／h-full。桌面用 `lg:max-h-none` 拿掉了高度上限，桌面上沒有任何東西限制清單高度。",
+      "impact": "桌面版（未被聲明要改動）步驟很多時，清單可能撐破側欄高度。如果父層有 overflow-hidden 或固定高度，下方的步驟和包裹層內其他元素（L232-234）會被裁切或無法捲動到。若父層確實限制了高度，應升級為 MAJOR。52 個 operations/editor 測試很可能是 JSDOM，無法偵測這類佈局問題。",
+      "recommended_fix": "包裹層加上 `lg:flex-1`（或 `flex-1`）。也可以只在手機套用 `hidden`，桌面維持原本的 DOM 結構。",
+      "required_test": "在桌面 viewport（≥1024px）建立 15 個以上步驟，確認清單在側欄內可捲動、最後一個步驟和底部操作都能捲到並點擊，與 WP15 前的截圖比對。",
+      "confidence": 0.5
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/app/(app)/dashboard/dashboard-kpis.tsx",
+      "area": "L112 `grid grid-cols-2 gap-3 xl:grid-cols-5`",
+      "issue": "手機原本是單欄，現在 320–390px 寬也固定兩欄。有活動資料時，金額類 KPI 的長字串（例如七位數金額）放在約 140px 寬的卡片中，可能溢出或被截斷。",
+      "evidence": "修改前：`grid gap-4 md:grid-cols-2 xl:grid-cols-5`（手機單欄）。修改後：`grid grid-cols-2 ...`。firstviewport 的 6 項測試著重在首屏；從描述看不出有測過非零的大數值。",
+      "impact": "有實際營運資料的商家在手機上可能看到數值溢出卡片、與相鄰卡片重疊，或出現水平捲動。",
+      "recommended_fix": "把數值設為 `min-w-0 break-words` 或 `truncate`，並調整字級（例如 `text-xl sm:text-2xl`）。也可以在最窄寬度維持單欄（`grid-cols-1 min-[400px]:grid-cols-2`）。",
+      "required_test": "在 320px 與 375px viewport 填入大數值（如 TWD 12,345,678、99.9%），確認 KPI 卡片沒有溢出、重疊或水平捲動，並重跑 axe。",
+      "confidence": 0.45
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/app/(app)/billing/plans/page.tsx",
+      "area": "L16-L20 formatPlanCurrency",
+      "issue": "（保留自先前審查）`TWD ${formatCurrency(cents)}` 直接加在已帶有 `$` 符號的格式前面，會顯示「TWD $1,000」這種重複的貨幣標示。",
+      "evidence": "註解寫明 `disambiguate the dollar symbol`，可知 formatCurrency 的輸出已包含 `$`；包裝函式沒有移除這個符號。",
+      "impact": "視覺上冗餘，螢幕閱讀器可能讀成「TWD dollar 1,000」。這也不是一致的 TWD 格式（標準寫法是 NT$ 或 TWD 加純數字），只做到部分釐清。",
+      "recommended_fix": "改用 `Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD' })`，或用不帶符號的數字格式加上「TWD」前綴。捨入規則維持不變。",
+      "required_test": "方案頁 snapshot／單元測試：月費、金流月費、四項超量單價的輸出都只出現一次貨幣標示，且數值與修改前相同。",
+      "confidence": 0.7
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+      "area": "約 L229 手機步驟切換按鈕；selectStep 呼叫處",
+      "issue": "切換按鈕有 aria-expanded 卻沒有 aria-controls 指向被控制的區域。手機上選了步驟後清單不會自動收合，編輯區被 max-h-60 的清單往下推。",
+      "evidence": "`<button type=\"button\" aria-expanded={mobileStepsOpen} onClick={() => setMobileStepsOpen(...)}>`，沒有 aria-controls，被控制的 div 也沒有 id。步驟按鈕的 `onClick={() => selectStep(step.id)}` 不會呼叫 setMobileStepsOpen(false)。",
+      "impact": "輔助技術使用者無法得知按鈕控制哪個區域。手機使用者選完步驟後，還得自己收合或捲動才能看到剛選步驟的設定，削弱了 WP15 的手機首屏目標。",
+      "recommended_fix": "給被控制的容器加 id，按鈕加 aria-controls。在手機尺寸下選擇步驟後呼叫 setMobileStepsOpen(false)，並把焦點移到編輯區標題或切換按鈕。",
+      "required_test": "在 375px 瀏覽器用鍵盤展開清單、選擇第二個步驟，確認清單收合、摘要文字更新、焦點位置合理，且 aria-controls 對應到存在的 id。",
+      "confidence": 0.55
+    },
+    {
+      "severity": "NIT",
+      "file": "src/app/actions/sales-workspace-actions.ts",
+      "area": "L33、L79、L100、L163；registration-actions.ts L45；layout.tsx L56；app-shell.tsx L149",
+      "issue": "（保留自先前審查）預設值 `taskPanelCollapsed: true` 在 7 處重複硬編碼。schema 預設值應該仍是 false（本 WP 不改 schema），之後新增的建立路徑很容易漏寫。",
+      "evidence": "四個 upsert 的 create 區塊、registration create、layout 的 `?? true`、AppShell 的參數預設值都各自寫了 true。",
+      "impact": "維護風險：之後新增的 create 路徑如果漏寫，會默默得到展開的預設值，違反「預設收合」。",
+      "recommended_fix": "抽出共用常數（例如 `DEFAULT_TASK_PANEL_COLLAPSED = true`）或 helper 函式 `onboardingPreferenceCreateDefaults()`，並集中引用。",
+      "required_test": "單元測試：每條建立 userOnboardingPreference 的 action 路徑新建的列都是 taskPanelCollapsed=true；已存在且為 false 的列在各 update 路徑下都保持 false。",
+      "confidence": 0.6
+    }
+  ],
+  "no_commit_push_deploy": true
+}

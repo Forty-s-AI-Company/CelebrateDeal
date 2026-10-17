@@ -1,0 +1,183 @@
+{
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "accepted": false,
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-sonnet-5-5"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "review": {
+    "summary": "Scoped read-only review of the supplied FunnelElementInspector / ActionFields code. In the text provided, the stale-target guard is consistent: actionTargetState drives both the disabled button and the apply() handler for show_popup and next_step, and an empty stepIds array is handled (select disabled, any stepId is missing, empty stepId is invalid). The remount key includes node.id plus the serialized node.actions, so same-node undo/redo or external action changes reseed the draft. I found no BLOCKER or MAJOR defects in the supplied text. Remaining items are MINOR/NIT and depend on code not supplied (the lib helper and the FunnelNode type). The 52 browser state checks are described only as underway, and the pre-extraction version passed. I saw no result for this refactored version, so this review does not certify test or release success.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "FunnelElementInspector (ActionFields)",
+        "area": "set() / apply() passing the full draft `action` to createFunnelInspectorActionUpdate",
+        "issue": "Draft state keeps fields from previously selected action types (popupId, stepId, href, formId) after the user switches the type. The whole draft object is passed to createFunnelInspectorActionUpdate. Correctness depends on that helper stripping fields that do not belong to the selected type.",
+        "evidence": "set() spreads `current` and only overwrites one key. The type select calls set(\"type\", ...) without clearing other keys. apply() passes `action` unfiltered. actionTargetState also computes missingPopup/missingStep without regard to action.type, though invalidTarget correctly gates by type.",
+        "impact": "If the lib helper does not whitelist fields per type, a stale popupId or stepId could be persisted on an open_url or none action. That would reintroduce dangling references that the repair aims to eliminate. Not provable from the supplied text.",
+        "recommended_fix": "Normalize the draft by type before applying (reuse the initialAction-style switch), or clear irrelevant keys when the type changes. Alternatively, assert in the lib helper that it emits only type-relevant fields.",
+        "required_test": "Start from a show_popup action with a stale popupId, switch to open_url with a valid href, apply, and assert the emitted command's action contains no popupId. Do the same for next_step to none.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "MINOR",
+        "file": "FunnelElementInspector (ActionFields / FunnelElementInspector)",
+        "area": "initialAction(node) vs key `node.actions ?? []`",
+        "issue": "The null-safety assumptions are inconsistent. initialAction dereferences `node.actions[0]` directly, while the remount key defensively uses `node.actions ?? []`.",
+        "evidence": "`const action = node.actions[0];` in initialAction versus `JSON.stringify(node.actions ?? [])` in the key.",
+        "impact": "If FunnelNode.actions can be undefined (as the `??` suggests), opening the actions tab throws during render for such nodes. If it can never be undefined, the `??` is dead code and misleading.",
+        "recommended_fix": "Use `node.actions?.[0]` in initialAction, or drop the `??` if the type guarantees an array.",
+        "required_test": "Render the inspector's actions tab with a node whose actions is undefined (or confirm by type that it cannot be) and assert no throw and a default `none` selection.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "NIT",
+        "file": "FunnelElementInspector (ActionFields)",
+        "area": "status paragraphs near the next_step field",
+        "issue": "For next_step with an empty stepIds array, two role=\"status\" messages render at once (no selectable steps, and choose a valid target). Separately, switching inspector tabs unmounts ActionFields, so an unsaved draft is lost without notice.",
+        "evidence": "`action.type === \"next_step\" && stepIds?.length === 0` and `invalidTarget` both render when stepId is empty. ActionFields is mounted only when group === \"actions\".",
+        "impact": "Redundant announcements for screen-reader users. Silent loss of an unapplied draft on tab switch. Neither is a data-integrity risk.",
+        "recommended_fix": "Show only the empty-steps message when stepIds is empty, or merge the two. Optionally keep the draft state in FunnelElementInspector, or document the discard behavior.",
+        "required_test": "With stepIds=[] and a next_step action, assert exactly one status message is present. Optionally edit the draft, switch tabs and return, and assert the intended behavior.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "medium",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-sonnet-5-5"
+    }
+  ],
+  "finalModel": "claude-sonnet-5-5"
+}

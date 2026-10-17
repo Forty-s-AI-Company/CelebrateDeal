@@ -1,0 +1,31 @@
+{
+  "scope": "This Next/seal integration increment only",
+  "sourceHashes": {
+    "scripts/wp20-next-runtime-disposable.mjs": "1bdcdf202f8333db253e03c0cd044e20b8e2a8db3e3e9c15270444d3101b9c32",
+    "scripts/wp20-next-runtime-probe.mjs": "77d5d69c8ec552a690c93ce17aa7e911c498330ce047ac68bc9235233237baab",
+    ".ai-team/reports/wp20-next-seal-route.py": "4a338fe4b6c761b59b7159dd934955bc54abfe1d2b604062c085b1ed59f964ff",
+    ".ai-team/reports/wp20-next-seal-review.ps1": "81984f4ae64a67845196689ff4e3b83ed130de7969eda0415788f4a15943e2b0",
+    ".ai-team/reports/wp20-next-seal-validate.py": "7883f474fb6f5fbf1dae27500dbfe2b53b2f8aa198bb1a0bb25f2c571115ec62",
+    ".ai-team/reports/wp20-next-seal-checkpoint.py": "f6eedf5b4432d45567df880241c1bd54a452ae88f2ffca500971e503a10d09bb",
+    "docs/launch/wp20-next-source-seal.md": "a0d2ecf53ae281764621309543981ed69491c0c97c2e109f224813eb6acf931a",
+    "docs\\launch\\product-audit-20261012-handoff.md": "16a25eb5a2c521d74a6a799388452e6c75983493c1bad7bc0a8abc43b8d8466c",
+    "docs\\launch\\product-audit-20261011-progress.md": "516409f8e70333017bb7dc465501e14a5fe714da71ca7cdbd1060b7e8664f9a1"
+  },
+  "otherChangedPaths": [
+    ".ai-team/state/goal-state.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-before-discriminating-control-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-checkpoint.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-control-syntax-failure.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-current-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-current-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-db.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-failure-disposition.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-followup-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-followup-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-initial-route.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-review-source.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-review.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-route.json",
+    "docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/next-seal-validation.json"
+  ]
+}

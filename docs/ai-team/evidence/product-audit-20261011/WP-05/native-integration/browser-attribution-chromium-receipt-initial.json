@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "browser-attribution-chromium", "revision": "sha256:1b08fd3674c05bd1918d05156e49200803f68422ce26d2d6e7be2e6177338f96", "status": "FAIL", "exit_code": 1, "duration_seconds": 36.829}

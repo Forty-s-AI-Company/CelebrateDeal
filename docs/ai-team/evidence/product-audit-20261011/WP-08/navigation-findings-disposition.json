@@ -1,0 +1,11 @@
+{
+  "landing_pages_name": "Retain established sidebar product terminology from original WP06 and F11 consistency requirement. Multi-step description retained; do not imply single static page. MINOR terminology concern retained for product glossary, not a new scope/authorization blocker.",
+  "role_test": "Existing AppShell tests already assert owner/admin/accountant/support, platform admin and feature gating; new title test has intentionally separate responsibility. Reviewer only received the new test excerpt.",
+  "fixed": [
+    "video title now video-specific",
+    "team link aligned",
+    "aria whitespace removed",
+    "literal title match cardinality asserted"
+  ],
+  "review_packet_gap": "settings/features line omitted due input filter; remains outside prior review coverage"
+}

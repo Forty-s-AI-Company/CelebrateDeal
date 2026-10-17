@@ -83,6 +83,10 @@ model Vendor {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  metricOrderSources               LiveMetricOrderSource[]
+  metricOrderTenantSources         LiveMetricOrderTenantSource[]
+  metricOrderWindowSources LiveMetricOrderWindowSource[]
+  metricRegistrationSources        LiveMetricRegistrationSource[]
   members                          VendorMember[]
   tracking                         TrackingSetting?
   videos                           Video[]
@@ -172,8 +176,8 @@ model Vendor {
   livePrivateChatMessages          LivePrivateChatMessage[]
   liveNotificationRules            LiveNotificationRule[]
   emailSuppressions                EmailSuppression[]
-  lineRichMenuDraft                 LineRichMenuDraft?
-  lineOfficialAccount              LineOfficialAccount?
+  lineRichMenuDraft                 LineRichMenuDraft[]
+  lineOfficialAccount              LineOfficialAccount[]
   lineUserIdentities               LineUserIdentity[]
   lineLoginStates                  LineLoginState[]
   lineDeliveries                   LineDelivery[]
@@ -362,6 +366,7 @@ model Video {
 
   @@unique([vendorId, id])
   @@index([thumbnailAssetId])
+
 }
 
 /// Durable tenant-scoped state used to restore a video to the provider/local
@@ -566,6 +571,9 @@ model FormSubmission {
   @@index([liveId, verificationStatus, createdAt])
   @@index([affiliateClickId])
   @@index([formId, customerKeyHash, createdAt])
+  metricRegistrations LiveMetricRegistration[]
+  metricCapture LiveMetricRegistrationCapture?
+
 }
 
 enum FormSubmissionVerificationStatus {
@@ -654,6 +662,8 @@ model Live {
   @@index([heroImageAssetId])
   @@index([vendorId, status, replayAvailableUntil])
   @@index([vendorId, projectId, status])
+  metricVersions LiveMetricVersion[]
+
 }
 
 /// Private WHIP/WHEP resources. Never expose upstream session URLs to viewers.
@@ -738,6 +748,7 @@ model LiveViewerSession {
 
   @@index([vendorId, liveId, expiresAt])
   @@index([liveId, expiresAt])
+
 }
 
 model LiveProduct {
@@ -785,7 +796,9 @@ model MessageTemplate {
 /// channel identifiers, is encrypted at rest with a vendor/field-specific AES-GCM key.
 model LineOfficialAccount {
   id                              String    @id @default(cuid())
-  vendorId                        String    @unique
+  vendorId                        String
+  displayName                     String    @default("LINE 官方帳號")
+  isDefault                       Boolean   @default(false)
   messagingChannelIdEncrypted     String
   messagingChannelSecretEncrypted String
   messagingAccessTokenEncrypted   String
@@ -799,6 +812,10 @@ model LineOfficialAccount {
 
   vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   deliveries LineDelivery[]
+  projects SalesProject[]
+  identities LineUserIdentity[]
+  loginStates LineLoginState[]
+  richMenuDrafts LineRichMenuDraft[]
 
   @@unique([vendorId, id])
   @@index([status, updatedAt])
@@ -810,6 +827,7 @@ model LineOfficialAccount {
 model LineUserIdentity {
   id                    String    @id @default(cuid())
   vendorId              String
+  lineOfficialAccountId String?
   subjectType           String
   subjectId             String
   lineUserIdHash        String
@@ -824,10 +842,12 @@ model LineUserIdentity {
   updatedAt             DateTime  @updatedAt
 
   vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  account LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
   deliveries LineDelivery[]
 
-  @@unique([vendorId, subjectType, subjectId])
-  @@unique([vendorId, lineUserIdHash])
+  @@unique([vendorId, lineOfficialAccountId, subjectType, subjectId])
+  @@index([vendorId, lineOfficialAccountId, lineUserIdHash])
+  @@unique([vendorId, lineOfficialAccountId, id])
   @@unique([vendorId, id])
   @@index([vendorId, subjectType, revokedAt])
   @@index([revokedAt, lastMaterializedAt])
@@ -838,6 +858,8 @@ model LineUserIdentity {
 model LineLoginState {
   id                    String    @id @default(cuid())
   vendorId              String
+  lineOfficialAccountId String?
+  accountVersion        String?
   stateHash             String    @unique
   nonceHash             String
   codeVerifierEncrypted String
@@ -849,6 +871,7 @@ model LineLoginState {
   createdAt             DateTime  @default(now())
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  account LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
 
   @@index([vendorId, expiresAt, consumedAt])
 }
@@ -876,11 +899,11 @@ model LineDelivery {
   updatedAt             DateTime  @updatedAt
 
   vendor         Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  account        LineOfficialAccount @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: Restrict)
-  identity       LineUserIdentity    @relation(fields: [vendorId, lineUserIdentityId], references: [vendorId, id], onDelete: Restrict)
+  account        LineOfficialAccount @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
+  identity       LineUserIdentity    @relation(fields: [vendorId, lineOfficialAccountId, lineUserIdentityId], references: [vendorId, lineOfficialAccountId, id], onDelete: NoAction)
   sourceTemplate MessageTemplate?    @relation(fields: [vendorId, sourceTemplateId], references: [vendorId, id], onDelete: Restrict)
 
-  @@unique([vendorId, idempotencyKey])
+  @@unique([vendorId, lineOfficialAccountId, idempotencyKey])
   @@index([status, nextAttemptAt, claimedAt])
   @@index([vendorId, trigger, createdAt])
   @@index([lineUserIdentityId, createdAt])
@@ -1041,6 +1064,351 @@ model EmailSuppression {
 
   @@unique([vendorId, recipientHash])
   @@index([vendorId, suppressedAt])
+}
+
+
+/// WP20 collection is opt-in. Default disabled; no legacy events are backfilled.
+/// Version-owned records contain opaque identifiers, never copied customer PII.
+model LiveMetricVersion {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  liveId              String
+  videoId             String?
+  mode                String
+  fingerprint         String   @db.Char(64)
+  durationMs          Int?
+  collectionEnabled   Boolean  @default(false)
+  collectionStartedAt DateTime? @db.Timestamptz(3)
+  playbackIntakeStartedAt DateTime? @db.Timestamptz(3)
+  /// Structural version revision; ordinary evidence invalidates overlapping windows only.
+  sourceRevision      BigInt   @default(0)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  /// Explicit lifetime supplied by the isolated test/provisioning context.
+  expiresAt           DateTime @db.Timestamptz(3)
+
+  live          Live                     @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  visitors      LiveMetricVisitor[]
+  registrations LiveMetricRegistration[]
+  sessions      LiveMetricSession[]
+  reports       LiveMetricReport[]
+  visitLosses   LiveMetricVisitLoss[]
+  coverageAudits LiveMetricCoverageAudit[]
+  registrationCaptures LiveMetricRegistrationCapture[]
+  viewingEpoch LiveMetricViewingEpoch?
+  viewingSource LiveMetricViewingSource[]
+  playbackIntakes LiveMetricPlaybackIntake[]
+  visitIntents LiveMetricVisitIntent[]
+  visitPages LiveMetricVisitPage[]
+  ingressRun LiveMetricIngressRun?
+
+  @@unique([vendorId, liveId, id])
+  @@unique([vendorId, liveId, mode, fingerprint])
+  @@index([expiresAt])
+}
+
+/// Owned disposable ingress census only. A stopped run is NOT coverage proof.
+model LiveMetricIngressRun {
+  id String @id
+  vendorId String
+  liveId String
+  versionId String @unique
+  manifestHash String @db.Char(64)
+  admissionLimit Int
+  openedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  stoppedAt DateTime? @db.Timestamptz(3)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction)
+  frames LiveMetricIngressFrame[]
+  seal LiveMetricIngressSeal?
+  coverageAudits LiveMetricCoverageAudit[]
+  @@unique([vendorId, liveId, versionId])
+  @@unique([vendorId, liveId, versionId, id])
+}
+
+/// Immutable source frontier, NOT metric coverage or request-universe proof.
+model LiveMetricIngressSeal {
+  runId String @id
+  vendorId String
+  liveId String
+  versionId String
+  sealedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  frameCount Int @default(0)
+  pageCount Int @default(0)
+  playbackCount Int @default(0)
+  @@unique([vendorId, liveId, versionId, runId])
+  run LiveMetricIngressRun @relation(fields: [vendorId, liveId, versionId, runId], references: [vendorId, liveId, versionId, id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// One committed admission per forwarded request; no URL, body or credentials.
+model LiveMetricIngressFrame {
+  id String @id
+  vendorId String
+  liveId String
+  versionId String
+  runId String
+  routeKind String
+  admittedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  outcome String @default("pending")
+  settledAt DateTime? @db.Timestamptz(3)
+  httpStatus Int?
+  run LiveMetricIngressRun @relation(fields: [vendorId, liveId, versionId, runId], references: [vendorId, liveId, versionId, id], onDelete: Cascade, onUpdate: NoAction)
+  visitPage LiveMetricVisitPage?
+  playbackIntake LiveMetricPlaybackIntake?
+  @@unique([vendorId, liveId, versionId, id])
+  @@index([runId, admittedAt, id])
+}
+
+/// Private server-triggered provenance; no historical epoch backfill.
+model LiveMetricPlaybackIntake {
+  id String @id
+  vendorId String
+  liveId String
+  versionId String
+  admissionSessionId String
+  issuedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  lossAt DateTime? @db.Timestamptz(3)
+  renewalCount BigInt @default(0)
+  ingressFrameId String? @unique
+  ingressFrame LiveMetricIngressFrame? @relation(fields: [vendorId, liveId, versionId, ingressFrameId], references: [vendorId, liveId, versionId, id], onDelete: NoAction, onUpdate: NoAction, map: "LiveMetricPlaybackIntake_ingressFrame_fkey")
+  @@unique([vendorId, liveId, versionId, ingressFrameId], map: "LiveMetricPlaybackIntake_ingress_scope_key")
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricPlaybackIntake_version_fkey")
+  session LiveMetricSession?
+  @@unique([vendorId, liveId, versionId, id], map: "LiveMetricPlaybackIntake_scope_key")
+  @@index([vendorId, liveId, admissionSessionId], map: "LiveMetricPlaybackIntake_admission_idx")
+  @@index([vendorId, liveId, versionId, issuedAt], map: "LiveMetricPlaybackIntake_window_idx")
+}
+
+model LiveMetricViewingEpoch {
+  vendorId String
+  liveId String
+  versionId String
+  startedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricViewingEpoch_version_fkey")
+  @@id([vendorId, liveId, versionId])
+}
+
+/// Insert-only events retain removed session identities until version deletion.
+model LiveMetricViewingSource {
+  id BigInt @id @default(autoincrement())
+  vendorId String
+  liveId String
+  versionId String
+  sessionId String
+  registrationId String
+  kind String
+  anchorAt DateTime @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  recordedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricViewingSource_version_fkey")
+  @@index([vendorId, liveId, versionId, sessionId], map: "LiveMetricViewingSource_scope_session_idx")
+  @@index([vendorId, liveId, versionId, kind, anchorAt], map: "LiveMetricViewingSource_window_idx")
+}
+
+model LiveMetricVisitor {
+  id             String   @id @default(cuid())
+  vendorId       String
+  liveId         String
+  versionId      String
+  browserHash    String   @db.Char(64)
+  firstVisitedAt DateTime @db.Timestamptz(3)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  version       LiveMetricVersion        @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade)
+  registrations LiveMetricRegistration[]
+
+  visits LiveMetricVisit[]
+  visitIntents LiveMetricVisitIntent[]
+  registrationCaptures LiveMetricRegistrationCapture[]
+
+  @@unique([vendorId, liveId, versionId, id], map: "LiveMetricVisitor_scope_id_key")
+  @@unique([vendorId, liveId, versionId, browserHash], map: "LiveMetricVisitor_scope_browser_key")
+  @@index([vendorId, liveId, versionId, firstVisitedAt], map: "LiveMetricVisitor_scope_visit_idx")
+}
+
+/// Server-render expectations. Not a counted visit or positive coverage epoch.
+model LiveMetricVisitPage {
+  vendorId String
+  liveId String
+  versionId String
+  eventId String
+  issuedAt DateTime @default(dbgenerated("date_trunc('milliseconds',clock_timestamp())")) @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  lossAt DateTime? @db.Timestamptz(3)
+  sourceKind String @default("unknown")
+  sourceFormId String?
+  ingressFrameId String? @unique
+  ingressFrame LiveMetricIngressFrame? @relation(fields: [vendorId, liveId, versionId, ingressFrameId], references: [vendorId, liveId, versionId, id], onDelete: NoAction, onUpdate: NoAction, map: "LiveMetricVisitPage_ingressFrame_fkey")
+  @@unique([vendorId, liveId, versionId, ingressFrameId], map: "LiveMetricVisitPage_ingress_scope_key")
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricVisitPage_version_fkey")
+  @@id([vendorId, liveId, versionId, eventId], map: "LiveMetricVisitPage_pkey")
+  @@index([vendorId, liveId, versionId, issuedAt, eventId], map: "LiveMetricVisitPage_window_idx")
+}
+
+/// Browser-started expectations, retained even if a preparation reply is lost.
+/// This does not prove that every page started JavaScript collection.
+model LiveMetricVisitIntent {
+  vendorId String
+  liveId String
+  versionId String
+  visitorId String
+  eventId String
+  preparedAt DateTime @default(dbgenerated("date_trunc('milliseconds',clock_timestamp())")) @db.Timestamptz(3)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricVisitIntent_version_fkey")
+  visitor LiveMetricVisitor @relation(fields: [vendorId, liveId, versionId, visitorId], references: [vendorId, liveId, versionId, id], onDelete: NoAction, onUpdate: NoAction, map: "LiveMetricVisitIntent_visitor_fkey")
+  @@id([vendorId, liveId, versionId, eventId], map: "LiveMetricVisitIntent_pkey")
+  @@index([vendorId, liveId, versionId, preparedAt, eventId], map: "LiveMetricVisitIntent_window_idx")
+  @@index([vendorId, liveId, versionId, visitorId], map: "LiveMetricVisitIntent_visitor_idx")
+}
+
+/// Immutable visit facts; visitor identity alone cannot answer arbitrary time windows.
+model LiveMetricVisit {
+  id        String   @id @default(uuid())
+  eventId   String
+  vendorId  String
+  liveId    String
+  versionId String
+  visitorId String
+  visitedAt DateTime @db.Timestamptz(3)
+
+  visitor LiveMetricVisitor @relation(fields: [vendorId, liveId, versionId, visitorId], references: [vendorId, liveId, versionId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([vendorId, liveId, versionId, visitorId, eventId], map: "LiveMetricVisit_scope_event_key")
+  @@index([vendorId, liveId, versionId, visitedAt, id], map: "LiveMetricVisit_scope_time_idx")
+  @@index([vendorId, liveId, versionId, visitorId], map: "LiveMetricVisit_scope_visitor_idx")
+}
+
+/// Missing evidence at millisecond resolution; never stores browser/person identity.
+model LiveMetricVisitLoss {
+  vendorId  String
+  liveId    String
+  versionId String
+  visitedAt DateTime @db.Timestamptz(3)
+
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([vendorId, liveId, versionId, visitedAt])
+}
+
+/// Immutable first-submission provenance; never rewritten by retries.
+model LiveMetricRegistrationCapture {
+  submissionId String @id
+  vendorId String
+  liveId String
+  versionId String
+  visitorId String?
+  capturedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction)
+  visitor LiveMetricVisitor? @relation(fields: [vendorId, liveId, versionId, visitorId], references: [vendorId, liveId, versionId, id], onDelete: NoAction, onUpdate: NoAction)
+  @@index([vendorId, liveId, versionId, submissionId], map: "LiveMetricRegistrationCapture_scope_submission_idx")
+  @@index([vendorId, liveId, versionId, visitorId], map: "LiveMetricRegistrationCapture_scope_visitor_idx")
+}
+
+model LiveMetricRegistration {
+  id           String   @id @default(cuid())
+  vendorId     String
+  liveId       String
+  versionId    String
+  submissionId String
+  visitorId    String?
+  verifiedAt   DateTime @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  version    LiveMetricVersion  @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade)
+  submission FormSubmission     @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  visitor    LiveMetricVisitor? @relation(fields: [vendorId, liveId, versionId, visitorId], references: [vendorId, liveId, versionId, id], onDelete: NoAction)
+  sessions   LiveMetricSession[]
+
+  @@unique([vendorId, liveId, versionId, id], map: "LiveMetricRegistration_scope_id_key")
+  @@unique([vendorId, liveId, versionId, submissionId], map: "LiveMetricRegistration_scope_submission_key")
+  @@index([vendorId, liveId, versionId, verifiedAt], map: "LiveMetricRegistration_scope_verified_idx")
+  @@index([submissionId])
+}
+
+model LiveMetricSession {
+  id                 String    @id @default(cuid())
+  vendorId           String
+  liveId             String
+  versionId          String
+  registrationId     String
+  /// Immutable provenance, checked on insert and every interval. No FK: normal
+  /// admission release deletes the short-lived lease but must retain evidence.
+  admissionSessionId String
+  intakeId String?
+  anchorAt           DateTime @db.Timestamptz(3)
+  lastSequence       Int       @default(-1)
+  finalSequence      Int?
+  lastElapsedMs      Int       @default(0)
+  closedAt           DateTime? @db.Timestamptz(3)
+  /// True only after an explicitly final contiguous sequence has been stored.
+  complete           Boolean   @default(false)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt          DateTime @db.Timestamptz(3)
+
+  version      LiveMetricVersion      @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade)
+  registration LiveMetricRegistration @relation(fields: [vendorId, liveId, versionId, registrationId], references: [vendorId, liveId, versionId, id], onDelete: Cascade)
+  intervals    LiveMetricInterval[]
+  intake LiveMetricPlaybackIntake? @relation(fields: [vendorId, liveId, versionId, intakeId], references: [vendorId, liveId, versionId, id], onDelete: NoAction, onUpdate: NoAction, map: "LiveMetricSession_intake_fkey")
+
+  @@unique([vendorId, liveId, versionId, id], map: "LiveMetricSession_scope_id_key")
+  @@unique([vendorId, liveId, versionId, intakeId], map: "LiveMetricSession_intake_key")
+  @@index([vendorId, liveId, versionId, registrationId], map: "LiveMetricSession_scope_registration_idx")
+  @@index([admissionSessionId])
+  @@index([expiresAt])
+}
+
+model LiveMetricInterval {
+  id             String   @id @default(cuid())
+  vendorId       String
+  liveId         String
+  versionId      String
+  sessionId      String
+  sequence       Int
+  payloadHash    String   @db.Char(64)
+  wallStartAt    DateTime @db.Timestamptz(3)
+  wallEndAt      DateTime @db.Timestamptz(3)
+  mediaStartMs   Int
+  mediaEndMs     Int
+  receivedAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  session LiveMetricSession @relation(fields: [vendorId, liveId, versionId, sessionId], references: [vendorId, liveId, versionId, id], onDelete: Cascade)
+
+  @@unique([sessionId, sequence])
+  @@index([vendorId, liveId, versionId, wallEndAt], map: "LiveMetricInterval_scope_wall_idx")
+}
+
+/// Resumable report work: request handlers enqueue/read, bounded workers advance
+/// cursor/checkpoint. Never run an entire large cohort on the HTTP event loop.
+model LiveMetricReport {
+  completionProjection LiveMetricCompletionProjection?
+  id             String    @id @default(cuid())
+  vendorId       String
+  liveId         String
+  versionId      String
+  windowStartAt  DateTime @db.Timestamptz(3)
+  windowEndAt    DateTime @db.Timestamptz(3)
+  inputRevision  BigInt
+  inputOrderRevision BigInt?
+  inputRegistrationRevision BigInt?
+  inputOrderTenantRevision BigInt?
+  status         String    @default("queued")
+  cursor         String?
+  processedCount Int       @default(0)
+  checkpoint     Json?
+  result         Json?
+  leaseOwner     String?
+  leaseExpiresAt DateTime? @db.Timestamptz(3)
+  attempts       Int       @default(0)
+  errorCode      String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  finishedAt     DateTime? @db.Timestamptz(3)
+  expiresAt      DateTime @db.Timestamptz(3)
+
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade)
+
+  @@index([vendorId, liveId, versionId, windowStartAt, windowEndAt, inputRevision], map: "LiveMetricReport_scope_window_revision_key")
+  @@index([vendorId, status, leaseExpiresAt], map: "LiveMetricReport_claim_idx")
+  @@index([expiresAt])
 }
 
 model AnalyticsEvent {
@@ -3505,6 +3873,7 @@ model CustomerCrmRecord {
 model SalesProject {
   id                String             @id @default(cuid())
   vendorId          String
+  lineOfficialAccountId String?
   name              String
   slug              String
   mode              SalesWorkspaceMode
@@ -3516,6 +3885,7 @@ model SalesProject {
   updatedAt         DateTime           @updatedAt
 
   vendor        Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  lineOfficialAccount LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
   products      SalesProjectProduct[]
   customers     SalesProjectCustomer[]
   landingPages  LandingPage[]
@@ -3756,13 +4126,17 @@ model LandingPageVersion {
 // Drafts are tenant-owned configuration, separate from any external publication state.
 model LineRichMenuDraft {
   id        String   @id @default(cuid())
-  vendorId  String   @unique
+  vendorId  String
+  lineOfficialAccountId String?
   menu      Json
   revision  Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  account LineOfficialAccount? @relation(fields: [vendorId, lineOfficialAccountId], references: [vendorId, id], onDelete: NoAction)
+
+  @@unique([vendorId, lineOfficialAccountId])
 }
 
 /// Purpose is part of the signed capability and the persisted consume guard.
@@ -3938,4 +4312,93 @@ model MerchantAffiliateCalculation {
   commissions AffiliateCommission[]
   @@unique([vendorId, checkoutId])
   @@unique([vendorId, checkoutId, id])
+}
+
+// 原生報名失敗的短效加密草稿；不改正式 FormSubmission 語意。
+model RegistrationFormRetryDraft {
+  idHash           String   @id
+  encryptedPayload String
+  sourcePath       String
+  formId           String
+  createdAt        DateTime @default(now())
+  expiresAt        DateTime
+
+  @@index([expiresAt])
+}
+
+/// Independent range audits; digest is provenance, not proof by itself.
+model LiveMetricCoverageAudit {
+  id String @id
+  vendorId String
+  liveId String
+  versionId String
+  kind String
+  status String
+  startAt DateTime @db.Timestamptz(3)
+  endAt DateTime @db.Timestamptz(3)
+  registrationRevision BigInt?
+  registrationCount Int?
+  orderRevision BigInt?
+  orderTenantRevision BigInt?
+  orderRegistrationRevision BigInt?
+  orderCount Int?
+  orderProofVersion Int?
+  ingressRunId String?
+  viewingRevision BigInt?
+  intakeRevision BigInt?
+  ingressProofVersion Int?
+  ingressReceipt Json? @db.JsonB
+  ingressRun LiveMetricIngressRun? @relation(fields: [vendorId, liveId, versionId, ingressRunId], references: [vendorId, liveId, versionId, id], onDelete: Cascade, onUpdate: NoAction, map: "LiveMetricCoverageAudit_ingressRun_fkey")
+  sourceRevision BigInt
+  auditDigest String @db.Char(64)
+  recordedAt DateTime @default(dbgenerated("date_trunc('milliseconds', clock_timestamp())")) @db.Timestamptz(3)
+  version LiveMetricVersion @relation(fields: [vendorId, liveId, versionId], references: [vendorId, liveId, id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([vendorId, liveId, versionId, kind, startAt, endAt], map: "LiveMetricCoverageAudit_scope_range_idx")
+}
+
+/// Transactional order input revision, independent of collector configuration.
+model LiveMetricOrderSource {
+  id BigInt @id @default(autoincrement())
+  vendorId String
+  liveId String
+  @@index([vendorId, liveId], map: "LiveMetricOrderSource_scope_idx")
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+
+/// Internal atomic first-completion projection; DB capability owns writes.
+model LiveMetricCompletionProjection {
+  reportId String @id
+  sourceRevision BigInt
+  algorithmVersion Int
+  cohortCount Int
+  rowCount Int
+  rows Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  report LiveMetricReport @relation(fields: [reportId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// Append-only authoritative submission revision, separate from metric evidence.
+model LiveMetricRegistrationSource {
+  id BigInt @id @default(autoincrement())
+  vendorId String
+  liveId String
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([vendorId, liveId], map: "LiveMetricRegistrationSource_scope_idx")
+}
+
+model LiveMetricOrderTenantSource {
+  id BigInt @id @default(autoincrement())
+  vendorId String
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([vendorId], map: "LiveMetricOrderTenantSource_vendor_idx")
+}
+
+// Append-only window source; no customer identity or payment contents.
+model LiveMetricOrderWindowSource {
+  id BigInt @id @default(autoincrement())
+  vendorId String
+  orderCreatedAt DateTime @db.Timestamp(3)
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([vendorId, orderCreatedAt], map: "LiveMetricOrderWindowSource_scope_idx")
 }

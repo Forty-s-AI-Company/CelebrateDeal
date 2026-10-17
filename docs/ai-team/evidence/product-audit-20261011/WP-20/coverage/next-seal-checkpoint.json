@@ -1,0 +1,186 @@
+{
+  "wholeWp": "NOT_READY",
+  "previousGoalTurn": "PROGRESS",
+  "currentGoalTurn": "PROGRESS",
+  "goalPercent": 40,
+  "completedWps": 8,
+  "totalWps": 20,
+  "validation": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 126
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "database": {
+    "migrations": 129,
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "postRunHashesMatch": true
+  },
+  "runtime": {
+    "status": "PASS",
+    "stage": "complete",
+    "checks": {
+      "disabledBootstrapSsrLeavesNoPageSource": "PASS",
+      "ownedFullNextStartupWithExactMarker": "PASS",
+      "actualNextFormClientPrepareAndVisitPersist": "PASS",
+      "realBrowserRefreshPreservesFirstPartyVisitorIdentity": "PASS",
+      "actualNextViewerClientVisitUsesSameVisitor": "PASS",
+      "allRealPageSourcesBoundAndSixCanonicalVisitApiResponses": "PASS",
+      "actualNextStoppedRunPreSealControlStillAppends": "PASS",
+      "actualBrowserRunStopsDrainsAndSealsSources": "PASS",
+      "actualNextLateSignedSourceAndTrustedSqlRejectedAfterSeal": "PASS",
+      "removingSealClauseAllowsForbiddenInsertAndRollbackRestoresFence": "PASS",
+      "afterOwnedNextStopSourceAndSealCountsStayUnchanged": "PASS"
+    },
+    "server": {
+      "started": true,
+      "ready": true,
+      "stopped": true,
+      "classifications": [
+        "READY_MARKER"
+      ],
+      "spawnError": false,
+      "starts": 2
+    },
+    "browser": {
+      "sourceResponses": [
+        200,
+        200,
+        200
+      ],
+      "visitResponses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "blockedExternal": 0,
+      "blockedAuxiliary": 5,
+      "assetStatuses": {
+        "200": 24
+      },
+      "encodedAssets": 23,
+      "firstSourceElapsedMs": 16691,
+      "dom": {
+        "secure": true,
+        "locks": true,
+        "contentType": "text/html",
+        "scripts": 6,
+        "hasFixture": true
+      },
+      "webSocketConnections": 3,
+      "consoleErrors": 4,
+      "consoleClasses": [
+        "RESOURCE_LOAD"
+      ]
+    },
+    "cleanup": {
+      "browser": "PASS",
+      "gateway": "PASS",
+      "nodeModulesLink": "PASS"
+    },
+    "bootstrapResponses": [
+      200,
+      200
+    ],
+    "observedCounts": {
+      "pages": 3,
+      "intents": 3,
+      "visits": 3,
+      "visitors": 1
+    },
+    "gatewayDiagnostics": {
+      "upstreamTimeoutMs": 120000,
+      "socketTimeouts": 0,
+      "errors": {}
+    },
+    "gatewayClose": {
+      "settlementFailures": 0,
+      "admissionFailures": 0,
+      "pendingFrames": 0
+    },
+    "sourceSeal": {
+      "frameCount": 5,
+      "pageCount": 4,
+      "playbackCount": 0,
+      "unmatchedInterruptedFrames": 1,
+      "lateHttpStatus": 200,
+      "mutationAppendedThenRolledBack": 1
+    }
+  },
+  "counterMeaning": {
+    "browserObservedCounts": "Before internal positive control:3 pages/3 visits/1 identity",
+    "sourceSeal": "After pre-seal internal control:5 frames/4 pages/3 visits; two interrupted, one unmatched",
+    "mutation": "One INSERT inside rolled-back transaction, no retained extra row"
+  },
+  "review": {
+    "observed": {
+      "source": "cli_terminal_model_usage",
+      "effort": "unknown",
+      "model": "claude-opus-5-5"
+    },
+    "provider": "claude_cli",
+    "fallbackEvents": [],
+    "routeFallbackEvents": [],
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "scripts/wp20-next-runtime-probe.mjs",
+        "area": "source-seal stage: receipt.sourceSeal.lateHttpStatus=await signedGet(late) through the actualNextLateSignedSourceAndTrustedSqlRejectedAfterSeal check",
+        "issue": "The test never shows why the late Next GET adds no row. The only evidence is HTTP 200 plus an unchanged count. The seal-clause counterfactual covers only the raw INSERT made from the probe's own transaction. It does not cover the Next request path.",
+        "evidence": "signedGet(late) checks only response.status===200 and the body size, then counts() stays at 4 pages and unmatched() stays at 1. Nothing captures a SQLSTATE, rollback, trigger rejection or source-side outcome for this request. The control GET differs from the late GET in frame id, elapsed time since admission and seal state, not just seal state. The weakened function only exists inside the rolled-back transaction, so Next never runs against it. The check name still says the actual Next late source was 'Rejected After Seal'.",
+        "impact": "Suppose the Next source skips the insert for some reason other than the seal, such as frame age, ordering or a per-run limit, and swallows the error to render 200. The receipt would still record the Next path as fenced by the seal. The raw-SQL fence evidence holds, but the claim that the seal enforces the actual Next path is stronger than what was observed.",
+        "recommended_fix": "Capture a DB-side signal for the late request in the disposable database. Options: (1) take a pg_stat_database xact_rollback delta, or temporarily set log_min_error_statement in the owned disposable server, and check that a 23514 occurs tied to the late frame id; or (2) add a time-matched control, i.e. admit another interrupted frame at the same moment, wait the same delay and consume it before sealing, so elapsed time is ruled out. Otherwise rename the check and receipt field to say only 'no source row after seal (cause not observed)'.",
+        "required_test": "Repeat the runtime probe and record the source-rejection evidence for the late GET, for example a 23514 rollback delta or log entry tied to the late frame. Also show that a frame with the same timing and no seal still appends through actual Next. The check passes only if both hold.",
+        "confidence": 0.55
+      }
+    ],
+    "suppliedRanges": {
+      "scripts/wp20-next-runtime-probe.mjs": "Lines 167-225 only; source seal and finally"
+    }
+  },
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "selectedModel": "sol",
+  "selectedEffort": "xhigh",
+  "rootObservedModel": "unknown",
+  "rootObservedEffort": "unknown",
+  "ownership": {
+    "writer": "root",
+    "reviewer": "readonly sequential",
+    "parallel": 1,
+    "depth": 1,
+    "automaticSpawn": false
+  },
+  "limits": [
+    "Raw SQL/mutation proves DB seal causality; Next late request only proves no append, internal reason not observed despite original check name",
+    "Only HTTP200 and bounded body for direct controls, not complete form rendering",
+    "5 blocked auxiliary requests and4 RESOURCE_LOAD console errors remain",
+    "Private fixed owned runtime only, no complete universe/RSC/query/alias/minimum role/epoch",
+    "No positive coverage, viewing/media E2E or five-metric nonzero acceptance",
+    "Prisma fixed-index env preflight and parent-process isolation remain partial",
+    "Earlier page-null/SSI/HTTP failures unresolved"
+  ],
+  "next": "Full source-entry closure/minimum role/source epoch + typed positive visits/viewing, then full five-stat M1/M2",
+  "safety": {
+    "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "base": "efb8b7e9",
+    "originalWorktreeMutated": false,
+    "commitPushDeploy": false,
+    "productionAccess": false
+  }
+}

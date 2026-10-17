@@ -1,0 +1,13 @@
+{
+  "status": "REPRODUCED",
+  "source": "real isolated Chromium setContent using same implicit label/select shape, no external requests",
+  "label": "選擇影片",
+  "optionTexts": [
+    "請選擇已就緒且有長度的影片",
+    "合成影片"
+  ],
+  "exactLabelMatches": 0,
+  "exactComboboxRoleAndNameMatches": 1,
+  "labelSubstringMatches": 1,
+  "fix": "Use semantic exact combobox role/name for existing control; retain all value/disabled/count and runtime assertions. No product source or access gate change."
+}

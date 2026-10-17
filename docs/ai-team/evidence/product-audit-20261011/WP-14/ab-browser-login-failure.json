@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "scope": "Actual authenticated loopback Next dev API/UI reads of synthetic persisted A/B attribution/status fixtures; disposable PostgreSQL, desktop/mobile readout axe. No active experiment, provider delivery, raw session capture or production-mode build.",
+  "tests": [
+    {
+      "title": "reads attributed current confirmation counts from PostgreSQL through the real merchant API and UI",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(page).toHaveURL(expected) failed\n\nExpected pattern: /\\/dashboard$/u\nTimeout: 30000ms\n\nCall log:\n  - Expect \"toHaveURL\" with timeout 30000ms\n"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T04:42:38.545Z",
+    "duration": 74733.947,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 131
+}

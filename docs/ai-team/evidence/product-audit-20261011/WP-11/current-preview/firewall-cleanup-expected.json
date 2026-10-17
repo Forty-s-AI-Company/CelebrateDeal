@@ -1,0 +1,42 @@
+{
+  "name": "Restrict staging Preview hosts",
+  "description": "Only fixed staging alias; optional MFA candidate verified",
+  "active": true,
+  "action": {
+    "mitigate": {
+      "action": "deny"
+    }
+  },
+  "conditionGroup": [
+    {
+      "conditions": [
+        {
+          "op": "eq",
+          "type": "environment",
+          "value": "preview"
+        },
+        {
+          "op": "ninc",
+          "type": "host",
+          "value": [
+            "celebrate-deal-staging.carry-digital-nomad.in.net",
+            "celebrate-deal-staging-9h58w3i9g-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-2tgmv4akz-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-i712wrcxm-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-2uzfzees5-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-iyu8r4q2c-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-8swdyyf3g-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-3diriknzf-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-coqxl3fra-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-3w0dm0sa8-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-eo193cchg-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-1xsasiz1j-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-8a3z25utt-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-a52x1d8ba-a25814740s-projects.vercel.app",
+            "celebrate-deal-staging-lo8afai2s-a25814740s-projects.vercel.app"
+          ]
+        }
+      ]
+    }
+  ]
+}

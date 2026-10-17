@@ -12,7 +12,8 @@ import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { entryRateLimitHeaders } from "@/lib/entry-rate-limit-headers";
 
 const MEMBER_ROLES = new Set(["owner", "admin", "accountant", "support"]);
 
@@ -46,11 +47,7 @@ export async function createVendorMemberAction(formData: FormData) {
 
   const headerStore = await headers();
   const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
+  const rateLimitHeaders = entryRateLimitHeaders(headerStore);
   const rateLimited = await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000);
   if (rateLimited) redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
 
@@ -152,11 +149,7 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
 
   const headerStore = await headers();
   const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
+  const rateLimitHeaders = entryRateLimitHeaders(headerStore);
   const rateLimited = await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000);
   if (rateLimited) redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
 

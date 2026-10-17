@@ -17,7 +17,7 @@ export default async function EditMessageTemplatePage({
   if (!template) notFound();
   return (
     <>
-      <PageHeader title="編輯訊息模板" description="更新通知渠道、觸發條件與文案。" />
+      <PageHeader title="編輯訊息模板" description="選擇 Email 或 LINE，更新觸發條件與內容。SMS 尚未串接。" />
       <MessageTemplateForm template={template} error={error === "invalid_template" ? error : null} />
     </>
   );

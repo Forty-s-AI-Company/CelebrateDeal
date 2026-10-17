@@ -1,0 +1,47 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "engine": "chromium",
+      "entry": "root",
+      "javascript": true,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "step",
+      "javascript": true,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "firefox",
+      "entry": "root",
+      "javascript": true,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "firefox",
+      "entry": "step",
+      "javascript": true,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true
+    }
+  ],
+  "cleanup": true,
+  "step": "success"
+}

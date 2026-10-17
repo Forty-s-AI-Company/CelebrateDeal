@@ -1,0 +1,9 @@
+{
+  "scope": "visit-page-data",
+  "promptCharacters": 17914,
+  "files": {
+    "prisma/migrations/20261016120000_live_metric_visit_page/migration.sql": "3b66e4a6880d671561995c94ba71849c43479fa14758fabe751d2be32faca222",
+    "src/lib/live-metric-visit-collection.ts": "be532e83befda4bcf2dd1db44be7922ff900fee8bf4c61beee739158b1cca740",
+    "src/lib/live-metric-visit-page.ts": "f6bfb138e9da693583feac232184f51715385f944f346a299a02d71209b3bb58"
+  }
+}

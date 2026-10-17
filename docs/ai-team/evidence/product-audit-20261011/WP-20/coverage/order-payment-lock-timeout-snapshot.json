@@ -1,0 +1,8 @@
+{
+  "file": "scripts/wp20-order-window-link-race.mjs",
+  "sha256": "ca161e78eb68828317667477fe4c57df5ef7708d47077959881d28c77c11c80e",
+  "lint": "PASS",
+  "integration": "order-payment-lock-timeout-db.json",
+  "lockTimeoutSqlState": "55P03",
+  "review": "PENDING"
+}

@@ -1,0 +1,39 @@
+{
+  "deployment_id": "dpl_E9wbsvtxx8ChBjZnUifufjgs93dC",
+  "results": [
+    {
+      "case": "no_forwarding_headers",
+      "exit_code": 0,
+      "http_status": "503",
+      "expected_rejection": true
+    },
+    {
+      "case": "forged_cloudflare",
+      "exit_code": 0,
+      "http_status": "503",
+      "expected_rejection": true
+    },
+    {
+      "case": "forged_vercel",
+      "exit_code": 0,
+      "http_status": "503",
+      "expected_rejection": true
+    },
+    {
+      "case": "multi_hop",
+      "exit_code": 0,
+      "http_status": "503",
+      "expected_rejection": true
+    },
+    {
+      "case": "forged_proof",
+      "exit_code": 0,
+      "http_status": "503",
+      "expected_rejection": true
+    }
+  ],
+  "status": "PASS_REJECTION_ONLY",
+  "normal_flow": "NOT_VERIFIED",
+  "database_operations": false,
+  "raw_output_persisted": false
+}

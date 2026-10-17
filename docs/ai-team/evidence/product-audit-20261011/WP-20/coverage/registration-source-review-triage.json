@@ -1,0 +1,10 @@
+{
+  "status": "REMEDIATION_REQUIRED",
+  "hotCounter": "Accept architectural concern; replace source trigger shared version UPDATE with insert-only ledger. Do not use max sequence as watermark; use scoped immutable count and atomic reader/report binding. Payment-path assertion requires call-path validation.",
+  "captureLockOrder": "Accept potential inversion; remove new version-row lock from source writes.",
+  "membership": "Needs preserve original rows with mismatch classification. Existing Live.formId revision guard was not supplied to reviewer; reconcile evidence without rewriting findings.",
+  "truncate": "Must test actual FK/cascade no-truncate enforcement; reviewer assertion not yet confirmed.",
+  "other": "Reverse reconciliation, deadline and canonical digest require follow-up.",
+  "typecheck": "PASS",
+  "nativeAgents": 0
+}

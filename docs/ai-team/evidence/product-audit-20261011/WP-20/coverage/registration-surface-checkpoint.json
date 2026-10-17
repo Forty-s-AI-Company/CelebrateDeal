@@ -1,0 +1,128 @@
+{
+  "status": "IN_PROGRESS",
+  "wholeWp": "NOT_READY",
+  "tests": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 185
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "database": {
+    "status": "PASS",
+    "migrationCount": 125,
+    "checks": {
+      "preparationAndEightConcurrentRetriesOneUncountedExpectation": "PASS",
+      "foreignScopeIdentityTakeoverAndRollbackRejected": "PASS",
+      "lostResponseRetryDoesNotDuplicateFactsAndUnansweredIntentRemains": "PASS",
+      "lowerUpperMixedUuidOneIntentAndOneActualVisit": "PASS",
+      "immutableExpectationAndVisitorRetentionServerTimestampNonUtc": "PASS",
+      "rlsPrivateAclAndUnprivilegedRoleDenied": "PASS",
+      "realWebinarTemplateRegistrationScopeIssuesExactlyOneUncountedPage": "PASS",
+      "pageCommittedBeforeBrowserUnknownNonceRejectedBeforeIdentityAndRollbackRetainsNoPage": "PASS",
+      "actualRegistrationSameVendorWrongFormForeignVendorAndInactiveRejectedWithoutPage": "PASS",
+      "draftProjectMetricGateAndForeignProjectCompositeFkRejected": "PASS",
+      "liveAndFormMutationsBlockedThroughIssuanceAndOuterRollbackNoNonce": "PASS",
+      "formReassignmentAfterOwnerLookupFailsTransactionalRecheck": "PASS",
+      "actualContextProofCompositionMissingIntentAndLostCookieRollbackAndIdempotentVisit": "PASS",
+      "unmatchedPageImmutableRlsAndPrivateProbeRoleDenied": "PASS",
+      "actualVersionExpiresBetweenContextAndInsertReturnsNullWithoutPage": "PASS",
+      "tenThousandCapEightParallelLastSlotOneSuccessAndPermanentUnresettableGap": "PASS",
+      "vendorCascadeNoOrphans": "PASS"
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    }
+  },
+  "reviewStatus": "REVIEW_COMPLETED_WITH_OPEN_FINDINGS",
+  "unresolved": [
+    {
+      "severity": "MAJOR",
+      "issue": "Unauthenticated per-render issuance can exhaust the lifetime 10000/version quota and cause permanent collection loss; same-scope locks can affect registration availability.",
+      "status": "OPEN",
+      "next": "Capacity/loss lifecycle and public issuance load design plus real load validation before release; never delete unmatched source to invent completeness."
+    },
+    {
+      "severity": "MINOR",
+      "issue": "Unexpected issuance failure propagates to public registration render.",
+      "status": "OPEN",
+      "next": "Isolate analytics failures only with a durable fail-closed source-loss mechanism; swallowing errors alone would hide missing observations."
+    },
+    {
+      "severity": "MAJOR",
+      "issue": "Recorded sources do not yet distinguish registration pages from viewer pages.",
+      "status": "OPEN",
+      "next": "Persist trusted source classification; exclude viewer/unknown history from registration denominator, no historical source backfill."
+    }
+  ],
+  "completedWp": [
+    "WP-01",
+    "WP-05",
+    "WP-06",
+    "WP-07",
+    "WP-08",
+    "WP-10",
+    "WP-11",
+    "WP-15"
+  ],
+  "wholeGoalPercent": 40,
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "engineeringResolved": "gpt-6.1-sol/xhigh",
+  "engineeringObserved": "unknown",
+  "ownership": {
+    "writer": "root",
+    "externalReview": "readonly sequential",
+    "maxParallel": 1,
+    "maxDepth": 1,
+    "automaticSpawn": false
+  },
+  "notVerified": [
+    "real signed Next HTTP/deployed role",
+    "RSC input reconciliation",
+    "all URL/cache/back-forward coverage",
+    "sustained load/soak",
+    "full five-metric E2E",
+    "trusted visits/viewing positive coverage"
+  ],
+  "originalSsi": "FAIL: 7 successful / 13 failed out of 20; not rerun or redefined",
+  "productionDeployment": "NOT_AUTHORIZED",
+  "gitPush": "NOT_REQUESTED",
+  "schemaChangesThisScope": false,
+  "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "sourceHashes": {
+    "src/lib/live-metric-visit-page.ts": "88201b545130dc5d42010df2f0f622ed87da97b0331cd949754db882b1120c36",
+    "src/lib/live-metric-registration-page.ts": "0a2f82c24e5474d5572dadff9a2379dae602e6fa9dd56817b970b13a17f784aa",
+    "src/lib/live-metric-registration-surface.ts": "31b1bf0294e204d94da06551a994e07464f28467863b19ac7dc8997bc078f5f9",
+    "src/components/metric-registration-visit.tsx": "6c2fec244c6954c36f90c7e2fab8d47b1ca52d4b32441e23392fa7abd653ae08",
+    "src/app/form/[slug]/page.tsx": "22a155575ecf4018f3a93afb52fc88c0f9d19a9896ec87aa8f1587b82b7006d9",
+    "src/app/lp/[slug]/page.tsx": "aff02c3513a89b924db80fdad1f500e2cd97d742531d4863c2a4f4541df98163",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "595b3bd30ecc3668376cf937697c1d5c12a3cf6f6822aa2b663d026b3b05a1fa",
+    "scripts/wp20-visit-page-disposable.mjs": "bcaa48ed2a298ebdf33161ae9f4d5316ad37fbd91b923d42994cc16fba604ece",
+    "src/lib/live-metric-visit-page.test.ts": "2ad0ea49db707e2e9ad72139597cede6dfd65d9c4f124b956dd7c176b5f391b4",
+    "src/lib/live-metric-registration-page.test.ts": "93a243af279ae01f98484bc200cbb95b06a4081e08a84c2eb4fff189aafe7053",
+    "src/lib/live-metric-registration-surface.test.ts": "0b0c9d40b724228790587fce7d1c806bc3473ca0bdba369e6826a93296db5fed",
+    "src/lib/live-metric-visit-intent.test.ts": "e7b54e6ce2ac31dd6788a9dd155b45ed05b0f9895ca474fb149ec956db66302d",
+    "src/lib/live-metric-visit-client.test.ts": "5cd45d4eb8bc0f1b5471a819f150e145f88a87d7d426b93edac66f5feb2d4812",
+    "src/lib/live-metric-visit-collection.test.ts": "63f99a4a859c50576282a6446dd12be690f34aff714d5dee2c6598d77750f6b6",
+    "src/lib/live-metric-visit.test.ts": "f2f59fa5a89db7c86f8056e3e8220c879a25870a8c932a2f9d7a9e03eaeb2e6a",
+    "src/lib/live-metric-visitor.test.ts": "057ef25d921fdfc31dc0baef10912bc869e3390427111943eedfb01f741038af",
+    "src/lib/live-metric-visit-context.test.ts": "6e243a7b2b1f4461460438887b6bde7915f91aad2ef863538d56819cbcfcc224",
+    "src/components/metric-registration-visit.test.tsx": "c0908b4fb5eb1b32523df185c84c08da77839bf0fc736a88addc11418310df9c",
+    "src/app/form/[slug]/page.test.tsx": "23ae011c529049f04e5eb24a7c8762b2c1f9cb14e6b3d1414ce5590a5ef953a0",
+    "src/app/lp/[slug]/page.test.tsx": "744b537a69cc975a0dc584811b5f0f1958b2851b2e1a56fc0f596154253803c0",
+    "src/app/(viewer)/live/[slug]/page.test.tsx": "bba37ae8e256c8d6e7da16ae76d349e65ef34ecc0e7f3655e80d2b0d7497bbbf",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.test.ts": "fd77ac8314c4937c5e9f1b37be8eea2300e9c8cef64d747c9cc2d793470aecc9",
+    "src/lib/public-registration-form.test.ts": "10fdba78bf3889033ab54c379910dab08466ce144385a3e7e3bc349f013436bc",
+    "src/lib/landing-page-service.test.ts": "8adaedcb9674bac5d971839ba6868f834571bc4f32030783476181fbbe2c0e4d"
+  }
+}

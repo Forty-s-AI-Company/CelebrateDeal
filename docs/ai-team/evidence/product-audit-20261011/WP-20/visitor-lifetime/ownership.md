@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; four visitor source/test files and evidence. Original review preserved. Independent re-review required.

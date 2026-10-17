@@ -1,0 +1,51 @@
+{
+  "root_cause": "disposable runner excluded 8-digit migration directory; draft table absent",
+  "migration": "20261011_registration_form_retry_draft",
+  "changed_files": [
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "scripts/prisma-loopback-disposable-migration-runner.test.mjs",
+    "scripts/prisma-migrate-status-diagnostic.mjs",
+    "scripts/prisma-migrate-status-diagnostic.test.mjs"
+  ],
+  "unit_status": "PASS",
+  "unit_total": 19,
+  "review_status": "COMPLETED_WITH_NONBLOCKING_MINORS",
+  "product_schema_changed": false,
+  "prior_browser_status": "PASS_95_MIGRATIONS",
+  "new_database_status": "PASS_96_MIGRATIONS",
+  "authorization": "SESSION_WIDE_NONPRODUCTION_APPROVED",
+  "ownership": "root sole writer; independent worktree",
+  "database_tests": {
+    "status": "PASS",
+    "total": 31,
+    "passed": 31,
+    "failed": 0,
+    "skipped": 0,
+    "failures": []
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "observed_review_model": "claude-opus-5-5",
+  "review_findings": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 2,
+    "NIT": 0
+  },
+  "remaining_minor": "Two hypothetical input/error-reporting limits retained; no current skipped migration or false PASS",
+  "diagnostic_followup": "8-digit allowlisted pending names now supported and regression-tested",
+  "review_dispositions": [
+    {
+      "finding": "discovery before receipt creation",
+      "disposition": "confirmed",
+      "reason": "Nonblocking for current complete96-source inventory; invalid input still throws and canonical verify rejects stale receipt. No source folder currently invalid. Do not interpret receipt without exit/gate."
+    },
+    {
+      "finding": "future symlink migration directory",
+      "disposition": "confirmed",
+      "reason": "Current migration inventory consists of regular directories; symlink/junction scope not introduced. Regression compares all actual SQL-bearing regular source directories; no claim for future linked migrations."
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:9afe92db0cfa9f4fd22d91d72687be2e835b97bc074119a985bdbe4153e162ce",
+  "changed_files": [
+    "src/components/landing-pages/funnel-page-editor.tsx",
+    "src/components/landing-pages/funnel-popup-preview.tsx",
+    "src/components/landing-pages/funnel-webinar-experience.tsx",
+    "src/components/landing-pages/funnel-webinar-settings.tsx",
+    "src/components/landing-pages/landing-page-puck-config.tsx",
+    "src/components/landing-pages/funnel-popup-preview.test.tsx"
+  ],
+  "tests_passed": 58,
+  "lint": "PASS",
+  "typecheck": "PASS after evidence backups renamed .tsx.txt; previous failures retained",
+  "browser_current_revision": "NOT_RUN",
+  "review_current_revision": "NOT_RUN",
+  "remaining": "Final review, current-snapshot a11y and whole WP acceptance; audit dynamic labels beyond static JSX inventory."
+}

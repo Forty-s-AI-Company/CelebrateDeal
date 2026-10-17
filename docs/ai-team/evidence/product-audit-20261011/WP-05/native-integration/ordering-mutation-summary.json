@@ -1,0 +1,1 @@
+{"expected_failure": true, "failed_tests": 2, "files_restored": true, "scope": "Only availability-gate tests; deliberate pre-gate read regression"}

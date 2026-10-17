@@ -1,0 +1,28 @@
+{
+  "status": "IN_PROGRESS",
+  "files": {
+    "prisma/migrations/20261016060000_live_metric_viewing_source/migration.sql": "9577c1c9af2449706ce148a4b9d5eabcf040f9d52bb15f3b63d4dc178776a0b7",
+    "prisma/schema.prisma": "0f3e5125b4b698d219e7e6c7ee89546c3bad046ace81e5ca69b1fca590c86d74",
+    "src/lib/live-metric-viewing-source-audit.ts": "d2bb9551239b19a75123533bd74fe5eca0e6d37aca4f514fd6cde51aea4de39b",
+    "src/lib/live-metric-viewing-source-audit.test.ts": "56a7d2d3cf869806b5388e9d065c04da76b347c3b41e4d75b552f6590c42bad1",
+    "scripts/wp20-viewing-source-ledger-disposable.mjs": "1becc905f0d1553ddde608eec7f0d796a4af5578976bed6aeefab95f97c49e3e",
+    "src/lib/live-metric-version.ts": "93b1530601d8ac38efba87418bff0093b20d6ca16fea013395b6e514e0cf061f",
+    "src/lib/live-metric-version.test.ts": "716d621e8d02f644ae2a67a327d1a49a1cdcebd6a4e021771ac054aca90e6403"
+  },
+  "unitTests": 72,
+  "unit": "viewing-ledger-final-unit.json",
+  "lint": "viewing-ledger-final-lint.json",
+  "typecheck": "viewing-ledger-final-typecheck.json",
+  "database": "viewing-ledger-db.json",
+  "migrationCount": 118,
+  "review": "viewing-ledger-review-disposition.json",
+  "limitations": [
+    "No playback-intake completeness proof",
+    "No viewing coverage producer or writer fence yet",
+    "No existing-version epoch backfill",
+    "Populated117-to118 upgrade not executed",
+    "Generated workspace Prisma client predates metric models; test uses raw SQL against validated migration schema",
+    "Trusted DB owner boundary; actual deployed non-owner runtime credentials/roles NOT_VERIFIED"
+  ],
+  "acceptance": "NOT_READY; full WP incomplete; retain reviewed BLOCKER/MAJOR and current-source review gaps"
+}

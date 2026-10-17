@@ -1,0 +1,77 @@
+{
+  "status": "IN_PROGRESS",
+  "authorization": "AUTHORIZED_NONPRODUCTION",
+  "ownership": "root sole writer; independent worktree",
+  "files": [
+    {
+      "path": "prisma/schema.prisma",
+      "sha256": "b6042d549caefb5e623396904fb3ac08328b9969ca72f8565e3e4a5cbc27c1ad"
+    },
+    {
+      "path": "prisma/migrations/20261014120000_live_metric_evidence/migration.sql",
+      "sha256": "c679cf9282a70cf31dd79d4a006eede7ccae6aec728afcbcc37d4a44e6b0b608"
+    },
+    {
+      "path": "scripts/wp20-metric-persistence-disposable.mjs",
+      "sha256": "78e9ed5ddf424953d1cca39be35e4fd98168cfe4c8dbd2b1ad8997cee44b4345"
+    }
+  ],
+  "validation": {
+    "disposable_database": "PASS: current 70 checks including 100001-row actual index plans; 97 migrations; cleanup PASS",
+    "scoped_eslint": "PASS current runner",
+    "independent_review": "round4 SUCCESS observed claude-opus-5-5; cohort-specific invalidation, scoped admission lookup and ReadCommitted guards subsequently fixed, pending re-review",
+    "typecheck": "NOT_RUN for this persistence snapshot",
+    "full_wp20_acceptance": "NOT_READY",
+    "load": "Prior release/timestamptz snapshot: 500 distinct admissions / 6000 intervals / 500 releases PASS; p95 438ms, release 134ms. Latest cohort/isolation changes NOT_RERUN under load."
+  },
+  "remaining": [
+    "independent migration review and fixes",
+    "bounded background aggregation",
+    "verified identity/API/player/read-model/UI integration",
+    "browser verification and whole-WP acceptance"
+  ],
+  "review_findings": {
+    "lifecycle": "Live/vendor/version delete tests PASS. Individual interval delete now rejected. External source mutation invalidation semantics still need resolution.",
+    "clock": "Functions pin UTC and all six new metric models use timestamptz(3). Actual Asia/Taipei session/interval receipt test PASS after reproducing timestamp-without-zone failure. Report lease timezone matrix still pending.",
+    "session": "Insertion source checks now lock live/submission/admission/version before session. Receipt clock after waits. Session/registration creation also protected. Await independent review.",
+    "report": "Submission changes invalidate only the affected verified cohort windows, structural revision unchanged; admission shortening filters vendor/live/version; queued raw updates rejected. Default RC tests PASS; pending latest independent review.",
+    "source_version": "Source-row lock waits and rejection verified for revocation, admission deletion, video change. Normal admission release now preserves ready historical reports; shortened expiry only invalidates overlapping windows.",
+    "indexes": "Actual 100001 validated rows per metric registration/session table: dedicated index scans, one result row each, execution 0.126ms / 0.069ms. First fixture timed out; explicit source ANALYZE in uncommitted fixture permits correct planning; no disabled constraints/triggers.",
+    "isolation": "New metric write triggers reject RepeatableRead/other isolation; explicit RepeatableRead insert rejection test PASS. Integration must use ReadCommitted."
+  },
+  "load_metrics": {
+    "sessions": 500,
+    "samplesPerSession": 12,
+    "deliveryLagMs": 5000,
+    "stored": 6000,
+    "elapsedMs": 66949,
+    "p50Ms": 261,
+    "p95Ms": 724,
+    "maxMs": 1060,
+    "reportStatus": "ready",
+    "sourceRevisionUnchanged": true
+  },
+  "index_metrics": {
+    "validatedRowsPerTable": 100001,
+    "plans": [
+      {
+        "table": "LiveMetricRegistration",
+        "indexes": [
+          "LiveMetricRegistration_submissionId_idx"
+        ],
+        "actualRows": 1,
+        "executionMs": 0.126
+      },
+      {
+        "table": "LiveMetricSession",
+        "indexes": [
+          "LiveMetricSession_admissionSessionId_idx"
+        ],
+        "actualRows": 1,
+        "executionMs": 0.069
+      }
+    ],
+    "constraintsAndTriggersEnabled": true
+  },
+  "latest_integration_evidence": "../ingestion/status.json: current 78 DB checks and all four validation receipts PASS; original persistence review remains pending final acceptance"
+}

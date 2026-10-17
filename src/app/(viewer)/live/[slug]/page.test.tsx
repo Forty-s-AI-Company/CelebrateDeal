@@ -1,4 +1,6 @@
+import {MetricVisitorError} from '@/lib/live-metric-visitor';
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {createMetricIngressAttestor,METRIC_INGRESS_HEADER} from '@/lib/live-metric-ingress-proof';
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -8,7 +10,13 @@ const mocks = vi.hoisted(() => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
   warn: vi.fn(),
+  connection: vi.fn(),
+  issuePage: vi.fn(),
+  headers: vi.fn(),
 }));
+vi.mock('next/headers',()=>({headers:mocks.headers}));
+vi.mock("next/server",()=>({connection:mocks.connection}));
+vi.mock("@/lib/live-metric-visit-page",()=>({issueMetricVisitPage:mocks.issuePage}));
 
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
@@ -35,6 +43,42 @@ vi.mock("@/components/live-playback", () => ({
 }));
 
 import PublicLivePage from "./page";
+import {PersistentLivePlaybackRegistration} from '@/components/persistent-live-playback';
+function playback(element:Awaited<ReturnType<typeof PublicLivePage>>){
+  const child=element.props.children[1];
+  expect(child.type).toBe(PersistentLivePlaybackRegistration);
+  return child;
+}
+
+it('waits for request-time rendering and durable page issuance before exposing the event to the collector',async()=>{
+ vi.stubEnv('LIVE_METRIC_VISITOR_KEYRING','synthetic-enabled');
+ let release!:(value:unknown)=>void;mocks.issuePage.mockImplementationOnce(()=>new Promise(done=>{release=done;}));
+ let returned=false;const pending=PublicLivePage({params:Promise.resolve({slug:'public-live'})}).then(value=>{returned=true;return value;});
+ await vi.waitFor(()=>expect(mocks.issuePage).toHaveBeenCalledTimes(1));expect(returned).toBe(false);
+ expect(mocks.connection.mock.invocationCallOrder[0]).toBeLessThan(mocks.findFirst.mock.invocationCallOrder[0]);
+ const eventId='10000000-0000-4000-8000-000000000001';release({eventId,versionId:'version'});
+ const element=await pending;expect(element.props.children[0].props).toEqual({vendorId:'vendor-1',liveId:'live-1',eventId});
+ expect(mocks.issuePage).toHaveBeenCalledWith(expect.anything(),{vendorId:'vendor-1',liveId:'live-1'},{kind:'viewer'});
+});
+it('does not release a collector or silently render an untracked page after issuance fails',async()=>{
+ vi.stubEnv('LIVE_METRIC_VISITOR_KEYRING','synthetic-enabled');mocks.issuePage.mockRejectedValueOnce(new Error('synthetic issuance failure'));
+ await expect(PublicLivePage({params:Promise.resolve({slug:'public-live'})})).rejects.toThrow('synthetic issuance failure');
+});
+it('does not issue an expectation for an unavailable playback page',async()=>{
+ vi.stubEnv('LIVE_METRIC_VISITOR_KEYRING','synthetic-enabled');mocks.resolveLiveRuntime.mockReturnValueOnce({state:'unavailable',playbackStartSeconds:null});
+ const element=await PublicLivePage({params:Promise.resolve({slug:'public-live'})});
+ expect(mocks.issuePage).not.toHaveBeenCalled();expect(element.props.children[0]).toBeNull();
+});
+it('requires and forwards a signed request binding when the isolated ingress profile is active',async()=>{
+ const run={vendorId:'vendor-1',liveId:'live-1',versionId:'version',runId:'10000000-0000-4000-8000-000000000001'},key=new Uint8Array(32).fill(5),frameId='10000000-0000-4000-8000-000000000002';
+ vi.stubEnv('LIVE_METRIC_VISITOR_KEYRING','synthetic-enabled');vi.stubEnv('LIVE_METRIC_INGRESS_PROFILE',JSON.stringify({...run,key:Buffer.from(key).toString('base64url')}));
+ const proof=createMetricIngressAttestor(run,key).issue(frameId,{kind:'viewer',method:'GET',target:'/live/public-live'});
+ mocks.headers.mockResolvedValue(new Headers({[METRIC_INGRESS_HEADER]:proof}));
+ await PublicLivePage({params:Promise.resolve({slug:'public-live'})});
+ expect(mocks.issuePage).toHaveBeenCalledWith(expect.anything(),{vendorId:'vendor-1',liveId:'live-1'},{kind:'viewer'},expect.objectContaining({...run,frameId,kind:'viewer'}));
+ mocks.issuePage.mockClear();mocks.headers.mockResolvedValue(new Headers());
+ await expect(PublicLivePage({params:Promise.resolve({slug:'public-live'})})).rejects.toThrow('binding unavailable');expect(mocks.issuePage).not.toHaveBeenCalled();
+});
 
 const validFields = [
   { key: "name", label: "姓名", type: "text", required: true },
@@ -101,16 +145,19 @@ function runtimeReadySalesLive() {
 }
 
 beforeEach(() => {
+  vi.stubEnv('LIVE_METRIC_INGRESS_PROFILE','');
   vi.restoreAllMocks();
   vi.clearAllMocks();
   vi.spyOn(console, "warn").mockImplementation(mocks.warn);
   mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: true });
   mocks.resolveLiveRuntime.mockReturnValue({ state: "playing", playbackStartSeconds: 0 });
   mocks.findFirst.mockResolvedValue(publicLive);
+  mocks.issuePage.mockResolvedValue(null);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("PublicLivePage", () => {
@@ -124,7 +171,7 @@ describe("PublicLivePage", () => {
       },
     });
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
-    expect(element.props.live.interactionEvents[0].metadata).toEqual({
+    expect(playback(element).props.live.interactionEvents[0].metadata).toEqual({
       kind: "poll", question: "選哪個？", durationSec: 30,
       options: [{ id: "option-1", label: "A" }, { id: "option-2", label: "B" }],
     });
@@ -176,8 +223,8 @@ describe("PublicLivePage", () => {
         messageTemplate: true,
       }),
     }));
-    expect(element.props.live.form).toBeNull();
-    expect(element.props.live.chatEnabled).toBe(false);
+    expect(playback(element).props.live.form).toBeNull();
+    expect(playback(element).props.live.chatEnabled).toBe(false);
   });
 
   it("returns not found when a waiting runtime is not publish-ready", async () => {
@@ -222,8 +269,8 @@ describe("PublicLivePage", () => {
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
     expect(mocks.notFound).not.toHaveBeenCalled();
-    expect(element.props.live.runtimeState).toBe("unavailable");
-    expect(element.props.live).not.toHaveProperty("videoUrl");
+    expect(playback(element).props.live.runtimeState).toBe("unavailable");
+    expect(playback(element).props.live).not.toHaveProperty("videoUrl");
   });
 
   it("returns not found when the lifecycle filter rejects the live", async () => {
@@ -277,7 +324,7 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
-    expect(element.props.live.form).toEqual({
+    expect(playback(element).props.live.form).toEqual({
       id: "form-valid",
       headline: "立即登記",
       description: "報名說明",
@@ -285,8 +332,8 @@ describe("PublicLivePage", () => {
       successMessage: "已完成",
       fields,
     });
-    expect(element.props.live).not.toHaveProperty("formConfigurationUnavailable");
-    expect(element.props.live.chatEnabled).toBe(true);
+    expect(playback(element).props.live).not.toHaveProperty("formConfigurationUnavailable");
+    expect(playback(element).props.live.chatEnabled).toBe(true);
   });
 
   it("maps public commerce data without exposing the playback source", async () => {
@@ -318,7 +365,7 @@ describe("PublicLivePage", () => {
     });
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
-    expect(element.props.live).toEqual({
+    expect(playback(element).props.live).toEqual({
       id: "live-1", title: "公開直播", slug: "public-live", status: "live", runtimeState: "playing", scheduledAt: publicLive.scheduledAt.toISOString(), serverNow: expect.any(String), description: "直播說明", accentCopy: "限時優惠", heroImageUrl: "/hero.png", vendorId: "vendor-1", admissionRequired: true, chatEnabled: true,
       brand: { name: "品牌商店", logoUrl: "/logo.png", primaryColor: "#123456", ctaColor: "#654321" },
       form: { id: "form-1", headline: "立即登記", description: "報名說明", submitLabel: "送出資料", successMessage: "已完成", fields: validFields },
@@ -408,8 +455,8 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
-    expect(element.props.live.interactionEvents).toEqual([]);
-    expect(element.props.live.scheduledMessages).toEqual([]);
+    expect(playback(element).props.live.interactionEvents).toEqual([]);
+    expect(playback(element).props.live.scheduledMessages).toEqual([]);
   });
 
   it("omits public messages assigned to a disabled role without hiding system or commerce events", async () => {
@@ -484,8 +531,8 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
-    expect(element.props.live.interactionEvents.map((event: { id: string }) => event.id)).toEqual(["event-product"]);
-    expect(element.props.live.scheduledMessages).toEqual([]);
+    expect(playback(element).props.live.interactionEvents.map((event: { id: string }) => event.id)).toEqual(["event-product"]);
+    expect(playback(element).props.live.scheduledMessages).toEqual([]);
   });
 
   it("projects only valid scheduled chat messages and keeps private role fields out of the client props", async () => {
@@ -555,13 +602,13 @@ describe("PublicLivePage", () => {
     });
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
-    expect(element.props.live.scheduledMessages).toEqual([
+    expect(playback(element).props.live.scheduledMessages).toEqual([
       expect.objectContaining({ id: "scheduled-official", source: "scheduled", triggerSec: 10, body: "歡迎", actor: expect.objectContaining({ presentationRole: "official" }) }),
       expect.objectContaining({ id: "scheduled-audience", source: "scheduled", triggerSec: 20, body: "記得看看商品", actor: expect.objectContaining({ presentationRole: "audience" }) }),
     ]);
-    expect(element.props.live.scheduledMessages[0]).not.toHaveProperty("roleId");
-    expect(element.props.live.scheduledMessages[0]).not.toHaveProperty("roleType");
-    expect(element.props.live.interactionEvents).toEqual([]);
+    expect(playback(element).props.live.scheduledMessages[0]).not.toHaveProperty("roleId");
+    expect(playback(element).props.live.scheduledMessages[0]).not.toHaveProperty("roleType");
+    expect(playback(element).props.live.interactionEvents).toEqual([]);
   });
 
   it("omits a product spotlight that is not in the live's current saleable product set", async () => {
@@ -605,8 +652,8 @@ describe("PublicLivePage", () => {
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 
-    expect(element.props.live.interactionEvents).toEqual([]);
-    expect(element.props.live.products).toEqual([
+    expect(playback(element).props.live.interactionEvents).toEqual([]);
+    expect(playback(element).props.live.products).toEqual([
       expect.objectContaining({ id: "product-current", name: "目前商品" }),
     ]);
   });
@@ -620,14 +667,23 @@ describe("PublicLivePage", () => {
     });
 
     const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
-    expect(element.props.live.form).toBeNull();
-    expect(element.props.live.formConfigurationUnavailable).toBe(true);
-    expect(element.props.live.chatEnabled).toBe(false);
-    expect(element.props.live.videoUrl).toBeUndefined();
-    expect(element.props.live.interactionEvents).toEqual([]);
-    expect(element.props.live.products).toEqual([]);
-    expect(Object.keys(element.props.live)).toEqual([
+    expect(playback(element).props.live.form).toBeNull();
+    expect(playback(element).props.live.formConfigurationUnavailable).toBe(true);
+    expect(playback(element).props.live.chatEnabled).toBe(false);
+    expect(playback(element).props.live.videoUrl).toBeUndefined();
+    expect(playback(element).props.live.interactionEvents).toEqual([]);
+    expect(playback(element).props.live.products).toEqual([]);
+    expect(Object.keys(playback(element).props.live)).toEqual([
       "id", "title", "slug", "status", "runtimeState", "scheduledAt", "serverNow", "description", "accentCopy", "heroImageUrl", "vendorId", "admissionRequired", "chatEnabled", "brand", "form", "formConfigurationUnavailable", "interactionEvents", "scheduledMessages", "products",
     ]);
   });
+});
+
+it('keeps authorized playback content without a collector after metric persistence failure',async()=>{
+ vi.stubEnv('LIVE_METRIC_VISITOR_KEYRING','synthetic-enabled');
+ mocks.issuePage.mockRejectedValueOnce(new MetricVisitorError('PERSISTENCE_UNAVAILABLE'));
+ const result=await PublicLivePage({params:Promise.resolve({slug:'public-live'})});
+ expect(result.props.children[0]).toBeNull();
+ expect(result.props.children[1].type).toBe(PersistentLivePlaybackRegistration);
+ expect(mocks.notFound).not.toHaveBeenCalled();
 });

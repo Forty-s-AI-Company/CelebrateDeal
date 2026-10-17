@@ -1,0 +1,9 @@
+{
+  "workflow": ".github/workflows/ci.yml",
+  "push_trigger": true,
+  "lint_command": "npm run lint",
+  "unit_command": "npm run test:coverage",
+  "configuration_change_required": false,
+  "remote_ci_run": "NOT_RUN",
+  "global_lint": "previous FAIL retained; no exclude or threshold change"
+}

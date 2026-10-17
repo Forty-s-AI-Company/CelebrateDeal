@@ -1,0 +1,27 @@
+{
+  "files": [
+    "src/app/(app)/billing/payment-methods/page.tsx",
+    "src/app/(app)/billing/payment-methods/page.test.tsx",
+    "src/lib/merchant-onboarding.ts",
+    "src/lib/merchant-onboarding.test.ts",
+    "src/lib/sales-workspace.ts",
+    "src/lib/sales-workspace.test.ts",
+    "src/app/(app)/onboarding/page.tsx",
+    "src/app/(app)/onboarding/page.test.tsx",
+    "src/app/(app)/dashboard/dashboard-details.tsx",
+    "src/app/(app)/dashboard/dashboard-details.test.ts"
+  ],
+  "sourceHashes": {
+    "src/app/(app)/billing/payment-methods/page.tsx": "b053f95619d99d5305768bf59f5ebc573ac2e6de6297aa7895a5ec043f2686b7",
+    "src/app/(app)/billing/payment-methods/page.test.tsx": "878576755649ee4a69dfedb4c84bfac810a7c8c69f1b66c23eb63a0d5daa9a29",
+    "src/lib/merchant-onboarding.ts": "06760afd849a8ace0a68ac85e583fbee7fefdb851cceefe7e065b77c5af68c2c",
+    "src/lib/merchant-onboarding.test.ts": "5da8d8d5d3cedc98dbd790f7ff7431981e23f0b2ba427161ef9844575b0b14bc",
+    "src/lib/sales-workspace.ts": "d5e3769877b280b6a12eb72e07e6ec406748807f04633a58228cf67b7354b8ec",
+    "src/lib/sales-workspace.test.ts": "8f35f6b5b704d26d580e2e384ede39b4ab7abc70598373f211cf08d2df3e718e",
+    "src/app/(app)/onboarding/page.tsx": "29e165f6fc54c6d9eb410fc47fd950f0583988c7d2395a7e4c654ce1a63f72d0",
+    "src/app/(app)/onboarding/page.test.tsx": "2b39cd66bf5e2d0c845ea121ad74e65733f2eadb041c454d386107244a9e7240",
+    "src/app/(app)/dashboard/dashboard-details.tsx": "a5a2cdc99655f1e63e674fc7b73ea33f399d7d95d04ffffe2e87135225fa2b26",
+    "src/app/(app)/dashboard/dashboard-details.test.ts": "95920f16945198cd9dc69c26c6ec0e3826ae390026753df37b165ac43a94a820"
+  },
+  "revision": "sha256:b8f7981bd6311bb7d2f9303c8a50c5cc623a43404558ab69661bdc8e3086bb51"
+}

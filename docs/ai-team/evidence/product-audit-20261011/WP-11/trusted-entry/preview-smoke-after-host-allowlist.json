@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "check": "login",
+      "exit": 0,
+      "http_status": "200",
+      "login_marker": true,
+      "fail_closed_marker": null
+    },
+    {
+      "check": "untrusted-entry",
+      "exit": 0,
+      "http_status": "503",
+      "login_marker": null,
+      "fail_closed_marker": true
+    }
+  ],
+  "synthetic_payload": true,
+  "database_operations": false,
+  "response_body_persisted": false
+}

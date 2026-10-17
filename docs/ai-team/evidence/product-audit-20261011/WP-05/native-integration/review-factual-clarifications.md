@@ -1,0 +1,7 @@
+# 審查敘述的範圍補充
+
+保留原review不改寫。Opus摘要寫「滿額拒絕前不取得DB connection」不精確：鎖前count仍使用短暫query connection，避免的是interactive transaction與advisory lock等待。兩連線pool持鎖測試證明指定場景能回應，不保證所有洪水或非滿額場景。
+
+安全審查沒有UI，也未自行執行測試；最新runner收據另有13項PASS。global128列可被占满、非滿額鎖等待及idle expired列保留仍記錄為殘餘風險，不宣稱消除DoS。
+
+UI packet先因CRLF使.NET長度20038超過20000而本機INVALID_INPUT，attempts空；改讀UTF8並正規化換行後19808，未刪任何來源內容、未降低輸入檢查。只在實際provider dispatch才扣追加額度。

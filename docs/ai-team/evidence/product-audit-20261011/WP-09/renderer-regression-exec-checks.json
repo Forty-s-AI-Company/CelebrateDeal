@@ -1,0 +1,22 @@
+{
+  "unit_exit": 0,
+  "unit_passed": 37,
+  "unit_chunk": "52acc0",
+  "browser_session": 35682,
+  "browser_exit": 0,
+  "browser_chunk": "802881",
+  "typecheck_session": 67827,
+  "typecheck_exit": 0,
+  "typecheck_chunk": "346833",
+  "lint_session": 6594,
+  "lint_exit": 0,
+  "lint_chunk": "4f5c04",
+  "screenshots_saved": 12,
+  "manually_viewed": [
+    "audience-course-consultation-390.png",
+    "webinar-course-registration-1280.png"
+  ],
+  "build_reused": "../WP-14/ab-build.json",
+  "no_new_build": true,
+  "unrelated_WP19_copy_not_claimed_built": true
+}

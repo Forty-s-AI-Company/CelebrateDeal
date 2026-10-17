@@ -1,0 +1,63 @@
+{
+  "status": "IN_PROGRESS",
+  "acceptance": "NOT_READY",
+  "authorization": "AUTHORIZED_NONPRODUCTION",
+  "source_revision": "sha256:358e310b3e74199c2d01128b2485889ddc88a15412246b889a64882a51b671ab",
+  "actual_result": "Bounded typed viewing ingestion implemented with server timestamp anchor, canonical replay hashing, scoped source-first locks, atomic ReadCommitted append and stable database error mapping. HTTP authentication/session issuance and player are not yet wired.",
+  "checks": {
+    "disposable_db": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "disposable_db",
+      "revision": "sha256:358e310b3e74199c2d01128b2485889ddc88a15412246b889a64882a51b671ab",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 20.656
+    },
+    "lint": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:358e310b3e74199c2d01128b2485889ddc88a15412246b889a64882a51b671ab",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.531
+    },
+    "targeted": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "targeted",
+      "revision": "sha256:358e310b3e74199c2d01128b2485889ddc88a15412246b889a64882a51b671ab",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 5.39
+    },
+    "typecheck": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:358e310b3e74199c2d01128b2485889ddc88a15412246b889a64882a51b671ab",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 93.39
+    }
+  },
+  "unit_tests_added": 21,
+  "disposable_database_checks": 78,
+  "cleanup": "PASS",
+  "review": {
+    "provider": "claude_cli",
+    "observed_model": "claude-opus-5-5",
+    "raw_receipt": "review-current.json",
+    "adjudication": "review-adjudication.json",
+    "latest_patch_final_review": "PENDING"
+  },
+  "remaining": [
+    "HTTP same-origin/body/rate-limit gate and server-resolved identity",
+    "session/content-version issuance and opt-in collection",
+    "player interval collection and lifecycle",
+    "resumable report worker and analytics UI",
+    "final critical review and full-WP acceptance"
+  ],
+  "ownership": "root sole writer; isolated worktree; automatic_spawn false"
+}

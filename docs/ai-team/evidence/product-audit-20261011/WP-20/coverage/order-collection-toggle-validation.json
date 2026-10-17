@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "lint": "PASS",
+  "database": "PASS",
+  "scope": "collectionEnabled change raises sourceRevision and changes audit digest; historical orders retained, coverage unknown",
+  "source": {
+    "scripts/wp20-order-source-audit-probe.mjs": "d94d5316eafd402680f55d6fe312789e3ab511264e2221049755cf6403c31e50"
+  },
+  "wholeWpStatus": "IN_PROGRESS"
+}

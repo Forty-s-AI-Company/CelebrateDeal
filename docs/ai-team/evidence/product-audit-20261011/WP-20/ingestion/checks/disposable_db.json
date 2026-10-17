@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "disposable_db", "revision": "sha256:358e310b3e74199c2d01128b2485889ddc88a15412246b889a64882a51b671ab", "status": "PASS", "exit_code": 0, "duration_seconds": 20.656}

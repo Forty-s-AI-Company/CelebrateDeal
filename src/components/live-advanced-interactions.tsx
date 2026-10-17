@@ -42,8 +42,17 @@ function metadata(value: unknown): AdvancedInteractionMetadata | null {
   return value as AdvancedInteractionMetadata;
 }
 
+/** Keep server backoff bounded to one minute, without tight retries. */
+export function interactionRetryDelay(response: Response) {
+  if (response.status !== 429 && response.status !== 503) return 2_000;
+  const value = response.headers.get("Retry-After")?.trim() ?? "";
+  const milliseconds = /^\d+$/u.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now();
+  return Number.isFinite(milliseconds) && milliseconds > 0
+    ? Math.min(60_000, Math.max(2_000, milliseconds)) : 30_000;
+}
+
 class InteractionRequestError extends Error {
-  constructor(public status: number) {
+  constructor(public status: number, public retryDelay = 2_000) {
     super(status === 409 ? "這個互動已結束，或你已經參加過了。" : "互動連線暫時忙碌，請再試一次。");
   }
 }
@@ -55,7 +64,7 @@ async function interactionRequest(body: Record<string, unknown>, signal?: AbortS
     headers: { "content-type": "application/json", "x-celebratedeal-client": "web" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new InteractionRequestError(response.status);
+  if (!response.ok) throw new InteractionRequestError(response.status, interactionRetryDelay(response));
   return await response.json() as { run?: PublicRun | null };
 }
 
@@ -152,17 +161,29 @@ function ActiveLiveAdvancedInteractions({
     const controller = new AbortController();
     const { signal } = controller;
     let timer: number;
+    let openRetryAt = 0;
+    let lastScriptedRun: PublicRun | null = null;
     async function refresh() {
+      let retryDelay = 2_000;
       try {
-        let scriptedRun: PublicRun | null = null;
-        if (scriptedEvent) {
+        let scriptedRun = lastScriptedRun;
+        if (scriptedEvent && Date.now() >= openRetryAt) {
           try {
             const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
             scriptedRun = payload.run ?? null;
+            lastScriptedRun = scriptedRun;
           } catch (error) {
             if (error instanceof InteractionRequestError && error.status === 401) {
               if (!signal.aborted) setAdmissionLost(true);
               return;
+            }
+            if (error instanceof InteractionRequestError && (error.status === 429 || error.status === 503)) {
+              // Back off this POST only; manual runs and spotlight still refresh.
+              openRetryAt = Date.now() + error.retryDelay;
+            } else {
+              // An ended/unavailable scripted run must not hide a new manual run.
+              lastScriptedRun = null;
+              scriptedRun = null;
             }
             // 排定事件已結束或暫時失敗，仍讀取手動互動與精選問題。
           }
@@ -171,6 +192,7 @@ function ActiveLiveAdvancedInteractions({
         const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
         if (signal.aborted) return;
         if (response.status === 401) { setAdmissionLost(true); return; }
+        retryDelay = interactionRetryDelay(response);
         if (!response.ok) return;
         const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
         if (signal.aborted) return;
@@ -179,7 +201,7 @@ function ActiveLiveAdvancedInteractions({
       } catch {
         // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
       } finally {
-        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), 2_000);
+        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), retryDelay);
       }
     }
     timer = window.setTimeout(() => void refresh(), 0);

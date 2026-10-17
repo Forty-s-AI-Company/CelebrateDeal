@@ -1,0 +1,12 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "scope": "LOCAL_ACTIONS_ONLY",
+  "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\shared-ip-actions\\execution-current.json"
+}

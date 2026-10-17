@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "result": {
+    "redis_restart_persistence": "PASS",
+    "synthetic_key_removed": true
+  }
+}

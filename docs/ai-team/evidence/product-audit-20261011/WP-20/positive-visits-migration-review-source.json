@@ -1,0 +1,9 @@
+{
+  "sourceHashes": {
+    "prisma/migrations/20261016180000_live_metric_visit_coverage/migration.sql": "a9e89a6a582e4f4f6be451c4a44cd0e6a9a941b4780aeb8907bb6f6f7501971a",
+    "src/lib/live-metric-visit-coverage.ts": "b799e1cc16641d70436c2a737048afcb4abeb660833e24da26fafafd5d964a64",
+    "prisma/schema.prisma": "b0d8e1dd021357fb9c747f9cf75487f6e0725bd290cd3d3366d72a69287a06bb"
+  },
+  "supplied": "complete migration130 and new privatepublisher; schema addedfields described",
+  "promptChars": 18792
+}

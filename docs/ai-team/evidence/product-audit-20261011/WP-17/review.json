@@ -1,0 +1,227 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 18,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [
+        "src/lib/quick-webinar.ts",
+        "src/lib/sales-project-publication.ts",
+        "src/app/actions/quick-webinar-actions.ts"
+      ],
+      "context_size": 18000,
+      "expected_duration": 30,
+      "code_surface_area": 6,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/app/actions/quick-webinar-actions.ts",
+      "src/lib/quick-webinar.ts",
+      "src/lib/sales-project-publication.ts"
+    ],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "reviewed": true,
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_process_status": "SUCCESS",
+  "review": {
+    "summary": "Read-only review of the supplied quick-webinar helper, the extracted publication helper and the server action. I found no blockers. Tenant scoping holds across the code shown: the manager context is checked first, and the video, project, landing-page and publication queries all filter by vendorId. Creation runs in a single transaction with stable resource IDs, so a concurrent double-submit fails on a unique key and rolls back, and a later retry takes the reuse path. The public URL is only returned after getLandingPagePublicationStatus reports the page available. The verified-payment and priced-product conditions appear unchanged as written. One MAJOR issue: the replay/reuse path, and the new-project path when an existing draft project is selected, can publish a project the manager deliberately unpublished. The page-level revision/unpublishedAt check does not see a project-level unpublish. There are also four MINOR issues, three of them low-confidence because they depend on code that was not supplied: legitimate retries rejected when the video title changes, a possible missing project-publication audit record, ambiguous confirmation-email wording relative to the Email confirmation gate, and new active vendor templates that could be picked up by any fallback lookup by trigger. This review does not confirm that unit, PG or the new tests pass.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/quick-webinar.ts",
+        "area": "prepareQuickWebinar reuse branch (projectReady with existing.revision === 1 && !existing.unpublishedAt) and new-resource projectReady call",
+        "issue": "The replay gate only checks the landing page's revision and unpublishedAt. It never checks whether the project itself was published before and then deliberately unpublished. A replay with the same requestId (browser resubmit, kept form state, network retry), or a new quick webinar created under a selected draft project, calls publishOwnedSalesProject. That can republish a project the manager took offline.",
+        "evidence": "Reuse path: `project.status === \"published\" && Boolean(project.publishedAt) || (existing.revision === 1 && !existing.unpublishedAt && (await publishOwnedSalesProject(...)).status === \"published\")`. Only status and publishedAt are selected from the project, and no project-level unpublish marker is checked. A project-level unpublish probably leaves the page's revision at 1 and unpublishedAt null, so if the page is still status 'published' the action skips publishLandingPage, but the project is already live again.",
+        "impact": "A stale or replayed request can make an intentionally withdrawn sales project (and its published pages) public again without explicit consent. This is a publication-safety and tenant-intent violation that is hard for the merchant to notice.",
+        "recommended_fix": "In the reuse branch, only auto-publish the project if it has never been published (for example, publishedAt is null and there is no prior unpublish audit or marker), or if it is the qw_project_${key} created by this same request and is still in its initial draft state. For a user-selected existing draft project, consider requiring the explicit project publish entry point instead of publishing as a side effect.",
+        "required_test": "PG integration tests: (1) create a quick webinar, publish it, unpublish the project through the existing project action, then replay the same requestId and assert the project stays unpublished and no public URL is returned. (2) Select a previously published-then-unpublished draft live project and create a new quick webinar; assert the project is not republished implicitly, or that this is gated as intended.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/quick-webinar.ts",
+        "area": "prepareQuickWebinar reuse branch: `existing.name !== title` conflict check",
+        "issue": "When the optional title is left blank, the title comes from the current video.title. If the video is renamed between the original commit and a retry with the same requestId, the legitimate retry is rejected as request_conflict, even though the action tells the user to 'retry with the same settings'.",
+        "evidence": "`const title = parsed.title || video.title.trim().slice(0, 120) || \"我的線上講座\";` is computed before the existing lookup, then compared with `existing.name`.",
+        "impact": "After a lost response, a retry can fail with a misleading conflict message instead of returning the already-created resources. This breaks the idempotency promise in a narrow case.",
+        "recommended_fix": "In the reuse branch, compare existing.name only when parsed.title is nonempty, or store the raw submitted title (or a request fingerprint) in the audit log or a column and compare that instead.",
+        "required_test": "Unit/PG test: create with a blank title, rename the video, replay the same requestId with a blank title, and expect reused:true rather than request_conflict.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/quick-webinar.ts",
+        "area": "Audit log at the end of prepareQuickWebinar / publishOwnedSalesProject extraction",
+        "issue": "The quick path can publish a sales project, but the only audit record is create_quick_webinar, and its `after` payload does not show that the project was published. If the original project publish action writes its own publish audit entry (it was not supplied), the extracted helper does not carry that over to this new caller.",
+        "evidence": "The auditLog.create `after` field is `{ pageId, projectId, videoId }`. The publishOwnedSalesProject helper writes no audit. The reuse path writes no audit at all, even when it publishes the project.",
+        "impact": "A project-level publication caused by quick webinar creation or replay cannot be traced in the audit trail, which matters for disputes and incident review.",
+        "recommended_fix": "Record the project-publication outcome: add `projectPublished: boolean` to the create audit, and write an audit entry with the same action/shape as the original publish action whenever publishOwnedSalesProject returns 'published' from either branch.",
+        "required_test": "PG test: for both the create and reuse branches, when the project goes from draft to published, assert an audit row records the publication with actorId and projectId.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/quick-webinar.ts",
+        "area": "messageTemplate creation for qw_confirm_ (trigger registration_confirmed)",
+        "issue": "The confirmation template tells the recipient to complete Email confirmation ('請依報名流程完成 Email 確認') but also includes {{live_url}}. If this trigger fires after confirmation, the wording is contradictory. If it is sent before double opt-in, it hands out the viewing link before the existing Email confirmation gate.",
+        "evidence": "body: \"{{name}}，請依報名流程完成 Email 確認。\\n活動時間：{{live_start_at}}\\n觀看入口：{{live_url}}...\" with trigger \"registration_confirmed\", attached as Live.messageTemplateId.",
+        "impact": "Either confusing copy in a real email, or a viewing link that skips the preserved Email confirmation step. Which one applies depends on when registration_confirmed is dispatched.",
+        "recommended_fix": "Check when registration_confirmed is dispatched. If it is after confirmation, change the copy to a confirmed message ('報名已確認'). If it is before, remove {{live_url}} or make sure live_url requires a confirmed registration token.",
+        "required_test": "Integration test of the public registration flow for a quick webinar: assert which email is sent before and after confirmation, and that no usable live_url reaches an unconfirmed registrant.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/quick-webinar.ts",
+        "area": "messageTemplate.create for qw_confirm_/qw_reminder_ (isActive: true, vendor-wide)",
+        "issue": "Each quick webinar creates vendor-level active templates for the registration_confirmed and live_reminder triggers. If any existing send path falls back to looking up a template by vendor + trigger + isActive (not supplied), these per-event templates could be used for other lives in the same vendor.",
+        "evidence": "The templates are created with only vendorId, channel, trigger and isActive:true. They are not scoped to a live or project except through Live.messageTemplateId and LiveNotificationRule.messageTemplateId.",
+        "impact": "Other events could send emails with the wrong event's subject or copy, which is an actual-send scope leak within the tenant.",
+        "recommended_fix": "Check that no send path selects a template by trigger alone. If one does, make it require an explicit link, or mark these templates as event-bound so fallback lookups skip them.",
+        "required_test": "Test: a vendor with an existing live that has no explicit template, plus a newly created quick webinar. Trigger that live's confirmation/reminder and assert the quick-webinar templates are not used.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

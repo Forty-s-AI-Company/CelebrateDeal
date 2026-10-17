@@ -1,0 +1,70 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "label": "project-unpublished",
+      "httpStatus": 200,
+      "notFoundUi": true,
+      "noindex": true,
+      "authoredContentAbsent": true,
+      "merchantReasonsAbsent": true
+    },
+    {
+      "label": "published-root",
+      "httpStatus": 200,
+      "authoredContent": true,
+      "formVisible": true
+    },
+    {
+      "label": "published-step",
+      "path": "opt-in",
+      "httpStatus": 200,
+      "formVisible": true
+    },
+    {
+      "label": "published-step",
+      "path": "thank-you",
+      "httpStatus": 200,
+      "formVisible": true
+    },
+    {
+      "label": "unpublish-without-reload",
+      "merchantReason": true
+    },
+    {
+      "label": "disabled-form",
+      "httpStatus": 200,
+      "notFoundUi": true,
+      "noindex": true,
+      "authoredContentAbsent": true,
+      "merchantReasonsAbsent": true
+    },
+    {
+      "label": "invalid-operations",
+      "httpStatus": 200,
+      "notFoundUi": true,
+      "noindex": true,
+      "authoredContentAbsent": true,
+      "merchantReasonsAbsent": true
+    },
+    {
+      "label": "expired-closed",
+      "httpStatus": 200,
+      "merchantReason": true
+    }
+  ],
+  "axe": [
+    {
+      "label": "merchant-diagnosis",
+      "scope": "[aria-label=\"公開網址狀態\"]",
+      "violations": []
+    },
+    {
+      "label": "published-root",
+      "scope": "whole-page",
+      "violations": []
+    }
+  ],
+  "restored": true,
+  "stage": "expired"
+}

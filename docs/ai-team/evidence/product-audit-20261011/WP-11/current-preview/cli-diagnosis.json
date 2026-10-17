@@ -1,0 +1,10 @@
+{
+  "cause": "installed CLI only accepts --skip-domain for production; preview invocation rejected",
+  "source": "C:/nvm4w/nodejs/node_modules/vercel/dist/commands/deploy/index.js:1360",
+  "resolution": "remove unsupported flag; keep --target preview; do not change aliases explicitly",
+  "diagnostic_deployment": "dpl_5SehvSrziLMKLruKc7NabXdp54Dq",
+  "diagnostic_deployment_status": "CANCELED",
+  "retained_staging_id": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+  "staging_state": "READY",
+  "staging_binding_unchanged": true
+}

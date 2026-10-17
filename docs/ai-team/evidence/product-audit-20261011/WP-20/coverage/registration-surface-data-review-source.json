@@ -1,0 +1,11 @@
+{
+  "promptCharacters": 18507,
+  "files": {
+    "src/lib/live-metric-visit-context.ts": "a83d497932faaac286ed17380731541e9707b4bb823c5d7aa1697d836333ba61",
+    "src/lib/live-metric-visit-page.ts": "88201b545130dc5d42010df2f0f622ed87da97b0331cd949754db882b1120c36",
+    "src/lib/live-metric-registration-page.ts": "fb3f91162c640676cac374bd6eb5c6af4c9a5f9f6a00d221ce00ecded03ccb09",
+    "src/lib/live-metric-registration-surface.ts": "c8dc8afdbd214a887973a49a610a03292822f35703859e735c4385e088979349",
+    "src/components/metric-registration-visit.tsx": "7d7f7c19f04f95ed8ce509826e7be6e243bd4e83ed82eb3a990a66c62d9df1c1"
+  },
+  "scope": "registration-surface-data"
+}

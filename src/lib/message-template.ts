@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const MESSAGE_TEMPLATE_CHANNELS = ["email", "line"] as const;
+export const LINE_WEBINAR_TEMPLATE_TRIGGERS = ["registration_confirmed", "live_reminder", "live_started"] as const;
+export const LINE_TEMPLATE_VARIABLE_LIMITS: Record<string, number> = { name: 160, live_title: 200, live_url: 2048, live_start_at: 160, vendor_name: 200, unsubscribe_url: 2048 };
 export const MESSAGE_TEMPLATE_TRIGGERS = [
   "registration_confirmed",
   "live_reminder",
@@ -105,6 +107,14 @@ export function hasUsableMessageTemplateContent(template: { subject: string | nu
 export function normalizeMessageTemplateDraft(input: unknown): MessageTemplateDraftResult {
   const parsed = MessageTemplateDraftSchema.safeParse(input);
   if (!parsed.success) return { success: false };
+  if (parsed.data.channel === "line" && !(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(parsed.data.trigger)) return { success: false };
+  if (parsed.data.channel === "line") {
+    let maximum = parsed.data.subject.length + parsed.data.body.length + 2600;
+    (parsed.data.subject + parsed.data.body).replace(variablePattern, (match, variable: string) => {
+      maximum += (LINE_TEMPLATE_VARIABLE_LIMITS[variable] ?? 0) - match.length;return match;
+    });
+    if (maximum > 25_000) return { success: false };
+  }
   if (!hasOnlySupportedMessageTemplateVariables(parsed.data.subject) || !hasOnlySupportedMessageTemplateVariables(parsed.data.body)) {
     return { success: false };
   }

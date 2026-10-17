@@ -1,0 +1,14 @@
+{
+  "status": "FAIL",
+  "stage": "start",
+  "mode": "verification",
+  "checks": {},
+  "sourceHashes": {
+    "src/lib/live-metric-coverage-reader.ts": "58adf840b15b428b97ac932b7d3b1a477ea808d1c9152a423261371104c4a806",
+    "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql": "df3bdb4ef06d9ac3c5b2b1bf236ac8457b3dd8ebe62e084787ef7c08b9e9e62e",
+    "scripts/wp20-unproven-coverage-disposable.mjs": "a9ce51087be77f9578856274a6b8ad0e790003e9d4153875185184cc95c8b7ea"
+  },
+  "errorCode": "RUNNER_ERROR",
+  "cleanup": "UNKNOWN",
+  "migrationCount": null
+}

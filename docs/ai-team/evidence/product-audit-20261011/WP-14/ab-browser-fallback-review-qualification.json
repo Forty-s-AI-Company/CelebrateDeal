@@ -1,0 +1,18 @@
+{
+  "kind": "review",
+  "source": "agy_wrapper",
+  "revision": "sha256:9791fc9e862aa0e22c987c5ab072bfb95639b2ac01308dfb0a8e34cceb19e820",
+  "status": "PASS",
+  "independent": true,
+  "role": "senior_review",
+  "model": "gemini-3.8-flash-high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "model_source": "canonical resolved/discovered slug, AGY terminal does not report actual model; not claimed as observed",
+  "provider_receipt": "../WP-19/capability-copy-readable-fallback-review.json",
+  "source_receipt": "../WP-19/capability-copy-combined-review-source.json",
+  "finding_count": 0,
+  "fallback_route": "capability-copy-fallback-review-route.json",
+  "gpt_final_verdict": false,
+  "coverage": "Exact current final3 test/caller files and2 declared product dependencies reviewed; original5 product source hashes unchanged from prior qualified Sonnet readout review."
+}

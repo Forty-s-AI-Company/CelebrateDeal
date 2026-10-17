@@ -1,0 +1,5 @@
+# Receipt lifecycle review follow-up
+Original finding 2: ../visit-writer/review-current.json. Not independently closed yet.
+Under the version and existing visitor locks, recordMetricVisit now checks the exact scoped persisted receipt before attempting INSERT. A committed receipt is readable after disabled/expired collection without changing visitedAt or writing new facts. New events still require the existing DB collection/lifetime guard. Deleted facts are not resurrected after closure. This is an internal persistence API, not authorization: the caller must still prove first-party visitor scope. No new HTTP access or retention policy is granted.
+Real DB fixture proves disabled and expired replay, new-event rejection, unchanged one-row count, and rejection/zero rows after deletion. Existing same-key races and FK concurrency checks still pass. Unit6/lint/tsc/DB127/schema/98 migrations/cleanup PASS at f44710d2fc8d7cfb25a82208918f90af1bcf0437716e802ee2eebf3cd80e3c7b.
+Outstanding: precision, verified collection coverage, cleanup scaling/lock order, complete collection/report integration, independent re-review and acceptance.

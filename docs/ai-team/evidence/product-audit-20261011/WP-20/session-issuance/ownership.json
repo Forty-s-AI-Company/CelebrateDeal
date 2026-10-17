@@ -1,0 +1,11 @@
+{
+  "writer": "root",
+  "files": [
+    "src/lib/live-metric-session.ts",
+    "src/lib/live-metric-session.test.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "automatic_spawn": false,
+  "depth": 0,
+  "scope": "server-side issuance and synthetic DB tests; no collection enabling, no schema changes"
+}

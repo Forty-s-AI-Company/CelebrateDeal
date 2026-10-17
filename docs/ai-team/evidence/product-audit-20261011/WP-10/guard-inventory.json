@@ -1,0 +1,67 @@
+{
+  "scope": "admin page/layout/route entry files",
+  "records": [
+    {
+      "file": "src/app/admin/layout.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/course-payouts/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/dashboard/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/payouts/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/payouts/[id]/csv/route.ts",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/platform-referral-payouts/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/refund-reconciliation/[id]/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/settlements/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/stream-reconciliation/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/webhooks/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/webhooks/[id]/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/billing/webhooks/[id]/reconciliation/route.ts",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/cloudflare/videos/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/support-cases/page.tsx",
+      "guard": true
+    },
+    {
+      "file": "src/app/admin/support-cases/[id]/page.tsx",
+      "guard": true
+    }
+  ],
+  "pending_factor": "startMfaEnrollment stores only pending setup cookie; completeMfaEnrollment verifies TOTP before userMfaFactor upsert",
+  "source": "src/lib/mfa-enrollment.ts"
+}

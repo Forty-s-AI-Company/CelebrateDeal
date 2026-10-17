@@ -1,0 +1,13 @@
+{
+  "files": {
+    "prisma/migrations/20261016040000_live_metric_order_payment_write_fence/migration.sql": "af53c5ccb8226d1737a2016494c6d95b19234f1211e418487181a96ac7a44bb9",
+    "prisma/migrations/20261016030000_live_metric_order_payment_serialization/migration.sql": "2ab70d10756f1a44f41699f9a48be7ce475979a0648b668cf1bce75e309bbf40",
+    "prisma/migrations/20261016010000_live_metric_order_window_source/migration.sql": "3dcbaf2cad4aa61a4fddc41f6b5b185ad61763ee49e8e2114f4c1cd77d7e5326",
+    "prisma/migrations/20261016000000_live_metric_order_identity_revision/migration.sql": "9b42eabdf28956e274c421dae640f207e6d9f47c37673183fb9f858c2aee44ec",
+    "scripts/wp20-order-window-link-race.mjs": "74aeb14735e318b58ec973afd834b0562968355a061a2da0e659746da30c406d"
+  },
+  "execution_provider": "claude_cli",
+  "requested_model": "opus",
+  "scope": "Follow-up 116/payment isolation",
+  "priorReview": "order-payment-serialization-review.json"
+}

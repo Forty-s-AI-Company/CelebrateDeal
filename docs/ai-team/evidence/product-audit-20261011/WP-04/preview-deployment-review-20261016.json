@@ -1,0 +1,202 @@
+{
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "review": {
+    "summary": "I found no false PASS claims. Build and packaging are marked PASS, and that is supported by the stated remote build and route-presence evidence. All five runtime HTTP checks are marked HOST_PERMISSION_BLOCKED (each got a 403 with X-Vercel-Mitigated: deny). Scheduler, heartbeat, delivery and data-isolation items are explicitly NOT_RUN, and the overall status is PARTIAL. The repaired .vercelignore anchors every directory rule to the repo root. The only unanchored patterns left are `.env` and `.env.*`, and neither is runtime source. Four gaps remain: (1) there is no rollback or stop condition for the two live Preview deployments. They were built from an uncommitted worktree with changes from multiple WPs, against a staging project that uses real PayUni payments, and data isolation was not checked. (2) Nothing records which exact source was deployed. (3) The 403 denial's root cause is not identified, and fixing it is not listed as a prerequisite for the scheduler. (4) The packaging PASS rests on a single route check rather than a full comparison with the local build. An empty or short findings list does not certify test or release success.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "docs/launch/wp04-staging-scheduler-setup-20261016.md",
+        "area": "## 復原 section and ## 2026-10-16 獨立 Preview 部署結果",
+        "issue": "There is no rollback, teardown or stop condition for the Preview deployments themselves. The 復原 (rollback) section only covers a future schedule.",
+        "evidence": "Two Preview deployments are READY: dpl_8TvGjjmYQgKMNfSgU8oPjTXXtmxc and the superseded dpl_GqfZQyS5N8EEFZDuywaqFhpnpXPS, which is missing a route. They were built from an uncommitted worktree containing \"the 20-WP implementation changes\". The staging project uses real PayUni payments (\"staging與正式站皆走PayUni正式金流\"). data_isolation is NOT_RUN. The 復原 section only says to disable a non-Production schedule. Neither the doc nor the evidence JSON records alias state for these deployments, or what to do with them if the edge 403 is lifted.",
+        "impact": "Today the edge denies every request, so nothing is reachable. If the firewall rule changes or someone gets a bypass, unreviewed code from several WPs could run against real payment configuration and data that has not been shown to be isolated. A scheduler could also be pointed at the superseded deployment that is missing a route. Nothing says who removes these deployments, or when.",
+        "recommended_fix": "Add a Preview rollback/stop subsection to the doc. Record the alias state of both deployments (expected: none). Remove the superseded deployment, or explicitly mark it as never to be targeted. State that runtime checks, firewall exceptions and scheduler targeting must not proceed until data isolation is confirmed and payment endpoints are shown to be unreachable or sandboxed. Include the command and conditions for removing dpl_8TvG… if any stop condition triggers.",
+        "required_test": "Read-only `vercel inspect` or alias listing for both deployment IDs, recorded in the evidence JSON. Check that the doc gives an explicit removal or stop condition for each deployment.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-20261016.json",
+        "area": "source_state",
+        "issue": "There is no local snapshot identifier for the uncommitted source that was deployed, so the build PASS cannot be tied to a reviewed code state.",
+        "evidence": "source_state.clean=false. Reproducibility relies only on \"The exact deployment ID is authoritative for the uploaded source\". No tree hash, file manifest hash or diff against base commit efb8b7e9 is recorded.",
+        "impact": "Reviewers cannot confirm that the deployed files match the code that was reviewed. Later edits to the worktree make it impossible to reconstruct what the build PASS and route checks actually covered.",
+        "recommended_fix": "Record a content identifier for the uploaded file set. For example, a `git stash create`/`git write-tree` hash taken with .vercelignore applied, or a hash of the sorted file manifest. Store it next to the deployment ID.",
+        "required_test": "Recompute the recorded identifier from the preserved snapshot and confirm it matches. Spot-check it against the Vercel deployment source listing.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-20261016.json",
+        "area": "http_verification.status / classification",
+        "issue": "Labelling a Vercel `X-Vercel-Mitigated: deny` response as HOST_PERMISSION_BLOCKED may blame the host environment for what is likely a project or team firewall rule. The doc also does not list resolving this as a prerequisite for the scheduler target.",
+        "evidence": "All five paths returned 403 with x_vercel_mitigated=deny and region hkg1. This header usually comes from a Firewall custom rule, IP/geo rule or bot mitigation. The cause was not identified. The WP-04 remaining-work list (固定非正式 scheduler target, 資料隔離, 重複排程排除, 心跳, 合成Email回執) does not mention that the edge denial blocks scheduler POSTs as well.",
+        "impact": "Any scheduler aimed at this deployment would get the same 403. If the deny is mislabelled as a host limitation, the actual blocker could be skipped when the scheduler is planned.",
+        "recommended_fix": "Identify the mitigation source (Firewall rule ID or category) read-only, without changing it. Classify it accordingly. Add \"edge mitigation must allow the scheduler path without disabling protection\" to the WP-04 remaining prerequisites.",
+        "required_test": "A read-only Vercel Firewall/rules inventory for the project, recorded with the rule category that caused the deny.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "docs/ai-team/evidence/product-audit-20261011/WP-04/preview-deployment-20261016.json",
+        "area": "packaging.corrected_attempt / verification",
+        "issue": "packaging.corrected_attempt=PASS is checked only for the one route that broke before. There is no full comparison against the local build to show nothing else was left out.",
+        "evidence": "The verification text only cites the api/funnel/operations/reports route and its .rsc path. output_count=570 and static_pages=189 are given without a local-build baseline to compare against.",
+        "impact": "The rules now anchored to the repo root make another omission unlikely, but the evidence does not prove the archive is complete, as a PASS label implies.",
+        "recommended_fix": "Record the local build's route/page count and output manifest, and show they match the remote output (570 outputs, 189 pages). Alternatively, say explicitly that the verification covered only the route that previously broke.",
+        "required_test": "Diff the local `next build` route manifest against the remote Vercel output listing for dpl_8TvG… and require zero missing app routes.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "completed": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "QUOTA_EXHAUSTED",
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "plan_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 17,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "production_data",
+        "security",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "plan_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "QUOTA_EXHAUSTED",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

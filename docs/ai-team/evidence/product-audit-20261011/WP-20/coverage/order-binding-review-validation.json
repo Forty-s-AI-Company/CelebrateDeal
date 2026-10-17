@@ -1,0 +1,13 @@
+{
+  "status": "VALID_FINDINGS",
+  "counts": {
+    "BLOCKER": 0,
+    "MAJOR": 3,
+    "MINOR": 5,
+    "NIT": 0
+  },
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "acceptance": "NOT_READY",
+  "note": "Unconfirmed findings remain unconfirmed; production writer-role test replaced by local synthetic least-privilege role verification. Scope narrowing required before acceptance."
+}

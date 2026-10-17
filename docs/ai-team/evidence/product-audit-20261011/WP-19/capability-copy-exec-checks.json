@@ -1,0 +1,16 @@
+{
+  "unit_exit": 0,
+  "unit_passed": 34,
+  "unit_chunk": "da5887",
+  "typecheck_session": 91287,
+  "typecheck_exit": 0,
+  "typecheck_completion": "9974a7",
+  "lint_session": 35872,
+  "lint_exit": 0,
+  "lint_completion": "9e9e59",
+  "diff_check_exit": 0,
+  "build": "NOT_RUN",
+  "browser": "NOT_RUN",
+  "preview_staging": "NOT_RUN",
+  "remote_ci": "NOT_RUN"
+}

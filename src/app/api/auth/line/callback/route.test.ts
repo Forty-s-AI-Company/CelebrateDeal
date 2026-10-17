@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   completeLineLogin: vi.fn(),
-  createUserSession: vi.fn(),
+  createUserSession: vi.fn(), currentAuth:vi.fn(),
 }));
 
+vi.mock("next/headers",()=>({cookies:async()=>({get:()=>({value:"synthetic-browser-binding"})})}));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/auth", () => ({
   AUTH_COOKIE: "session",
-  createUserSession: mocks.createUserSession,
+  createUserSession: mocks.createUserSession, getCurrentAuth:mocks.currentAuth,
   sessionCookieOptions: () => ({ httpOnly: true, sameSite: "lax" as const }),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
@@ -17,7 +18,7 @@ vi.mock("@/lib/line-login", () => ({
   completeLineLogin: mocks.completeLineLogin,
   LineFetchLoginProvider: class {},
 }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 
 import { GET } from "./route";
 
@@ -41,7 +42,7 @@ describe("GET /api/auth/line/callback", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.completeLineLogin).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
       state: "opaque",
-      code: "opaque",
+      code: "opaque",browserBinding:"synthetic-browser-binding", currentUserId:undefined,
     });
     expect(mocks.createUserSession).not.toHaveBeenCalled();
   });

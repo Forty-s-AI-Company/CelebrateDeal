@@ -1,0 +1,164 @@
+{
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "reviewed": true,
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR issues in the supplied snapshot (sha256:cbd7bcd7…9fe9b0), and one MINOR issue.\n\n**What holds up:**\n- **No-store before encryption:** `attachRegistrationResult` sets `Cache-Control: no-store` and rewrites `Location` to the canonical origin before it encrypts. If encryption throws or the encrypted value is longer than 3800 characters, the redirect is still non-cacheable and has no receipt.\n- **Retry-After forwarding:** it is only forwarded on 429 responses. It comes from the server's own response and must be 1–8 digits. HTTP-date values and header injection are rejected, and no other error headers are forwarded.\n- **Body limits:** `readBoundedBody` checks the declared Content-Length and then counts bytes as it streams, so it can't buffer more than 1,000,000 bytes. Bodies that are too large, unreadable or malformed return `null`, which takes the error path. The supplied route tests say they confirm this with a 303 redirect, no-store, no database lookups and no writes.\n- **Content-type check:** the regex has no anchors, but a mismatched content type only makes form parsing fail into the same `null` error path, so there's no bypass.\n- **Receipt check:** it is bound to a purpose string, checks length before decrypting, checks types after parsing, and limits the expiry window on both sides.\n\n**MINOR:** the no-store guarantee only covers successful redirects that pass every validation check (see the finding).\n\nThis review covered only the supplied excerpts. `registrationRetryResponse`, `processSubmission`, `clearRegistrationRetry` and the encryption module weren't reviewed. No full storage audit is claimed, and an empty or minor-only result doesn't certify that tests or a release pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/registration-submission-receipt.ts",
+        "area": "attachRegistrationResult, early returns before response.headers.set(\"Cache-Control\", \"no-store\")",
+        "issue": "The no-store header and the rewrite to the canonical `Location` only happen after every validation passes. A successful 303 redirect that fails the `Origin` check returns early without either. Examples: a missing `Origin` header, `Origin: null` under a no-referrer policy, a mismatched internal host, or a target that isn't an allowed source path. The comment says a successful redirect must never be cacheable, but that only holds on the path where a receipt can be issued.",
+        "evidence": "`if (!location || request.headers.get(\"origin\") !== origin) return;` and the later combined validation `return` both run before `response.headers.set(\"Cache-Control\", \"no-store\")`. The POST wrapper adds no no-store fallback for successful native-form responses.",
+        "impact": "Low. A 303 without explicit freshness headers usually isn't cached, and the redirect target isn't sensitive. Still, the no-store guarantee depends on whatever `processSubmission` happens to set, and those requests keep a possibly internal-host `Location`.",
+        "recommended_fix": "Set `Cache-Control: no-store` for every 303 response on this route before any validation or early return. For example, do it first in `attachRegistrationResult` when `response.status === 303`, or in the POST wrapper before calling it. Keep the canonical `Location` rewrite and receipt issuing behind the existing checks.",
+        "required_test": "Add a route or unit test that posts a valid native form with the `Origin` header missing, set to `null`, or mismatched. It should assert a 303 redirect, `Cache-Control: no-store` and no receipt cookie.",
+        "confidence": 0.45
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 5,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "security",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "revision": "sha256:bc043d77402d2a690c60b307f2920d0ec910df3f2db9064e5778f7033e46e19d",
+  "status": "VALIDATED_WITH_NEW_CONFIRMED_FINDINGS",
+  "product_changes": false,
+  "unit_tests_passed": 186,
+  "database_tests_passed": 7,
+  "deadline_browser_cases": 8,
+  "deadline_scope": "Native no-JS, Chromium/Firefox x root/step x closed/redirect; drafts bound to original path, readonly after expiry, existing target availability preserved; no sent mail; synthetic fixtures cleaned.",
+  "limitations": [
+    "Does not certify human screen-reader behavior.",
+    "Does not itself certify JS deadline transition; separate shared component browser and existing JS entry regression evidence apply only to their scopes.",
+    "Whole WP05 still awaits consolidated acceptance.",
+    "Negative mutation of thank-you HTTP status/query was not executed; positive runtime assertions directly check both."
+  ],
+  "historical_failures": [
+    "attempt1-3: unrelated announcement button included in overbroad whole-page selector",
+    "attempt4: expected closed feedback at explicitly viewable redirect destination",
+    "attempt5: combined browser engines exceeded existing 10 POST/min loopback-client limit; now isolated owned server per engine"
+  ],
+  "review": "Cleanup MINORs resolved with 3 injected faults and final independent review. Current product review uncovered confirmed LeadForm native/JS attribution and SSR initialization MAJORs; see current-review-disposition.json.",
+  "entry_regression": "PASS:24 entry cases plus3 status cases",
+  "runner_sha256": "24597810c0af821da236a6940d7f8daa69bac30e51ffccfd30822366f83b2deb",
+  "total_current_browser_cases": 35
+}

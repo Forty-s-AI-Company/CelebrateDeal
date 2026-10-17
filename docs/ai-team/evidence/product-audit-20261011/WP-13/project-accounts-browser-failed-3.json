@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "scope": "Actual local Next dev owner login, multiple synthetic LINE account creation, shared and independent Project selection, credential redaction, screenshots; disposable PostgreSQL. No real LINE calls, secret/session capture or Production build.",
+  "tests": [
+    {
+      "title": "owner adds reusable LINE accounts and selects them independently for two courses",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"cmvaz5y870009vdwc1spcvxar\"\nReceived: \"cmvaz5w2h0005vdwc2blclmhn\""
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T12:58:09.809Z",
+    "duration": 114221.178,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 132
+}

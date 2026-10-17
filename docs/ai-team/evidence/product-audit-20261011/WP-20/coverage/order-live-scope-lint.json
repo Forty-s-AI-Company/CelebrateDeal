@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "order live scope lint", "revision": "sha256:86507468813235424846f5c988d64f2b7497458ea6309d3e91fdac622a354efe", "status": "PASS", "exit_code": 0, "duration_seconds": 8.125}

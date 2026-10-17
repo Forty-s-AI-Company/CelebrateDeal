@@ -1,0 +1,208 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "exitCode": -1,
+      "status": "IDLE_TIMEOUT",
+      "model": "claude-opus-5-5-high",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli"
+    }
+  ],
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "completed": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "review": {
+    "summary": "I reviewed the four supplied client files only: collector, clock, delivery and transport. I found no BLOCKER or MAJOR defect in the client renewal scope. Renewal keeps the same nonce, session, version, anchor and duration, never moves expiry earlier, and never rebases the clock mapping. A failed renewal does not add lease time. Loss is recorded with a flag that later calls cannot clear, and it suppresses the close request. Sequence numbering and acknowledgement checks are strict. I found four MINOR issues: (1) the timeout/expiry branch can mark a session as lost after it was sealed or even after its close request was sent; (2) the client marks a close as terminal without checking deliveryComplete or lastSequence; (3) the client does not check the server time or sequence counters in renewal replies; (4) a successful reply whose body is not valid JSON is retried as a temporary error instead of being refused. The server route, helpers, test harness, media binding and the server-side checks for expiry and resurrection were not supplied and are not certified. Known full-release blockers are still open and are not counted as new findings: the synchronized Serializable gate (7/20 passing, NOT_READY), long-duration/live/WHEP testing, signed Next HTTP authentication, upgrades on populated data, and scheduler integration. An empty or MINOR-only result does not show that tests or the release passed.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-collector.ts",
+        "area": "renew() catch branch (remainingMs()===0 -> abandon)",
+        "issue": "The success path returns early if delivery is already sealed, but the catch path does not. When a renewal request times out or throws after a media-ended event or finish() has sealed delivery, and the conservative clock has reached 0, abandon() still runs. That marks collectionLost on a collection that was already complete. If a close request is already in flight, the state can end up with both terminal=true and collectionLost=true.",
+        "evidence": "renew(): `if (delivery?.state().sealed) return;` exists only after a resolved http.open. In catch: `if (clock?.remainingMs() === 0) { disabled = true; ...; await delivery?.abandon(); }` has no sealed check. In delivery, abandon() sets collectionLost unconditionally, and deliver() reads collectionLost only before calling close. A close that is already in flight still sets terminal.",
+        "impact": "A collection that was sealed with every sample inside the old lease can be reported as lost, or as both lost and closed. Its close may be suppressed even though the server would accept it. This blurs the difference between loss and a completed close, which the change is meant to keep separate.",
+        "recommended_fix": "In the catch path, skip abandon() when delivery is already sealed and collectionLost is not set, and let the close attempt decide the outcome. Alternatively, make abandon() do nothing once a close has started or terminal is true.",
+        "required_test": "Seal delivery through finish/ended while a renewal is pending. Then make the renewal reject after remainingMs() reaches 0. Assert that collectionLost is not set on the already-sealed delivery and that terminal and collectionLost are never both true.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-transport.ts",
+        "area": "close(): terminal derivation",
+        "issue": "The client treats a close as terminal when appendOpen is false and closedAtMs is set. It ignores the parsed deliveryComplete field and never checks that the receipt's lastSequence equals finalSequence.",
+        "evidence": "closeSchema parses deliveryComplete and lastSequence, but the code returns `{ terminal: !receipt.appendOpen && receipt.closedAtMs !== null }`.",
+        "impact": "If the server closed the session as incomplete (for example after expiry or a gap), the client still reports terminal, the same as a certified complete close. Any UI or telemetry reading delivery state cannot tell a completed close from a server-side loss.",
+        "recommended_fix": "Require deliveryComplete === true and lastSequence === finalSequence before reporting a completed close. Report a closed-but-incomplete receipt as a separate non-retryable loss or rejected state.",
+        "required_test": "Return a close receipt with appendOpen=false, closedAtMs set and deliveryComplete=false, and separately one with lastSequence !== finalSequence. Assert that neither yields a completed-close state.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-collector.ts",
+        "area": "renew() receipt validation / live-metric-clock.ts extendExpiry",
+        "issue": "The client compares a renewal reply's identity fields and expiry, but ignores its serverNowAtMs, lastSequence and lastElapsedMs. It never checks that the existing monotonic mapping still agrees with the database clock, or that the server's counters match what this writer has acknowledged.",
+        "evidence": "renew() checks sessionId, versionId, anchorAtMs, durationMs and extendExpiry(expiresAtMs) only. extendExpiry takes only a value, and http.open is not timed during renewal. Under the original mapping, server elapsed time must lie between the local elapsed time when the request was sent and the local elapsed time when the reply arrived plus the original uncertainty. None of this is checked.",
+        "impact": "Browser monotonic time can drift or pause during sleep on some platforms. If it does, the conservative expiry stop is computed on a lagging timeline, and the lease extension is accepted without any sign of the drift. A reply showing a foreign writer (lastSequence above this client's acknowledged sequence) is also accepted. Server checks may catch both cases, but those checks were not supplied.",
+        "recommended_fix": "Time the renewal request. Check that serverNowAtMs - anchorAtMs falls within [local elapsed at send, local elapsed at receive + uncertaintyMs], and that lastSequence/lastElapsedMs do not exceed this writer's acknowledged state. Abandon if either check fails.",
+        "required_test": "Use a stubbed clock whose monotonic time stalls or runs fast between open and renew, and a renewal reply whose lastSequence is above the acknowledged sequence. Assert that the collector abandons and does not extend the lease.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-transport.ts",
+        "area": "post(): response.json() on 2xx; open() classification",
+        "issue": "If a successful response has a body that is not valid JSON, response.json() throws. open() then treats this as a temporary error and the caller retries. A body that is valid JSON but fails the schema returns null and is treated as permanent. The documented rule is that permanent failures return null and temporary errors throw, so the same bad server reply is classified two different ways depending on how it is broken. Status 408 is also treated as permanent.",
+        "evidence": "`const responseBody: unknown = response.ok ? await response.json() : null;` sits outside any try/catch. In renew(), the catch block keeps retrying the same nonce until the conservative expiry instead of abandoning straight away.",
+        "impact": "A malformed renewal or issuance reply causes repeated requests until the lease runs out, instead of an immediate permanent refusal. Lease time is not extended, so this is not a security issue. However, the client misses its promised behaviour for malformed renewal replies, and a single 408 permanently disables collection.",
+        "recommended_fix": "Catch JSON parse failures on 2xx responses in post() and return a parse-failure result so that open() returns null. Decide explicitly whether 408 should be treated as temporary.",
+        "required_test": "Return a 200 with a non-JSON body from the sessions endpoint during both open and renew. Assert that the result is a permanent null, the delivery is abandoned and there are no retries. Return a 408 and assert the chosen classification.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5",
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "concurrency",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database",
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 60000,
+      "expected_duration": 120,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "claude_cli_discovery_status": "SUCCESS"
+}

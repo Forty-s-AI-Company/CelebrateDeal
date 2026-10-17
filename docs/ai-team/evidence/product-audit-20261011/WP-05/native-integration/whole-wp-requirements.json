@@ -1,0 +1,63 @@
+[
+  {
+    "id": "R1",
+    "requirement": "Native 400/403/404/429/503 safe303 back to source, preserve fields",
+    "proof": [
+      "registration-form-retry-response.test.ts parameterized statuses",
+      "browser status403/404/429 and all 3 renderer400 native cases",
+      "route.db.test.ts queue503 stores draft and resubmits"
+    ]
+  },
+  {
+    "id": "R2",
+    "requirement": "Three forms share pending/error/success and aria-live/alert semantics",
+    "proof": [
+      "registration-submission-feedback shared component",
+      "unit215 current snapshot",
+      "browser-ui-feedback/lp-js/webinar-pending and native equivalents; axe0 serious/critical in form scenarios"
+    ]
+  },
+  {
+    "id": "R3",
+    "requirement": "Preserve API client contract and email-confirmation rules",
+    "proof": [
+      "verify-core.py unchanged core invariant",
+      "JSON success asserts ok true and verificationRequired true",
+      "API route unit and DB idempotency tests; no email sent in synthetic E2E"
+    ]
+  },
+  {
+    "id": "R4",
+    "requirement": "No PII in URL/log; safe encrypted short-lived form/path-bound retry",
+    "proof": [
+      "critical security part1 exact hashes unchanged except reviewed optional attribution amendment",
+      "registration-form-retry unit/DB tests: TTL,cap,wrong path/form,storage fail closed",
+      "nativeURL only opaque status and HttpOnly draft capability; stored encrypted envelope"
+    ]
+  },
+  {
+    "id": "R5",
+    "requirement": "503 resubmit must not create duplicate record",
+    "proof": [
+      "Current PostgreSQL test fails queue once, count1 after503 and afterlater success, draft cleared; concurrent duplicate count1"
+    ]
+  },
+  {
+    "id": "R6",
+    "requirement": "Public E2E, targeted, a11y and additive migration verification",
+    "proof": [
+      "215unit7DB,lint,tsc,invariant current PASS",
+      "Current27 browser cases; historical unaffected deadline8/attribution8 separately scoped",
+      "WP07 disposable migration baseline and current retry DB tests"
+    ]
+  },
+  {
+    "id": "R7",
+    "requirement": "Isolation/no Production/push/deploy",
+    "proof": [
+      "Independent worktree base efb8b7e9",
+      "Owned loopback31026/disposable64506 synthetic fixtures; runners refuse env files and suppress raw logs",
+      "No external send or deploy runner invoked"
+    ]
+  }
+]

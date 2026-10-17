@@ -1,0 +1,277 @@
+Independent Critical Payment/Migration review117. Return schema JSON summary/findings max5 under5000chars, severity BLOCKER/MAJOR/MINOR/NIT. Only supplied immutable text, no tools. Prior116 review MINOR: a read-only RR snapshot predating an115 relink survives a writer-only table drain, then updates payment after116 without new-window event. Reproduced real FAIL with version bump true, old snapshot update succeeds, destination count unchanged. New117 uses same116 runtime function, drains writers under explicit atomic table locks, physically no-op-updates all currently linked payment rows then bumps version. This should force stale RR writers to40001/P2034. Unlinked payments have no currentorder; subsequentruntime link physically writes payment. Consider correctness, privilege/side effects, upgrade lock/batch cost; do not assume no-op UPDATE harmless without checking supplied context. Catalog on owned disposable DB showed exactly3 payment source AFTER triggers short-circuit unchanged facts plus1 no-truncate statement trigger; no pg_publication_tables entry forPaymentTransaction; terminal paid exact-delta probe unchanged all payment fields. That is local schema evidence only, no Production inspection. New117 real test PASS: pre-upgrade RR write abortedP2034. Probe executes lock/function/touch/bump extracted from117, not psql upgrade on populated data; review this limitation. Test temporarily reinstalls115 function in owned disposable DB to create old behavior, keeps triggers/constraints enabled. Original synchronized20 gate remains7/20, deadlock followup callbackMAJOR resolved for one synthetic affiliatepath, overallWP NOT READY. Focus new117, not restating unrelated blocked gate as a new code finding.
+
+FILE prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql
+1: -- Expire snapshots that predate a relation changed by the old115 function.
+2: -- Writer drain alone does not invalidate a read-only pre-upgrade RR snapshot.
+3: BEGIN;
+4: SET LOCAL lock_timeout='5s';
+5: LOCK TABLE public."PaymentTransaction",public."CommerceOrder" IN SHARE ROW EXCLUSIVE MODE;
+6: CREATE OR REPLACE FUNCTION public.wp20_metric_order_payment_lock() RETURNS trigger
+7: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET row_security=off AS $$
+8: DECLARE facts JSONB; payment_row RECORD;
+9: BEGIN
+10:  IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."CommerceOrder"'::regclass THEN
+11:   RAISE EXCEPTION 'invalid order payment lock relation' USING ERRCODE='23514';
+12:  END IF;
+13:  IF TG_OP='UPDATE' AND (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt")
+14:   IS NOT DISTINCT FROM (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt") THEN RETURN NEW; END IF;
+15:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+16:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+17:  FOR payment_row IN SELECT p."vendorId",p.id FROM public."PaymentTransaction" p WHERE EXISTS (
+18:   SELECT 1 FROM jsonb_array_elements(facts) f
+19:   WHERE p.id=f->>'primaryPaymentTransactionId' AND p."vendorId"=f->>'vendorId'
+20:  ) ORDER BY p."vendorId",p.id LOOP
+21:   -- Write the same value to create a new MVCC tuple without changing payment
+22:   -- facts. Existing payment source triggers ignore unchanged facts. A payment
+23:   -- writer with an older RR/Serializable snapshot must abort with 40001.
+24:   UPDATE public."PaymentTransaction" p SET metadata=p.metadata
+25:    WHERE p."vendorId"=payment_row."vendorId" AND p.id=payment_row.id;
+26:  END LOOP;
+27:  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+28:  RETURN NEW;
+29: END $$;
+30: -- Touch currently linked payments even if their last relation change used115.
+31: -- This creates an MVCC conflict for old RR/Serializable payment snapshots.
+32: -- Unlinked payments have no current order window; a later116 link writes its
+33: -- payment row before publishing its own event. Unchanged facts emit no events.
+34: UPDATE public."PaymentTransaction" p SET metadata=p.metadata
+35:  WHERE EXISTS (SELECT 1 FROM public."CommerceOrder" o
+36:   WHERE o."vendorId"=p."vendorId" AND o."primaryPaymentTransactionId"=p.id);
+37: -- CREATE OR REPLACE preserves the revoked function ACL from migration115.
+38: UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1;
+39: COMMIT;
+
+
+FILE prisma/migrations/20261016040000_live_metric_order_payment_write_fence/migration.sql
+1: -- Lock-only serialization is insufficient for a pre-existing RR snapshot.
+2: -- Drain old writers and replace the function atomically before expiring proofs.
+3: BEGIN;
+4: SET LOCAL lock_timeout='5s';
+5: LOCK TABLE public."PaymentTransaction",public."CommerceOrder" IN SHARE ROW EXCLUSIVE MODE;
+6: CREATE OR REPLACE FUNCTION public.wp20_metric_order_payment_lock() RETURNS trigger
+7: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET row_security=off AS $$
+8: DECLARE facts JSONB; payment_row RECORD;
+9: BEGIN
+10:  IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."CommerceOrder"'::regclass THEN
+11:   RAISE EXCEPTION 'invalid order payment lock relation' USING ERRCODE='23514';
+12:  END IF;
+13:  IF TG_OP='UPDATE' AND (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt")
+14:   IS NOT DISTINCT FROM (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt") THEN RETURN NEW; END IF;
+15:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+16:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+17:  FOR payment_row IN SELECT p."vendorId",p.id FROM public."PaymentTransaction" p WHERE EXISTS (
+18:   SELECT 1 FROM jsonb_array_elements(facts) f
+19:   WHERE p.id=f->>'primaryPaymentTransactionId' AND p."vendorId"=f->>'vendorId'
+20:  ) ORDER BY p."vendorId",p.id LOOP
+21:   -- Write the same value to create a new MVCC tuple without changing payment
+22:   -- facts. Existing payment source triggers ignore unchanged facts. A payment
+23:   -- writer with an older RR/Serializable snapshot must abort with 40001.
+24:   UPDATE public."PaymentTransaction" p SET metadata=p.metadata
+25:    WHERE p."vendorId"=payment_row."vendorId" AND p.id=payment_row.id;
+26:  END LOOP;
+27:  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+28:  RETURN NEW;
+29: END $$;
+30: -- CREATE OR REPLACE preserves the revoked function ACL from migration115.
+31: UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1;
+32: COMMIT;
+
+
+FILE scripts/wp20-order-upgrade-snapshot-disposable.mjs
+1: import assert from 'node:assert/strict';
+2: import fs from 'node:fs';
+3: import { createRequire } from 'node:module';
+4: import { main } from './prisma-loopback-disposable-migration-runner.mjs';
+5: const require=createRequire(import.meta.url),base='docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/';
+6: const receipt={status:'FAIL',stage:'start',scope:'Owned disposable source-fence upgrade reproduction; no report completeness claim'};
+7: let migration;
+8: try {
+9:  const paths=JSON.parse(fs.readFileSync('node_modules/.prisma/client/index.js','utf8').match(/"relativeEnvPaths":\s*(\{[^}]*\})/u)?.[1]??'null');
+10:  assert.ok(paths&&Object.values(paths).every(x=>x===null));
+11:  const {PrismaClient}=require('@prisma/client');
+12:  const oldSource=fs.readFileSync('prisma/migrations/20261016030000_live_metric_order_payment_serialization/migration.sql','utf8');
+13:  const newSource=fs.readFileSync('prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql','utf8');
+14:  const oldFunction=oldSource.match(/CREATE FUNCTION public\.wp20_metric_order_payment_lock\(\)[\s\S]*?END \$\$;/u)?.[0]?.replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION');
+15:  const newFunction=newSource.match(/CREATE OR REPLACE FUNCTION public\.wp20_metric_order_payment_lock\(\)[\s\S]*?END \$\$;/u)?.[0];
+16:  const upgradeTouch=newSource.match(/\nUPDATE public\."PaymentTransaction" p SET metadata=p\.metadata[\s\S]*?;/u)?.[0];
+17:  assert.ok(oldFunction&&newFunction&&upgradeTouch);
+18:  migration=await main({afterMigrate:async({databaseUrl})=>{
+19:   const url=new URL(databaseUrl);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/celebratedeal_test');
+20:   const db=new PrismaClient({datasourceUrl:databaseUrl});
+21:   try {
+22:    const [marker]=await db.$queryRawUnsafe("SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()");assert.match(marker.marker,/^prisma-no-dotenv:[a-f0-9]{16}$/u);
+23:    receipt.stage='fixtures';
+24:    const vendor=await db.vendor.create({data:{name:'Synthetic upgrade',slug:'upgrade-snapshot',email:'upgrade@example.test',passwordHash:'synthetic-unused'}});
+25:    const video=await db.video.create({data:{vendorId:vendor.id,title:'Synthetic',videoUrl:'https://example.test/synthetic.mp4',durationSec:100}});
+26:    const live=await db.live.create({data:{vendorId:vendor.id,videoId:video.id,title:'Synthetic',slug:'upgrade-snapshot',scheduledAt:new Date()}});
+27:    const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+28:    const start=new Date(+clock.now-10800000),middle=new Date(+clock.now-7200000),end=new Date(+clock.now-3600000);
+29:    await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ('upgrade-version',$1,$2,$3,'live',$4,true,$5,$6)`,vendor.id,live.id,video.id,'d'.repeat(64),start,new Date(+clock.now+3600000));
+30:    const payment=await db.paymentTransaction.create({data:{vendorId:vendor.id,providerName:'synthetic-upgrade',status:'pending',metadata:{syntheticBeforeUpgrade:1}}});
+31:    for(const [id,date,link] of [['upgrade-old',new Date(+start+1000),payment.id],['upgrade-new',new Date(+middle+1000),null]])await db.commerceOrder.create({data:{id,vendorId:vendor.id,primaryPaymentTransactionId:link,orderNumber:id,checkoutIdempotencyKey:id,checkoutIdentityHash:'a'.repeat(43),status:'pending_payment',subtotalAmountCents:100,totalAmountCents:100,buyerEncryptedEnvelope:'synthetic-unused',buyerMaskedName:'Synthetic',buyerMaskedEmail:'synthetic@example.test',createdAt:date}});
+32:    const revision=async()=> (await db.$queryRawUnsafe('SELECT public.wp20_metric_order_window_revision($1,$2::timestamptz,$3::timestamptz) AS revision',vendor.id,middle,end))[0].revision;
+33:    // Reinstall only the known115 function, without disabling a trigger or guard.
+34:    await db.$executeRawUnsafe(oldFunction);
+35:    let beforeCommit,afterCommit,writeCode=null;
+36:    receipt.stage='pre-upgrade-snapshot';
+37:    try {
+38:     await db.$transaction(async oldTx=>{
+39:      await oldTx.$queryRawUnsafe('SELECT metadata FROM "PaymentTransaction" WHERE id=$1',payment.id);
+40:      await db.$transaction(async writer=>{
+41:       await writer.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1','upgrade-old');
+42:       await writer.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,'upgrade-new');
+43:      });
+44:      // Execute117's lock/function/payment-touch/bump protocol atomically.
+45:      await db.$transaction(async upgrade=>{
+46:       await upgrade.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+47:       await upgrade.$executeRawUnsafe('LOCK TABLE public."PaymentTransaction",public."CommerceOrder" IN SHARE ROW EXCLUSIVE MODE');
+48:       await upgrade.$executeRawUnsafe(newFunction);
+49:       await upgrade.$executeRawUnsafe(upgradeTouch);
+50:       await upgrade.$executeRawUnsafe('UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1');
+51:      },{timeout:15000});
+52:      const [version]=await db.$queryRawUnsafe('SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=$1','upgrade-version');
+53:      assert.equal(version.sourceRevision,1n);receipt.versionBumped=true;
+54:      beforeCommit=await revision();
+55:      await oldTx.paymentTransaction.update({where:{id:payment.id},data:{metadata:{syntheticAfterUpgrade:1}}});
+56:     },{isolationLevel:'RepeatableRead',timeout:30000});
+57:    } catch(error) {
+58:     writeCode=error?.meta?.code??error?.code;
+59:     if(!['40001','P2034'].includes(writeCode))throw error;
+60:    }
+61:    afterCommit=await revision();
+62:    receipt.oldSnapshotWriteAborted=writeCode!==null;receipt.writeCode=writeCode;
+63:    receipt.destinationRevisionIncreased=typeof beforeCommit==='bigint'&&afterCommit>beforeCommit;
+64:    receipt.stage='upgrade-invalidation';
+65:    assert.ok(receipt.oldSnapshotWriteAborted||receipt.destinationRevisionIncreased,'old pre-upgrade snapshot must abort or invalidate destination window');
+66:    receipt.status='PASS';receipt.stage='complete';
+67:   } finally {await db.$disconnect();}
+68:  }});
+69: } catch(error) {receipt.errorCode=/^(?:P[0-9]{4}|[0-9A-Z]{5})$/.test(error?.meta?.code??error?.code??'')?(error.meta?.code??error.code):'ASSERTION_OR_RUNNER_ERROR';}
+70: receipt.cleanup=migration?.cleanup??'UNKNOWN';if(migration?.status!=='PASS')receipt.status='FAIL';
+71: fs.writeFileSync(base+'order-upgrade-snapshot-result.json',JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));process.exitCode=receipt.status==='PASS'?0:1;
+
+
+DEPENDENCY prisma/migrations/20261016010000_live_metric_order_window_source/migration.sql
+-- Window-scoped append-only source, initially side-by-side with legacy fences.
+-- Consumers must use a new proof format before switching; no legacy proof backfill.
+CREATE TABLE public."LiveMetricOrderWindowSource" (
+ id BIGSERIAL PRIMARY KEY,
+ "vendorId" TEXT NOT NULL REFERENCES public."Vendor"(id) ON DELETE CASCADE ON UPDATE NO ACTION,
+ "orderCreatedAt" TIMESTAMP(3) NOT NULL
+);
+CREATE INDEX "LiveMetricOrderWindowSource_scope_idx" ON public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt");
+CREATE FUNCTION public.wp20_metric_order_window_changed() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+DECLARE facts JSONB;
+BEGIN
+ IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+  RAISE EXCEPTION 'invalid order window source relation' USING ERRCODE='23514';
+ END IF;
+ IF TG_OP='UPDATE' THEN
+  IF TG_TABLE_NAME='CommerceOrder' THEN
+   IF (NEW.id,NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status)
+    IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status) THEN RETURN NULL; END IF;
+  ELSE
+   IF (NEW.id,NEW."vendorId",NEW.metadata) IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD.metadata) THEN RETURN NULL; END IF;
+  END IF;
+ END IF;
+ facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+  ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+ IF TG_TABLE_NAME='CommerceOrder' THEN
+  INSERT INTO public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt")
+   SELECT DISTINCT v.id,(f->>'createdAt')::timestamp(3)
+   FROM jsonb_array_elements(facts) f JOIN public."Vendor" v ON v.id=f->>'vendorId'
+   ORDER BY v.id,(f->>'createdAt')::timestamp(3);
+ ELSE
+  -- Payments without an established order have no window yet. The later order
+  -- INSERT/link emits its own event even if payment metadata is missing.
+  INSERT INTO public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt")
+   SELECT DISTINCT o."vendorId",o."createdAt" FROM public."CommerceOrder" o
+   JOIN jsonb_array_elements(facts) f ON o."primaryPaymentTransactionId"=f->>'id' AND o."vendorId"=f->>'vendorId'
+   JOIN public."Vendor" v ON v.id=o."vendorId"
+   ORDER BY o."vendorId",o."createdAt";
+ END IF;
+ RETURN NULL;
+END $$;
+CREATE TRIGGER "CommerceOrder_metric_window_revision" AFTER INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_window_changed();
+CREATE TRIGGER "PaymentTransaction_metric_window_revision" AFTER INSERT OR UPDATE OR DELETE ON public."PaymentTransaction"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_window_changed();
+CREATE FUNCTION public.wp20_metric_order_window_revision(vendor_id TEXT,window_start TIMESTAMPTZ,window_end TIMESTAMPTZ) RETURNS BIGINT
+LANGUAGE sql STABLE STRICT SECURITY DEFINER SET search_path=pg_catalog SET row_security=off AS $$
+ SELECT count(*) FROM public."LiveMetricOrderWindowSource" WHERE "vendorId"=vendor_id
+  AND "orderCreatedAt">=(window_start AT TIME ZONE 'UTC') AND "orderCreatedAt"<(window_end AT TIME ZONE 'UTC')
+$$;
+CREATE TRIGGER "LiveMetricOrderWindowSource_immutable" BEFORE UPDATE OR DELETE ON public."LiveMetricOrderWindowSource"
+ FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_immutable();
+CREATE TRIGGER "LiveMetricOrderWindowSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricOrderWindowSource"
+ FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+ALTER TABLE public."LiveMetricOrderWindowSource" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public."LiveMetricOrderWindowSource" FROM PUBLIC;
+REVOKE ALL ON SEQUENCE public."LiveMetricOrderWindowSource_id_seq" FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wp20_metric_order_window_changed(),public.wp20_metric_order_window_revision(text,timestamptz,timestamptz) FROM PUBLIC;
+DO $$ DECLARE api_role TEXT; BEGIN
+ FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+   EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricOrderWindowSource" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricOrderWindowSource_id_seq" FROM %I',api_role);
+   EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_window_changed(),public.wp20_metric_order_window_revision(text,timestamptz,timestamptz) FROM %I',api_role);
+  END IF;
+ END LOOP;
+END $$;
+
+
+DEPENDENCY prisma/migrations/20261016000000_live_metric_order_identity_revision/migration.sql
+-- IDs participate in keyset/digest and payment joins; fence ID-only updates too.
+CREATE OR REPLACE FUNCTION public.wp20_metric_order_tenant_changed() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+DECLARE old_vendor TEXT; new_vendor TEXT; target TEXT;
+BEGIN
+ IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+  RAISE EXCEPTION 'invalid tenant order source relation' USING ERRCODE='23514';
+ END IF;
+ IF TG_OP='UPDATE' THEN
+  IF TG_TABLE_NAME='CommerceOrder' THEN
+   IF (NEW.id,NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status)
+    IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status) THEN RETURN NULL; END IF;
+  ELSE
+   IF (NEW.id,NEW."vendorId",NEW.metadata) IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD.metadata) THEN RETURN NULL; END IF;
+  END IF;
+ END IF;
+ IF TG_OP<>'INSERT' THEN old_vendor:=OLD."vendorId"; END IF;
+ IF TG_OP<>'DELETE' THEN new_vendor:=NEW."vendorId"; END IF;
+ FOR target IN SELECT DISTINCT value FROM unnest(ARRAY[old_vendor,new_vendor]) value WHERE value IS NOT NULL ORDER BY value LOOP
+  INSERT INTO public."LiveMetricOrderTenantSource"("vendorId") SELECT id FROM public."Vendor" WHERE id=target;
+ END LOOP;
+ RETURN NULL;
+END $$;
+
+
+BEFORE FIX
+{
+  "status": "FAIL",
+  "stage": "upgrade-invalidation",
+  "scope": "Owned disposable source-fence upgrade reproduction; no report completeness claim",
+  "versionBumped": true,
+  "oldSnapshotWriteAborted": false,
+  "writeCode": null,
+  "destinationRevisionIncreased": false,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}
+AFTER FIX
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Owned disposable source-fence upgrade reproduction; no report completeness claim",
+  "versionBumped": true,
+  "oldSnapshotWriteAborted": true,
+  "writeCode": "P2034",
+  "destinationRevisionIncreased": false,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

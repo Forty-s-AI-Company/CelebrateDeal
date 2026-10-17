@@ -1,0 +1,222 @@
+{
+  "execution_provider": "claude_cli",
+  "completed": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "medium",
+      "risk_score": 0,
+      "engineering_profile": "large",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "medium",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:3ce0ab65dd20117476df69ce55d7a5e7f3e2833dc4c49674f6e990b530ef7569",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/components/registration-submission-feedback.tsx",
+      "src/components/registration-submission-feedback.test.tsx",
+      "src/components/lead-form.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "src/lib/registration-submission-client.ts",
+      "src/lib/registration-submission-client.test.ts",
+      "src/components/lead-form.test.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.test.tsx"
+    ],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [
+      "src/components/landing-pages/funnel-page-document-renderer.test.tsx",
+      "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "src/components/lead-form.test.tsx",
+      "src/components/lead-form.tsx",
+      "src/components/registration-submission-feedback.test.tsx",
+      "src/components/registration-submission-feedback.tsx",
+      "src/lib/registration-submission-client.test.ts",
+      "src/lib/registration-submission-client.ts"
+    ],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": "senior_review"
+  },
+  "accepted": false,
+  "review": {
+    "summary": "Static review of the supplied text only; no tests were run and none are claimed. No BLOCKER or MAJOR defects found. Both callers clear the error text while pending, so the pending true->false transition re-triggers focus and the alert re-announces on repeated identical errors. Remaining items are minor robustness, test-coverage and polish concerns: unconditional focus stealing, effect/retry paths untested by static-markup tests, duplicated success text in the funnel renderer, and possible layout gaps from always-mounted empty regions.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/registration-submission-feedback.tsx",
+        "area": "useEffect focus restore (lines 12-14)",
+        "issue": "Error focus is moved unconditionally to the alert paragraph whenever an error appears and pending is false, regardless of where focus currently is.",
+        "evidence": "`useEffect(() => { if (errorMessage && !pending) errorRef.current?.focus(); }, [errorMessage, pending]);` has no check of document.activeElement. In lead-form the inputs are not shown as disabled while status === \"loading\" (only the button is), so a user can move to or edit another field while the request is pending.",
+        "impact": "A late failure can pull keyboard/screen-reader focus away from a field the user is actively editing, which is disruptive. Recovery is only needed when focus was lost (body) or was on the submit control that became disabled.",
+        "recommended_fix": "Capture whether focus was on the submit control/within the form (or on body) when pending began, and only call focus() when document.activeElement is body/null, the submit button, or the feedback region itself. Optionally pass focusOnError={false} for callers that manage focus themselves.",
+        "required_test": "DOM test (jsdom/RTL): focus an input, toggle pending true->false with an error, assert focus stays on the input; with focus on body or the disabled submit button, assert focus lands on the alert element.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/registration-submission-feedback.test.tsx",
+        "area": "whole file (all four tests use renderToStaticMarkup)",
+        "issue": "The focus-recovery and repeated-retry behaviors named in the task are not exercised; static markup rendering never runs useEffect.",
+        "evidence": "All tests call `renderToStaticMarkup`, which does not execute effects or re-render, so `errorRef.current?.focus()` and the pending false->true->false sequence are never validated. Only initial markup strings are asserted.",
+        "impact": "A regression that removes or breaks focus restoration, or that stops re-focusing on a second identical error, would pass the suite.",
+        "recommended_fix": "Add client-render tests that mount the component, rerender through error -> pending -> same error, and assert document.activeElement and region text at each step.",
+        "required_test": "RTL test: render error (expect focus on role=alert); rerender pending (alert empty, status shows progress, no focus change); rerender with identical error (expect focus restored again and alert text re-populated); render with no error on mount (expect no focus).",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+        "area": "RegistrationSubmissionFeedback usage + success <p> (lines ~328-329)",
+        "issue": "Success message is rendered twice: once via the sr-only polite status region and again as a visible plain paragraph with no role.",
+        "evidence": "`successMessage={status === \"success\" ? message : \"\"}` is passed to the feedback component, and `{status === \"success\" && message ? <p className=\"text-sm text-emerald-700\">{message}</p> : null}` renders the same text visibly.",
+        "impact": "Screen-reader users in browse mode hear the success text twice (sr-only span plus visible paragraph). The live announcement is intended, but the duplicate content is redundant.",
+        "recommended_fix": "Either mark the visible paragraph aria-hidden (keeping the status region as the announcement), or let the shared component render the visible success text itself in a single polite region (visible, not sr-only) and drop the extra paragraph.",
+        "required_test": "Render funnel form in success state and assert the message appears exactly once in the accessibility tree (or that the visible copy is aria-hidden).",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/registration-submission-feedback.tsx",
+        "area": "effect dependencies [errorMessage, pending]",
+        "issue": "Refocus/re-announce for a repeated identical error depends on the caller toggling pending or changing the message; there is no explicit retry token.",
+        "evidence": "Effect deps are only `errorMessage` and `pending`. Both supplied callers blank the message while pending, so network retries work, but a caller that sets the same error again without a pending transition (e.g. a client-side validation or verification-not-ready path that sets status \"error\" directly) produces no dep change, no focus move, and no live-region text change.",
+        "impact": "Repeated identical failures from non-pending paths could be silent for keyboard/screen-reader users. Not demonstrable from the supplied text because those handler paths are not shown.",
+        "recommended_fix": "Accept an optional `errorKey`/attempt counter prop (incremented per failed attempt) included in the effect deps and used to remount or re-write the alert text; document that callers must either toggle pending or supply the key.",
+        "required_test": "Rerender twice with the same errorMessage, pending=false, and an incremented errorKey; assert focus is restored after the user moves focus away and the alert text is re-announced.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/registration-submission-feedback.tsx",
+        "area": "JSX return (alert <p> and status <span>)",
+        "issue": "Always-mounted empty alert paragraph is a real layout child, and the focused alert element may be double-announced by some screen readers.",
+        "evidence": "The `<p ... className=\"text-sm text-red-700\">` is rendered even when empty. In callers using grid gap or space-y spacing (lead-form previously rendered nothing there), an empty child can still add an inter-item gap. The same element is both role=\"alert\" (aria-live assertive) and programmatically focused with tabIndex -1.",
+        "impact": "Possible extra blank spacing above the submit button before any error, and potential duplicate announcement (live-region change plus focus announcement) in some AT combinations. Both are cosmetic/minor; layout classes are not in the supplied scope.",
+        "recommended_fix": "Use `empty:hidden`/`min-h-0 m-0` or hidden-when-empty styling that keeps the node mounted, and verify in a screen reader that focus plus role=alert does not double-announce; if it does, keep role=alert but only focus when text is present and consider role=\"alert\" without aria-live duplication.",
+        "required_test": "Visual check of both forms before/after change for unchanged spacing; manual NVDA/VoiceOver pass confirming a single announcement of the error.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-sonnet-5-5",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "normalized_status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-sonnet-5-5",
+      "exitCode": 0
+    }
+  ],
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-sonnet-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  }
+}

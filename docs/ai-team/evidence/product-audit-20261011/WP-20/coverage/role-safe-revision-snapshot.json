@@ -1,0 +1,11 @@
+{
+  "revision": "sha256:dfb8602b166a1ce3b9bc6ad1299cca0530502718142d90e658039c60a7a91051",
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql",
+    "src/lib/live-metric-report-reader.ts",
+    "scripts/wp20-payment-retry-disposable.mjs"
+  ],
+  "independentReview": "NOT_RUN_AFTER_FIX",
+  "role_contract": "Trusted backend EXECUTE capability only; public/authenticated/service_role remain revoked. Caller authorizes tenant. Full deployed worker role not verified."
+}

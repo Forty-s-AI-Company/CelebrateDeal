@@ -1,3 +1,5 @@
+import { encryptSensitiveValue } from "@/lib/sensitive-data";
+import { protectCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -6,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   captureOperationalError: vi.fn(),
   materializeLiveNotificationsForSubmission: vi.fn(),
   db: {
+    commerceOrder: { findFirst: vi.fn() },
+    commerceOrderEvent: { findUnique: vi.fn() },
+    automationRule: { findFirst: vi.fn() },
     $transaction: vi.fn(),
     emailDelivery: {
       create: vi.fn(),
@@ -78,6 +83,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("CSRF_SECRET", "g7-07-email-delivery-test-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+  mocks.db.commerceOrder.findFirst.mockResolvedValue({ id: "order-1", buyerEncryptedEnvelope: protectCommerceOrderPii({buyer:{name:"Synthetic",email:"lead@example.test"},shipping:null},{vendorId:"vendor-1",orderId:"order-1"}).buyerEncrypted });
+  mocks.db.commerceOrderEvent.findUnique.mockResolvedValue({ eventType: "checkout_incomplete_candidate", actorType: "system", createdAt: new Date(Date.now()-60*60_000) });
+  mocks.db.automationRule.findFirst.mockResolvedValue({ createdAt: new Date(Date.now()-2*60*60_000), updatedAt: new Date(Date.now()-2*60*60_000), condition: { type: "order_pending_payment" }, actions: [{ type: "send_email_notification", template: "checkout_followup" }] });
   mocks.db.emailSuppression.findUnique.mockResolvedValue(null);
   mocks.db.blacklist.findFirst.mockResolvedValue(null);
   mocks.db.liveNotificationRule.count.mockResolvedValue(0);
@@ -1055,4 +1063,52 @@ describe("student portal login delivery", () => {
     expect(mocks.db.studentPortalAccessToken.findFirst).not.toHaveBeenCalled();
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
+});
+
+describe('WP18 checkout follow-up actual email dispatcher guard',()=>{
+ const followup=()=>candidate({trigger:'checkout_followup',sourceLiveId:null,sourceFormSubmissionId:null,idempotencyKey:'wp18-checkout-v1:order-1:rule-1:1'});
+ it('rechecks eligibility before calling the existing sender',async()=>{
+  mocks.db.emailDelivery.findUnique.mockResolvedValue(followup());mocks.sendTransactionalEmail.mockResolvedValue({id:'synthetic-message'});
+  await expect(dispatchEmailDelivery('delivery-1')).resolves.toEqual({status:'sent'});
+  expect(mocks.db.commerceOrder.findFirst).toHaveBeenCalled();
+  expect(mocks.db.commerceOrder.findFirst.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendTransactionalEmail.mock.invocationCallOrder[0]);
+ });
+ it.each(['paid-or-cancelled-order','disabled-or-versioned-rule','missing-event'])('does not send when %s is no longer eligible',async missing=>{
+  mocks.db.emailDelivery.findUnique.mockResolvedValue(followup());
+  if(missing==='paid-or-cancelled-order')mocks.db.commerceOrder.findFirst.mockResolvedValue(null);
+  if(missing==='disabled-or-versioned-rule')mocks.db.automationRule.findFirst.mockResolvedValue(null);
+  if(missing==='missing-event')mocks.db.commerceOrderEvent.findUnique.mockResolvedValue(null);
+  await expect(dispatchEmailDelivery('delivery-1')).resolves.toEqual({status:'superseded'});
+  expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+ });
+ it('preserves the existing unsubscribe suppression for follow-ups',async()=>{
+  mocks.db.emailDelivery.findUnique.mockResolvedValue(followup());mocks.db.emailSuppression.findUnique.mockResolvedValue({resubscribedAt:null});
+  await expect(dispatchEmailDelivery('delivery-1')).resolves.toEqual({status:'suppressed'});expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+ });
+ it('does not send when the current-source read fails',async()=>{
+  mocks.db.emailDelivery.findUnique.mockResolvedValue(followup());mocks.db.commerceOrder.findFirst.mockRejectedValue(new Error('DB unavailable'));
+  await expect(dispatchEmailDelivery('delivery-1')).rejects.toThrow('DB unavailable');expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+ });
+});
+
+it('does not send a checkout follow-up to a different buyer',async()=>{
+ mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({trigger:'checkout_followup',sourceLiveId:null,sourceFormSubmissionId:null,idempotencyKey:'wp18-checkout-v1:order-1:rule-1:1'}));
+ mocks.db.commerceOrder.findFirst.mockResolvedValue({id:'order-1',buyerEncryptedEnvelope:protectCommerceOrderPii({buyer:{name:'Other',email:'other@example.test'},shipping:null},{vendorId:'vendor-1',orderId:'order-1'}).buyerEncrypted});
+ await expect(dispatchEmailDelivery('delivery-1')).resolves.toEqual({status:'superseded'});expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+});
+
+it.each(['wrong-order','missing-email'])('finalizes a %s source envelope without contacting the email provider',async kind=>{
+ const envelope=kind==='wrong-order'?protectCommerceOrderPii({buyer:{name:'Synthetic',email:'lead@example.test'},shipping:null},{vendorId:'vendor-1',orderId:'other-order'}).buyerEncrypted:encryptSensitiveValue(JSON.stringify({name:'Synthetic'}),'commerce-order-buyer:vendor-1:order-1');
+ mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({trigger:'checkout_followup',sourceLiveId:null,sourceFormSubmissionId:null,idempotencyKey:'wp18-checkout-v1:order-1:rule-1:1'}));
+ mocks.db.commerceOrder.findFirst.mockResolvedValue({id:'order-1',buyerEncryptedEnvelope:envelope});
+ await expect(dispatchEmailDelivery('delivery-1')).resolves.toEqual({status:kind==='missing-email'?'superseded':'failed'});expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+ expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({data:expect.objectContaining({status:kind==='missing-email'?'superseded':'failed',lastErrorCode:kind==='missing-email'?'config_superseded':'followup_source_unavailable'})}));
+});
+
+it('does not contact the provider when the buyer-binding encryption configuration is unavailable',async()=>{
+ const queued=candidate({trigger:'checkout_followup',sourceLiveId:null,sourceFormSubmissionId:null,idempotencyKey:'wp18-checkout-v1:order-1:rule-1:1'});mocks.db.emailDelivery.findUnique.mockResolvedValue(queued);
+ vi.stubEnv('CSRF_SECRET','');vi.stubEnv('JOB_SECRET','');
+ await expect(dispatchEmailDelivery('delivery-1')).resolves.toEqual({status:'failed'});expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+ expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error),{source:'checkout_followup',operation:'validate_recipient',status:'rejected'});
+ expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({data:expect.objectContaining({status:'failed',claimedAt:null,nextAttemptAt:expect.any(Date),lastErrorCode:'followup_source_unavailable'})}));
 });

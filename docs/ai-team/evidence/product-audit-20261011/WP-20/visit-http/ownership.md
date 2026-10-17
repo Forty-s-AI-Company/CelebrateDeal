@@ -1,0 +1,1 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; config helper/visits route/tests and evidence; independent Auth review required. No environment secret read by tools or provisioning.

@@ -1,0 +1,8 @@
+{
+  "status": "PUBLISHED",
+  "scope": "preview only",
+  "added_exact_host": "celebrate-deal-staging-lo8afai2s-a25814740s-projects.vercel.app",
+  "rule_id": "rule_log_generated_staging_preview_hosts_HJx9RW",
+  "rollback": "remove only added exact host from same rule; preserve concurrent changes",
+  "existing_rule_action_preserved": true
+}

@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "scope": "Real loopback proxy and production resolver code over local HTTP; synthetic upstream, not application routes or cloud deployment",
+  "checks": [
+    {
+      "case": "proxy-0",
+      "status": "PASS"
+    },
+    {
+      "case": "proxy-1",
+      "status": "PASS"
+    },
+    {
+      "case": "proxy-2",
+      "status": "PASS"
+    },
+    {
+      "case": "direct-unproved-0",
+      "status": "PASS"
+    },
+    {
+      "case": "direct-unproved-1",
+      "status": "PASS"
+    },
+    {
+      "case": "direct-unproved-2",
+      "status": "PASS"
+    }
+  ],
+  "cleanup": true
+}

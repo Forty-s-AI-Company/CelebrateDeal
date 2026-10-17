@@ -1,0 +1,23 @@
+{
+  "status": "FAIL",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic demo checkout. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T00:12:30.297Z",
+    "duration": 84401.413,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "errors": [
+    "Error: Process from config.webServer was not able to start. Exit code: 1"
+  ],
+  "exitCode": 1,
+  "migrations": 131
+}

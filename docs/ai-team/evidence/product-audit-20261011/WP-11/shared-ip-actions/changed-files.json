@@ -1,0 +1,37 @@
+{
+  "files": [
+    "src/app/actions/auth-security-actions.ts",
+    "src/app/actions/buyer-support-actions.ts",
+    "src/app/actions/consultation-actions.ts",
+    "src/app/actions/registration-actions.ts",
+    "src/app/actions/student-portal-actions.ts",
+    "src/app/actions/vendor-member-actions.ts",
+    "src/lib/mfa-recovery-regeneration.ts",
+    "src/lib/registration-form-retry-response.ts",
+    "src/app/actions.test.ts",
+    "src/app/actions.mfa-db.test.ts",
+    "src/app/actions/student-portal-actions.test.ts",
+    "src/app/actions/student-portal-actions-boundary.test.ts",
+    "src/app/actions/registration-actions.test.ts",
+    "src/app/actions/registration-actions.db.test.ts",
+    "src/app/actions/buyer-support-actions.test.ts",
+    "src/lib/registration-form-retry-response.test.ts",
+    "src/lib/entry-rate-limit-headers.ts",
+    "src/lib/entry-rate-limit-headers.test.ts",
+    "src/app/actions/source-rate-limit.integration.test.ts",
+    "src/lib/rate-limit-boundary.test.ts"
+  ],
+  "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+  "product_changed": [
+    "src/app/actions/auth-security-actions.ts",
+    "src/app/actions/buyer-support-actions.ts",
+    "src/app/actions/consultation-actions.ts",
+    "src/app/actions/registration-actions.ts",
+    "src/app/actions/student-portal-actions.ts",
+    "src/app/actions/vendor-member-actions.ts",
+    "src/lib/mfa-recovery-regeneration.ts",
+    "src/lib/registration-form-retry-response.ts",
+    "src/lib/entry-rate-limit-headers.ts"
+  ],
+  "scope": "LOCAL_ACTIONS_ONLY"
+}

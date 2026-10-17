@@ -1,0 +1,91 @@
+--- a/src/app/(app)/messages/templates/page.tsx
++++ b/src/app/(app)/messages/templates/page.tsx
+@@ -94,7 +94,7 @@
+     <>
+       <PageHeader
+         title="訊息模板"
+-        description="管理報名成功、開播提醒與課後通知 Email；購買追蹤、SMS、LINE 在事件來源或 provider 接通前保持停用。"
++        description="可選 Email 或 LINE 建立通知模板。LINE 須連接官方帳號並取得學員綁定；實際送達仍取決於排程與供應商。SMS 尚未串接。"
+         action={(
+           <div className="flex flex-wrap gap-2">
+             <ButtonLink href="/messages/deliveries" tone="secondary">查看寄送紀錄</ButtonLink>
+@@ -163,7 +163,7 @@
+                 </div>
+                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                   <Badge tone="blue">{channelLabel(template.channel)}</Badge>
+-                  <Badge tone={template.isActive ? "green" : "gray"}>{template.isActive ? "啟用" : "停用"}</Badge>
++                  <Badge tone={template.isActive ? "green" : "gray"}>{template.isActive ? "模板啟用" : "模板停用"}</Badge>
+                   <Link href={`/messages/templates/${encodeURIComponent(template.id)}/edit`} className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-white transition hover:bg-primary-dark">編輯</Link>
+                   <Link href={`/messages/templates/${encodeURIComponent(template.id)}/preview`} className="inline-flex min-h-10 items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">預覽內容</Link>
+                 </div>
+--- a/src/app/(app)/messages/templates/new/page.tsx
++++ b/src/app/(app)/messages/templates/new/page.tsx
+@@ -11,7 +11,7 @@
+   const { error } = await searchParams;
+   return (
+     <>
+-      <PageHeader title="新增訊息模板" description="建立可供 Email 排程與寄送使用的商家模板；未串接的渠道會保持停用。" />
++      <PageHeader title="新增訊息模板" description="可分別建立 Email 與 LINE 通知模板，每份模板選擇一個通道。SMS 尚未串接，不能啟用。" />
+       <MessageTemplateForm error={error === "invalid_template" || error === "missing_template" ? error : null} />
+     </>
+   );
+--- a/src/app/(app)/messages/templates/[id]/edit/page.tsx
++++ b/src/app/(app)/messages/templates/[id]/edit/page.tsx
+@@ -17,7 +17,7 @@
+   if (!template) notFound();
+   return (
+     <>
+-      <PageHeader title="編輯訊息模板" description="更新通知渠道、觸發條件與文案。" />
++      <PageHeader title="編輯訊息模板" description="選擇 Email 或 LINE，更新觸發條件與內容。SMS 尚未串接。" />
+       <MessageTemplateForm template={template} error={error === "invalid_template" ? error : null} />
+     </>
+   );
+--- /dev/null
++++ b/docs/launch/wp19-notification-channels-20261016.md
+@@ -0,0 +1,31 @@
++# WP-19 通知通道現況
++
++人類已決定保留 Email、LINE、SMS，讓使用者選擇。這份現況說明不變更決策，也不以 Email＋LINE 取代尚未完成的 SMS。
++
++## 商家目前可以操作的功能
++
++在「訊息模板」新增或編輯模板時，選擇 Email 或 LINE；每份模板使用一個通道，需使用兩種通道時分別建立模板。
++
++| 通道 | 目前模板功能 | 寄送的前提 |
++| --- | --- | --- |
++| Email | 可選；報名成功、開播提醒、課後通知等既有 Email 模板 | 對應事件及規則、排程、寄送供應商可用，且收件者符合驗證與退訂規則 |
++| LINE | 可選；報名成功、開播提醒、直播開始 | 商家已連接官方帳號，學員完成必要驗證與 LINE 綁定，未封鎖／撤回同意，且排程與供應商可用 |
++| SMS | 選項顯示尚未串接，不能啟用 | adapter、計量及供應商 Sandbox 驗證尚未完成；不宣稱可以寄送 |
++
++「模板啟用」表示模板設定，不能據此認定已排入佇列或送達。佇列、供應商接受與實際送達也應分別判讀；目前寄送紀錄頁不作為尚未串接的 SMS 送達證據。
++
++LINE 同一觸發條件依既有最新模板規則選用，並非把所有同類模板都寄一次。修改或停用模板對既有佇列的影響，以模板表單中的實際說明為準。Email 的必要確認與退訂規則不因切換模板通道而取消。
++
++## 保留的原始驗收與暫緩事項
++
++- D-4 的通道選擇已決定，不重問是否要做 SMS。
++- SMS 供應商、費用上限、點數／計量規則、核准的 Sandbox 合成收件者資料仍未知，維持 `WAITING_AUTHORIZATION` 並按人類指示暫緩。
++- 原 WP-19 仍須完成 SMS adapter、退訂與點數紀錄，並取得供應商 Sandbox 實際送達證據；本文件與 UI 文案不能代替這些功能。
++- WP-04 的實際排程與 WP-13 的 LINE Sandbox 送達仍是原依賴，不因選項可操作或模板啟用而移除。
++- 不從 PayUni 付款服務推定 SMS 供應商、費率或發票功能；本項不調整付款或帳單。
++
++## 本輪範圍
++
++修正模板列表、新增及編輯頁的能力說明，與現有表單／伺服器接受 Email、LINE，拒絕 SMS 的行為一致。沒有新增供應商、開啟 SMS、變更 schema、通知佇列、資料驗證或退訂規則。
++
++來源：`src/lib/message-template.ts`、`src/components/message-template-form-client.tsx`、`src/lib/line-notification-materializer.ts`，以及 Goal Plan 的 WP-19 原始範圍。實際驗證與未驗證事項記錄於本 WP evidence 與 handoff。
+--- a/src/app/(app)/messages/templates/page.test.tsx
++++ b/src/app/(app)/messages/templates/page.test.tsx
+@@ -128,7 +128,11 @@
+       trigger: "post_live_followup",
+     });
+     expect(html).toContain("課後通知");
+-    expect(html).toContain("管理報名成功、開播提醒與課後通知 Email");
++    expect(html).toContain("可選 Email 或 LINE 建立通知模板");
++    expect(html).toContain("LINE 須連接官方帳號並取得學員綁定");
++    expect(html).toContain("SMS 尚未串接");
++    expect(html).toContain("模板啟用");
++    expect(html).not.toContain("SMS、LINE 在事件來源或 provider 接通前保持停用");
+   });
+ 
+   it.each([

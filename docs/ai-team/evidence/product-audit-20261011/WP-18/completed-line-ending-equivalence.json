@@ -1,0 +1,8 @@
+{
+  "src/lib/checkout-followup.ts": {
+    "beforeSha256": "b9f87c6892f4137a56a9423d7a280b047d2406978784b50ecc1e371ff7962097",
+    "afterSha256": "7638d95b005da0d5c577bf4cfd930f63886bd8e372a53a4642b84fd725e95e93",
+    "normalizedSha256": "3519de6275cb7f2c6f40bac432b672c870edaa27726b16b482f148371e9cdbf8",
+    "onlyLineEndingsChanged": true
+  }
+}

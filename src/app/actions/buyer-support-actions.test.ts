@@ -18,8 +18,8 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerAct
 vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction }) }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/rate-limit", () => ({
-  checkRateLimit: mocks.checkRateLimit,
   getRateLimitProviderStatus: mocks.getRateLimitProviderStatus,
 }));
 vi.mock("@/lib/buyer-support-access", () => ({

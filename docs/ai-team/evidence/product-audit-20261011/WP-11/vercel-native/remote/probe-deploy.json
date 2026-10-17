@@ -1,0 +1,12 @@
+{
+  "exit": 0,
+  "status": "ok",
+  "deployment": {
+    "id": "dpl_BJ9DkFdmKjP1Z7ewfHvf5jnzKad1",
+    "url": "https://celebrate-deal-staging-3xt6w5tpu-a25814740s-projects.vercel.app",
+    "readyState": "INITIALIZING",
+    "target": null
+  },
+  "credentials": "synthetic fixture only; no real secrets read",
+  "project_env_mutated": false
+}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readTextBody } from "@/lib/api-security";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 const MAX_CSP_REPORT_BYTES = 16 * 1024;
 

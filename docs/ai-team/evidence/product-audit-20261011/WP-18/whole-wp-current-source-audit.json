@@ -1,0 +1,386 @@
+{
+  "files": [
+    "src/app/api/payments/checkout/route.ts",
+    "src/app/api/payments/checkout/route.test.ts",
+    "src/lib/checkout-followup-queue.ts",
+    "src/lib/checkout-followup-queue.test.ts",
+    "src/lib/checkout-followup.ts",
+    "src/lib/checkout-followup.test.ts",
+    "src/lib/email-delivery.ts",
+    "src/lib/email-delivery.test.ts",
+    "src/app/api/jobs/email-deliveries/route.ts",
+    "src/app/api/jobs/email-deliveries/route.test.ts",
+    "src/lib/completed-followup.ts",
+    "src/lib/completed-followup.test.ts",
+    "src/lib/automation-workflow.ts",
+    "src/lib/automation-workflow.test.ts",
+    "src/app/actions/automation-actions.ts",
+    "src/app/actions/automation-actions.test.ts",
+    "src/app/(app)/settings/automations/page.tsx",
+    "src/app/(app)/settings/automations/page.test.tsx"
+  ],
+  "sourceHashes": {
+    "src/app/api/payments/checkout/route.ts": "1d40145681021dc7c692906a678f58f81332106c395474963818a5f819520bf7",
+    "src/app/api/payments/checkout/route.test.ts": "6a65b2c95440621ce261156cdd607c861cdae95df67d760af1dc00d88e6eb5d2",
+    "src/lib/checkout-followup-queue.ts": "ba0c77ed8e8fc9e749c11f13100c9b755a7f78df11b9aa38ee486bed6a414d10",
+    "src/lib/checkout-followup-queue.test.ts": "1baa2e53f79b0ae0824da56f2cc7a42289617ab2dc3ca278adc892d1b6a8d595",
+    "src/lib/checkout-followup.ts": "7638d95b005da0d5c577bf4cfd930f63886bd8e372a53a4642b84fd725e95e93",
+    "src/lib/checkout-followup.test.ts": "814251593b6b734d056089d43a4f7be73e39e721dae959234b664397c5e9f8c3",
+    "src/lib/email-delivery.ts": "3f42bc52eba290fa6de60921f881c0a41330484af965c7594f7abd87cf2499f1",
+    "src/lib/email-delivery.test.ts": "ae6de03c7d827ccfe30ad35df4c4f6b965b298e8142a2aa42be3b9584bb69d46",
+    "src/app/api/jobs/email-deliveries/route.ts": "8a58e97255db6d9129be5b525cac34a38c22e7c6cff208e4527e8592bb05304c",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "173f091543a2d4b4766c670614053668d871f5372a58aa510e6a75619500d357",
+    "src/lib/completed-followup.ts": "c1a918a9b2ef7b54f76f87bf0549957298b4d952db91cc4eeaa9901ec00fbb41",
+    "src/lib/completed-followup.test.ts": "875bad0c9a42f2a63778873305cd737bd653b8871f67a57e023526ff1599a0ac",
+    "src/lib/automation-workflow.ts": "d26462aacbd98a28b443c1cb2a291cd2810b552a8348e40d0602afe152d76a98",
+    "src/lib/automation-workflow.test.ts": "ace190faadf4ac414a256ad704946c4716f535032548cee0ae034f49c91d6a4e",
+    "src/app/actions/automation-actions.ts": "93720609e9ef0cff905ff4d777a30d7875ed1f8737efa244a011f97b84e64c2b",
+    "src/app/actions/automation-actions.test.ts": "a07d10e261d71f17a1d7bfdbe9f9fb4cd1aadc7c03574618c6ed40093487523b",
+    "src/app/(app)/settings/automations/page.tsx": "608a1a315f8ef38c29536c65c22526331a80580e7c2580fe117d1091183af7ac",
+    "src/app/(app)/settings/automations/page.test.tsx": "34d3109135dc2e74b56acd1cc8b8e24fbebc771c0bcc8c85fa5894ed2251bb70"
+  },
+  "historical_validation_comparison": [
+    {
+      "path": "src/app/api/payments/checkout/route.ts",
+      "validation": "checkout-event-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.test.ts",
+      "validation": "checkout-event-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/email-delivery.ts",
+      "validation": "checkout-event-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/email-delivery.test.ts",
+      "validation": "checkout-event-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/checkout-followup.ts",
+      "validation": "checkout-event-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/checkout-followup.test.ts",
+      "validation": "checkout-event-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/checkout-followup-queue.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/checkout-followup-queue.test.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/checkout-followup.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/checkout-followup.test.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/email-delivery.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/email-delivery.test.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/app/api/jobs/email-deliveries/route.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/app/api/jobs/email-deliveries/route.test.ts",
+      "validation": "checkout-queue-validation.json",
+      "current_hash_match": false
+    },
+    {
+      "path": "src/lib/checkout-followup.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/checkout-followup.test.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/email-delivery.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/email-delivery.test.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/app/api/jobs/email-deliveries/route.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/app/api/jobs/email-deliveries/route.test.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/completed-followup.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/completed-followup.test.ts",
+      "validation": "completed-followup-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/automation-workflow.ts",
+      "validation": "activation-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/lib/automation-workflow.test.ts",
+      "validation": "activation-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/app/actions/automation-actions.ts",
+      "validation": "activation-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/app/actions/automation-actions.test.ts",
+      "validation": "activation-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/app/(app)/settings/automations/page.tsx",
+      "validation": "activation-validation.json",
+      "current_hash_match": true
+    },
+    {
+      "path": "src/app/(app)/settings/automations/page.test.tsx",
+      "validation": "activation-validation.json",
+      "current_hash_match": true
+    }
+  ],
+  "current_review_coverage": {
+    "src/app/api/payments/checkout/route.ts": {
+      "review": "checkout-event-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/app/api/payments/checkout/route.test.ts": {
+      "review": "checkout-event-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/checkout-followup-queue.ts": {
+      "review": "checkout-queue-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/checkout-followup-queue.test.ts": {
+      "review": "checkout-queue-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/checkout-followup.ts": {
+      "review": "completed-final-review.json",
+      "match": "recorded_line_endings_only",
+      "equivalence_receipt": "completed-line-ending-equivalence.json",
+      "normalizedSha256": "3519de6275cb7f2c6f40bac432b672c870edaa27726b16b482f148371e9cdbf8"
+    },
+    "src/lib/checkout-followup.test.ts": {
+      "review": "completed-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/email-delivery.ts": {
+      "review": "completed-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/email-delivery.test.ts": {
+      "review": "completed-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/app/api/jobs/email-deliveries/route.ts": {
+      "review": "completed-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/app/api/jobs/email-deliveries/route.test.ts": {
+      "review": "completed-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/completed-followup.ts": {
+      "review": "completed-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/completed-followup.test.ts": {
+      "review": "completed-final-review.json",
+      "match": "exact_bytes"
+    },
+    "src/lib/automation-workflow.ts": {
+      "review": "activation-fixed-review.json",
+      "match": "exact_bytes"
+    },
+    "src/app/actions/automation-actions.ts": {
+      "review": "activation-fixed-review.json",
+      "match": "exact_bytes"
+    },
+    "src/app/actions/automation-actions.test.ts": {
+      "review": "activation-fixed-review.json",
+      "match": "exact_bytes"
+    },
+    "src/app/(app)/settings/automations/page.tsx": {
+      "review": "activation-fixed-review.json",
+      "match": "exact_bytes"
+    },
+    "src/app/(app)/settings/automations/page.test.tsx": {
+      "review": "activation-fixed-review.json",
+      "match": "exact_bytes"
+    }
+  },
+  "product_files": [
+    "src/app/api/payments/checkout/route.ts",
+    "src/lib/checkout-followup-queue.ts",
+    "src/lib/checkout-followup.ts",
+    "src/lib/email-delivery.ts",
+    "src/app/api/jobs/email-deliveries/route.ts",
+    "src/lib/completed-followup.ts",
+    "src/lib/automation-workflow.ts",
+    "src/app/actions/automation-actions.ts",
+    "src/app/(app)/settings/automations/page.tsx"
+  ],
+  "reviews": [
+    {
+      "receipt": "checkout-event-final-review.json",
+      "observed_model": "claude-opus-5-5",
+      "current_source_paths": [
+        "src/app/api/payments/checkout/route.ts",
+        "src/app/api/payments/checkout/route.test.ts"
+      ],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "checkout-followup module (isCurrentCheckoutFollowupDelivery tail)",
+          "area": "try { revealCommerceOrderPii(...); createEmailRecipientHash(...) } catch { return false; }",
+          "issue": "The bare catch treats every error from the encryption and recipient-hash helpers the same way. A record-level problem (malformed, misbound or missing-email envelope) gets the same permanent `false` as an environment-level failure, such as a missing or rotated encryption key or HMAC secret, or a broken helper. The catch logs nothing and records no metric, so these drops are invisible.",
+          "evidence": "The catch has no condition and returns false with the comment 'Do not log the envelope/exception'. The function's doc comment says failures 'must not silently turn into either a send or permanent drop', but the repair only keeps database failures out of that path. Your task text says existing dispatchEmailDelivery tests map `false` to superseded/config_superseded, which is a final outcome.",
+          "impact": "A temporary key or secret misconfiguration during deployment would quietly mark every pending checkout follow-up as superseded, and nobody would see it. This fails closed (no wrong-recipient send), so it is not a payment or privacy risk. The cost is lost deliveries that can't be diagnosed.",
+          "recommended_fix": "Keep returning false for record-level failures. Either (a) let environment errors propagate, which needs only a local check of the error type or code that the existing helpers already expose, or (b) emit a counter or log line with only a fixed reason code and no envelope, exception message or PII, so mass drops can be seen. Either fix stays inside this module and needs no shared transport, crypto or schema change.",
+          "required_test": "Unit test: make the existing encryption or HMAC helper's key or secret unavailable through the existing test configuration, call isCurrentCheckoutFollowupDelivery for an otherwise valid delivery, and assert the chosen behaviour: it either rejects, or returns false while recording the fixed non-PII reason code. In both cases the provider must not be called.",
+          "confidence": 0.55
+        }
+      ]
+    },
+    {
+      "receipt": "checkout-queue-final-review.json",
+      "observed_model": "claude-opus-5-5",
+      "current_source_paths": [
+        "src/lib/checkout-followup-queue.ts",
+        "src/lib/checkout-followup-queue.test.ts"
+      ],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/checkout-followup.ts",
+          "area": "isCurrentCheckoutFollowupDelivery, the final try/catch around revealCommerceOrderPii and createEmailRecipientHash",
+          "issue": "Every error from decrypting or hashing returns false, including temporary key or config failures. This guard is used at send time and by the materializer. False means the reminder is no longer current, so it is suppressed (dispatcher) or marked skipped with 'source_superseded' (materializer). The queue fix keeps a skip for CommerceOrderPiiValidationError only; this guard does not make that distinction.",
+          "evidence": "The docblock says DB failures 'must not silently turn into either a send or permanent drop'. The catch block is a bare `catch { ...; return false; }` with no instanceof CommerceOrderPiiValidationError check. In checkout-followup-queue.ts, `if (!await isCurrentCheckoutFollowupDelivery(...)) { await markSuperseded(); return \"superseded\"; }` turns false into a permanent skipped ledger row.",
+          "impact": "Fail-closed, so nothing is sent by mistake. But during a key-rotation or config outage, emails that are already queued are suppressed at dispatch. A materialization that hits the guard during the same outage is permanently recorded as source_superseded. Since the delivery ID allows one per order, these pending-payment buyers never get their reminder after the outage ends. This is the same kind of 'temporary error becomes permanent drop' problem the materializer fix was meant to prevent.",
+          "recommended_fix": "In the guard, return false only for CommerceOrderPiiValidationError or a hash mismatch. Rethrow, or return a separate 'unavailable' result for, any other decrypt, config or HMAC error. The dispatcher can then defer and retry, and the materializer's outer catch can record status failed, which gets the cooldown. Keep the fixed operational diagnostic.",
+          "required_test": "On real PostgreSQL, run the existing dispatcher with a queued checkout_followup row while revealCommerceOrderPii or the HMAC key setup throws a non-validation error. Assert the row is not finally suppressed and is sent once the config is restored. Also assert the materializer records status 'failed', not 'skipped', when the guard fails for that reason.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/checkout-followup-queue.ts",
+          "area": "payload body: createEmailUnsubscribeUrl(id), where id comes from checkoutFollowupDeliveryId",
+          "issue": "The delivery ID used to be opaque. It is now an unsalted SHA-256 of vendorId plus newline plus orderId, so anyone who knows both values can compute it. It is passed to createEmailUnsubscribeUrl. If that helper relies on the delivery ID as the secret part of the unsubscribe link, rather than adding its own server-keyed signature, the link can now be forged.",
+          "evidence": "`return `wp18-checkout-${createHash(\"sha256\").update(`${scope.vendorId}\\n${scope.orderId}`).digest(\"hex\")}`` and `取消訂閱：${createEmailUnsubscribeUrl(id)}`. The createEmailUnsubscribeUrl implementation was not supplied, so this is conditional.",
+          "impact": "If the URL is not signed independently, a third party who knows a vendorId and orderId could unsubscribe that buyer. Order IDs are often shown to buyers or in URLs. This would not expose PII, but it would be an unauthorized preference change.",
+          "recommended_fix": "Confirm that createEmailUnsubscribeUrl adds a server-secret signature (HMAC) over the delivery ID and that the unsubscribe handler checks it. If not, sign the token or derive the deterministic ID with a keyed HMAC instead of plain SHA-256. If the ID becomes keyed, the SQL NOT EXISTS check must take the precomputed value as a parameter.",
+          "required_test": "A unit or integration test that builds the unsubscribe URL from a computed wp18-checkout-<sha256> ID without the server secret and asserts the unsubscribe endpoint rejects it.",
+          "confidence": 0.3
+        }
+      ]
+    },
+    {
+      "receipt": "completed-final-review.json",
+      "observed_model": "claude-opus-5-5",
+      "current_source_paths": [
+        "src/lib/checkout-followup.ts",
+        "src/lib/checkout-followup.test.ts",
+        "src/lib/email-delivery.ts",
+        "src/lib/email-delivery.test.ts",
+        "src/app/api/jobs/email-deliveries/route.ts",
+        "src/app/api/jobs/email-deliveries/route.test.ts",
+        "src/lib/completed-followup.ts",
+        "src/lib/completed-followup.test.ts"
+      ],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "readCompletedFollowupSource (order/attribution query)",
+          "area": "order EXISTS branch: lower(trim(buyer.email))=${row.email.trim().toLowerCase()}",
+          "issue": "The same-email check normalises each side differently. PostgreSQL trim(text) removes only ASCII spaces, while JavaScript String.trim() also removes tabs, CR/LF, NBSP, U+FEFF and other whitespace. PostgreSQL lower() depends on the database collation (under C collation it lowercases ASCII only), while JavaScript toLowerCase() applies full Unicode mappings. This breaks the claim that the match is consistent with the customer HMAC, unless automationCustomerKeyHash uses exactly the same trim/lowercase rules.",
+          "evidence": "The reader compares lower(trim(buyer.email)) in SQL against row.email.trim().toLowerCase() computed in JavaScript. recipientHash and customerKey are built by separate helpers whose normalisation is not shown. Nothing checks that the SQL and JavaScript normalisation are equivalent.",
+          "impact": "Suppose a buyer's FormSubmission.email on another live has non-space whitespace padding or non-ASCII uppercase characters (under C or similar collation), and the order has no automationCustomerKeyHash. The match fails, order.exists is false, and the order still counts as attributed in attributionUnknown. The reader then returns eligible and the buyer gets a 'completed but not ordered' email — the same kind of bug this fix is meant to close. The impact is limited if form writes already store canonical emails.",
+          "recommended_fix": "Use one canonical normalisation on both sides. Normalise in JavaScript with the same helper used for the customer HMAC, and in SQL use an equivalent expression, e.g. lower(btrim(buyer.email, E' \\t\\r\\n ﻿')) with an explicit collation such as COLLATE \"und-x-icu\" or a fixed ASCII-only rule. Alternatively, compare a stored normalised-email column or hash. If FormSubmission.email is guaranteed canonical on write, document that and assert it.",
+          "required_test": "Real PG14 test: create a live-B order with no automationCustomerKeyHash whose buyer_order attempt references a FormSubmission whose email has tab/NBSP padding and mixed case (plus a non-ASCII uppercase case under the deployed collation). The candidate on live A has the canonical form of the same email. Assert the reader returns ineligible, and assert that normalising the same input with the customer-key helper gives identical results.",
+          "confidence": 0.5
+        }
+      ]
+    },
+    {
+      "receipt": "activation-fixed-review.json",
+      "observed_model": "claude-opus-5-5",
+      "current_source_paths": [
+        "src/lib/automation-workflow.ts",
+        "src/app/actions/automation-actions.ts",
+        "src/app/actions/automation-actions.test.ts",
+        "src/app/(app)/settings/automations/page.tsx",
+        "src/app/(app)/settings/automations/page.test.tsx"
+      ],
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "automation email action executor (send_email_notification branch)",
+          "area": "no_show_followup body construction: createEmailUnsubscribeUrl(id) call before the try/emailDelivery.create",
+          "issue": "The new unsubscribe-link step can throw an error (missing NEXT_PUBLIC_APP_URL, bad URL scheme, or a delivery id that fails the SAFE_ID check), and nothing inside the action catches it. Every other failure in this branch returns a status object, such as recipient_not_linked or duplicate.",
+          "evidence": "createEmailUnsubscribeUrl throws 'Public application URL is not configured.' when the env var is missing. The call sits inside the protectEmailDeliveryPayload argument, outside the try/catch, which only handles unique-key conflicts. Only the no_show_followup template takes this path.",
+          "impact": "If the setting is missing in an environment, every no-show follow-up run fails partway through. Earlier actions in the same rule (such as a LINE message or voucher) may already have run, and the run may be retried over and over or dropped, depending on the caller's error handling. Other templates are not affected.",
+          "recommended_fix": "Check that the public URL is configured when the no-show rule is turned on, or at startup. Alternatively, catch the error in this branch and return an explicit status such as { status: 'unsubscribe_unavailable' } without queueing the email. Never queue the email without the opt-out link.",
+          "required_test": "Unit/PG test: with NEXT_PUBLIC_APP_URL unset, run a no_show_followup execution. Assert that no emailDelivery row is created, that a clear status or retry-safe outcome is recorded, and that replaying with the setting restored queues exactly one email.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "automation email action executor / unsubscribe handler",
+          "area": "no_show_followup opt-out semantics (token bound to a single deliveryId)",
+          "issue": "The token is signed over a single deliveryId, and the reported proof only shows that the handler 'cancels queue' for that delivery. The supplied text has no evidence that an unsubscribe also blocks future no_show_followup emails to the same recipient. The email action queues without checking for a previous opt-out.",
+          "evidence": "unsubscribeSignature signs `${TOKEN_VERSION}.${deliveryId}` only. The send_email_notification branch creates emailDelivery with status 'queued' and does not check for a suppression record. The task summary says the unsubscribe handler 'cancels queue' and says nothing about suppressing later emails.",
+          "impact": "If the handler only cancels the delivery the link belongs to (which has usually already been sent by the time the recipient clicks), a recipient who unsubscribes still gets the next no-show follow-up. That would leave the WP18 opt-out requirement only nominally met.",
+          "recommended_fix": "Confirm that the existing unsubscribe handler records a recipient- or vendor-level opt-out, and that either queueing or the send-time check honors it for automation no_show_followup emails. If it already does, add a test that proves it. Add no new infrastructure.",
+          "required_test": "PG test: queue a no_show_followup, unsubscribe through the real handler using its token, then trigger a second no-show event for the same recipient. Assert that the second email is not sent: either it is never queued, or it is suppressed or cancelled at send time.",
+          "confidence": 0.4
+        }
+      ]
+    }
+  ],
+  "scope": "Original WP18 own implementation; WP04 and real provider delivery are not complete.",
+  "line_ending_exception": "checkout-followup.ts differs only by recorded CRLF/LF change; not claimed byte-identical to original review."
+}

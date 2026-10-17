@@ -1,0 +1,30 @@
+{
+  "status": "IN_PROGRESS",
+  "original_failure": {
+    "viewport": "390x844",
+    "first_field_y": 987,
+    "height": 40
+  },
+  "repair": [
+    "Mobile steps collapsed by default with explicit keyboard toggle",
+    "Mobile project switcher native details retains selected project name",
+    "Compact mobile operations header and spacing; desktop preserved"
+  ],
+  "changed_files": [
+    "src/components/app-shell.tsx",
+    "src/components/landing-pages/funnel-operations-panel.tsx"
+  ],
+  "validation": {
+    "first_measurement_run": "PASS6 Chromium/Firefox desktop/mobile/small-mobile",
+    "eslint": "PASS",
+    "keyboard_augmented_run": "PASS6; steps and project switcher keyboard expand/collapse",
+    "updated_independent_review": "NOT_RUN",
+    "updated_typecheck": "NOT_RUN"
+  },
+  "remaining": [
+    "updated52state regression",
+    "review incremental changes",
+    "same snapshot required check receipts",
+    "canonical acceptance"
+  ]
+}

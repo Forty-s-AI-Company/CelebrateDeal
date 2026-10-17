@@ -1,0 +1,118 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "scope": "LOCAL_ACTIONS_ONLY",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\shared-ip-actions\\execution-current.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "terminal_evidence": "review-final-cli.json",
+    "preceding_scoped_reviews": [
+      "review-cli.json",
+      "review-followup-cli.json"
+    ],
+    "review": {
+      "summary": "I reviewed only the supplied rate-limit boundary test for this scope revision; the product code is unchanged. I found no BLOCKER or MAJOR issues.\n\n**Prior MINOR 1 (recipient request copy): fixed.**\n- The recipient is now accepted only when all of these hold: the file is `app/actions/student-portal-actions.ts`, the local binding is `checkRecipientRateLimit`, and the call argument is `new Request(getCanonicalAppUrl())` with exactly one argument and no arguments to `getCanonicalAppUrl`.\n- `new Request(await sourceRequest())` and `new Request(req)` are now rejected, and the positive case still passes.\n\n**Prior MINOR 2 (other ways to reach the legacy limiter): fixed for the declared regression-guard scope.**\n- Re-exports (`export {…} from` and `export * from`) are flagged, including in payment-exception files, because that check runs before the payment skip.\n- Dynamic `import()` and `require` with plain string paths are flagged.\n- Paths ending in `.js`, `.ts`, `.mjs` or `/index` are matched to the legacy module.\n- Re-exporting an imported legacy binding through a local `export { checkRateLimit }` is caught by the \"escaped\" check.\n- Each of the 9 fixture cases exercises one of these paths. Without the matching fix, each of the six rejection fixtures would produce no violation, so they are meaningful.\n\n**Two small gaps remain in the import-detection logic (findings below):**\n- An import that combines a default and named imports skips the existing check that rejects default-only imports.\n- A few other plain-path import forms are not detected: `import x = require(...)` and template-literal paths in `import()` or `require` such as `` `./rate-limit` ``.\n\nNeither gap affects the current product code. The test is name-based, not scope-aware, so fully disguised code is out of scope, as you stated.\n\nThis review does not show that the tests pass, that the whole WP is complete, or that deployment is ready.",
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/rate-limit-boundary.test.ts",
+          "area": "checkBoundary import loop: `const bindings = statement.importClause?.namedBindings; if (!bindings || !ts.isNamedImports(bindings))`",
+          "issue": "Default-only legacy imports are rejected as opaque, but a default import combined with named imports (`import legacy, { checkRateLimit } from \"@/lib/rate-limit\"`) is not. In that case `namedBindings` is a NamedImports node, so the check passes, and `importClause.name` (the default binding) is never inspected or tracked.",
+          "evidence": "The opaque check looks only at `namedBindings`. `statement.importClause.name` is never read. Only names in `bindings.elements` whose imported name is `checkRateLimit` are added to `legacyBindings`.",
+          "impact": "This only matters if the legacy module has, or later gains, a default export that exposes the limiter. A caller could then write `legacy.checkRateLimit(rawRequest, ...)` or `legacy(rawRequest, ...)` and pass the test with a raw request, even though the test already rejects the same default binding when it is imported on its own. There is no current caller and no product impact.",
+          "recommended_fix": "In the import loop, also add a violation when `statement.importClause?.name` is present for a legacy import, unless it is type-only. Do this whether or not `namedBindings` is present.",
+          "required_test": "Add a fixture `import legacy, { checkRateLimit } from \"@/lib/rate-limit\"; legacy(req, \"raw\", 1, 1000);` checked as `lib/synthetic-caller.ts`, and require it to produce a violation.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "NIT",
+          "file": "src/lib/rate-limit-boundary.test.ts",
+          "area": "visit(): `ts.isStringLiteral(modulePath)`; statement loop handles only ImportDeclaration/ExportDeclaration",
+          "issue": "Some plain-path ways to load the legacy module are not detected. One is `import legacy = require(\"./rate-limit\")` (an ImportEqualsDeclaration with ExternalModuleReference). The other is a template-literal path without `${}` (a NoSubstitutionTemplateLiteral) in `import(`./rate-limit`)` or `require(`./rate-limit`)`, because only StringLiteral is accepted.",
+          "evidence": "The statement loop checks only `ts.isExportDeclaration` and `ts.isImportDeclaration`. The dynamic-load check requires `ts.isStringLiteral(modulePath)`.",
+          "impact": "These forms are uncommon. Under an ESM tsconfig, import-equals fails to type-check. The task explicitly excludes deliberate disguise, but these are plain paths, not computed ones, so they are borderline. There is no current caller.",
+          "recommended_fix": "Use `ts.isStringLiteralLike(modulePath)` for `import()` and `require`. Also check `ts.isImportEqualsDeclaration(statement) && ts.isExternalModuleReference(statement.moduleReference)` with a string-literal-like expression, and treat it as an opaque legacy load.",
+          "required_test": "Add fixtures for `const l = await import(`./rate-limit`);` and `import l = require(\"./rate-limit\");` checked as `lib/synthetic-caller.ts`, and require each to produce a violation.",
+          "confidence": 0.4
+        }
+      ]
+    },
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\shared-ip-actions\\review-current.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "targeted",
+      "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.828,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\shared-ip-actions\\checks\\targeted.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.047,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\shared-ip-actions\\checks\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.859,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\shared-ip-actions\\checks\\typecheck.json"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/rate-limit-boundary.test.ts",
+      "area": "checkBoundary import loop: `const bindings = statement.importClause?.namedBindings; if (!bindings || !ts.isNamedImports(bindings))`",
+      "issue": "Default-only legacy imports are rejected as opaque, but a default import combined with named imports (`import legacy, { checkRateLimit } from \"@/lib/rate-limit\"`) is not. In that case `namedBindings` is a NamedImports node, so the check passes, and `importClause.name` (the default binding) is never inspected or tracked.",
+      "evidence": "The opaque check looks only at `namedBindings`. `statement.importClause.name` is never read. Only names in `bindings.elements` whose imported name is `checkRateLimit` are added to `legacyBindings`.",
+      "impact": "This only matters if the legacy module has, or later gains, a default export that exposes the limiter. A caller could then write `legacy.checkRateLimit(rawRequest, ...)` or `legacy(rawRequest, ...)` and pass the test with a raw request, even though the test already rejects the same default binding when it is imported on its own. There is no current caller and no product impact.",
+      "recommended_fix": "In the import loop, also add a violation when `statement.importClause?.name` is present for a legacy import, unless it is type-only. Do this whether or not `namedBindings` is present.",
+      "required_test": "Add a fixture `import legacy, { checkRateLimit } from \"@/lib/rate-limit\"; legacy(req, \"raw\", 1, 1000);` checked as `lib/synthetic-caller.ts`, and require it to produce a violation.",
+      "confidence": 0.45,
+      "disposition": "confirmed",
+      "disposition_reason": "Accepted bounded regression-guard limitation; no current production caller/default export uses these forms. Guard is not an exhaustive source-level security proof. No current product defect; original review preserved."
+    },
+    {
+      "severity": "NIT",
+      "file": "src/lib/rate-limit-boundary.test.ts",
+      "area": "visit(): `ts.isStringLiteral(modulePath)`; statement loop handles only ImportDeclaration/ExportDeclaration",
+      "issue": "Some plain-path ways to load the legacy module are not detected. One is `import legacy = require(\"./rate-limit\")` (an ImportEqualsDeclaration with ExternalModuleReference). The other is a template-literal path without `${}` (a NoSubstitutionTemplateLiteral) in `import(`./rate-limit`)` or `require(`./rate-limit`)`, because only StringLiteral is accepted.",
+      "evidence": "The statement loop checks only `ts.isExportDeclaration` and `ts.isImportDeclaration`. The dynamic-load check requires `ts.isStringLiteral(modulePath)`.",
+      "impact": "These forms are uncommon. Under an ESM tsconfig, import-equals fails to type-check. The task explicitly excludes deliberate disguise, but these are plain paths, not computed ones, so they are borderline. There is no current caller.",
+      "recommended_fix": "Use `ts.isStringLiteralLike(modulePath)` for `import()` and `require`. Also check `ts.isImportEqualsDeclaration(statement) && ts.isExternalModuleReference(statement.moduleReference)` with a string-literal-like expression, and treat it as an opaque legacy load.",
+      "required_test": "Add fixtures for `const l = await import(`./rate-limit`);` and `import l = require(\"./rate-limit\");` checked as `lib/synthetic-caller.ts`, and require each to produce a violation.",
+      "confidence": 0.4,
+      "disposition": "confirmed",
+      "disposition_reason": "Accepted bounded regression-guard limitation; no current production caller/default export uses these forms. Guard is not an exhaustive source-level security proof. No current product defect; original review preserved."
+    }
+  ]
+}

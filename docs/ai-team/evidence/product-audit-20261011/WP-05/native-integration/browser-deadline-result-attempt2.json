@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "cleanup": true,
+  "step": "expired-draft",
+  "stage": "chromium:root:closed",
+  "errorType": "AssertionError",
+  "errorCode": "ERR_ASSERTION",
+  "assertion": {
+    "operator": "strictEqual",
+    "actual": 1,
+    "expected": 0
+  },
+  "failureLine": "48"
+}

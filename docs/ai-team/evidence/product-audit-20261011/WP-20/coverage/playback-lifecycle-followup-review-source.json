@@ -1,0 +1,8 @@
+{
+  "promptCharacters": 14667,
+  "scope": "lifecycle followup changed controller and sessions route",
+  "files": {
+    "src/app/api/live-metrics/[vendorId]/[liveId]/sessions/route.ts": "25b609221abeca4b53b43058cdd628a1cf59c60ac378030023396144db050e4e",
+    "src/lib/live-metric-playback-controller.ts": "c5bad1fe37344a244cdc40fef7d92397231181a9c5ef63395c938f2e03af8906"
+  }
+}

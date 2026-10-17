@@ -1,0 +1,21 @@
+{
+  "staging": {
+    "id": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+    "state": "READY"
+  },
+  "retainedPreview": {
+    "id": "dpl_E9wbsvtxx8ChBjZnUifufjgs93dC",
+    "state": "READY"
+  },
+  "temporaryPreview": {
+    "unavailable": true,
+    "error": true,
+    "reason_category": "not_found",
+    "remove_command_exit_code": 0
+  },
+  "sandbox": {
+    "id": "sbx_Qf0EcsunKoXhG7mnyXWlehgx1bcU",
+    "status": "stopped",
+    "bridge_process_terminated_with_session": true
+  }
+}

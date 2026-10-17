@@ -1,0 +1,22 @@
+[
+  {
+    "path": "src/lib/live-core-metrics-read-model.ts",
+    "change": "added",
+    "sha256": "4cb26fa713c1f1ffb95e170bc03aae9fae53858a64c8b012f0081d8738308815"
+  },
+  {
+    "path": "src/lib/live-core-metrics-read-model.test.ts",
+    "change": "added",
+    "sha256": "75fb1a4bdb8b09c53880b1268ed51fa63b239cb8252715569f0805ac7db3c21b"
+  },
+  {
+    "path": "src/lib/live-viewing-evidence.ts",
+    "change": "added",
+    "sha256": "afb402025c5c343b22bece181cb8d75ef51a42cbff940998ef776fda06240dcf"
+  },
+  {
+    "path": "src/lib/live-viewing-evidence.test.ts",
+    "change": "added",
+    "sha256": "37339b5ec41b32c0d292345102fc424479fabbd4550e18886e99ba4026aed275"
+  }
+]

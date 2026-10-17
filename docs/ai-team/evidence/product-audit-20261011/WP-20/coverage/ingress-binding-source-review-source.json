@@ -1,0 +1,13 @@
+{
+  "schemaSupplied": true,
+  "suppliedRanges": {
+    "src/lib/live-metric-playback-intake.ts": "Full file except credential declaration lines 11; omitted lines not independently reviewed"
+  },
+  "promptCharacters": 18715,
+  "files": {
+    "prisma/schema.prisma": "504ebc9b3776a4804918c80e1701a2bd3fe6466f9cbd2ea189c32135add694a7",
+    "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql": "1e3b97666bff7caf3cdf7a4c38187474179956d5398c302f2cbb0ff1969cb435",
+    "src/lib/live-metric-visit-page.ts": "57cb20038b7552ed616c2ef57e904eff599daa7bbb69375766b56bbad81e2b6e",
+    "src/lib/live-metric-playback-intake.ts": "8c71dcaff492ee895eca59950f862a1d0de02761fef024c5144c7f1e2c947cd7"
+  }
+}

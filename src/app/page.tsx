@@ -3,7 +3,6 @@ import { getCurrentVendor } from "@/lib/auth";
 
 export default async function HomePage() {
   const vendor = await getCurrentVendor();
-  // Preserve the public root-entry context after redirecting anonymous visitors
-  // so the announcement can open once without blocking direct login flows.
-  redirect(vendor ? "/dashboard" : "/login?from=home");
+  // 先完成身分查詢再送出HTTP轉址，避免載入骨架先串流成200。
+  return redirect(vendor ? "/dashboard" : "/login?from=home");
 }

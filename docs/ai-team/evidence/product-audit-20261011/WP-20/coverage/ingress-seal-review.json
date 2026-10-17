@@ -1,0 +1,195 @@
+{
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "completed": false,
+  "reviewed": true,
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "review": {
+    "summary": "I reviewed only the supplied migration and helper. I found no BLOCKER or MAJOR defects in the lock order, read-committed visibility, cascade, forgery or access paths that are visible in these two files.\n\n**What holds up:**\n- **Lock order:** The seal takes the version row with FOR SHARE, then the run row with FOR UPDATE. Source writers take the version with FOR SHARE, then the run with FOR SHARE, then the frame with FOR UPDATE. Writers that already hold the run lock force the seal to wait until they commit, and later writers block until the seal commits. The trigger and predicate are volatile PL/pgSQL, so each statement gets a fresh read-committed snapshot after a wait: the pending-frame check and the recounts see drained writers, and the predicate's seal check sees a committed seal.\n- **Frame inserts during sealing:** Frame inserts that take a key-share lock on the run through their foreign key also conflict with the seal's FOR UPDATE.\n- **Forgery:** Counts and `sealedAt` are always derived inside the trigger, and the run, Live, version and vendor IDs are checked against the locked run.\n- **Retention:** UPDATE and TRUNCATE are rejected. DELETE is allowed only once the parent run is gone (the cascade path) and is checked before the isolation-level check, so a version cascade still works under other isolation levels.\n- **Repeat calls:** The helper repeats the lock order and returns the existing seal once it holds the run lock, so concurrent callers get the same seal back. A direct second insert fails with a unique-key error rather than succeeding twice.\n- **Table access:** The seal table has row-level security on and is revoked from PUBLIC and the API roles.\n\n**Remaining issues (lower severity):**\n1. The replaced predicate function's EXECUTE permission is not re-revoked (MINOR).\n2. Sealing only works on a database whose comment carries the disposable-database marker. This ties the feature to the test environment and is not a real access control (MINOR, scope note).\n3. The 0–10000 count limits can make some runs permanently unsealable (MINOR, depends on frame limits outside this scope).\n\n**Not verified from this text:** that frame admission and settlement guards lock the run, that every page/intake insert path calls the predicate (including rows with no frame), that a version has only one run, and the privileges of the deployed minimum role. As the brief notes, the helper only works with an owner-level role, because no grants are added. An empty or short findings list here does not prove that tests pass or that this is ready to release.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016170000_live_metric_ingress_source_seal/migration.sql",
+        "area": "CREATE OR REPLACE FUNCTION public.wp20_metric_ingress_source_allowed(...) and the trailing DO $$ revoke block",
+        "issue": "The migration redefines a SECURITY DEFINER predicate that runs with row_security=off but never re-revokes its EXECUTE permission. The DO block revokes only the seal table and wp20_metric_ingress_seal_guard().",
+        "evidence": "The DO block runs REVOKE for TABLE \"LiveMetricIngressSeal\" and FUNCTION wp20_metric_ingress_seal_guard() only. There is no REVOKE ... ON FUNCTION wp20_metric_ingress_source_allowed(text,text,text,text,text) from PUBLIC, anon, authenticated or service_role. CREATE OR REPLACE keeps the old ACL only if the signature matches exactly. If this 5-argument signature differs from the previous one, PostgreSQL creates a new overload with the default EXECUTE grant to PUBLIC.",
+        "impact": "If the signature is new, or the old ACL was never tightened, any API role could call the predicate directly. As the definer it takes FOR SHARE on the run and FOR UPDATE on the frame, bypassing row-level security. A caller could then hold locks that block or starve sealing and source writers, and could probe whether a frame exists, whether it has been used and whether its run is sealed. That contradicts the stated 'private; never grants browser authority' intent.",
+        "recommended_fix": "In this migration, REVOKE ALL ON FUNCTION public.wp20_metric_ingress_source_allowed(TEXT,TEXT,TEXT,TEXT,TEXT) FROM PUBLIC, and add it to the anon/authenticated/service_role loop. Optionally assert that no other overload of the function exists.",
+        "required_test": "On the disposable PG16 database after migrating, check has_function_privilege for PUBLIC, anon and authenticated on the exact signature: each must be false. Check that pg_proc has exactly one wp20_metric_ingress_source_allowed. Check that SET ROLE anon; SELECT public.wp20_metric_ingress_source_allowed(...) fails with permission denied.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016170000_live_metric_ingress_source_seal/migration.sql",
+        "area": "wp20_metric_ingress_seal_guard: the shobj_description(...) ~ '^prisma-no-dotenv:[a-f0-9]{16}$' check",
+        "issue": "Sealing depends on a test-harness comment on the database. That ties the schema's behaviour to the disposable environment, and the check only applies to sealing, not to the source predicate.",
+        "evidence": "The INSERT branch raises 'metric source seal requires owned primary read committed' unless pg_database's comment matches prisma-no-dotenv:<16 hex>. wp20_metric_ingress_source_allowed has no equivalent check.",
+        "impact": "In any environment without the marker, sealing can never succeed. The new seal check in the predicate then does nothing, and source inserts are never frozen. That is fail-safe for data, but the feature looks deployed when it is not. The marker can also be set by anyone who can run COMMENT ON DATABASE, so it is not an authorization boundary and should not be cited as proof of ownership or minimum role.",
+        "recommended_fix": "Raise as a scope proposal: either document this as an intentional gate for disposable databases only and keep it out of any production migration path, or replace it with an explicit deployment decision. Do not treat it as an access control.",
+        "required_test": "On the disposable database: with the marker present, sealing succeeds. After running COMMENT ON DATABASE ... IS NULL inside a transaction that is rolled back, the seal INSERT raises 23514 and the predicate's behaviour is unchanged.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016170000_live_metric_ingress_source_seal/migration.sql",
+        "area": "CREATE TABLE LiveMetricIngressSeal: CHECK constraints on frameCount, pageCount and playbackCount (BETWEEN 0 AND 10000)",
+        "issue": "The derived counts have a hard upper limit, but nothing visible in this scope caps frames per run at 10000.",
+        "evidence": "The trigger runs SELECT count(*) INTO NEW.\"frameCount\" (and the page and playback equivalents) with no clamping, and the table CHECKs reject values above 10000.",
+        "impact": "If a run admits more than 10000 frames, the seal INSERT always fails with a check violation. That run can then never be sealed, so later page/intake inserts for it are never frozen.",
+        "recommended_fix": "Confirm that an existing admission guard caps frames per run at 10000 or fewer, and reference it in a comment. Otherwise raise the limit or raise an explicit 'run exceeds seal bound' error.",
+        "required_test": "On the disposable database, create a stopped run with 10001 settled frames (or as many as the admission cap allows). Expect either that admission rejects frame 10001, or that the seal fails with the explicit error and later source inserts are still handled as designed.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "agy_discovery_process_status": "SUCCESS"
+}

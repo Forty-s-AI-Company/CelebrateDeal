@@ -36,7 +36,7 @@ vi.mock("@/lib/form-submission-line-binding-session", () => ({
   verifyFormSubmissionLineBindingToken: mocks.verifyBindingToken,
 }));
 vi.mock("@/lib/line-login", () => ({ beginLineLogin: mocks.beginLineLogin }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
 
 import { POST } from "./route";
 
@@ -55,7 +55,7 @@ describe("POST /api/auth/line/start", () => {
     mocks.cookies.mockResolvedValue({ get: (name: string) => ({ value: name === "registration-line-binding" ? "signed" : "" }) });
     mocks.verifyBindingToken.mockReturnValue({ submissionId: "submission-1" });
     mocks.formSubmissionFindFirst.mockResolvedValue({ id: "submission-1", form: { vendorId: "vendor-1" } });
-    mocks.beginLineLogin.mockResolvedValue({ authorizationUrl: "https://access.line.me/oauth2/v2.1/authorize?safe=1" });
+    mocks.beginLineLogin.mockResolvedValue({ browserBinding:"a".repeat(64),authorizationUrl: "https://access.line.me/oauth2/v2.1/authorize?safe=1" });
 
     const response = await POST(new Request("https://app.example.test/api/auth/line/start", { method: "POST" }));
 

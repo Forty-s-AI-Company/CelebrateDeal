@@ -1,0 +1,109 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "detail": "Owned source edits completed through desktop tools; full acceptance separate",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+      "status": "PASS",
+      "exit_code": 0,
+      "detail": "unit.json:67tests/7files",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-unit.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "legacy",
+      "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+      "status": "PASS",
+      "exit_code": 0,
+      "detail": "legacy-compat.json:exact12metadata/nodetrees",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-legacy.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+      "status": "PASS",
+      "exit_code": 0,
+      "detail": "session74894 exit0; after directbuild terminal, no competing type generation",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+      "status": "PASS",
+      "exit_code": 0,
+      "detail": "session29687:5ownedfiles",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+      "status": "PASS",
+      "exit_code": 0,
+      "detail": "browser.json session61480 exit0; six UIapply/publish/unverified submissions;12axe; fragment target exactly1; reused directbuild.json same product source",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-browser.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+    "status": "PASS",
+    "independent": true,
+    "role": "senior_review",
+    "model": "claude-sonnet-5-5",
+    "observed_model": "claude-sonnet-5-5",
+    "raw_receipts": [
+      "fixed-review.json",
+      "final-review.json"
+    ],
+    "scope_coverage": "review-coverage.json; exact current product blocks with prior+final qualified context",
+    "wholeWpReady": false,
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-review.json"
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "detail": "Actual whole six-template browser test asserts one native target and successful fragment jump/public submission; PASS. Expired/unconfigured composition remains governed by existing Webinar readiness, no change to guards.",
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "browser",
+          "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+          "status": "PASS",
+          "exit_code": 0,
+          "detail": "browser.json session61480 exit0; six UIapply/publish/unverified submissions;12axe; fragment target exactly1; reused directbuild.json same product source",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\gate-browser.json"
+        }
+      ]
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "unresolved",
+      "detail": "Existing preview/published label and required-marker differences"
+    }
+  ]
+}

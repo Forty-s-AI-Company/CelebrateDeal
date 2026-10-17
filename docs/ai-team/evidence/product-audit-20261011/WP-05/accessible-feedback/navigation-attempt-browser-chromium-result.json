@@ -1,0 +1,112 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "label": "project-unpublished",
+      "httpStatus": 404,
+      "notFoundUi": true,
+      "noindex": true,
+      "authoredContentAbsent": true,
+      "merchantReasonsAbsent": true
+    },
+    {
+      "label": "published-root",
+      "httpStatus": 200,
+      "authoredContent": true,
+      "formVisible": true
+    },
+    {
+      "label": "client-error",
+      "surface": "funnel",
+      "status": 400,
+      "sameFrameSingleRequest": true,
+      "fieldsRetained": true,
+      "retryEnabled": true,
+      "serverDetailsAbsent": true,
+      "assertiveError": true,
+      "errorFocused": true,
+      "keyboardRetry": true
+    },
+    {
+      "label": "client-error",
+      "surface": "funnel",
+      "status": 403,
+      "sameFrameSingleRequest": true,
+      "fieldsRetained": true,
+      "retryEnabled": true,
+      "serverDetailsAbsent": true,
+      "assertiveError": true,
+      "errorFocused": true,
+      "keyboardRetry": true
+    },
+    {
+      "label": "client-error",
+      "surface": "funnel",
+      "status": 404,
+      "sameFrameSingleRequest": true,
+      "fieldsRetained": true,
+      "retryEnabled": true,
+      "serverDetailsAbsent": true,
+      "assertiveError": true,
+      "errorFocused": true,
+      "keyboardRetry": true
+    },
+    {
+      "label": "client-error",
+      "surface": "funnel",
+      "status": 429,
+      "sameFrameSingleRequest": true,
+      "fieldsRetained": true,
+      "retryEnabled": true,
+      "serverDetailsAbsent": true,
+      "assertiveError": true,
+      "errorFocused": true,
+      "keyboardRetry": true
+    },
+    {
+      "label": "client-error",
+      "surface": "funnel",
+      "status": 503,
+      "sameFrameSingleRequest": true,
+      "fieldsRetained": true,
+      "retryEnabled": true,
+      "serverDetailsAbsent": true,
+      "assertiveError": true,
+      "errorFocused": true,
+      "keyboardRetry": true
+    },
+    {
+      "label": "client-error",
+      "surface": "funnel",
+      "status": "network",
+      "sameFrameSingleRequest": true,
+      "fieldsRetained": true,
+      "retryEnabled": true,
+      "serverDetailsAbsent": true,
+      "assertiveError": true,
+      "errorFocused": true,
+      "keyboardRetry": true
+    }
+  ],
+  "axe": [
+    {
+      "label": "merchant-diagnosis",
+      "scope": "[aria-label=\"公開網址狀態\"]",
+      "violations": []
+    },
+    {
+      "label": "published-root",
+      "scope": "whole-page",
+      "violations": []
+    }
+  ],
+  "restored": true,
+  "stage": "client-failure-matrix",
+  "errorType": "TypeError",
+  "errorCategories": [],
+  "assertionCode": null,
+  "actual": null,
+  "expected": null,
+  "stackLocation": "    at WORKTREE\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\accessible-feedback\\browser.cjs:40:50",
+  "contextRequired": false
+}

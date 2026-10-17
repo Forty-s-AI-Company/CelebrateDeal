@@ -4,6 +4,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: as
 vi.mock("next/navigation", () => ({ redirect: m.redirect }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: m.security }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: m.rate }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: m.rate }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 vi.mock("@/lib/automation-workflow", () => ({ automationCustomerKeyHash: () => "synthetic-customer-hash" }));
 vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrant: m.resolveGrant }));

@@ -1,0 +1,221 @@
+{
+  "review": {
+    "summary": "I reviewed only the supplied diffs and the new navigation-title test excerpt. In app-shell.tsx, every changed navigation item keeps its original href and the same managerOnly, financeOnly, ownerOnly and feature flags, so I found no change to routes or permissions. The edits only change visible labels, page titles and one aria-label. Several pages are listed with no diff: orders, settings/tracking and support-cases. If the test passes, their existing titles must already equal the new navigation labels \"訂單與履約\", \"追蹤設定\" and \"客服案件\", but I could not verify that from the excerpts. The settings/features excerpt was cut off, so I did not review it. I found no BLOCKER or MAJOR issues. The findings are: two titles that may mislead users (\"一頁式網站\" for funnels and \"媒體素材\" for an area that only handles video), one leftover old label, a stray space in an aria-label, and gaps in the new test: it checks only the owner role, its snapshot leaves out permission and feature flags, and its title matching is fragile. The note that all 79 targeted tests, lint and typecheck pass comes from the caller, and I have not checked it myself.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/landing-pages/page.tsx",
+        "area": "PageHeader title / create CTA / empty-state heading (lines ~12-17)",
+        "issue": "\"Funnels\" was translated as \"一頁式網站\" (one-page website), which describes something narrower than a funnel.",
+        "evidence": "The description still says \"建立銷售、名單蒐集與自訂流程，集中管理每個全畫面頁面\" (multi-purpose flows, each full-screen page), and the list component is still FunnelList. The new title and both CTAs say \"一頁式網站\".",
+        "impact": "Merchants may think each item is a single static page rather than a funnel with several steps. The term also no longer matches other funnel wording in the editor and list component, which hurts consistency and discoverability.",
+        "recommended_fix": "Use a term that keeps the funnel meaning, for example \"銷售漏斗\" or \"導購頁面\". If \"一頁式網站\" is the product's chosen term, confirm that funnels really are single-page and update the description to match.",
+        "required_test": "Update the nav/title alignment snapshot to the chosen term, and get product/copy sign-off on the glossary entry for landing-pages.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/(app)/videos/page.tsx",
+        "area": "PageHeader title (line ~85)",
+        "issue": "The new title \"媒體素材\" (media assets) suggests more media types than the page handles. The rest of the page only deals with video.",
+        "evidence": "The title changed from \"影片庫\" to \"媒體素材\", but the action is still \"新增影片\" and the description only mentions 直播回放, 預錄影片 and 播放素材.",
+        "impact": "Users may expect to upload images or other assets here and not find a way to do it. The title and the CTA on the same header also use different terms.",
+        "recommended_fix": "Either keep a video-specific title such as \"影片庫\" or \"影片素材\", or, if the page will support other media, update the description and CTA in the same change.",
+        "required_test": "Update the snapshot and copy review for /videos. Optionally, add an assertion that the CTA wording matches the title's domain term.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/(app)/settings/security/page.tsx",
+        "area": "PageHeader action label (line ~118)",
+        "issue": "The owner action button still uses the old team page name, \"管理團隊與上下線\". The team page is now titled \"團隊管理\".",
+        "evidence": "settings/team/page.tsx changes its title from \"團隊與上下線\" to \"團隊管理\", while the security page's ButtonLink to /settings/team keeps \"管理團隊與上下線\".",
+        "impact": "The link label doesn't match the title of the page it opens. This is a small inconsistency that the new test cannot catch.",
+        "recommended_fix": "Change the button text to \"團隊管理\" or \"前往團隊管理\".",
+        "required_test": "None beyond a copy check. Optionally, extend the alignment test to cover in-page links to navigation destinations.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/(app)/dashboard/page.tsx",
+        "area": "KPI section aria-label (line ~46)",
+        "issue": "There is a stray space in the new aria-label: \"營運總覽關鍵指標 區域\".",
+        "evidence": "aria-label=\"營運總覽關鍵指標 區域\", while the sibling label is \"營運總覽明細區域\" with no space.",
+        "impact": "Screen readers announce it inconsistently. Any tests or selectors that match the exact label may also break.",
+        "recommended_fix": "Change it to \"營運總覽關鍵指標區域\".",
+        "required_test": "Update any accessibility or role-query tests that reference the region names.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "navigation title test (new)",
+        "area": "labels snapshot / role coverage",
+        "issue": "The test only covers navigationForRole(\"owner\"), and its snapshot records only href and label. Permission and feature-gate flags are not recorded, so the test can't catch the route or permission changes this review is meant to guard against.",
+        "evidence": "labels = navigationForRole(\"owner\")...map(item => ({ href, label })). managerOnly, financeOnly, ownerOnly and feature are dropped, and no other role is tested.",
+        "impact": "A later edit could change an item's gating (for example, removing financeOnly from /billing/payouts) or hide or expose items for manager, finance or sales roles, and this test would still pass. Items that owners can't see are never checked against their page title.",
+        "recommended_fix": "Add managerOnly, financeOnly, ownerOnly and feature to the snapshotted objects. Also snapshot navigationForRole for each supported role, or run the title check across the union of all roles' items.",
+        "required_test": "Snapshot the per-role navigation including the gating flags, and assert that the expected finance-only, owner-only and feature-gated items appear only for the intended roles.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "navigation title test (new)",
+        "area": "title regex",
+        "issue": "The title check uses a regex that only finds the first <PageHeader> with a string-literal title. It stops matching if a '>' appears earlier in the tag.",
+        "evidence": "/<PageHeader\\b[^>]*?title=\"([^\"]+)\"/ only finds the first literal match, so a page with more than one PageHeader has only the first one checked.",
+        "impact": "Pages with conditional headers, or headers that set title through an expression, are either checked incompletely or fail with a confusing undefined value.",
+        "recommended_fix": "Assert that each page has exactly one PageHeader match, or export the title constants and compare them directly. When the regex finds nothing, fail with a clear message.",
+        "required_test": "A negative or self-check case: fail when the match count is not 1, or when the title is not a string literal.",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 18,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "billing",
+        "payment",
+        "permission",
+        "revenue_sharing",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "exitCode": 0
+    }
+  ],
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "finalModel": "claude-opus-5-5",
+  "normalized_status": "REVIEW_COMPLETED",
+  "completed": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false
+}

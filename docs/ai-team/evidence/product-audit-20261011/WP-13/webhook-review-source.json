@@ -1,0 +1,8 @@
+{
+  "sourceHashes": {
+    "src/lib/line-webhook-events.ts": "f6609098a494145ea3156a69e835ab59d91ddea3d699ef6dceae34a9e6ad0c25",
+    "src/app/api/webhooks/line/[vendorId]/route.ts": "2b5f2114f41ec149f4995a97c162f56403a9bb53e70ed1da7ac4a27ba302c1b5"
+  },
+  "contextChars": 6826,
+  "scope": "Full two changed product modules and exact worker/OAuth dependency excerpts; synthetic fixture credentials excluded."
+}

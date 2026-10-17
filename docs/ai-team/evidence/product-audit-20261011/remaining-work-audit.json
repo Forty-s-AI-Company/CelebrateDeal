@@ -1,0 +1,44 @@
+{
+  "completed_scope_checks": [
+    {
+      "item": "WP-06",
+      "gate_status": "READY",
+      "revision_matches": true,
+      "revision": "sha256:bf36160c7a27a734d0b13d6061b968be736a3e42ea232b115155cdd94661c491"
+    },
+    {
+      "item": "WP-07",
+      "gate_status": "READY",
+      "revision_matches": true,
+      "revision": "sha256:081855c5144d76503e5cba90e681bbcf19374d5b59d2d94e84d5f7825b612b66"
+    },
+    {
+      "item": "WP-10",
+      "gate_status": "READY",
+      "revision_matches": true,
+      "revision": "sha256:df4c52c330110360681e9ef61502e9fc3722fecfa3cd81c439503a92fa5281f1"
+    },
+    {
+      "item": "WP-01/no-project",
+      "gate_status": "READY",
+      "revision_matches": true,
+      "revision": "sha256:092cbc670290ef934dbb92475e941ea3fa846103d5af46e861cada1744722650"
+    },
+    {
+      "item": "WP-01/consultation",
+      "gate_status": "READY",
+      "revision_matches": true,
+      "revision": "sha256:2235a5037a8729c5920bfa7933471aa601350547f130e239ea8677f1b1466350"
+    }
+  ],
+  "whole_goal_complete": false,
+  "global_blocked_audit_count": 3,
+  "live_work_handles": [],
+  "latest_revalidation": {
+    "new_human_decisions": false,
+    "schema_or_scheduler_changes": false,
+    "classification": "no_progress_missing_required_inputs",
+    "next_action": "Mark thread Goal blocked pending required owner inputs."
+  },
+  "blocked_threshold_met": true
+}

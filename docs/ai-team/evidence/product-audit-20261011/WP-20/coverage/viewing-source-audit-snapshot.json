@@ -1,0 +1,16 @@
+{
+  "status": "PARTIAL_IMPLEMENTATION",
+  "files": {
+    "src/lib/live-metric-viewing-source-audit.ts": "0dd10b071ce4a8ef809d17ba4ab06f00b473ca6100ed165b39eb2c2f02133e24",
+    "src/lib/live-metric-viewing-source-audit.test.ts": "9404af2ab16234ac52afac872f9bf24a93f48a3eca7e6a2e45a13a4edb9a2cfc",
+    "scripts/wp20-viewing-audit-disposable.mjs": "1e5deae03fbba59b56eafdd3f305a8153255898b908be8d27f0ddcfdee7ae0cc"
+  },
+  "unitTests": 30,
+  "unitReceipt": "viewing-source-audit-final-unit.json",
+  "lint": "PASS",
+  "typecheck": "viewing-source-audit-minor-fix-typecheck.json",
+  "db": "viewing-source-audit-db.json",
+  "review": "viewing-source-audit-review-disposition.json",
+  "coveragePublication": "NOT_IMPLEMENTED; enumerated coverage remains unknown",
+  "fullWp": "INCOMPLETE"
+}

@@ -1,0 +1,69 @@
+-  return <div className="overflow-auto"><p className="mb-3 text-sm">只列出伺服器驗證 Funnel 來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。</p>{reports.leadsTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["Funnel", "Step", "時間", "Submission ID", "驗證狀態"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.leads.map((row) => <tr className="border-t" key={row.id}><td className="p-2">{row.pageId}</td><td>{row.stepId}</td><td>{row.createdAt}</td><td className="font-mono">{row.submissionId}</td><td>{row.verificationStatus}</td></tr>)}</tbody></table>{!reports.leads.length ? <p className="p-3">此範圍尚無可信提交紀錄。</p> : null}</div>;
+-}
+-function SalesReport({ reports }: { reports: FunnelReports }) {
+-  return <div className="overflow-auto"><p className="mb-3 text-sm">來源為 CommerceOrder／PaymentTransaction 的已付款 projection，排除測試訂單；退款另列，不將不同幣別相加。</p>{reports.salesTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["Order", "Step", "付款時間", "Currency", "已付／退款（分）", "Order／Payment 狀態", "Payment ID"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.sales.map((row) => <tr className="border-t" key={row.id}><td className="p-2"><span>{row.orderNumber}</span><small className="block">{row.id}</small></td><td>{row.stepId}</td><td>{row.paidAt}</td><td>{row.currency}</td><td>{row.paidAmountCents} / {row.refundedAmountCents}</td><td>{row.status} / {row.paymentStatus}</td><td className="font-mono">{row.paymentId}</td></tr>)}</tbody></table>{!reports.sales.length ? <p className="p-3">此範圍尚無已付款訂單。</p> : null}</div>;
+-}
++  return <div className="overflow-auto"><p className="mb-3 text-sm">瀏覽次數為伺服器公開頁交付紀錄，包含重新整理；步驟轉換為同一匿名訪客依序到達下一步，非成交。未取得匿名識別的瀏覽不計入。</p>{reports.statsTruncated ? <p role="alert">已達 10,000 筆上限，以下為部分資料，請縮短日期範圍。</p> : null}
++    <table className="w-full text-left text-sm"><thead><tr>{["步驟", "瀏覽次數", "訪客", "報名次數", "步驟轉換", "流失人數"].map((label) => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{reports.stats.map((row) => <tr key={row.stepId} className="border-t"><td className="p-2">{row.name}</td><td>{row.pageViews}</td><td>{row.visitors}</td><td>{row.submissions}</td><td>{row.conversionRate === null ? "—" : `${(row.conversionRate * 100).toFixed(1)}% (${row.conversions})`}</td><td>{row.dropOff ?? "—"}</td></tr>)}</tbody></table>
++    <div className="mt-4">{reports.experiments.map((row) => <p key={`${row.id}-${row.arm}`} className="text-sm">實驗 {row.id} · {row.arm === "control" || row.arm === "variant" ? experimentArmLabels[row.arm] : "未知組別"} · 瀏覽次數 {row.pageViews} · 報名次數 {row.submissions}</p>)}</div>
++    <details className="mt-4"><summary>檢視來源事件編號（前 20 筆）</summary>{reports.sources.map((source) => <p key={source.id} className="break-all font-mono text-xs">{source.id} · {source.stepId} · {source.createdAt}</p>)}</details>
++  </div>;
++}
++function LeadsReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
++  return <div className="overflow-auto"><p className="mb-3 text-sm">只列出伺服器驗證網站來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。</p>{reports.leadsTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["網站", "步驟", "時間", "報名編號", "驗證狀態"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.leads.map((row) => <tr className="border-t" key={row.id}><td className="p-2">{editor.name}</td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "無法辨識的步驟"}</td><td>{row.createdAt}</td><td className="font-mono">{row.submissionId}</td><td>{reportStatusLabel(row.verificationStatus, "verification")}</td></tr>)}</tbody></table>{!reports.leads.length ? <p className="p-3">此範圍尚無可信提交紀錄。</p> : null}</div>;
++}
++function SalesReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
++  return <div className="overflow-auto"><p className="mb-3 text-sm">來源為訂單與付款紀錄的已付款資料，排除測試訂單；退款另列，不將不同幣別相加。</p>{reports.salesTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["訂單", "步驟", "付款時間", "幣別", "已付／退款（分）", "訂單／付款狀態", "付款編號"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.sales.map((row) => <tr className="border-t" key={row.id}><td className="p-2"><span>{row.orderNumber}</span><small className="block">{row.id}</small></td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "無法辨識的步驟"}</td><td>{row.paidAt}</td><td>{row.currency}</td><td>{row.paidAmountCents} / {row.refundedAmountCents}</td><td>{reportStatusLabel(row.status, "order")} / {reportStatusLabel(row.paymentStatus, "payment")}</td><td className="font-mono">{row.paymentId}</td></tr>)}</tbody></table>{!reports.sales.length ? <p className="p-3">此範圍尚無已付款訂單。</p> : null}</div>;
++}
+
+--- src/components/landing-pages/funnel-page-editor.tsx (before)
++++ src/components/landing-pages/funnel-page-editor.tsx
+@@ -20,8 +20,8 @@
+ import { addFunnelStep, moveFunnelStep, removeFunnelStep, renameFunnelStep, setFunnelStepPath, type FunnelFlowMutationResult } from "@/lib/funnel-flow";
+ 
+-type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };
++type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };
+ 
+ const palette: Array<{ type: FunnelNodeType; label: string }> = [
+-  { type: "section", label: "Section" }, { type: "row", label: "Row" },
++  { type: "section", label: "區塊" }, { type: "row", label: "欄列" },
+   { type: "columns_2", label: "2 欄" }, { type: "columns_3", label: "3 欄" }, { type: "columns_4", label: "4 欄" },
+   { type: "text", label: "文字" }, { type: "headline", label: "標題" }, { type: "image", label: "圖片" },
+@@ -31,6 +31,6 @@
+   { type: "form", label: "表單" }, { type: "form_input", label: "表單欄位" }, { type: "checkbox", label: "核取方塊" },
+   { type: "calendar", label: "行事曆" }, { type: "x_share_button", label: "X 分享" }, { type: "survey", label: "問卷" },
+-  { type: "countdown", label: "倒數計時" }, { type: "menu", label: "選單" }, { type: "faq", label: "FAQ" },
+-  { type: "raw_html", label: "Raw HTML" }, { type: "recaptcha", label: "reCAPTCHA" },
++  { type: "countdown", label: "倒數計時" }, { type: "menu", label: "選單" }, { type: "faq", label: "常見問題" },
++  { type: "raw_html", label: "自訂 HTML" }, { type: "recaptcha", label: "reCAPTCHA" },
+   { type: "payment_button", label: "付款按鈕" }, { type: "payment_method", label: "付款方式" }, { type: "offer_price", label: "方案價格" },
+   { type: "physical_product", label: "實體商品" }, { type: "customer_type", label: "客戶類型" }, { type: "agreement", label: "同意條款" },
+@@ -113,5 +113,5 @@
+ // The editor coordinates the palette, history, inspector, templates, Popups and canvas in one persisted session.
+ // eslint-disable-next-line complexity -- one session boundary owns the mutually exclusive editor panels.
+-function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds }: Props) {
++function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds, stepNames }: Props) {
+   const [history, setHistory] = useState(() => createFunnelPageHistory(document));
+   const historyRef = useRef(history);
+@@ -224,33 +224,33 @@
+       {sidebarCollapsed ? null : <>
+       <div className="grid grid-cols-3 gap-1 border-b border-slate-200 p-2">
+-        <button className={`${control} ${panel === "elements" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("elements")}>Elements</button>
+-        <button className={`${control} ${panel === "blocks" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("blocks")}>Blocks</button>
++        <button className={`${control} ${panel === "elements" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("elements")}>元件</button>
++        <button className={`${control} ${panel === "blocks" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("blocks")}>版型區塊</button>
+         <button className={`${control} ${panel === "settings" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("settings")}>設定</button>
+         <button id="funnel-page-settings-tab" className={`${control} ${panel === "page" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("page")}>頁面</button>
+-        <button id="funnel-popups-tab" className={`${control} ${panel === "popups" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("popups")}>Popups</button>
++        <button id="funnel-popups-tab" className={`${control} ${panel === "popups" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("popups")}>彈出視窗</button>
+         <button className={`${control} ${panel === "templates" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("templates")}>換模板</button>
+         <button className={`${control} ${panel === "flow" ? "border-blue-600 text-blue-700" : ""}`} disabled={!history.present.flow} onClick={() => setPanel("flow")}>流程</button>
+       </div>
+       <div className="flex items-center gap-2 border-b border-slate-200 p-2">
+-        <button className={control} disabled={disabled || !history.past.length} onClick={() => stepHistory("undo")}>Undo</button>
+-        <button className={control} disabled={disabled || !history.future.length} onClick={() => stepHistory("redo")}>Redo</button>
++        <button className={control} disabled={disabled || !history.past.length} onClick={() => stepHistory("undo")}>復原</button>
++        <button className={control} disabled={disabled || !history.future.length} onClick={() => stepHistory("redo")}>重做</button>
+         <button className={control} onClick={() => setViewport(viewport === "desktop" ? "mobile" : "desktop")}>{viewport === "desktop" ? "桌機" : "手機"}</button>
+       </div>
+       <div className="min-h-0 flex-1 overflow-auto p-3">

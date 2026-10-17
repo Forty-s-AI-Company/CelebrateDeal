@@ -1,0 +1,605 @@
+[
+  {
+    "severity": "MAJOR",
+    "area": "Old-message suppression / message deduplication",
+    "file": "src/lib/line-notification.ts",
+    "issue": "Delivery deduplication keys are unique per vendor and leave out the LINE account, so a message re-queued after a Project switch is matched to the old account's suppressed row and never created for the new account.",
+    "impact": "After a switch, registration_confirmed, live_reminder and live_started messages already queued through the old account are suppressed and can never be sent through the new account.",
+    "evidence": "LineDelivery has @@unique([vendorId, idempotencyKey]), enqueue returns 'duplicate' when that key conflicts, and checkWebinarDeliverySource rebuilds the expected key without any account ID.",
+    "recommended_fix": "Add lineOfficialAccountId to the deduplication scope, either in the key itself or as @@unique([vendorId, lineOfficialAccountId, idempotencyKey]), and include it in the expected-key check.",
+    "required_test": "Queue live_reminder on account A, switch the Project to B, re-link and re-queue, then assert that A's row is suppressed and B's row is queued and sent.",
+    "confidence": 0.75,
+    "review": "core",
+    "id": "core-1",
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-unit",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-disposable-pg",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-disposable-pg-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-browser",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-browser-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-typecheck",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-lint",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-diff-check",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-diff-check-receipt.json"
+      }
+    ]
+  },
+  {
+    "severity": "MAJOR",
+    "area": "OAuth / login",
+    "file": "src/lib/line-login.ts",
+    "issue": "completeLineLogin accepts any valid state/code pair without checking that the callback comes from the browser that started the flow.",
+    "impact": "An attacker can send a victim a callback URL from the attacker's own flow, which links the attacker's LINE account to the victim's subject (or the reverse) or signs the victim in as the attacker.",
+    "evidence": "beginLineLogin returns only the authorization URL, and completeLineLogin({state, code}) checks only the stored stateHash, with no cookie or session-bound value.",
+    "recommended_fix": "In beginLineLogin, set an HttpOnly, SameSite=Lax cookie tied to the state hash, and require it in completeLineLogin; for 'user' subjects, also check the current session user.",
+    "required_test": "Finishing the callback in a different browser, without the cookie set at the start, must be rejected and leave the state unconsumed.",
+    "confidence": 0.5,
+    "review": "core",
+    "id": "core-2",
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-unit",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-disposable-pg",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-disposable-pg-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-browser",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-browser-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-typecheck",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-lint",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-diff-check",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-diff-check-receipt.json"
+      }
+    ]
+  },
+  {
+    "severity": "MINOR",
+    "area": "Migration / tenant deletion",
+    "file": "prisma/migrations/20261016190000_project_line_accounts/migration.sql",
+    "issue": "The new foreign keys to LineOfficialAccount use ON DELETE RESTRICT, which Postgres checks immediately even while a Vendor cascade is still deleting the referencing rows.",
+    "impact": "Deleting a vendor that has projects, identities, login states or drafts can fail, depending on the order in which the cascades run.",
+    "evidence": "SalesProject, LineUserIdentity, LineLoginState and LineRichMenuDraft each reference LineOfficialAccount with ON DELETE RESTRICT, and all of them also cascade from Vendor.",
+    "recommended_fix": "Use onDelete: NoAction (ON DELETE NO ACTION) so the check runs at the end of the statement, after the vendor cascade finishes, while still blocking direct account deletion.",
+    "required_test": "Delete a Vendor that has two accounts, linked projects, identities, deliveries, login states and drafts, and assert it succeeds.",
+    "confidence": 0.45,
+    "review": "core",
+    "id": "core-3",
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-unit",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-disposable-pg",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-disposable-pg-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-browser",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-browser-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-typecheck",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-lint",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-diff-check",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-diff-check-receipt.json"
+      }
+    ]
+  },
+  {
+    "severity": "MINOR",
+    "area": "Migration / schema drift",
+    "file": "prisma/migrations/20261016190000_project_line_accounts/migration.sql",
+    "issue": "The migration's conditional unique indexes (LineOfficialAccount_one_default_per_vendor and LineRichMenuDraft_unbound_per_vendor) are not described in schema.prisma.",
+    "impact": "A later 'prisma migrate dev' may report drift and generate a DROP INDEX, which would silently remove the one-default-per-vendor rule that login and webhook routing depend on.",
+    "evidence": "schema.prisma only declares @@unique([vendorId, id]) on LineOfficialAccount, while the SQL creates a unique index on (vendorId) WHERE isDefault.",
+    "recommended_fix": "Describe the conditional indexes in the schema where Prisma supports it, or document them and add a CI check that the next generated migration does not drop them.",
+    "required_test": "Run prisma migrate diff against the migrated database in CI and assert that no DROP INDEX statements are produced.",
+    "confidence": 0.5,
+    "review": "core",
+    "id": "core-4",
+    "disposition": "unresolved"
+  },
+  {
+    "severity": "NIT",
+    "area": "Legacy backfill / identity uniqueness",
+    "file": "prisma/migrations/20261016190000_project_line_accounts/migration.sql",
+    "issue": "LineUserIdentity.lineOfficialAccountId stays nullable after the backfill, and Postgres treats NULLs as distinct in the new unique index.",
+    "impact": "Identities from vendors with no account remain NULL; they can duplicate subjects and can never be routed or revoked through any account.",
+    "evidence": "The backfill only joins vendors that have an account; there is no NOT NULL constraint or cleanup step for the remaining rows.",
+    "recommended_fix": "Revoke or delete identities whose account is still NULL, then make the column NOT NULL (or add a CHECK constraint).",
+    "required_test": "Seed an identity for a vendor with no account, run the migration, and assert that no NULL-account identities remain active.",
+    "confidence": 0.4,
+    "review": "core",
+    "id": "core-5",
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-unit",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-disposable-pg",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-disposable-pg-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-browser",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-browser-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-typecheck",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-lint",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-diff-check",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-diff-check-receipt.json"
+      }
+    ]
+  },
+  {
+    "area": "UI wrong account",
+    "confidence": 0.75,
+    "issue": "The menu editor's React key ignores the account, so unsaved menu edits survive switching to another account that also has no draft.",
+    "severity": "MINOR",
+    "evidence": "page.tsx renders LineRichMenuStudio with key={draft?`${draft.id}:${draft.revision}`:\"new\"}, so two draftless accounts both get key \"new\" and useState(menu) is kept while the accountId prop changes.",
+    "file": "src/app/(app)/settings/line/page.tsx",
+    "impact": "An owner can save a menu typed for account A into account B's draft without realizing it.",
+    "recommended_fix": "Add the account ID to the key, e.g. key={`${account.id}:${draft?.id??\"new\"}:${draft?.revision??0}`}.",
+    "required_test": "Render with account A (no draft), edit the menu, switch to account B (no draft), and check that the editor resets to the template and the posted accountId is B.",
+    "review": "boundary",
+    "id": "boundary-1",
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-unit",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-disposable-pg",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-disposable-pg-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-browser",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-browser-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-typecheck",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-lint",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-diff-check",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-diff-check-receipt.json"
+      }
+    ]
+  },
+  {
+    "area": "unsafe account updates",
+    "confidence": 0.7,
+    "issue": "The connection test can set lastValidatedAt on credentials that were rotated after it read the account.",
+    "severity": "MINOR",
+    "evidence": "testLineOfficialAccountAction decrypts and calls LINE with the old token, then updates lastValidatedAt by vendorId_id only; a save in between sets lastValidatedAt:null and new encrypted values that this update overwrites.",
+    "file": "src/app/actions/line-actions.ts",
+    "impact": "Settings can show freshly rotated, never-tested credentials as validated.",
+    "recommended_fix": "Use updateMany with a where clause that also matches the encrypted credential fields (or richMenuAccountVersion) that were read, and report connection_failed if count is 0.",
+    "required_test": "Use a fake fetch to run a save between the test's read and its write, then check that lastValidatedAt stays null.",
+    "review": "boundary",
+    "id": "boundary-2",
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-unit",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-disposable-pg",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-disposable-pg-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-browser",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-browser-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-typecheck",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-lint",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-diff-check",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-diff-check-receipt.json"
+      }
+    ]
+  },
+  {
+    "area": "UI wrong account",
+    "confidence": 0.55,
+    "issue": "An unknown or deleted accountId in the URL silently opens the \"add new account\" form instead of an error.",
+    "severity": "NIT",
+    "evidence": "`query.accountId ? accounts.find(...) ?? null : accounts[0]` gives a null account, which renders the create form and selects \"new\" in the account picker.",
+    "file": "src/app/(app)/settings/line/page.tsx",
+    "impact": "An owner following a stale link may think they are updating an account but actually try to create a duplicate; the server's duplicate-channel check blocks it with a generic error.",
+    "recommended_fix": "Show a not-found message (or redirect to the default account) when a non-\"new\" accountId does not match any account.",
+    "required_test": "Request /settings/line?accountId=<foreign or deleted id> and check that no create form is shown and an account-not-found message appears.",
+    "review": "boundary",
+    "id": "boundary-3",
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-unit",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-disposable-pg",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-disposable-pg-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-browser",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-browser-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-typecheck",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-lint",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "project-accounts-diff-check",
+        "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+        "status": "PASS",
+        "exit_code": 0,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-13\\project-accounts-diff-check-receipt.json"
+      }
+    ]
+  },
+  {
+    "area": "Consent revocation / webhook routing",
+    "file": "src/app/api/webhooks/line/[vendorId]/route.ts",
+    "severity": "MAJOR",
+    "issue": "The only webhook route supplied is `/api/webhooks/line/[vendorId]`, so `params.accountId` is always undefined and `findLineAccount` always resolves the vendor's default account.",
+    "evidence": "The handler types `accountId?` in params, but no `[accountId]` segment exists in the supplied routes, and `findLineAccount(db, vendorId, undefined)` filters on `isDefault: true`.",
+    "impact": "Unfollow events from a non-default project account fail signature checks with a 401 (or update only the default account), so those identities stay unrevoked and keep receiving pushes; the same happens to the old default's webhook when the default changes.",
+    "recommended_fix": "Add an account-specific route, `/api/webhooks/line/[vendorId]/[accountId]`, that passes the explicit account ID through, and show that per-account URL in the account settings.",
+    "required_test": "Send a signed unfollow webhook for a non-default account and assert it returns 200 and revokes only that account's identity, while the same body signed with the default account's secret is rejected.",
+    "confidence": 0.6,
+    "review": "core-repair",
+    "id": "core-repair-1",
+    "disposition": "rejected_with_reason",
+    "reason": "Account-specific nested route existed before this review but was omitted from its prompt. It reexports the vendor/account handler, is included in final boundary review, and the current regression test imports that nested route, verifies non-default signed unfollow/account-scoped revoke, wrong-default signature 401 and unknown ID 404. All 128 current units PASS."
+  },
+  {
+    "area": "Delivery idempotency after switching back to an old account",
+    "file": "src/lib/line-notification.ts",
+    "severity": "MINOR",
+    "issue": "If a project switches A→B→A, the delivery suppressed under A still holds A's key, so re-enqueuing the same event through A returns `duplicate` and nothing is ever sent.",
+    "evidence": "The suppressed row keeps `(vendorId, lineOfficialAccountId=A, idempotencyKey)`, and `enqueueLineNotification` maps P2002 to `duplicate` without checking the existing row's status.",
+    "impact": "After a switch back, buyers who are still linked to account A permanently miss reminder and confirmation messages for those events.",
+    "recommended_fix": "When the conflicting row is suppressed with `line_project_account_changed`, re-queue it with a fresh payload instead of returning `duplicate`, or document the switch-back behavior as intended.",
+    "required_test": "Enqueue on A, switch to B, process so the row is suppressed, switch back to A, enqueue again, and assert exactly one push goes out through A.",
+    "confidence": 0.6,
+    "review": "core-repair",
+    "id": "core-repair-2",
+    "disposition": "unresolved"
+  },
+  {
+    "area": "Project account switch availability",
+    "file": "src/app/actions/project-line-actions.ts",
+    "severity": "MINOR",
+    "issue": "The in-flight check blocks a switch whenever any delivery on the old account is `sending`, including deliveries for other projects, default-account user notices, and stale leases that only clear on the next worker run.",
+    "evidence": "The `findFirst` only filters on `vendorId`, `lineOfficialAccountId` and `status: \"sending\"`, with no project/subject or `claimedAt` lease filter.",
+    "impact": "On a busy shared account, or after a worker crash, managers keep getting `lineError=unavailable` and cannot change the project's account.",
+    "recommended_fix": "Ignore rows whose `claimedAt` lease has expired, and either scope the check to deliveries whose subjects resolve to this project or accept the current, more conservative check and say so in a comment.",
+    "required_test": "Seed a `sending` row with an expired `claimedAt` and one belonging to another project, then assert the switch succeeds.",
+    "confidence": 0.55,
+    "review": "core-repair",
+    "id": "core-repair-3",
+    "disposition": "unresolved"
+  },
+  {
+    "area": "OAuth browser binding UX",
+    "file": "src/lib/line-login-browser-binding.ts",
+    "severity": "NIT",
+    "issue": "Every flow uses the same fixed cookie name, so starting a second LINE flow in another tab overwrites the first flow's binding.",
+    "evidence": "`response.cookies.set(LINE_LOGIN_BROWSER_COOKIE, ...)` always writes the single cookie `celebrate_line_oauth`.",
+    "impact": "The first tab's callback fails with a generic `line=error`, although security is not affected.",
+    "recommended_fix": "Key the cookie name by a short prefix of the binding hash, or accept the limitation and show a clear 'restart login' message.",
+    "required_test": "Start two flows, complete the first, and assert the user sees the documented behavior (a clear failure message or success).",
+    "confidence": 0.5,
+    "review": "core-repair",
+    "id": "core-repair-4",
+    "disposition": "unresolved"
+  },
+  {
+    "area": "Account lifecycle authority",
+    "confidence": 0.45,
+    "file": "src/app/actions/line-actions.ts",
+    "impact": "If any flow disables an account for safety or compliance, an owner can bring it back into project selection and notification delivery just by re-saving its credentials.",
+    "issue": "saveLineOfficialAccountAction sets status to \"active\" on every update, so re-saving a disabled account turns it back on.",
+    "required_test": "Disable an existing account, re-save its credentials, and check that the status stays disabled, or that reactivation is explicit and audited.",
+    "evidence": "The update data is { ...protectedCredentials, displayName, status: \"active\", ... } and is applied to both create and update with no check of existing.status.",
+    "recommended_fix": "Keep existing.status on update and only set status to active on create, unless reactivation is an intended, audited operation.",
+    "severity": "MINOR",
+    "review": "boundary-repair",
+    "id": "boundary-repair-1",
+    "disposition": "unresolved"
+  },
+  {
+    "area": "Connection diagnostic",
+    "confidence": 0.6,
+    "file": "src/app/actions/line-actions.ts",
+    "impact": "A disabled account can be shown as recently validated, which is misleading. The risk is low because the UI disables the button, but a direct action call bypasses that.",
+    "issue": "testLineOfficialAccountAction does not check status, so it calls LINE and records lastValidatedAt for non-active accounts.",
+    "required_test": "Call the action directly for a non-active account and check that it returns not_configured without updating lastValidatedAt.",
+    "evidence": "The select does not include status, and the updateMany where clause has no status: \"active\" condition.",
+    "recommended_fix": "Select status and return not_configured when it isn't active, or add status: \"active\" to the CAS where clause.",
+    "severity": "NIT",
+    "review": "boundary-repair",
+    "id": "boundary-repair-2",
+    "disposition": "unresolved"
+  },
+  {
+    "area": "Rich menu draft scoping",
+    "confidence": 0.5,
+    "file": "src/app/actions/line-rich-menu-actions.ts",
+    "impact": "Not exploitable today, because a draft's account ID only changes from null to an ID when the first account is created. But if drafts ever become reassignable, a stale form could edit the wrong account's draft.",
+    "issue": "In editDraft, the delete and update writes filter only on vendorId plus id/revision and leave out lineOfficialAccountId, so account binding depends on an earlier read rather than the write itself.",
+    "required_test": "Check that a delete or update posted with a mismatched accountId but a valid id/revision changes no rows.",
+    "evidence": "deleteMany({ where: { vendorId, ...reference } }) and updateMany({ where: { vendorId, ...reference } }), while the earlier read used lineOfficialAccountId: accountId.",
+    "recommended_fix": "Add lineOfficialAccountId: accountId to the deleteMany and updateMany where clauses.",
+    "severity": "NIT",
+    "review": "boundary-repair",
+    "id": "boundary-repair-3",
+    "disposition": "unresolved"
+  }
+]

@@ -1,0 +1,194 @@
+{
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "payment"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "review": {
+    "summary": "I reviewed only the shared display-label helper and its test file in this partial packet. The helper only changes what is shown: lookups read stored values without changing them, `referenceOptions` keeps each original id as `value`, and the test checks that the caller's `names` object is unchanged. Most dictionaries are tied to their domain types with `satisfies`, so a missing label would fail typecheck. Lookups use `Object.hasOwn`, so unknown values and built-in object property names like `__proto__` and `constructor` fall back safely to \"未知狀態\" (unknown status). Performance is linear and fine. I found no BLOCKER or MAJOR issues. I found 2 MINOR and 2 NIT issues: duplicate detection ignores surrounding whitespace in names, the payment-status dictionary has no type check against its source, some status terms are inconsistent, and test coverage has small gaps. I didn't run anything, so this doesn't confirm that the tests, browser checks or release pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-display-labels.ts",
+        "area": "referenceOptions (label mapping + duplicate counting)",
+        "issue": "Names that differ only by leading or trailing spaces are treated as different, so no suffix is added even though the options look identical.",
+        "evidence": "`names[id].trim()` is only used to decide whether a name is empty. The label is the raw `names[id]`, and `counts` is keyed on that raw label. For example, `{a: \"報名頁\", b: \"報名頁 \"}` produces two options that both show 報名頁 and get no （第 n 項） suffix.",
+        "impact": "This breaks the doc comment's promise that options with the same name can still be told apart (重名…仍可區分). A merchant can pick the wrong step or popup when two options look the same. The stored value stays correct, but the user's choice is ambiguous.",
+        "recommended_fix": "Make the label `names[id].trim()` when the trimmed name is not empty, and count duplicates on that trimmed label. Optionally also normalize repeated internal spaces.",
+        "required_test": "Add a case to referenceOptions where `ids=['a','b']` and `names={a:'報名頁', b:' 報名頁 '}`, and assert the labels are `['報名頁（第 1 項）','報名頁（第 2 項）']`. Also check that a whitespace-only name falls back to 未命名….",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-display-labels.ts",
+        "area": "paymentStatusLabels declaration",
+        "issue": "The payment-status dictionary isn't tied to any type or constant from the code that writes payment statuses. The order and verification dictionaries are, through `satisfies Record<...>`.",
+        "evidence": "`const paymentStatusLabels = { pending: ..., paid: ..., ... }` has no `satisfies`, and nothing imports a payment-status union or constant. The comment says this field is a backend string.",
+        "impact": "If the backend adds or renames a value, or uses different letter case (for example `succeeded` or `PAID`), the UI quietly shows 未知狀態 for real transactions. Typecheck won't catch it, and no test will fail. This is safe because it doesn't claim success, but it makes reports less useful and lets drift go unnoticed.",
+        "recommended_fix": "Export a constant tuple of payment statuses from the module that writes transactions, and apply `satisfies Record<PaymentStatus, string>` to this dictionary. If the value really is free-form, add a test that compares it with the writer's known values.",
+        "required_test": "Add a unit test that loops over every payment status the transaction writer can store and asserts `reportStatusLabel(v, 'payment') !== '未知狀態'`.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-display-labels.ts",
+        "area": "orderStatusLabels.expired vs paymentStatusLabels.expired",
+        "issue": "The same `expired` status gets different Chinese wording depending on the domain.",
+        "evidence": "In the order domain `expired` is shown as 付款逾期, but in the payment domain it is shown as 已逾期. Other shared states use the same wording in both: 已付款, 付款失敗, 已退款, 部分退款 and 已取消.",
+        "impact": "An expired order and its expired transaction can show different labels on the same report, which may confuse merchants.",
+        "recommended_fix": "Use one term for both, or document why they differ.",
+        "required_test": "Add the status dictionaries to the snapshot or an equality test so the terminology is reviewed.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-display-labels.test.ts",
+        "area": "\"never labels an unknown or inherited status as successful\" and snapshot test",
+        "issue": "The unknown-value and built-in-property checks only run against the `order` domain, and the snapshot leaves out the order, payment and verification dictionaries.",
+        "evidence": "The loop calls `reportStatusLabel(status, 'order')` only. The untyped `payment` domain is checked only for `paid`. The snapshot includes the goal, step, tab, experiment status and experiment arm labels, but not the three status dictionaries, which aren't exported.",
+        "impact": "Today all three domains share one code path, so the risk is low. But a later refactor that splits the lookup per domain could bring back inherited-property or unknown-value bugs in `payment` or `verification` without any test failing.",
+        "recommended_fix": "Run the unknown-value cases in all three domains. Snapshot the status labels too, for example by snapshotting `reportStatusLabel` output for each known value.",
+        "required_test": "Assert `reportStatusLabel(s, d) === '未知狀態'` for `s` in `['new_future_state','__proto__','constructor','toString']` and every domain `d`.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "completed": false,
+  "execution_provider": "claude_cli",
+  "claude_cli_discovery_status": "SUCCESS"
+}

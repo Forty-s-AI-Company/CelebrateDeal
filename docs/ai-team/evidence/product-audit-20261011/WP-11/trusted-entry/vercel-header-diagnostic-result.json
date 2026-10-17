@@ -1,0 +1,114 @@
+{
+  "deployment_id": "dpl_hs6Sc9UKEEJFwovyLWBEAp2Av18c",
+  "status": "PASS_SINGLE_EGRESS",
+  "results": [
+    {
+      "case": "baseline",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    },
+    {
+      "case": "ipv4_forgery",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    },
+    {
+      "case": "ipv6_forgery",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    },
+    {
+      "case": "duplicate",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    },
+    {
+      "case": "mixed_case",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    },
+    {
+      "case": "comma_list",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    },
+    {
+      "case": "empty",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    },
+    {
+      "case": "all_forged",
+      "exit_code": 0,
+      "http_status": "200",
+      "booleans": {
+        "single": true,
+        "valid": true,
+        "equalsSentinel": false,
+        "includesSentinel": false,
+        "matchesRealIp": true
+      },
+      "passed": true
+    }
+  ],
+  "second_egress": "NOT_VERIFIED",
+  "limiter_behavior": "NOT_VERIFIED",
+  "raw_output_persisted": false,
+  "database_operations": false
+}

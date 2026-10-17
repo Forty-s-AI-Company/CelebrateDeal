@@ -1,0 +1,16 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:a70a80e37f690fb724bc834fda9462edbd661aa0d1e10b0d8e8ee9f4c12c9dcb",
+  "status": "PASS",
+  "independent": true,
+  "role": "senior_review",
+  "model": "claude-sonnet-5-5",
+  "observed_model": "claude-sonnet-5-5",
+  "raw_receipts": [
+    "fixed-review.json",
+    "final-review.json"
+  ],
+  "scope_coverage": "review-coverage.json; exact current product blocks with prior+final qualified context",
+  "wholeWpReady": false
+}

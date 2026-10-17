@@ -1,0 +1,14 @@
+{
+  "sourceHashes": {
+    "src/lib/checkout-followup-queue.ts": "ba0c77ed8e8fc9e749c11f13100c9b755a7f78df11b9aa38ee486bed6a414d10",
+    "src/lib/checkout-followup-queue.test.ts": "1baa2e53f79b0ae0824da56f2cc7a42289617ab2dc3ca278adc892d1b6a8d595",
+    "src/lib/checkout-followup.ts": "e16f8a06341869603e4d0a0284df2bd3ab059e9476b666fa16c672d9cd5f43e6",
+    "src/lib/checkout-followup.test.ts": "c1ea460ccaf13591e83718be5b3228c35c21a919c1b0cea2d27aac6def2f6e32",
+    "src/lib/email-delivery.ts": "341282406f2ddd6a249a6a0bb82a1edcd37a50ae1f8ac52237cf999da5c3f1be",
+    "src/lib/email-delivery.test.ts": "7ae2b9353d3d7e07c60d96973975eb41586b117eda51efc6f77d4a5d4e7ad5a9",
+    "src/app/api/jobs/email-deliveries/route.ts": "f8cb8411f6b95437801a8bbd818f998e95bf7c5de7d9d50ac9c8ed58810dd60a",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "3780d1cd60219ff0cb739ef84ae90912b1a0c3fecca28d2a4e69af681c924f94"
+  },
+  "contextChars": 18061,
+  "supplied": "Full affected domain modules; unchanged recorder omitted; exact dispatcher/job summary. WholeWP18 notready."
+}

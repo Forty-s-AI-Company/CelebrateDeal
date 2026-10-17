@@ -1,0 +1,55 @@
+{
+  "status": "IN_PROGRESS_NOT_READY",
+  "reviewReceipt": "viewing-ledger-followup-review.json",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "executionProvider": "claude_cli",
+  "structuredSeverityCounts": {
+    "BLOCKER": 2,
+    "MAJOR": 2,
+    "MINOR": 3,
+    "NIT": 4
+  },
+  "reviewSourceMatchesCurrent": false,
+  "changedAfterReview": [
+    "scope/session grouping index",
+    "invalid-window rejection",
+    "duration in digest",
+    "atomic BEGIN/COMMIT and bounded DDL timeouts",
+    "unexpected ACL fail-closed assertion",
+    "additional effective-runtime/nested-trigger/catalog/ACL probes",
+    "effective runtime full-audit probe",
+    "fail-closed ACL assertion negative probe"
+  ],
+  "verifiedAfterChanges": [
+    "72 related source/version/session unit tests",
+    "lint",
+    "typecheck",
+    "118 schema validation/migration/status",
+    "source DB assertions incl range changes, no-op/progress, rollback/commit order, forged direct and nested insert rejection, identity mutation, no truncate, invalid window, owner-only current ACL, restricted effective runtime full audit and DDL denials, unexpected ACL rejection/rollback, version cascade cleanup"
+  ],
+  "remainingReviewFindings": [
+    "Existing full-WP and synchronized20 release blocker unchanged",
+    "Actual nonProduction deployed runtime role/grants not configured or verified; synthetic effective-role probe is not deployed evidence",
+    "Load/performance MAJOR unverified; scope/session index is mitigation only",
+    "Populated117-to118 upgrade and complete Prisma drift/catalog tests not executed",
+    "Harness source not independently reviewed",
+    "Final targeted fixes not independently rereviewed; version helper not independently reviewed"
+  ],
+  "sourceFiles": {
+    "prisma/migrations/20261016060000_live_metric_viewing_source/migration.sql": "9577c1c9af2449706ce148a4b9d5eabcf040f9d52bb15f3b63d4dc178776a0b7",
+    "prisma/schema.prisma": "0f3e5125b4b698d219e7e6c7ee89546c3bad046ace81e5ca69b1fca590c86d74",
+    "src/lib/live-metric-viewing-source-audit.ts": "d2bb9551239b19a75123533bd74fe5eca0e6d37aca4f514fd6cde51aea4de39b",
+    "src/lib/live-metric-viewing-source-audit.test.ts": "56a7d2d3cf869806b5388e9d065c04da76b347c3b41e4d75b552f6590c42bad1",
+    "scripts/wp20-viewing-source-ledger-disposable.mjs": "1becc905f0d1553ddde608eec7f0d796a4af5578976bed6aeefab95f97c49e3e",
+    "src/lib/live-metric-version.ts": "93b1530601d8ac38efba87418bff0093b20d6ca16fea013395b6e514e0cf061f",
+    "src/lib/live-metric-version.test.ts": "716d621e8d02f644ae2a67a327d1a49a1cdcebd6a4e021771ac054aca90e6403"
+  },
+  "sourceRoot": "C:/Users/eden/.codex/worktrees/product-audit-goal-plan/CelebrateDeal",
+  "coverage": "unknown; no positive writer/producer enabled",
+  "originalGate": "7 successes/13 failures; unchanged; not rerun",
+  "trustBoundary": "Trusted migration/function/table owner. No protection claimed against owner/superuser DDL changes. Private ACL guard rejects unexpected non-owner grants at migration end."
+}

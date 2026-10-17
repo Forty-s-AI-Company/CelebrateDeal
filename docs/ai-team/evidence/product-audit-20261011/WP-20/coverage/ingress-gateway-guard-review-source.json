@@ -1,0 +1,10 @@
+{
+  "suppliedRanges": {
+    "scripts/wp20-ingress-disposable.mjs": "Only Host/origin rejection comment through before const unknown; original HTTP setup/shutdown cases omitted"
+  },
+  "files": {
+    "scripts/wp20-ingress-disposable.mjs": "fb2af3e1a279f60fbffc362fd84cbdf1344e48e07d3d3b22b001f7d11a1d1203",
+    "src/lib/live-metric-ingress-gateway.ts": "db8310b21fdfbb58a547809b80f206fc70825bed7a197cfe7010b0f7b80c55e7"
+  },
+  "promptCharacters": 13660
+}

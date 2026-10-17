@@ -13,7 +13,9 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit as checkRecipientRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { entryRateLimitHeaders } from "@/lib/entry-rate-limit-headers";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
 import {
@@ -31,11 +33,7 @@ function value(formData: FormData, key: string) {
 
 async function sourceRequest() {
   const incoming = await headers();
-  const forwarded = new Headers();
-  for (const name of ["cf-connecting-ip", "x-forwarded-for", "user-agent"]) {
-    const header = incoming.get(name);
-    if (header) forwarded.set(name, header);
-  }
+  const forwarded = entryRateLimitHeaders(incoming);
   return new Request(getCanonicalAppUrl(), { headers: forwarded });
 }
 
@@ -67,7 +65,7 @@ export async function requestMagicLinkAction(
   const customerKeyHash = automationCustomerKeyHash(vendor.id, email.data);
   // A second bucket intentionally uses no client-provided forwarding headers.
   // This keeps one tenant/student identity bounded even if XFF is spoofed.
-  const recipientLimited = await checkRateLimit(
+  const recipientLimited = await checkRecipientRateLimit(
     new Request(getCanonicalAppUrl()),
     `student-portal-magic-link-recipient:${vendor.id}:${customerKeyHash}`,
     3,

@@ -1,0 +1,22 @@
+[
+  {
+    "sha256": "56d9fe05c2efbfdbd07b939ac0f7708e189dafc7bc7f8dd40c7bbda84e66a559",
+    "path": "src/components/public-policy.tsx"
+  },
+  {
+    "sha256": "ff03861aca31f6b6c8cf6383f74433d189ef3a438ffd6fa07434d23d990c48ef",
+    "path": "src/components/public-policy.test.tsx"
+  },
+  {
+    "sha256": "fca679efaaa7bd19d68f123b680a71e110d0f5d4ae8cc97b65e32ec67b249ced",
+    "path": "src/app/policies/[slug]/page.tsx"
+  },
+  {
+    "sha256": "6f5b3fc652461562c6776c06c7fbb65dfcc4e90011b4bfb4fd2f54ef369a1daa",
+    "path": "src/app/policies/[slug]/page.test.tsx"
+  },
+  {
+    "sha256": "f467f92d32868f4d49f2f45a3ceb35c8e9dcd7c72e28c6659f948d68636bf35c",
+    "path": "tests/e2e/wp03-public-presentation.spec.ts"
+  }
+]

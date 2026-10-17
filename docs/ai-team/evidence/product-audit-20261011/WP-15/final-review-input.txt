@@ -1,0 +1,124 @@
+Final cumulative WP15 independent review in Traditional Chinese: BLOCKER/MAJOR/MINOR/NIT only. Scope: UI mobile first screen, default collapsed preferences preserving saved false, keyboard/axe/target sizes, explicit TWD. No schema/query/security/payment behavior changes. Prior Opus closed false desktop-panel MAJOR (unchanged desktop aside render below), ratio-string MINOR (nonzero ratio implies numeric source checked); retains currency redundancy MINOR/default duplication NIT. Sonnet mobile increment no BLOCKER/MAJOR. Its coverage gap now closed by6 actual browser states testing keyboard project selection, summary update, menu closing, elementFromPoint verifies input/menu not covered. Snapshot9819852c actual7validation_runner checks PASS:78targeted,lint,typecheck,52operations/editor,18shell,16dashboard,6firstviewport. Browser synthetic boundaries, full login E2E NOT executed. Assess cumulative diff independently; do not equate green tests with all requirements.
+
+--- src/components/app-shell.tsx beforeWP15
++++ src/components/app-shell.tsx
+@@ -149 +149 @@
+-  taskPanelCollapsed = false,
++  taskPanelCollapsed = true,
+@@ -302,2 +302 @@
+-        {!isPlatformAdmin && selectProject ? <div className="mt-3"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div> : null}
+-        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
++        {!isPlatformAdmin && selectProject ? <details className="mt-2"><summary className="min-h-11 cursor-pointer rounded-lg border border-slate-200 px-3 py-3 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-blue-700">專案：{projects.find((project) => project.id === selectedProjectId)?.name ?? "全部專案總覽"}</summary><div className="mt-2"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div></details> : null}
+@@ -313,0 +313,4 @@
++        {/* Place mobile guidance in normal document flow, outside the sticky header. */}
++        <div className="lg:hidden">
++        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
++        </div>
+
+--- src/app/(app)/dashboard/dashboard-kpis.tsx beforeWP15
++++ src/app/(app)/dashboard/dashboard-kpis.tsx
+@@ -1 +1 @@
+-import { Badge, Card } from "@/components/ui";
++import { Card } from "@/components/ui";
+@@ -106 +106,5 @@
+-  return (
++  // Zero activity is a display state, not evidence that the merchant is new.
++  // Preserve every metric behind a keyboard-accessible native disclosure.
++  const hasActivity = kpis.some((kpi) => typeof kpi.value === "number" && kpi.value !== 0)
++    || data.funnel.some((step) => step.count !== 0);
++  const metrics = (
+@@ -108 +112 @@
+-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
++      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+@@ -111 +115 @@
+-            <p className="text-sm text-slate-500">{kpi.label}</p>
++            <p className="text-sm text-slate-600">{kpi.label}</p>
+@@ -113 +116,0 @@
+-            <div className="mt-4"><Badge tone={kpi.tone}>{kpi.label}</Badge></div>
+@@ -135,0 +139,9 @@
++  if (hasActivity) return metrics;
++  return (
++    <details className="rounded-xl border border-slate-200 bg-white p-4">
++      <summary className="min-h-11 cursor-pointer rounded-md py-3 font-semibold text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-700">
++        目前指標尚無活動資料，展開查看全部指標
++      </summary>
++      <div className="mt-3">{metrics}</div>
++    </details>
++  );
+
+--- src/app/(app)/layout.tsx beforeWP15
++++ src/app/(app)/layout.tsx
+@@ -56 +56 @@
+-  return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={normalizeVendorFeatureModules(vendor.enabledFeatureModules)} planLabel={activeSubscription?.plan.name ?? "Free"} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? false} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{children}</AppShell>;
++  return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={normalizeVendorFeatureModules(vendor.enabledFeatureModules)} planLabel={activeSubscription?.plan.name ?? "Free"} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{children}</AppShell>;
+
+--- src/app/actions/registration-actions.ts beforeWP15
++++ src/app/actions/registration-actions.ts
+@@ -45 +45 @@
+-      await tx.userOnboardingPreference.create({ data: { userId: user.id, vendorId: vendor.id, questionnaireStep: 0 } });
++      await tx.userOnboardingPreference.create({ data: { userId: user.id, vendorId: vendor.id, questionnaireStep: 0, taskPanelCollapsed: true } });
+
+--- src/app/actions/sales-workspace-actions.ts beforeWP15
++++ src/app/actions/sales-workspace-actions.ts
+@@ -33 +33 @@
+-    create: { userId: auth.user.id, vendorId: vendor.id, questionnaireAnswers: parsed, questionnaireStep: nextQuestionnaireStep(parsed) },
++    create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, questionnaireAnswers: parsed, questionnaireStep: nextQuestionnaireStep(parsed) },
+@@ -57 +57 @@
+-    await tx.userOnboardingPreference.update({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, data: { questionnaireStep: 4, questionnaireDoneAt: new Date(), recommendedMode: mode, selectedMode: mode, guideDismissedAt: null, taskPanelCollapsed: false } });
++    await tx.userOnboardingPreference.update({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, data: { questionnaireStep: 4, questionnaireDoneAt: new Date(), recommendedMode: mode, selectedMode: mode, guideDismissedAt: null } });
+@@ -79 +79 @@
+-  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, selectedProjectId: projectId }, update: { selectedProjectId: projectId } });
++  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, selectedProjectId: projectId }, update: { selectedProjectId: projectId } });
+@@ -100 +100 @@
+-    await tx.userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, selectedProjectId: created.id }, update: { selectedProjectId: created.id } });
++    await tx.userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, selectedProjectId: created.id }, update: { selectedProjectId: created.id } });
+@@ -163 +163 @@
+-  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, ...data }, update: data });
++  await getDb().userOnboardingPreference.upsert({ where: { userId_vendorId: { userId: auth.user.id, vendorId: vendor.id } }, create: { userId: auth.user.id, vendorId: vendor.id, taskPanelCollapsed: true, ...data }, update: data });
+
+--- src/app/(app)/billing/plans/page.tsx beforeWP15
++++ src/app/(app)/billing/plans/page.tsx
+@@ -15,0 +16,5 @@
++
++// Keep existing rounding and prices; disambiguate the dollar symbol for merchants.
++function formatPlanCurrency(cents: number) {
++  return `TWD ${formatCurrency(cents)}`;
++}
+@@ -288 +293 @@
+-            <p className="text-3xl font-bold text-slate-950">{formatCurrency(plan.monthlyPriceCents)}</p>
++            <p className="text-3xl font-bold text-slate-950">{formatPlanCurrency(plan.monthlyPriceCents)}</p>
+@@ -294 +299 @@
+-              <PlanRow label="平台金流月費" value={formatCurrency(plan.paymentServiceFeeCents)} />
++              <PlanRow label="平台金流月費" value={formatPlanCurrency(plan.paymentServiceFeeCents)} />
+@@ -299 +304 @@
+-              <p className="mt-1">月結參考單價：播放每 100 小時 {formatCurrency(plan.overflowWatchHourPriceCents)}、活動每 10 場 {formatCurrency(plan.overflowEventUnitPriceCents)}、推廣者每 10 人 {formatCurrency(plan.overflowAffiliateUnitPriceCents)}、儲存每 100 分鐘 {formatCurrency(plan.overflowStorageMinutePriceCents * 100)}。帳單可從帳單頁手動完成付款。</p>
++              <p className="mt-1">月結參考單價：播放每 100 小時 {formatPlanCurrency(plan.overflowWatchHourPriceCents)}、活動每 10 場 {formatPlanCurrency(plan.overflowEventUnitPriceCents)}、推廣者每 10 人 {formatPlanCurrency(plan.overflowAffiliateUnitPriceCents)}、儲存每 100 分鐘 {formatPlanCurrency(plan.overflowStorageMinutePriceCents * 100)}。帳單可從帳單頁手動完成付款。</p>
+
+--- src/components/landing-pages/funnel-operations-panel.tsx beforeWP15
++++ src/components/landing-pages/funnel-operations-panel.tsx
+@@ -53,0 +54 @@
++  const [mobileStepsOpen, setMobileStepsOpen] = useState(false);
+@@ -221,2 +222,2 @@
+-  return <section aria-label="一頁式網站管理" className="min-w-0 space-y-4">
+-    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
++  return <section aria-label="一頁式網站管理" className="min-w-0 space-y-2 lg:space-y-4">
++    <header className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm lg:gap-4 lg:px-5 lg:py-4">
+@@ -228,2 +229,4 @@
+-        <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-auto">{content.flow.steps.map((step, index) => <article key={step.id} className={content.activeStepId === step.id ? "bg-sky-50" : "bg-white hover:bg-slate-50"}>
+-          <div className="flex items-start gap-2 px-4 py-4"><button type="button" onClick={() => selectStep(step.id)} className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><strong className="block truncate text-sm text-slate-900">{step.name}</strong><span className="mt-1 block text-xs text-slate-600">{step.isSystem ? "網站停用時顯示" : funnelStepLabels[step.type]}</span></button>{!step.isSystem ? <div className="flex gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={pending || index === 0} onClick={() => { const result = moveFunnelStepPage(content, step.id, Math.max(0, index - 1)); if (result.ok) persistContent(result.state, "步驟順序已儲存。"); }} className="cursor-pointer rounded p-1 text-slate-600 hover:bg-white disabled:opacity-30">↑</button><button type="button" aria-label={`移除 ${step.name}`} disabled={pending} onClick={() => { if (!window.confirm(`確定移除「${step.name}」及其頁面內容？`)) return; const result = removeFunnelStepPage(content, step.id); if (result.ok) persistContent(result.state, "步驟已移除。"); else setMessage(result.error); }} className="cursor-pointer rounded p-1 text-red-600 hover:bg-red-50">×</button></div> : <MoreHorizontal size={17} className="text-slate-400" />}</div>
++        <button type="button" aria-expanded={mobileStepsOpen} onClick={() => setMobileStepsOpen((open) => !open)} className="min-h-11 px-4 py-2 text-left text-sm font-semibold text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-700 lg:hidden">網站步驟：{active?.step.name ?? "選擇步驟"}（{mobileStepsOpen ? "收合" : "展開"}）</button>
++        <div className={`${mobileStepsOpen ? "flex" : "hidden"} min-h-0 flex-col lg:flex`}>
++        <div className="max-h-60 min-h-0 flex-1 divide-y divide-slate-100 overflow-auto lg:max-h-none">{content.flow.steps.map((step, index) => <article key={step.id} className={content.activeStepId === step.id ? "bg-sky-50" : "bg-white hover:bg-slate-50"}>
++          <div className="flex items-start gap-2 px-4 py-4"><button type="button" onClick={() => selectStep(step.id)} className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><strong className="block truncate text-sm text-slate-900">{step.name}</strong><span className="mt-1 block text-xs text-slate-600">{step.isSystem ? "網站停用時顯示" : funnelStepLabels[step.type]}</span></button>{!step.isSystem ? <div className="flex gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={pending || index === 0} onClick={() => { const result = moveFunnelStepPage(content, step.id, Math.max(0, index - 1)); if (result.ok) persistContent(result.state, "步驟順序已儲存。"); }} className="min-h-11 min-w-11 cursor-pointer rounded p-1 text-slate-600 hover:bg-white disabled:opacity-30">↑</button><button type="button" aria-label={`移除 ${step.name}`} disabled={pending} onClick={() => { if (!window.confirm(`確定移除「${step.name}」及其頁面內容？`)) return; const result = removeFunnelStepPage(content, step.id); if (result.ok) persistContent(result.state, "步驟已移除。"); else setMessage(result.error); }} className="min-h-11 min-w-11 cursor-pointer rounded p-1 text-red-600 hover:bg-red-50">×</button></div> : <MoreHorizontal size={17} className="text-slate-400" />}</div>
+@@ -231,0 +235 @@
++        </div>
+@@ -235 +239 @@
+-        <div className="p-5 sm:p-7">
++        <div className="p-3 sm:p-7">
+@@ -253 +257 @@
+-  return <div><div className="mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">頁面設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(`/landing-pages/${editor.pageId}?step=${encodeURIComponent(active.step.id)}`)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
++  return <div><div className="mb-3 lg:mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">頁面設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(`/landing-pages/${editor.pageId}?step=${encodeURIComponent(active.step.id)}`)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
+
+Unchanged desktop aside fragments, intervening logo omitted:
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-200 bg-white px-3 pb-3 pt-4 text-slate-900 lg:flex">
+        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}

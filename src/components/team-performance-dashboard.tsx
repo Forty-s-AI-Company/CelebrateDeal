@@ -15,7 +15,7 @@ export function TeamPerformanceDashboard({
 }) {
   return (
     <>
-      <PageHeader title="展業成效" description="依真實頁面歸因、點擊、報名與可明確對應頁面的瀏覽事件彙整；不會推估缺少的資料。" />
+      <PageHeader title="成效分析" description="依真實頁面歸因、點擊、報名與可明確對應頁面的瀏覽事件彙整；不會推估缺少的資料。" />
       <Card className="mb-6">
         <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" method="get">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">團隊

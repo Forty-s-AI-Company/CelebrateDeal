@@ -1,0 +1,51 @@
+[
+  {
+    "severity": "MINOR",
+    "file": "src/app/r/[code]/route.ts",
+    "area": "limited branch: `const retryAfter = limited.headers.get(\"Retry-After\"); if (retryAfter) response.headers.set(\"Retry-After\", retryAfter);`",
+    "issue": "The limiter's Retry-After value is copied as-is. The supplied memory limiter calculates it as a fractional number of seconds, and the test only checks that the value is greater than 0, so a non-integer header would not be caught.",
+    "evidence": "rate-limit.ts memoryDecision: `retryAfterSeconds: (bucket.resetAt - now) / 1000` (not rounded). checkRateLimit passes it to `tooManyRequests(...)`, which was not supplied, so it is unknown whether that function rounds up. The real-limiter test asserts only `Number(response.headers.get(\"retry-after\")) > 0`, which a value like \"59.997\" would pass.",
+    "impact": "If `tooManyRequests` does not round up, the redirect carries an invalid Retry-After value (RFC 9110 requires whole seconds). Clients may ignore it or misread it. This does not affect security or attribution.",
+    "recommended_fix": "Make sure the header value is a non-negative whole number: either confirm that `tooManyRequests` applies Math.ceil, or apply Math.ceil in the route before copying the value. Changing the limiter itself is outside this task, so propose it as a scope item if needed.",
+    "required_test": "In the real memory-limiter test, assert that the 61st response's `retry-after` matches /^\\d+$/ and is between 1 and 60.",
+    "confidence": 0.35,
+    "disposition": "rejected_with_reason",
+    "reason": "Existing tooManyRequests in src/lib/rate-limit.ts uses String(Math.max(1, Math.ceil(retryAfterSeconds))); the route forwards the resulting integer header. Dependency excerpt omitted this function; production source inspected, unchanged. Test-strengthening suggestion remains optional, not a demonstrated protocol defect."
+  },
+  {
+    "severity": "NIT",
+    "file": "src/app/r/[code]/route.ts",
+    "area": "limited branch: Retry-After on a 307 redirect",
+    "issue": "On a 3xx response, Retry-After means something different than on a 429. RFC 9110 §10.2.3 says it tells the client to wait that long before following the redirect. That works against the goal of letting the visitor see the plans page right away.",
+    "evidence": "The comment says the intent is to let the visitor still see the plans page (讓訪客仍能查看方案), but the code sets `Retry-After` on `NextResponse.redirect(...)` (status 307).",
+    "impact": "Mainstream browsers ignore Retry-After on redirects, so there is no real effect today. A client that follows the spec strictly could delay loading the plans page. This has no security impact.",
+    "recommended_fix": "Either keep the header and record that it is informational, or drop it and keep only `no-store`. The task explicitly asked for the header to be kept, so this is a product/protocol decision, not a defect.",
+    "required_test": "None required. If the header is removed, update the 429/503 and real-limiter tests to assert `retry-after` is null.",
+    "confidence": 0.5,
+    "disposition": "unresolved"
+  },
+  {
+    "severity": "MINOR",
+    "file": "src/app/r/[code]/route.ts",
+    "area": "GET lines 11-13 (checkRateLimit early return)",
+    "issue": "When the referral limiter trips or fails closed, a top-level browser visit gets the limiter's raw 429/503 response instead of being redirected to /billing/plans.",
+    "evidence": "`const limited = await checkRateLimit(request, \"platform-referral-entry\", 60, 60_000); if (limited) return limited;` runs before any redirect. This route is a GET link people open from shared referral URLs, and per-IP keying (whose trust model is explicitly uncertified) puts many users behind one NAT/CGNAT/campus egress in the same bucket.",
+    "impact": "Real prospects behind a shared IP, or everyone during a limiter-provider outage that returns 503, land on an error page instead of the plans page. That breaks the referral link and loses the conversion. The protection goal (no unbounded click writes) doesn't require blocking the navigation itself.",
+    "recommended_fix": "When `limited` is set, skip recordPlatformReferralClick and do NOT set or clear the referral cookie (leave any existing attribution alone). Still issue NextResponse.redirect to /billing/plans, e.g. with no referral flag or a neutral flag, and add Retry-After/no-store headers as needed. The DB write stays rate-limited while the navigation degrades gracefully.",
+    "required_test": "Route unit/HTTP test: request 61 within the window and a simulated provider 503 both return a 3xx to /billing/plans, call recordPlatformReferralClick zero times, and send no Set-Cookie for PLATFORM_REFERRAL_COOKIE. Requests 1-60 behave as before.",
+    "confidence": 0.55,
+    "disposition": "resolved",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "unit",
+        "revision": "sha256:82b5c340bc097fbc1d42ddf452ba97dec17c1df3c053f2a14b86e80ba8acf81b",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 1.703,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\referral-navigation\\checks\\unit.json"
+      }
+    ]
+  }
+]

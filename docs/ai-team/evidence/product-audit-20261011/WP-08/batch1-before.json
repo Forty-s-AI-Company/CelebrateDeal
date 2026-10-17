@@ -1,0 +1,182 @@
+[
+  {
+    "file": "src/components/landing-pages/funnel-operations-panel.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/0.txt",
+    "sha256": "500c9f2c4e9b930ae44b1e6fac4f02f1b679f98fac405d30db745a1b95dc9076"
+  },
+  {
+    "file": "src/components/app-shell.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/1.txt",
+    "sha256": "e4f7d5f4323983b1628aac8e1f78fd24409757dadedd2ca1bd5a1e77155abbad"
+  },
+  {
+    "file": "src/components/landing-page-workspace.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/2.txt",
+    "sha256": "9c2069ebfb845ca9a9069bc6a5d8b357d2382af96bc5d59f90f161851eaf5d87"
+  },
+  {
+    "file": "src/components/landing-pages/workspace-editor.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/3.txt",
+    "sha256": "1c9a31945a447bb93d4d35e8eef555c641060fcd70b7673325279beafadeec4a"
+  },
+  {
+    "file": "src/app/(app)/landing-pages/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/4.txt",
+    "sha256": "4f853e4025c131f3c841de46e2930bf93cb83d530a2033de4ad6720be16526b8"
+  },
+  {
+    "file": "src/app/(app)/interaction-scripts/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/5.txt",
+    "sha256": "1dabfc4d7cd8354485b653d1fc968ea311e415a162d8435033a6fcef47a2c094"
+  },
+  {
+    "file": "src/app/(app)/dashboard/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/6.txt",
+    "sha256": "4df858ad6d1a6dcaed01bf95d50760ab3dc5284b6f624c3928512f2ec2051ebb"
+  },
+  {
+    "file": "src/app/(app)/dashboard/loading.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/7.txt",
+    "sha256": "bc868a8b945fefe5ecced49a0fd669e8a71c5d8b2116c4d48b498cc8c1a68985"
+  },
+  {
+    "file": "src/app/(app)/dashboard/dashboard-details-loading.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/8.txt",
+    "sha256": "2bbde8ce44b34bbffe11fd79bad0e265a1e3571f226c1cd034b28a3724eccd6b"
+  },
+  {
+    "file": "src/app/(app)/dashboard/dashboard-kpis-loading.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/9.txt",
+    "sha256": "1789248a1a4c1b707056d8b648c5f3fb1d2d1efd05235c7682c1b517323ad370"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-element-inspector.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/10.txt",
+    "sha256": "59477dfeada5b18bb855c17ade65e4105c0e7179eb1ea316d206a0e550f7d3eb"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/11.txt",
+    "sha256": "c9f4943af2f60d4351a5041b352b91981b1bb6cc7d5c1e6de78885944f3d270d"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-list.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/12.txt",
+    "sha256": "5405d287efcddfc1bf893ce5e521f71e057e80c50b0eddd5f3f0404d3bf3a3bb"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-page-editor.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/13.txt",
+    "sha256": "0d4d86c3291f45d140fb2b219f2969b9547e880ec4966e841a868b0c1272b4d7"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/14.txt",
+    "sha256": "e24ae058170c35ba0badd1712247d6eac8103b8f40146930164bddba7f4cad26"
+  },
+  {
+    "file": "src/components/landing-pages/funnel-template-gallery-picker.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/15.txt",
+    "sha256": "cc3e5dcf9d34b1bc7ca89f5890ef673684347fdd850c9396beab2e7aa0ea53ea"
+  },
+  {
+    "file": "src/app/(app)/lives/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/16.txt",
+    "sha256": "e556f09885c6983cb79326c3fec021bc18a2ef2392c408377158b100107f53cd"
+  },
+  {
+    "file": "src/app/(app)/videos/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/17.txt",
+    "sha256": "92d7e3a5da171473347357dc7a410dc6f9d2271e9fbbdb8feaeff65aef1dda51"
+  },
+  {
+    "file": "src/app/(app)/forms/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/18.txt",
+    "sha256": "3a4fe4106051d927dd558ed5eb5860c6e96d3dd03c25099a36b103d005b7dacb"
+  },
+  {
+    "file": "src/app/(app)/products/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/19.txt",
+    "sha256": "74bd4875552933bd74e949402a7099ee3390ac1e111290e9871055433e6415ea"
+  },
+  {
+    "file": "src/app/(app)/orders/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/20.txt",
+    "sha256": "f3e49093dc8652a663b5f0b97597f1d8dff200f979ea152d33907de58d04b1d4"
+  },
+  {
+    "file": "src/app/(app)/consultations/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/21.txt",
+    "sha256": "1bbfeadb9352e6908f06d63b9606b8137e440beb6db959f6205c4affaa5faf89"
+  },
+  {
+    "file": "src/app/(app)/support-cases/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/22.txt",
+    "sha256": "be7b0a6c19296b089100a3bb89b264fcc7907c606f011bbfb10203a78b410ce7"
+  },
+  {
+    "file": "src/app/(app)/messages/deliveries/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/23.txt",
+    "sha256": "c135465459317c33a5751e8d0ec842bae007740dc66781d1a548cdafff4cf990"
+  },
+  {
+    "file": "src/app/(app)/blacklists/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/24.txt",
+    "sha256": "89f49678363e835b43fb80196d3aa7db995b3d482a633e7674f8df93f99bbec5"
+  },
+  {
+    "file": "src/app/(app)/affiliates/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/25.txt",
+    "sha256": "785b0081dbdd22f25cd1033a1f1b82492abc9802315042241703692b40eac008"
+  },
+  {
+    "file": "src/app/(app)/team-templates/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/26.txt",
+    "sha256": "102f2054cfa72275e9cf05c1f0de82d3f9b9d42b896a424058cc81d3de8e37dc"
+  },
+  {
+    "file": "src/app/(app)/billing/payment-methods/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/27.txt",
+    "sha256": "37d9816a12a415ceba299e3961b9c729e7340318a57fcf26226d1d27eefbec7f"
+  },
+  {
+    "file": "src/app/(app)/affiliates/commissions/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/28.txt",
+    "sha256": "80850d423f7c94e9578e962563e6f54d08f6a7c4239e490e821646bbca0e43d5"
+  },
+  {
+    "file": "src/app/(app)/billing/course-payouts/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/29.txt",
+    "sha256": "9937f152eea8bf2cf4d0027ed504e5b8569aea61e8854c276aeb1791156c107a"
+  },
+  {
+    "file": "src/app/(app)/onboarding/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/30.txt",
+    "sha256": "ba2ac03497a62316b78913077e0916bf1455a2e7bd4921a7395eddbe6cddec8c"
+  },
+  {
+    "file": "src/app/(app)/settings/tracking/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/31.txt",
+    "sha256": "f0d671265ffeb2fba3b2d52a7d58fe76a0487bb20cd721afc037983e7c0ddcc4"
+  },
+  {
+    "file": "src/app/(app)/settings/features/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/32.txt",
+    "sha256": "edb007dc13ed9df3e46ec83f5a1d464db78e1dce4bede6420dabb51a1d30f965"
+  },
+  {
+    "file": "src/app/(app)/settings/automations/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/33.txt",
+    "sha256": "ea00890439842de543d0f0340d7a85898278cf6056d521d81687756c9768e7a3"
+  },
+  {
+    "file": "src/app/(app)/settings/team/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/34.txt",
+    "sha256": "3f9c49c65422a50fdd15f4c23b4a0815d069779cc4cb1a4927ea716a632408b6"
+  },
+  {
+    "file": "src/app/(app)/settings/security/page.tsx",
+    "before": "docs/ai-team/evidence/product-audit-20261011/WP-08/before/35.txt",
+    "sha256": "cc022a31e9b70b5297cc6e46ad9b62a46877a435fb74f3436419b75231d750b1"
+  }
+]

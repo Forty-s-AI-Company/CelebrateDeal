@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
+  limited: vi.fn(),
   recordPlatformReferralClick: vi.fn(),
 }));
 
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.limited }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/platform-referral", () => ({
   PLATFORM_REFERRAL_COOKIE: "celebratedeal_platform_referral",
@@ -20,8 +22,10 @@ vi.mock("@/lib/platform-referral", () => ({
 
 import { GET } from "./route";
 
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.limited.mockResolvedValue(null);
 });
 
 describe("platform referral entry route", () => {
@@ -47,4 +51,57 @@ describe("platform referral entry route", () => {
     expect(mocks.recordPlatformReferralClick).not.toHaveBeenCalled();
     expect(response.headers.get("set-cookie")).toContain("celebratedeal_platform_referral=;");
   });
+});
+
+it.each([429, 503])("redirects limiter %i to plans without database writes or attribution changes", async (status) => {
+  const limited = new Response(null, { status, headers: { "Retry-After": "30" } }); mocks.limited.mockResolvedValue(limited);
+  const response = await GET(new Request("https://app.example.test/r/SYNTHETIC"), { params: Promise.resolve({ code: "SYNTHETIC" }) });
+  expect(response.status).toBe(307);
+  expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans");
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("retry-after")).toBe("30");
+  expect(response.headers.get("set-cookie")).toBeNull();
+  expect(mocks.getDb).not.toHaveBeenCalled(); expect(mocks.recordPlatformReferralClick).not.toHaveBeenCalled();
+  expect(mocks.limited).toHaveBeenCalledWith(expect.any(Request), "platform-referral-entry", 60, 60_000);
+});
+it("enforces the actual memory-provider limit before the sixty-first attribution write", async () => {
+  vi.stubEnv("RATE_LIMIT_PROVIDER", "memory");
+  const real = await vi.importActual<typeof import("@/lib/trusted-entry-rate-limit")>("@/lib/trusted-entry-rate-limit"); mocks.limited.mockImplementation((request, key, limit, windowMs) => {
+    // Synthetic transport supplies the socket address; headers are not trusted.
+    Object.defineProperty(request, "ip", { value: "127.0.0.1" });
+    return real.checkRateLimit(request, key, limit, windowMs, { trustMode: "runtime", deploymentSource: "node" });
+  });
+  mocks.recordPlatformReferralClick.mockResolvedValue({ id: "synthetic-click" });
+  for (let i = 0; i < 60; i++) expect((await GET(new Request("https://app.example.test/r/SYNTHETIC"), { params: Promise.resolve({ code: "SYNTHETIC" }) })).status).toBe(307);
+  const response = await GET(new Request("https://app.example.test/r/SYNTHETIC"), { params: Promise.resolve({ code: "SYNTHETIC" }) });
+  expect(response.status).toBe(307);
+  expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans");
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("set-cookie")).toBeNull();
+  expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+  expect(mocks.recordPlatformReferralClick).toHaveBeenCalledTimes(60);
+});
+
+it("does not invent a retry time when the limiter supplies none", async () => {
+  mocks.limited.mockResolvedValue(new Response(null, { status: 503 }));
+  const response = await GET(new Request("https://app.example.test/r/SYNTHETIC"), { params: Promise.resolve({ code: "SYNTHETIC" }) });
+  expect(response.status).toBe(307);
+  expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans");
+  expect(response.headers.get("retry-after")).toBeNull();
+  expect(response.headers.get("set-cookie")).toBeNull();
+  expect(mocks.getDb).not.toHaveBeenCalled();
+  expect(mocks.recordPlatformReferralClick).not.toHaveBeenCalled();
+});
+
+
+it.each([429, 503])("distinguishes source failure from throttling without logging request data (%s)", async status => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    mocks.limited.mockResolvedValue(new Response(null, { status }));
+    const response = await GET(new Request("https://app.example.test/r/synthetic-private-code"), { params: Promise.resolve({ code: "synthetic-private-code" }) });
+    expect(response.status).toBe(307);
+    expect(mocks.recordPlatformReferralClick).not.toHaveBeenCalled();
+    if (status === 503) expect(warn.mock.calls).toEqual([["platform_referral_source_unavailable"]]);
+    else expect(warn).not.toHaveBeenCalled();
+  } finally { warn.mockRestore(); }
 });

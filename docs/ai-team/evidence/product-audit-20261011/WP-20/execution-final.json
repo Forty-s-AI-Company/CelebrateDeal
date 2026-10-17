@@ -1,0 +1,11 @@
+{
+  "kind": "execution",
+  "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+  "status": "COMPLETED",
+  "source": "desktop_native",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "scope": "Authorized nonproduction implementation; no publish/deploy/push"
+}

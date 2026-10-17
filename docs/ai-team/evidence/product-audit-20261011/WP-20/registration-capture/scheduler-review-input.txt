@@ -1,0 +1,197 @@
+Review this bounded registration reconciliation scheduler/HTTP adapter snapshot. Return concise JSON summary and findings with severity BLOCKER/MAJOR/MINOR/NIT, file, area, issue, evidence, impact, recommended_fix, required_test, confidence. Keep total output under 6000 characters; prioritize actionable correctness/security flaws; do not repeat source. No tools. Do not certify unprovided implementation. Context: internal job POST authenticates via constant-time JOB_SECRET check before parsing; missing configuration denies. readJsonBody enforces byte bound. materializeMetricRegistration validates vendor/live/submission and expectedVersionId in SQL, bounded ReadCommitted transaction 10s plus 5s acquire, returns recorded or explicit pending/terminal outcomes; throws sanitized persistence failure. Reconciliation coverage intentionally unknown, completion means pass completion only. No deployed scheduler yet. Report any necessary integration limitation in summary rather than invented findings. Synthetic/local only. Review current source, including exhausted-budget contradictory receipt fix.
+
+FILE src/lib/live-metric-registration-pass.ts
+import { z } from "zod";
+import { MetricRegistrationReconcileRequest } from "./live-metric-registration-reconcile";
+
+const count = z.number().int().min(0).max(20);
+const Receipt = z.object({ status: z.enum(["batch_complete", "budget_exhausted"]),
+  processed: count, retryable: count, terminalGaps: count,
+  outcomes: z.record(z.string(), count), nextSubmissionId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable(),
+  hasMore: z.boolean(), coverage: z.literal("unknown") }).strict();
+type Input = z.infer<typeof MetricRegistrationReconcileRequest>;
+type SendPage = (input: Input, signal: AbortSignal) => Promise<unknown>;
+
+/** One bounded scheduler pass. Transport supplies authentication and a reviewed
+ * target; this module never discovers hosts or credentials. Resume at the last
+ * acknowledged cursor after failures; start from null on a later full pass.
+ */
+export async function runMetricRegistrationPass(sendPage: SendPage, input: Input, maxPages = 5) {
+  const request = MetricRegistrationReconcileRequest.parse(input);
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 10) throw new Error("Invalid page budget");
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error("Pass deadline")); }, 60000);
+  });
+  let pages = 0, processed = 0, retryable = 0, terminalGaps = 0;
+  let cursor = request.afterSubmissionId;
+  const seen = new Set<string>(); if (cursor !== null) seen.add(cursor);
+  const result = (status: "pass_complete" | "page_limit" | "transport_unavailable" | "invalid_receipt" | "no_progress" | "deadline") =>
+    ({ status, pages, processed, retryable, terminalGaps, nextSubmissionId: cursor, coverage: "unknown" as const });
+  try {
+    while (pages < maxPages) {
+      let raw: unknown;
+      try { raw = await Promise.race([sendPage({ ...request, afterSubmissionId: cursor }, controller.signal), deadline]); }
+      catch { return result(controller.signal.aborted ? "deadline" : "transport_unavailable"); }
+      const parsed = Receipt.safeParse(raw);
+      if (!parsed.success) return result("invalid_receipt");
+      const page = parsed.data;
+      // Exhausting the batch budget necessarily leaves unprocessed candidates.
+      // Reject contradictory completion claims before acknowledging any cursor.
+      if ((page.status === "budget_exhausted" && !page.hasMore)
+        || page.processed > request.take || page.retryable + page.terminalGaps > page.processed
+        || Object.values(page.outcomes).reduce((sum, n) => sum+n, 0) !== page.processed
+        || (page.processed === 0 && page.nextSubmissionId !== cursor)) return result("invalid_receipt");
+      if (page.processed > 0 && (page.nextSubmissionId === null || seen.has(page.nextSubmissionId))) return result("no_progress");
+      pages++; processed += page.processed; retryable += page.retryable; terminalGaps += page.terminalGaps;
+      cursor = page.nextSubmissionId; if (cursor !== null) seen.add(cursor);
+      if (!page.hasMore) return result("pass_complete");
+      if (page.processed === 0) return result("no_progress");
+    }
+    return result("page_limit");
+  } finally { clearTimeout(timer); controller.abort(); }
+}
+
+FILE src/lib/live-metric-registration-reconcile.ts
+import { performance } from "node:perf_hooks";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { materializeMetricRegistration, MetricRegistrationError } from "./live-metric-registration-capture";
+
+const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+export const MetricRegistrationReconcileRequest = z.object({ vendorId: id, liveId: id, versionId: id,
+  afterSubmissionId: id.nullable(), take: z.number().int().min(1).max(20) }).strict();
+type Database = Pick<PrismaClient, "$transaction">;
+
+/** Internal scheduler boundary; caller must authorize the supplied scope.
+ * Each pass visits captures, including unresolved/terminal ones, in stable key
+ * order. Continue with nextSubmissionId while hasMore, then start a NEW pass
+ * from null later so late verifications and failed writes are reconsidered.
+ * A completed page/pass is never proof of complete collection or zero loss.
+ */
+export async function reconcileMetricRegistrations(db: Database, value: z.infer<typeof MetricRegistrationReconcileRequest>) {
+  const parsed = MetricRegistrationReconcileRequest.safeParse(value);
+  if (!parsed.success) throw new MetricRegistrationError("INVALID_INPUT");
+  const input = parsed.data;
+  const started = performance.now();
+  let candidates: { submissionId: string }[];
+  try {
+    candidates = await db.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true)`);
+      const cursor = input.afterSubmissionId === null ? Prisma.empty : Prisma.sql`AND "submissionId">${input.afterSubmissionId}`;
+      return tx.$queryRaw<{ submissionId: string }[]>(Prisma.sql`
+        SELECT "submissionId" FROM "LiveMetricRegistrationCapture"
+        WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+          ${cursor} ORDER BY "submissionId" ASC LIMIT ${input.take + 1}`);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 7000, maxWait: 3000 });
+  } catch { throw new MetricRegistrationError("PERSISTENCE_UNAVAILABLE"); }
+  const page = candidates.slice(0, input.take);
+  const outcomes: Record<string, number> = {};
+  let processed = 0, retryable = 0, terminalGaps = 0;
+  let nextSubmissionId = input.afterSubmissionId;
+  for (const candidate of page) {
+    // One already-started projection may use its bounded 10s transaction plus
+    // 5s acquisition wait. Never start another after the 20s batch deadline.
+    if (performance.now() - started >= 20000) break;
+    try {
+      const result = await materializeMetricRegistration(db, {
+        vendorId: input.vendorId, liveId: input.liveId, submissionId: candidate.submissionId,
+      }, input.versionId);
+      outcomes[result.status] = (outcomes[result.status] ?? 0) + 1;
+      if (result.retryable) retryable++;
+      else if (result.status !== "recorded") terminalGaps++;
+    } catch {
+      outcomes.persistence_unavailable = (outcomes.persistence_unavailable ?? 0) + 1;
+      retryable++;
+    }
+    // Advance even over failures: a bad row cannot starve the rest of a pass.
+    // A new pass must revisit it; this cursor is NOT an acceptance watermark.
+    nextSubmissionId = candidate.submissionId;
+    processed++;
+  }
+  return { status: processed < page.length ? "budget_exhausted" as const : "batch_complete" as const,
+    processed, retryable, terminalGaps, outcomes, nextSubmissionId,
+    hasMore: processed < page.length || candidates.length > input.take,
+    coverage: "unknown" as const };
+}
+
+FILE src/app/api/jobs/live-metric-registrations/route.ts
+import { NextResponse } from "next/server";
+import { readJsonBody, requireJobSecret } from "@/lib/api-security";
+import { getDb } from "@/lib/db";
+import { MetricRegistrationReconcileRequest, reconcileMetricRegistrations } from "@/lib/live-metric-registration-reconcile";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+const headers = { "Cache-Control": "private, no-store" };
+const json = (value: unknown, status: number) => NextResponse.json(value, { status, headers });
+
+/** Scheduler-only: one explicitly scoped bounded page per authenticated call.
+ * No global scan or implicit collection enablement. The caller continues the
+ * cursor, and starts a fresh pass later; coverage remains the service's unknown.
+ */
+export async function POST(request: Request) {
+  if (!requireJobSecret(request)) return json({ error: "Unauthorized" }, 401);
+  let body: unknown;
+  try { body = await readJsonBody(request, 1024); }
+  catch { return json({ error: "Invalid reconciliation request" }, 400); }
+  const parsed = MetricRegistrationReconcileRequest.safeParse(body);
+  if (!parsed.success) return json({ error: "Invalid reconciliation request" }, 400);
+  try {
+    const result = await reconcileMetricRegistrations(getDb(), parsed.data);
+    // Successful execution does not promise every row is recorded. Pending and
+    // terminal gaps remain explicit for the scheduler and later report coverage.
+    return json(result, 200);
+  } catch {
+    return json({ error: "Reconciliation unavailable" }, 503);
+  }
+}
+
+FILE src/lib/live-metric-registration-pass.test.ts
+import { describe, expect, it, vi } from "vitest";
+import { runMetricRegistrationPass } from "./live-metric-registration-pass";
+const input = { vendorId: "v", liveId: "l", versionId: "version", afterSubmissionId: null, take: 2 };
+const page = (cursor: string, hasMore = true) => ({ status: "batch_complete", processed: 1, retryable: 1, terminalGaps: 0,
+  outcomes: { pending_verification: 1 }, nextSubmissionId: cursor, hasMore, coverage: "unknown" });
+describe("bounded metric reconciliation pass", () => {
+  it("advances pages without promoting unknown coverage", async () => {
+    const send = vi.fn().mockResolvedValueOnce(page("a")).mockResolvedValueOnce(page("b", false));
+    expect(await runMetricRegistrationPass(send, input)).toMatchObject({ status: "pass_complete", pages: 2, processed: 2, retryable: 2, coverage: "unknown" });
+    expect(send.mock.calls[1][0].afterSubmissionId).toBe("a");
+  });
+  it("keeps the last acknowledged cursor on transport failure", async () => {
+    const send = vi.fn().mockResolvedValueOnce(page("a")).mockRejectedValueOnce(new Error("synthetic"));
+    expect(await runMetricRegistrationPass(send, input)).toMatchObject({ status: "transport_unavailable", nextSubmissionId: "a", pages: 1 });
+  });
+  it("stops on cycles and page limits", async () => {
+    expect(await runMetricRegistrationPass(vi.fn().mockResolvedValue(page("a")), input)).toMatchObject({ status: "no_progress", pages: 1 });
+    expect(await runMetricRegistrationPass(vi.fn().mockResolvedValue(page("a")), input, 1)).toMatchObject({ status: "page_limit", pages: 1 });
+  });
+  it("rejects inconsistent counters and completion claims", async () => {
+    expect((await runMetricRegistrationPass(async () => ({ ...page("a"), processed: 2 }), input)).status).toBe("invalid_receipt");
+    expect((await runMetricRegistrationPass(async () => ({ ...page("a"), coverage: "complete" }), input)).status).toBe("invalid_receipt");
+  });
+  it("rejects exhausted-budget completion without acknowledging its cursor", async () => {
+    const send = vi.fn().mockResolvedValueOnce(page("a"))
+      .mockResolvedValueOnce({ ...page("b", false), status: "budget_exhausted" });
+    expect(await runMetricRegistrationPass(send, input)).toMatchObject({
+      status: "invalid_receipt", pages: 1, processed: 1, nextSubmissionId: "a",
+    });
+  });
+  it("continues after a valid exhausted-budget page", async () => {
+    const send = vi.fn().mockResolvedValueOnce({ ...page("a"), status: "budget_exhausted" })
+      .mockResolvedValueOnce(page("b", false));
+    expect(await runMetricRegistrationPass(send, input)).toMatchObject({
+      status: "pass_complete", pages: 2, processed: 2, nextSubmissionId: "b", coverage: "unknown",
+    });
+  });
+  it("aborts a transport that never responds at the deadline", async () => {
+    vi.useFakeTimers(); let signal: AbortSignal | undefined;
+    try {
+      const running = runMetricRegistrationPass(async (_input, current) => { signal = current; return new Promise(() => {}); }, input);
+      await vi.advanceTimersByTimeAsync(60000);
+      expect((await running).status).toBe("deadline"); expect(signal?.aborted).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+});

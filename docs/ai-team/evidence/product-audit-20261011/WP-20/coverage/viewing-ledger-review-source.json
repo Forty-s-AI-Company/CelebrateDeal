@@ -1,0 +1,11 @@
+{
+  "files": {
+    "prisma/migrations/20261016060000_live_metric_viewing_source/migration.sql": "f1e771c93d40c5951cf7cdce3b8a3f4e9cd6b27f6921ab6539e82bda105ac786",
+    "prisma/schema.prisma": "99103c85b477bdaee9172333cdf6a4ea5e39fdafcc00cb30e2995124102d0353",
+    "src/lib/live-metric-viewing-source-audit.ts": "7c172267d1a8128c241a08d9ac0cf9704cc3534910457b67fdf4d3f509b67438",
+    "src/lib/live-metric-viewing-source-audit.test.ts": "7b3de352ab94c4d4626c6a00e0152eefd20b11ceda2c0070e483e97d2d0f0c95",
+    "scripts/wp20-viewing-source-ledger-disposable.mjs": "a84b7d08553fa73b1c9d49747aaacae764974c789ab2debd65026f02ffd0f32c"
+  },
+  "reviewScope": "Full118 SQL/new models; changed private audit blocks; test/harness receipt only",
+  "promptCharacters": 15383
+}

@@ -13,9 +13,9 @@ vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
 vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
-    lineOfficialAccount: { findUnique: mocks.accountFindUnique },
+    lineOfficialAccount: { findMany: mocks.accountFindUnique },
     lineDelivery: { findMany: mocks.deliveryFindMany },
-    lineRichMenuDraft: { findUnique: mocks.draftFindUnique },
+    lineRichMenuDraft: { findFirst: mocks.draftFindUnique },
   }),
 }));
 vi.mock("@/components/line-rich-menu-studio", () => ({
@@ -34,12 +34,12 @@ beforeEach(() => {
   mocks.draftFindUnique.mockResolvedValue(null);
   mocks.requireVendorOwner.mockResolvedValue({ vendor: { id: "vendor-1" } });
   mocks.getCsrfToken.mockResolvedValue("csrf-test-token");
-  mocks.accountFindUnique.mockResolvedValue({
-    id: "line-account-1",
+  mocks.accountFindUnique.mockResolvedValue([{
+    id: "line-account-1", displayName:"Synthetic account", isDefault:true,
     status: "active",
     connectedAt: new Date("2026-09-05T00:00:00Z"),
     lastValidatedAt: new Date("2026-09-06T00:00:00Z"),
-  });
+  }]);
   mocks.deliveryFindMany.mockResolvedValue([{
     id: "delivery-1",
     trigger: "live_started",
@@ -52,29 +52,44 @@ beforeEach(() => {
 });
 
 describe("LineSettingsPage", () => {
+  it("selects a saved account without exposing credentials or another account's draft",async()=>{
+    const existing=(await mocks.accountFindUnique())[0];
+    mocks.accountFindUnique.mockResolvedValue([existing,{...existing,id:"second",displayName:"Second course account",isDefault:false}]);
+    const html=renderToStaticMarkup(await LineSettingsPage({searchParams:Promise.resolve({accountId:"second"})}));
+    expect(html).toContain('value="second" selected=""');expect(html).toContain("/api/webhooks/line/vendor-1/second");
+    expect(mocks.draftFindUnique).toHaveBeenCalledWith(expect.objectContaining({where:{vendorId:"vendor-1",lineOfficialAccountId:"second"}}));
+    expect(mocks.deliveryFindMany).toHaveBeenCalledWith(expect.objectContaining({where:{vendorId:"vendor-1",lineOfficialAccountId:"second"}}));
+  });
+  it("opens a separate new-account form without reading another account's data",async()=>{
+    const html=renderToStaticMarkup(await LineSettingsPage({searchParams:Promise.resolve({accountId:"new"})}));
+    expect(html).toContain("manager.line.biz");expect(mocks.draftFindUnique).not.toHaveBeenCalled();expect(mocks.deliveryFindMany).not.toHaveBeenCalled();
+  });
+  it("rejects an unknown or foreign account instead of displaying a create form",async()=>{
+    await expect(LineSettingsPage({searchParams:Promise.resolve({accountId:"foreign"})})).rejects.toThrow();expect(mocks.draftFindUnique).not.toHaveBeenCalled();expect(mocks.deliveryFindMany).not.toHaveBeenCalled();
+  });
   it("renders the tenant webhook URL and scoped masked delivery log", async () => {
-    const html = renderToStaticMarkup(await LineSettingsPage());
+    const html = renderToStaticMarkup(await LineSettingsPage({}));
 
     expect(mocks.accountFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1" } }));
     expect(mocks.deliveryFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { vendorId: "vendor-1", lineOfficialAccountId: "line-account-1" },
     }));
-    expect(html).toContain("/api/webhooks/line/vendor-1");
+    expect(html).toContain("/api/webhooks/line/vendor-1/line-account-1");
     expect(html).toContain("推播紀錄");
     expect(html).toContain("iden…3456");
     expect(html).not.toContain("identity-123456");
-    expect(mocks.draftFindUnique).toHaveBeenCalledWith({ where: { vendorId: "vendor-1" }, select: { id: true, revision: true, menu: true } });
+    expect(mocks.draftFindUnique).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", lineOfficialAccountId:"line-account-1" }, select: { id: true, revision: true, menu: true } });
     expect(html).toContain("rich-menu-studio");
   });
   it("preserves invalid stored drafts instead of presenting a blank overwrite form", async () => {
     mocks.draftFindUnique.mockResolvedValue({ id: "draft-1", revision: 1, menu: {} });
-    const html = renderToStaticMarkup(await LineSettingsPage());
+    const html = renderToStaticMarkup(await LineSettingsPage({}));
     expect(html).toContain("原始草稿已保留");
     expect(html).not.toContain("rich-menu-studio");
   });
   it("does not read configuration when owner authorization fails", async () => {
     mocks.requireVendorOwner.mockRejectedValueOnce(new Error("forbidden"));
-    await expect(LineSettingsPage()).rejects.toThrow("forbidden");
+    await expect(LineSettingsPage({})).rejects.toThrow("forbidden");
     expect(mocks.draftFindUnique).not.toHaveBeenCalled();
   });
 });

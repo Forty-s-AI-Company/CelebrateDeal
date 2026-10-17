@@ -11,7 +11,8 @@ import {
   verifyFormSubmissionLineBindingToken,
 } from "@/lib/form-submission-line-binding-session";
 import { beginLineLogin, type LineLoginSubjectType } from "@/lib/line-login";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { LINE_LOGIN_BROWSER_COOKIE, lineLoginBrowserCookieOptions } from "@/lib/line-login-browser-binding";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 const StartRequest = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("user"), redirectPath: z.string().max(1_024).default("/dashboard") }).strict(),
@@ -81,7 +82,9 @@ export async function POST(request: Request) {
       subjectId,
       redirectPath: parsed.data.redirectPath,
     });
-    return NextResponse.json({ authorizationUrl: result.authorizationUrl }, { headers: { "Cache-Control": "no-store" } });
+    const response = NextResponse.json({ authorizationUrl: result.authorizationUrl }, { headers: { "Cache-Control": "no-store" } });
+    response.cookies.set(LINE_LOGIN_BROWSER_COOKIE,result.browserBinding,lineLoginBrowserCookieOptions());
+    return response;
   } catch {
     return NextResponse.json({ error: "line_login_unavailable" }, { status: 503 });
   }

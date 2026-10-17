@@ -66,6 +66,45 @@ afterEach(() => {
 });
 
 describe("webhook retry worker", () => {
+  it("drains twenty due events without overlapping processors or resetting retry budgets", async () => {
+    const due = Array.from({ length: 20 }, (_, index) => event({
+      id: `due-${index}`, retryCount: 1,
+      payload: { normalized: { provider: "demo", eventId: `due-reference-${index}` } },
+    }));
+    dependencies.db.webhookEvent.findMany.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce(due);
+    dependencies.db.webhookEvent.findUnique.mockImplementation(async ({ where }) => due.find(item => item.id === where.id));
+    dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+    let releaseFirst!: () => void;
+    let enteredFirst!: () => void;
+    const firstEntered = new Promise<void>(resolve => { enteredFirst = resolve; });
+    const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let active = 0, peak = 0;
+    dependencies.processPaymentWebhook.mockImplementation(async (_payload, claimed) => {
+      active += 1; peak = Math.max(peak, active);
+      expect(claimed.retryCount).toBe(2);
+      expect(claimed.maxRetries).toBe(3);
+      try {
+        if (claimed.id === "due-0") { enteredFirst(); await firstGate; }
+        return { vendor: { id: "vendor-1" }, transaction: { id: `transaction-${claimed.id}` } };
+      } finally { active -= 1; }
+    });
+    const draining = processDueWebhookRetries(20);
+    await firstEntered;
+    try {
+      expect(dependencies.processPaymentWebhook).toHaveBeenCalledTimes(1);
+    } finally { releaseFirst(); }
+    const results = await draining;
+    expect(results).toEqual(due.map(item => ({ eventId: item.id, status: "processed" })));
+    expect(peak).toBe(1);
+    expect(dependencies.processPaymentWebhook).toHaveBeenCalledTimes(20);
+    for (const item of due) {
+      expect(dependencies.db.webhookEvent.updateMany).toHaveBeenCalledWith({
+        where: { id: item.id, status: "failed", retryCount: 1, updatedAt: item.updatedAt },
+        data: { status: "retrying", retryCount: { increment: 1 }, nextRetryAt: null },
+      });
+    }
+  });
+
   it("allows only one worker to claim a retry attempt", async () => {
     const storedEvent = event();
     dependencies.db.webhookEvent.findUnique.mockResolvedValue(storedEvent);

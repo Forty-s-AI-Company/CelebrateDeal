@@ -1,0 +1,8 @@
+{
+  "defaultCheck": "FAIL",
+  "reportedLines": 4225,
+  "windowsLineEndingCheck": "PASS",
+  "normalization": "Git cr-at-eol only; no file edits and actual spaces still checked",
+  "diagnostics": [],
+  "firstCaptureFailure": "Python cp950 decoder; corrected with explicit UTF-8"
+}

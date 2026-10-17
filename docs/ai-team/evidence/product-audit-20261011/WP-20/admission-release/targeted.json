@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "targeted", "revision": "sha256:ccf67528d59d7d15820c5f3e3894f4421abbd43910dba2c67f454bfe81486f0f", "status": "PASS", "exit_code": 0, "duration_seconds": 5.218}

@@ -1,0 +1,424 @@
+{
+  "status": "PASS",
+  "scope": "Real client components and app CSS, synthetic server-action/report adapters; not authenticated full-app E2E",
+  "checks": [
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "step",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "step",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "step",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "popup",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "popup",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "popup",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "leads",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "銷售紀錄",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "A/B 測試",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "截止設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "頁面設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "網站設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "新增步驟",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "step",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "step",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "step",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "popup",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "popup",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "popup",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "leads",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "銷售紀錄",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "A/B 測試",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "截止設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "頁面設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "網站設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "新增步驟",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "step",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "step",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "step",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "popup",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "popup",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "popup",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "leads",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "銷售紀錄",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "A/B 測試",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "截止設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "頁面設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "網站設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "mode": "operations",
+      "state": "新增步驟",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "step",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "step",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "step",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "popup",
+      "state": "applied-action",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "popup",
+      "state": "missing-target",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "popup",
+      "state": "same-node-action-restored",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "leads",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "銷售紀錄",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "A/B 測試",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "截止設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "頁面設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "網站設定",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "mode": "operations",
+      "state": "新增步驟",
+      "behavior": "PASS",
+      "a11ySerious": []
+    }
+  ],
+  "cleanup": true,
+  "stage": "firefox:mobile:operations"
+}

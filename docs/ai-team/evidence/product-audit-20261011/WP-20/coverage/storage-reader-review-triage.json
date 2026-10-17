@@ -1,0 +1,17 @@
+{
+  "status": "REVIEW_RECEIVED_NOT_ACCEPTED",
+  "major_invalidation_race": {
+    "decision": "DISPUTED_PENDING_EXTERNAL_ADJUDICATION",
+    "evidence": "Existing wp20_metric_report_create/claim/finish all lock LiveMetricVersion FOR UPDATE; conflicts with audit FOR SHARE. Required dependency omitted from first review snapshot."
+  },
+  "major_collection_outage": {
+    "decision": "DISPUTED_PENDING_EXTERNAL_ADJUDICATION",
+    "evidence": "Existing version BEFORE UPDATE always increments sourceRevision; collectionStartedAt immutable once set; actual reader DB test disables collection and rejects old certificate. Re-enable case still needs explicit test."
+  },
+  "major_kind_coverage": {
+    "decision": "CONFIRMED_INCOMPLETE_INTEGRATION",
+    "next": "Read registration/viewing/order coverage separately; gate future report calculator adapter by each dependency."
+  },
+  "minor_provenance": "Producer/run canonical digest and idempotency contract pending; id already PK but no producer design yet.",
+  "minor_fragmentation": "Producer coalescing/window-bounded audit required; current cap intentionally fail-closed."
+}

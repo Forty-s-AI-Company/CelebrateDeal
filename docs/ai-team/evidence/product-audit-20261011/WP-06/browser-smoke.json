@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "environment": "loopback disposable synthetic",
+  "results": [
+    {
+      "scenario": "partner navigation",
+      "path": "/partner-pages",
+      "notFound": 0
+    },
+    {
+      "scenario": "LINE navigation",
+      "path": "/settings/line",
+      "notFound": 0
+    },
+    {
+      "scenario": "legacy commissions",
+      "path": "/affiliates",
+      "status": 200
+    }
+  ],
+  "cookiesCaptured": false
+}

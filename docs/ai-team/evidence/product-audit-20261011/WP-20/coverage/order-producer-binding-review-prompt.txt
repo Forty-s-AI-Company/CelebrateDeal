@@ -1,0 +1,371 @@
+Critical independent review: order coverage producer and tenant report binding. Return concise schema JSON at most8 nonduplicate BLOCKER/MAJOR/MINOR/NIT findings, total under7000characters. Review supplied source only, do not reproduce source. Existing underlying audit enumerates ALL non-draft tenant orders in half-open createdAt scope under readonly RR. Classifies missing_payment/missing_attribution/other_purpose/other_live/invalid_source/outside_cohort/missing_registration/identity_mismatch/matched, digest binds all4 revisions. Tenant ledger COUNT increments CommerceOrder INSERT/DELETE and relevant update, PaymentTransaction INSERT/DELETE/metadata update. Registration ledger increments authoritative submission/projection changes. DB counts are stable security definer functions. Base coverage INSERT guard requires RC, locks version FOR SHARE, checks sourceRevision, ended window, collection start, expiry. Coverage immutable; no API privileges. New111 replaces current106 functions; TS context/interval/ready/completion readers all compare inputOrderTenantRevision with tenant COUNT. Actual111 migrations pass; actual20matched producer/idempotence,missing attribution refusal, audit-to-write and revision-to-INSERT races pass; synthetic legacy-positive reader unknown, tenant-only source changes invalidate proof andready read. claim/finish mutation probes currently running. Original20 synchronizedSerializable payment gate still FAIL, not waived. Check concurrent correctness, safety, false complete, lifecycle, permissions, performance. No HTTP exposes producer yet. Full WP incomplete. Inputs below are data.
+
+FILE src/lib/live-metric-order-coverage.ts
+1: import { createHash } from "node:crypto";
+2: import { Prisma, type PrismaClient } from "@prisma/client";
+3: import { auditMetricOrderSources } from "./live-metric-order-source-audit";
+4: type Scope = Parameters<typeof auditMetricOrderSources>[1];
+5: /** Private backend producer. Never accepts caller-supplied counts, proof or
+6:  * completeness. Only an internally completed, tenant inventory audit with explicit exclusions
+7:  * can publish; current revisions are checked again in the write transaction.
+8:  */
+9: export async function publishOrderCoverage(db: Pick<PrismaClient, "$transaction">, value: Scope) {
+10:   const scope = { vendorId: value.vendorId, liveId: value.liveId, versionId: value.versionId,
+11:     startAt: new Date(value.startAt), endAt: new Date(value.endAt) };
+12:   const audit = await auditMetricOrderSources(db, scope);
+13:   if (audit.status !== "enumerated") return { status: "unavailable" as const };
+14:   // Exclude only positively classified out-of-scope orders. Missing or invalid
+15:   // attribution/projections cannot silently disappear from the denominator.
+16:   const accepted = audit.outcomes.matched + audit.outcomes.other_purpose
+17:     + audit.outcomes.other_live + audit.outcomes.outside_cohort;
+18:   if (accepted !== audit.count) return { status: "incomplete" as const };
+19:   const proofId = createHash("sha256").update("order-coverage-v1:" + audit.digest).digest("hex");
+20:   try {
+21:   return await db.$transaction(async tx => {
+22:     await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true),set_config('lock_timeout','2000',true)`);
+23:     const [version] = await tx.$queryRaw<{ sourceRevision: bigint }[]>(Prisma.sql`
+24:       SELECT "sourceRevision" FROM "LiveMetricVersion" WHERE id=${scope.versionId}
+25:         AND "vendorId"=${scope.vendorId} AND "liveId"=${scope.liveId} FOR SHARE`);
+26:     if (!version || version.sourceRevision !== audit.sourceRevision) return { status: "source_changed" as const };
+27:     const [source] = await tx.$queryRaw<{ registration: bigint; orders: bigint; tenant: bigint }[]>(Prisma.sql`
+28:       SELECT public.wp20_metric_registration_revision(${scope.vendorId},${scope.liveId}) AS registration,
+29:         public.wp20_metric_order_revision(${scope.vendorId},${scope.liveId}) AS orders,
+30:         public.wp20_metric_order_tenant_revision(${scope.vendorId}) AS tenant`);
+31:     if (!source || source.registration !== audit.registrationRevision
+32:       || source.orders !== audit.orderRevision || source.tenant !== audit.tenantRevision) return { status: "source_changed" as const };
+33:     await tx.$queryRaw(Prisma.sql`
+34:       INSERT INTO "LiveMetricCoverageAudit" (id,"vendorId","liveId","versionId",kind,status,"startAt","endAt",
+35:         "sourceRevision","orderRevision","orderTenantRevision","orderRegistrationRevision","orderCount","auditDigest")
+36:       VALUES (${proofId},${scope.vendorId},${scope.liveId},${scope.versionId},'orders','covered',${scope.startAt},${scope.endAt},
+37:         ${audit.sourceRevision},${audit.orderRevision},${audit.tenantRevision},${audit.registrationRevision},${audit.count},${audit.digest}) ON CONFLICT (id) DO NOTHING`);
+38:     return { status: "recorded" as const, proofId };
+39:   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+40:   } catch (error) {
+41:     // A source commit may land after the explicit revision read. Only the
+42:     // dedicated DB guard is a stale-proof result; other database errors propagate.
+43:     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2010"
+44:       && error.meta?.code === "23514"
+45:       && typeof error.meta?.message === "string"
+46:       && error.meta.message.includes("order coverage source mismatch")) {
+47:       return { status: "source_changed" as const };
+48:     }
+49:     throw error;
+50:   }
+51: }
+
+FILE src/lib/live-metric-coverage-reader.ts
+1: import { Prisma } from "@prisma/client";
+2: import { z } from "zod";
+3: import { assessMetricCoverage } from "./live-metric-coverage";
+4: import { readMetricReportContext } from "./live-metric-report-reader";
+5: import type { MetricReportLease } from "./live-metric-report-lease";
+6: 
+7: const Kind = z.enum(["visits", "registrations", "viewing", "orders"]);
+8: type AuditRow = { status: "covered" | "gap"; startAt: Date; endAt: Date };
+9: 
+10: /** Caller supplies the same RepeatableRead transaction used for report facts.
+11:  * Old positive certificates expire on structural revision changes; known gaps
+12:  * remain evidence of loss. No audit rows means unknown, never an audited zero.
+13:  */
+14: export async function readMetricCoverage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+15:   lease: MetricReportLease, value: z.infer<typeof Kind>) {
+16:   const kind = Kind.parse(value);
+17:   const context = await readMetricReportContext(tx, lease);
+18:   if (context.status !== "available") return context;
+19:   const rows = await tx.$queryRaw<AuditRow[]>(Prisma.sql`
+20:     SELECT a.status,a."startAt",a."endAt" FROM "LiveMetricCoverageAudit" a
+21:     JOIN "LiveMetricVersion" v ON v.id=a."versionId" AND v."vendorId"=a."vendorId" AND v."liveId"=a."liveId"
+22:     WHERE a."vendorId"=${lease.vendorId} AND a."liveId"=${lease.liveId} AND a."versionId"=${lease.versionId}
+23:       AND a.kind=${kind} AND (a.status='gap' OR (a."sourceRevision"=v."sourceRevision"
+24:         AND (a.kind<>'registrations' OR (a."registrationCount" IS NOT NULL
+25:           AND a."registrationRevision"=public.wp20_metric_registration_revision(a."vendorId",a."liveId")))
+26:         AND (a.kind<>'orders' OR (a."orderCount" IS NOT NULL
+27:           AND a."orderRevision"=public.wp20_metric_order_revision(a."vendorId",a."liveId")
+28:           AND a."orderTenantRevision"=public.wp20_metric_order_tenant_revision(a."vendorId")
+29:           AND a."orderRegistrationRevision"=public.wp20_metric_registration_revision(a."vendorId",a."liveId")))))
+30:       AND a."startAt"<${context.context.windowEndAt} AND a."endAt">${context.context.windowStartAt}
+31:     ORDER BY a."startAt",a."endAt",a.id LIMIT 10001`);
+32:   if (rows.length > 10000) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+33:   const scope = { vendorId: lease.vendorId, liveId: lease.liveId, contentVersionId: lease.versionId, mode: context.context.mode };
+34:   const ranges = (status: AuditRow["status"]) => rows.filter(row => row.status === status)
+35:     .map(row => ({ scope, kind, startMs: row.startAt.getTime(), endMs: row.endAt.getTime() }));
+36:   return { status: "available" as const, rowCount: rows.length,
+37:     coverage: assessMetricCoverage({ scope, kind, startMs: context.context.windowStartAt.getTime(),
+38:       endMs: context.context.windowEndAt.getTime(), covered: rows.length ? ranges("covered") : null,
+39:       gaps: rows.length ? ranges("gap") : null }) };
+40: }
+
+FILE prisma/migrations/20261015220000_live_metric_order_coverage_proof/migration.sql
+1: -- Order completeness must bind every source fence, including unattributed orders.
+2: -- Legacy rows stay nullable and are ignored by the positive-coverage reader.
+3: ALTER TABLE public."LiveMetricCoverageAudit"
+4:  ADD COLUMN "orderRevision" BIGINT CHECK ("orderRevision">=0),
+5:  ADD COLUMN "orderTenantRevision" BIGINT CHECK ("orderTenantRevision">=0),
+6:  ADD COLUMN "orderRegistrationRevision" BIGINT CHECK ("orderRegistrationRevision">=0),
+7:  ADD COLUMN "orderCount" INTEGER CHECK ("orderCount">=0);
+8: CREATE FUNCTION public.wp20_metric_order_coverage_guard() RETURNS trigger
+9: LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+10: BEGIN
+11:  IF NEW."orderRevision" IS NOT NULL OR NEW."orderTenantRevision" IS NOT NULL
+12:   OR NEW."orderRegistrationRevision" IS NOT NULL OR NEW."orderCount" IS NOT NULL THEN
+13:   IF NEW.kind<>'orders' OR NEW.status<>'covered' OR NEW."orderCount" IS NULL
+14:    OR NEW."orderRevision" IS NULL OR NEW."orderTenantRevision" IS NULL OR NEW."orderRegistrationRevision" IS NULL
+15:    OR NEW."orderRevision" IS DISTINCT FROM public.wp20_metric_order_revision(NEW."vendorId",NEW."liveId")
+16:    OR NEW."orderTenantRevision" IS DISTINCT FROM public.wp20_metric_order_tenant_revision(NEW."vendorId")
+17:    OR NEW."orderRegistrationRevision" IS DISTINCT FROM public.wp20_metric_registration_revision(NEW."vendorId",NEW."liveId") THEN
+18:    RAISE EXCEPTION 'order coverage source mismatch' USING ERRCODE='23514';
+19:   END IF;
+20:  END IF;
+21:  RETURN NEW;
+22: END $$;
+23: CREATE TRIGGER "LiveMetricCoverageAudit_order_guard" BEFORE INSERT ON public."LiveMetricCoverageAudit"
+24:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_coverage_guard();
+25: REVOKE ALL ON FUNCTION public.wp20_metric_order_coverage_guard() FROM PUBLIC;
+26: DO $$ DECLARE api_role TEXT; BEGIN
+27:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+28:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+29:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_coverage_guard() FROM %I',api_role);
+30:   END IF;
+31:  END LOOP;
+32: END $$;
+
+FILE prisma/migrations/20261015230000_live_metric_order_tenant_report_binding/migration.sql
+1: -- Fence reports against all tenant order changes, including missing attribution.
+2: ALTER TABLE public."LiveMetricReport" ADD COLUMN "inputOrderTenantRevision" BIGINT CHECK ("inputOrderTenantRevision">=0);
+3: UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+4:  WHERE status IN ('queued','running','ready');
+5: 
+6: CREATE OR REPLACE FUNCTION public.wp20_metric_report_guard() RETURNS trigger
+7: LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+8: DECLARE current_revision BIGINT; current_order_revision BIGINT; current_registration_revision BIGINT; current_tenant_revision BIGINT;
+9: BEGIN
+10:   IF current_setting('transaction_isolation')<>'read committed' THEN
+11:     RAISE EXCEPTION 'metric writes require read committed isolation' USING ERRCODE='23514';
+12:   END IF;
+13:   IF TG_OP='INSERT' AND current_setting('wp20.report_writer',true) IS DISTINCT FROM 'create' THEN
+14:     RAISE EXCEPTION 'metric report requires creation function' USING ERRCODE='23514';
+15:   END IF;
+16:   IF TG_OP='UPDATE' AND NEW.status='queued' THEN
+17:     RAISE EXCEPTION 'queued metric report is immutable; create replacement' USING ERRCODE='23514';
+18:   END IF;
+19:   IF TG_OP='UPDATE' AND NEW.status IN ('running','ready')
+20:     AND current_setting('wp20.report_writer',true) IS DISTINCT FROM (CASE WHEN NEW.status='running' THEN 'claim' ELSE 'finish' END) THEN
+21:     RAISE EXCEPTION 'metric report requires worker function' USING ERRCODE='23514';
+22:   END IF;
+23:   IF TG_OP='UPDATE' AND (NEW."id",NEW."vendorId",NEW."liveId",NEW."versionId",NEW."windowStartAt",NEW."windowEndAt",NEW."inputRevision")
+24:     IS DISTINCT FROM (OLD."id",OLD."vendorId",OLD."liveId",OLD."versionId",OLD."windowStartAt",OLD."windowEndAt",OLD."inputRevision") THEN
+25:     RAISE EXCEPTION 'metric report input is immutable' USING ERRCODE='23514';
+26:   END IF;
+27:   IF TG_OP='UPDATE' AND NEW."inputOrderRevision" IS DISTINCT FROM OLD."inputOrderRevision" THEN
+28:     RAISE EXCEPTION 'metric order input is immutable' USING ERRCODE='23514';
+29:   END IF;
+30:   IF TG_OP='UPDATE' AND NEW."inputRegistrationRevision" IS DISTINCT FROM OLD."inputRegistrationRevision" THEN
+31:     RAISE EXCEPTION 'metric registration input is immutable' USING ERRCODE='23514';
+32:   END IF;
+33:   IF TG_OP='UPDATE' AND NEW."inputOrderTenantRevision" IS DISTINCT FROM OLD."inputOrderTenantRevision" THEN
+34:     RAISE EXCEPTION 'metric tenant order input is immutable' USING ERRCODE='23514';
+35:   END IF;
+36:   IF NEW."status" IN ('queued','running','ready') THEN
+37:     current_tenant_revision := public.wp20_metric_order_tenant_revision(NEW."vendorId");
+38:     IF TG_OP='INSERT' THEN NEW."inputOrderTenantRevision":=current_tenant_revision; END IF;
+39:     IF NEW."inputOrderTenantRevision" IS DISTINCT FROM current_tenant_revision THEN
+40:       RAISE EXCEPTION 'metric tenant order input is stale' USING ERRCODE='23514';
+41:     END IF;
+42:     current_registration_revision := public.wp20_metric_registration_revision(NEW."vendorId",NEW."liveId");
+43:     IF TG_OP='INSERT' THEN NEW."inputRegistrationRevision":=current_registration_revision; END IF;
+44:     IF current_registration_revision IS NULL OR NEW."inputRegistrationRevision" IS DISTINCT FROM current_registration_revision THEN
+45:       RAISE EXCEPTION 'metric registration input is stale' USING ERRCODE='23514';
+46:     END IF;
+47:     current_order_revision := public.wp20_metric_order_revision(NEW."vendorId",NEW."liveId");
+48:     IF TG_OP='INSERT' THEN NEW."inputOrderRevision":=current_order_revision; END IF;
+49:     IF current_order_revision IS NULL OR NEW."inputOrderRevision" IS DISTINCT FROM current_order_revision THEN
+50:       RAISE EXCEPTION 'metric order input is stale' USING ERRCODE='23514';
+51:     END IF;
+52:     -- Workers lock the version before the report. SHARE also closes the race
+53:     -- between a report INSERT and an evidence-triggered revision increment.
+54:     SELECT "sourceRevision" INTO current_revision FROM public."LiveMetricVersion"
+55:     WHERE "id"=NEW."versionId" AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+56:     IF NOT FOUND OR current_revision<>NEW."inputRevision" THEN
+57:       RAISE EXCEPTION 'metric report input is stale' USING ERRCODE='23514';
+58:     END IF;
+59:   END IF;
+60:   RETURN NEW;
+61: END $$;
+62: 
+63: CREATE OR REPLACE FUNCTION public.wp20_metric_report_create(
+64:   vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+65:   window_start TIMESTAMPTZ(3), window_end TIMESTAMPTZ(3), input_revision BIGINT, expires_at TIMESTAMPTZ(3)
+66: ) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+67: DECLARE previous_writer TEXT; order_revision BIGINT; registration_revision BIGINT; tenant_revision BIGINT;
+68: BEGIN
+69: 
+70:   -- No shared source-row lock: payment changes append events. Version/report
+71:   -- locks retain metric lifecycle ordering. Every reader rechecks event count.
+72:   order_revision := public.wp20_metric_order_revision(vendor_id,live_id);
+73:   registration_revision := public.wp20_metric_registration_revision(vendor_id,live_id);
+74:   tenant_revision := public.wp20_metric_order_tenant_revision(vendor_id);
+75:   PERFORM 1 FROM public."LiveMetricVersion" WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+76:   IF NOT FOUND THEN RAISE EXCEPTION 'metric version missing' USING ERRCODE='23514'; END IF;
+77:   UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+78:     WHERE "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+79:       AND status IN ('queued','running','ready') AND ("inputOrderRevision" IS DISTINCT FROM order_revision OR "inputRegistrationRevision" IS DISTINCT FROM registration_revision OR "inputOrderTenantRevision" IS DISTINCT FROM tenant_revision);
+80: 
+81:   IF window_end>clock_timestamp() THEN RAISE EXCEPTION 'metric report window must have ended' USING ERRCODE='23514'; END IF;
+82:   previous_writer := current_setting('wp20.report_writer',true);
+83:   PERFORM set_config('wp20.report_writer','create',true);
+84:   INSERT INTO public."LiveMetricReport" (id,"vendorId","liveId","versionId","windowStartAt","windowEndAt","inputRevision","expiresAt")
+85:     VALUES (report_id,vendor_id,live_id,version_id,window_start,window_end,input_revision,expires_at);
+86:   PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+87:   RETURN 1;
+88: END $$;
+89: 
+90: CREATE OR REPLACE FUNCTION public.wp20_metric_report_claim(
+91:   vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+92:   worker_id TEXT, lease_until TIMESTAMPTZ(3)
+93: ) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+94: DECLARE changed INTEGER; previous_writer TEXT; order_revision BIGINT; registration_revision BIGINT; tenant_revision BIGINT;
+95: BEGIN
+96: 
+97:   -- No shared source-row lock: payment changes append events. Version/report
+98:   -- locks retain metric lifecycle ordering. Every reader rechecks event count.
+99:   order_revision := public.wp20_metric_order_revision(vendor_id,live_id);
+100:   registration_revision := public.wp20_metric_registration_revision(vendor_id,live_id);
+101:   tenant_revision := public.wp20_metric_order_tenant_revision(vendor_id);
+102:   IF worker_id IS NULL OR length(worker_id)=0 OR lease_until<=clock_timestamp()
+103:     OR lease_until>clock_timestamp()+INTERVAL '5 minutes' THEN
+104:     RAISE EXCEPTION 'invalid metric worker lease' USING ERRCODE='23514';
+105:   END IF;
+106:   PERFORM 1 FROM public."LiveMetricVersion"
+107:     WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+108:   IF NOT FOUND THEN RETURN 0; END IF;
+109:   IF EXISTS(SELECT 1 FROM public."LiveMetricReport" WHERE id=report_id AND "vendorId"=vendor_id
+110:       AND "liveId"=live_id AND "versionId"=version_id AND ("inputOrderRevision" IS DISTINCT FROM order_revision OR "inputRegistrationRevision" IS DISTINCT FROM registration_revision OR "inputOrderTenantRevision" IS DISTINCT FROM tenant_revision)) THEN
+111:     UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+112:       WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id AND status IN ('queued','running','ready');
+113:     RETURN 0;
+114:   END IF;
+115: 
+116:   UPDATE public."LiveMetricReport" SET status='failed',"errorCode"='attempt_limit',"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+117:     WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+118:       AND attempts>=5 AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()));
+119:   previous_writer := current_setting('wp20.report_writer',true);
+120:   PERFORM set_config('wp20.report_writer','claim',true);
+121:   UPDATE public."LiveMetricReport" SET status='running',"leaseOwner"=worker_id,
+122:     "leaseExpiresAt"=lease_until,attempts=attempts+1
+123:     WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+124:       AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()))
+125:       AND attempts<5 AND "expiresAt">clock_timestamp();
+126:   GET DIAGNOSTICS changed = ROW_COUNT;
+127:   PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+128:   RETURN changed;
+129: END $$;
+130: 
+131: CREATE OR REPLACE FUNCTION public.wp20_metric_report_finish(
+132:   vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+133:   worker_id TEXT, report_result JSONB
+134: ) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+135: DECLARE changed INTEGER; previous_writer TEXT; order_revision BIGINT; registration_revision BIGINT; tenant_revision BIGINT;
+136: BEGIN
+137: 
+138:   -- No shared source-row lock: payment changes append events. Version/report
+139:   -- locks retain metric lifecycle ordering. Every reader rechecks event count.
+140:   order_revision := public.wp20_metric_order_revision(vendor_id,live_id);
+141:   registration_revision := public.wp20_metric_registration_revision(vendor_id,live_id);
+142:   tenant_revision := public.wp20_metric_order_tenant_revision(vendor_id);
+143:   IF report_result IS NULL THEN RAISE EXCEPTION 'metric result required' USING ERRCODE='23514'; END IF;
+144:   PERFORM 1 FROM public."LiveMetricVersion"
+145:     WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+146:   IF NOT FOUND THEN RETURN 0; END IF;
+147:   IF EXISTS(SELECT 1 FROM public."LiveMetricReport" WHERE id=report_id AND "vendorId"=vendor_id
+148:       AND "liveId"=live_id AND "versionId"=version_id AND ("inputOrderRevision" IS DISTINCT FROM order_revision OR "inputRegistrationRevision" IS DISTINCT FROM registration_revision OR "inputOrderTenantRevision" IS DISTINCT FROM tenant_revision)) THEN
+149:     UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+150:       WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id AND status IN ('queued','running','ready');
+151:     RETURN 0;
+152:   END IF;
+153: 
+154:   previous_writer := current_setting('wp20.report_writer',true);
+155:   PERFORM set_config('wp20.report_writer','finish',true);
+156:   UPDATE public."LiveMetricReport" SET status='ready',result=report_result,
+157:     "finishedAt"=clock_timestamp(),"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+158:     WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+159:       AND status='running' AND "leaseOwner"=worker_id AND "leaseExpiresAt">clock_timestamp()
+160:       AND "expiresAt">clock_timestamp();
+161:   GET DIAGNOSTICS changed = ROW_COUNT;
+162:   PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+163:   RETURN changed;
+164: END $$;
+165: 
+166: CREATE OR REPLACE FUNCTION public.wp20_metric_completion_publish(
+167:  vendor_id TEXT,live_id TEXT,version_id TEXT,report_id TEXT,worker_id TEXT,
+168:  source_revision BIGINT,cohort_count INTEGER,facts JSONB
+169: ) RETURNS INTEGER LANGUAGE plpgsql SECURITY DEFINER
+170: SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+171: DECLARE report public."LiveMetricReport"%ROWTYPE; current_revision BIGINT; actual_cohort BIGINT;
+172: BEGIN
+173:  IF current_setting('transaction_isolation')<>'read committed' THEN
+174:   RAISE EXCEPTION 'completion write requires read committed' USING ERRCODE='23514';
+175:  END IF;
+176:  IF facts IS NULL OR jsonb_typeof(facts)<>'array' OR cohort_count IS NULL OR cohort_count<0
+177:    OR source_revision IS NULL OR source_revision<0 THEN
+178:   RAISE EXCEPTION 'invalid completion manifest' USING ERRCODE='23514';
+179:  END IF;
+180:  IF jsonb_array_length(facts)>cohort_count OR cohort_count>1000000 OR pg_column_size(facts)>67108864 THEN
+181:   RAISE EXCEPTION 'completion manifest limit exceeded' USING ERRCODE='23514';
+182:  END IF;
+183:  -- Input-only checks require no locks and reject malformed batches early.
+184:  IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE jsonb_typeof(f)<>'object') THEN
+185:   RAISE EXCEPTION 'invalid completion fact shape' USING ERRCODE='23514';
+186:  END IF;
+187:  IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE
+188:    NOT (f ? 'personId' AND f ? 'firstCompletedAtMs')
+189:    OR jsonb_typeof(f->'personId')<>'string' OR jsonb_typeof(f->'firstCompletedAtMs')<>'number'
+190:    OR (SELECT count(*) FROM jsonb_object_keys(f))<>2) THEN
+191:   RAISE EXCEPTION 'invalid completion fact shape' USING ERRCODE='23514';
+192:  END IF;
+193:  IF (SELECT count(DISTINCT f->>'personId') FROM jsonb_array_elements(facts) f)<>jsonb_array_length(facts) THEN
+194:   RAISE EXCEPTION 'duplicate completion person' USING ERRCODE='23514';
+195:  END IF;
+196:  IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE
+197:   (f->>'firstCompletedAtMs')::numeric<>trunc((f->>'firstCompletedAtMs')::numeric)
+198:   OR (f->>'firstCompletedAtMs')::numeric<0 OR (f->>'firstCompletedAtMs')::numeric>8640000000000000) THEN
+199:   RAISE EXCEPTION 'completion fact outside timestamp range' USING ERRCODE='23514';
+200:  END IF;
+201:  -- Match the established version -> report lock order before publishing.
+202:  SELECT "sourceRevision" INTO current_revision FROM public."LiveMetricVersion"
+203:   WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+204:  IF NOT FOUND OR current_revision<>source_revision THEN RETURN 0; END IF;
+205:  SELECT * INTO report FROM public."LiveMetricReport" WHERE id=report_id
+206:   AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id FOR UPDATE;
+207:  IF NOT FOUND OR report.status<>'running' OR report."leaseOwner" IS DISTINCT FROM worker_id
+208:   OR report."leaseExpiresAt"<=clock_timestamp() OR report."expiresAt"<=clock_timestamp()
+209:   OR report."inputRevision"<>source_revision
+210:   OR report."inputOrderRevision" IS DISTINCT FROM public.wp20_metric_order_revision(vendor_id,live_id)
+211:   OR report."inputRegistrationRevision" IS DISTINCT FROM public.wp20_metric_registration_revision(vendor_id,live_id)
+212:   OR report."inputOrderTenantRevision" IS DISTINCT FROM public.wp20_metric_order_tenant_revision(vendor_id)
+213:  THEN RETURN 0; END IF;
+214:  SELECT count(*) INTO actual_cohort FROM public."LiveMetricRegistration"
+215:   WHERE "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+216:     AND "verifiedAt">=report."windowStartAt" AND "verifiedAt"<report."windowEndAt";
+217:  IF actual_cohort<>cohort_count THEN RAISE EXCEPTION 'completion cohort changed' USING ERRCODE='23514'; END IF;
+218:  -- Scope-dependent membership remains under the version/report locks.
+219:  IF EXISTS(
+220:   SELECT 1 FROM jsonb_to_recordset(facts) AS f("personId" text,"firstCompletedAtMs" numeric)
+221:   LEFT JOIN public."LiveMetricRegistration" g
+222:    ON g.id=f."personId" AND g."vendorId"=vendor_id AND g."liveId"=live_id AND g."versionId"=version_id
+223:     AND g."verifiedAt">=report."windowStartAt" AND g."verifiedAt"<report."windowEndAt"
+224:     AND f."firstCompletedAtMs">=extract(epoch FROM g."verifiedAt")*1000
+225:     AND f."firstCompletedAtMs"<extract(epoch FROM report."windowEndAt")*1000
+226:   WHERE g.id IS NULL) THEN
+227:   RAISE EXCEPTION 'completion fact outside cohort window' USING ERRCODE='23514';
+228:  END IF;
+229:  -- Validation may consume the rest of a short lease; do not publish after expiry.
+230:  IF report."leaseExpiresAt"<=clock_timestamp() OR report."expiresAt"<=clock_timestamp() THEN RETURN 0; END IF;
+231:  INSERT INTO public."LiveMetricCompletionProjection" ("reportId","sourceRevision","algorithmVersion","cohortCount","rowCount",rows)
+232:  VALUES (report_id,source_revision,1,cohort_count,jsonb_array_length(facts),facts)
+233:  ON CONFLICT ("reportId") DO NOTHING;
+234:  IF NOT EXISTS(SELECT 1 FROM public."LiveMetricCompletionProjection" p WHERE p."reportId"=report_id
+235:   AND p."sourceRevision"=source_revision AND p."cohortCount"=cohort_count AND p.rows=facts) THEN
+236:   RAISE EXCEPTION 'completion projection conflict' USING ERRCODE='23514';
+237:  END IF;
+238:  RETURN 1;
+239: END $$;

@@ -1,0 +1,9 @@
+{
+  "revision": "sha256:5f1891035c24f14d7af273d18938abcf5f0609f4e925d3136d0849122766433b",
+  "files": [
+    "src/lib/live-metric-registration-pass.ts",
+    "src/lib/live-metric-registration-reconcile.ts",
+    "src/app/api/jobs/live-metric-registrations/route.ts",
+    "src/lib/live-metric-registration-pass.test.ts"
+  ]
+}

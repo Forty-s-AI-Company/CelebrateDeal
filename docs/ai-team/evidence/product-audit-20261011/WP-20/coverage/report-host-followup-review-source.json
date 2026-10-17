@@ -1,0 +1,12 @@
+{
+  "promptCharacters": 18654,
+  "files": {
+    "scripts/run-metric-report-host.mjs": "75ad568bfe505739587bdede87d8ec2d22a279dcd919ef7ed79d6ca0c6101b66",
+    "scripts/metric-report-host-build-gate.mjs": "8df201bcec912b80f1f436ff8801e8f5bb788e29acf9197944916af6eca66a0f",
+    "src/lib/live-metric-report-host.ts": "16552592787601e7879e0ffed0f077bc88fcb4dd41bfc62788707980f5250e78",
+    "scripts/metric-report-host-runtime.mjs": "8cf33c0d4a7eea62454e78168d2b4ec7ba403575c571a14373434ac25cb0376d",
+    "scripts/metric-report-host-artifacts.mjs": "d58fd7399bfaa1575d9b62254c5837ca66b4f0688a99907377ff84b0c6cb81c8",
+    "scripts/build-metric-report-host.mjs": "ff76d7e3cd98baea205b551f135a9504a95ef2a6a27d368c2dd705ea027ae4a5"
+  },
+  "scope": "private local host, launcher, fixed builder, scheduler stop boundary"
+}

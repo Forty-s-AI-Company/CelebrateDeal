@@ -1,0 +1,13 @@
+{
+  "files": {
+    "src/lib/live-metric-order-audit.ts": "e78e88edf1b0b86e1ddae59ef8dad6247d0a83817a4d42fc92af87d60dfea0fa",
+    "scripts/wp20-order-source-audit-probe.mjs": "8698fa81fa38488c4d63d993a854bd53bf19e869bb6f86c2eebc7239e8b8dd1f",
+    "scripts/wp20-payment-retry-disposable.mjs": "04900b0b5af21a1f4d23ca0d5bee3b8eb033d1ba17ef63268ac98c8413ed7085"
+  },
+  "database": "PASS",
+  "lint": "PASS before runner sequencing adjustment",
+  "typecheck": "NOT_RUN",
+  "independentReview": "NOT_RUN",
+  "coverage": "unknown",
+  "limitation": "Scoped order revision does not fence all unattributed tenant orders; no certificate publisher"
+}

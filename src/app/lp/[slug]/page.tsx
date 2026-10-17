@@ -1,6 +1,11 @@
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+import {withMetricRegistrationVisit} from '@/components/metric-registration-visit';
+import {hasMetricRegistrationForm,metricWebinarRegistrationScope} from '@/lib/live-metric-registration-surface';
+import { registrationDeadlineOutcome } from "@/components/registration-deadline-outcome";
+import { registrationRetryBoundary } from "@/components/registration-retry-boundary";
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { loadPublicLandingPage } from "@/lib/landing-page-service";
@@ -32,9 +37,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const settings = funnelDocument?.settings.seo;
   return { title, description: seo?.description, keywords: settings?.keywords, authors: settings?.author ? [{ name: settings.author }] : undefined, robots: settings?.hideFromSearch ? { index: false, follow: false } : undefined, openGraph: { title, description: seo?.description, ...(socialImage ? { images: [socialImage] } : {}) } };
 }
-export default async function PublicLandingPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PublicLandingPage({ params, searchParams }: { searchParams?: Promise<RegistrationAttributionQuery & { registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string }> }) {
+  const query = await searchParams ?? {};
   const page = await load((await params).slug);
   if (!page) notFound();
+  const buildRetryBoundary = () => registrationRetryBoundary({ formId: isFunnelStepPages(page.content) && page.content.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}`, attributionQuery: query, retry: query.registrationRetry, submitted: query.submitted });
   const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
   if (isFunnelStepPages(page.content)) {
     const requestedStep = page.content.flow.steps.find((step) => !step.isSystem);
@@ -42,21 +49,18 @@ export default async function PublicLandingPage({ params }: { params: Promise<{ 
     const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
     const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: requestedStep.id, visitorId });
     if (!runtime || runtime.decision.status === "unavailable") notFound();
-    if (runtime.decision.status === "closed") return <PublicFunnelClosed />;
-    if (runtime.decision.status === "redirect") redirect(`/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(runtime.decision.path)}`);
+    const withRetry = await buildRetryBoundary();
+    if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: page.content.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry });
     const decision = runtime.decision;
     await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
-    if (page.content.flow.goal === "webinar") return <FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />;
+    if (page.content.flow.goal === "webinar") return withRetry(await withMetricRegistrationVisit(<FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />,metricWebinarRegistrationScope(page.content,decision.renderedStepId,page.webinar),{kind:'landing',target:`/lp/${encodeURIComponent(page.slug)}`}));
     const document = getPublicFunnelPage(page.content, page.content.flow.steps.find((step) => step.id === decision.renderedStepId)?.path);
     if (!document) notFound();
     const logicalDocument = getPublicFunnelPage(page.content, requestedStep.path);
     const nextPath = logicalDocument ? getNextPublicFunnelStepPath(page.content, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
-    return <PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
+    return withRetry(await withMetricRegistrationVisit(<PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />,{formId:hasMetricRegistrationForm(document)?page.submissionForm?.id:undefined,liveId:page.submissionLiveId},{kind:'landing',target:`/lp/${encodeURIComponent(page.slug)}`}));
   }
-  if (!isPageDocument(page.content)) return <LandingPageRenderer content={page.content} context={page.context} />;
-  return <PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />;
-}
-
-function PublicFunnelClosed() {
-  return <main className="mx-auto max-w-2xl px-6 py-24 text-center"><h1 className="text-2xl font-black text-slate-950">此活動已截止</h1><p className="mt-3 text-slate-600">目前不再接受新的瀏覽或送出資料。</p></main>;
+  const withRetry = await buildRetryBoundary();
+  if (!isPageDocument(page.content)) return withRetry(<LandingPageRenderer content={page.content} context={page.context} />);
+  return withRetry(await withMetricRegistrationVisit(<PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />,{formId:hasMetricRegistrationForm(page.content)?page.submissionForm?.id:undefined,liveId:page.submissionLiveId},{kind:'landing',target:`/lp/${encodeURIComponent(page.slug)}`}));
 }

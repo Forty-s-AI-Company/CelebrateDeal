@@ -1,0 +1,15 @@
+{
+  "sourceHashes": {
+    "src/lib/line-rich-menu-draft-content.ts": "754abdf214be1971514d0a16dc924a679a4781fddb4f9093c0dcde5051b60c8f",
+    "src/lib/line-rich-menu-sync.ts": "c056a6d8a602f84fe866250ca09f7219256c5a10bc2269375c0f8e87da28b3b8",
+    "src/lib/line-rich-menu-publication.ts": "65ece48d871b4441b4041afa24473d58c6ca776306917c4384fd7e94b8ffd127",
+    "src/lib/line-rich-menu-client.ts": "e3dfd5d2f41508be9056ad845e12b3a277f93d34a65e5cc3472182d9507e6608",
+    "src/app/actions/line-rich-menu-actions.ts": "ed00b152fdf2c268789ca558acc9358a93c9e35b44836c872c169fdba556001d",
+    "src/app/actions/line-actions.ts": "8e2dec4349817e65baddf1677748881d31bfa0f0ef8f04f8165503a40e6d91c5",
+    "src/components/line-rich-menu-studio.tsx": "ba4a6db0f8740a8f311a006f9a62b696b92402e7474e0b1c63e114bc54fb425b",
+    "src/components/line-official-account-form.tsx": "9d02a39315d04f060b59a0d68e3b38abb75b70ef1a1065fb9b2804b66ba54c0c",
+    "src/app/(app)/settings/line/page.tsx": "2b7845f4444b96319ab990a8b124fff31d5064e6e725418a9c38b559eb62f513"
+  },
+  "contextChars": 59774,
+  "scope": "Full9productmodules. Existing auth/CSRF/encryption helper code unchanged; no credential values or fixtures included."
+}

@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "checks": {
+    "preparationAndEightConcurrentRetriesOneUncountedExpectation": "PASS",
+    "foreignScopeIdentityTakeoverAndRollbackRejected": "PASS",
+    "lostResponseRetryDoesNotDuplicateFactsAndUnansweredIntentRemains": "PASS",
+    "lowerUpperMixedUuidOneIntentAndOneActualVisit": "PASS",
+    "immutableExpectationAndVisitorRetentionServerTimestampNonUtc": "PASS",
+    "rlsPrivateAclAndUnprivilegedRoleDenied": "PASS",
+    "pageCommittedBeforeBrowserUnknownNonceRejectedBeforeIdentityAndRollbackRetainsNoPage": "PASS",
+    "actualContextProofCompositionMissingIntentAndLostCookieRollbackAndIdempotentVisit": "PASS",
+    "unmatchedPageImmutableRlsAndPrivateProbeRoleDenied": "PASS",
+    "vendorCascadeNoOrphans": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-visit-intent.ts": "fc9811588bff24dbc35e0bc93780922c8934dbba931db1267ec9dbde2307ec01",
+    "src/lib/live-metric-visit-collection.ts": "be532e83befda4bcf2dd1db44be7922ff900fee8bf4c61beee739158b1cca740",
+    "src/lib/live-metric-visit-client.ts": "92550082d35ec058b3e119c27fca8e92e8975e2199b74be72d784d8aff0ae282",
+    "src/lib/live-metric-visit-page.ts": "f6bfb138e9da693583feac232184f51715385f944f346a299a02d71209b3bb58",
+    "src/components/live-metric-visit.tsx": "5d2e087aeede42bd3c11880453554c4e79a2e9250c3e6ec457e551ace64edd79",
+    "src/app/(viewer)/live/[slug]/page.tsx": "f70cc5ba8a3a3d3b1603af64ad2a84ac94841cd2070bab5a3f8b0f39eba9603a",
+    "prisma/migrations/20261016120000_live_metric_visit_page/migration.sql": "3b66e4a6880d671561995c94ba71849c43479fa14758fabe751d2be32faca222",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "8c0629c4d838688e1f97a6610ec3062cd0abf7dbdc17dc777996989e9b79d45c",
+    "prisma/schema.prisma": "5ae6c97b26215920e2b3517b2bcfb0ffee6666153e010cad883f4b67d27b17c5",
+    "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": "796bca8ab59add3a0ed8c1bccd2dab1e45e233ade50b8344ec2275dd89d77e82"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 124
+}

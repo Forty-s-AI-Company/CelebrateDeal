@@ -1,0 +1,166 @@
+{
+  "wholeWp": "NOT_READY",
+  "goalPercent": 40,
+  "goalCompletedWps": 8,
+  "goalTotalWps": 20,
+  "previousGoalTurn": "PROGRESS",
+  "currentGoalTurn": "PROGRESS",
+  "validation": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 113
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "database": {
+    "migrations": 128,
+    "checks": 19,
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    }
+  },
+  "reviews": {
+    "proof-forwarding": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "provider": "claude_cli",
+      "fallbackEvents": [],
+      "routeFallbackEvents": [],
+      "suppliedRanges": {
+        "src/lib/live-metric-ingress-proof.ts": "Full file except credential declaration lines 24; omitted lines not independently reviewed"
+      },
+      "hashesMatch": true,
+      "findings": []
+    },
+    "source-defined-final": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5"
+      },
+      "provider": "claude_cli",
+      "fallbackEvents": [],
+      "routeFallbackEvents": [],
+      "suppliedRanges": {
+        "prisma/schema.prisma": "Description of new binding fields/relations only; full schema not supplied",
+        "src/lib/live-metric-visit-page.ts": "Only exact diff against prior reviewed source hash 57cb20038b7552ed616c2ef57e904eff599daa7bbb69375766b56bbad81e2b6e; unchanged body not resupplied; actual current INSERT with ingressFrameId also supplied",
+        "src/lib/live-metric-playback-intake.ts": "Only exact diff against prior reviewed source hash 7b5f1949ba5dac7a31e1c8b0ea013717790b8cf9267e985913c692da663b40c1; unchanged body not resupplied; actual current INSERT with ingressFrameId also supplied"
+      },
+      "hashesMatch": true,
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-ingress-source.ts",
+          "area": "canBindMetricIngressSource $queryRaw call; migration REVOKE/ACL DO block",
+          "issue": "The application pre-check calls public.wp20_metric_ingress_source_allowed directly, but the migration revokes EXECUTE from everyone except the function owner and fails if any other grantee exists. The pre-check runs on every source write, including legacy no-run versions with no binding.",
+          "evidence": "canBindMetricIngressSource always runs SELECT public.wp20_metric_ingress_source_allowed(...) after requireMetricIngressSource passes. The migration revokes from PUBLIC, anon, authenticated and service_role, and raises if any grantee other than proowner exists. Before this change, the legacy no-run visit-page and playback paths made no SQL call here.",
+          "impact": "Under any non-owner runtime role, every visit-page and playback write fails with 42501 (an unmapped 500), including legacy no-run writes. That would regress the 'no-run legacy behavior retained' contract. The submission scopes runtime to the owner connection only, so this is a deployment/scope proposal rather than a defect in the authorized synthetic task.",
+          "recommended_fix": "Before any non-owner deployment, choose one: grant EXECUTE on the predicate only to a dedicated app role and update the ACL assertion to allow it; or skip the SQL pre-check when no binding is present and rely on the trigger plus a mapped 23514; or call a separate narrow wrapper.",
+          "required_test": "In a disposable database, run a visit-page and a playback write as an unprivileged app role, (a) with no run and no binding and (b) with a run and a valid binding. Assert the documented outcome: success or a mapped error, never an unmapped permission-denied error.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "NIT",
+          "file": "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql",
+          "area": "wp20_metric_ingress_source_allowed: transaction_isolation check before the no-run branch",
+          "issue": "The read-committed/primary precondition is checked before the no-run return, so it now also applies to legacy no-run inserts into LiveMetricVisitPage and LiveMetricPlaybackIntake.",
+          "evidence": "IF current_setting('transaction_isolation')<>'read committed' ... RAISE runs before the run lookup that returns frame_key IS NULL. The trigger calls this for every INSERT.",
+          "impact": "If any existing writer, maintenance job or restore inserts under REPEATABLE READ or SERIALIZABLE, legacy no-run inserts that used to succeed now fail with 23514. This only matters if the existing canonical guards did not already require read committed, which the supplied text does not show.",
+          "recommended_fix": "Confirm that the existing canonical guards already require read committed. If they don't, either document the new precondition or apply the isolation check only after the run lookup finds a run.",
+          "required_test": "In a disposable database, insert a no-run legacy row under REPEATABLE READ and compare the result with the pre-migration baseline.",
+          "confidence": 0.35
+        }
+      ]
+    },
+    "entry": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "provider": "claude_cli",
+      "fallbackEvents": [],
+      "routeFallbackEvents": [],
+      "suppliedRanges": {
+        "src/app/form/[slug]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted",
+        "src/app/(viewer)/live/[slug]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted",
+        "src/app/lp/[slug]/[stepPath]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted",
+        "src/app/api/live-playback-source/route.ts": "Full file except credential declaration lines 37; omitted lines not independently reviewed",
+        "src/app/lp/[slug]/page.tsx": "Matching ingress/issuance lines with -1/+3 context; credential declarations omitted"
+      },
+      "hashesMatch": true,
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/app/form/[slug]/page.tsx; src/app/lp/[slug]/page.tsx; src/app/lp/[slug]/[stepPath]/page.tsx; src/app/(viewer)/live/[slug]/page.tsx; src/app/api/live-playback-source/route.ts",
+          "area": "form page L128; LP root L56/L61/L65; LP step L51/L57; viewer L131; playback route binding line",
+          "issue": "The server builds the expected frame target in inconsistent ways. The form page and LP root use the slug stored in the DB. The LP step and viewer pages use the incoming decoded route params, re-encoded with encodeURIComponent. The playback API uses the raw url.pathname+url.search. None of these share a canonicaliser with the gateway's signed target.",
+          "evidence": "`/form/${encodeURIComponent(form.slug)}` and `/lp/${encodeURIComponent(page.slug)}` use DB values. The step page uses `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(stepPath)}` built from params. The API uses `url.pathname+url.search` as received. Requests whose bytes differ only in harmless ways will produce different strings: hex case in percent-escapes, characters like ~ ! ' ( ) * that encodeURIComponent leaves alone but a client may escape, Unicode normalisation, or a case/alias slug lookup.",
+          "impact": "Mismatches fail closed, so I see no way to forge or reuse a frame. However, under the controlled profile a legitimate visit can be rejected, and the whole registration or viewer page then errors. Synthetic M1/M2 runs could also show false gaps between frames and source rows, which skews the evidence.",
+          "recommended_fix": "Define one shared function that canonicalises the target, used by both the gateway and the server. Use it to choose the policy for each route: canonical DB slug or incoming path, and for the API either raw query or sorted canonical query. Apply it on every entry route, including both LP root and step, so they follow the same rule.",
+          "required_test": "Loopback tests with signed frames on the disposable DB for each route, covering: escaped vs unescaped reserved characters, upper vs lower hex escapes, Unicode slugs in NFC vs NFD, and slug case/alias variants. Assert that accepted and rejected outcomes are deterministic and match what the gateway manifest expects, and that a frame signed for one route's target is rejected on every other route.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-registration-page.ts",
+          "area": "issueMetricRegistrationPage catch block",
+          "issue": "Every error that is not a MetricVisitorError is turned into MetricVisitorError('PERSISTENCE_UNAVAILABLE'). If a binding failure thrown further down (frame replay, scope or target mismatch, missing frame for a run-owned source, or a DB trigger rejecting the frame) is not itself a MetricVisitorError, it will be reported as a persistence outage.",
+          "evidence": "`if(error instanceof MetricVisitorError)throw error; throw new MetricVisitorError('PERSISTENCE_UNAVAILABLE');`. The wrapper imports MetricIngressBindingError separately, which suggests it is a different class.",
+          "impact": "The page still fails closed, but logs and metrics can no longer tell forged, replayed or misbound frames apart from DB outages. Any retry handling keyed on PERSISTENCE_UNAVAILABLE would also treat integrity failures as transient. This weakens audit evidence for the controlled profile.",
+          "recommended_fix": "Re-throw MetricIngressBindingError (and any frame-integrity errors raised by the DB) unchanged, or map them to their own non-retryable code, before the generic persistence mapping.",
+          "required_test": "Unit test: issueMetricVisitPage throws MetricIngressBindingError, and the test asserts that issueMetricRegistrationPage propagates that class or code. Loopback DB test: a replayed frame on a registration surface is reported as a binding failure, not PERSISTENCE_UNAVAILABLE.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/components/metric-registration-visit.tsx; src/app/(viewer)/live/[slug]/page.tsx",
+          "area": "wrapper early return before the configured/entry check; viewer metricEnabled gate L129-131",
+          "issue": "With profile mode on, the frame header is only checked on paths that will issue a visit. The registration wrapper returns early when the scope is unresolved or the keyring is missing. The viewer page skips the check when the keyring is missing or the runtime is unavailable. The playback API, by contrast, calls metricIngressFromRequest every time. So the rule that a missing or invalid header must fail when the profile is on depends on the route and its state.",
+          "evidence": "`if(!resolved||!process.env.LIVE_METRIC_VISITOR_KEYRING)return compose(child,null);` runs before `metricIngressConfigured()`. The viewer uses `metricEnabled && metricIngressConfigured() ? metricIngressFromRequest(...) : undefined`. The playback route calls `metricIngressFromRequest(request.headers, ...)` with no gate.",
+          "impact": "Admission frames committed by the gateway for these requests are never consumed or rejected, so there is no server-side signal. Also, if the keyring is missing from the process environment under the controlled profile, every registration and viewer visit silently goes untracked instead of failing. This can make a synthetic run look complete while sources are missing. It has no effect on authorization.",
+          "recommended_fix": "Decide on and document one rule. Either validate the frame whenever the profile is on, even when tracking is skipped, or record an explicit 'untracked by design' reason. At minimum, fail at startup or on first request when profile mode is on and LIVE_METRIC_VISITOR_KEYRING is missing.",
+          "required_test": "Loopback tests with profile mode on: (a) keyring unset, which should give a startup/request failure or an explicit untracked marker; (b) unresolved scope on the form and LP pages with a missing or invalid header; (c) viewer page with the runtime unavailable and a missing or invalid header. Assert the chosen behaviour, and assert that no source rows are written in any case.",
+          "confidence": 0.4
+        }
+      ]
+    }
+  },
+  "reviewLimits": "Credential declarations omitted; entry snippets/schema descriptions/caller diffs are scoped, not full application certification",
+  "acceptedLimits": [
+    "Owner-only disposable runtime, other runtime-role grants not validated",
+    "Strict target bytes and canonical path scope; aliases/RSC/attribution not full coverage",
+    "Skipped tracking gates may skip profile validation; full startup/entry closure not implemented",
+    "Some integrity errors use generic persistence classification",
+    "HMAC alone has no expiry/completeness authority; DB lifetime/one-use required",
+    "Admission stop permits outstanding source completion; source seal pending"
+  ],
+  "remaining": [
+    "Owned full Next runtime with browser/JS and minimum runtime-role verification",
+    "Full entry universe/startup/source epoch and atomic writer fence",
+    "Typed positive visits/viewing proof producers and matching readers",
+    "Complete nonzero five-metric M1/M2 integration",
+    "Existing public lifetime quota/permanent loss/lock/form availability MAJOR",
+    "Original SSI7/13 and intermittent failures remain unresolved"
+  ],
+  "notClaimed": [
+    "No covered flag or wholeWP/Goal acceptance",
+    "No deployment, push, production or customer/payment data use",
+    "No complete Next/browser E2E from Node service harness"
+  ]
+}

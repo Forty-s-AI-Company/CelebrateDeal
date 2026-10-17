@@ -6,7 +6,7 @@ const m = vi.hoisted(() => ({ auth: vi.fn(), origin: vi.fn(), sameOrigin: vi.fn(
 vi.mock("@/lib/auth", () => ({ getCurrentAuth: m.auth }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ live: { findFirst: m.live }, $transaction: m.transaction }) }));
 vi.mock("@/lib/api-security", async original => ({ ...await original<typeof import("@/lib/api-security")>(), requireSameOriginRequest: m.sameOrigin }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: m.limit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: m.limit }));
 vi.mock("@/lib/live-media-provider", () => ({ mediaOrigin: m.origin }));
 import { GET, POST } from "./route";
 

@@ -1,0 +1,28 @@
+{
+  "status": "FAIL",
+  "stage": "queue-window-isolation",
+  "scope": "Private scoped scheduler with real isolated worker; synthetic disposable database only",
+  "results": {
+    "defaultOneJobBound": "PASS",
+    "remainingQueueProcessed": "PASS",
+    "duplicateTickNoExecution": "PASS",
+    "realWorker": "PASS",
+    "unknownRemainsUnavailable": "PASS",
+    "activeLeaseExcluded": "PASS",
+    "foreignVersionExcluded": "PASS",
+    "barrierCompetingTicksExactlyOneExecution": "PASS",
+    "expiredLeaseRecoveredOldFinishRejected": "PASS",
+    "exhaustedHeadTerminalizedNextTickProgresses": "PASS",
+    "futureWindowRejectedByCreateGuard": "PASS",
+    "expiredReportAndVersionExcluded": "PASS",
+    "realForeignTenantMixedScopesExcluded": "PASS",
+    "originalCrossWindowInvalidationReproducedAndRolledBack": "PASS",
+    "differentWindowRevisionsRemainIndependent": "PASS",
+    "concurrentEnqueueCreatesExactlyOneGeneration": "PASS",
+    "changedWindowReplacedWithoutInvalidatingOtherReadyWindow": "PASS"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

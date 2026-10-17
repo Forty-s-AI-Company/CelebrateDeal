@@ -1,0 +1,6 @@
+{
+  "runner_sha256": "375785b15af4bf74777a4c1bca073ecaccf0e760dfaf3e184e79146702a67e32",
+  "lint": "PASS",
+  "confirmed": "Raw UPDATE receives SQLSTATE40001 read/write dependencies; no deadlock proven",
+  "unresolved": "Exact SSI dependency cycle and correction preserving original acceptance"
+}

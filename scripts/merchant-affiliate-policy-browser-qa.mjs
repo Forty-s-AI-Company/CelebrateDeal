@@ -24,7 +24,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
   const report = JSON.parse(fs.readFileSync(output, "utf8"));
   receipt.tests = { total: report.numTotalTests, passed: report.numPassedTests, failed: report.numFailedTests, skipped: report.numPendingTests };
   receipt.failedTitles = report.testResults.flatMap((suite) => suite.assertionResults.filter((test) => test.status === "failed").map((test) => test.title));
-  const expectedSuites = ["/src/lib/merchant-affiliate-policy.db.test.ts", "/src/lib/payment-webhooks.test.ts"];
+  const expectedSuites = ["/src/lib/merchant-affiliate-policy.db.test.ts", "/src/lib/payment-webhooks.db.test.ts"];
   const exactSuite = report.testResults?.length === expectedSuites.length && expectedSuites.every(expected => report.testResults.some(suite => suite.name.replaceAll("\\", "/").endsWith(expected)));
   if (child.status !== 0 || !report.success || !exactSuite || report.numTotalTests !== 61 || report.numPassedTests !== 61 || report.numPendingTests !== 0) throw new Error("course-database-gate-failed");
   if (includeBrowser) {

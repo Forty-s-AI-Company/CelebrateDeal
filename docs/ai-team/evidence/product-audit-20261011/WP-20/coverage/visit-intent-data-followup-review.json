@@ -1,0 +1,174 @@
+{
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "completed": false,
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "status": "RATE_LIMITED"
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS"
+    }
+  ],
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5",
+    "effort": "unknown"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "finalModel": "claude-opus-5-5",
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 15,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 4,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "summary": "Follow-up review of the four supplied files only. Both earlier issues look fixed in this source. (1) Earlier conditional MAJOR, about event ID letter case: recordMetricVisit already lowercases the event ID. The collection Event schema and the intent Input schema also lowercase it before use. That matches the lowercase-only DB CHECK. (2) Earlier MINOR, about which prepare entry point HTTP calls: prepareTrackedMetricVisit requires a valid event and checks it with safeParse before any transaction; a failure gives SCOPE_UNAVAILABLE. prepareMetricVisit, where the event is optional, also uses safeParse and maps failures to SCOPE_UNAVAILABLE before starting a transaction. collectPreparedMetricVisit requires a non-empty proof string of bounded length. It then requires an exact intent for the resolved version, visitor and event inside the same transaction as recordMetricVisit. If no intent exists, for example when a new visitor is created silently, the transaction rolls back. A different visitor cannot take over an existing intent: ON CONFLICT DO NOTHING is followed by a check scoped to the visitor. The trigger sets an immutable server timestamp (preparedAt). It blocks UPDATE and DELETE unless the parent version is gone, which allows the version/vendor cascade. Lock order is version first, then visitor, in both the app code and the trigger. Privileges are revoked and verified as owner-only, with RLS enabled. The diamond cascade (version → visitor and version → intent, with the visitor FK set to NO ACTION) should resolve at the end of the statement, because PostgreSQL queues RI cascade triggers on the outer statement. I found no new BLOCKER or MAJOR. There is one new MINOR, about retry semantics. No test outcomes are assumed. The omitted helpers (context, visitor, proof, schema, harness) and deployment were not reviewed or certified. An empty findings list would not certify that tests or a release pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-collection.ts",
+        "area": "prepareMetricVisit / collectMetricVisit catch blocks; src/lib/live-metric-visit-intent.ts requireMetricVisitIntent",
+        "issue": "When an intent cannot be found or claimed, the code throws a plain Error, and the catch block turns it into PERSISTENCE_UNAVAILABLE. That is the same code used for transient database failures. Cases that will never succeed on retry look identical to temporary outages. Examples: the eventId is already held by another visitor's intent (for example, a retry after a lost prepare reply without the cookie), or collect is called after a version rollover or with a proof that has no matching intent.",
+        "evidence": "requireMetricVisitIntent: `if (rows.length !== 1) throw new Error(\"Metric visit preparation unavailable\")`. Both callers end with `throw new MetricVisitorError(\"PERSISTENCE_UNAVAILABLE\")` for any error that is not a MetricVisitorError. The disclosed lost-prepare test keeps the original intent row, so a later prepare with the same eventId but a newly created visitor always fails the visitor-scoped check.",
+        "impact": "A browser or HTTP layer that retries PERSISTENCE_UNAVAILABLE with the same eventId can loop forever without succeeding. The HTTP layer also cannot tell a permanently unmatched intent apart from a real outage for rate-limiting or monitoring. No visit is wrongly counted, so integrity is intact. The cost is lost liveness, plus noisy error signals.",
+        "recommended_fix": "Throw a distinct MetricVisitorError, for example PREPARATION_REQUIRED or EVENT_UNAVAILABLE, from requireMetricVisitIntent and from the claim check in prepareMetricVisitIntent. Pass it through the existing `instanceof MetricVisitorError` branch so it keeps its own code. Document that clients must generate a new eventId and prepare again on that code, rather than retrying the same event.",
+        "required_test": "Use the local disposable DB with synthetic data. (a) Prepare an event with visitor A. Then prepare the same eventId without a cookie, which creates visitor B. Assert the distinct error code, zero intents for B, and no new visitor committed. (b) Call collectPreparedMetricVisit with a valid proof but no matching intent. Assert the distinct error code and zero LiveMetricVisit rows. (c) Assert that a simulated DB outage still returns PERSISTENCE_UNAVAILABLE.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "accepted": false
+}

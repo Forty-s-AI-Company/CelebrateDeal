@@ -1,0 +1,16 @@
+{
+  "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql": "068b58d8c953526d22290da3b384b5f0aa96a5288b7f9c1e9211501ac1aff1c4",
+  "src/lib/live-metric-completion-store.ts": "0f87d670db74e236a85d49c86faea9673f98648029042d07ecba2b36388cd86d",
+  "src/lib/live-metric-report-job.ts": "b198cfd4d9627e5545983e43abf7e3f130331f8365ed2400b2f1fdf59b1e8587",
+  "src/lib/live-metric-report-snapshot.ts": "47834ffc7b34143e42c6450bd0cea6083f2cbc41cd3e2231ddc6633826121ffc",
+  "src/lib/live-metric-snapshot-input.ts": "f6e1eaa080561ff093b93cbdc06a0bdaf8a3024ffc625faf372aa3220974dc4c",
+  "src/lib/live-metric-executor.ts": "5929a04c061da475d62436dc3b69f9ce398a34eba401dd21b5ddbdb82c1be07e",
+  "src/lib/live-metric-worker.ts": "a1cacdc5653f968aef0f419a0265563b56d0f0e7f1c396542091a7c914182193",
+  "src/lib/live-core-metrics-read-model.ts": "a0b3ef9fd5dbf0eebc9168dde465c17b0661a0639c1e2392faf8b140d96b6e4f",
+  "src/lib/live-viewing-evidence.ts": "afb402025c5c343b22bece181cb8d75ef51a42cbff940998ef776fda06240dcf",
+  "scripts/wp20-completion-publish-probe.mjs": "7658458f11f711acf5dda3a3dbc713400be46d1d267808cf0937a361962ab73d",
+  "prisma/migrations/20261015140000_live_metric_order_source/migration.sql": "d597be8abcdc049cdcbf1d79dc73d038b09acac065a10881dff94606e25b8645",
+  "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql": "b770d369a5f0a3b50fa9a47567bc870c1890df5086f9e8425daeba49c201cdbb",
+  "src/lib/live-metric-report-reader.ts": "7612238644fef1d980ace12d8a90af21ea29067a5580ec0a2e19a4eaff4eaf65",
+  "src/lib/live-metric-completion-store.test.ts": "65f6e1e333fde5a8cbf9795c5fa7cfd4948ceb6a48e477632ae14d92bd6cb09f"
+}

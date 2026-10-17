@@ -1,0 +1,17 @@
+{
+  "scope": "queue incremental scope, not complete Goal diff",
+  "files": {
+    "src/lib/live-metric-report-queue.ts": "2738221865bf56c4e13c3ccb52ab8d3404342906bb48702cf3184ba73d4e6450",
+    "src/lib/live-metric-report-queue.test.ts": "10722e10bfcdbd3fae772186d1c67a587714fdd246f6e667af8be8cefee413d9",
+    "prisma/migrations/20261016100000_live_metric_report_queue_window/migration.sql": "aec54f350d6aa63cac1bd731cc4d1b9f5c921cb26f76d1731ac1f64889450d66",
+    "scripts/wp20-report-scheduler-disposable.mjs": "e4b8f12755ca0729e5d30ef31caf6d177af0e837284ee69f0eab887ac22b9bb5",
+    ".ai-team/reports/wp20-report-queue-review.ps1": "786805e99716f49037049e4b2a2795f0afc59163e7071e53fe2936bd6f786a0f",
+    ".ai-team/reports/wp20-report-queue-validate.py": "84a69d02c648b812f154947ea1bc92de38668a3f6fd9deb257f632df49852f82",
+    ".ai-team/reports/wp20-report-queue-checkpoint.py": "8280a9141f2668e7cbd587dcd0e151714e16b76ea5e805b9abdff31f0065c6f3",
+    "docs/launch/product-audit-20261012-handoff.md": "67e5c4ba8bf562f30b58a5f4db1383b2b10eed2cf6c8c1a364cc4cbd55aebf56",
+    "docs/launch/product-audit-20261011-progress.md": "d2b29fe064e0810a1d295ef066a4ece78895386d4a6ce3ddf14f2b0cef1a8f5e",
+    "docs/launch/wp20-coverage-producer-contract.md": "90de4df131ca214bbbff38a9e1114fb54955e59719dac0cb49f08a81527ed57f",
+    ".ai-team/state/goal-state.json": "72751f8ede1ac7651cd24b9ca70c91c8210114ca0bcb2a3bc75116fe88662f54",
+    ".ai-team/logs/goal-progress.md": "9de9d2b0bf71a90be4bd7d58a3a4b71a984e1a03b867e730adb6915686f2ea72"
+  }
+}

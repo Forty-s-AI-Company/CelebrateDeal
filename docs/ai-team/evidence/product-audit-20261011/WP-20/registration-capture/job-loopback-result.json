@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "cleanup": "PASS",
+  "checks": [
+    "actual_http_auth_denied",
+    "actual_route_service_database",
+    "three_page_pass",
+    "terminal_gap_preserved",
+    "idempotent_four_registrations",
+    "private_no_store"
+  ],
+  "excluded": [
+    "Next_server_routing",
+    "remote_TLS",
+    "deployed_timer"
+  ]
+}

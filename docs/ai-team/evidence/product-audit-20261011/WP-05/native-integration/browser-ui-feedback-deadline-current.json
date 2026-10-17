@@ -1,0 +1,69 @@
+{
+  "checks": [
+    {
+      "engine": "chromium",
+      "javascript": false,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true,
+      "sharedSuccessUrlEditable": true,
+      "sharedErrorUrlUnconfirmed": true,
+      "reloadedErrorUrlUnconfirmed": true,
+      "jsErrorFocus": "NOT_APPLICABLE"
+    },
+    {
+      "engine": "chromium",
+      "javascript": true,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true,
+      "sharedSuccessUrlEditable": true,
+      "sharedErrorUrlUnconfirmed": true,
+      "reloadedErrorUrlUnconfirmed": true,
+      "jsErrorFocus": true
+    },
+    {
+      "engine": "firefox",
+      "javascript": false,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true,
+      "sharedSuccessUrlEditable": true,
+      "sharedErrorUrlUnconfirmed": true,
+      "reloadedErrorUrlUnconfirmed": true,
+      "jsErrorFocus": "NOT_APPLICABLE"
+    },
+    {
+      "engine": "firefox",
+      "javascript": true,
+      "error400": true,
+      "refill": true,
+      "success": true,
+      "draftCleared": true,
+      "noMailSent": true,
+      "sharedSuccessUrlEditable": true,
+      "sharedErrorUrlUnconfirmed": true,
+      "reloadedErrorUrlUnconfirmed": true,
+      "jsErrorFocus": true
+    }
+  ],
+  "status": "PASS",
+  "cleanup": true,
+  "browserClockDelta": 0,
+  "currentStep": "success",
+  "__registrationReturnPathPresent": true,
+  "originMatches": true,
+  "lastSubmissionStatus": 200,
+  "resultCookieIssued": false,
+  "responseNoStore": false,
+  "resultSecure": false,
+  "resultMaxAge": 60,
+  "resultExpiryDelta": 59,
+  "redirectCarriesProof": true
+}

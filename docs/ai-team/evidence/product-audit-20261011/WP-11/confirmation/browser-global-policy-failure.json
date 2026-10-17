@@ -1,0 +1,22 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "previewGet": 200,
+      "previewHead": 200,
+      "mailPreviewConsumes": false,
+      "axeViolations": 0
+    }
+  ],
+  "restored": true,
+  "stage": "confirmation",
+  "axe": [],
+  "requestBoundary": {
+    "postStatus": 303,
+    "originMatches": true,
+    "referrerOriginOnly": false,
+    "referrerAbsent": false,
+    "referrerHasQuery": true
+  },
+  "errorType": "AssertionError"
+}

@@ -1,0 +1,183 @@
+{
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false,
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "finalModel": "claude-opus-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "completed": false,
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "agy_discovery_process_status": "SUCCESS",
+  "review": {
+    "summary": "No BLOCKER or MAJOR defects in the supplied current source; one MINOR and one NIT. The cap is consistent between the app and the database: the issuer takes the per-live lock before the version share lock, and the trigger re-takes the same lock before counting, so issuers cannot race for the last slot. The loss stamp can only go from unset to the database time, cannot change other fields, and is committed before the page returns without a collector. Only P2090 from a known Prisma raw-query error, unavailable scope or lifetime, and an expired page map to null; other errors fail closed. Public prepare still maps an expired or missing page to scope-unavailable. MINOR: the permanent 10000-row cap can be used up by anonymous renders (bots, prefetches, refreshes) or by ordinary traffic, which permanently turns off collection for that version. NIT: the database does not limit the loss marker to the cap case or to a single row, and the marker sits on an ordinary page row. Previously reported issues and the disclosed open areas (full page set, readers, load, deployment) are not repeated. No test, load, release or full-coverage result is certified.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "issueMetricVisitPage cap check (usage.count>=MAX_METRIC_VISIT_PAGES) together with migration trigger cap check (>=10000)",
+        "issue": "The per-version cap never frees up: expired rows and rows that were never matched still count toward it. Any anonymous page render inserts a row, so a client with no identity (or just normal traffic above 10000 renders per version) can permanently turn off collection for that version.",
+        "evidence": "The count query has no filter on expiresAt or on whether the row was matched. The trigger counts every row for the version. By design nothing can delete or reclaim rows. Issuance runs on the public render path, before any visitor identity and before the collect-side rate limits the collection docstring says the HTTP boundary must enforce.",
+        "impact": "Data stays correct (the loss is stamped and completeness is not faked), but availability does not: once the cap is reached, every later render for the version goes untracked for the rest of its life, and a cheap anonymous burst can cause this early. This is an inherent trade-off of the chosen fix, so it may be better handled as a scope proposal than a regression.",
+        "recommended_fix": "Rate-limit or otherwise gate issuance per client before the transaction runs. Alternatively, add a database-enforced way to fold expired, unmatched expectations into an append-only per-version loss or uncounted counter, so space can be reclaimed without hiding the gap. In either case, document 10000 renders per version as a hard product limit.",
+        "required_test": "On a disposable database, run 10000 anonymous issuances for one version and confirm that every later render returns null with the loss stamped. Then check that whatever gating or aggregation is chosen stops exhaustion by a single client, and that the aggregated loss count stays accurate.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "prisma/migrations/20261016120000_live_metric_visit_page/migration.sql",
+        "area": "wp20_metric_visit_page_guard UPDATE branch (lossAt null->not null)",
+        "issue": "The database allows a loss stamp on any row, at any time, on as many rows as anyone likes. It does not check that the version has reached the cap or that the stamped row is the first one. The rule that loss is marked only at the cap, on the first row, is enforced only in the app. The marker also sits on an ordinary page-expectation row that can still be matched later.",
+        "evidence": "The UPDATE branch checks only OLD.lossAt IS NULL, NEW.lossAt IS NOT NULL, and that no other column changed. Unlike the INSERT path, it does not take the advisory lock or count rows.",
+        "impact": "This errs on the conservative side, since it can only report less completeness, never more. But a future reader that treats lossAt as a property of a single row, or that expects exactly one marker, could misread the data. There is no current integrity risk because no grants exist.",
+        "recommended_fix": "Either have the guard require the advisory lock, a count at or above the cap, and that the target is the first row, or document that any non-null lossAt on any row means the whole version is incomplete from the earliest lossAt onward. That rule should then hold for future readers.",
+        "required_test": "As the owning role, run a direct SQL UPDATE that sets lossAt on a non-first row below the cap. Check that it is either rejected or handled by the documented version-level reading rule in reader tests.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED"
+}

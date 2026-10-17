@@ -1,0 +1,11 @@
+{
+  "files": {
+    "src/lib/live-metric-ingress-gateway.ts": "5e1b43be9eabe9908c9210a67ca23f497235a0138e9db3db8eb6afb09481d0a8",
+    "src/lib/live-metric-ingress-proof.ts": "0f705bd92ad4317506f2341c7722bcbacc03110f80043723b5893f46ead8165a"
+  },
+  "suppliedRanges": {
+    "src/lib/live-metric-ingress-proof.ts": "Full file except credential declaration lines 24; omitted lines not independently reviewed"
+  },
+  "schemaSupplied": false,
+  "promptCharacters": 18406
+}

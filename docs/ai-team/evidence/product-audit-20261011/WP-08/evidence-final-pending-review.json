@@ -1,0 +1,77 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\execution-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "a11y",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 51.843,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\a11y.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 11.078,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "shell-a11y",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 11.64,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\shell-a11y.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "targeted",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 8.109,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\targeted.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "terminology-snapshot",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.657,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\terminology-snapshot.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.672,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\typecheck.json"
+    }
+  ],
+  "review": {},
+  "findings": []
+}

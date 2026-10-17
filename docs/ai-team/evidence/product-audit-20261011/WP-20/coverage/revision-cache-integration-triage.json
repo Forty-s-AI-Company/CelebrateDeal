@@ -1,0 +1,14 @@
+{
+  "status": "IN_PROGRESS",
+  "failure": "nonviewer-true:assert-10",
+  "expected": "recorded",
+  "actual": "clock_order_conflict",
+  "report_snapshot_reached": false,
+  "confirmed": [
+    "Capture retry returns existing provenance without rewriting capturedAt",
+    "Eligibility compares verifiedAt UTC against capturedAt",
+    "Test writes verifiedAt from DB clock before concurrent materialization"
+  ],
+  "root_cause": "UNCONFIRMED",
+  "next": "Capture sanitized time deltas and compare stored timestamps before repeated capture and materialization; do not weaken eligibility guard"
+}

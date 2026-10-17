@@ -1,0 +1,25 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "loadMetrics": null,
+  "indexMetrics": null,
+  "visitDeletionMetrics": null,
+  "orderContentionMetrics": null,
+  "registrationClockDiagnostics": [],
+  "serializationDiagnostics": [],
+  "passed": 0,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 115,
+    "failure": {
+      "category": "toolchain-missing",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "NOT_CREATED",
+    "tempRoot": "CLEANUP_BLOCKED"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

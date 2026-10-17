@@ -1,0 +1,10 @@
+{
+  "promptCharacters": 13868,
+  "files": {
+    "scripts/wp20-ingress-disposable.mjs": "019dfcd3a48281ba9cd36fabaeaeb34f54e987a6183185dbcce9a9a312d954bd",
+    "src/lib/live-metric-ingress-gateway.ts": "d3978105b1cf9c2d09c656d132e2aa1d005238759c9636f79b80e08a622ed2b7"
+  },
+  "suppliedRanges": {
+    "scripts/wp20-ingress-disposable.mjs": "Only actual-http section before parent-cascade"
+  }
+}

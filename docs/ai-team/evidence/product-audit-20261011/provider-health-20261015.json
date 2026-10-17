@@ -1,0 +1,51 @@
+{
+  "checkedAt": "2026-10-14T16:40:55.269825+00:00",
+  "scope": "synthetic connectivity only; not code review or task acceptance",
+  "agyDiscovery": "SUCCESS",
+  "models": [
+    {
+      "requested": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "observed": "claude-sonnet-5-5"
+    },
+    {
+      "requested": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "observed": "claude-opus-5-5"
+    },
+    {
+      "requested": "gemini-3.8-flash-medium",
+      "provider": "agy",
+      "status": "SUCCESS",
+      "validResponse": true,
+      "observed": "unknown"
+    },
+    {
+      "requested": "gemini-3.8-flash-high",
+      "provider": "agy",
+      "status": "SUCCESS",
+      "validResponse": true,
+      "observed": "unknown"
+    },
+    {
+      "requested": "gpt-6-luna",
+      "status": "NOT_RUN"
+    },
+    {
+      "requested": "gpt-6.1-sol",
+      "status": "NOT_RUN"
+    },
+    {
+      "requested": "gpt-6-astra",
+      "status": "NOT_RUN"
+    }
+  ],
+  "limitations": [
+    "Gemini actual model not independently observed",
+    "Codex independent inference probes not run",
+    "Claude AGY transport not tested; CLI fallback tested",
+    "No future availability guarantee"
+  ]
+}

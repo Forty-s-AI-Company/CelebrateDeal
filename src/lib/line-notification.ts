@@ -4,8 +4,12 @@ import { getDb } from "@/lib/db";
 import { LineFetchClient, LineMessagingError, type LineFlexContents, type LineMessage, type LineMessagingClient } from "@/lib/line-client";
 import { unprotectLineOfficialAccountCredentials, unprotectLineProfileValue } from "@/lib/line-credentials";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+import { LINE_WEBINAR_TEMPLATE_TRIGGERS } from "@/lib/message-template";
+import { buildLineWebinarMessages, findLineWebinarTemplate, lineWebinarTemplateFingerprint, type LineWebinarVariables } from "@/lib/line-webinar-template";
+import { resolveSubjectLineAccount, type LineAccountRoutingDatabase } from "@/lib/line-account-routing";
 
 export const LINE_NOTIFICATION_TRIGGERS = [
+  "registration_confirmed",
   "live_reminder",
   "live_started",
   "order_created",
@@ -15,7 +19,8 @@ export const LINE_NOTIFICATION_TRIGGERS = [
 ] as const;
 export type LineNotificationTrigger = typeof LINE_NOTIFICATION_TRIGGERS[number];
 
-type LineNotificationDatabase = Pick<PrismaClient, "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery">;
+type LineNotificationDatabase = LineAccountRoutingDatabase & Pick<PrismaClient, "lineUserIdentity" | "lineDelivery">;
+type LineWebinarDeliveryDatabase = LineNotificationDatabase & Pick<PrismaClient, "$transaction" | "messageTemplate" | "formSubmission">;
 type LineClientFactory = (accessToken: string) => LineMessagingClient;
 export type LineDeliveryProcessingScope = {
   /** Limits a worker invocation to one tenant without changing global cron behavior. */
@@ -119,7 +124,7 @@ function isUniqueConflict(error: unknown) {
 
 /** Materializes an encrypted, tenant-idempotent LINE outbox entry. */
 export async function enqueueLineNotification(
-  db: LineNotificationDatabase,
+  db: LineNotificationDatabase & Partial<Pick<PrismaClient, "messageTemplate">>,
   input: {
     vendorId: string;
     subjectType: "user" | "promoter" | "buyer_order" | "buyer_registration";
@@ -129,21 +134,39 @@ export async function enqueueLineNotification(
     messages: readonly LineMessage[];
     dueAt?: Date;
     sourceTemplateId?: string | null;
+    templateVariables?: LineWebinarVariables;
+    requireTemplate?: boolean;
+    eventOccurredAt?: Date;
   },
 ) {
   if (!LINE_NOTIFICATION_TRIGGERS.includes(input.trigger) || !input.idempotencyKey || input.idempotencyKey.length > 255) {
     throw new Error("Invalid LINE notification.");
   }
-  const [account, identity] = await Promise.all([
-    db.lineOfficialAccount.findUnique({ where: { vendorId: input.vendorId }, select: { id: true, status: true } }),
-    db.lineUserIdentity.findUnique({
-      where: { vendorId_subjectType_subjectId: { vendorId: input.vendorId, subjectType: input.subjectType, subjectId: input.subjectId } },
+  const account = await resolveSubjectLineAccount(db, input.vendorId, input.subjectType, input.subjectId);
+  if (!account || account.status !== "active") return { status: "not_linked" as const };
+  const identity = await db.lineUserIdentity.findUnique({
+      where: { vendorId_lineOfficialAccountId_subjectType_subjectId: { vendorId: input.vendorId, lineOfficialAccountId: account.id, subjectType: input.subjectType, subjectId: input.subjectId } },
       select: { id: true, revokedAt: true },
-    }),
-  ]);
-  if (!account || account.status !== "active" || !identity || identity.revokedAt) return { status: "not_linked" as const };
+    });
+  if (!identity || identity.revokedAt) return { status: "not_linked" as const };
+  let messages = input.messages;
+  let sourceTemplateId = input.sourceTemplateId ?? null;
+  let templateFingerprint: string | null = null;
+  if (input.requireTemplate && (!input.templateVariables || !(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(input.trigger))) throw new Error("LINE template context is required.");
+  if (input.templateVariables && (LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(input.trigger)) {
+    if (!db.messageTemplate) throw new Error("LINE webinar template storage is required.");
+    const template = await findLineWebinarTemplate({ messageTemplate: db.messageTemplate }, input.vendorId, input.trigger);
+    if (!template && input.requireTemplate) return { status: "not_configured" as const };
+    if (template) {
+      if (input.trigger === "registration_confirmed" && (!input.eventOccurredAt || input.eventOccurredAt < template.updatedAt)) return { status: "event_precedes_template" as const };
+      const rendered = buildLineWebinarMessages(template, input.templateVariables);
+      if (!rendered) return { status: "template_disabled_or_invalid" as const };
+      messages = rendered;sourceTemplateId = template.id;templateFingerprint = lineWebinarTemplateFingerprint(template);
+    }
+  }
+  if (messages.length < 1 || messages.length > 5) throw new Error("Invalid LINE message count.");
   const id = randomUUID();
-  const payloadEncrypted = encryptSensitiveValue(JSON.stringify(input.messages), deliveryPurpose(input.vendorId, id));
+  const payloadEncrypted = encryptSensitiveValue(JSON.stringify(templateFingerprint ? { v: 2, templateFingerprint, messages } : messages), deliveryPurpose(input.vendorId, id));
   try {
     const delivery = await db.lineDelivery.create({
       data: {
@@ -151,7 +174,7 @@ export async function enqueueLineNotification(
         vendorId: input.vendorId,
         lineOfficialAccountId: account.id,
         lineUserIdentityId: identity.id,
-        sourceTemplateId: input.sourceTemplateId ?? null,
+        sourceTemplateId,
         trigger: input.trigger,
         idempotencyKey: input.idempotencyKey,
         payloadEncrypted,
@@ -164,21 +187,51 @@ export async function enqueueLineNotification(
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
     const existing = await db.lineDelivery.findUnique({
-      where: { vendorId_idempotencyKey: { vendorId: input.vendorId, idempotencyKey: input.idempotencyKey } },
+      where: { vendorId_lineOfficialAccountId_idempotencyKey: { vendorId: input.vendorId, lineOfficialAccountId: account.id, idempotencyKey: input.idempotencyKey } },
       select: { id: true },
     });
     return { status: "duplicate" as const, deliveryId: existing?.id ?? null };
   }
 }
 
-function safeMessages(value: string): LineMessage[] {
+function safePayload(value: string): { messages: LineMessage[]; templateFingerprint: string | null } {
   const parsed: unknown = JSON.parse(value);
-  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 5) throw new Error("Invalid LINE delivery payload.");
-  return parsed as LineMessage[];
+  if (Array.isArray(parsed) && parsed.length >= 1 && parsed.length <= 5) return { messages: parsed as LineMessage[], templateFingerprint: null };
+  if (parsed && typeof parsed === "object" && "v" in parsed && parsed.v === 2 && "templateFingerprint" in parsed && typeof parsed.templateFingerprint === "string" && /^[a-f0-9]{64}$/u.test(parsed.templateFingerprint) && "messages" in parsed && Array.isArray(parsed.messages) && parsed.messages.length >= 1 && parsed.messages.length <= 5) {
+    return { messages: parsed.messages as LineMessage[], templateFingerprint: parsed.templateFingerprint };
+  }
+  throw new Error("Invalid LINE delivery payload.");
+}
+
+type CurrentLineDelivery = Prisma.LineDeliveryGetPayload<{ include: { identity: true } }>;
+type DeliveryWithAccount = Prisma.LineDeliveryGetPayload<{include:{account:true;identity:true}}>;
+function hasDeliveryConsent(current:DeliveryWithAccount|null):current is DeliveryWithAccount {
+  return Boolean(current && current.vendorId === current.account.vendorId && current.vendorId === current.identity.vendorId && current.lineOfficialAccountId === current.identity.lineOfficialAccountId && current.account.status === "active" && !current.identity.revokedAt);
+}
+
+async function checkWebinarDeliverySource(db: LineWebinarDeliveryDatabase, current: CurrentLineDelivery, fingerprint: string | null, now: Date) {
+  if (!(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(current.trigger)) return null;
+  const registration = current.identity.subjectType === "buyer_registration" ? await db.formSubmission.findFirst({
+    where: { id: current.identity.subjectId, verificationStatus: "VERIFIED", form: { vendorId: current.vendorId }, live: { vendorId: current.vendorId } },
+    select: { live: { select: { id: true, status: true, scheduledAt: true, startedAt: true, endedAt: true } } },
+  }) : null;
+  const live = registration?.live;
+  const eligible = live && !live.endedAt && (current.trigger === "live_started"
+    ? live.status === "live" && live.startedAt
+    : live.status === "scheduled" && !live.startedAt && live.scheduledAt > now);
+  if (!eligible || !live) return "line_registration_unavailable";
+  const expectedKey = current.trigger === "registration_confirmed"
+    ? stableLineIdempotencyKey(["registration_confirmed", current.identity.subjectId])
+    : stableLineIdempotencyKey([current.trigger, live.id, current.identity.subjectId, current.trigger === "live_started" ? live.startedAt : live.scheduledAt]);
+  if (current.idempotencyKey !== expectedKey) return "line_event_changed";
+  const template = await findLineWebinarTemplate(db, current.vendorId, current.trigger);
+  if (!template) return current.sourceTemplateId || fingerprint ? "line_template_changed" : null;
+  if (!template.isActive || template.id !== current.sourceTemplateId || fingerprint !== lineWebinarTemplateFingerprint(template)) return "line_template_changed";
+  return null;
 }
 
 export async function processDueLineDeliveries(
-  db: LineNotificationDatabase = getDb(),
+  db: LineWebinarDeliveryDatabase = getDb(),
   clientFactory: LineClientFactory = (accessToken) => new LineFetchClient(accessToken),
   now = new Date(),
   scope: LineDeliveryProcessingScope = {},
@@ -208,7 +261,13 @@ export async function processDueLineDeliveries(
   });
   const results: Array<{ id: string; status: "sent" | "failed" | "exhausted" | "suppressed" | "claimed_elsewhere" }> = [];
   for (const delivery of due) {
-    const claim = await db.lineDelivery.updateMany({
+    let claim: {count:number};
+    try {
+    claim = await db.$transaction(async tx => {
+      // This Serializable read participates in the Project switch transaction.
+      // A switch either precedes this claim, or observes an in-flight push.
+      await resolveSubjectLineAccount(tx, delivery.vendorId, delivery.identity.subjectType, delivery.identity.subjectId);
+      return tx.lineDelivery.updateMany({
       where: {
         id: delivery.id,
         vendorId: delivery.vendorId,
@@ -216,7 +275,11 @@ export async function processDueLineDeliveries(
         attemptCount: delivery.attemptCount,
       },
       data: { status: "sending", claimedAt: now, attemptCount: { increment: 1 }, nextAttemptAt: null },
-    });
+      });
+    }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+    } catch {
+      results.push({id:delivery.id,status:"claimed_elsewhere"}); continue;
+    }
     if (claim.count !== 1) {
       results.push({ id: delivery.id, status: "claimed_elsewhere" });
       continue;
@@ -225,13 +288,7 @@ export async function processDueLineDeliveries(
       where: { id: delivery.id, vendorId: delivery.vendorId },
       include: { account: true, identity: true },
     });
-    if (
-      !current
-      || current.vendorId !== current.account.vendorId
-      || current.vendorId !== current.identity.vendorId
-      || current.account.status !== "active"
-      || current.identity.revokedAt
-    ) {
+    if (!hasDeliveryConsent(current)) {
       await db.lineDelivery.updateMany({
         where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
         data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: "line_consent_unavailable" },
@@ -240,10 +297,20 @@ export async function processDueLineDeliveries(
       continue;
     }
     try {
+      const selectedAccount = await resolveSubjectLineAccount(db, current.vendorId, current.identity.subjectType, current.identity.subjectId);
+      if (!selectedAccount || selectedAccount.id !== current.lineOfficialAccountId || selectedAccount.status !== "active") {
+        await db.lineDelivery.updateMany({ where: { id: current.id, vendorId: current.vendorId, status: "sending" }, data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: "line_project_account_changed" } });
+        results.push({ id: current.id, status: "suppressed" }); continue;
+      }
+      const payload = safePayload(decryptSensitiveValue(current.payloadEncrypted, deliveryPurpose(current.vendorId, current.id)));
+      const suppression = await checkWebinarDeliverySource(db, current, payload.templateFingerprint, now);
+      if (suppression) {
+        await db.lineDelivery.updateMany({ where: { id: current.id, vendorId: current.vendorId, status: "sending" }, data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: suppression } });
+        results.push({ id: current.id, status: "suppressed" });continue;
+      }
       const credentials = unprotectLineOfficialAccountCredentials(current.vendorId, current.account);
       const recipient = unprotectLineProfileValue(current.vendorId, "userId", current.identity.lineUserIdEncrypted);
-      const messages = safeMessages(decryptSensitiveValue(current.payloadEncrypted, deliveryPurpose(current.vendorId, current.id)));
-      await clientFactory(credentials.messagingAccessToken).push(recipient, messages, { retryKey: current.id });
+      await clientFactory(credentials.messagingAccessToken).push(recipient, payload.messages, { retryKey: current.id });
       await db.lineDelivery.updateMany({
         where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
         data: { status: "sent", sentAt: now, claimedAt: null, lastErrorCode: null },

@@ -103,3 +103,16 @@ test("keeps legacy 12-digit migration names when explicitly whitelisted", () => 
 
   assert.deepEqual(diagnostic.pendingMigrations, ["202607170001_team_funnel_domain"]);
 });
+
+
+test("reports date-only pending migrations only when explicitly allowlisted", () => {
+  const allowed = "20261011_registration_form_retry_draft";
+  const diagnostic = classifyPrismaMigrateStatus(
+    `The following migrations have not yet been applied: ${allowed} 20261012_untrusted`,
+    { knownMigrationNames: [allowed] },
+  );
+  assert.deepEqual(diagnostic.pendingMigrations, [allowed]);
+  assert.deepEqual(classifyPrismaMigrateStatus(
+    `The following migrations have not yet been applied: ${allowed}`,
+  ).pendingMigrations, []);
+});

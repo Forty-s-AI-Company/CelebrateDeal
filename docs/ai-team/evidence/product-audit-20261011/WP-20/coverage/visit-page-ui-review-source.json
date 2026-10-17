@@ -1,0 +1,9 @@
+{
+  "files": {
+    "src/lib/live-metric-visit-page.ts": "f6bfb138e9da693583feac232184f51715385f944f346a299a02d71209b3bb58",
+    "src/components/live-metric-visit.tsx": "5d2e087aeede42bd3c11880453554c4e79a2e9250c3e6ec457e551ace64edd79",
+    "src/app/(viewer)/live/[slug]/page.tsx": "f70cc5ba8a3a3d3b1603af64ad2a84ac94841cd2070bab5a3f8b0f39eba9603a"
+  },
+  "scope": "visit-page-ui",
+  "promptCharacters": 15555
+}

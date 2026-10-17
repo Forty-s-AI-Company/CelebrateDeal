@@ -1,0 +1,18 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:df4c52c330110360681e9ef61502e9fc3722fecfa3cd81c439503a92fa5281f1",
+  "status": "PASS",
+  "independent": true,
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "lineage": [
+    "review-attempt.json"
+  ],
+  "scope_files": [
+    "src/lib/auth.ts",
+    "src/lib/auth.test.ts"
+  ],
+  "findings": []
+}

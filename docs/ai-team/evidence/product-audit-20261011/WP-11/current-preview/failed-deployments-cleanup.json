@@ -1,0 +1,11 @@
+{
+  "exit_code": 0,
+  "requested_exact_owned_deployments": [
+    "dpl_5SehvSrziLMKLruKc7NabXdp54Dq",
+    "dpl_HP9tejPPwmSLXd7rm2aZDwNXKPhq",
+    "dpl_hN9aYynqz8qL3z6ijcpzhzAerA9k"
+  ],
+  "safe_skip_active_alias": true,
+  "verification": "pending_API_read",
+  "raw_output_persisted": false
+}

@@ -1,0 +1,203 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-opus-5-5",
+  "claude_cli_discovery_status": "SUCCESS",
+  "review": {
+    "summary": "I reviewed only the supplied text: both public funnel routes, the shared wrapper and the surface classifier. I found no BLOCKER. I found one MAJOR, which depends on the omitted issuance service: every anonymous server render of a tracked registration page seems to create a record and take a lock, so plain repeated requests could reach the existing 10000 cap and trigger the permanent loss marker. I also found three MINOR issues. First, an error during issuance is not contained, so it would turn the public registration page into an error page. Second, the classifier runs on every request, even when metrics are switched off, and it assumes node fields like overrides, visibility and type are always present and valid. Third, the payment-child and popup exclusions depend on assumptions about how documents are structured; this source alone doesn't confirm them. Confirmed in this text: the metadata functions never issue records. Webinar scope uses the step that was actually rendered (`decision.renderedStepId`) and requires a full form/live resource, a thank-you step and a waiting/live/replay state. Generic pages use the rendered document. A missing live binding passes an undefined liveId, and the wrapper is expected to reject it without fanout. The legacy LandingPageRenderer path stays untracked. The wrapper checks IDs and config before awaiting `connection()`, and only then calls `getDb()` and issuance. It always returns the same Fragment shape: an empty slot or the collector, then the child. The event props are only vendorId, liveId and eventId. This review does not cover issuance, the retry helper, the client protocol, the omitted consultation/CSRF code, or any test or release results, and it does not certify that either file is complete.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/components/metric-registration-visit.tsx",
+        "area": "withMetricRegistrationVisit lines 12-18 (issue-on-every-SSR)",
+        "issue": "Every anonymous server render of a tracked registration page runs issuance, including a locked form/live/vendor/project recheck in a transaction. Nothing visible here removes duplicate requests from the same visitor, limits request rate or filters bots. The issuance service is omitted, so it may handle this. If it does not, anyone can use up the shared 10000 cap for a live and trigger the permanent loss marker, and the per-request row locks compete with real registration submissions on the same form/live.",
+        "evidence": "The wrapper calls issueMetricRegistrationPage(getDb(), resolved) on every request once the IDs parse and LIVE_METRIC_VISITOR_KEYRING is set. It passes no visitor/cookie key and no rate-limit context. Both routes are force-dynamic, and the brief says issuance keeps the 10000 cap and a permanent loss marker, with the exact recheck done under locks. Before this change, the cap could only be reached through the live-room flow. Now an unauthenticated GET on a public, shareable URL can reach it, including link-preview crawlers, prefetches and reloads.",
+        "impact": "About 10000 cheap unauthenticated requests could permanently mark a live's visitor metric as lossy. Even normal heavy traffic (crawlers, reloads) could reach the cap early. Row locks taken on each page view could also add delay or lock timeouts to the form submission path under load.",
+        "recommended_fix": "Before treating this as accepted behaviour, confirm that issuance reuses one record per visitor/owner hint (for example, keyed on the existing funnel visitor cookie) and does not take locks the submission path needs, or uses a short lock timeout. Otherwise, pass the resolved visitorId to issuance and reuse its record, or limit issuance per visitor per live so repeated anonymous GETs cannot use up the permanent cap.",
+        "required_test": "DB test: N repeated renders of the same tracked registration page from the same visitor cookie, and from no cookie, must not use up the cap linearly, or must hit a documented limit. A concurrency test must show that issuance does not block or time out concurrent registration submission on the same form/live.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/metric-registration-visit.tsx",
+        "area": "lines 15-17 (await connection/getDb/issue without isolation)",
+        "issue": "An error from getDb() or issuance (lock timeout, failure inside the bounded transaction, keyring parse error) is not caught in the wrapper. It propagates and replaces the whole public registration page with an error boundary. 'Fail closed' should mean no metric is recorded, not that the registration page is unavailable.",
+        "evidence": "There is no try/catch around `await issueMetricRegistrationPage(getDb(),resolved)`. Both routes `await withMetricRegistrationVisit(...)` directly inside `withRetry(...)`, so the exception happens before the child is returned. The brief requires that existing published load/runtime/deadline/retry behaviour be preserved.",
+        "impact": "A failure in the metrics subsystem alone, such as lock contention, makes the registration page fail. That blocks registrations, which are the business path this feature is only meant to observe.",
+        "recommended_fix": "Unless issuance is confirmed to return null for every unexpected failure, catch errors around getDb/issuance in the wrapper. Log them with only primitive fields (no secret or URL) and return compose(child, null), so the same Fragment/slot shape is kept and the metric fails closed instead of the page.",
+        "required_test": "Unit test: make issueMetricRegistrationPage (and getDb) throw. Assert the wrapper resolves to the same Fragment with a null first slot and the unchanged child, and that the routes still render the registration form.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-registration-surface.ts",
+        "area": "hasMetricRegistrationForm lines 10-22; call sites in both routes",
+        "issue": "The classifier runs on every generic funnel request before the wrapper checks whether metrics are configured. It assumes `node.overrides` always exists, that `node.visible` is a real boolean (not optional with a default of true), and that getFunnelNodeDefinition always returns a definition for every node type, including on stored or legacy documents.",
+        "evidence": "`node.overrides[viewport]` throws if overrides is undefined. `!(override?.visible??node.visible)` treats an undefined `visible` as hidden. `getFunnelNodeDefinition(node.type).children` / `.category` throws if the type is unknown. In both routes, hasMetricRegistrationForm(document) is evaluated unconditionally inside the argument list, before LIVE_METRIC_VISITOR_KEYRING is checked.",
+        "impact": "If stored documents can break these assumptions, a published page that rendered before this change could now fail to render even with metrics switched off. Alternatively, a real lead form could be silently classified as hidden, causing undercounting.",
+        "recommended_fix": "Use the same normalisation and visibility defaulting as the public renderer (or call its shared helper). Guard against missing overrides and unknown definitions by returning false, not throwing. Alternatively, run the classifier only after the wrapper has confirmed metrics are configured.",
+        "required_test": "Classifier unit tests with: nodes missing overrides, nodes with `visible` undefined, an unknown node type, and a legacy document. Assert no exception, and that visibility matches the renderer for each viewport.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-registration-surface.ts",
+        "area": "hasMetricRegistrationForm form branch lines 16-19 / container recursion line 20",
+        "issue": "The payment-child exclusion looks only at the form's direct children. The popup-only exclusion relies entirely on popups not being in `document.root`, or on popup container types having no `children` definition. Neither assumption is checked in this code.",
+        "evidence": "`children.some(child=>getFunnelNodeDefinition(child.type).category==='payment')` does not search below the first level. There is no branch for a popup or modal node type, and the code recurses into any node whose definition has `children`. The doc comment says the classifier mirrors the renderer, but the renderer code is not supplied.",
+        "impact": "If a payment node can be nested inside a container within a form, a checkout form is counted as a registration page. If popups are root nodes with container definitions, a popup-only form is counted. Either way, visitor counts would include pages that are outside the agreed scope.",
+        "recommended_fix": "Search the form's whole subtree for payment nodes, using the renderer's own rule. Explicitly exclude popup/modal container types, or document and assert that popups are stored outside `root`.",
+        "required_test": "Classifier cases: a form with a payment node nested one container deep returns false; a form inside a popup/modal node (in whatever structure the editor actually saves) returns false; a visible lead form in mobile only returns true.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "attempts": [
+    {
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high",
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "completed": false,
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "cross_module",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 4,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "reviewed": true,
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "status": "REVIEW_COMPLETED",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  }
+}

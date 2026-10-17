@@ -1,0 +1,9 @@
+{
+  "files": {
+    "scripts/wp20-registration-truncate-probe.mjs": "8aa8c742c03211bd03da9a628be1d2057eafa5050f30b1e5dfb72b58e9a42420",
+    "scripts/wp20-payment-retry-disposable.mjs": "452885d6cc2e5bb08ca8345f1da205e673f07e4120ff89302f8bd5e28c69009a"
+  },
+  "lint": "PASS",
+  "database": "PASS",
+  "scope": "Owned disposable database only; every probe rolled back"
+}

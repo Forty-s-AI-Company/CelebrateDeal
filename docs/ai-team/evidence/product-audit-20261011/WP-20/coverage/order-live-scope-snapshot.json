@@ -1,0 +1,12 @@
+{
+  "revision": "sha256:86507468813235424846f5c988d64f2b7497458ea6309d3e91fdac622a354efe",
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql",
+    "prisma/schema.prisma",
+    "src/lib/live-metric-report-reader.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "review": "NOT_RUN_AFTER_FIX",
+  "remaining": "same-live webhook retry contention, synthetic writer privileges, full dependency invalidation and query performance"
+}

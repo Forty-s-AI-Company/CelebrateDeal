@@ -1,0 +1,20 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:bedc4b2ab1418f3e41ec8d7e50233167c59c78f4ba0df02b51cc6e1b170a28ee",
+  "validation": "79tests/lint/typecheck PASS; latest UI browser not run",
+  "changed_files": [
+    "src/components/app-shell.tsx",
+    "src/components/app-shell.test.ts",
+    "src/components/__snapshots__/app-shell.test.ts.snap",
+    "src/app/(app)/videos/page.tsx",
+    "src/app/(app)/settings/security/page.tsx",
+    "src/app/(app)/dashboard/page.tsx"
+  ],
+  "review": {
+    "observed_model": "claude-sonnet-5-5",
+    "effort": "unknown",
+    "scope": "full inspector source",
+    "MAJOR": "stale popup reference retained when target removed; membership check absent; confirmed helper only rejects empty id"
+  },
+  "next": "Repair stale reference UI and apply guard; inspect same-node undo state and add meaningful browser regression; remaining integrated review and gate"
+}

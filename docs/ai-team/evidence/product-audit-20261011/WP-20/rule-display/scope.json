@@ -1,0 +1,10 @@
+{
+  "files": [
+    "src/app/(app)/lives/[id]/analytics/page.tsx",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+    "src/lib/live-metric-contract.ts"
+  ],
+  "writer": "root",
+  "scope": "Approved rule description only; metrics remain unavailable",
+  "automatic_spawn": false
+}

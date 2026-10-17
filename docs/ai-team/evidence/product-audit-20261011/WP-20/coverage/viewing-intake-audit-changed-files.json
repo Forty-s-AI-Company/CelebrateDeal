@@ -1,0 +1,18 @@
+{
+  "scope": "Recorded intake/viewing audit checkpoint, not complete Goal diff",
+  "files": {
+    "prisma/migrations/20261016090000_live_metric_private_viewing_pages/migration.sql": "bba8dd6a4112a39d767d2a29d121288c2cc451e1ed649939384df0249cad671d",
+    "src/lib/live-metric-playback-intake-audit.ts": "504c692d2d6bedfa4e1d296227068f82a74cd32e1cdc1d58be0c98093c2c12aa",
+    "src/lib/live-metric-playback-intake-audit.test.ts": "ec333246e85c69f6aad706cf461614b209ae27a2c77dd034e247893bf5cc5298",
+    "src/lib/live-metric-viewing-source-audit.ts": "b51c2b0cbb87f8ab1056d46653437fb776d082b219063e92e7933b4ea378d574",
+    "src/lib/live-metric-viewing-source-audit.test.ts": "d615a20d4fb15911c64c9dfc879b8f64f5818caf222c3f1dc6ebe76b51aa3cf2",
+    "scripts/wp20-playback-intake-disposable.mjs": "0fc99c2b99a80b21a8f86db8a0c08d7250018cc44cc77989029ece266d4f4277",
+    ".ai-team/reports/wp20-renewal-validate.py": "ad0ac7115caa1c984ae0fb7669a0de866ac6d0b23f6a43dea1e8867aa727c894",
+    ".ai-team/reports/wp20-viewing-intake-audit-review.ps1": "e52c65c9114a7e7cee414e7e8a6b6a7543d25b384df76affb34e93b92ed56411",
+    ".ai-team/reports/wp20-viewing-intake-checkpoint.py": "6eed72fa384749fef29babe3f0c68f16d405777de76fa2336b0d74f4971feb5b",
+    "docs/launch/product-audit-20261012-handoff.md": "6377d54dc89b9eb3b21dfbb29f239717a0b0fe2d350ff5206a7a3d7415d89ab1",
+    "docs/launch/product-audit-20261011-progress.md": "7ef5ebe266c5c76a93f6780f3051c9c3e73ca0a9414437c3aad52b1939151be5",
+    "docs/launch/wp20-coverage-producer-contract.md": "1ae22a67d80e50b8d4acf9202a9b027c460eb8fa95c39cc068b3daa558a4abcc",
+    "scripts/wp20-viewing-source-ledger-disposable.mjs": "0b1ae88eb7f8cf335bf956a7fbe432e1f24b3e0077ed353d9716a467095c83fa"
+  }
+}

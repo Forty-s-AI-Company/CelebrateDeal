@@ -1,0 +1,168 @@
+{
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "payment"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 16235,
+      "expected_duration": 0,
+      "code_surface_area": 8,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "finalModel": "claude-opus-5-5",
+  "review": {
+    "summary": "I reviewed only the affected fixes. Three of them look correct in the supplied text. First, the same-email order check now covers a payment attempt matched by either the primary transaction id or the vendor's orderNumber, so another live and a non-primary attempt both count. The buyer is tied to the payment's formSubmissionId and sourceLiveId, and both buyerform and buyerLive are limited to the vendor. Second, both transactions now set TimeZone to UTC for the transaction only, which keeps the comparisons between timestamps with and without time zones independent of the session. Third, every rowCount/jsonb_array_length check and every firstCompletedAtMs numeric cast now sits behind a CASE guard on jsonb_typeof, so no query relies on SQL evaluation order. The unknown-attribution branch stays conservative and never reads other buyers' emails. I found no regression in the guard, claim or retry logic, which this change didn't touch. One minor gap remains: the SQL email comparison normalises emails differently from JavaScript (and possibly from the customer HMAC). The non-UTC and cross-live database runs are still in progress, so this review does not confirm any test or release result.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "readCompletedFollowupSource (order/attribution query)",
+        "area": "order EXISTS branch: lower(trim(buyer.email))=${row.email.trim().toLowerCase()}",
+        "issue": "The same-email check normalises each side differently. PostgreSQL trim(text) removes only ASCII spaces, while JavaScript String.trim() also removes tabs, CR/LF, NBSP, U+FEFF and other whitespace. PostgreSQL lower() depends on the database collation (under C collation it lowercases ASCII only), while JavaScript toLowerCase() applies full Unicode mappings. This breaks the claim that the match is consistent with the customer HMAC, unless automationCustomerKeyHash uses exactly the same trim/lowercase rules.",
+        "evidence": "The reader compares lower(trim(buyer.email)) in SQL against row.email.trim().toLowerCase() computed in JavaScript. recipientHash and customerKey are built by separate helpers whose normalisation is not shown. Nothing checks that the SQL and JavaScript normalisation are equivalent.",
+        "impact": "Suppose a buyer's FormSubmission.email on another live has non-space whitespace padding or non-ASCII uppercase characters (under C or similar collation), and the order has no automationCustomerKeyHash. The match fails, order.exists is false, and the order still counts as attributed in attributionUnknown. The reader then returns eligible and the buyer gets a 'completed but not ordered' email — the same kind of bug this fix is meant to close. The impact is limited if form writes already store canonical emails.",
+        "recommended_fix": "Use one canonical normalisation on both sides. Normalise in JavaScript with the same helper used for the customer HMAC, and in SQL use an equivalent expression, e.g. lower(btrim(buyer.email, E' \\t\\r\\n ﻿')) with an explicit collation such as COLLATE \"und-x-icu\" or a fixed ASCII-only rule. Alternatively, compare a stored normalised-email column or hash. If FormSubmission.email is guaranteed canonical on write, document that and assert it.",
+        "required_test": "Real PG14 test: create a live-B order with no automationCustomerKeyHash whose buyer_order attempt references a FormSubmission whose email has tab/NBSP padding and mixed case (plus a non-ASCII uppercase case under the deployed collation). The candidate on live A has the canonical form of the same email. Assert the reader returns ineligible, and assert that normalising the same input with the customer-key helper gives identical results.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "completed": false,
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "accepted": false,
+  "claude_cli_discovery_status": "SUCCESS"
+}

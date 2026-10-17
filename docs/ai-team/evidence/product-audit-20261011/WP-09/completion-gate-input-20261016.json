@@ -1,0 +1,222 @@
+{
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\completion-execution-20261016.json"
+    },
+    "findings": [
+      {
+        "file": "src/lib/funnel-template-gallery.test.ts",
+        "confidence": 0.3,
+        "impact": "Future regression-detection gap only; no current defect.",
+        "evidence": "Final Sonnet evidence review; current template and rendered states are covered.",
+        "required_test": "Update the targeted guard when adding new external-delivery copy.",
+        "severity": "MINOR",
+        "issue": "A denylist may not catch every future rewording.",
+        "disposition": "unresolved",
+        "recommended_fix": "Keep explicit terms and native target assertion when copy changes.",
+        "area": "future negative-copy coverage"
+      }
+    ],
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "wp09-completion-unit",
+        "revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 3.828,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\completion-unit-20261016.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "wp09-completion-browser-reattest",
+        "revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 0.078,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\completion-browser-reattest-20261016.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "wp09-completion-lint",
+        "revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 5.109,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\completion-lint-20261016.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "wp09-completion-typecheck",
+        "revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 14.5,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\completion-typecheck-20261016.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "claude_cli",
+      "revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+      "status": "PASS",
+      "independent": true,
+      "role": "senior_review",
+      "model": "claude-sonnet-5-5",
+      "observed_model": "claude-sonnet-5-5",
+      "observed_effort": "unknown",
+      "provider_receipt": "completion-sonnet-review-20261016.json",
+      "scope": "Final WP-09 revision-bound dependency, re-attestation and rendered-copy evidence review; no BLOCKER or MAJOR findings.",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-09\\completion-review-qualified-20261016.json"
+    }
+  },
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "implement",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "large",
+      "large_workload": true,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [
+        "ux_ui"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "medium",
+      "changed_files": [
+        "src/lib/funnel-template-gallery.ts",
+        "src/lib/funnel-template-gallery.test.ts",
+        "src/components/landing-pages/funnel-webinar-experience.tsx",
+        "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+        "tests/e2e/wp09-sales-templates.spec.ts"
+      ],
+      "context_size": 4000,
+      "expected_duration": 20,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "implement",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "status": "planned",
+        "required": true,
+        "model": "claude-sonnet-5-5",
+        "role": "senior_review",
+        "source": "claude_cli"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "snapshot_files": [
+      "src/lib/funnel-template-gallery.ts",
+      "src/lib/funnel-template-gallery.test.ts",
+      "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+      "tests/e2e/wp09-sales-templates.spec.ts"
+    ],
+    "required_checks": [
+      "wp09-completion-unit",
+      "wp09-completion-browser-reattest",
+      "wp09-completion-lint",
+      "wp09-completion-typecheck"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": null,
+    "review_scope_files": [
+      "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+      "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "src/lib/funnel-template-gallery.test.ts",
+      "src/lib/funnel-template-gallery.ts",
+      "tests/e2e/wp09-sales-templates.spec.ts"
+    ],
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "high",
+    "effort_floor": "high",
+    "effort_reason": null,
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "high",
+      "effort_floor": "high",
+      "effort_reason": null,
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "review_status": "planned",
+    "self_review": false,
+    "finding_escalation": null
+  }
+}

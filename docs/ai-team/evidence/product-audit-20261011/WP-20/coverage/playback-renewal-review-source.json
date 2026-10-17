@@ -1,0 +1,11 @@
+{
+  "files": {
+    "src/lib/live-metric-delivery.ts": "a04cbd317c0a2cfb9cb003e8840f89f3ce63508f29a4f921d3f15b5ec46e3fa2",
+    "src/lib/live-metric-session.ts": "df008ac87d65607cc115d94186d396a21d84f67358466f31d3124ea44d6113b4",
+    "src/lib/live-metric-clock.ts": "7445ae150c69ff4e7fd5a7e3b7e077c1dd1d66ae5d6ecef0c1ee7e718ff3a24e",
+    "src/lib/live-metric-collector.ts": "050b0ae622c04e5c15cdf56b2a319645c531408092d34018c76fa35f2ea106cc",
+    "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql": "15aeccf84f400a63e649bcf5cdb4d11f59b65c0084d7b83c28f3dcc717633649"
+  },
+  "reviewScope": "Full120 SQL/session/collector/clock/delivery; route/transport/helper/harness excluded",
+  "promptCharacters": 33270
+}

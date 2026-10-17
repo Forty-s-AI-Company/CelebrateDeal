@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "testsPassed": 87,
+  "command": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/components/live-playback.test.tsx",
+    "src/lib/live-metric-release.test.ts",
+    "src/lib/live-metric-transport.test.ts"
+  ],
+  "sourceRevision": "See viewing-capacity-loss-final-source.json; executed after finish-race fix",
+  "receiptOrigin": "root exec observed terminal"
+}

@@ -1,0 +1,82 @@
+{
+  "status": "PASS",
+  "scope": "Actual local Next dev public routes/desktop-mobile axe; disposable PostgreSQL, no account/order/provider operations or secret/session capture. Production-mode build NOT_RUN for this copy/presentation subitem.",
+  "tests": [
+    {
+      "title": "public presentation /policies is readable and truthful on desktop and mobile",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    },
+    {
+      "title": "public presentation /policies/terms is readable and truthful on desktop and mobile",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    },
+    {
+      "title": "public presentation /policies/privacy is readable and truthful on desktop and mobile",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    },
+    {
+      "title": "public presentation /policies/refunds is readable and truthful on desktop and mobile",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    },
+    {
+      "title": "public presentation /support is readable and truthful on desktop and mobile",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    },
+    {
+      "title": "unknown inherited policy names return a real 404",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T04:28:03.700Z",
+    "duration": 74717.87400000001,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 0,
+  "migrations": 131
+}

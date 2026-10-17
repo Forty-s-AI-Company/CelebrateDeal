@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "scope": "Exact eligibility body incl5queries and canPublish arguments preserved, only vendor.id identifier rename. New helper/update outcome guard does not change eligibility.",
+  "eligibilityBodySha256": "aff1479d2f6b8765b9adac9444763a001b6610529bb5c590a6b3f1c73f1e8250",
+  "before": "docs\\ai-team\\evidence\\product-audit-20261011\\WP-17\\before\\sales-workspace-actions.ts.before",
+  "after": "src/lib/sales-project-publication.ts",
+  "conditionalUpdateCountGuardAdded": true
+}

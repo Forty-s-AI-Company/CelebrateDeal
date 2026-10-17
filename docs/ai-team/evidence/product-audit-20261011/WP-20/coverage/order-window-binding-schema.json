@@ -1,0 +1,1 @@
+{"status": "PASS", "exitCode": 0, "validationConfirmed": true, "isolatedCwd": true, "priorCaptureIssue": "cp950 decode failure; rerun with explicit UTF-8", "cleanup": "PASS"}

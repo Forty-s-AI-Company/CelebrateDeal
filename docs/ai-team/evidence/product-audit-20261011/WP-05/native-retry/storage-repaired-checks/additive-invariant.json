@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "additive-invariant", "revision": "sha256:58f8329f5fc13b0db02773452ef4dda4c054f3db9aab60140c687c528fdade68", "status": "PASS", "exit_code": 0, "duration_seconds": 0.062}

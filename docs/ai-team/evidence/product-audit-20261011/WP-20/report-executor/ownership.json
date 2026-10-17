@@ -1,0 +1,1 @@
+{"writer": "root", "files": ["src/lib/live-metric-worker.ts", "src/lib/live-metric-executor.ts", "scripts/build-metric-worker.mjs", "scripts/wp20-metric-executor-qa.mjs", "package.json", ".gitignore"], "depth": 0, "automatic_spawn": false}

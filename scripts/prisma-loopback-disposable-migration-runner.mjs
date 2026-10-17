@@ -15,9 +15,9 @@ const schemaSource = path.join(workspaceRoot, "prisma", "schema.prisma");
 const receiptPath = path.join(workspaceRoot, ".ai-team", "reports", "prisma-loopback-disposable-migration-receipt.json");
 const runNamePattern = /^celebratedeal-prisma-migrate-[a-f0-9]{16}$/;
 const tempNamePattern = /^celebratedeal-prisma-migrate-[a-f0-9]{16}$/;
-// Preserve every canonical migration directory, including legacy 12-digit
+// Preserve date-only 8-digit migrations as well as legacy 12-digit
 // prefixes, while still rejecting arbitrary files from the mirror.
-const migrationNamePattern = /^\d{12,14}_[a-z0-9_]+$/;
+const migrationNamePattern = /^(?:\d{8}|\d{12,14})_[a-z0-9_]+$/;
 const receiptSchema = "celebratedeal-prisma-loopback-migration/v1";
 const dockerImage = "postgres:16-alpine";
 
@@ -52,7 +52,14 @@ function selectedSystemEnvironment(tempRoot) {
 }
 
 export function listCanonicalMigrations(directory = migrationsRoot) {
-  return fs.readdirSync(directory, { withFileTypes: true })
+  const entries = fs.readdirSync(directory, { withFileTypes: true });
+  // 有 SQL 的目錄不得靜默漏跑；名稱不合法時先停止，再由人員修正來源。
+  if (entries.some((entry) => entry.isDirectory()
+    && fs.existsSync(path.join(directory, entry.name, "migration.sql"))
+    && !migrationNamePattern.test(entry.name))) {
+    throw new Error("migration-name-noncanonical");
+  }
+  return entries
     .filter((entry) => entry.isDirectory() && migrationNamePattern.test(entry.name))
     .map((entry) => entry.name)
     .sort();

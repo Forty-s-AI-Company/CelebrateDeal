@@ -1,0 +1,17 @@
+{
+  "suppliedRanges": {
+    "src/lib/live-metric-visit-reconciliation.ts": "Prefix before async function readSources; unchanged algorithm reused, omitted from supplied text"
+  },
+  "promptCharacters": 15188,
+  "reusedAlgorithm": {
+    "marker": "async function readSources",
+    "bodyUnchanged": true,
+    "baselineByteHash": "3e4f0823253af99173028b4abf074557a404c7df2b2eec90e6aad6a69469c30c",
+    "normalization": "CRLF to LF only"
+  },
+  "files": {
+    "src/lib/live-metric-visit-reconciliation.ts": "cd7bb891ea1b0b9a2f8cc9b4dc5a77de2348f19178a6e6a6c94239f50bb2086b",
+    "src/lib/live-metric-read-visibility.ts": "8e9fa59e571b5d7ca76549a7dab6a3d9996ef16abbb0d55032fc5489f795c0a6",
+    "src/lib/live-metric-coverage-reader.ts": "f0dd360b2997e851c91d4b013dc8705b1f60ca529536e441ba861ffc47d2b75d"
+  }
+}

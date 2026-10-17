@@ -1,0 +1,11 @@
+{
+  "status": "FAIL",
+  "testsPassed": 33,
+  "testsFailed": 11,
+  "toolChunk": "014dc7",
+  "rootCause": "Existing page returns Fragment with metric collector and playback child; old tests still read fragment.props.live. Assertions retained; next correction locates/asserts playback child instead.",
+  "sourceHashes": {
+    "src/app/(viewer)/live/[slug]/page.tsx": "f70cc5ba8a3a3d3b1603af64ad2a84ac94841cd2070bab5a3f8b0f39eba9603a",
+    "src/app/(viewer)/live/[slug]/page.test.tsx": "15d803e9a040414a56f6a7f6ac53d8010af7b6a9bc2b386ce3e9fdfd9a2ac2fe"
+  }
+}

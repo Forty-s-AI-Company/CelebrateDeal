@@ -1,0 +1,306 @@
+--- /dev/null
++++ b/src/lib/line-rich-menu-publication.ts
+@@ -0,0 +1,89 @@
++import { createHash } from "node:crypto";
++import sharp from "sharp";
++import { LineRichMenuSchema, type LineRichMenu } from "@/lib/line-rich-menu";
++import type { LineRichMenuClient } from "@/lib/line-rich-menu-client";
++
++export const LINE_RICH_MENU_IMAGE_LIMIT = 1_000_000;
++export const LINE_RICH_MENU_PLACEHOLDERS = ["live_url", "consultation_url", "portal_url", "voucher_url"] as const;
++export type RichMenuLinks = Partial<Record<typeof LINE_RICH_MENU_PLACEHOLDERS[number], string>>;
++export type PreparedLineRichMenu = { menu: LineRichMenu; image: Buffer; contentType: "image/png" | "image/jpeg"; fingerprint: string };
++export type RichMenuPreparation = { status: "ready"; publication: PreparedLineRichMenu }
++  | { status: "invalid_menu" | "unresolved_links" | "invalid_image" | "image_too_large" | "image_size_mismatch" };
++
++/** Validate bytes locally; never fetch merchant URLs or turn a draft into a sync claim. */
++export async function prepareLineRichMenuPublication(input: unknown, imageBytes: Uint8Array, links: RichMenuLinks): Promise<RichMenuPreparation> {
++  const parsed = LineRichMenuSchema.safeParse(input);
++  if (!parsed.success) return { status: "invalid_menu" };
++  const menu = parsed.data;
++  for (const area of menu.areas) {
++    if (area.action.type !== "uri") continue;
++    const placeholder = /^\{\{(live_url|consultation_url|portal_url|voucher_url)\}\}$/u.exec(area.action.uri);
++    if (placeholder) {
++      const replacement = links[placeholder[1] as keyof RichMenuLinks];
++      if (typeof replacement !== "string" || !replacement.trim()) return { status: "unresolved_links" };
++      area.action.uri = replacement;
++    }
++    if (area.action.uri.includes("{{") || area.action.uri.includes("}}")) return { status: "unresolved_links" };
++  }
++  if (!LineRichMenuSchema.safeParse(menu).success) return { status: "invalid_menu" };
++  if (imageBytes.byteLength > LINE_RICH_MENU_IMAGE_LIMIT) return { status: "image_too_large" };
++  // Do not pass SVG, external references or other formats into the decoder.
++  const image = Buffer.from(imageBytes);
++  const png = image.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
++  const jpeg = image.length >= 3 && image[0] === 255 && image[1] === 216 && image[2] === 255;
++  if (!png && !jpeg) return { status: "invalid_image" };
++  try {
++    const decoder = sharp(image, { limitInputPixels: 2500 * 1686, failOn: "warning" });
++    const metadata = await decoder.metadata();
++    if ((metadata.format !== "png" && metadata.format !== "jpeg") || (metadata.pages ?? 1) !== 1 || (metadata.orientation ?? 1) !== 1) return { status: "invalid_image" };
++    if (metadata.width !== menu.size.width || metadata.height !== menu.size.height) return { status: "image_size_mismatch" };
++    // Metadata alone can succeed on a truncated file; require a complete decode.
++    await decoder.raw().toBuffer();
++    const imageHash = createHash("sha256").update(image).digest("hex");
++    const fingerprint = createHash("sha256").update(`line-rich-menu-v1:${JSON.stringify(menu)}:${imageHash}`).digest("hex");
++    return { status: "ready", publication: { menu, image, contentType: png ? "image/png" : "image/jpeg", fingerprint } };
++  } catch { return { status: "invalid_image" }; }
++}
++
++type PublicationStage = "read_default" | "create" | "upload" | "check_current" | "set_default" | "confirm";
++export type RichMenuPublicationResult = {
++  status: "synced" | "conflict" | "failed" | "uncertain";
++  stage: PublicationStage;
++  remoteMenuId: string | null;
++  previousMenuId: string | null;
++  previousDefaultKnown: boolean;
++  fingerprint: string;
++};
++
++/**
++ * One attempt only. The caller must own the tenant resource and provide an
++ * authoritative revision/lease check. It must still persist this result with CAS.
++ * Never delete remote resources or restore defaults after an uncertain outcome.
++ */
++export async function publishPreparedLineRichMenu(
++  client: LineRichMenuClient,
++  publication: PreparedLineRichMenu,
++  isCurrent: () => Promise<boolean>,
++): Promise<RichMenuPublicationResult> {
++  let stage: PublicationStage = "check_current";
++  let remoteMenuId: string | null = null,previousMenuId: string | null = null,previousDefaultKnown = false;
++  const result = (status: RichMenuPublicationResult["status"]): RichMenuPublicationResult => ({ status,stage,remoteMenuId,previousMenuId,previousDefaultKnown,fingerprint:publication.fingerprint });
++  try {
++    if (!await isCurrent()) return result("conflict");
++    stage="read_default";previousMenuId=await client.getDefault();previousDefaultKnown=true;
++    stage="check_current";if (!await isCurrent()) return result("conflict");
++    stage="create";remoteMenuId=await client.create(publication.menu);
++    stage="upload";await client.uploadImage(remoteMenuId,publication.image,publication.contentType);
++    stage="check_current";if (!await isCurrent()) return result("conflict");
++    if (await client.getDefault() !== previousMenuId) return result("conflict");
++    stage="set_default";await client.setDefault(remoteMenuId);
++    stage="confirm";
++    if (await client.getDefault() !== remoteMenuId) return result("uncertain");
++    if (!await isCurrent()) return result("conflict");
++    return result("synced");
++  } catch {
++    // A create or upload timeout may have left an artifact even before a default
++    // switch. Keep it uncertain so a caller cannot blindly repeat the operation.
++    return result(stage === "read_default" || (stage === "check_current" && remoteMenuId === null) ? "failed" : "uncertain");
++  }
++}
+--- /dev/null
++++ b/src/lib/line-rich-menu-publication.test.ts
+@@ -0,0 +1,90 @@
++import sharp from "sharp";
++import { beforeAll, describe, expect, it, vi } from "vitest";
++import { createRichMenuTemplate } from "./line-rich-menu";
++import { prepareLineRichMenuPublication, publishPreparedLineRichMenu, LINE_RICH_MENU_IMAGE_LIMIT } from "./line-rich-menu-publication";
++
++let png: Buffer,jpeg: Buffer;
++const links = { live_url: "https://example.test/live/synthetic", consultation_url: "https://example.test/consultation", portal_url: "https://example.test/portal", voucher_url: "https://example.test/voucher" };
++beforeAll(async () => {
++  const input = { create: { width: 2500, height: 1686, channels: 3 as const, background: "#2563eb" } };
++  png=await sharp(input).png().toBuffer();jpeg=await sharp(input).jpeg().toBuffer();
++});
++
++describe("Rich Menu single-attempt publication protocol", () => {
++  const old=`richmenu-${"b".repeat(32)}`,created=`richmenu-${"c".repeat(32)}`;
++  function client() {
++    return { getDefault:vi.fn().mockResolvedValueOnce(old).mockResolvedValueOnce(old).mockResolvedValue(created),create:vi.fn().mockResolvedValue(created),uploadImage:vi.fn().mockResolvedValue(undefined),setDefault:vi.fn().mockResolvedValue(undefined),delete:vi.fn() };
++  }
++  async function publication() {
++    const ready=await prepareLineRichMenuPublication(createRichMenuTemplate("minimal-4"),png,links);
++    if(ready.status!=="ready")throw new Error("Synthetic publication missing");return ready.publication;
++  }
++  it("reports sync only after image upload, default switch, remote confirmation and current revision checks", async () => {
++    const remote=client(),current=vi.fn().mockResolvedValue(true);
++    const result=await publishPreparedLineRichMenu(remote,await publication(),current);
++    expect(result).toMatchObject({status:"synced",remoteMenuId:created,previousMenuId:old,previousDefaultKnown:true});
++    expect(current).toHaveBeenCalledTimes(4);
++    expect(remote.uploadImage.mock.invocationCallOrder[0]).toBeLessThan(remote.setDefault.mock.invocationCallOrder[0]);
++    expect(remote.delete).not.toHaveBeenCalled();
++  });
++  it("does not create any remote artifact when the authoritative snapshot is already stale", async () => {
++    const remote=client();expect((await publishPreparedLineRichMenu(remote,await publication(),async()=>false)).status).toBe("conflict");
++    expect(remote.getDefault).not.toHaveBeenCalled();expect(remote.create).not.toHaveBeenCalled();
++  });
++  it("does not overwrite a changed default or delete artifacts after a conflict", async () => {
++    const remote=client();remote.getDefault.mockReset().mockResolvedValueOnce(old).mockResolvedValueOnce(`richmenu-${"d".repeat(32)}`);
++    expect((await publishPreparedLineRichMenu(remote,await publication(),async()=>true)).status).toBe("conflict");
++    expect(remote.setDefault).not.toHaveBeenCalled();expect(remote.delete).not.toHaveBeenCalled();
++  });
++  it("keeps default-switch timeouts uncertain instead of falsely claiming sync or rolling back another writer", async () => {
++    const remote=client();remote.setDefault.mockRejectedValueOnce(new Error("private-provider-diagnostic"));
++    const result=await publishPreparedLineRichMenu(remote,await publication(),async()=>true);
++    expect(result).toMatchObject({status:"uncertain",stage:"set_default",remoteMenuId:created});
++    expect(JSON.stringify(result)).not.toContain("private-provider-diagnostic");expect(remote.delete).not.toHaveBeenCalled();expect(remote.setDefault).toHaveBeenCalledTimes(1);
++  });
++  it("keeps an ambiguous create failure uncertain without retrying or claiming no remote side effect", async () => {
++    const remote=client();remote.create.mockRejectedValueOnce(new Error("synthetic ambiguous response"));
++    expect(await publishPreparedLineRichMenu(remote,await publication(),async()=>true)).toMatchObject({status:"uncertain",stage:"create",remoteMenuId:null});
++    expect(remote.create).toHaveBeenCalledTimes(1);expect(remote.setDefault).not.toHaveBeenCalled();expect(remote.delete).not.toHaveBeenCalled();
++  });
++  it("does not report the current draft synced if it changes during remote publication", async () => {
++    const current=vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
++    const remote=client();expect((await publishPreparedLineRichMenu(remote,await publication(),current)).status).toBe("conflict");
++    expect(remote.setDefault).toHaveBeenCalledTimes(1);expect(remote.delete).not.toHaveBeenCalled();
++  });
++});
++
++describe("Rich Menu publication preparation", () => {
++  it.each(["golden-6","minimal-4"] as const)("resolves the %s draft without mutating it and binds image bytes to the fingerprint", async type => {
++    const menu = createRichMenuTemplate(type),before=structuredClone(menu);
++    const result=await prepareLineRichMenuPublication(menu,png,links);
++    expect(result.status).toBe("ready");if(result.status!=="ready")return;
++    expect(menu).toEqual(before);expect(JSON.stringify(result.publication.menu)).not.toContain("{{");
++    expect(result.publication.menu.areas[0].action).toMatchObject({ type:"uri",uri:links.live_url });
++    expect(result.publication.fingerprint).toMatch(/^[a-f0-9]{64}$/u);
++    expect(result.publication.contentType).toBe("image/png");
++    const repeat=await prepareLineRichMenuPublication(menu,png,links);
++    expect(repeat.status==="ready"&&repeat.publication.fingerprint).toBe(result.publication.fingerprint);
++    const changed=await prepareLineRichMenuPublication(menu,jpeg,links);
++    expect(changed.status==="ready"&&changed.publication.contentType).toBe("image/jpeg");
++    expect(changed.status==="ready"&&changed.publication.fingerprint).not.toBe(result.publication.fingerprint);
++  });
++  it("rejects missing placeholder values, unknown markers and unsafe replacement URLs before decoding", async () => {
++    const menu=createRichMenuTemplate("golden-6");
++    expect((await prepareLineRichMenuPublication(menu,png,{})).status).toBe("unresolved_links");
++    expect((await prepareLineRichMenuPublication(menu,png,{...links,live_url:"javascript:alert(1)"})).status).toBe("invalid_menu");
++    menu.areas[0].action={type:"uri",label:"Synthetic",uri:"https://example.test/{{unknown}}"};
++    expect((await prepareLineRichMenuPublication(menu,png,links)).status).toBe("unresolved_links");
++  });
++  it("requires image bytes to match the saved menu dimensions", async () => {
++    const other=await sharp({create:{width:2500,height:843,channels:3,background:"white"}}).png().toBuffer();
++    expect((await prepareLineRichMenuPublication(createRichMenuTemplate("minimal-4"),other,links)).status).toBe("image_size_mismatch");
++  });
++  it("rejects oversized, SVG and truncated images without fetching external references", async () => {
++    const menu=createRichMenuTemplate("minimal-4");
++    expect((await prepareLineRichMenuPublication(menu,new Uint8Array(LINE_RICH_MENU_IMAGE_LIMIT+1),links)).status).toBe("image_too_large");
++    expect((await prepareLineRichMenuPublication(menu,Buffer.from('<svg><image href="https://example.test/never-fetch"/></svg>'),links)).status).toBe("invalid_image");
++    expect((await prepareLineRichMenuPublication(menu,png.subarray(0,64),links)).status).toBe("invalid_image");
++    expect((await prepareLineRichMenuPublication({},png,links)).status).toBe("invalid_menu");
++  });
++});
+--- /dev/null
++++ b/src/lib/line-rich-menu-client.ts
+@@ -0,0 +1,70 @@
++import { LineRichMenuSchema, type LineRichMenu } from "@/lib/line-rich-menu";
++
++export interface LineRichMenuClient {
++  create(menu: LineRichMenu): Promise<string>;
++  uploadImage(id: string, bytes: Uint8Array, contentType: "image/png" | "image/jpeg"): Promise<void>;
++  getDefault(): Promise<string | null>;
++  setDefault(id: string | null): Promise<void>;
++  delete(id: string): Promise<void>;
++}
++
++type Stage = "create" | "upload" | "read_default" | "set_default" | "delete";
++export class LineRichMenuError extends Error {
++  constructor(readonly stage: Stage, readonly status?: number) { super(`LINE rich menu ${stage} failed.`);this.name = "LineRichMenuError"; }
++}
++const idPattern = /^richmenu-[a-f0-9]{32}$/u;
++function checkedId(id: string) {
++  if (!idPattern.test(id)) throw new TypeError("Invalid LINE rich menu reference.");
++  return id;
++}
++
++/** Official fixed hosts only; injectable fetch is for owned offline/Sandbox tests. */
++export class LineFetchRichMenuClient implements LineRichMenuClient {
++  constructor(private readonly providerValue: string, private readonly fetchImpl: typeof fetch = fetch) {
++    if (!providerValue.trim()) throw new TypeError("LINE provider configuration is required.");
++  }
++
++  private async request(stage: Stage, host: "api.line.me" | "api-data.line.me", path: string, method: string, body?: BodyInit, contentType?: string) {
++    try {
++      return await this.fetchImpl(`https://${host}/v2/bot/${path}`, {
++        method, headers: { Authorization: `Bearer ${this.providerValue}`, ...(contentType ? { "Content-Type": contentType } : {}) },
++        body, signal: AbortSignal.timeout(10_000), redirect: "error",
++      });
++    } catch { throw new LineRichMenuError(stage); }
++  }
++
++  async create(input: LineRichMenu) {
++    const menu = LineRichMenuSchema.parse(input);
++    if (menu.areas.some(area => area.action.type === "uri" && /\{\{|\}\}/u.test(area.action.uri))) throw new TypeError("Rich menu links must be resolved.");
++    const response = await this.request("create", "api.line.me", "richmenu", "POST", JSON.stringify(menu), "application/json");
++    if (!response.ok) throw new LineRichMenuError("create", response.status);
++    try { const result: unknown = await response.json();if (result && typeof result === "object" && "richMenuId" in result && typeof result.richMenuId === "string") return checkedId(result.richMenuId); }
++    catch { /* Never expose a provider response or parsing diagnostics. */ }
++    throw new LineRichMenuError("create");
++  }
++
++  async uploadImage(id: string, bytes: Uint8Array, contentType: "image/png" | "image/jpeg") {
++    const response = await this.request("upload", "api-data.line.me", `richmenu/${checkedId(id)}/content`, "POST", new Uint8Array(bytes), contentType);
++    if (!response.ok) throw new LineRichMenuError("upload", response.status);
++  }
++
++  async getDefault() {
++    const response = await this.request("read_default", "api.line.me", "user/all/richmenu", "GET");
++    if (response.status === 404) return null;
++    if (!response.ok) throw new LineRichMenuError("read_default", response.status);
++    try { const result: unknown = await response.json();if (result && typeof result === "object" && "richMenuId" in result && typeof result.richMenuId === "string") return checkedId(result.richMenuId); }
++    catch { /* Fixed failure below; do not forward remote content. */ }
++    throw new LineRichMenuError("read_default");
++  }
++
++  async setDefault(id: string | null) {
++    const path = id === null ? "user/all/richmenu" : `user/all/richmenu/${checkedId(id)}`;
++    const response = await this.request("set_default", "api.line.me", path, id === null ? "DELETE" : "POST");
++    if (!response.ok) throw new LineRichMenuError("set_default", response.status);
++  }
++
++  async delete(id: string) {
++    const response = await this.request("delete", "api.line.me", `richmenu/${checkedId(id)}`, "DELETE");
++    if (!response.ok && response.status !== 404) throw new LineRichMenuError("delete", response.status);
++  }
++}
+--- /dev/null
++++ b/src/lib/line-rich-menu-client.test.ts
+@@ -0,0 +1,45 @@
++import { describe, expect, it, vi } from "vitest";
++import { createRichMenuTemplate } from "./line-rich-menu";
++import { LineFetchRichMenuClient } from "./line-rich-menu-client";
++
++const id=`richmenu-${"a".repeat(32)}`;
++function menu() {
++  const result=createRichMenuTemplate("minimal-4");
++  for(const area of result.areas) area.action={type:"uri",label:area.action.label,uri:"https://example.test/synthetic"};
++  return result;
++}
++describe("fixed-host Rich Menu provider adapter", () => {
++  it("uses the correct create, binary image, default and cleanup endpoints with redirects disabled", async () => {
++    const fetchImpl=vi.fn().mockResolvedValueOnce(Response.json({richMenuId:id})).mockResolvedValueOnce(new Response(null,{status:200})).mockResolvedValueOnce(Response.json({richMenuId:id})).mockResolvedValue(new Response(null,{status:200}));
++    const client=new LineFetchRichMenuClient("synthetic-offline-value",fetchImpl);
++    expect(await client.create(menu())).toBe(id);
++    await client.uploadImage(id,new Uint8Array([1,2,3]),"image/png");
++    expect(await client.getDefault()).toBe(id);await client.setDefault(id);await client.setDefault(null);await client.delete(id);
++    expect(fetchImpl.mock.calls.map(call=>call[0])).toEqual([
++      "https://api.line.me/v2/bot/richmenu",`https://api-data.line.me/v2/bot/richmenu/${id}/content`,
++      "https://api.line.me/v2/bot/user/all/richmenu",`https://api.line.me/v2/bot/user/all/richmenu/${id}`,
++      "https://api.line.me/v2/bot/user/all/richmenu",`https://api.line.me/v2/bot/richmenu/${id}`,
++    ]);
++    expect(fetchImpl.mock.calls[1][1].body).toEqual(new Uint8Array([1,2,3]));
++    expect(fetchImpl.mock.calls.every(call=>call[1].redirect==="error")).toBe(true);
++    expect(fetchImpl.mock.calls[4][1].method).toBe("DELETE");
++  });
++  it("treats absent defaults and already-deleted owned artifacts as absent", async () => {
++    const client=new LineFetchRichMenuClient("synthetic-offline-value",vi.fn().mockResolvedValue(new Response(null,{status:404})));
++    expect(await client.getDefault()).toBeNull();await expect(client.delete(id)).resolves.toBeUndefined();
++  });
++  it("rejects unresolved placeholders and malformed remote references before any fetch", async () => {
++    const fetchImpl=vi.fn();const client=new LineFetchRichMenuClient("synthetic-offline-value",fetchImpl);
++    await expect(client.create(createRichMenuTemplate("minimal-4"))).rejects.toThrow("links must be resolved");
++    await expect(client.setDefault("../../other-account")).rejects.toThrow("Invalid LINE rich menu reference");
++    expect(fetchImpl).not.toHaveBeenCalled();
++  });
++  it("returns fixed failures without provider response bodies or network diagnostics", async () => {
++    const client=new LineFetchRichMenuClient("synthetic-offline-value",vi.fn().mockResolvedValue(new Response("private-provider-detail",{status:500})));
++    await expect(client.create(menu())).rejects.toThrow("LINE rich menu create failed.");
++    const offline=new LineFetchRichMenuClient("synthetic-offline-value",vi.fn().mockRejectedValue(new Error("private-network-detail")));
++    await expect(offline.getDefault()).rejects.toThrow("LINE rich menu read_default failed.");
++    const malformed=new LineFetchRichMenuClient("synthetic-offline-value",vi.fn().mockResolvedValue(Response.json({richMenuId:"unexpected"})));
++    await expect(malformed.create(menu())).rejects.toThrow("LINE rich menu create failed.");
++  });
++});

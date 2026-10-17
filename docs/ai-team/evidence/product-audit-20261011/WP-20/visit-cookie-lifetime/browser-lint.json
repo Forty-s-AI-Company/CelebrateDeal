@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "browser-lint", "revision": "sha256:26fd5525a233e86f8cb03167a1b2856d83fc16f14afdc7fc772cc1074a5cdbe5", "status": "PASS", "exit_code": 0, "duration_seconds": 3.953}

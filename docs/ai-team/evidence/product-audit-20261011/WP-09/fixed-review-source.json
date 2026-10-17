@@ -1,0 +1,8 @@
+{
+  "sourceHashes": {
+    "src/lib/funnel-template-gallery.ts": "eb3f52049fd0bc7efada59696d5fa93ab308d416207ce9b101e5c3a602580119",
+    "src/lib/funnel-template-gallery.test.ts": "903c58cc4e86d317bc4be929b22dcb14b24afc72f42573ab6323162b26b59ac0"
+  },
+  "contextChars": 12244,
+  "scope": "all new builders/metadata/filter; unchanged node/form helper and actual public required-field rendering supplied"
+}

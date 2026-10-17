@@ -1,0 +1,771 @@
+Independent Critical Migration/Permission review, part 1 of 2. Review ONLY supplied source ledger and report/completion revision binding. No tools, no file edits. Return canonical findings JSON. This review is not full Goal acceptance. Existing original Serializable contention gate FAIL and missing other producers/scheduler are known separate gaps, do not repeat them as new local findings. Check insert-only ledger COUNT revision, source changes, concurrent transactions, lock order, permissions, report lifecycle and stale completion rejection. Legacy migrations not supplied: flag missing dependencies if required, do not assume absent guards. Current DB tests PASS: 107 migrations, 20 concurrent ReadCommitted source inserts, RR repeatable snapshots, five source mutation invalidations, uncaptured verified insert invalidates ready report, schema/typecheck. Report exact interleaving for race findings. Max 8 findings; concise evidence and fixes.
+
+FILE prisma/migrations/20261015170000_live_metric_registration_source_revision/migration.sql
+1: -- Insert-only authoritative submission ledger: no shared version-row UPDATE.
+2: -- COUNT in a snapshot is the revision; max(sequence) is not a commit watermark.
+3: CREATE TABLE public."LiveMetricRegistrationSource" (
+4:  id BIGSERIAL PRIMARY KEY,
+5:  "vendorId" TEXT NOT NULL REFERENCES public."Vendor"(id) ON DELETE CASCADE ON UPDATE NO ACTION,
+6:  "liveId" TEXT NOT NULL
+7: );
+8: CREATE INDEX "LiveMetricRegistrationSource_scope_idx" ON public."LiveMetricRegistrationSource"("vendorId","liveId");
+9: CREATE FUNCTION public.wp20_metric_registration_source_revision() RETURNS trigger
+10: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+11: DECLARE old_live TEXT; new_live TEXT; scope RECORD;
+12: BEGIN
+13:  IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."FormSubmission"'::regclass THEN
+14:   RAISE EXCEPTION 'invalid registration source relation' USING ERRCODE='23514';
+15:  END IF;
+16:  IF TG_OP='UPDATE' AND
+17:   (NEW.id,NEW."liveId",NEW."formId",NEW."verificationStatus",NEW."verifiedAt") IS NOT DISTINCT FROM
+18:   (OLD.id,OLD."liveId",OLD."formId",OLD."verificationStatus",OLD."verifiedAt") THEN RETURN NULL; END IF;
+19:  IF TG_OP<>'INSERT' AND OLD."verificationStatus"='VERIFIED' THEN old_live:=OLD."liveId"; END IF;
+20:  IF TG_OP<>'DELETE' AND NEW."verificationStatus"='VERIFIED' THEN new_live:=NEW."liveId"; END IF;
+21:  FOR scope IN SELECT l.id,l."vendorId" FROM public."Live" l
+22:   WHERE l.id=old_live OR l.id=new_live ORDER BY l.id LOOP
+23:   INSERT INTO public."LiveMetricRegistrationSource"("vendorId","liveId") VALUES(scope."vendorId",scope.id);
+24:  END LOOP;
+25:  RETURN NULL;
+26: END $$;
+27: CREATE TRIGGER "FormSubmission_metric_audit_revision" AFTER INSERT OR UPDATE OR DELETE ON public."FormSubmission"
+28:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_registration_source_revision();
+29: CREATE FUNCTION public.wp20_metric_registration_source_immutable() RETURNS trigger
+30: LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+31: BEGIN
+32:  IF TG_OP='DELETE' AND NOT EXISTS(SELECT 1 FROM public."Vendor" WHERE id=OLD."vendorId") THEN RETURN OLD; END IF;
+33:  RAISE EXCEPTION 'metric registration source events are immutable' USING ERRCODE='23514';
+34: END $$;
+35: CREATE TRIGGER "LiveMetricRegistrationSource_immutable" BEFORE UPDATE OR DELETE ON public."LiveMetricRegistrationSource"
+36:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_registration_source_immutable();
+37: CREATE TRIGGER "LiveMetricRegistrationSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricRegistrationSource"
+38:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+39: CREATE FUNCTION public.wp20_metric_registration_revision(vendor_id TEXT,live_id TEXT) RETURNS BIGINT
+40: LANGUAGE sql STABLE STRICT SECURITY DEFINER SET search_path=pg_catalog SET row_security=off AS $$
+41:  SELECT count(*) FROM public."LiveMetricRegistrationSource" WHERE "vendorId"=vendor_id AND "liveId"=live_id
+42: $$;
+43: ALTER TABLE public."LiveMetricRegistrationSource" ENABLE ROW LEVEL SECURITY;
+44: REVOKE ALL ON TABLE public."LiveMetricRegistrationSource" FROM PUBLIC;
+45: REVOKE ALL ON SEQUENCE public."LiveMetricRegistrationSource_id_seq" FROM PUBLIC;
+46: REVOKE ALL ON FUNCTION public.wp20_metric_registration_source_revision(),public.wp20_metric_registration_source_immutable(),public.wp20_metric_registration_revision(text,text) FROM PUBLIC;
+47: DO $$ DECLARE api_role TEXT; BEGIN
+48:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+49:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+50:    EXECUTE format('REVOKE ALL ON public."LiveMetricRegistrationSource" FROM %I',api_role);
+51:    EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricRegistrationSource_id_seq" FROM %I',api_role);
+52:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_registration_source_revision(),public.wp20_metric_registration_source_immutable(),public.wp20_metric_registration_revision(text,text) FROM %I',api_role);
+53:   END IF;
+54:  END LOOP;
+55: END $$;
+
+FILE prisma/migrations/20261015180000_live_metric_registration_report_binding/migration.sql
+1: -- Bind authoritative submission changes independently of metric evidence.
+2: ALTER TABLE public."LiveMetricReport" ADD COLUMN "inputRegistrationRevision" BIGINT CHECK ("inputRegistrationRevision">=0);
+3: UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+4:  WHERE status IN ('queued','running','ready');
+5: 
+6: CREATE OR REPLACE FUNCTION public.wp20_metric_report_guard() RETURNS trigger
+7: LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+8: DECLARE current_revision BIGINT; current_order_revision BIGINT; current_registration_revision BIGINT;
+9: BEGIN
+10:   IF current_setting('transaction_isolation')<>'read committed' THEN
+11:     RAISE EXCEPTION 'metric writes require read committed isolation' USING ERRCODE='23514';
+12:   END IF;
+13:   IF TG_OP='INSERT' AND current_setting('wp20.report_writer',true) IS DISTINCT FROM 'create' THEN
+14:     RAISE EXCEPTION 'metric report requires creation function' USING ERRCODE='23514';
+15:   END IF;
+16:   IF TG_OP='UPDATE' AND NEW.status='queued' THEN
+17:     RAISE EXCEPTION 'queued metric report is immutable; create replacement' USING ERRCODE='23514';
+18:   END IF;
+19:   IF TG_OP='UPDATE' AND NEW.status IN ('running','ready')
+20:     AND current_setting('wp20.report_writer',true) IS DISTINCT FROM (CASE WHEN NEW.status='running' THEN 'claim' ELSE 'finish' END) THEN
+21:     RAISE EXCEPTION 'metric report requires worker function' USING ERRCODE='23514';
+22:   END IF;
+23:   IF TG_OP='UPDATE' AND (NEW."id",NEW."vendorId",NEW."liveId",NEW."versionId",NEW."windowStartAt",NEW."windowEndAt",NEW."inputRevision")
+24:     IS DISTINCT FROM (OLD."id",OLD."vendorId",OLD."liveId",OLD."versionId",OLD."windowStartAt",OLD."windowEndAt",OLD."inputRevision") THEN
+25:     RAISE EXCEPTION 'metric report input is immutable' USING ERRCODE='23514';
+26:   END IF;
+27:   IF TG_OP='UPDATE' AND NEW."inputOrderRevision" IS DISTINCT FROM OLD."inputOrderRevision" THEN
+28:     RAISE EXCEPTION 'metric order input is immutable' USING ERRCODE='23514';
+29:   END IF;
+30:   IF TG_OP='UPDATE' AND NEW."inputRegistrationRevision" IS DISTINCT FROM OLD."inputRegistrationRevision" THEN
+31:     RAISE EXCEPTION 'metric registration input is immutable' USING ERRCODE='23514';
+32:   END IF;
+33:   IF NEW."status" IN ('queued','running','ready') THEN
+34:     current_registration_revision := public.wp20_metric_registration_revision(NEW."vendorId",NEW."liveId");
+35:     IF TG_OP='INSERT' THEN NEW."inputRegistrationRevision":=current_registration_revision; END IF;
+36:     IF current_registration_revision IS NULL OR NEW."inputRegistrationRevision" IS DISTINCT FROM current_registration_revision THEN
+37:       RAISE EXCEPTION 'metric registration input is stale' USING ERRCODE='23514';
+38:     END IF;
+39:     current_order_revision := public.wp20_metric_order_revision(NEW."vendorId",NEW."liveId");
+40:     IF TG_OP='INSERT' THEN NEW."inputOrderRevision":=current_order_revision; END IF;
+41:     IF current_order_revision IS NULL OR NEW."inputOrderRevision" IS DISTINCT FROM current_order_revision THEN
+42:       RAISE EXCEPTION 'metric order input is stale' USING ERRCODE='23514';
+43:     END IF;
+44:     -- Workers lock the version before the report. SHARE also closes the race
+45:     -- between a report INSERT and an evidence-triggered revision increment.
+46:     SELECT "sourceRevision" INTO current_revision FROM public."LiveMetricVersion"
+47:     WHERE "id"=NEW."versionId" AND "vendorId"=NEW."vendorId" AND "liveId"=NEW."liveId" FOR SHARE;
+48:     IF NOT FOUND OR current_revision<>NEW."inputRevision" THEN
+49:       RAISE EXCEPTION 'metric report input is stale' USING ERRCODE='23514';
+50:     END IF;
+51:   END IF;
+52:   RETURN NEW;
+53: END $$;
+54: 
+55: CREATE OR REPLACE FUNCTION public.wp20_metric_report_create(
+56:   vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+57:   window_start TIMESTAMPTZ(3), window_end TIMESTAMPTZ(3), input_revision BIGINT, expires_at TIMESTAMPTZ(3)
+58: ) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+59: DECLARE previous_writer TEXT; order_revision BIGINT; registration_revision BIGINT;
+60: BEGIN
+61: 
+62:   -- No shared source-row lock: payment changes append events. Version/report
+63:   -- locks retain metric lifecycle ordering. Every reader rechecks event count.
+64:   order_revision := public.wp20_metric_order_revision(vendor_id,live_id);
+65:   registration_revision := public.wp20_metric_registration_revision(vendor_id,live_id);
+66:   PERFORM 1 FROM public."LiveMetricVersion" WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+67:   IF NOT FOUND THEN RAISE EXCEPTION 'metric version missing' USING ERRCODE='23514'; END IF;
+68:   UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+69:     WHERE "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+70:       AND status IN ('queued','running','ready') AND ("inputOrderRevision" IS DISTINCT FROM order_revision OR "inputRegistrationRevision" IS DISTINCT FROM registration_revision);
+71: 
+72:   IF window_end>clock_timestamp() THEN RAISE EXCEPTION 'metric report window must have ended' USING ERRCODE='23514'; END IF;
+73:   previous_writer := current_setting('wp20.report_writer',true);
+74:   PERFORM set_config('wp20.report_writer','create',true);
+75:   INSERT INTO public."LiveMetricReport" (id,"vendorId","liveId","versionId","windowStartAt","windowEndAt","inputRevision","expiresAt")
+76:     VALUES (report_id,vendor_id,live_id,version_id,window_start,window_end,input_revision,expires_at);
+77:   PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+78:   RETURN 1;
+79: END $$;
+80: 
+81: CREATE OR REPLACE FUNCTION public.wp20_metric_report_claim(
+82:   vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+83:   worker_id TEXT, lease_until TIMESTAMPTZ(3)
+84: ) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+85: DECLARE changed INTEGER; previous_writer TEXT; order_revision BIGINT; registration_revision BIGINT;
+86: BEGIN
+87: 
+88:   -- No shared source-row lock: payment changes append events. Version/report
+89:   -- locks retain metric lifecycle ordering. Every reader rechecks event count.
+90:   order_revision := public.wp20_metric_order_revision(vendor_id,live_id);
+91:   registration_revision := public.wp20_metric_registration_revision(vendor_id,live_id);
+92:   IF worker_id IS NULL OR length(worker_id)=0 OR lease_until<=clock_timestamp()
+93:     OR lease_until>clock_timestamp()+INTERVAL '5 minutes' THEN
+94:     RAISE EXCEPTION 'invalid metric worker lease' USING ERRCODE='23514';
+95:   END IF;
+96:   PERFORM 1 FROM public."LiveMetricVersion"
+97:     WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+98:   IF NOT FOUND THEN RETURN 0; END IF;
+99:   IF EXISTS(SELECT 1 FROM public."LiveMetricReport" WHERE id=report_id AND "vendorId"=vendor_id
+100:       AND "liveId"=live_id AND "versionId"=version_id AND ("inputOrderRevision" IS DISTINCT FROM order_revision OR "inputRegistrationRevision" IS DISTINCT FROM registration_revision)) THEN
+101:     UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+102:       WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id AND status IN ('queued','running','ready');
+103:     RETURN 0;
+104:   END IF;
+105: 
+106:   UPDATE public."LiveMetricReport" SET status='failed',"errorCode"='attempt_limit',"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+107:     WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+108:       AND attempts>=5 AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()));
+109:   previous_writer := current_setting('wp20.report_writer',true);
+110:   PERFORM set_config('wp20.report_writer','claim',true);
+111:   UPDATE public."LiveMetricReport" SET status='running',"leaseOwner"=worker_id,
+112:     "leaseExpiresAt"=lease_until,attempts=attempts+1
+113:     WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+114:       AND (status='queued' OR (status='running' AND "leaseExpiresAt"<=clock_timestamp()))
+115:       AND attempts<5 AND "expiresAt">clock_timestamp();
+116:   GET DIAGNOSTICS changed = ROW_COUNT;
+117:   PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+118:   RETURN changed;
+119: END $$;
+120: 
+121: CREATE OR REPLACE FUNCTION public.wp20_metric_report_finish(
+122:   vendor_id TEXT, live_id TEXT, version_id TEXT, report_id TEXT,
+123:   worker_id TEXT, report_result JSONB
+124: ) RETURNS INTEGER LANGUAGE plpgsql SET search_path = pg_catalog, public SET timezone = 'UTC' AS $$
+125: DECLARE changed INTEGER; previous_writer TEXT; order_revision BIGINT; registration_revision BIGINT;
+126: BEGIN
+127: 
+128:   -- No shared source-row lock: payment changes append events. Version/report
+129:   -- locks retain metric lifecycle ordering. Every reader rechecks event count.
+130:   order_revision := public.wp20_metric_order_revision(vendor_id,live_id);
+131:   registration_revision := public.wp20_metric_registration_revision(vendor_id,live_id);
+132:   IF report_result IS NULL THEN RAISE EXCEPTION 'metric result required' USING ERRCODE='23514'; END IF;
+133:   PERFORM 1 FROM public."LiveMetricVersion"
+134:     WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+135:   IF NOT FOUND THEN RETURN 0; END IF;
+136:   IF EXISTS(SELECT 1 FROM public."LiveMetricReport" WHERE id=report_id AND "vendorId"=vendor_id
+137:       AND "liveId"=live_id AND "versionId"=version_id AND ("inputOrderRevision" IS DISTINCT FROM order_revision OR "inputRegistrationRevision" IS DISTINCT FROM registration_revision)) THEN
+138:     UPDATE public."LiveMetricReport" SET status='stale',result=NULL,"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+139:       WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id AND status IN ('queued','running','ready');
+140:     RETURN 0;
+141:   END IF;
+142: 
+143:   previous_writer := current_setting('wp20.report_writer',true);
+144:   PERFORM set_config('wp20.report_writer','finish',true);
+145:   UPDATE public."LiveMetricReport" SET status='ready',result=report_result,
+146:     "finishedAt"=clock_timestamp(),"leaseOwner"=NULL,"leaseExpiresAt"=NULL
+147:     WHERE id=report_id AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+148:       AND status='running' AND "leaseOwner"=worker_id AND "leaseExpiresAt">clock_timestamp()
+149:       AND "expiresAt">clock_timestamp();
+150:   GET DIAGNOSTICS changed = ROW_COUNT;
+151:   PERFORM set_config('wp20.report_writer',coalesce(previous_writer,''),true);
+152:   RETURN changed;
+153: END $$;
+154: 
+155: CREATE OR REPLACE FUNCTION public.wp20_metric_completion_publish(
+156:  vendor_id TEXT,live_id TEXT,version_id TEXT,report_id TEXT,worker_id TEXT,
+157:  source_revision BIGINT,cohort_count INTEGER,facts JSONB
+158: ) RETURNS INTEGER LANGUAGE plpgsql SECURITY DEFINER
+159: SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+160: DECLARE report public."LiveMetricReport"%ROWTYPE; current_revision BIGINT; actual_cohort BIGINT;
+161: BEGIN
+162:  IF current_setting('transaction_isolation')<>'read committed' THEN
+163:   RAISE EXCEPTION 'completion write requires read committed' USING ERRCODE='23514';
+164:  END IF;
+165:  IF facts IS NULL OR jsonb_typeof(facts)<>'array' OR cohort_count IS NULL OR cohort_count<0
+166:    OR source_revision IS NULL OR source_revision<0 THEN
+167:   RAISE EXCEPTION 'invalid completion manifest' USING ERRCODE='23514';
+168:  END IF;
+169:  IF jsonb_array_length(facts)>cohort_count OR cohort_count>1000000 OR pg_column_size(facts)>67108864 THEN
+170:   RAISE EXCEPTION 'completion manifest limit exceeded' USING ERRCODE='23514';
+171:  END IF;
+172:  -- Input-only checks require no locks and reject malformed batches early.
+173:  IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE jsonb_typeof(f)<>'object') THEN
+174:   RAISE EXCEPTION 'invalid completion fact shape' USING ERRCODE='23514';
+175:  END IF;
+176:  IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE
+177:    NOT (f ? 'personId' AND f ? 'firstCompletedAtMs')
+178:    OR jsonb_typeof(f->'personId')<>'string' OR jsonb_typeof(f->'firstCompletedAtMs')<>'number'
+179:    OR (SELECT count(*) FROM jsonb_object_keys(f))<>2) THEN
+180:   RAISE EXCEPTION 'invalid completion fact shape' USING ERRCODE='23514';
+181:  END IF;
+182:  IF (SELECT count(DISTINCT f->>'personId') FROM jsonb_array_elements(facts) f)<>jsonb_array_length(facts) THEN
+183:   RAISE EXCEPTION 'duplicate completion person' USING ERRCODE='23514';
+184:  END IF;
+185:  IF EXISTS(SELECT 1 FROM jsonb_array_elements(facts) f WHERE
+186:   (f->>'firstCompletedAtMs')::numeric<>trunc((f->>'firstCompletedAtMs')::numeric)
+187:   OR (f->>'firstCompletedAtMs')::numeric<0 OR (f->>'firstCompletedAtMs')::numeric>8640000000000000) THEN
+188:   RAISE EXCEPTION 'completion fact outside timestamp range' USING ERRCODE='23514';
+189:  END IF;
+190:  -- Match the established version -> report lock order before publishing.
+191:  SELECT "sourceRevision" INTO current_revision FROM public."LiveMetricVersion"
+192:   WHERE id=version_id AND "vendorId"=vendor_id AND "liveId"=live_id FOR UPDATE;
+193:  IF NOT FOUND OR current_revision<>source_revision THEN RETURN 0; END IF;
+194:  SELECT * INTO report FROM public."LiveMetricReport" WHERE id=report_id
+195:   AND "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id FOR UPDATE;
+196:  IF NOT FOUND OR report.status<>'running' OR report."leaseOwner" IS DISTINCT FROM worker_id
+197:   OR report."leaseExpiresAt"<=clock_timestamp() OR report."expiresAt"<=clock_timestamp()
+198:   OR report."inputRevision"<>source_revision
+199:   OR report."inputOrderRevision" IS DISTINCT FROM public.wp20_metric_order_revision(vendor_id,live_id)
+200:   OR report."inputRegistrationRevision" IS DISTINCT FROM public.wp20_metric_registration_revision(vendor_id,live_id)
+201:  THEN RETURN 0; END IF;
+202:  SELECT count(*) INTO actual_cohort FROM public."LiveMetricRegistration"
+203:   WHERE "vendorId"=vendor_id AND "liveId"=live_id AND "versionId"=version_id
+204:     AND "verifiedAt">=report."windowStartAt" AND "verifiedAt"<report."windowEndAt";
+205:  IF actual_cohort<>cohort_count THEN RAISE EXCEPTION 'completion cohort changed' USING ERRCODE='23514'; END IF;
+206:  -- Scope-dependent membership remains under the version/report locks.
+207:  IF EXISTS(
+208:   SELECT 1 FROM jsonb_to_recordset(facts) AS f("personId" text,"firstCompletedAtMs" numeric)
+209:   LEFT JOIN public."LiveMetricRegistration" g
+210:    ON g.id=f."personId" AND g."vendorId"=vendor_id AND g."liveId"=live_id AND g."versionId"=version_id
+211:     AND g."verifiedAt">=report."windowStartAt" AND g."verifiedAt"<report."windowEndAt"
+212:     AND f."firstCompletedAtMs">=extract(epoch FROM g."verifiedAt")*1000
+213:     AND f."firstCompletedAtMs"<extract(epoch FROM report."windowEndAt")*1000
+214:   WHERE g.id IS NULL) THEN
+215:   RAISE EXCEPTION 'completion fact outside cohort window' USING ERRCODE='23514';
+216:  END IF;
+217:  -- Validation may consume the rest of a short lease; do not publish after expiry.
+218:  IF report."leaseExpiresAt"<=clock_timestamp() OR report."expiresAt"<=clock_timestamp() THEN RETURN 0; END IF;
+219:  INSERT INTO public."LiveMetricCompletionProjection" ("reportId","sourceRevision","algorithmVersion","cohortCount","rowCount",rows)
+220:  VALUES (report_id,source_revision,1,cohort_count,jsonb_array_length(facts),facts)
+221:  ON CONFLICT ("reportId") DO NOTHING;
+222:  IF NOT EXISTS(SELECT 1 FROM public."LiveMetricCompletionProjection" p WHERE p."reportId"=report_id
+223:   AND p."sourceRevision"=source_revision AND p."cohortCount"=cohort_count AND p.rows=facts) THEN
+224:   RAISE EXCEPTION 'completion projection conflict' USING ERRCODE='23514';
+225:  END IF;
+226:  RETURN 1;
+227: END $$;
+
+FILE src/lib/live-metric-report-reader.ts
+1: import { Prisma } from "@prisma/client";
+2: import { z } from "zod";
+3: import type { MetricReportLease } from "./live-metric-report-lease";
+4: 
+5: const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+6: const Request = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id,
+7:   sessionId: id, afterSequence: z.number().int().min(-1).max(2_147_483_647), take: z.number().int().min(1).max(500) }).strict();
+8: type ReadRequest = MetricReportLease & { sessionId: string; afterSequence: number; take: number };
+9: export type MetricIntervalRow = { sequence: number; wallStartAt: Date; wallEndAt: Date; mediaStartMs: number; mediaEndMs: number };
+10: type SessionState = { isolation: string; registrationId: string; lastSequence: number; complete: boolean; closedAt: Date | null };
+11: const CohortRequest = Request.omit({ sessionId: true, afterSequence: true }).extend({ afterId: id.nullable() }).strict();
+12: export type MetricRegistrationRow = { id: string; visitorId: string | null; verifiedAt: Date; identityCurrent: boolean };
+13: export type MetricSessionRow = { id: string; anchorAt: Date; expiresAt: Date; closedAt: Date | null; complete: boolean; lastSequence: number };
+14: const SessionPageRequest = CohortRequest.extend({ registrationId: id }).strict();
+15: const LossRequest = CohortRequest.omit({ afterId: true }).extend({ after: z.date().nullable() }).strict();
+16: export type MetricVisitLossRow = { visitedAt: Date };
+17: 
+18: /** The composite key makes timestamps unique within this exact version scope.
+19:  * Read loss provenance under the same report lease/MVCC snapshot as live facts.
+20:  */
+21: export async function readMetricVisitLossPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+22:   value: MetricReportLease & { after: Date | null; take: number }) {
+23:   const input = LossRequest.parse(value);
+24:   const report = await reportSnapshot(tx, input);
+25:   if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+26:   const cursor = input.after === null ? Prisma.empty : Prisma.sql`AND "visitedAt">${input.after}`;
+27:   const rows = await tx.$queryRaw<MetricVisitLossRow[]>(Prisma.sql`
+28:     SELECT "visitedAt" FROM "LiveMetricVisitLoss" WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId}
+29:       AND "versionId"=${input.versionId} AND "visitedAt">=${report.windowStartAt} AND "visitedAt"<${report.windowEndAt} ${cursor}
+30:     ORDER BY "visitedAt" LIMIT ${input.take + 1}`);
+31:   const page = rows.slice(0, input.take);
+32:   return { status: "available" as const, rows: page, hasMore: rows.length > input.take, next: page.at(-1)?.visitedAt ?? input.after };
+33: }
+34: export type MetricVisitRow = { id: string; visitorId: string; visitedAt: Date };
+35: type VisitCursor = { id: string; visitedAt: Date };
+36: const VisitRequest = CohortRequest.omit({ afterId: true }).extend({
+37:   after: z.object({ id: z.string().uuid(), visitedAt: z.date() }).strict().nullable(),
+38: }).strict();
+39: 
+40: /** Preserve individual facts, including repeat visits; browser deduplication
+41:  * belongs to the metric calculation. No browser hashes leave this reader.
+42:  */
+43: export async function readMetricVisitPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+44:   value: MetricReportLease & { after: VisitCursor | null; take: number }) {
+45:   const input = VisitRequest.parse(value);
+46:   const report = await reportSnapshot(tx, input);
+47:   if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+48:   const cursor = input.after === null ? Prisma.empty : Prisma.sql`AND ("visitedAt",id)>(${input.after.visitedAt},${input.after.id})`;
+49:   const rows = await tx.$queryRaw<MetricVisitRow[]>(Prisma.sql`
+50:     SELECT id,"visitorId","visitedAt" FROM "LiveMetricVisit"
+51:     WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+52:       AND "visitedAt">=${report.windowStartAt} AND "visitedAt"<${report.windowEndAt} ${cursor}
+53:     ORDER BY "visitedAt",id LIMIT ${input.take + 1}`);
+54:   const page = rows.slice(0, input.take);
+55:   const last = page.at(-1);
+56:   return { status: "available" as const, rows: page, hasMore: rows.length > input.take,
+57:     next: last ? { id: last.id, visitedAt: last.visitedAt } : input.after };
+58: }
+59: export type MetricReportContext = {
+60:   sourceRevision?: bigint;
+61:   windowStartAt: Date; windowEndAt: Date; mode: "live" | "replay";
+62:   durationMs: number | null; collectionEnabled: boolean; collectionStartedAt: Date | null;
+63: };
+64: const LeaseRequest = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id }).strict();
+65: 
+66: type ReadClient = Pick<Prisma.TransactionClient, "$queryRaw">;
+67: const snapshotRevisions = new WeakMap<ReadClient, { vendorId: string; liveId: string; revision: bigint }>();
+68: 
+69: /** Own a fresh facade for exactly one read-only RR callback. The private cache
+70:  * cannot be supplied by callers, reused on the original client, or survive the
+71:  * callback. Lease expiry is still checked against the DB clock on every page.
+72:  */
+73: export async function withMetricOrderRevision<T>(tx: ReadClient, value: MetricReportLease,
+74:   read: (snapshot: ReadClient) => Promise<T>): Promise<T> {
+75:   const scope = LeaseRequest.parse(value);
+76:   await tx.$queryRaw(Prisma.sql`SET TRANSACTION READ ONLY`);
+77:   const [state] = await tx.$queryRaw<{ isolation: string; readOnly: string; revision: bigint }[]>(Prisma.sql`
+78:     SELECT current_setting('transaction_isolation') AS isolation,
+79:       current_setting('transaction_read_only') AS "readOnly",
+80:       public.wp20_metric_order_revision(${scope.vendorId},${scope.liveId}) AS revision`);
+81:   if (!state || state.isolation !== "repeatable read" || state.readOnly !== "on"
+82:     || typeof state.revision !== "bigint" || state.revision < BigInt(0)) throw new Error("Metric revision requires read-only repeatable-read snapshot");
+83:   const snapshot: ReadClient = { $queryRaw: tx.$queryRaw.bind(tx) };
+84:   snapshotRevisions.set(snapshot, { vendorId: scope.vendorId, liveId: scope.liveId, revision: state.revision });
+85:   try { return await read(snapshot); }
+86:   finally { snapshotRevisions.delete(snapshot); }
+87: }
+88: 
+89: function orderRevision(tx: ReadClient, scope: Pick<MetricReportLease, "vendorId" | "liveId">) {
+90:   const cached = snapshotRevisions.get(tx);
+91:   return cached && cached.vendorId === scope.vendorId && cached.liveId === scope.liveId
+92:     ? Prisma.sql`${cached.revision}::bigint`
+93:     : Prisma.sql`public.wp20_metric_order_revision(r."vendorId",r."liveId")`;
+94: }
+95: 
+96: 
+97: /** Read configuration in the same MVCC snapshot as the facts. Collection start
+98:  * is provenance only: it does not prove uninterrupted or complete collection.
+99:  */
+100: export async function readMetricReportContext(tx: Pick<Prisma.TransactionClient, "$queryRaw">, value: MetricReportLease) {
+101:   const report = await reportSnapshot(tx, LeaseRequest.parse(value));
+102:   if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+103:   const { windowStartAt, windowEndAt, mode, durationMs, collectionEnabled, collectionStartedAt, sourceRevision } = report;
+104:   return { status: "available" as const, context: { windowStartAt, windowEndAt, mode, durationMs, collectionEnabled, collectionStartedAt, sourceRevision } };
+105: }
+106: 
+107: export type MetricOrderRow = { id: string; registrationId: string; establishedAt: Date; cancelled: boolean };
+108: 
+109: /** Resolve only server-owned checkout attribution, never buyer PII. Read the
+110:  * current order state in the report snapshot so cancellations cannot be mixed
+111:  * with historical paid events. Drafts are not established orders.
+112:  */
+113: export async function readMetricOrderPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+114:   value: MetricReportLease & { afterId: string | null; take: number }) {
+115:   const input = CohortRequest.parse(value);
+116:   const report = await reportSnapshot(tx, input);
+117:   if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+118:   const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND o.id>${input.afterId}`;
+119:   const rows = await tx.$queryRaw<MetricOrderRow[]>(Prisma.sql`
+120:     SELECT o.id,g.id AS "registrationId",o."createdAt" AT TIME ZONE 'UTC' AS "establishedAt",
+121:       (o.status='cancelled') AS cancelled
+122:     FROM "CommerceOrder" o JOIN "PaymentTransaction" p ON p.id=o."primaryPaymentTransactionId" AND p."vendorId"=o."vendorId"
+123:     JOIN "LiveMetricRegistration" g ON g."vendorId"=o."vendorId" AND g."liveId"=${input.liveId}
+124:       AND g."versionId"=${input.versionId} AND g."submissionId"=p.metadata->>'formSubmissionId'
+125:     JOIN "FormSubmission" f ON f.id=g."submissionId" AND f."liveId"=g."liveId"
+126:     JOIN "RegistrationForm" form ON form.id=f."formId" AND form."vendorId"=g."vendorId"
+127:     JOIN "Live" l ON l.id=g."liveId" AND l."vendorId"=g."vendorId" AND l."formId"=f."formId"
+128:     WHERE o."vendorId"=${input.vendorId} AND p.metadata->>'sourceLiveId'=${input.liveId}
+129:       AND p.metadata->>'billingPurpose'='buyer_order' AND o.status<>'draft'
+130:       AND f."verificationStatus"='VERIFIED' AND g."verifiedAt"=f."verifiedAt" AT TIME ZONE 'UTC'
+131:       AND g."verifiedAt">=${report.windowStartAt} AND g."verifiedAt"<${report.windowEndAt}
+132:       AND o."createdAt">=(${report.windowStartAt}::timestamptz AT TIME ZONE 'UTC')
+133:       AND o."createdAt"<(${report.windowEndAt}::timestamptz AT TIME ZONE 'UTC') ${cursor}
+134:     ORDER BY o.id LIMIT ${input.take + 1}`);
+135:   const page = rows.slice(0, input.take);
+136:   return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+137: }
+138: 
+139: /** Enumerate all potentially overlapping sessions, including incomplete ones.
+140:  * The worker must account for unknown delivery, not filter it into zero views.
+141:  */
+142: export async function readMetricSessionPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+143:   value: MetricReportLease & { registrationId: string; afterId: string | null; take: number }) {
+144:   const input = SessionPageRequest.parse(value);
+145:   const report = await reportSnapshot(tx, input);
+146:   if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+147:   const [registration] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+148:     SELECT id FROM "LiveMetricRegistration" WHERE id=${input.registrationId} AND "vendorId"=${input.vendorId}
+149:       AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+150:       AND "verifiedAt">=${report.windowStartAt} AND "verifiedAt"<${report.windowEndAt}`);
+151:   if (!registration) return { status: "unavailable" as const, reason: "registration_outside_cohort" as const };
+152:   const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND id>${input.afterId}`;
+153:   const rows = await tx.$queryRaw<MetricSessionRow[]>(Prisma.sql`
+154:     SELECT id,"anchorAt","expiresAt","closedAt",complete,"lastSequence" FROM "LiveMetricSession"
+155:     WHERE "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+156:       AND "registrationId"=${input.registrationId} AND "anchorAt"<${report.windowEndAt} AND "expiresAt">${report.windowStartAt} ${cursor}
+157:     ORDER BY id ASC LIMIT ${input.take + 1}`);
+158:   const page = rows.slice(0, input.take);
+159:   return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+160: }
+161: 
+162: async function reportSnapshot(tx: Pick<Prisma.TransactionClient, "$queryRaw">, input: MetricReportLease) {
+163:   const [report] = await tx.$queryRaw<(MetricReportContext & { isolation: string })[]>(Prisma.sql`
+164:     SELECT current_setting('transaction_isolation') AS isolation,r."windowStartAt",r."windowEndAt",
+165:       v.mode,v."durationMs",v."collectionEnabled",v."collectionStartedAt",r."inputRevision" AS "sourceRevision"
+166:     FROM "LiveMetricReport" r JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+167:     WHERE r.id=${input.reportId} AND r."vendorId"=${input.vendorId} AND r."liveId"=${input.liveId} AND r."versionId"=${input.versionId}
+168:       AND r.status='running' AND r."leaseOwner"=${input.workerId} AND r."leaseExpiresAt">clock_timestamp()
+169:       AND r."expiresAt">clock_timestamp() AND r."inputRevision"=v."sourceRevision"
+170:       AND r."inputRegistrationRevision"=public.wp20_metric_registration_revision(r."vendorId",r."liveId")
+171:       AND r."inputOrderRevision"=${orderRevision(tx, input)}`);
+172:   if (report && report.isolation !== "repeatable read") throw new Error("Metric reader requires repeatable-read snapshot");
+173:   return report ?? null;
+174: }
+175: 
+176: /** Enumerate the report's verified-at cohort, not every registration ever seen.
+177:  * Keep contradicted identity facts visible to the adapter as an invalidation
+178:  * signal; silently excluding them would change the denominator.
+179:  */
+180: export async function readMetricRegistrationPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+181:   value: MetricReportLease & { afterId: string | null; take: number }) {
+182:   const input = CohortRequest.parse(value);
+183:   const report = await reportSnapshot(tx, input);
+184:   if (!report) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+185:   const cursor = input.afterId === null ? Prisma.empty : Prisma.sql`AND g.id>${input.afterId}`;
+186:   const rows = await tx.$queryRaw<MetricRegistrationRow[]>(Prisma.sql`
+187:     SELECT g.id,g."visitorId",g."verifiedAt",
+188:       coalesce(f."verificationStatus"='VERIFIED' AND f."verifiedAt"=(g."verifiedAt" AT TIME ZONE 'UTC')
+189:         AND f."liveId"=g."liveId" AND f."formId"=l."formId",false) AS "identityCurrent"
+190:     FROM "LiveMetricRegistration" g
+191:     JOIN "Live" l ON l.id=g."liveId" AND l."vendorId"=g."vendorId"
+192:     LEFT JOIN "FormSubmission" f ON f.id=g."submissionId"
+193:     WHERE g."vendorId"=${input.vendorId} AND g."liveId"=${input.liveId} AND g."versionId"=${input.versionId}
+194:       AND g."verifiedAt">=${report.windowStartAt} AND g."verifiedAt"<${report.windowEndAt} ${cursor}
+195:     ORDER BY g.id ASC LIMIT ${input.take + 1}`);
+196:   const page = rows.slice(0, input.take);
+197:   return { status: "available" as const, rows: page, hasMore: rows.length > input.take, nextId: page.at(-1)?.id ?? input.afterId };
+198: }
+199: 
+200: /** Shared by all sessions in one report, not reset per person/page. These are
+201:  * work limits, not sampling or truncation rules. The caller must also bound the
+202:  * database transaction timeout because a budget cannot cancel an active query.
+203:  */
+204: export class MetricReadBudget {
+205:   private rows = 0;
+206:   private pages = 0;
+207:   private readonly started: number;
+208:   constructor(private readonly limits = { rows: 1_000_000, pages: 4000, milliseconds: 30000 }, private readonly now = () => performance.now()) {
+209:     if (!Number.isSafeInteger(limits.rows) || limits.rows < 1 || limits.rows > 1_000_000
+210:       || !Number.isSafeInteger(limits.pages) || limits.pages < 1 || limits.pages > 4000
+211:       || !Number.isSafeInteger(limits.milliseconds) || limits.milliseconds < 1 || limits.milliseconds > 30000) throw new Error("Invalid metric read budget");
+212:     this.started = now();
+213:   }
+214:   active() { const elapsed = this.now() - this.started; return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < this.limits.milliseconds; }
+215:   nextPage() { if (!this.active() || this.pages >= this.limits.pages) return false; this.pages++; return true; }
+216:   retain(count: number) {
+217:     if (!Number.isSafeInteger(count) || count < 0 || !this.active() || count > this.limits.rows - this.rows) return false;
+218:     this.rows += count; return true;
+219:   }
+220: }
+221: 
+222: export async function readMetricSessionIntervals(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+223:   value: Omit<ReadRequest, "afterSequence" | "take">, budget: MetricReadBudget) {
+224:   const rows: MetricIntervalRow[] = [];
+225:   let afterSequence = -1;
+226:   while (budget.nextPage()) {
+227:     const page = await readMetricIntervalPage(tx, { ...value, afterSequence, take: 500 });
+228:     if (page.status !== "available") return page;
+229:     if (!budget.retain(page.rows.length)) break;
+230:     rows.push(...page.rows);
+231:     if (!page.hasMore) return { status: "available" as const, rows, registrationId: page.registrationId, deliveryComplete: page.deliveryComplete };
+232:     afterSequence = page.nextSequence;
+233:   }
+234:   // Do not leak a prefix as if it represented all viewing for this session.
+235:   return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+236: }
+237: 
+238: /** Read one indexed session/sequence page inside the worker's repeatable-read
+239:  * snapshot. Never use OFFSET or an unbounded cohort query. Claim/finish happen
+240:  * in separate read-committed transactions, as required by the write guards.
+241:  */
+242: export async function readMetricIntervalPage(tx: Pick<Prisma.TransactionClient, "$queryRaw">, value: ReadRequest) {
+243:   const input = Request.parse(value);
+244:   const [session] = await tx.$queryRaw<SessionState[]>(Prisma.sql`
+245:     SELECT current_setting('transaction_isolation') AS isolation, s."registrationId",s."lastSequence",s.complete,s."closedAt"
+246:     FROM "LiveMetricSession" s
+247:     JOIN "LiveMetricReport" r ON r."vendorId"=s."vendorId" AND r."liveId"=s."liveId" AND r."versionId"=s."versionId"
+248:     JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+249:     WHERE s.id=${input.sessionId} AND s."vendorId"=${input.vendorId} AND s."liveId"=${input.liveId} AND s."versionId"=${input.versionId}
+250:       AND r.id=${input.reportId} AND r.status='running' AND r."leaseOwner"=${input.workerId}
+251:       AND r."leaseExpiresAt">clock_timestamp() AND r."expiresAt">clock_timestamp()
+252:       AND r."inputRevision"=v."sourceRevision"
+253:       AND r."inputRegistrationRevision"=public.wp20_metric_registration_revision(r."vendorId",r."liveId")
+254:       AND r."inputOrderRevision"=${orderRevision(tx, input)}`);
+255:   if (!session) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+256:   if (session.isolation !== "repeatable read") throw new Error("Metric reader requires repeatable-read snapshot");
+257:   if (input.afterSequence > session.lastSequence) throw new Error("Metric cursor exceeds snapshot");
+258:   const rows = await tx.$queryRaw<MetricIntervalRow[]>(Prisma.sql`
+259:     SELECT sequence,"wallStartAt","wallEndAt","mediaStartMs","mediaEndMs" FROM "LiveMetricInterval"
+260:     WHERE "sessionId"=${input.sessionId} AND "vendorId"=${input.vendorId} AND "liveId"=${input.liveId} AND "versionId"=${input.versionId}
+261:       AND sequence>${input.afterSequence} ORDER BY sequence ASC LIMIT ${input.take + 1}`);
+262:   if (rows.length > input.take + 1 || rows.some((row, index) => row.sequence !== input.afterSequence + index + 1)) throw new Error("Metric interval snapshot is inconsistent");
+263:   const hasMore = rows.length > input.take;
+264:   const page = rows.slice(0, input.take);
+265:   const nextSequence = page.at(-1)?.sequence ?? input.afterSequence;
+266:   if (!hasMore && nextSequence !== session.lastSequence) throw new Error("Metric interval snapshot is incomplete");
+267:   return { status: "available" as const, registrationId: session.registrationId, rows: page, nextSequence, hasMore,
+268:     // Complete pagination and complete delivery are different facts.
+269:     deliveryComplete: session.complete && session.closedAt !== null };
+270: }
+271: 
+272: /** Read only a current completed aggregate for an already-authorized scope.
+273:  * This is not an HTTP authorization boundary. Stored status alone is insufficient
+274:  * because Serializable payment writes invalidate generation without touching reports.
+275:  */
+276: export async function readMetricReadyReport(db: Pick<Prisma.TransactionClient, "$queryRaw">,
+277:   value: Omit<MetricReportLease, "workerId">) {
+278:   const input = LeaseRequest.omit({ workerId: true }).parse(value);
+279:   const [report] = await db.$queryRaw<{ result: Prisma.JsonValue }[]>(Prisma.sql`
+280:     SELECT r.result FROM "LiveMetricReport" r
+281:     JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+282:     WHERE r.id=${input.reportId} AND r."vendorId"=${input.vendorId} AND r."liveId"=${input.liveId}
+283:       AND r."versionId"=${input.versionId} AND r.status='ready' AND r."expiresAt">clock_timestamp()
+284:       AND r."inputRevision"=v."sourceRevision"
+285:       AND r."inputRegistrationRevision"=public.wp20_metric_registration_revision(r."vendorId",r."liveId")
+286:       AND r."inputOrderRevision"=public.wp20_metric_order_revision(r."vendorId",r."liveId")`);
+287:   return report ? { status: "available" as const, result: report.result }
+288:     : { status: "unavailable" as const, reason: "report_not_current" as const };
+289: }
+
+FILE src/lib/live-metric-completion-store.ts
+1: import { Prisma, type PrismaClient } from "@prisma/client";
+2: import { z } from "zod";
+3: import type { CompletionProjection, MetricScope } from "./live-core-metrics-read-model";
+4: import type { MetricReportLease } from "./live-metric-report-lease";
+5: const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+6: const leaseSchema = z.object({ vendorId: id, liveId: id, versionId: id, reportId: id, workerId: id }).strict();
+7: const factSchema = z.object({ personId: id, firstCompletedAtMs: z.number().int().min(0).max(8_640_000_000_000_000) }).strict();
+8: const factsSchema = z.array(factSchema).max(1_000_000).superRefine((rows, context) => {
+9:   if (new Set(rows.map(row => row.personId)).size !== rows.length) context.addIssue({ code: "custom", message: "Duplicate completion person" });
+10: });
+11: type Database = Pick<Prisma.TransactionClient, "$queryRaw">;
+12: export type StoredCompletion = z.infer<typeof factSchema>;
+13: 
+14: /** Internal writer: caller must establish complete registration/viewing coverage
+15:  * and delivery before calculating candidates. The DB rechecks lease/revision;
+16:  * a worker result alone is not permission to certify missing source history.
+17:  */
+18: export async function publishMetricCompletion(db: Pick<PrismaClient, "$transaction">, value: MetricReportLease, sourceRevision: bigint,
+19:   scope: MetricScope, projection: CompletionProjection): Promise<boolean> {
+20:   const lease = leaseSchema.parse(value);
+21:   if (typeof sourceRevision !== "bigint" || sourceRevision < BigInt(0)) throw new Error("Invalid completion source revision");
+22:   if (scope.vendorId !== lease.vendorId || scope.liveId !== lease.liveId || scope.contentVersionId !== lease.versionId
+23:     || !["live", "replay"].includes(scope.mode)) throw new Error("Completion scope mismatch");
+24:   if (projection.status !== "available") return false;
+25:   const cohortCount = z.number().int().min(0).max(1_000_000).parse(projection.cohortCount);
+26:   if (projection.rows.some(row => row.scope.vendorId !== scope.vendorId || row.scope.liveId !== scope.liveId
+27:     || row.scope.contentVersionId !== scope.contentVersionId || row.scope.mode !== scope.mode)) throw new Error("Completion scope mismatch");
+28:   const rows = factsSchema.parse(projection.rows.map(row => ({ personId: row.personId, firstCompletedAtMs: row.firstCompletedAtMs })));
+29:   if (rows.length > cohortCount) throw new Error("Completion cohort mismatch");
+30:   // Serialize before opening the transaction so payload conversion holds no locks.
+31:   const payload = JSON.stringify(rows);
+32:   return db.$transaction(async tx => {
+33:     // SET LOCAL applies before the publish statement starts and expires on rollback.
+34:     await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout','5000',true), set_config('lock_timeout','2000',true)`);
+35:     const [result] = await tx.$queryRaw<{ changed: number }[]>(Prisma.sql`
+36:       SELECT public.wp20_metric_completion_publish(${lease.vendorId},${lease.liveId},${lease.versionId},${lease.reportId},${lease.workerId},
+37:         ${sourceRevision}::bigint,${cohortCount}::integer,${payload}::jsonb) AS changed`);
+38:     return result?.changed === 1;
+39:   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000, maxWait: 5000 });
+40: }
+41: 
+42: /** Read in the same RR snapshot as viewing facts. null is missing provenance;
+43:  * [] is a stored complete empty projection, never inferred from a missing row.
+44:  */
+45: export async function readMetricCompletion(tx: Database, value: MetricReportLease, reserve: (rows: number) => boolean = () => true) {
+46:   const lease = leaseSchema.parse(value);
+47:   const [record] = await tx.$queryRaw<{ isolation: string; rowCount: number | null; cohortCount: number | null }[]>(Prisma.sql`
+48:     SELECT current_setting('transaction_isolation') AS isolation,p."rowCount",p."cohortCount"
+49:     FROM "LiveMetricReport" r JOIN "LiveMetricVersion" v ON v.id=r."versionId" AND v."vendorId"=r."vendorId" AND v."liveId"=r."liveId"
+50:     LEFT JOIN "LiveMetricCompletionProjection" p ON p."reportId"=r.id AND p."sourceRevision"=r."inputRevision" AND p."algorithmVersion"=1
+51:     WHERE r.id=${lease.reportId} AND r."vendorId"=${lease.vendorId} AND r."liveId"=${lease.liveId} AND r."versionId"=${lease.versionId}
+52:       AND r.status='running' AND r."leaseOwner"=${lease.workerId} AND r."leaseExpiresAt">clock_timestamp() AND r."expiresAt">clock_timestamp()
+53:       AND r."inputRevision"=v."sourceRevision" AND r."inputRegistrationRevision"=public.wp20_metric_registration_revision(r."vendorId",r."liveId")
+54:       AND r."inputOrderRevision"=public.wp20_metric_order_revision(r."vendorId",r."liveId")`);
+55:   if (!record) return { status: "unavailable" as const, reason: "lease_or_scope_unavailable" as const };
+56:   if (record.isolation !== "repeatable read") throw new Error("Completion reader requires repeatable-read snapshot");
+57:   // Reserve the shared budget before transferring or parsing the JSON payload.
+58:   const rowCount = record.rowCount === null ? 0 : z.number().int().min(0).max(1_000_000).parse(record.rowCount);
+59:   if (!reserve(rowCount + 1)) return { status: "unavailable" as const, reason: "limit_exceeded" as const };
+60:   if (record.cohortCount === null) return { status: "available" as const, rows: null, cohortCount: null };
+61:   const cohortCount = z.number().int().min(0).max(1_000_000).parse(record.cohortCount);
+62:   const [payload] = await tx.$queryRaw<{ rows: unknown }[]>(Prisma.sql`
+63:     SELECT rows FROM "LiveMetricCompletionProjection" WHERE "reportId"=${lease.reportId}`);
+64:   const rows = factsSchema.parse(payload?.rows);
+65:   if (rows.length !== rowCount) throw new Error("Completion row count mismatch");
+66:   if (rows.length > cohortCount) throw new Error("Completion cohort mismatch");
+67:   return { status: "available" as const, rows, cohortCount };
+68: }
+
+FILE scripts/wp20-registration-source-concurrency.mjs
+1: import assert from 'node:assert/strict';
+2: /** Real independent connections, synthetic sources, all triggers enabled. */
+3: export async function verifyRegistrationSourceConcurrency(db, service, fixture) {
+4:  const {vendor,live,video,form}=fixture;
+5:  const [clock]=await db.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+6:  const start=new Date(+clock.now-20000),end=new Date(+clock.now-1000),verifiedAt=new Date(+clock.now-10000);
+7:  const versionId='registration-race-version',ids=[];
+8:  await db.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ($1,$2,$3,$4,'live',$5,true,$6,$7)`,versionId,vendor.id,live.id,video.id,'c'.repeat(64),start,new Date(+clock.now+3600000));
+9:  const revision=async client=>(await client.$queryRawUnsafe('SELECT public.wp20_metric_registration_revision($1,$2) AS revision',vendor.id,live.id))[0].revision;
+10:  const create=async i=>{
+11:   const id=`registration-race-${i}`;ids.push(id);
+12:   return db.formSubmission.create({data:{id,formId:form.id,liveId:live.id,name:'Synthetic',email:`race-${i}@example.test`,verificationStatus:'VERIFIED',verifiedAt}});
+13:  };
+14:  try {
+15:   const before=await revision(db),started=performance.now();
+16:   const results=await Promise.allSettled(Array.from({length:20},(_,i)=>create(i)));
+17:   assert.equal(results.filter(x=>x.status==='fulfilled').length,20);
+18:   assert.equal(await revision(db),before+BigInt(20));
+19:   const concurrentMs=Math.round(performance.now()-started);
+20:   const request={vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:end,afterSubmissionId:null,take:500};
+21:   await db.$transaction(async tx=>{
+22:    await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+23:    const old=await service.readRegistrationAuditPage(tx,request);
+24:    assert.equal(old.status,'available');assert.equal(old.rows.length,20);
+25:    await create(20);
+26:    const same=await service.readRegistrationAuditPage(tx,request);
+27:    assert.equal(same.registrationRevision,old.registrationRevision);assert.equal(same.rows.length,20);
+28:    assert.ok(await revision(db)>old.registrationRevision);
+29:   },{isolationLevel:'RepeatableRead',timeout:15000});
+30:   await db.$transaction(async tx=>{
+31:    await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+32:    const fresh=await service.readRegistrationAuditPage(tx,request);
+33:    assert.equal(fresh.status,'available');assert.equal(fresh.rows.length,21);
+34:   },{isolationLevel:'RepeatableRead',timeout:15000});
+35:   await db.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistration" (id,"vendorId","liveId","versionId","submissionId","verifiedAt") VALUES ('registration-race-projection',$1,$2,$3,'registration-race-0',$4)`,vendor.id,live.id,versionId,verifiedAt);
+36:   await db.$transaction(async tx=>{
+37:    await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+38:    const reverse=await service.readRegistrationProjectionAuditPage(tx,request);
+39:    assert.equal(reverse.status,'available');
+40:    assert.deepEqual(reverse.rows,[{registrationId:'registration-race-projection',outcome:'registration_without_capture'}]);
+41:   },{isolationLevel:'RepeatableRead',timeout:15000});
+42:   const summary=await service.auditMetricRegistrationSources(db,{vendorId:vendor.id,liveId:live.id,versionId,startAt:start,endAt:end});
+43:   assert.equal(summary.status,'enumerated');assert.equal(summary.count,21);
+44:   assert.equal(summary.projectionCount,1);assert.equal(summary.projectionOutcomes.registration_without_capture,1);
+45:   assert.equal(summary.coverage,'unknown');
+46:   const replacement=await db.registrationForm.create({data:{vendorId:vendor.id,name:'Synthetic replacement',slug:'registration-race-replacement',headline:'Synthetic',fields:[]}});
+47:   try {
+48:    await db.live.update({where:{id:live.id},data:{formId:replacement.id}});
+49:    await db.$transaction(async tx=>{
+50:     await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+51:     const changed=await service.readRegistrationAuditPage(tx,request);
+52:     assert.equal(changed.status,'available');assert.equal(changed.rows.length,21);
+53:     assert.ok(changed.rows.every(row=>row.outcome==='form_mismatch'));
+54:     const reverse=await service.readRegistrationProjectionAuditPage(tx,request);
+55:     assert.equal(reverse.status,'available');
+56:     assert.deepEqual(reverse.rows,[{registrationId:'registration-race-projection',outcome:'invalid_source'}]);
+57:    },{isolationLevel:'RepeatableRead',timeout:15000});
+58:   } finally {
+59:    await db.live.update({where:{id:live.id},data:{formId:form.id}});
+60:    await db.registrationForm.delete({where:{id:replacement.id}});
+61:   }
+62:   return {status:'PASS',submitted:20,committed:20,concurrentMs,snapshotIsolation:'PASS',nextSnapshotSeesLateSource:'PASS',oldFormRowsRemainVisible:'PASS',reverseProjectionAudit:'PASS',bidirectionalSummary:'PASS',scope:'ReadCommitted concurrent calls; not synchronized Serializable payment acceptance'};
+63:  } finally {
+64:   await db.formSubmission.deleteMany({where:{id:{in:ids}}});
+65:   await db.$executeRawUnsafe('DELETE FROM "LiveMetricVersion" WHERE id=$1',versionId);
+66:  }
+67: }
+
+FILE scripts/wp20-metric-source-invalidation.mjs
+1: import { verifyCompletionPublish } from "./wp20-completion-publish-probe.mjs";
+2: import assert from "node:assert/strict";
+3: 
+4: /** Each case rolls back all synthetic source mutations after proving real ready-reader invalidation. */
+5: export async function verifyMetricSourceInvalidation(db, service, fixture) {
+6:   const results=[];
+7:   for(const field of ["verificationStatus","verifiedAt","formId","liveId","liveFormId"]) {
+8:     const rollback=new Error("synthetic-source-rollback");
+9:     try {
+10:       await db.$transaction(async tx=>{
+11:         const {vendor,live,video,submission}=fixture;
+12:         const [clock]=await tx.$queryRawUnsafe("SELECT date_trunc('milliseconds',clock_timestamp()) AS now");
+13:         const verified=new Date(+clock.now-10000),start=new Date(+clock.now-20000),end=new Date(+clock.now-1000),expires=new Date(+clock.now+3600000);
+14:         await tx.formSubmission.update({where:{id:submission.id},data:{verifiedAt:verified}});
+15:         await tx.$executeRawUnsafe(`INSERT INTO "LiveMetricVersion" (id,"vendorId","liveId","videoId",mode,fingerprint,"collectionEnabled","collectionStartedAt","expiresAt") VALUES ('source-matrix-version',$1,$2,$3,'live',$4,true,$5,$6)`,vendor.id,live.id,video.id,"b".repeat(64),start,expires);
+16:         await tx.$executeRawUnsafe(`INSERT INTO "LiveMetricRegistration" (id,"vendorId","liveId","versionId","submissionId","verifiedAt") VALUES ('source-matrix-registration',$1,$2,'source-matrix-version',$3,$4)`,vendor.id,live.id,submission.id,verified);
+17:         const sourceRevision=async()=> (await tx.$queryRawUnsafe(`SELECT public.wp20_metric_registration_revision($1,$2) AS revision`,vendor.id,live.id))[0].revision;
+18:         const beforeUncaptured=await sourceRevision();
+19:         const uncaptured=await tx.formSubmission.create({data:{formId:submission.formId,liveId:live.id,name:"Synthetic uncaptured",email:"uncaptured@example.test",verificationStatus:"VERIFIED",verifiedAt:verified}});
+20:         assert.ok(await sourceRevision()>beforeUncaptured);
+21:         const beforeDelete=await sourceRevision();
+22:         await tx.formSubmission.delete({where:{id:uncaptured.id}});
+23:         assert.ok(await sourceRevision()>beforeDelete);
+24:         const [version]=await tx.$queryRawUnsafe(`SELECT "sourceRevision" AS revision FROM "LiveMetricVersion" WHERE id='source-matrix-version'`);
+25:         const lease={vendorId:vendor.id,liveId:live.id,versionId:"source-matrix-version",reportId:"source-matrix-report",workerId:"source-matrix-worker"};
+26:         await tx.$queryRawUnsafe('SELECT public.wp20_metric_report_create($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::bigint,$8::timestamptz)',vendor.id,live.id,lease.versionId,lease.reportId,start,end,version.revision,expires);
+27:         assert.equal(await service.claimMetricReport(tx,lease),true);
+28:         await verifyCompletionPublish(tx,lease,version.revision,verified);
+29:         const metric={status:"unavailable",reason:"missing_data"};
+30:         const aggregate={registrationRate:metric,attendanceRate:metric,completionRate:metric,averageViewingSeconds:metric,postCompletionOrderRate:metric,unattributedRegistrations:null,provisionalConversions:null};
+31:         assert.equal(await service.finishMetricReport(tx,lease,aggregate),true);
+32:         const scope={vendorId:lease.vendorId,liveId:lease.liveId,versionId:lease.versionId,reportId:lease.reportId};
+33:         assert.equal((await service.readMetricReadyReport(tx,scope)).status,"available");
+34:         await tx.$executeRawUnsafe("SAVEPOINT uncaptured_report_probe");
+35:         await tx.formSubmission.create({data:{formId:submission.formId,liveId:live.id,name:"Synthetic late source",email:"late-source@example.test",verificationStatus:"VERIFIED",verifiedAt:verified}});
+36:         assert.deepEqual(await service.readMetricReadyReport(tx,scope),{status:"unavailable",reason:"report_not_current"});
+37:         await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT uncaptured_report_probe");
+38:         await tx.$executeRawUnsafe("RELEASE SAVEPOINT uncaptured_report_probe");
+39:         assert.equal((await service.readMetricReadyReport(tx,scope)).status,"available");
+40:         if(field==="liveFormId") await tx.live.update({where:{id:live.id},data:{formId:null}});
+41:         else if(field==="formId") {
+42:           const replacement=await tx.registrationForm.create({data:{vendorId:vendor.id,name:"Synthetic replacement",slug:"source-matrix-replacement",headline:"Synthetic",fields:[]}});
+43:           await tx.formSubmission.update({where:{id:submission.id},data:{formId:replacement.id}});
+44:         } else await tx.formSubmission.update({where:{id:submission.id},data:field==="verificationStatus"?{verificationStatus:"UNVERIFIED"}:field==="verifiedAt"?{verifiedAt:new Date(+verified+1)}:{liveId:null}});
+45:         assert.deepEqual(await service.readMetricReadyReport(tx,scope),{status:"unavailable",reason:"report_not_current"});
+46:         results.push({field,status:"PASS",completionPublish:"PASS",uncapturedSourceRevision:"PASS",uncapturedReadyReportInvalidation:"PASS"});
+47:         throw rollback;
+48:       },{timeout:15000});
+49:     }catch(error){if(error!==rollback)throw error;}
+50:   }
+51:   return results;
+52: }

@@ -9,6 +9,9 @@ import {
 import { captureOperationalError } from "@/lib/monitoring";
 import { materializeLineNotifications } from "@/lib/line-notification-materializer";
 import { processDueLineDeliveries } from "@/lib/line-notification";
+import { getDb } from "@/lib/db";
+import { processDueCheckoutFollowups } from "@/lib/checkout-followup-queue";
+import { processDueCompletedFollowups } from "@/lib/completed-followup";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -51,6 +54,22 @@ async function processEmailDeliveries() {
     const dueLiveNotifications = await processDueLiveNotifications({ includeFuture: false, writeBudget: 100 });
     const followups = await processDuePostLiveFollowups();
     const reconciliations = await processLiveReminderReconciliationJobs();
+    let checkoutFollowups: Array<{ status: string }>;
+    try { checkoutFollowups = await processDueCheckoutFollowups(getDb()); }
+    catch {
+      checkoutFollowups = [{ status: "failed" }];
+      try { captureOperationalError(new Error("Checkout follow-up job unavailable"),
+        { source: "email_delivery_job", operation: "checkout_followup", status: "failed" }); }
+      catch { /* A failed new materializer must not block existing deliveries. */ }
+    }
+    let completedFollowups: Array<{ status: string }>;
+    try { completedFollowups = await processDueCompletedFollowups(getDb()); }
+    catch {
+      completedFollowups = [{ status: "failed" }];
+      try { captureOperationalError(new Error("Completed follow-up job unavailable"),
+        { source: "email_delivery_job", operation: "completed_followup", status: "failed" }); }
+      catch { /* Existing deliveries continue after a failed materializer. */ }
+    }
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
     const lineResults = await processDueLineDeliveries();
@@ -88,6 +107,16 @@ async function processEmailDeliveries() {
         status: SAFE_RECONCILIATION_STATUSES.has(result.status) ? result.status : "unknown",
       })),
       processed: results.length,
+      completedFollowups: completedFollowups.length,
+      completedFollowupResults: completedFollowups.slice(0, 20).map(result => ({
+        status: SAFE_STATUSES.has(result.status) || new Set(["queued", "duplicate", "invalid_snapshot"]).has(result.status)
+          ? result.status : "unknown",
+      })),
+      checkoutFollowups: checkoutFollowups.length,
+      checkoutFollowupResults: checkoutFollowups.slice(0, 20).map(result => ({
+        status: SAFE_STATUSES.has(result.status) || new Set(["queued", "duplicate", "invalid_snapshot"]).has(result.status)
+          ? result.status : "unknown",
+      })),
       results: results.slice(0, 20).map((result) => ({
         status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
       })),

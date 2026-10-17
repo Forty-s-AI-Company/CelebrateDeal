@@ -12,7 +12,8 @@ import {
   serializeRecoveryCodes,
   verifyTotpCode,
 } from "@/lib/mfa";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { entryRateLimitHeaders } from "@/lib/entry-rate-limit-headers";
 
 function formText(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -20,12 +21,7 @@ function formText(formData: FormData, key: string) {
 }
 
 function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
-  const forwarded = new Headers();
-  for (const name of ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "user-agent"]) {
-    const value = headerStore.get(name);
-    if (value) forwarded.set(name, value);
-  }
-  return forwarded;
+  return entryRateLimitHeaders(headerStore);
 }
 
 export type MfaRecoveryRegenerationResult =

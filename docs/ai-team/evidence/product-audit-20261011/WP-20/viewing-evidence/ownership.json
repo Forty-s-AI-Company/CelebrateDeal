@@ -1,0 +1,11 @@
+{
+  "writer": "root",
+  "depth": 0,
+  "files": [
+    "src/lib/live-viewing-evidence.ts",
+    "src/lib/live-viewing-evidence.test.ts"
+  ],
+  "scope": "Pure segmentation and temporal completion derivation; ingestion verification, database and UI wiring pending",
+  "rollback": "Remove two new files only",
+  "automatic_spawn": false
+}

@@ -1,0 +1,10 @@
+{
+  "sourceHashes": {
+    "src/lib/line-rich-menu-draft-content.ts": "754abdf214be1971514d0a16dc924a679a4781fddb4f9093c0dcde5051b60c8f",
+    "src/lib/line-rich-menu-sync.ts": "c056a6d8a602f84fe866250ca09f7219256c5a10bc2269375c0f8e87da28b3b8",
+    "src/lib/line-rich-menu-publication.ts": "65ece48d871b4441b4041afa24473d58c6ca776306917c4384fd7e94b8ffd127",
+    "src/lib/line-rich-menu-client.ts": "e3dfd5d2f41508be9056ad845e12b3a277f93d34a65e5cc3472182d9507e6608"
+  },
+  "contextChars": 25545,
+  "scope": "Full4coremodules; boundary caller contracts explicit; no fixture or provider values."
+}

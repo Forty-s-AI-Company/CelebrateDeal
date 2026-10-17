@@ -1,0 +1,128 @@
+import { randomUUID } from "node:crypto";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+import { PrismaClient } from "@prisma/client";
+import { hashPassword } from "../../src/lib/password";
+import { formatZonedDateTimeLocal } from "../../src/lib/zoned-date-time";
+import { revealEmailDeliveryPayload } from "../../src/lib/email-delivery-pii";
+
+const db = new PrismaClient();
+const run = randomUUID();
+const email = `wp17-${run}@example.test`;
+const password = "Synthetic-WP17-Password-123!";
+const proof = "wp17-owned-loopback-ingress-proof-20261016";
+const headers = { "x-real-ip": "192.0.2.17", "x-forwarded-for": "192.0.2.17", "x-celebratedeal-live-chat-ingress": proof };
+const videoSource = "https://video.example.test/wp17-synthetic.webm";
+let vendorId = "", userId = "", projectId = "", videoId = "", methodId = "", productId = "";
+let newMerchant: { vendorId: string; email: string; videoId: string };
+
+test.beforeAll(async () => {
+  const vendor = await db.vendor.create({ data: { name: "WP17 合成商家", slug: `wp17-${run}`, email, passwordHash: hashPassword(password), timezone: "Asia/Taipei", tracking: { create: {} } } });vendorId = vendor.id;
+  const user = await db.user.create({ data: { email, name: "WP17 合成擁有者", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId, role: "owner", status: "active" } } } });userId = user.id;
+  const project = await db.salesProject.create({ data: { vendorId, name: "WP17 合成專案", slug: `wp17-project-${run}`, mode: "live_course", primaryFlow: "live" } });projectId = project.id;
+  await db.userOnboardingPreference.create({ data: { vendorId, userId, selectedProjectId: projectId } });
+  const product = await db.product.create({ data: { vendorId, name: "合成課程", slug: `wp17-product-${run}`, priceCents: 12800, currency: "TWD", inventory: 3, isActive: true, fulfillmentType: "physical", fulfillmentTypeConfirmed: true } });productId = product.id;
+  await db.salesProjectProduct.create({ data: { vendorId, projectId, productId } });
+  const method = await db.paymentMethodReference.create({ data: { vendorId, providerName: "demo", providerPaymentMethodRef: `synthetic-reference-${run}`, status: "verified", verifiedAt: new Date(Date.now() - 1000) } });methodId = method.id;
+  // 與下方實際產生的約兩秒合成影片一致；不假造 readyState 或 timeupdate。
+  const video = await db.video.create({ data: { vendorId, title: "WP17 合成影片", sourceType: "url", videoUrl: videoSource, durationSec: 2, status: "ready" } });videoId = video.id;
+  const freshEmail = `wp17-new-${run}@example.test`;
+  const fresh = await db.vendor.create({ data: { name: "WP17 合成新商家", slug: `wp17-new-${run}`, email: freshEmail, passwordHash: hashPassword(password), timezone: "Asia/Taipei", tracking: { create: {} } } });
+  await db.user.create({ data: { email: freshEmail, name: "合成新商家擁有者", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId: fresh.id, role: "owner", status: "active" } } } });
+  const freshVideo = await db.video.create({ data: { vendorId: fresh.id, title: "新商家合成影片", sourceType: "url", videoUrl: videoSource, durationSec: 2, status: "ready" } });
+  newMerchant = { vendorId: fresh.id, email: freshEmail, videoId: freshVideo.id };
+});
+
+test("a new merchant receives an owned draft and persistent creation feedback within three decisions", async ({ page, baseURL }) => {
+  test.setTimeout(90_000);page.setDefaultTimeout(20_000);
+  const origin = new URL(baseURL!).origin;await page.route("**/*", route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());await page.setExtraHTTPHeaders(headers);
+  await page.goto("/login");await page.getByLabel("Email", { exact: true }).fill(newMerchant.email);await page.getByLabel("密碼", { exact: true }).fill(password);await page.getByRole("button", { name: "登入", exact: true }).click();await expect(page).toHaveURL(/\/dashboard/u);await page.goto("/lives/new");
+  const quick = page.getByRole("form", { name: "一場即上線", exact: true });await expect(quick).toBeVisible();await expect(quick.locator('select, input:not([type="hidden"])')).toHaveCount(3);
+  await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(newMerchant.videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 300_000), "Asia/Taipei"));await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
+  await expect(page.getByText("專案尚未發布，公開網址目前無法開啟", { exact: true })).toBeVisible();await expect(page.getByRole("link", { name: "開啟公開報名頁", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "尚無有效且已驗證的商家付款方式", exact: true })).toBeVisible();
+  await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toHaveValue(newMerchant.videoId);
+  await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toBeDisabled();await expect(page.getByRole("button", { name: "建立另一場", exact: true })).toBeVisible();
+  expect(await db.salesProject.count({ where: { vendorId: newMerchant.vendorId } })).toBe(1);expect(await db.live.count({ where: { vendorId: newMerchant.vendorId } })).toBe(1);expect(await db.landingPage.count({ where: { vendorId: newMerchant.vendorId, status: "draft", publishedVersionId: null } })).toBe(1);await axe(page);
+});
+test.afterAll(async () => { await db.$disconnect(); });
+
+async function axe(page: Page) {
+  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+  expect(result.violations.filter(v => v.impact === "serious" || v.impact === "critical").map(v => ({ id: v.id, impact: v.impact }))).toEqual([]);
+}
+
+test("three-decision entry creates public pages, confirms a synthetic registration, plays real synthetic media, and blocks an unverified method", async ({ page, browser, baseURL }) => {
+  test.setTimeout(360_000);page.setDefaultTimeout(20_000);
+  const origin = new URL(baseURL!).origin;
+  // 以瀏覽器自己的 encoder 產生實際可解碼的合成 WebM，不連外取素材。
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");canvas.width = 160;canvas.height = 90;
+    const ctx = canvas.getContext("2d")!;const stream = canvas.captureStream(10);
+    const recorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp8" });const chunks: Blob[] = [];
+    return new Promise<number[]>(resolve => {
+      recorder.ondataavailable = event => chunks.push(event.data);
+      recorder.onstop = async () => resolve(Array.from(new Uint8Array(await new Blob(chunks, { type: "video/webm" }).arrayBuffer())));
+      recorder.start();let frame = 0;
+      const timer = setInterval(() => { ctx.fillStyle = frame++ % 2 ? "#2563eb" : "#047857";ctx.fillRect(0, 0, 160, 90); }, 100);
+      setTimeout(() => { clearInterval(timer);recorder.stop();stream.getTracks().forEach(track => track.stop()); }, 1800);
+    });
+  });
+  const media = Buffer.from(bytes);expect(media.length).toBeGreaterThan(100);
+  const installRoutes = async (target: Page) => {
+    await target.route("**/*", route => route.request().url() === videoSource ? route.fulfill({ status: 200, contentType: "video/webm", headers: { "access-control-allow-origin": "*" }, body: media }) : new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+  };
+  await installRoutes(page);await page.setExtraHTTPHeaders(headers);
+  await page.goto("/login");await page.getByLabel("Email", { exact: true }).fill(email);await page.getByLabel("密碼", { exact: true }).fill(password);await page.getByRole("button", { name: "登入", exact: true }).click();await expect(page).toHaveURL(/\/dashboard/u);
+  await page.goto("/lives/new");
+  const quick = page.getByRole("form", { name: "一場即上線", exact: true });
+  await expect(quick).toBeVisible();await expect(quick.locator('select, input:not([type="hidden"])')).toHaveCount(3);
+  await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(videoId);
+  await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 180_000), "Asia/Taipei"));
+  await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
+  const publicLink = page.getByRole("link", { name: "開啟公開報名頁", exact: true });await expect(publicLink).toBeVisible();
+  const publicPath = (await publicLink.getAttribute("href"))!;expect(publicPath).toMatch(/^\/lp\/quick-webinar-[a-f0-9]+$/u);
+  const live = await db.live.findFirstOrThrow({ where: { vendorId }, include: { form: true } });
+  expect(live.title).toBe("WP17 合成影片");expect(await db.live.count({ where: { vendorId } })).toBe(1);
+  expect((await db.salesProject.findUniqueOrThrow({ where: { id: projectId } })).status).toBe("published");
+  expect(await db.liveNotificationRule.count({ where: { vendorId, liveId: live.id, trigger: "before_live", offsetMinutes: 60, isActive: true } })).toBe(1);
+  // 完成後轉為唯讀；新建意圖必須使用「建立另一場」取得新的建立識別。
+  await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toHaveValue(videoId);
+  await expect(quick.getByLabel(/^開始時間/u)).toHaveValue(formatZonedDateTimeLocal(live.scheduledAt, "Asia/Taipei"));
+  await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toBeDisabled();await expect(quick.getByRole("button", { name: "建立並檢查上線", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "建立另一場", exact: true }).click();
+  await expect(quick.getByRole("combobox", { name: "選擇影片", exact: true })).toHaveValue("");await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 240_000), "Asia/Taipei"));await quick.getByLabel(/^活動名稱/u).fill("WP17 第二場合成講座");await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();await expect(publicLink).toBeVisible();expect(await publicLink.getAttribute("href")).not.toBe(publicPath);expect(await db.live.count({ where: { vendorId } })).toBe(2);
+  const attendee = await browser.newContext({ baseURL, extraHTTPHeaders: headers });const viewer = await attendee.newPage();viewer.setDefaultTimeout(20_000);await installRoutes(viewer);
+  try {
+    expect((await viewer.goto(publicPath))?.status()).toBe(200);
+    for (const width of [1280, 390]) { await viewer.setViewportSize({ width, height: 900 });await axe(viewer);await viewer.screenshot({ path: test.info().outputPath(`registration-${width}.png`), fullPage: true }); }
+    const registration = viewer.locator('form[action="/api/form-submissions"]');await registration.getByLabel("姓名", { exact: true }).fill("WP17 合成報名者");await registration.getByLabel("Email", { exact: true }).fill(`attendee-${run}@example.test`);await registration.getByRole("button", { name: "送出報名", exact: true }).click();
+    await expect(viewer).toHaveURL(/\/thank-you\?submitted=verification_required$/u);
+    const submission = await db.formSubmission.findFirstOrThrow({ where: { liveId: live.id, email: `attendee-${run}@example.test` } });expect(submission.verificationStatus).toBe("UNVERIFIED");
+    const delivery = await db.emailDelivery.findFirstOrThrow({ where: { vendorId, sourceFormSubmissionId: submission.id, trigger: "form_submission_verification" } });
+    // 僅使用此 fixture 剛產生的驗證能力，記憶體內走實際頁面；不記錄／保存其值。
+    const payload = revealEmailDeliveryPayload(delivery.payloadEncryptedEnvelope, { vendorId, deliveryId: delivery.id });
+    const url = payload.body.match(/http:\/\/127\.0\.0\.1:\d+\/verify-registration\?[^\s]+/u)?.[0];
+    if (!url || new URL(url).origin !== origin) throw new Error("Synthetic verification link is unavailable.");
+    let verificationFailed = false;
+    try { await viewer.goto(url);await viewer.getByRole("button", { name: "確認 Email 並完成報名", exact: true }).click();await expect(viewer.getByRole("heading", { name: "Email 已確認", exact: true })).toBeVisible(); }
+    catch { verificationFailed = true; }
+    finally { await viewer.goto(`${publicPath}/thank-you`); }
+    if (verificationFailed) throw new Error("Synthetic verification flow failed; sensitive navigation details withheld.");
+    expect((await db.formSubmission.findUniqueOrThrow({ where: { id: submission.id } })).verificationStatus).toBe("VERIFIED");
+    expect(await db.emailDelivery.count({ where: { vendorId, sourceFormSubmissionId: submission.id, trigger: "registration_confirmed", status: "queued" } })).toBe(1);
+    await viewer.goto(`${publicPath}/broadcast`);await axe(viewer);
+    // 等實際伺服器時間到開播；不更改場次事實、不偽造 media API 或時鐘。
+    await expect(viewer.getByRole("link", { name: /前往授權播放/u })).toBeVisible({ timeout: Math.max(30_000, live.scheduledAt.getTime() - Date.now() + 20_000) });
+    await viewer.getByRole("link", { name: /前往授權播放/u }).click();await expect(viewer).toHaveURL(new RegExp(`/live/${live.slug}$`, "u"));
+    const video = viewer.locator("video").first();await expect(video).toBeVisible();
+    expect(await video.evaluate(async element => { const media = element as HTMLVideoElement;media.muted = true;try { await media.play();return true; } catch { return false; } })).toBe(true);
+    await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
+    expect(await video.evaluate(element => (element as HTMLVideoElement).error === null)).toBe(true);
+  } finally { await attendee.close(); }
+  // 另一個合成草稿專案缺付款驗證，必須保留草稿／缺項，不提供公開成功連結。
+  const blocked = await db.salesProject.create({ data: { vendorId, name: "WP17 待補專案", slug: `wp17-blocked-${run}`, mode: "live_course", primaryFlow: "live" } });
+  await db.salesProjectProduct.create({ data: { vendorId, projectId: blocked.id, productId } });await db.paymentMethodReference.update({ where: { id: methodId }, data: { status: "pending", verifiedAt: null } });await db.userOnboardingPreference.update({ where: { userId_vendorId: { userId, vendorId } }, data: { selectedProjectId: blocked.id } });
+  await page.reload();await quick.getByRole("combobox", { name: "選擇影片", exact: true }).selectOption(videoId);await quick.getByLabel(/^開始時間/u).fill(formatZonedDateTimeLocal(new Date(Date.now() + 300_000), "Asia/Taipei"));await quick.getByRole("button", { name: "建立並檢查上線", exact: true }).click();
+  await expect(page.getByText("專案尚未發布，公開網址目前無法開啟", { exact: true })).toBeVisible();await expect(publicLink).toHaveCount(0);await expect(page.getByRole("link", { name: "尚無有效且已驗證的商家付款方式", exact: true })).toBeVisible();expect((await db.salesProject.findUniqueOrThrow({ where: { id: blocked.id } })).status).toBe("draft");
+});

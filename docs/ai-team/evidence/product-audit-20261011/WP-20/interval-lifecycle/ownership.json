@@ -1,0 +1,16 @@
+{
+  "writer": "root",
+  "files": [
+    "src/lib/live-metric-ingestion.ts",
+    "src/lib/live-metric-ingestion.test.ts",
+    "src/lib/live-metric-close.ts",
+    "src/lib/live-metric-close.test.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.test.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/close/route.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/close/route.test.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "depth": 0,
+  "automatic_spawn": false
+}

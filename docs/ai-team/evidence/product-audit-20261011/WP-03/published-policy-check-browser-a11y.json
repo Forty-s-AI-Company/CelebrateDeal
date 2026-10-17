@@ -1,0 +1,10 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "browser_a11y",
+  "revision": "sha256:b6b968942d23d310ddcd14d0b21421be37451080f4c5da545cce8fd2c7c15358",
+  "status": "PASS",
+  "exit_code": 0,
+  "details": "6 Playwright cases passed; 10 desktop/mobile axe scans found no serious or critical issues; disposable PostgreSQL and synthetic data only",
+  "raw_receipt": "published-policy-browser.json"
+}

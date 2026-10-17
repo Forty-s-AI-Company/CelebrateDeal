@@ -16,7 +16,7 @@ const navGroups = [
   {
     label: "營運總覽",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: Gauge },
+      { href: "/dashboard", label: "營運總覽", icon: Gauge },
       { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
     ],
   },
@@ -24,7 +24,7 @@ const navGroups = [
     label: "銷講中心",
     items: [
       { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
-      { href: "/videos", label: "媒體素材", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
+      { href: "/videos", label: "影片素材", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
       { href: "/landing-pages", label: "一頁式網站", icon: Palette, managerOnly: true, feature: "funnel_builder" },
       { href: "/forms", label: "報名管理", icon: ClipboardList, managerOnly: true, feature: "funnel_builder" },
     ],
@@ -33,17 +33,17 @@ const navGroups = [
     label: "成交管理",
     items: [
       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
-      { href: "/orders", label: "訂單管理", icon: PackageCheck, managerOnly: true },
+      { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
       { href: "/consultations", label: "諮詢預約", icon: CalendarCheck, managerOnly: true, feature: "consultation_booking" },
       { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },
-      { href: "/support-cases", label: "售後服務", icon: Headphones, managerOnly: true },
+      { href: "/support-cases", label: "客服案件", icon: Headphones, managerOnly: true },
     ],
   },
   {
     label: "互動與行銷",
     items: [
       { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
-      { href: "/messages/deliveries", label: "寄送紀錄", icon: ReceiptText, managerOnly: true },
+      { href: "/messages/deliveries", label: "寄送管理", icon: ReceiptText, managerOnly: true },
       { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
       { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
       { href: "/blacklists", label: "封鎖名單", icon: Ban, managerOnly: true },
@@ -54,6 +54,7 @@ const navGroups = [
     items: [
       { href: "/affiliates", label: "推廣夥伴", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
       { href: "/team-templates", label: "團隊模板", icon: UsersRound, feature: "funnel_builder" },
+      { href: "/partner-pages", label: "我的夥伴頁", icon: Palette, feature: "funnel_builder" },
       { href: "/team-performance", label: "成效分析", icon: BarChart3, feature: "affiliate_program" },
     ],
   },
@@ -66,14 +67,14 @@ const navGroups = [
       { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true },
       { href: "/billing/electronic-invoices", label: "電子發票", icon: ReceiptText, financeOnly: true },
       { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true },
-      { href: "/billing/payouts", label: "稅務匯出", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
+      { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
-      { href: "/billing/course-payouts", label: "勞報單審核", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
+      { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
       { href: "/settings/brand", label: "品牌設定", icon: Palette, managerOnly: true },
-      { href: "/settings/tracking", label: "追蹤", icon: BarChart3, managerOnly: true },
+      { href: "/settings/tracking", label: "追蹤設定", icon: BarChart3, managerOnly: true },
       { href: "/settings/features", label: "功能模組", icon: Settings2, managerOnly: true },
-      { href: "/settings/commissions", label: "分潤規則", icon: Handshake, managerOnly: true, feature: "affiliate_program" },
+      { href: "/settings/line", label: "LINE 整合", icon: Bell, ownerOnly: true },
       { href: "/settings/automations", label: "自動化", icon: Bot, managerOnly: true },
       { href: "/settings/team", label: "團隊管理", icon: UsersRound, managerOnly: true },
       { href: "/settings/security", label: "安全性", icon: Shield },
@@ -125,6 +126,8 @@ export function navigationForRole(memberRole: string | null, isPlatformAdmin = f
       items: group.items.filter((item) => {
         const adminOnly = "adminOnly" in item && item.adminOnly;
         if (adminOnly) return false;
+        // Match the existing LINE page guard; this only filters navigation.
+        if ("ownerOnly" in item && item.ownerOnly && memberRole !== "owner") return false;
         if ("financeOnly" in item && item.financeOnly && !isFinance) return false;
         if ("managerOnly" in item && item.managerOnly && !isManager) return false;
         return !("feature" in item && item.feature) || !enabledModules || hasVendorFeature(enabledModules, item.feature as VendorFeatureModule);
@@ -143,7 +146,7 @@ export function AppShell({
   projects = [],
   selectedProjectId = null,
   onboardingTasks = [],
-  taskPanelCollapsed = false,
+  taskPanelCollapsed = true,
   selectProject,
   persistTaskPanelCollapsed,
 }: {
@@ -168,7 +171,7 @@ export function AppShell({
   const accountItemByHref = new Map(accountItems.map((item) => [item.href, item]));
   const accountMenuSections = [
     { label: "工作區", hrefs: ["/onboarding", "/settings/brand"] },
-    { label: "系統設定", hrefs: ["/settings/tracking", "/settings/features", "/settings/commissions", "/settings/automations", "/settings/team", "/settings/security"] },
+    { label: "系統設定", hrefs: ["/settings/tracking", "/settings/features", "/settings/line", "/settings/automations", "/settings/team", "/settings/security"] },
     { label: "帳務與方案", hrefs: ["/billing/usage", "/billing/payment-methods", "/billing/plans", "/billing/invoices", "/billing/electronic-invoices", "/billing/settlements", "/billing/payouts", "/affiliates/commissions", "/billing/course-payouts"] },
   ];
   const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
@@ -296,8 +299,7 @@ export function AppShell({
             </FormSubmitButton>
           </form>
         </div>
-        {!isPlatformAdmin && selectProject ? <div className="mt-3"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div> : null}
-        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
+        {!isPlatformAdmin && selectProject ? <details className="mt-2"><summary className="min-h-11 cursor-pointer rounded-lg border border-slate-200 px-3 py-3 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-blue-700">專案：{projects.find((project) => project.id === selectedProjectId)?.name ?? "全部專案總覽"}</summary><div className="mt-2"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div></details> : null}
         <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="行動版主要導覽">
           {visibleGroups.flatMap((group) => group.items).map((item) => (
             <AppShellNavLink key={item.href} href={item.href} mobile>
@@ -308,6 +310,10 @@ export function AppShell({
       </header>
 
       <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-72 lg:px-8 xl:px-10">
+        {/* Place mobile guidance in normal document flow, outside the sticky header. */}
+        <div className="lg:hidden">
+        {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
+        </div>
         <FeatureAccessBoundary enabledModules={enabledModules}>{children}</FeatureAccessBoundary>
         <footer className="mx-auto mt-12 max-w-5xl border-t border-border pt-5">
           <p className="mb-3 text-xs font-semibold text-slate-600">公開資訊與客服</p>

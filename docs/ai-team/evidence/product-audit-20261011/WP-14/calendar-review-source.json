@@ -1,0 +1,14 @@
+{
+  "sourceHashes": {
+    "src/lib/webinar-calendar.ts": "204d8937ff84873aa4a9edb88b15c978e9ec23d6bd3a038889796bb527e2c4bb",
+    "src/lib/webinar-calendar.test.ts": "c18c765ea8967d79fe2384829cdc7f06a395226cd27b2f9c8a8de3431d21f058",
+    "src/components/webinar-calendar-download.tsx": "1f8528220b601fd2fe7650844b7ce9af6ebacba3deaf8035844294bf79aa5b01",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "1ec73a1fab9f2d7e65edbbb6c5315c71b6f853cc7489a65f77245d7dd5f9b077",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx": "7bb8878ef68c3f61d3bed37640870ee8290929af51e74d897723226e21b7942b",
+    "src/lib/landing-page-service.ts": "08f7ab9b41165512b4a1f2568f36cd4ae0dbbb5722e4f5e4d8c08a19778427b4",
+    "src/components/landing-page-workspace.tsx": "757e42990dc40f6bcc1b3ab9b533ff5e7162177bb85af5098be453728a957fa9",
+    "tests/e2e/wp17-quick-webinar.spec.ts": "c84f3fcc0a3949c19fca6c656c6b7d48d82611b3007225c72e9b24bd56968f47"
+  },
+  "coverage": "Five full new/changed UI/serializer/test files, exact additive DTO title diffs and exact E2E addition; all unchanged public queries/guards preserved.",
+  "contextChars": 27710
+}

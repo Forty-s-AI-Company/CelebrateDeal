@@ -1,0 +1,8 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "rich-menu-typecheck",
+  "revision": "sha256:7913d158e354af56a8edb3b8fa6d9053140ba0ef7897b8f48d120af424a495a4",
+  "status": "PASS",
+  "exit_code": 0
+}

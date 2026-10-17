@@ -1,0 +1,22 @@
+{
+  "root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "files": [
+    "src/lib/trusted-entry-rate-limit.ts",
+    "src/lib/trusted-entry-rate-limit.test.ts",
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/api/automation/vouchers/redeem/route.ts",
+    "src/app/r/[code]/route.ts",
+    "src/app/api/live-admission/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts",
+    "src/app/api/automation/vouchers/redeem/route.test.ts",
+    "src/app/r/[code]/route.test.ts",
+    "src/app/api/live-admission/route.test.ts",
+    "src/app/api/live-admission/route.lease-db.test.ts",
+    "src/lib/request-client-ip.ts",
+    "src/lib/live-chat-request-security.ts",
+    "src/lib/rate-limit.ts",
+    "src/lib/trusted-entry-rate-limit.native.test.ts",
+    "src/lib/trusted-entry-rate-limit.native-provider.test.ts"
+  ],
+  "revision": "sha256:9f742df82910060b7a4eebeb89003de388105d583cdb38455e25907ee64b88c9"
+}

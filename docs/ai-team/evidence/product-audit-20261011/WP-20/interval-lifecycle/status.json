@@ -1,0 +1,21 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:8aed7955278d44dd7e69675f1a2e6f4db57c929ae4f86ed6690a583fb415ef71",
+  "targeted_tests": 147,
+  "database_checks": 120,
+  "checks": {
+    "targeted": "PASS",
+    "disposable_db": "PASS",
+    "scoped_lint": "PASS",
+    "typecheck": "PASS"
+  },
+  "review_observed_model": "claude-opus-5-5",
+  "whole_wp_acceptance": "NOT_READY",
+  "authorization_blocker": false,
+  "remaining": [
+    "player queue and lifecycle integration",
+    "visitor attribution and nonproduction provisioning",
+    "bounded report worker and UI",
+    "browser reconciliation and final acceptance"
+  ]
+}

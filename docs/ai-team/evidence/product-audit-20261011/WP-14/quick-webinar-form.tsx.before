@@ -1,0 +1,43 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import Link from "next/link";
+import { createQuickWebinarAction, type QuickWebinarState } from "@/app/actions/quick-webinar-actions";
+import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+
+export function QuickWebinarForm({ videos, timeZone, csrfToken, requestId }: {
+  videos: Array<{ id: string; title: string }>;
+  timeZone: string; csrfToken: string; requestId: string;
+}) {
+  const [state, action, pending] = useActionState(createQuickWebinarAction, { status: "idle", message: "" } as QuickWebinarState);
+  // revalidatePath 會重送 Server Component props；同一張表單仍沿用原建立識別。
+  const [submissionId] = useState(requestId);
+  const [videoId, setVideoId] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [title, setTitle] = useState("");
+  const completed = state.status === "ready" || state.status === "needs_attention";
+  const control = "min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2";
+  return <section aria-labelledby="quick-webinar-title" className="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-5">
+    <h2 id="quick-webinar-title" className="text-xl font-bold text-slate-950">一場即上線</h2>
+    <p className="mt-2 text-sm text-slate-700">選影片與開始時間，名稱可留空。系統自動建立報名、確認、播放頁與開播前一小時的 Email 提醒設定，回放保留七天。</p>
+    {/* React resets action forms after submission. Keep this intent's values;
+        only the explicit full navigation below starts a blank creation intent. */}
+    <form action={action} onReset={event => event.preventDefault()} aria-label="一場即上線" aria-busy={pending} className="mt-4 grid gap-4">
+      <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+      <input type="hidden" name="requestId" value={submissionId} />
+      <label className="grid gap-1 text-sm font-medium">選擇影片<select required name="videoId" value={videoId} onChange={e => setVideoId(e.target.value)} disabled={pending || completed || !videos.length} className={control}><option value="">請選擇已就緒且有長度的影片</option>{videos.map(video => <option key={video.id} value={video.id}>{video.title}</option>)}</select></label>
+      {!videos.length ? <p className="text-sm text-slate-700">目前沒有可用影片。<Link className="underline" href="/videos">前往影片庫上傳並確認處理完成</Link></p> : null}
+      <label className="grid gap-1 text-sm font-medium">開始時間（{timeZone}）<input required type="datetime-local" name="startsAtLocal" value={startsAt} onChange={e => setStartsAt(e.target.value)} disabled={pending || completed} className={control} /></label>
+      <label className="grid gap-1 text-sm font-medium">活動名稱（選填，預設使用影片名稱）<input name="title" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} disabled={pending || completed} className={control} /></label>
+      <p className="text-sm text-slate-600">會沿用目前選取的直播專案。未選過專案的新帳號會建立新專案；若缺商品、已驗證付款方式等發布條件，會保留草稿並列出缺項。</p>
+      {!completed ? <button type="submit" disabled={pending || !videos.length} className="min-h-11 rounded-md bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{pending ? "建立與檢查中…" : "建立並檢查上線"}</button> : <p className="text-sm text-slate-700">這場的建立結果已固定，請使用下方連結繼續調整。</p>}
+    </form>
+    {state.message ? <div role={state.status === "error" ? "alert" : "status"} className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+      <p>{state.message}</p>
+      {state.missing?.length ? <ul className="mt-2 list-disc pl-5">{state.missing.map(item => <li key={item.label}><Link className="underline" href={item.href}>{item.label}</Link></li>)}</ul> : null}
+      <div className="mt-3 flex flex-wrap gap-4">{state.publicUrl ? <Link className="font-semibold underline" href={state.publicUrl}>開啟公開報名頁</Link> : null}{state.editorUrl ? <Link className="underline" href={state.editorUrl}>檢查頁面與發布設定</Link> : null}{state.liveUrl ? <Link className="underline" href={state.liveUrl}>調整場次與提醒</Link> : null}</div>
+      {/* 完整導覽會重新取得建立識別；不讓新的建場意圖沿用已完成表單的 ID。 */}
+      {completed ? <button type="button" className="mt-3 inline-block min-h-11 py-2 font-semibold underline" onClick={() => window.location.assign("/lives/new")}>建立另一場</button> : null}
+    </div> : null}
+  </section>;
+}

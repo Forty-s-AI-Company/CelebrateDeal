@@ -1,0 +1,164 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\execution-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "a11y",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 51.843,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\a11y.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 11.078,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "shell-a11y",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 11.64,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\shell-a11y.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "targeted",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 8.109,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\targeted.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "terminology-snapshot",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.657,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\terminology-snapshot.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.672,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\checks-final-copy\\typecheck.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:04c67aa9599ab0dc248dd9362696eefedf0bfc2775feef3b059b6518147b6988",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "scope": "WP08 cumulative scoped source reviews and final coverage/terminal-evidence review; component tests with synthetic adapters, not full login flow",
+    "lineage": [
+      "batch1-reviewed.json",
+      "batch1-test-followup-reviewed.json",
+      "option-collision-reviewed.json",
+      "navigation-final-safe-reviewed.json",
+      "stale-target-reviewed.json",
+      "reports-safe-reviewed.json",
+      "editor-integration-reviewed.json",
+      "whole-wp-reviewed.json",
+      "puck-block-reviewed.json",
+      "dashboard-copy-reviewed.json",
+      "final-coverage-reviewed.json",
+      "acceptance-zh-reviewed.json"
+    ],
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-08\\review-final-receipt.json"
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "funnel gallery picker 元件（檔名未於本次提供）",
+      "area": "作品集選擇對話框的焦點管理",
+      "issue": "對話框開啟時沒有完整處理焦點移入、焦點限制與關閉後焦點歸還。這是既有問題，已保留到 WP15 處理。",
+      "evidence": "final-coverage-reviewed.json 列出 modal-focus MINOR；disposition 寫明「gallery focus MINOR retained for WP15 UI work」。",
+      "impact": "鍵盤與螢幕閱讀器使用者可能把焦點移到對話框背後，或關閉後失去原本位置。WP08 要求無障礙測試，但這次的 4 個無障礙狀態只涵蓋 shell 與 dashboard-loading，不涵蓋這個對話框。",
+      "recommended_fix": "在 WP15 為對話框加入初始焦點、Tab 循環限制、Esc 關閉與焦點歸還，並確認 role=dialog 與 aria-modal、aria-labelledby 正確。",
+      "required_test": "對話框鍵盤操作的無障礙元件測試：開啟後焦點在對話框內、Tab/Shift+Tab 不會離開、Esc 可關閉，關閉後焦點回到觸發按鈕。",
+      "confidence": 0.6,
+      "disposition": "confirmed"
+    },
+    {
+      "severity": "MINOR",
+      "file": "funnel list 元件（檔名未於本次提供）",
+      "area": "日期顯示格式化",
+      "issue": "日期格式化依賴執行環境的時區，伺服器端與客戶端渲染結果可能不同，導致 hydration 不一致。這是既有問題，已保留到 WP15。",
+      "evidence": "final-coverage-reviewed.json 列出 possible hydration-timezone MINOR；disposition 寫明「preexisting date timezone ... MINOR retained for WP15」。",
+      "impact": "跨時區使用者可能看到日期閃動，或主控台出現 hydration 警告。不影響資料正確性，也不涉及權限。",
+      "recommended_fix": "使用明確時區（例如使用者設定的時區或 UTC）做格式化，或只在客戶端格式化並提供穩定的 SSR 預設值。",
+      "required_test": "在不同 TZ 環境下進行 SSR 與 hydration 的元件測試，確認日期字串一致且沒有 hydration 警告。",
+      "confidence": 0.45,
+      "disposition": "confirmed"
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/components/landing-pages/funnel-webinar-settings.tsx",
+      "area": "區段說明文案（最終替換字串）",
+      "issue": "新文案寫著「設定線上講座時區、開始與結束時間，以及重播截止時間」。最終審查者沒有拿到這個元件的原始碼，所以無法確認這四個控制項（時區、開始時間、結束時間、重播截止時間）都真的存在。",
+      "evidence": "final-coverage-reviewed.json 寫明 webinar-settings 替換文案「could not be checked against its component source because that source was not supplied」。dashboard-copy 審查先前指出舊文案提到本區段沒有的控制項。",
+      "impact": "如果其中有任何一個控制項不存在（例如沒有「結束時間」欄位），文案會再次描述不存在的功能，誤導使用者。舊文案提到的時間與重播截止欄位看起來確實存在，所以這個風險不高。",
+      "recommended_fix": "拿新文案逐一對照 funnel-webinar-settings.tsx 的欄位，只列出實際存在的控制項。",
+      "required_test": "對這個元件做渲染測試，斷言時區、開始時間、結束時間、重播截止時間欄位都存在，並與說明文案一致。",
+      "confidence": 0.35,
+      "disposition": "confirmed"
+    },
+    {
+      "severity": "NIT",
+      "file": "src/components/landing-pages/funnel-goal-picker.tsx",
+      "area": "「此類型目前尚未開放建立。」提示分支",
+      "issue": "文案已改成中性的說法，但 dashboard-copy 審查指出這個提示是寫死的，而且實際上執行不到。改文案沒有處理這段無法到達的程式。",
+      "evidence": "dashboard-copy-reviewed.json 寫到「a hardcoded and unreachable \"in development\" notice」。最終替換只改了字串內容。",
+      "impact": "只影響可維護性，使用者看不到這段，沒有功能影響。",
+      "recommended_fix": "確認 webinar 目標是否仍應停用：若應停用，就讓提示可以到達；若不需要，就移除這個死分支。",
+      "required_test": "選取 webinar 目標的元件測試，確認提示的顯示與否符合預期。",
+      "confidence": 0.4,
+      "disposition": "confirmed"
+    },
+    {
+      "severity": "NIT",
+      "file": "WP08 文案相關元件（多個檔案）",
+      "area": "剩餘的空格與標點",
+      "issue": "Funnel 改名後，中英文之間的空格與全形／半形標點仍有零星不一致，已保留未修。",
+      "evidence": "disposition 寫明「Residual cosmetic spacing and punctuation NIT」；final-coverage-reviewed.json 列出 copy-consistency NIT。",
+      "impact": "只影響外觀與一致性，沒有功能或無障礙影響。",
+      "recommended_fix": "之後統一處理一次中文排版（移除中文詞之間多餘的空格，統一使用全形標點）。",
+      "required_test": "在術語／文案 lint 中加入規則，檢查中文字元之間是否有空格。",
+      "confidence": 0.55,
+      "disposition": "confirmed"
+    }
+  ]
+}

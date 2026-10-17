@@ -1,0 +1,1 @@
+root sole writer; depth0; dispatch0; automatic_spawn=false. Scope new visitor service/tests and evidence/handoff. Independent Auth review required; observed model unknown.

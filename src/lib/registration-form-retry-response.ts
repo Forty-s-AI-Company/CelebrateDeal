@@ -1,0 +1,73 @@
+import { registrationAttribution } from "@/lib/registration-attribution";
+import { NextResponse } from "next/server";
+import { getDb } from "@/lib/db";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
+import { parseRegistrationFormFields, REGISTRATION_FORM_RESERVED_FIELDS } from "@/lib/registration-form-fields";
+import { deleteRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName, registrationRetryCookieOptions, registrationRetrySourcePath, saveRegistrationRetryDraft } from "@/lib/registration-form-retry";
+
+export function registrationRetryOrigin(request: Request) {
+  // 使用部署者設定的公開origin，不取用可偽造的forwarded host。
+  try { return new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin; }
+  catch { return new URL(request.url).origin; }
+}
+export function trustedNativeRetryRequest(request: Request) {
+  // 草稿保存不接受Referer替代Origin，也不信任forwarded host。
+  return request.headers.get("origin") === registrationRetryOrigin(request);
+}
+function existingDraft(request: Request) {
+  const secure = registrationRetrySecureCookies(new URL(request.url).host);
+  const name = registrationRetryCookieName(secure);
+  const value = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
+  return { secure, name, value };
+}
+export async function clearRegistrationRetry(request: Request, response: NextResponse) {
+  const { secure, name, value } = existingDraft(request);
+  if (!value) return;
+  try { await deleteRegistrationRetryDraft(getDb(), value); } catch { /* DB初始化失敗也不得影響已完成提交。 */ }
+  response.cookies.set(name, "", { ...registrationRetryCookieOptions(secure), maxAge: 0 });
+}
+async function eligibleDraftFields(formId: string) {
+  if (!formId || formId.length > 128) return null;
+  const db = getDb();
+  const form = await db.registrationForm.findUnique({ where: { id: formId }, select: { isActive: true, fields: true, projectId: true, vendorId: true } });
+  if (!form?.isActive) return null;
+  if (form.projectId && !await db.salesProject.findFirst({ where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } }, select: { id: true } })) return null;
+  const fields = parseRegistrationFormFields(form.fields);
+  return fields.success ? new Set(fields.data.map((field) => field.key)) : null;
+}
+export async function registrationRetryResponse(request: Request, data: FormData | null, status: number) {
+  const sourcePath = typeof data?.get("__registrationReturnPath") === "string" ? registrationRetrySourcePath(String(data.get("__registrationReturnPath"))) : null;
+  if (!trustedNativeRetryRequest(request) || !sourcePath) return NextResponse.redirect(new URL("/registration-error", registrationRetryOrigin(request)), { status: 303, headers: { "Cache-Control": "no-store" } });
+  const target = new URL(sourcePath, registrationRetryOrigin(request));
+  const errorStatus = ([400, 403, 404, 429, 503].includes(status) ? status : 503) as 400 | 403 | 404 | 429 | 503;
+  let saved: string | null = null;
+  try {
+    // 另設草稿寫入額度，避免主提交被限流後仍可無限新增密文。
+    const limited = await checkRateLimit(request, "registration-retry-draft", 10, 60_000);
+    if (!limited && data) {
+      const allowed = await eligibleDraftFields(String(data.get("formId") ?? ""));
+      const answers: Record<string, string> = {};
+      let valid = Boolean(allowed);
+      for (const [key, value] of data.entries()) {
+        if (REGISTRATION_FORM_RESERVED_FIELDS.has(key)) continue;
+        if (!allowed?.has(key) || typeof value !== "string" || Object.hasOwn(answers, key)) { valid = false; break; }
+        Object.defineProperty(answers, key, { value, enumerable: true });
+      }
+      if (valid) saved = await saveRegistrationRetryDraft(getDb(), {
+        formId: String(data.get("formId") ?? ""), sourcePath, answers,
+        attribution: registrationAttribution({ ref: typeof data.get("referralCode") === "string" ? String(data.get("referralCode")) : undefined, share: typeof data.get("shareCode") === "string" ? String(data.get("shareCode")) : undefined, lp: typeof data.get("landingPageId") === "string" ? String(data.get("landingPageId")) : undefined }),
+        liveId: typeof data.get("liveId") === "string" ? String(data.get("liveId")) : null, status: errorStatus,
+      });
+    }
+  } catch { /* 無草稿時明示未保留，不輸出欄位或密文。 */ }
+  target.searchParams.set("registrationRetry", saved ? String(errorStatus) : "unavailable");
+  const response = NextResponse.redirect(target, { status: 303, headers: { "Cache-Control": "no-store" } });
+  if (saved) {
+    const previous = existingDraft(request);
+    try { await deleteRegistrationRetryDraft(getDb(), previous.value); } catch { /* 舊草稿仍受TTL限制。 */ }
+    response.cookies.set(previous.name, saved, registrationRetryCookieOptions(previous.secure));
+  } else {
+    await clearRegistrationRetry(request, response);
+  }
+  return response;
+}

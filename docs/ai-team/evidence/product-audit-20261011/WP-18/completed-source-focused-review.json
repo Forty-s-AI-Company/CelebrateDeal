@@ -1,0 +1,215 @@
+{
+  "claude_cli_discovery_status": "SUCCESS",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "agy_discovery_process_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "review": {
+    "summary": "Read-only review of the WP18 completed-follow-up source reader and send guard, using only the supplied text. I could not run tests, check the schema or inspect callers, so nothing here certifies release. What holds up: snapshot isolation is checked, tenant scoping is consistent, the fresh-report fallback is re-anchored to the original vendor/live, and completion is re-proved from the projection plus registration and order-window revisions. The send guard ties the delivery id, idempotency key and recipientHash to a freshly read source. The main risk is the no-order check: it only finds orders through the customer hash or the order's primary payment's metadata, so an order that has neither is missed and the buyer gets the email anyway. Lower-risk issues: deliveries can retry forever because 'unavailable' never ages out (and a pruned original report causes the same), the two queries apply different filters so a valid report can be skipped, the verifiedAt/timestamp comparisons depend on the session time zone, and inputOrderTenantRevision is only compared with another stored column, never with a live value.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "(supplied WP18 source reader)",
+        "area": "readCompletedFollowupSource – no-order EXISTS query",
+        "issue": "The check can only find an order in two ways: o.automationCustomerKeyHash equals the recipient's customer key, or the order's primary payment carries buyer_order metadata (LEFT JOIN on o.primaryPaymentTransactionId). An order (for example a pending one) whose hash is NULL or was never backfilled, and that has no primary payment yet, or whose matching payment is not the primary one, is not detected.",
+        "evidence": "LEFT JOIN \"PaymentTransaction\" payment ON payment.id=o.\"primaryPaymentTransactionId\" ...; the only other condition is o.\"automationCustomerKeyHash\"=${customerKey}. The code comment says 'Existing customer hashes are conservative', which implies some orders may have no hash.",
+        "impact": "If the order write path allows such a state, a person who already placed an order is told they completed but did not order. That is wrong-recipient messaging and breaks the completed_and_not_ordered rule.",
+        "recommended_fix": "Show that every non-draft CommerceOrder gets automationCustomerKeyHash when it is created (NOT NULL or a CHECK for status<>'draft'), or extend the check to cover orders linked to the submission or live through any payment transaction or the order's own attribution columns. If attribution data is missing, return unavailable or ineligible rather than sending.",
+        "required_test": "Actual-PG test: a pending order with a NULL customer hash and no primary payment (or the matching payment set as non-primary), attributed to the same email/live, must make the source ineligible. Also test that the schema blocks a non-draft order without a hash, if that is the chosen fix.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "(supplied WP18 source reader)",
+        "area": "readCompletedFollowupSource – 'current' report query vs. 7-day window; original anchor join",
+        "issue": "The 'unavailable' result never expires. The WINDOW_MS check only runs after an eligible row is found, so if no current report is ever regenerated (or the original report row named in the idempotency key is pruned when it expires), every call returns unavailable and the guard throws FollowupSourceUnavailableError indefinitely. The join on 'original' adds no binding beyond ref.vendorId/liveId, which are already supplied, but it makes the report row's existence a hard requirement.",
+        "evidence": "WHERE original.id=${ref.reportId} ... ; if (!current) return { status: \"unavailable\" }; the guard throws on unavailable; RETRY_MS is declared but not used in this scope.",
+        "impact": "Deliveries can stay in a retry loop after the follow-up window has closed, and pruning the original report blocks recovery even when a valid fresh report exists. The result is operational noise and stuck queue rows, not a wrong send.",
+        "recommended_fix": "Make deliveries older than WINDOW_MS (based on creation or enqueue time) terminally ineligible rather than unavailable. Either drop the dependency on the original row's existence (vendor/live already come from ref) or make sure reports referenced by pending deliveries are kept.",
+        "required_test": "Delete or expire the original report while a fresh current report exists: expect eligible. With no current report and enqueue time past WINDOW_MS: expect a terminal false, not a throw.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "(supplied WP18 source reader)",
+        "area": "readCompletedFollowupSource – current-report selection vs. row query filters",
+        "issue": "The first query picks the newest report but does not apply the second query's filters (v.collectionEnabled, v.expiresAt, v.durationMs>0, rowCount/cohortCount, the live/form/rule predicates). If the newest report fails one of them, the result is final 'ineligible', even when an older report that still passes every revision check would qualify. The failure is classified as permanent rather than unavailable.",
+        "evidence": "The first query uses ORDER BY fresh.\"createdAt\" DESC LIMIT 1 without the collectionEnabled/expiresAt/rowCount checks. The second query applies them, and rows.length!==1 then returns ineligible.",
+        "impact": "The guard can wrongly cancel a delivery that should go out. This is a false negative, not a privacy leak.",
+        "recommended_fix": "Move the version and projection predicates (collectionEnabled, version expiresAt, durationMs>0, rowCount checks) into the selection query so that ranking only considers reports that can qualify.",
+        "required_test": "Create two current reports where the newest has a collection-disabled or expired version and the older one is valid: assert the reader picks the valid one (or returns unavailable), not ineligible.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "(supplied WP18 source reader)",
+        "area": "Row query – g.\"verifiedAt\"=f.\"verifiedAt\" AT TIME ZONE 'UTC'; expiresAt/replayAvailableUntil > clock_timestamp()",
+        "issue": "If these columns are Prisma's default timestamp(3) without time zone, AT TIME ZONE 'UTC' turns f.verifiedAt into a timestamptz. Comparing that with g.verifiedAt (and comparing timestamp columns with clock_timestamp()) casts implicitly using the session TimeZone. The results then depend on the session time zone.",
+        "evidence": "g.\"verifiedAt\"=f.\"verifiedAt\" AT TIME ZONE 'UTC' mixes timestamp and timestamptz; several timestamp columns are compared with clock_timestamp(). Nothing pins the session to UTC.",
+        "impact": "With a non-UTC session TimeZone, the verifiedAt match fails (every source becomes ineligible) or expiry and replay windows shift by the UTC offset. Tests run on a UTC database will not show this.",
+        "recommended_fix": "Compare like types: g.\"verifiedAt\"=f.\"verifiedAt\" if both columns are the same type, and (clock_timestamp() AT TIME ZONE 'UTC') for timestamp-without-zone columns. Alternatively, SET LOCAL TimeZone='UTC' in the transaction and assert it.",
+        "required_test": "Run the actual-PG eligibility suite with SET TimeZone='America/Los_Angeles' (and a positive offset such as 'Asia/Tokyo') and assert the same results.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "(supplied WP18 source reader)",
+        "area": "Current-report query – fresh.\"inputOrderTenantRevision\"=fresh.\"inputOrderRevision\"",
+        "issue": "This compares two stored columns of the same row. It never checks the tenant order revision against a current value, unlike the registration and order-window revisions, which are checked against wp20_* functions.",
+        "evidence": "AND fresh.\"inputOrderTenantRevision\"=fresh.\"inputOrderRevision\" with no current tenant-revision function call.",
+        "impact": "Orders placed in the tenant after the report was built, outside the window, do not mark the report stale. The direct order EXISTS query limits the effect on the send decision, but the 'current report' claim is weaker than stated.",
+        "recommended_fix": "Compare inputOrderTenantRevision with a current tenant-wide order revision function. If tenant order freshness is meant to rely only on the direct order check, document that and remove the redundant predicate.",
+        "required_test": "Bump only the tenant-wide order revision (an order outside the report window) and assert the intended outcome: stale/unavailable, or explicitly still current.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "payment",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 13122,
+      "expected_duration": 0,
+      "code_surface_area": 8,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "completed": false,
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "accepted": false,
+  "finalModel": "claude-opus-5-5"
+}

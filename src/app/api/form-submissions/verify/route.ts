@@ -14,7 +14,7 @@ import {
 } from "@/lib/form-submission-chat-session";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
 import { captureOperationalError } from "@/lib/monitoring";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 
 const VerificationForm = z.object({
   token: z.string().min(1).max(320),

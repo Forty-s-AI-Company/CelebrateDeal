@@ -1,0 +1,255 @@
+Final bounded critical repair review for revision sha256:ec4c1f1a8c592310aab96751718c05378def2ff985ef021b743a086a37b1f976. Prior observed Opus review-repair-cli (728dc139) found noBLOCKER/MAJOR, oneMINOR cachedscriptedrun after409/500/network. Now clear scriptedRun andcache on allerrors except429/503; testscover409/500/network vs429/503. Also purefunction extraction readLimitedInteraction fromPOST preservesordering/sameorigin outsidehelper to meetcomplexitylint; noassertionweakening. Allotherpreviouslyreviewed APIimports/trustedresolver/capacity/body/admissioncodeunchanged. Scope localAPI incremental only; remaining8actions wholeWPunfinished, nodeploymentcertification. Review exactprovidedchanges plus current sourcebelow; do not rescan orspawn.
+
+CURRENT route read limiter area
+  };
+}
+
+export async function GET(request: Request) {
+  // Polling every 2s: 32 viewers behind one IP use at most 992 requests/min
+  // including their initial reads. Keep headroom and a separate read bucket.
+  const limited = await checkRateLimit(request, "live-interactions-read", 1_200, 60_000);
+  if (limited) return limited;
+  const url = new URL(request.url);
+  const vendorId = url.searchParams.get("vendorId") ?? "";
+  const liveId = url.searchParams.get("liveId") ?? "";
+  if (!Identifier.safeParse(vendorId).success || !Identifier.safeParse(liveId).success) {
+    return NextResponse.json({ error: "Invalid interaction scope" }, { status: 400 });
+  }
+  const viewer = await admittedViewer(request, vendorId, liveId);
+  if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
+  const now = new Date();
+  const [runs, spotlight] = await Promise.all([getDb().liveInteractionRun.findMany({
+    where: {
+      vendorId,
+CURRENT POST limited parser andentry
+
+async function readLimitedInteraction(request: Request) {
+  // Bound parsing first, then separate scripted polling from viewer mutations.
+  const limited = await checkRateLimit(request, "live-interactions-request", 1_200, 60_000);
+  if (limited) return limited;
+  const parsed = RequestBody.safeParse(await readJsonBody(request));
+  const opening = parsed.success && parsed.data.action === "open";
+  const actionLimited = await checkRateLimit(request, opening ? "live-interactions-open" : "live-interactions", opening ? 1_200 : 60, 60_000);
+  if (actionLimited) return actionLimited;
+  if (!parsed.success) return NextResponse.json({ error: "Invalid interaction request" }, { status: 400 });
+  return parsed.data;
+}
+
+export async function POST(request: Request) {
+  const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
+  if (sameOrigin) return sameOrigin;
+  const data = await readLimitedInteraction(request);
+  if (data instanceof Response) return data;
+  const viewer = await admittedViewer(request, data.vendorId, data.liveId);
+  if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
+
+  if (data.action === "ask_question") {
+    const body = normalizeLiveQuestionBody(data.body);
+    const displayName = normalizeLiveQuestionDisplayName(data.displayName);
+    if (!body) return NextResponse.json({ error: "Invalid question" }, { status: 400 });
+    const live = await getDb().live.findFirst({ where: { id: data.liveId, vendorId: data.vendorId, status: "live" }, select: { id: true } });
+    if (!live) return NextResponse.json({ error: "Live unavailable" }, { status: 409 });
+    const question = await getDb().$transaction(async (tx) => {
+      const recentCount = await tx.liveQuestion.count({
+        where: { vendorId: data.vendorId, liveId: data.liveId, participantHash: viewer.participantHash, createdAt: { gt: new Date(Date.now() - 60_000) } },
+      });
+      if (recentCount >= 3) return null;
+CURRENT backoff anderror
+/** Keep server backoff bounded to one minute, without tight retries. */
+export function interactionRetryDelay(response: Response) {
+  if (response.status !== 429 && response.status !== 503) return 2_000;
+  const value = response.headers.get("Retry-After")?.trim() ?? "";
+  const milliseconds = /^\d+$/u.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now();
+  return Number.isFinite(milliseconds) && milliseconds > 0
+    ? Math.min(60_000, Math.max(2_000, milliseconds)) : 30_000;
+}
+
+class InteractionRequestError extends Error {
+  constructor(public status: number, public retryDelay = 2_000) {
+    super(status === 409 ? "這個互動已結束，或你已經參加過了。" : "互動連線暫時忙碌，請再試一次。");
+  }
+}
+
+async function interactionRequest(body: Record<string, unknown>, signal?: AbortSignal) {
+  const response = await fetch("/api/live-interactions", {
+    method: "POST",
+    signal,
+    headers: { "content-type": "application/json", "x-celebratedeal-client": "web" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new InteractionRequestError(response.status, interactionRetryDelay(response));
+  return await response.json() as { run?: PublicRun | null };
+}
+
+function WinnerReveal({ run }: { run: PublicRun }) {
+  const isWinner = run.winnerIsViewer;
+CURRENT full refresh
+  useEffect(() => {
+    if (!enabled || admissionLost) return;
+    // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
+    const controller = new AbortController();
+    const { signal } = controller;
+    let timer: number;
+    let openRetryAt = 0;
+    let lastScriptedRun: PublicRun | null = null;
+    async function refresh() {
+      let retryDelay = 2_000;
+      try {
+        let scriptedRun = lastScriptedRun;
+        if (scriptedEvent && Date.now() >= openRetryAt) {
+          try {
+            const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
+            scriptedRun = payload.run ?? null;
+            lastScriptedRun = scriptedRun;
+          } catch (error) {
+            if (error instanceof InteractionRequestError && error.status === 401) {
+              if (!signal.aborted) setAdmissionLost(true);
+              return;
+            }
+            if (error instanceof InteractionRequestError && (error.status === 429 || error.status === 503)) {
+              // Back off this POST only; manual runs and spotlight still refresh.
+              openRetryAt = Date.now() + error.retryDelay;
+            } else {
+              // An ended/unavailable scripted run must not hide a new manual run.
+              lastScriptedRun = null;
+              scriptedRun = null;
+            }
+            // 排定事件已結束或暫時失敗，仍讀取手動互動與精選問題。
+          }
+        }
+        if (signal.aborted) return;
+        const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
+        if (signal.aborted) return;
+        if (response.status === 401) { setAdmissionLost(true); return; }
+        retryDelay = interactionRetryDelay(response);
+        if (!response.ok) return;
+        const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
+        if (signal.aborted) return;
+        setRun(scriptedRun ?? payload.runs?.[0] ?? null);
+        setSpotlight(payload.spotlight ?? null);
+      } catch {
+        // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
+      } finally {
+        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), retryDelay);
+      }
+    }
+    timer = window.setTimeout(() => void refresh(), 0);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [enabled, admissionLost, liveId, scriptedEvent, vendorId]);
+
+  useEffect(() => {
+    if (!run) return;
+    const update = () => setRemainingSeconds(Math.max(0, Math.ceil((Date.parse(run.endsAt) - Date.now()) / 1_000)));
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [run]);
+
+  // Reset run-specific input before rendering a different poll.
+  const [selectionRunId, setSelectionRunId] = useState(run?.id);
+CURRENT component regression tests
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+
+const hooks = vi.hoisted(() => ({ effects: [] as Array<() => void | (() => void)>, setters: [] as Array<ReturnType<typeof vi.fn>> }));
+vi.mock("react", async (original) => ({
+  ...await original<typeof import("react")>(),
+  useState: <T,>(value: T | (() => T)) => {
+    const setter = vi.fn(); hooks.setters.push(setter);
+    return [typeof value === "function" ? (value as () => T)() : value, setter];
+  },
+  useRef: <T,>(value: T) => ({ current: value }),
+  useMemo: <T,>(factory: () => T) => factory(),
+  useEffect: (effect: () => void | (() => void)) => { hooks.effects.push(effect); },
+}));
+import { interactionRetryDelay, LiveAdvancedInteractions } from "./live-advanced-interactions";
+
+let cleanup: Array<() => void> = [];
+beforeEach(() => {
+  vi.useFakeTimers();
+  hooks.effects = [];
+  hooks.setters = [];
+  vi.stubGlobal("window", { setTimeout, clearTimeout });
+});
+afterEach(() => {
+  cleanup.forEach(fn => fn()); cleanup = [];
+  vi.useRealTimers(); vi.unstubAllGlobals();
+});
+
+function mountPolling(scripted: boolean) {
+  const wrapper = LiveAdvancedInteractions({ vendorId: "synthetic-vendor", liveId: "synthetic-live", enabled: true, currentSeconds: 1,
+    events: scripted ? [{ id: "synthetic-event", eventType: "poll", triggerSec: 0, title: "Synthetic", metadata: { kind: "poll", durationSec: 60 } }] : [],
+  })!;
+  // Execute the actual component effects with a deterministic hook/timer harness.
+  const child = wrapper.props.children as ReactElement<Record<string, unknown>>;
+  (child.type as (props: Record<string, unknown>) => unknown)(child.props);
+  for (const effect of hooks.effects) { const stop = effect(); if (stop) cleanup.push(stop); }
+}
+
+describe("interaction polling backoff", () => {
+  it.each([409, 500, "network", 429, 503] as const)("keeps the scripted run only during explicit backoff: %s", async (status) => {
+    let opens = 0;
+    const scriptedRun = { id: "scripted-A" };
+    const manualRun = { id: "manual-B" };
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method !== "POST") return Response.json({ runs: [manualRun] });
+      if (++opens === 1) return Response.json({ run: scriptedRun });
+      if (status === "network") throw new Error("Synthetic network failure");
+      return new Response(null, { status, headers: { "Retry-After": "30" } });
+    }));
+    mountPolling(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hooks.setters[1]).toHaveBeenLastCalledWith(scriptedRun);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(hooks.setters[1]).toHaveBeenLastCalledWith(status === 429 || status === 503 ? scriptedRun : manualRun);
+  });
+  it.each([429, 503])("honors Retry-After for GET %i and cancels on unmount", async (status) => {
+    const fetchMock = vi.fn(async () => new Response(null, { status, headers: { "Retry-After": "60" } }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    cleanup.forEach(fn => fn()); cleanup = [];
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each([429, 503])("backs off scripted POST %i while GET continues", async (status) => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? new Response(null, { status, headers: { "Retry-After": "30" } })
+      : Response.json({ runs: [], spotlight: { id: "synthetic-question", body: "Synthetic", displayName: null } }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(true);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST")).toHaveLength(15);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST")).toHaveLength(16);
+  });
+  it("retains the normal two-second poll after successful responses", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ runs: [], spotlight: null }));
+    vi.stubGlobal("fetch", fetchMock); mountPolling(false);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each([null, "garbage", "-1", "0"])("uses a safe fallback for invalid retry value %s", (header) => {
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: header === null ? {} : { "Retry-After": header } }))).toBe(30_000);
+  });
+  it("supports dates and prevents timer overflow or sub-poll retries", () => {
+    vi.setSystemTime(new Date("2026-10-14T00:00:00Z"));
+    expect(interactionRetryDelay(new Response(null, { status: 429, headers: { "Retry-After": "Wed, 14 Oct 2026 00:01:00 GMT" } }))).toBe(60_000);
+    expect(interactionRetryDelay(new Response(null, { status: 429, headers: { "Retry-After": "1" } }))).toBe(2_000);
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: { "Retry-After": "Wed, 14 Oct 2037 00:00:00 GMT" } }))).toBe(60_000);
+    expect(interactionRetryDelay(new Response(null, { status: 503, headers: { "Retry-After": "9999999999" } }))).toBe(60_000);
+  });
+});
+
+PRIOR READONLYREVIEW(no edits to rawreceipt)
+{"summary":"The repair fixes the prior MAJOR. In POST, the same-origin check and a 1,200/min per-source gate now run before parsing. Only requests that strictly parse as `action === \"open\"` use the separate 1,200/min open bucket. Malformed requests and all other mutations still use both the 1,200/min gate and the original 60/min `live-interactions` bucket. GET has its own 1,200/min bucket, and its limit check runs before the request is processed. The order of auth, admission (`admittedViewer` before any action), body bounds (`readJsonBody` after the source gate) and transactions is unchanged in the excerpts. The 32-viewer route test runs the real trusted resolver and memory limiter. It sends 960 opens and 960 GETs, then 60 writes that return 201 and a 61st that returns 429. The headroom is plausible for the stated 2-second polling. The nonpayment threshold matrix still holds for POST at 60, because the `{}` body fails to parse and goes to the 60/min bucket. On the client, the scripted POST now backs off on 429/503 while GET keeps polling, a GET 429/503 backs off everything, the Retry-After delay is limited to 2–60 seconds with a 30-second fallback, and the unmount cleanup is tested. I found no BLOCKER or MAJOR. There is one MINOR client regression: the last scripted run is now kept after failures other than 429/503. This review doesn't certify the full work package, deployment, commercial rate-limit providers, the business database, or the 8 action/helper files outside this scope.","findings":[{"severity":"MINOR","file":"src/components/live-advanced-interactions.tsx","area":"refresh(): lastScriptedRun / catch branch of the scripted open request","issue":"`lastScriptedRun` is meant to keep the last run visible only while the scripted POST is backing off. It is also kept when the open request fails for other reasons (409 ended/already joined, 5xx, network error). Then `setRun(scriptedRun ?? payload.runs?.[0] ?? null)` keeps showing the stale scripted run and hides manual runs from GET.","evidence":"Before this change, `scriptedRun` was reset to null on every tick, so any open failure fell back to `payload.runs?.[0]`, as the comment '排定事件已結束或暫時失敗，仍讀取手動互動與精選問題' says. Now `let scriptedRun = lastScriptedRun;` runs every tick, and the catch block clears `lastScriptedRun` on no path except a successful response with `run: null`. A 409 leaves it unchanged.","impact":"Example: the server closes the scripted run while the client still treats `scriptedEvent` as active (clock skew, early close, already participated → 409), or open keeps returning 5xx. For the rest of that event window, viewers see a frozen scripted run (stale tally/winner state) instead of host-launched manual runs and their updates. This only lasts until `scriptedEvent` changes, but it reverses the documented fallback behavior.","recommended_fix":"Reuse `lastScriptedRun` only when the POST was skipped because of `openRetryAt`, or when it just failed with 429/503. On any other failure (409, other non-OK statuses, network errors), set `lastScriptedRun = null` and `scriptedRun = null` so GET's manual runs are shown.","required_test":"Polling harness test: the first open returns 200 with run A. The next open returns 409 (and, separately, 500), while GET returns manual run B. Assert that `setRun` gets B on the following tick. Also assert that when open returns 429, `setRun` still gets A until the Retry-After delay ends.","confidence":0.6}]}

@@ -1,0 +1,51 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "checks": {
+    "preparationAndEightConcurrentRetriesOneUncountedExpectation": "PASS",
+    "foreignScopeIdentityTakeoverAndRollbackRejected": "PASS",
+    "lostResponseRetryDoesNotDuplicateFactsAndUnansweredIntentRemains": "PASS",
+    "lowerUpperMixedUuidOneIntentAndOneActualVisit": "PASS",
+    "immutableExpectationAndVisitorRetentionServerTimestampNonUtc": "PASS",
+    "rlsPrivateAclAndUnprivilegedRoleDenied": "PASS",
+    "realWebinarTemplateRegistrationScopeIssuesExactlyOneUncountedPage": "PASS",
+    "pageCommittedBeforeBrowserUnknownNonceRejectedBeforeIdentityAndRollbackRetainsNoPage": "PASS",
+    "actualRegistrationSameVendorWrongFormForeignVendorAndInactiveRejectedWithoutPage": "PASS",
+    "draftProjectMetricGateAndForeignProjectCompositeFkRejected": "PASS",
+    "liveAndFormMutationsBlockedThroughIssuanceAndOuterRollbackNoNonce": "PASS",
+    "formReassignmentAfterOwnerLookupFailsTransactionalRecheck": "PASS",
+    "actualContextProofCompositionMissingIntentAndLostCookieRollbackAndIdempotentVisit": "PASS",
+    "unmatchedPageImmutableRlsAndPrivateProbeRoleDenied": "PASS",
+    "actualVersionExpiresBetweenContextAndInsertReturnsNullWithoutPage": "PASS",
+    "tenThousandCapEightParallelLastSlotOneSuccessAndPermanentUnresettableGap": "PASS",
+    "vendorCascadeNoOrphans": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-visit-intent.ts": "fc9811588bff24dbc35e0bc93780922c8934dbba931db1267ec9dbde2307ec01",
+    "src/lib/live-metric-visit-collection.ts": "be532e83befda4bcf2dd1db44be7922ff900fee8bf4c61beee739158b1cca740",
+    "src/lib/live-metric-visit-client.ts": "92550082d35ec058b3e119c27fca8e92e8975e2199b74be72d784d8aff0ae282",
+    "scripts/wp20-visit-page-disposable.mjs": "bcaa48ed2a298ebdf33161ae9f4d5316ad37fbd91b923d42994cc16fba604ece",
+    "src/lib/live-metric-visit-page.ts": "88201b545130dc5d42010df2f0f622ed87da97b0331cd949754db882b1120c36",
+    "src/components/live-metric-visit.tsx": "5d2e087aeede42bd3c11880453554c4e79a2e9250c3e6ec457e551ace64edd79",
+    "src/app/(viewer)/live/[slug]/page.tsx": "f70cc5ba8a3a3d3b1603af64ad2a84ac94841cd2070bab5a3f8b0f39eba9603a",
+    "prisma/migrations/20261016120000_live_metric_visit_page/migration.sql": "9305969ff2e518e979c9353bc5b4e8fd5559bd296e550710d11b2ea279768cf0",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "8c0629c4d838688e1f97a6610ec3062cd0abf7dbdc17dc777996989e9b79d45c",
+    "prisma/schema.prisma": "9950d343da0eb83515def9ba43cf7911b4350eac409d491dff702d9c34f76b29",
+    "prisma/migrations/20261016110000_live_metric_visit_intent/migration.sql": "796bca8ab59add3a0ed8c1bccd2dab1e45e233ade50b8344ec2275dd89d77e82",
+    "src/lib/funnel-flow.ts": "8c1918143c23b6c9ef77071150d6b740efecfd56b787d22c8c4bae7162dd53df",
+    "src/lib/funnel-step-pages.ts": "0cc667e0ce1ab4c8b4559f5bb9882ea1a23c29811950fd83bc3a80859d1e5092",
+    "src/lib/funnel-webinar.ts": "ef1c7b1d4f9a7b6068ddde7682e7c09b5d6aa488802b70eb7a3e30a9dde6f5e7",
+    "src/lib/live-metric-registration-page.ts": "0a2f82c24e5474d5572dadff9a2379dae602e6fa9dd56817b970b13a17f784aa",
+    "src/lib/live-metric-registration-surface.ts": "31b1bf0294e204d94da06551a994e07464f28467863b19ac7dc8997bc078f5f9",
+    "src/components/metric-registration-visit.tsx": "6c2fec244c6954c36f90c7e2fab8d47b1ca52d4b32441e23392fa7abd653ae08",
+    "src/app/form/[slug]/page.tsx": "22a155575ecf4018f3a93afb52fc88c0f9d19a9896ec87aa8f1587b82b7006d9",
+    "src/app/lp/[slug]/page.tsx": "aff02c3513a89b924db80fdad1f500e2cd97d742531d4863c2a4f4541df98163",
+    "src/app/lp/[slug]/[stepPath]/page.tsx": "595b3bd30ecc3668376cf937697c1d5c12a3cf6f6822aa2b663d026b3b05a1fa"
+  },
+  "advisoryVoidUnsupported": true,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 125
+}

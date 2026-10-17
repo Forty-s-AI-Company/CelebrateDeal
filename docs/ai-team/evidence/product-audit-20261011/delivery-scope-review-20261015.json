@@ -1,0 +1,182 @@
+{
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "status": "REVIEW_COMPLETED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper",
+      "exitCode": 3,
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "provider": "claude_cli",
+      "exitCode": 0,
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 5000,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "observed": {
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage",
+    "model": "claude-opus-5-5"
+  },
+  "agy_discovery_process_status": "SUCCESS",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "execution_provider": "claude_cli",
+  "reviewed": true,
+  "review": {
+    "summary": "The interpretation is mostly correct, and nothing in it blocks delivery.\n\n**Count:** 8 completed + 6 direct holds (02, 03, 04, 12, 13, 19) + 5 dependent packages (09, 14, 16, 17, 18) + WP20 = 20, so 8/20 is accurate.\n\n**User decision holds:** All 11 remaining packages other than WP20 depend, directly or through other packages, on user decisions: D2–D6, content approval, the A/B input, or an owner scope revision. 17 waits on 02/04, 09 and 14 wait on 17, 18 waits on 04, and 16 waits on 19 or a scope revision.\n\n**Technical gap under the latest scope restriction:** WP20 is a separate case. Migration 125 rejects positive visits/viewing coverage, and the code that produces those positive source records (and the gate around them) doesn't exist yet. The current restriction blocks adding it, so the stored reports can't support all five nonzero statistics. Calling WP20 partial (UI increment only) and not complete is correct.\n\n**Nonblocking observations:** The 81 passing tests, lint and tsc are taken as reported. Two classification refinements are listed in the findings as MINOR/NIT.\n\n**Possible next action:** None of the supplied evidence shows an already-authorized, product-only action that would finish any whole remaining package without new wiring or a change to the original acceptance. The only permitted action is the one you proposed: record the exact 20-package status and keep the tested UI increment. Then ask the user one decision question about WP20 and stop. Don't run more checkpoints or re-review the same blocker.\n\nThis review covers only the supplied text. I didn't review any files or run any tests.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "N/A (supplied status interpretation)",
+        "area": "WP20 classification / conflict statement",
+        "issue": "WP20 is called a 'technical gap', but it's really a conflict between two user instructions. M1/M2 (identity, events and additive persistence) were authorized earlier, and the current session prohibits expanding wiring or validation. The interpretation decides on its own that building the positive-source producer counts as prohibited 'expansion', and it doesn't name the user decision needed to settle this.",
+        "evidence": "'M1/M2 necessary identity/events/additive persistence authorized previously. Current user now prohibits expanding wiring/validation.' and 'Positive source producer/fence not yet implemented.'",
+        "impact": "If WP20 is recorded only as a technical gap, it may stay stuck without the user ever seeing the single decision that would unblock it, or someone may later treat the earlier M1/M2 authorization as permission to override the latest restriction.",
+        "recommended_fix": "Record WP20 as 'partial; blocked by the latest-session restriction on wiring'. List exactly two ways to resolve it: (a) the user explicitly lets the previously authorized M1/M2 positive-source producer and its gate go ahead, or (b) the owner revises the WP20 acceptance. Until the user chooses, take neither.",
+        "required_test": "None. This is a status-record classification.",
+        "confidence": 0.75
+      },
+      {
+        "severity": "NIT",
+        "file": "N/A (supplied status interpretation)",
+        "area": "Hold vs dependency labelling in the status record",
+        "issue": "The status record should label each dependent package (09, 14, 16, 17, 18) with the root user decision it ultimately waits on, not just the package it depends on, so that '8/20 plus holds' can be traced back to D2–D6, content approval, the A/B input, or an owner scope revision.",
+        "evidence": "'09->17/content approval, 14->13/17 and A/B input, 17->02/04, 18->04, 16->other19 or explicit owner scope revision'",
+        "impact": "Without root labels, readers may think the dependent packages are engineering-blocked instead of decision-blocked, and the full set of user decisions needed won't be visible in one place.",
+        "recommended_fix": "For each held or dependent package, write down its root decisions, for example 17 → D2, D3, D6a and 18 → D6a, plus any external input such as content approval or A/B input.",
+        "required_test": "None.",
+        "confidence": 0.6
+      }
+    ]
+  }
+}

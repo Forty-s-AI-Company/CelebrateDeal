@@ -1,0 +1,16 @@
+{
+  "status": "READY_SUBTASK_ONLY",
+  "whole_wp": "INCOMPLETE_D5",
+  "revision": "sha256:187a651ae5530c1b49aa5dd9f0e1c70c5a9afdec8b2a996138a3b4a297d25aea",
+  "tests": "11/11PASS0skip",
+  "semantic_browser": "6/6PASS;staticSSRonly",
+  "lint": "SCOPED_PASS",
+  "typecheck": "PASS",
+  "review": "Sonnet0BLOCKER/MAJOR;1MINOR3NIT retained",
+  "not_verified": [
+    "production CSS contrast",
+    "running Next page E2E",
+    "approved legal contents/version/effective date"
+  ],
+  "safety": "No legal source modifications, schema, data, push or deploy"
+}

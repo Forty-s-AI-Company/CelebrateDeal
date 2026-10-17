@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "checks": {
+    "threeRealRecipesInactiveThenOwnedActivation": "PASS",
+    "forgedGenericEventsCannotQueueOrClaim": "PASS",
+    "disableReenableAdvancesSnapshotVersion": "PASS",
+    "manualDryrunRequiresRealSources": "PASS",
+    "otherVendorRuleNotMutated": "PASS",
+    "unsupportedFunnelScopeNotActivated": "PASS",
+    "realEditedSnapshotCompareAndSwapRejects": "PASS",
+    "requestBoundaryDenialsDoNotMutate": "PASS",
+    "auditWrittenNoSendSideEffects": "PASS"
+  },
+  "scope": "Actual server-action persistence/readiness/dedicated dispatch against owned PostgreSQL. Request auth/CSRF/navigation/cache boundaries are scoped fixture shims, NOT real HTTP authentication or CSRF verification.",
+  "browser": "NOT_RUN",
+  "providerDelivery": "NOT_RUN",
+  "remoteCI": "NOT_RUN",
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

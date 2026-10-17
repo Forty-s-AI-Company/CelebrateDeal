@@ -1,0 +1,173 @@
+{
+  "verification": {
+    "kind": "local_wrapper",
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED"
+  },
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "payment",
+        "production_data",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 4946,
+      "expected_duration": 0,
+      "code_surface_area": 1,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "finalModel": "claude-opus-5-5",
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "I reviewed only the changed tail you supplied: the 256-character limit in the key builder and parser, and the narrowed try/catch around decrypt and hash. No BLOCKER or MAJOR defects found. The builder and parser apply the same limit, the length check happens before any database access, and the three database reads in Promise.all are still outside the try, so read failures still propagate. Wrong vendor/order envelopes, malformed envelopes and a missing email all fail closed (no send). I have one MINOR finding: the catch block cannot distinguish a bad buyer record from a broken key or secret configuration, and logs nothing. The 256 limit counts characters rather than bytes; that only matters if email.ts counts bytes and order or rule IDs can contain non-ASCII. I couldn't check that from the supplied text and am not raising it as a defect. An empty or short findings list does not mean tests or release have passed; lint and tsc are still pending.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "checkout-followup module (isCurrentCheckoutFollowupDelivery tail)",
+        "area": "try { revealCommerceOrderPii(...); createEmailRecipientHash(...) } catch { return false; }",
+        "issue": "The bare catch treats every error from the encryption and recipient-hash helpers the same way. A record-level problem (malformed, misbound or missing-email envelope) gets the same permanent `false` as an environment-level failure, such as a missing or rotated encryption key or HMAC secret, or a broken helper. The catch logs nothing and records no metric, so these drops are invisible.",
+        "evidence": "The catch has no condition and returns false with the comment 'Do not log the envelope/exception'. The function's doc comment says failures 'must not silently turn into either a send or permanent drop', but the repair only keeps database failures out of that path. Your task text says existing dispatchEmailDelivery tests map `false` to superseded/config_superseded, which is a final outcome.",
+        "impact": "A temporary key or secret misconfiguration during deployment would quietly mark every pending checkout follow-up as superseded, and nobody would see it. This fails closed (no wrong-recipient send), so it is not a payment or privacy risk. The cost is lost deliveries that can't be diagnosed.",
+        "recommended_fix": "Keep returning false for record-level failures. Either (a) let environment errors propagate, which needs only a local check of the error type or code that the existing helpers already expose, or (b) emit a counter or log line with only a fixed reason code and no envelope, exception message or PII, so mass drops can be seen. Either fix stays inside this module and needs no shared transport, crypto or schema change.",
+        "required_test": "Unit test: make the existing encryption or HMAC helper's key or secret unavailable through the existing test configuration, call isCurrentCheckoutFollowupDelivery for an otherwise valid delivery, and assert the chosen behaviour: it either rejects, or returns false while recording the fixed non-PII reason code. In both cases the provider must not be called.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "accepted": false,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "status": "RATE_LIMITED"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "status": "SUCCESS"
+    }
+  ],
+  "reviewed": true
+}

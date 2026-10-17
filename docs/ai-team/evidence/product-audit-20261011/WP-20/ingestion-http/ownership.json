@@ -1,0 +1,10 @@
+{
+  "writer": "root",
+  "files": [
+    "src/lib/live-metric-ingestion.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.ts",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/intervals/route.test.ts"
+  ],
+  "automatic_spawn": false,
+  "depth": 0
+}

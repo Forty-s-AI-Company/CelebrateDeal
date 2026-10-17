@@ -1,0 +1,36 @@
+{
+  "status": "PASS",
+  "source_revision": "sha256:4a1b964080a65416f6a6423c7b7a67df8a52ef12c8305ea5aacd3aa96ac4e778",
+  "readiness": "PASS; deploy command did not override platform project ID; project-level user-defined metadata provenance NOT_VERIFIED",
+  "route_matrix": {
+    "local": 10,
+    "sandbox": 10
+  },
+  "forged_header_cases": {
+    "local": 8,
+    "sandbox": 8
+  },
+  "burst": {
+    "requests": 123,
+    "validation400": 120,
+    "rate_limited429": 3,
+    "duration_seconds": 13.406
+  },
+  "distinct_egress": "second400 while first429",
+  "provider_outage": {
+    "passed": 8,
+    "total": 8
+  },
+  "limitations": [
+    "real Redis6 with narrow synthetic HTTP bridge, not commercial Upstash",
+    "business DB unavailable remotely; business success covered only by local disposable DB/browser evidence",
+    "Production topology not validated",
+    "global lint FAIL299 docs evidence errors; src errors0",
+    "Four HTTP boundary rows do not prove remote limiter reach: referral, voucher-confirm, portal-confirm, admission-release",
+    "Two egress sequence observed by orchestrator but artifacts lack timestamps and network labels",
+    "Real remote IPv6 /64 behavior not verified; unit/integration only",
+    "No secret-store/environment-name enumeration for platform metadata provenance"
+  ],
+  "cleanup": "PASS; retained staging and prior Preview READY",
+  "whole_acceptance": "NOT_RUN"
+}

@@ -1,0 +1,107 @@
+Independent WP15 incremental review, Traditional Chinese. Previous initial/followup review closed all BLOCKER/MAJOR; residual nonblocking currency redundancy MINOR and preference literal duplication NIT remain. Review new compact mobile changes for correctness, keyboard accessibility, maintainability and regression. Tools disabled; source excerpts below. Mobile default step list collapsed, desktop always flex. Native details now wraps project switcher in mobile header only. Existing desktop panel and switcher unchanged. Actual shell+operations tests on Chromium/Firefox x1280x900,390x844,375x667 pass6: first editable field within viewport, step disclosure and project details keyboard toggles, axe0serious. Full login E2E not executed. Current snapshot checks still running. Only BLOCKER/MAJOR/MINOR/NIT findings. Do not invent APIs or claim whole WP ready.
+
+--- src/components/app-shell.tsx previous reviewed
++++ src/components/app-shell.tsx
+@@ -302 +302 @@
+-        {!isPlatformAdmin && selectProject ? <div className="mt-3"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div> : null}
++        {!isPlatformAdmin && selectProject ? <details className="mt-2"><summary className="min-h-11 cursor-pointer rounded-lg border border-slate-200 px-3 py-3 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-blue-700">專案：{projects.find((project) => project.id === selectedProjectId)?.name ?? "全部專案總覽"}</summary><div className="mt-2"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div></details> : null}
+
+--- src/components/landing-pages/funnel-operations-panel.tsx previous reviewed
++++ src/components/landing-pages/funnel-operations-panel.tsx
+@@ -53,0 +54 @@
++  const [mobileStepsOpen, setMobileStepsOpen] = useState(false);
+@@ -221,2 +222,2 @@
+-  return <section aria-label="一頁式網站管理" className="min-w-0 space-y-4">
+-    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
++  return <section aria-label="一頁式網站管理" className="min-w-0 space-y-2 lg:space-y-4">
++    <header className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm lg:gap-4 lg:px-5 lg:py-4">
+@@ -227,0 +229,2 @@
++        <button type="button" aria-expanded={mobileStepsOpen} onClick={() => setMobileStepsOpen((open) => !open)} className="min-h-11 px-4 py-2 text-left text-sm font-semibold text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-700 lg:hidden">網站步驟：{active?.step.name ?? "選擇步驟"}（{mobileStepsOpen ? "收合" : "展開"}）</button>
++        <div className={`${mobileStepsOpen ? "flex" : "hidden"} min-h-0 flex-col lg:flex`}>
+@@ -231,0 +235 @@
++        </div>
+@@ -235 +239 @@
+-        <div className="p-5 sm:p-7">
++        <div className="p-3 sm:p-7">
+@@ -253 +257 @@
+-  return <div><div className="mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">頁面設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(`/landing-pages/${editor.pageId}?step=${encodeURIComponent(active.step.id)}`)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
++  return <div><div className="mb-3 lg:mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">頁面設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(`/landing-pages/${editor.pageId}?step=${encodeURIComponent(active.step.id)}`)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
+
+Project switcher complete source:
+"use client";
+
+import { useState, useTransition } from "react";
+import Link from "next/link";
+import { Building2, Check, ChevronDown, FolderKanban, Plus } from "lucide-react";
+
+export type ProjectSwitcherItem = { id: string; name: string; status: string };
+
+export function WorkspaceProjectSwitcher({
+  workspaceName,
+  projects,
+  selectedProjectId,
+  selectProject,
+}: {
+  workspaceName: string;
+  projects: ProjectSwitcherItem[];
+  selectedProjectId: string | null;
+  selectProject: (projectId: string | null) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [optimisticProjectId, setOptimisticProjectId] = useState<string | null | undefined>();
+  const [pending, startTransition] = useTransition();
+  const displayProjectId = optimisticProjectId === undefined ? selectedProjectId : optimisticProjectId;
+  const current = projects.find((project) => project.id === displayProjectId);
+
+  function choose(projectId: string | null) {
+    const previousProjectId = displayProjectId;
+    // Reflect the user's scope choice immediately while the server persists it.
+    setOptimisticProjectId(projectId);
+    setOpen(false);
+    startTransition(async () => {
+      try {
+        await selectProject(projectId);
+        setOptimisticProjectId(undefined);
+      } catch (error) {
+        setOptimisticProjectId(previousProjectId);
+        throw error;
+      }
+    });
+  }
+
+  return (
+    <div className="relative mb-3 rounded-xl border border-slate-200 bg-slate-50/80 p-2" data-workspace-switcher>
+      <p className="flex items-center gap-2 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600"><Building2 size={13} aria-hidden="true" />商家 Workspace</p>
+      <p className="truncate px-2 pb-2 pt-1 text-sm font-semibold text-slate-800">{workspaceName}</p>
+      <button type="button" disabled={pending} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:ring-4 focus-visible:ring-blue-100">
+        <FolderKanban size={16} className="shrink-0 text-blue-600" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">{current?.name ?? "全部專案總覽"}</span>
+        <ChevronDown size={16} className={`shrink-0 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+      {open ? <div role="menu" aria-label="切換銷售專案" className="absolute left-2 right-2 top-full z-50 mt-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+        <button role="menuitemradio" aria-checked={!displayProjectId} type="button" onClick={() => choose(null)} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm hover:bg-slate-50"><Check size={15} className={!displayProjectId ? "opacity-100" : "opacity-0"} aria-hidden="true" /><span><b className="block">全部專案總覽</b><span className="text-xs text-slate-500">商家彙總，僅供檢視</span></span></button>
+        {projects.map((project) => <button key={project.id} role="menuitemradio" aria-checked={project.id === displayProjectId} type="button" onClick={() => choose(project.id)} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm hover:bg-slate-50"><Check size={15} className={project.id === displayProjectId ? "opacity-100" : "opacity-0"} aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{project.name}</span></button>)}
+        <div className="mt-1 border-t border-slate-100 pt-1">
+          <Link role="menuitem" href="/projects/new" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"><Plus size={15} aria-hidden="true" />建立新專案</Link>
+          <Link role="menuitem" href="/projects" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-slate-600 hover:bg-slate-50"><FolderKanban size={15} aria-hidden="true" />管理專案</Link>
+        </div>
+      </div> : null}
+    </div>
+  );
+}
+
+Validation runner assertion source:
+,{name:'合成網站',exact:true}).waitFor();
+ const field=page.locator('main input:not([type="hidden"])').first();await field.waitFor();
+ const bounds=await field.boundingBox();
+ report.measurements??=[];report.measurements.push({engine,viewport:viewport.name,fieldBounds:bounds,height:viewport.height});
+ assert(bounds&&bounds.y>=0&&bounds.y+bounds.height<=viewport.height,'Primary field outside first viewport: '+JSON.stringify(bounds));
+ if(viewport.name!=='desktop'){
+ const steps=page.getByRole('button',{name:/^網站步驟：/});assert.equal(await steps.getAttribute('aria-expanded'),'false');
+ await steps.focus();await page.keyboard.press('Enter');assert.equal(await steps.getAttribute('aria-expanded'),'true');
+ assert((await page.getByRole('button',{name:/^移除 /}).count())>0);
+ await steps.focus();await page.keyboard.press('Enter');assert.equal(await steps.getAttribute('aria-expanded'),'false');
+ const summary=page.locator('header summary');await summary.focus();await page.keyboard.press('Enter');
+ assert.equal(await page.locator('header [data-workspace-switcher]').isVisible(),true);
+ await summary.focus();await page.keyboard.press('Enter');assert.equal(await page.locator('header [data-workspace-switcher]').isVisible(),false);
+ }

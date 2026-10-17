@@ -1,0 +1,6 @@
+{
+  "scope": "Full current sole changed product route; all other product sources identical to prior qualified reviews.",
+  "sourceHashes": {
+    "src/app/policies/[slug]/page.tsx": "3053615591be467948f3fb1c5cf125b4da0df59fd901b01f045540e673e4cf09"
+  }
+}

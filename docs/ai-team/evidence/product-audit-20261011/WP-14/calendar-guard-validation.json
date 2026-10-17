@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "unit_tests": 26,
+  "resource_regression_tests": 22,
+  "final_scoped_lint": {
+    "session": 36172,
+    "exit_code": 0,
+    "warnings": 1,
+    "warning": "Existing intentional full new-intent navigation; no suppression/rule change"
+  },
+  "hydration_pattern": "Same existing useSyncExternalStore client/server snapshot pattern as course-player.tsx; no shared hook or framework edits.",
+  "security_invariants": "Verification/session/verify-route source hashes unchanged. Existing safety units and actual full browser confirmation retained.",
+  "intermediate_lint_failure": "Synchronous setState-in-effect rejected at both new readiness sites; replaced with existing useSyncExternalStore pattern, no rule weakening.",
+  "build": "calendar-build.json current frozen product PASS; earlier internal length exception preserved and cause unconfirmed."
+}

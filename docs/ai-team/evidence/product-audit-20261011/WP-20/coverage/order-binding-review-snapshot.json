@@ -1,0 +1,18 @@
+{
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql",
+    "src/lib/live-metric-report-reader.ts"
+  ],
+  "sha256": {
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql": "d8283969550ba647313ff1aef617269a584610783dbf1e70ade23124a1cfa3a2",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql": "32f87e0f5172bd33936ad2be998510e79b0d8bde9f6417e2301f8feb816acd24",
+    "src/lib/live-metric-report-reader.ts": "519380be60e6dd06b177ce5ff98830ef242e14f6375c7404a5c9392c3cc56e17"
+  },
+  "independentReview": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "requested_model_key": "opus",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "scope": "Order source migration, report lifecycle migration and report readers only"
+}

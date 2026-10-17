@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "results": [
+    {
+      "state": "unenrolled",
+      "requestedPath": "/admin/billing/dashboard",
+      "finalPath": "/mfa/setup"
+    },
+    {
+      "state": "unenrolled",
+      "requestedPath": "/admin/support-cases",
+      "finalPath": "/mfa/setup"
+    },
+    {
+      "state": "unenrolled",
+      "requestedPath": "/admin/billing/payouts",
+      "finalPath": "/mfa/setup"
+    },
+    {
+      "state": "enrollment-start",
+      "result": "reachable-without-loop"
+    },
+    {
+      "state": "enrolled-unverified",
+      "finalPath": "/mfa/verify"
+    },
+    {
+      "state": "enrolled-verified",
+      "finalPath": "/admin/billing/dashboard",
+      "verificationPersisted": true
+    },
+    {
+      "state": "non-admin",
+      "platformAccessDenied": true
+    }
+  ],
+  "fixtureDeactivated": true
+}

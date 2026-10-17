@@ -205,6 +205,48 @@ const webinarPage = (prefix: string, stage: "registration" | "thank-you" | "broa
   ];
 };
 
+// 課程與銷講內容只提供可編輯起點；不內建虛構成效、名額或成交保證。
+const courseLeadPage = (prefix: string, variant: "workbook" | "consultation" | "lesson") => {
+  const copy = {
+    workbook: { title: "把專業整理成第一份課程大綱", eyebrow: "課程規劃工作表", intro: "從受眾、學習目標到單元安排，用一份工作表整理你的開課想法。", cta: "索取課程規劃資訊", theme: "#eff6ff", items: ["釐清想幫助的學員與問題", "寫下可檢查的學習目標", "排出第一版課程單元"] },
+    consultation: { title: "先釐清需求，再決定適合的學習方案", eyebrow: "課程需求諮詢", intro: "說明目前的目標與遇到的困難，讓團隊先了解需求，再討論是否適合進一步諮詢。", cta: "留下諮詢意願", theme: "#f5f3ff", items: ["整理目前的學習或業務目標", "找出最需要協助的一個環節", "確認課程內容與投入是否適合"] },
+    lesson: { title: "用一堂入門課，認識你的下一步", eyebrow: "課程體驗資訊", intro: "先了解主題、練習方式與適合對象，再決定是否參與完整課程。", cta: "索取體驗課資訊", theme: "#fff7ed", items: ["主題概念與常見誤區", "一個可以自行練習的任務", "完整課程的內容與適合對象"] },
+  }[variant];
+  const signup = form(prefix, "course_form", "留下聯絡方式", copy.cta);
+  return [
+    section(prefix, "hero", variant === "workbook" ? [columns(prefix, "hero_columns", [
+      box(prefix, "hero_copy", [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)]), signup,
+    ])] : [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)], copy.theme),
+    section(prefix, "contents", [headline(prefix, "contents_title", variant === "consultation" ? "這次可以先討論什麼？" : "先了解這三件事"),
+      columns(prefix, "contents_columns", copy.items.map((item, index) => box(prefix, `topic_${index}`, [headline(prefix, `topic_title_${index}`, `${index + 1}｜${item}`, "h3") ])), 3)]),
+    ...(variant === "workbook" ? [] : [section(prefix, "signup", [signup])]),
+    section(prefix, "next", [headline(prefix, "next_title", "送出之後會發生什麼？"), text(prefix, "next_text", "請依完成頁指示確認後續聯繫方式。留下聯絡方式不代表已購買課程或完成諮詢預約；課程內容、時程與聯絡方式請由主辦單位確認。")]),
+  ];
+};
+
+const salesWebinarPage = (prefix: string, variant: "course" | "workshop" | "strategy") => {
+  const copy = {
+    course: { title: "開課前，先把你的課程路線說清楚", eyebrow: "課程說明會", intro: "了解課程主題、單元安排與練習方式，判斷是否符合你現在的需求。", cta: "報名課程說明會", theme: "#eff6ff", agenda: ["適合對象與先備條件", "課程單元與練習安排", "參與方式與問題討論"] },
+    workshop: { title: "帶著一個問題，完成一份實作草稿", eyebrow: "線上實作工作坊", intro: "從範例拆解到自己動手，先用一次練習認識這套方法的使用方式。", cta: "報名實作工作坊", theme: "#ecfdf5", agenda: ["拆解範例與操作步驟", "完成自己的第一版草稿", "整理卡點與後續練習方向"] },
+    strategy: { title: "把你的專業，整理成清楚的服務提案", eyebrow: "顧問服務銷講", intro: "從客戶需求、服務範圍到交付安排，了解如何說明一份完整提案。", cta: "報名服務提案講座", theme: "#fff7ed", agenda: ["定義想協助的客戶與問題", "釐清服務範圍與交付方式", "用提案說明價值與合作條件"] },
+  }[variant];
+  // Webinar 的公開報名由既有專用表單處理；模板導向它，不另外渲染停用的通用表單。
+  const signup = box(prefix, "webinar_signup", [
+    headline(prefix, "signup_title", "參加這場活動", "h2"),
+    text(prefix, "signup_text", "確認活動資訊後，前往報名表填寫資料。"),
+    button(prefix, "signup_button", copy.cta, { type: "open_url", href: "#webinar-registration", newTab: false }),
+  ]);
+  return [
+    section(prefix, "hero", variant === "course" ? [columns(prefix, "hero_columns", [
+      box(prefix, "hero_copy", [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)]), signup,
+    ])] : [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)], copy.theme),
+    section(prefix, "agenda", [headline(prefix, "agenda_title", "本場內容"), list(prefix, "agenda_list", copy.agenda)]),
+    section(prefix, "speaker", [headline(prefix, "speaker_title", "講者與活動資訊"), text(prefix, "speaker_text", "請填入實際講者姓名、相關經驗與活動時間。報名前可先向主辦單位確認內容與參與方式。")]),
+    ...(variant === "course" ? [] : [section(prefix, "signup", [signup])]),
+    section(prefix, "participation", [headline(prefix, "participation_title", variant === "workshop" ? "參加前可以先準備" : "報名前先確認"), text(prefix, "participation_text", variant === "workshop" ? "先記下想處理的一個問題，並準備可操作的裝置。實作素材與需要的工具請依主辦單位公告為準。" : "本頁是活動報名，送出資料不代表購買課程。若活動中介紹付費方案，內容與費用需另行確認；報名狀態與觀看入口請依完成頁指示。")]),
+  ];
+};
+
 const templates: FunnelTemplateGalleryItem[] = [
   { id: "webinar-broadcast", referenceId: "celebratedeal-webinar-broadcast", goal: "webinar", category: "播放會場", name: "專注播放會場", description: "直播狀態、重點摘要、提問筆記與播放問題指引。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "專注播放會場", summary: "線上活動與參與資訊", palette: ["#f8fafc", "#0f172a", "#f59e0b"], sectionCount: 2 }, build: (prefix) => webinarPage(prefix, "broadcast") },
   { id: "webinar-thank-you", referenceId: "celebratedeal-webinar-thank-you", goal: "webinar", category: "報名完成", name: "報名完成行動清單", description: "Email、行事曆與提問準備三步驟，降低報名後流失。", status: "available", statusReason: availableReason, preview: { eyebrow: "Webinar", headline: "報名完成行動清單", summary: "三步驟參與提醒", palette: ["#ecfdf5", "#047857", "#ffffff"], sectionCount: 3 }, build: (prefix) => webinarPage(prefix, "thank-you") },
@@ -218,6 +260,12 @@ const templates: FunnelTemplateGalleryItem[] = [
   { id: "custom-privacy", referenceId: "3012", goal: "custom", category: "隱私", name: "隱私權政策", description: "可編輯的隱私資料處理、權利與聯絡章節。", status: "available", statusReason: availableReason, preview: { eyebrow: "Custom", headline: "隱私權政策", summary: "簡潔的法務純文字版面", palette: ["#ffffff", "#0f172a", "#e2e8f0"], sectionCount: 1 }, build: (prefix) => legalPage(prefix, "privacy") },
   { id: "custom-terms", referenceId: "3011", goal: "custom", category: "條款", name: "服務條款", description: "可編輯的服務範圍、使用者責任與聯絡章節。", status: "available", statusReason: availableReason, preview: { eyebrow: "Custom", headline: "服務條款", summary: "簡潔的條款純文字版面", palette: ["#ffffff", "#1e293b", "#cbd5e1"], sectionCount: 1 }, build: (prefix) => legalPage(prefix, "terms") },
   { id: "custom-brand-info", referenceId: "3010", goal: "custom", category: "品牌資訊", name: "品牌資訊頁", description: "含導覽、Hero、品牌原則與聯絡行動的資訊頁。", status: "available", statusReason: availableReason, preview: { eyebrow: "Custom", headline: "品牌資訊頁", summary: "品牌化導覽與分段內容", palette: ["#f8fafc", "#7c3aed", "#ffffff"], sectionCount: 4 }, build: brandInfo },
+  { id: "audience-course-workbook", referenceId: "celebratedeal-course-workbook", goal: "audience", category: "課程工作表", name: "課程規劃名單頁", description: "以課程工作表為主題，搭配學習目標、單元安排與名單表單。", status: "available", statusReason: availableReason, preview: { eyebrow: "課程名單", headline: "課程規劃名單頁", summary: "工作表與學習目標導向", palette: ["#eff6ff", "#1d4ed8", "#ffffff"], sectionCount: 3 }, build: prefix => courseLeadPage(prefix, "workbook") },
+  { id: "audience-course-consultation", referenceId: "celebratedeal-course-consultation", goal: "audience", category: "課程諮詢", name: "課程需求諮詢名單頁", description: "先說明需求討論範圍，再收集聯絡方式，不冒充已完成預約。", status: "available", statusReason: availableReason, preview: { eyebrow: "課程名單", headline: "課程需求諮詢名單頁", summary: "需求釐清與諮詢意願", palette: ["#f5f3ff", "#7c3aed", "#ffffff"], sectionCount: 4 }, build: prefix => courseLeadPage(prefix, "consultation") },
+  { id: "audience-course-lesson", referenceId: "celebratedeal-course-lesson", goal: "audience", category: "體驗課程", name: "入門體驗課名單頁", description: "介紹入門主題、練習任務與適合對象，讓訪客索取課程資訊。", status: "available", statusReason: availableReason, preview: { eyebrow: "課程名單", headline: "入門體驗課名單頁", summary: "體驗內容與後續學習路線", palette: ["#fff7ed", "#9a3412", "#ffffff"], sectionCount: 4 }, build: prefix => courseLeadPage(prefix, "lesson") },
+  { id: "webinar-course-registration", referenceId: "celebratedeal-webinar-course", goal: "webinar", category: "課程說明會", name: "課程說明會報名頁", description: "課程內容、適合對象與參與方式，搭配首屏活動報名表單。", status: "available", statusReason: availableReason, preview: { eyebrow: "銷講活動", headline: "課程說明會報名頁", summary: "課程路線與報名前確認", palette: ["#eff6ff", "#2563eb", "#ffffff"], sectionCount: 4 }, build: prefix => salesWebinarPage(prefix, "course") },
+  { id: "webinar-workshop-registration", referenceId: "celebratedeal-webinar-workshop", goal: "webinar", category: "實作工作坊", name: "線上實作工作坊報名頁", description: "實作目標、操作議程與參加前準備，搭配活動報名表單。", status: "available", statusReason: availableReason, preview: { eyebrow: "銷講活動", headline: "線上實作工作坊報名頁", summary: "範例拆解與動手練習", palette: ["#ecfdf5", "#047857", "#ffffff"], sectionCount: 5 }, build: prefix => salesWebinarPage(prefix, "workshop") },
+  { id: "webinar-strategy-registration", referenceId: "celebratedeal-webinar-strategy", goal: "webinar", category: "顧問服務銷講", name: "服務提案銷講報名頁", description: "以客戶需求、服務範圍與交付方式為主題，清楚區分活動報名與購買。", status: "available", statusReason: availableReason, preview: { eyebrow: "銷講活動", headline: "服務提案銷講報名頁", summary: "服務價值與合作條件", palette: ["#fff7ed", "#9a3412", "#ffffff"], sectionCount: 5 }, build: prefix => salesWebinarPage(prefix, "strategy") },
 ];
 
 export const FUNNEL_TEMPLATE_GALLERY: readonly FunnelTemplateGalleryItem[] = Object.freeze(templates);
@@ -236,16 +284,21 @@ export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal, stepType?: 
   const goalTemplates = goal ? FUNNEL_TEMPLATE_GALLERY.filter((template) => template.goal === goal) : FUNNEL_TEMPLATE_GALLERY;
   if (!stepType) return goalTemplates;
   if (goal === "webinar") {
-    const templatesByStep: Partial<Record<FunnelStepType, string>> = {
-      webinar_registration_page: "webinar-registration",
-      webinar_thank_you_page: "webinar-thank-you",
-      webinar_broadcast_page: "webinar-broadcast",
+    const templatesByStep: Partial<Record<FunnelStepType, string[]>> = {
+      webinar_registration_page: ["webinar-registration", "webinar-course-registration", "webinar-workshop-registration", "webinar-strategy-registration"],
+      webinar_thank_you_page: ["webinar-thank-you"],
+      webinar_broadcast_page: ["webinar-broadcast"],
     };
-    const templateId = templatesByStep[stepType];
-    return templateId ? goalTemplates.filter((template) => template.id === templateId) : [];
+    const templateIds = templatesByStep[stepType];
+    return templateIds ? goalTemplates.filter((template) => templateIds.includes(template.id)) : [];
   }
   if (goal === "custom") return ["info_page", "contact_us_page"].includes(stepType) ? goalTemplates : [];
-  if (goal === "audience") return ["opt_in_page", "inline_form", "popup_form", "link_in_bio"].includes(stepType) ? goalTemplates : [];
+  if (goal === "audience") {
+    if (stepType === "opt_in_page") return goalTemplates;
+    // 保留原三款的可用步驟；新的完整課程長頁只提供給名單頁。
+    return ["inline_form", "popup_form", "link_in_bio"].includes(stepType)
+      ? goalTemplates.filter(template => !template.id.startsWith("audience-course-")) : [];
+  }
   if (goal === "sell") return ["order_form", "sales_page", "upsell", "downsell"].includes(stepType) ? goalTemplates : [];
   return [];
 }

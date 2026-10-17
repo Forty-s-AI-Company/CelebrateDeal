@@ -5,7 +5,7 @@ const { checkRateLimit, consumePasswordResetToken } = vi.hoisted(() => ({
   consumePasswordResetToken: vi.fn(),
 }));
 
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit }));
 vi.mock("@/lib/password-reset", () => ({ consumePasswordResetToken }));
 
 import { POST } from "@/app/api/auth/password-reset/confirm/route";

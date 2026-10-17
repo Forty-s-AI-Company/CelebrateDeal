@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   processDueEmailDeliveries: vi.fn(),
+  processDueCheckoutFollowups: vi.fn(),
+  processDueCompletedFollowups: vi.fn(),
   processDuePostLiveFollowups: vi.fn(),
   processLiveReminderReconciliationJobs: vi.fn(),
   processDueLiveNotifications: vi.fn(),
@@ -26,6 +28,11 @@ vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOpera
 vi.mock("@/lib/line-notification-materializer", () => ({ materializeLineNotifications: mocks.materializeLineNotifications }));
 vi.mock("@/lib/line-notification", () => ({ processDueLineDeliveries: mocks.processDueLineDeliveries }));
 
+vi.mock("@/lib/checkout-followup-queue", () => ({ processDueCheckoutFollowups: mocks.processDueCheckoutFollowups }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ syntheticDatabase: true }) }));
+
+vi.mock("@/lib/completed-followup", () => ({ processDueCompletedFollowups: mocks.processDueCompletedFollowups }));
+
 import { GET, POST } from "./route";
 
 beforeEach(() => {
@@ -35,6 +42,8 @@ beforeEach(() => {
   mocks.processLiveReminderReconciliationJobs.mockResolvedValue([]);
   mocks.processDuePostLiveFollowups.mockResolvedValue([]);
   mocks.processDueEmailDeliveries.mockResolvedValue([]);
+  mocks.processDueCheckoutFollowups.mockResolvedValue([]);
+  mocks.processDueCompletedFollowups.mockResolvedValue([]);
   mocks.processDueLiveNotifications.mockResolvedValue([]);
   mocks.processLegacyReminderCutovers.mockResolvedValue([]);
   mocks.materializeLineNotifications.mockResolvedValue([]);
@@ -101,6 +110,10 @@ describe("POST /api/jobs/email-deliveries", () => {
       reconciled: 2,
       reconciliationResults: [{ status: "completed" }, { status: "unknown" }],
       processed: 2,
+      completedFollowups: 0,
+      completedFollowupResults: [],
+      checkoutFollowups: 0,
+      checkoutFollowupResults: [],
       results: [{ status: "sent" }, { status: "unknown" }],
       lineMaterialized: 0,
       lineProcessed: 0,
@@ -176,4 +189,29 @@ describe("GET /api/jobs/email-deliveries", () => {
     expect(response.status).toBe(401);
     expect(mocks.processDueEmailDeliveries).not.toHaveBeenCalled();
   });
+});
+
+
+it('authenticates before checkout materialization and queues before dispatch',async()=>{
+ const response=await POST(request('g7-07-job-secret'));expect(response.status).toBe(200);
+ expect(mocks.processDueCheckoutFollowups).toHaveBeenCalledOnce();
+ expect(mocks.processDueCheckoutFollowups.mock.invocationCallOrder[0]).toBeLessThan(mocks.processDueEmailDeliveries.mock.invocationCallOrder[0]);
+ mocks.processDueCheckoutFollowups.mockClear();await POST(request('invalid'));expect(mocks.processDueCheckoutFollowups).not.toHaveBeenCalled();
+});
+it('keeps existing email dispatch working when checkout materialization fails',async()=>{
+ mocks.processDueCheckoutFollowups.mockRejectedValue(new Error('synthetic private database details'));
+ const response=await POST(request('g7-07-job-secret'));const body=await response.json();expect(response.status).toBe(200);
+ expect(body.checkoutFollowupResults).toEqual([{status:'failed'}]);expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();
+ expect(JSON.stringify(body)).not.toContain('private');expect(mocks.captureOperationalError.mock.calls[0][0].message).toBe('Checkout follow-up job unavailable');
+});
+it('returns bounded checkout statuses without source or buyer identities',async()=>{
+ mocks.processDueCheckoutFollowups.mockResolvedValue(Array.from({length:25},(_,i)=>({status:i===0?'queued':'private-value',orderId:'private-order',email:'buyer@example.test'})));
+ const body=await (await POST(request('g7-07-job-secret'))).json();expect(body.checkoutFollowups).toBe(25);expect(body.checkoutFollowupResults).toHaveLength(20);
+ expect(body.checkoutFollowupResults[0]).toEqual({status:'queued'});expect(body.checkoutFollowupResults[1]).toEqual({status:'unknown'});expect(JSON.stringify(body)).not.toContain('private');
+});
+
+it('authenticates before completed followup work and keeps dispatch after a completed materializer failure',async()=>{
+ await POST(request('invalid'));expect(mocks.processDueCompletedFollowups).not.toHaveBeenCalled();
+ mocks.processDueCompletedFollowups.mockRejectedValue(new Error('synthetic private source'));
+ const body=await (await POST(request('g7-07-job-secret'))).json();expect(body.completedFollowupResults).toEqual([{status:'failed'}]);expect(mocks.processDueEmailDeliveries).toHaveBeenCalledOnce();expect(JSON.stringify(body)).not.toContain('private');
 });

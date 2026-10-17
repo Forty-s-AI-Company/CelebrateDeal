@@ -1,0 +1,47 @@
+{
+  "scope": "Read-only verified identity audit; no source changes",
+  "revision": "sha256:02e739d7744fd28466202a52d797d61d1b07315b47e9287a3f1c95d97fd4566f",
+  "files": [
+    "src/app/api/live-chat/instructor/route.ts",
+    "src/app/api/live-chat/messages/route.ts",
+    "src/app/api/live-chat/private/route.ts",
+    "src/app/api/live-purchase-broadcasts/route.ts",
+    "src/app/api/live-chat/instructor/route.test.ts",
+    "src/app/api/live-chat/messages/route.test.ts",
+    "src/app/api/live-chat/private/route.test.ts",
+    "src/app/api/live-purchase-broadcasts/route.test.ts",
+    "src/lib/request-client-ip.test.ts",
+    "src/lib/rate-limit.ts",
+    "src/lib/live-chat-request-security.ts",
+    "src/lib/request-client-ip.ts"
+  ],
+  "hashes": {
+    "src/app/api/live-chat/instructor/route.ts": "31a247ba287049924a4616318c2b3ca77c02b19ed658c3df45963eda4f0c2eec",
+    "src/app/api/live-chat/messages/route.ts": "9954f063cd21f3b5a39d8fa23ae663c7396b2edbbb34216025f163e36ce75a73",
+    "src/app/api/live-chat/private/route.ts": "49aa57bec366f762b116a8366e5b159346f0a10128ca7eb8e312587e8c06e6c6",
+    "src/app/api/live-purchase-broadcasts/route.ts": "587cfd9c02c3bd0a07e0de0edcf024e64d4d5f0d8daf376343b81acd690f6595",
+    "src/app/api/live-chat/instructor/route.test.ts": "df8bc1d955ac9a6a4b71e9689f76788b132d35c6672483eca525dfe07a8ba039",
+    "src/app/api/live-chat/messages/route.test.ts": "42ff72addef509de32e9865d40161e5484b89a0880afb1845b6a5bb0b90b8a4f",
+    "src/app/api/live-chat/private/route.test.ts": "52f431fff8b0a1c563bd184a75b3dac30a2c6716abd9417714cd7d7bb58a48ac",
+    "src/app/api/live-purchase-broadcasts/route.test.ts": "f4e7415b496f82efb4935f0df71bbc669ac49da12c40f1ba57b744dfbe4fbd7b",
+    "src/lib/request-client-ip.test.ts": "ce1f61f7d2e6be04258553a059f71b88f65fbc2ac793cb07278c3cac31b08850",
+    "src/lib/rate-limit.ts": "afb85a865dbfa6bcffc50d4b9e1842d76856543d46ab0558d8237f041190c5ba",
+    "src/lib/live-chat-request-security.ts": "ce34d51f9de420c200a43d0a9f5fae125aeacca5fd178387142a2b802fd97d48",
+    "src/lib/request-client-ip.ts": "5d41f878d65c5698a467b74b736d9fc1aba6ff326a7121079162bfb77fe14189"
+  },
+  "findings": [
+    {
+      "caller": "src/app/api/live-chat/instructor/route.ts",
+      "identity": "authenticated user key plus fixed unknown suffix; attacker source headers removed"
+    },
+    {
+      "callers": [
+        "src/app/api/live-chat/messages/route.ts",
+        "src/app/api/live-chat/private/route.ts",
+        "src/app/api/live-purchase-broadcasts/route.ts"
+      ],
+      "identity": "getRequestClientIp with explicit proof/runtime resolver then metadata-only adapter; null collapses to fixed unknown read bucket, write paths require trusted IP. Unknown source does not use raw forwarded alternatives."
+    }
+  ],
+  "limitations": "Provider cloudflare_waf relies on external enforcement. Existing liveChatIpTrustConfig differs from ENTRY config; full deployment configuration/whole review remains."
+}

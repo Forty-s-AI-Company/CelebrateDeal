@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "lease-db", "revision": "sha256:92739c76e3a777d6d079ff5f45a337ee5d6090e4139631dc3ec9d071b221d377", "status": "FAIL", "exit_code": 1, "duration_seconds": 2.672}

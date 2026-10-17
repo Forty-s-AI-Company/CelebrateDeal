@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "exit_code": 0,
+  "schema_sha256": "8039bd7f19e916c4d390746aa416a1b2451a30d132d674899ae61103bce0d189",
+  "scope": "Isolated copy, synthetic URLs, no project dotenv/config"
+}

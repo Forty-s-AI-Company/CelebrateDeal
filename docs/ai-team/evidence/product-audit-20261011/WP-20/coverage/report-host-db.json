@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "scope": "Actual private process host, owned loopback disposable PostgreSQL and synthetic records only",
+  "checks": {
+    "fixedSourceArtifactBuild": "PASS",
+    "actualChildTwoCyclesDedupRealWorkerAndUnknownMetrics": "PASS",
+    "aggregateOnlyProcessOutput": "PASS",
+    "nonLoopbackDotenvNonFileAndWrongMarkerDeniedWithoutWork": "PASS",
+    "controlPipeEofStopsCadence": "PASS",
+    "brokenOutputAndControlPipeExitWithoutRawDiagnostics": "PASS",
+    "stopWaitsForLockedEnqueueAndStartsNoFurtherWork": "PASS"
+  },
+  "sourceHashes": {
+    "src/lib/live-metric-report-host.ts": "30ccc4100b62111e9f9d3cded6f1c1f719047ba5dacebb0ad322c5cb00cb4b33",
+    "src/lib/live-metric-report-scheduler.ts": "aec9c44b548a2007e397ee6e805b95a4816c00a428c0edd9afefb9da68a61d98",
+    "scripts/run-metric-report-host.mjs": "e36b9881b99526f5e7e11b5a5f57c326374d405ad7f4d6dfbb02ad1f4b8cc435",
+    "scripts/build-metric-report-host.mjs": "5ecf0933afd25e3a9faaaf64aac1de9ba83e9a9a4a395f45ded0467f47040c61",
+    "scripts/metric-report-host-runtime.mjs": "f9e6d38c488c058bef72434ad6e5d2daed13085d1a67cc7d839b0ec5b11b0ebf",
+    "scripts/metric-report-host-artifacts.mjs": "5ad7af0e56f3c2762e54f1cc4eb7484196e35c071861258b47eb05d1188bcdbd",
+    "scripts/metric-report-host-build-gate.mjs": "8df201bcec912b80f1f436ff8801e8f5bb788e29acf9197944916af6eca66a0f"
+  },
+  "process": {
+    "cycles": 2,
+    "created": 1,
+    "recorded": 1,
+    "minimumCadenceMilliseconds": 1000,
+    "stopDuringInFlight": "PASS"
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrationCount": 122
+}

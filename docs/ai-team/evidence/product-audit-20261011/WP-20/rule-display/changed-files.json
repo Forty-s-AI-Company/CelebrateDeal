@@ -1,0 +1,11 @@
+{
+  "changed": [
+    "src/app/(app)/lives/[id]/analytics/page.tsx",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx"
+  ],
+  "unchanged_dependency": "src/lib/live-metric-contract.ts",
+  "schema_event_query_changes": false,
+  "ownership": "root",
+  "rollback": "Restore only these two files from rule-display/before/*.txt after verifying no later edits",
+  "git": "isolated worktree; no commit/push"
+}

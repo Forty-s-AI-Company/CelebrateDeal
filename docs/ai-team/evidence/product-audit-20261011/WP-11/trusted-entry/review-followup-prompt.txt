@@ -1,0 +1,83 @@
+WP11 same revision58180fc4 final followup: no source changes. Prior review has no BLOCKER/MAJOR. Close missing context findings using exact legacy and call sites below. runtime/node is supported only when adapter supplies request.ip; ordinary Next dev/start is NOT supported for runtime mode. Local tested Next deployment uses proof-backed cloudflare, so accept runtime availability as documented residual MINOR, not shipping configuration. Same proof header requires same injected value across entry and live-chat when edge uses one global value; separate values require path-specific edge injection. Cloud deployment remains unapproved. NIT provider ordering test claim is retained as residual, implementation order is visible. Please return findings with canonical severity; explicitly state if any material scope limitation blocks LOCAL patch acceptance. Redacted credential source semantics remain as previously supplied; never certify cloud or overall WP readiness.
+function clientIp(request: Request) {
+  return (
+    request.headers.get("cf-connecting-ip")
+    ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? "unknown"
+  );
+}
+
+export async function checkRateLimit(request: Request, key: string, limit: number, windowMs: number) {
+  const provider = getRateLimitProviderId();
+
+  if (provider === "cloudflare_waf") {
+    // Cloudflare WAF is enforced before the request reaches Next.js.
+    return null;
+  }
+
+  let decision: RateLimitDecision;
+  try {
+    decision = provider === "upstash_redis"
+      ? await upstashDecision(request, key, limit, windowMs)
+      : await memoryDecision(request, key, limit, windowMs);
+  } catch {
+    return serviceUnavailable();
+  }
+
+  if (decision.allowed) {
+    return null;
+  }
+
+  return tooManyRequests(decision.retryAfterSeconds ?? Math.ceil(windowMs / 1000));
+}
+
+
+src/app/portal/[vendorSlug]/access/route.ts
+24: /** 郵件掃描或預覽只能看到確認頁，不消耗一次性連結。 */
+25: export async function GET(request: Request, { params }: Context) {
+26:   const limited = await checkRateLimit(request, "student-portal-access-preview", 60, 60_000);
+27:   if (limited) return limited;
+28:   const { vendorSlug } = await params;
+29:   const capability = new URL(request.url).searchParams.get("token") ?? "";
+35: /** 所有狀態寫入留在 POST，租戶核對仍先於原子的單次消耗。 */
+36: export async function POST(request: Request, { params }: Context) {
+37:   const limited = await checkRateLimit(request, "student-portal-access-confirm", 30, 60_000);
+38:   if (limited) return limited;
+39:   const { vendorSlug } = await params;
+40:   const path = accessPath(vendorSlug);
+
+src/app/api/automation/vouchers/redeem/route.ts
+15: /** 郵件預覽不設 checkout cookie，也不旋轉連結。 */
+16: export async function GET(request: Request) {
+17:   const limited = await checkRateLimit(request, "automation-voucher-redeem", 60, 60_000);
+18:   if (limited) return limited;
+19:   const capability = new URL(request.url).searchParams.get("token") ?? "";
+20:   if (!AUTOMATION_VOUCHER_BEARER.test(capability)) return unavailable(400);
+25: 
+26: export async function POST(request: Request) {
+27:   const limited = await checkRateLimit(request, "automation-voucher-confirm", 30, 60_000);
+28:   if (limited) return limited;
+29:   if (!isCapabilityConfirmationOrigin(request, PATH)) return unavailable(403);
+30:   const confirmation = await readCapabilityConfirmationDetails(request, PATH, "voucher");
+
+src/app/r/[code]/route.ts
+10: export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
+11:   // 先限流，避免匿名 referral 點擊無上限寫入。
+12:   const limited = await checkRateLimit(request, "platform-referral-entry", 60, 60_000);
+13:   if (limited) {
+14:     // 限制歸屬寫入，但讓訪客仍能查看方案；不改動既有歸屬資訊。
+15:     const response = NextResponse.redirect(new URL("/billing/plans", request.url));
+
+src/app/api/live-admission/route.ts
+30:   if (sameOrigin) return sameOrigin;
+31: 
+32:   const limited = await checkRateLimit(request, "live-admission", 120, 60_000);
+33:   if (limited) return limited;
+34: 
+35:   const payload = await readPayload(request);
+55: 
+56:   // 釋放入口獨立計數，不能讓 DELETE flood 消耗 admission 的額度。
+57:   const limited = await checkRateLimit(request, "live-admission-release", 120, 60_000);
+58:   if (limited) return limited;
+59: 
+60:   const payload = await readPayload(request);

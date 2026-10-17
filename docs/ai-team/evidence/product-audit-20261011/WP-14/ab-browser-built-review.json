@@ -1,0 +1,8 @@
+{
+  "exit_code": 0,
+  "status": "CLAUDE_CLI_RUNTIME_ERROR",
+  "process_status": "NETWORK_TRANSIENT",
+  "review_output": null,
+  "observed_model": "unknown",
+  "observed_effort": "unknown"
+}

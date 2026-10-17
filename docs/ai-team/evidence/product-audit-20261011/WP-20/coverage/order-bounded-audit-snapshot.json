@@ -1,0 +1,14 @@
+{
+  "files": {
+    "src/lib/live-metric-order-source-audit.ts": "ba19df3ab22b1a02e04cef823e1cb9e8b731510a9409a62ce84af018a2a67867",
+    "src/lib/live-metric-order-source-audit.test.ts": "e2298c8beef082395180f4a9f411610c623bc7427720b4873f5604c9323ac40c",
+    "src/lib/live-metric-order-audit.ts": "e78e88edf1b0b86e1ddae59ef8dad6247d0a83817a4d42fc92af87d60dfea0fa",
+    "scripts/wp20-order-source-audit-probe.mjs": "0bb52571fbba697b52908f3ea9460eb96fd7aec6df6c8eed6509a5c0a66e3f56",
+    "scripts/wp20-payment-retry-disposable.mjs": "727767324d9a2c93d6d04bdacbeffdd3eb68760b13911804f6cd8ff10a915385"
+  },
+  "unitTests": 5,
+  "database": "PASS",
+  "lint": "PASS",
+  "typecheckAfterNewWrapper": "NOT_RUN",
+  "independentReview": "NOT_RUN"
+}

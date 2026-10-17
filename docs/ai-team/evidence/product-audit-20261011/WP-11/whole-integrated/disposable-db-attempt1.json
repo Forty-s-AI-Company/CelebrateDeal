@@ -1,0 +1,19 @@
+{
+  "status": "BLOCKED_OR_FAILED",
+  "tests": {
+    "status": "FAIL",
+    "total": 31,
+    "passed": 30,
+    "failed": 1,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "failure": {
+    "category": "lease-regression-failed",
+    "errorCode": null,
+    "rootCauseConfirmed": false
+  }
+}

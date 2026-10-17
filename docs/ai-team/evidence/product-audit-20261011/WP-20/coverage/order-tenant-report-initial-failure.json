@@ -1,0 +1,74 @@
+{
+  "status": "FAIL",
+  "stage": "registration-source-concurrency",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "registrationVendorCascade": {
+    "status": "PASS",
+    "vendorDeleted": true,
+    "metricOrphans": 0,
+    "sourceOrphans": 0
+  },
+  "registrationTruncateProtection": {
+    "status": "PASS",
+    "cases": [
+      {
+        "table": "FormSubmission",
+        "rejected": true
+      },
+      {
+        "table": "Live",
+        "rejected": true
+      },
+      {
+        "table": "RegistrationForm",
+        "rejected": true
+      },
+      {
+        "table": "LiveMetricRegistration",
+        "rejected": true
+      }
+    ]
+  },
+  "matchedRegistrationAudit": {
+    "status": "PASS",
+    "mutationProtection": {
+      "status": "PASS",
+      "captureImmutable": "PASS",
+      "captureUnique": "PASS",
+      "registrationUnique": "PASS",
+      "projectionDeleteInvalidates": "PASS"
+    },
+    "matchedBothDirections": "PASS",
+    "stableDigest": "PASS",
+    "revokedSourceDetected": "PASS",
+    "privateProofPublish": "PASS",
+    "emptySourceProof": "PASS",
+    "auditToPublishRace": "PASS",
+    "revisionToInsertRace": "PASS",
+    "staleProofRejected": "PASS",
+    "projectionProofLifecycle": "PASS",
+    "coverage": "complete before revoke; unknown after revoke"
+  },
+  "actualStatus": null,
+  "expectedStatus": null,
+  "failureFrames": [
+    "wp20-registration-source-concurrency.mjs:21:10",
+    "wp20-payment-retry-disposable.mjs:76:45",
+    "wp20-payment-retry-disposable.mjs:26:15"
+  ],
+  "auditPhase": null,
+  "assertion": {
+    "actual": 19,
+    "expected": 20
+  },
+  "sqlState": null,
+  "guard": null,
+  "errorCode": "ASSERTION_OR_RUNNER_ERROR"
+}

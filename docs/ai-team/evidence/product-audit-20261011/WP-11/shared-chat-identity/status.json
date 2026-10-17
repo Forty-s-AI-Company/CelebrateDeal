@@ -1,0 +1,38 @@
+{
+  "status": "IN_PROGRESS",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "ownership": "root sole writer in independent worktree",
+  "review_session": null,
+  "browser_session": null,
+  "new_preview_deployed": false,
+  "unit_tests": {
+    "passed": 854,
+    "failed": 0,
+    "skipped": 0
+  },
+  "targeted_lint": "PASS",
+  "global_lint": "FAIL_299_ERRORS_11_WARNINGS",
+  "typecheck": "PASS",
+  "current_remote_validation": "NOT_RUN_AFTER_SHARED_RESOLVER_EXTRACTION",
+  "production_topology": "UNVERIFIED_RELEASE_BLOCKER",
+  "previous_turn": "progress",
+  "authorization_blocker": false,
+  "remaining": [
+    "currentnativePreviewfull-flow",
+    "remoteplatformmetadata-provenance",
+    "wholeacceptancegate",
+    "globalLintfailuretriage"
+  ],
+  "rollback": "before exact files; remove only six new files listed in changed-files.json; preserve all other WP work",
+  "review": "COMPLETED_0_BLOCKER_0_MAJOR",
+  "review_observed_model": "claude-opus-5-5",
+  "browser": {
+    "status": "PASS",
+    "engines": 2,
+    "checks": 18,
+    "migrations": 96,
+    "cleanup": "PASS"
+  },
+  "current_revision": "sha256:a390708cac12df9df524332b026ff56621e0b4fa75fa00b02ebe2a2796b52f7f"
+}

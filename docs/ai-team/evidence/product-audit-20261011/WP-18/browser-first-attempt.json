@@ -1,0 +1,31 @@
+{
+  "status": "FAIL",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic demo checkout. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "owner activates three draft recipes; real checkout produces one delayed follow-up; desktop/mobile axe",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(page).toHaveURL(expected) failed\n\nExpected pattern: /\\/dashboard/u\nTimeout: 30000ms\n\nCall log:\n  - Expect \"toHaveURL\" with timeout 30000ms\n"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "stats": {
+    "startTime": "2026-10-15T23:33:47.174Z",
+    "duration": 379957.577,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 131
+}

@@ -1,0 +1,171 @@
+{
+  "review": {
+    "summary": "I reviewed only the supplied src/lib/live-metric-ingress-gateway.ts, focusing on the new upstreamTimeoutMs option and the diagnostics() output. I found no BLOCKER or MAJOR problems. The timeout option is checked as an integer from 1000 to 120000 with a default of 15000. It doesn't change the marker-DB/run binding, the manifest hash, the Host/Origin/Sec-Fetch checks, the route allowlist, the stripping of x-forwarded/internal headers, or the attestation. The server's 15s request timeout and 10s header timeout, and close()'s 5s forced teardown and 15s drain deadline, still cap how long anything can run. diagnostics() returns only counts keyed by a fixed list of error codes plus 'OTHER', with no request bodies, headers, URLs or other data. That keying also rules out prototype pollution. One MINOR problem: the error counts can't be read reliably when investigating the cold 502s. This review doesn't certify that the real end-to-end tests ran or passed, and it doesn't cover production or deployed-edge behaviour.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-ingress-gateway.ts",
+        "area": "handle(): upstream.setTimeout callback, upstream 'error' handler, request 'aborted' / response 'close' destroy paths, diagnostics()",
+        "issue": "The ECONNRESET count mixes up three different events. When the gateway gives up on a request itself (idle timeout, client abort, or the response closing before it finishes), it calls upstream.destroy() with no error. In Node, if no response has arrived yet, that makes the ClientRequest emit 'error' with code ECONNRESET ('socket hang up'). So a gateway timeout raises both socketTimeouts and errors.ECONNRESET, and a browser abort shows up as an upstream ECONNRESET. In the timeout case the error handler then sends a 502 that the gateway made itself. Settlement records it as outcome 'responded' with httpStatus 502, the same as a 502 actually returned by Next.",
+        "evidence": "upstream.setTimeout(upstreamTimeoutMs, () => { diagnostics.socketTimeouts++; upstream.destroy(); }); upstream.once('error', ... diagnostics.errors[code]++ ... if (!response.headersSent) { response.writeHead(502); ... }); request.once('aborted', () => upstream.destroy()); response.once('close', () => { if (!finished) upstream.destroy(); }); response 'finish' -> settle({ outcome: 'responded', httpStatus: response.statusCode }).",
+        "impact": "There is no security, auth or data-exposure impact. The harm is to evidence: the brief says the cold-502 cause has not been claimed fixed, and someone reading the counts or frame statuses could wrongly blame Next or the upstream for 502s or resets that the gateway caused, or the reverse. That could lead to a wrong root cause or a false claim that the fix worked.",
+        "recommended_fix": "Before calling destroy(), record why: set a local flag ('timeout', 'client-abort' or 'response-closed') and skip the ECONNRESET increment when the flag is set. Alternatively, pass a tagged error to destroy() and map it to its own allowlisted code such as 'GATEWAY_TIMEOUT' or 'CLIENT_ABORT'. If frame evidence needs to separate the two kinds of 502, add a separate diagnostic count for 502s the gateway generated (no changes to the schema or stored data are needed for counts only).",
+        "required_test": "In a loopback synthetic test with an owned stub upstream: (1) the upstream accepts the connection and never answers, with upstreamTimeoutMs=1000. Assert socketTimeouts==1 and errors.ECONNRESET is absent or 0. (2) The client aborts before upstream headers arrive. Assert the abort isn't counted as an upstream ECONNRESET. (3) The upstream really resets the socket. Assert ECONNRESET==1 and socketTimeouts==0.",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "accepted": false,
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 1,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "completed": false
+}

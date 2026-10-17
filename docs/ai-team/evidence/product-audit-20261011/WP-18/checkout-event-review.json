@@ -1,0 +1,206 @@
+{
+  "claude_cli_discovery_status": "SUCCESS",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration",
+        "payment",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 10790,
+      "expected_duration": 0,
+      "code_surface_area": 6,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "status": "RATE_LIMITED",
+      "provider": "agy_wrapper"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "reviewed": true,
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "completed": false,
+  "review": {
+    "summary": "Reviewer model: Opus 5.5 (claude-opus-5-5). I reviewed only the supplied WP18 increment: the checkout-followup module, the two checkout route hunks and the email-delivery guard hunks. I found no BLOCKER or MAJOR defects. The candidate predicate covers what the brief requires: owned pending_payment, no paidAt, zero paid and refunded amounts, a positive total, and a same-vendor pending primary transaction. The candidate upsert uses an empty update, so a replay keeps the original DB timestamps, and the mismatch check is wrapped so a failure only logs a fixed diagnostic. The delivery-key parser cannot be confused by colons because Identity rejects ':', and the version has a range limit. Other triggers skip the new guard. Read failures inside the guard propagate rather than turning into a send. I found 3 MINOR issues and 1 NIT. (1) The guard reads idempotencyKey as an optional field, but the shown snapshot identity type doesn't include it, so the compiler won't flag a caller that leaves it out. Every checkout_followup delivery would then be silently dropped. (2) This depends on context I wasn't given: I can't confirm the candidate write runs after the order's transaction has committed. The two call sites use different clients (getDb() and db). (3) The guard doesn't check that the delivery's recipient is the order's buyer. (4) Concurrent replays can log a false failure diagnostic. The disposable-PG DB run is NOT_RUN. An empty or non-blocking result here does not certify that tests pass or that the work is ready to release, and this does not mean the whole of WP18 is complete.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/email-delivery.ts",
+        "area": "DeliverySnapshotDatabase / EmailDeliverySnapshotIdentity (~L791-800) and the isCurrentCheckoutFollowupDelivery call (~L1022)",
+        "issue": "The new guard needs delivery.idempotencyKey, but the shown EmailDeliverySnapshotIdentity Pick only covers \"id\" | \"vendorId\" | \"sourceLiveId\" | \"sourceFormSubmissionId\" | \"trigger\". The guard's parameter types idempotencyKey as optional, so a narrowed identity object, or a claim query that doesn't select idempotencyKey, still compiles. In that case the guard always returns false for checkout_followup.",
+        "evidence": "In the guard's signature, idempotencyKey is optional ({ vendorId; trigger; idempotencyKey?: string }). deliveryReference(undefined) returns null, so the guard returns false. The diff adds the commerceOrder, commerceOrderEvent and automationRule delegates to the database type but does not add idempotencyKey to EmailDeliverySnapshotIdentity.",
+        "impact": "This fails closed, so nothing is sent wrongly. But once a producer exists, every checkout follow-up email could be silently suppressed, and unit tests that pass whole delivery objects would hide it.",
+        "recommended_fix": "Add \"idempotencyKey\" to the EmailDeliverySnapshotIdentity Pick, or make it required in the guard's parameter type. Also confirm that the claim and snapshot select includes idempotencyKey.",
+        "required_test": "Write a test that builds the delivery through the real claim and snapshot path, not a hand-made object, with trigger checkout_followup, a valid key and eligible DB rows. It should assert the guard returns true. Add a negative test where idempotencyKey is absent.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/payments/checkout/route.ts",
+        "area": "Hunks @@ -688 (getDb()) and @@ -978 (db)",
+        "issue": "The two call sites use different clients. If either `db` is an interactive-transaction client, or the order/transaction rows aren't committed yet at the getDb() call, there are two failure modes. (a) The pendingOrderWhere read can't see the rows and quietly returns not_eligible. (b) A failed upsert inside a Postgres transaction aborts that transaction (25P02), even though the try/catch handles the JS error. That would change the checkout result, which goes against the brief's 'must not affect checkout result' requirement.",
+        "evidence": "In the first path, getDb() is called right after the prior `orderId: order.id` call. The second path uses the local `db`. The supplied hunks don't show whether either path has committed.",
+        "impact": "Depending on the transaction boundary: either candidates are silently never recorded, or a checkout fails or rolls back because of the observational write.",
+        "recommended_fix": "Confirm that both call sites run after commit on a non-transactional client, and use the same client source in both paths. If either one can run inside a transaction, move the call outside it.",
+        "required_test": "Run against the disposable PG for both checkout paths. (1) Assert that a candidate event exists after a successful checkout. (2) Force the upsert to fail (for example, a pre-existing event with the same dedupKey but a different eventType). Assert the checkout response, order and transaction rows are unchanged and committed.",
+        "confidence": 0.3
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/checkout-followup.ts",
+        "area": "isCurrentCheckoutFollowupDelivery",
+        "issue": "The guard binds order, rule and version through the key, but it never checks that the outbox recipient is the order's buyer contact. Any checkout_followup outbox row with a valid key and an arbitrary recipient passes the guard.",
+        "evidence": "The guard selects only { id: true } from commerceOrder and takes no recipient field from the delivery.",
+        "impact": "There is no producer in this increment, so nothing can be exploited now. But the guard won't catch a future producer bug that pairs a valid key with the wrong recipient, which could send one buyer's checkout reminder to a different address.",
+        "recommended_fix": "Raise this as a scope proposal for the producer task: either bind the recipient (or a hash of it) to the order in the guard, or document that the producer is the only enforcement point.",
+        "required_test": "Once the producer exists, add a negative test: a delivery with a valid key but a recipient that doesn't match the order should not send.",
+        "confidence": 0.35
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/checkout-followup.ts",
+        "area": "recordCheckoutFollowupCandidate upsert",
+        "issue": "When two legitimate replays run at the same time, both can take the upsert's create branch and hit a unique-constraint error (P2002). This is caught and reported as 'Checkout follow-up event unavailable' even though the event was recorded.",
+        "evidence": "Prisma upsert is not atomic across concurrent creates, and the catch maps every error to the failed status and logs the diagnostic.",
+        "impact": "Monitoring gets a false-positive failure diagnostic. Checkout behaviour and the data are unaffected.",
+        "recommended_fix": "Optionally, treat a unique-constraint error as already recorded (re-read the event, or skip the diagnostic).",
+        "required_test": "Run two candidate records for the same order concurrently. Assert one event exists, and optionally that no failure diagnostic is logged.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "normalized_status": "REVIEW_COMPLETED"
+}

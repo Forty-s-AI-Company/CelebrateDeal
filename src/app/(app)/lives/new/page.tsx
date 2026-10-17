@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { randomUUID } from "node:crypto";
+import { QuickWebinarForm } from "@/components/quick-webinar-form";
 import { notFound } from "next/navigation";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { LiveStepperForm } from "@/components/live-stepper-form";
@@ -64,7 +66,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const draftLookupAt = new Date();
   const videos = await db.video.findMany({
     where: liveReadyVideoWhere(vendor.id),
-    select: { id: true, title: true },
+    select: { id: true, title: true, durationSec: true, sourceType: true },
     orderBy: { createdAt: "desc" },
   });
   const products = await db.product.findMany({
@@ -167,13 +169,15 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="建立直播間" description="用八個清楚步驟完成設定；每次變更都會建立可復原、具版本保護的伺服器草稿。" />
+      <PageHeader title="建立直播間" description={initialDraft ? "繼續完成原本的八步設定與伺服器草稿。" : "先用影片與時間快速建場，自動建立報名、確認與播放頁；需要細部調整時，可使用下方完整設定。"} />
       {draft && !initialDraft ? (
         <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           指定的直播草稿已失效、已完成或不屬於目前商店。系統沒有載入任何內容，你可以改選下方仍有效的草稿。
         </p>
       ) : null}
       {!initialDraft ? <LiveDraftResumeNotice drafts={resumableDrafts} timeZone={vendor.timezone} /> : null}
+      {!initialDraft ? <QuickWebinarForm videos={videos.filter(video => ["url", "cloudflare_stream"].includes(video.sourceType) && video.durationSec !== null && video.durationSec > 0 && video.durationSec <= 43_200)} timeZone={vendor.timezone} csrfToken={csrfToken} requestId={randomUUID()} /> : null}
+      <h2 className="mb-4 text-lg font-semibold">完整直播設定</h2>
       <LiveStepperForm
         videos={videos}
         products={products}

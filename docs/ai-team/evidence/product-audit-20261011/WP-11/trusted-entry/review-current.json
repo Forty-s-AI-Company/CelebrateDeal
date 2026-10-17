@@ -1,0 +1,196 @@
+{
+  "status": "REVIEW_COMPLETED",
+  "accepted": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "critical",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "reviewed": true,
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "execution_provider": "claude_cli",
+  "finalModel": "claude-opus-5-5",
+  "normalized_status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "completed": false,
+  "review": {
+    "summary": "Scoped Critical review of WP11 revision sha256:58180fc4…aa29. I acknowledge the redactions. I reviewed the credential-reference declarations at wrapper L15, test L7/L14/L24, resolver L73 and live-chat L20/L27 only through the semantics you supplied, not as literal code. I found no BLOCKER or MAJOR defects in the code shown. The resolver fails closed on everything I checked: no configuration, mismatched mode/source, weak or padded secrets, missing or forged proof, malformed cf-connecting-ip, and a trusted-proxy XFF chain that is malformed or doesn't match. Forged alternate headers end up in the same bucket. The original request body is never forked or consumed. The rate-limit check runs before the legacy limiter, so a missing source gives a 503 before any provider is called. Four routes changed, and each diff only swaps the import. Limitations I couldn't verify: (a) the literal redacted lines; (b) how legacy src/lib/rate-limit.ts builds its bucket key; (c) the checkRateLimit call sites in the four routes, which the diffs don't show; (d) whether any production edge or proxy can actually set the proof header. One deployment note, raised as a scope proposal rather than a defect: with no ENTRY_CLIENT_IP_* configuration, every request to /r/[code], portal access, voucher redemption and live admission returns 503, including under plain `next dev`/`next start`. Any future deployment needs a release gate or startup check for this. Production/default deployment stays NOT authorized. I didn't re-run anything: the test, HTTP, PostgreSQL, browser and cleanup PASS counts are as you reported them. An empty or low-severity findings list doesn't certify test or release success.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "L10-12 (runtime/node branch) with src/lib/request-client-ip.ts L99-102, L136-137",
+        "issue": "ENTRY_CLIENT_IP_TRUST_MODE=runtime + DEPLOYMENT_SOURCE=node can be set through env and is accepted as trusted, but nothing in this scope supplies `request.ip`. Next.js App Router handlers don't set it (NextRequest.ip is gone, and was only ever set on Vercel), so this mode returns 503 on every request in a real Next server.",
+        "evidence": "runtimeIp reads `(request as Request & {ip?: unknown}).ip`. The only test that passes in runtime mode adds it by hand with Object.defineProperty (test L48). The task says runtime/node 'requires injected socket IP', but no injector is in scope.",
+        "impact": "Not a security bypass: it fails closed. But an operator who picks the mode that looks most natural for self-hosted Node would take down referral redirects, portal access, voucher redemption and live admission entirely.",
+        "recommended_fix": "Until a socket-IP injector is wired and reviewed, have entryIpTrustConfig refuse runtime/node (or log or assert at startup), and document that only proof-backed proxy modes are supported for now.",
+        "required_test": "A test that entryIpTrustConfig({ENTRY_CLIENT_IP_TRUST_MODE:'runtime', ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE:'node'}) either can't be selected, or comes with a startup diagnostic. Or, once an injector exists, an integration test through a real Next server.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "L13-15 (proxy branch reading ENTRY_CLIENT_IP_INGRESS_SECRET) with src/lib/request-client-ip.ts L7 and src/lib/live-chat-request-security.ts L16-27",
+        "issue": "Entry and live-chat checks read the same proof header (x-celebratedeal-live-chat-ingress) but compare it against secrets from different env vars. An edge that overwrites that one header with one value can only satisfy both if the two secrets are the same.",
+        "evidence": "LIVE_CHAT_INGRESS_PROOF_HEADER is shared, and hasValidIngressProof compares it with whichever config.ingressSecret it's given. According to the redacted semantics, the entry secret comes from env.ENTRY_CLIENT_IP_INGRESS_SECRET, separate from the live-chat secret.",
+        "impact": "Two separate env vars suggest two separate secrets. If they differ, one surface returns 503 on every request. If they must match, the second env var only adds configuration drift without isolating anything.",
+        "recommended_fix": "Either use one shared ingress-secret source for both, or give the entry check its own proof header name so each surface can carry its own secret. Document the edge-injection contract either way.",
+        "required_test": "A test showing a request with a single proof-header value is accepted by both liveChatIpTrustConfig and entryIpTrustConfig under the documented configuration, or a test for the separate entry header.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-chat-request-security.ts",
+        "area": "L33-43 (rateLimitRequestWithIdentity) and the legacy src/lib/rate-limit.ts it feeds (not supplied)",
+        "issue": "Can't verify that forged headers are fully neutralized. The helper removes only x-forwarded-for and x-real-ip and overwrites cf-connecting-ip. If the legacy limiter also builds its bucket from other client-supplied headers (e.g. true-client-ip, forwarded, x-vercel-forwarded-for), forged values would still create separate buckets.",
+        "evidence": "legacy rate-limit.ts isn't in scope. The rotation test (test L44-52) only rotates cf-connecting-ip and x-forwarded-for.",
+        "impact": "If the legacy limiter reads any other header, attackers could get around per-client limits on the four entry routes by rotating it.",
+        "recommended_fix": "Confirm which headers the legacy limiter reads. Ideally pass the normalized identity to it as an explicit key argument instead of rewriting headers.",
+        "required_test": "Extend the rotation test to rotate every header the legacy limiter reads (and common alternatives such as true-client-ip and forwarded), and assert a 429 on the (limit+1)th request.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/trusted-entry-rate-limit.test.ts",
+        "area": "L37-43",
+        "issue": "The test name says it rejects 'before calling even an edge-only provider', but the test only checks for a 503. It has no spy or mock showing the legacy provider wasn't called.",
+        "evidence": "There's no vi.spyOn or mock of checkLegacyRateLimit. The ordering is guaranteed by wrapper code at L26-31, not by this test.",
+        "impact": "The test claims more than it checks. A later change that calls the provider first would still pass.",
+        "recommended_fix": "Spy on the legacy checkRateLimit and assert it isn't called, or rename the test.",
+        "required_test": "Assert the legacy limiter spy has zero calls for missing or forged proof.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "exitCode": 0,
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "provider": "claude_cli"
+    }
+  ],
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  }
+}

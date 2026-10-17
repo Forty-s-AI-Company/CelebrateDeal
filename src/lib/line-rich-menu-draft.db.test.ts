@@ -8,10 +8,12 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 import { updateRichMenuDraftAction, type RichMenuActionState } from "@/app/actions/line-rich-menu-actions";
 
 const vendorIds: string[] = [];
+let accountId="";
 const initial: RichMenuActionState = { status: "idle", error: null, reference: null };
 function form(reference: RichMenuActionState["reference"] = null, intent = "save") {
   const data = new FormData();
   data.set("id", reference?.id ?? ""); data.set("revision", String(reference?.revision ?? 0)); data.set("intent", intent);
+  data.set("accountId",accountId);
   data.set("menu", JSON.stringify(createRichMenuTemplate("minimal-4")));
   return data;
 }
@@ -19,7 +21,8 @@ async function vendor() {
   const suffix = crypto.randomUUID();
   const row = await getDb().vendor.create({ data: { name: "Synthetic rich menu owner", slug: `menu-${suffix}`, email: `menu-${suffix}@example.test`, passwordHash: "synthetic-test-only" } });
   vendorIds.push(row.id);
-  return row;
+  const account=await getDb().lineOfficialAccount.create({data:{vendorId:row.id,messagingChannelIdEncrypted:"synthetic",messagingChannelSecretEncrypted:"synthetic",messagingAccessTokenEncrypted:"synthetic"}});accountId=account.id;
+  return {...row,lineAccountId:account.id};
 }
 afterEach(async () => {
   await getDb().vendor.deleteMany({ where: { id: { in: vendorIds.splice(0) } } });
@@ -48,15 +51,17 @@ describe("LINE draft PostgreSQL isolation and compare-and-swap", () => {
     expect(recreated.status).toBe("saved");
     expect(recreated.reference?.id).not.toBe(reference?.id);
     expect(await updateRichMenuDraftAction(initial, form(reference))).toMatchObject({ error: "conflict" });
-    expect(await getDb().lineRichMenuDraft.findUnique({ where: { vendorId: owner.id } })).toMatchObject({ ...recreated.reference, menu: createRichMenuTemplate("minimal-4") });
+    expect(await getDb().lineRichMenuDraft.findFirst({ where: { vendorId: owner.id } })).toMatchObject({ ...recreated.reference, menu: createRichMenuTemplate("minimal-4") });
   });
   it("prevents another tenant from updating or deleting a known draft and cascades only its owner", async () => {
     const a = await vendor(); const b = await vendor();
+    accountId=a.lineAccountId;
     mocks.auth.mockResolvedValue({ vendor: { id: a.id } });
     const draft = await updateRichMenuDraftAction(initial, form());
     mocks.auth.mockResolvedValue({ vendor: { id: b.id } });
+    accountId=b.lineAccountId;
     for (const intent of ["save", "delete"]) expect(await updateRichMenuDraftAction(initial, form(draft.reference, intent))).toMatchObject({ error: "conflict" });
-    expect(await getDb().lineRichMenuDraft.findUnique({ where: { vendorId: a.id } })).toMatchObject({ revision: 1 });
+    expect(await getDb().lineRichMenuDraft.findFirst({ where: { vendorId: a.id } })).toMatchObject({ revision: 1 });
     await getDb().vendor.delete({ where: { id: b.id } });
     expect(await getDb().lineRichMenuDraft.count({ where: { vendorId: a.id } })).toBe(1);
     await getDb().vendor.delete({ where: { id: a.id } });

@@ -1,0 +1,8 @@
+{
+  "files": {
+    "src/lib/live-metric-playback-intake-audit.ts": "1073110e3eb5726102c4156054ee40bf9363d21a12229d5867c73ee5c8b9e0ed",
+    "src/lib/live-metric-viewing-source-audit.ts": "ae1c40876b6b3bb931904f31720d15e0352538ad967287faea29747fff3cccf8"
+  },
+  "scope": "Full intake helper and parent viewing audit; harness/functions SQL not supplied",
+  "promptCharacters": 19532
+}

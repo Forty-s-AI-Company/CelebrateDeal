@@ -1,0 +1,1297 @@
+--- src/app/(app)/affiliates/commissions/page.tsx (before)
++++ src/app/(app)/affiliates/commissions/page.tsx
+@@ -52,5 +52,5 @@
+     <>
+       <PageHeader
+-        title="聯盟分潤"
++        title="佣金結算"
+         description="依活動、商品與推廣碼追蹤佣金，並與平台交易服務費分開列帳。"
+       />
+
+--- src/app/(app)/affiliates/page.tsx (before)
++++ src/app/(app)/affiliates/page.tsx
+@@ -29,5 +29,5 @@
+     <>
+       <PageHeader
+-        title="聯盟夥伴"
++        title="推廣夥伴"
+         description="管理推廣碼、來源渠道、點擊與轉換成效。"
+         action={
+
+--- src/app/(app)/billing/course-payouts/page.tsx (before)
++++ src/app/(app)/billing/course-payouts/page.tsx
+@@ -30,5 +30,5 @@
+     <>
+       <PageHeader
+-        title="課程 F/G 分潤"
++        title="課程分潤"
+         description="檢視課程分潤的 gross、net reference、應付金額、退款／dispute ledger 與人工出款結果。此頁為商家唯讀對帳，不會執行付款。"
+       />
+
+--- src/app/(app)/billing/payment-methods/page.tsx (before)
++++ src/app/(app)/billing/payment-methods/page.tsx
+@@ -123,5 +123,5 @@
+     <>
+       <PageHeader
+-        title="付款方式設定"
++        title="付款方式"
+         description="管理平台方案與 Stream 用量需要的付款方式驗證狀態；CelebrateDeal 只保留 provider opaque reference，不接觸卡號。"
+       />
+
+--- src/app/(app)/blacklists/page.tsx (before)
++++ src/app/(app)/blacklists/page.tsx
+@@ -33,5 +33,5 @@
+   return (
+     <>
+-      <PageHeader title="黑名單管理" description="管理互動風險與無效名單來源，可搜尋、記錄原因並解除封鎖。" />
++      <PageHeader title="封鎖名單" description="管理互動風險與無效名單來源，可搜尋、記錄原因並解除封鎖。" />
+       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
+         <Card>
+
+--- src/app/(app)/consultations/page.tsx (before)
++++ src/app/(app)/consultations/page.tsx
+@@ -46,5 +46,5 @@
+   return (
+     <>
+-      <PageHeader title="諮詢預約工作台" description="設定可預約時段、掌握即將到來的諮詢；停用不會刪除既有預約紀錄。" />
++      <PageHeader title="諮詢預約" description="設定可預約時段、掌握即將到來的諮詢；停用不會刪除既有預約紀錄。" />
+       <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
+       {!scope.isAggregate ? (
+
+--- src/app/(app)/dashboard/dashboard-details-loading.tsx (before)
++++ src/app/(app)/dashboard/dashboard-details-loading.tsx
+@@ -1,5 +1,5 @@
+ export default function DashboardDetailsLoading() {
+   return (
+-    <div data-dashboard-scope="details-shell" role="status" aria-busy="true" aria-live="polite" aria-label="正在載入 Dashboard 明細" className="grid gap-6">
++    <div data-dashboard-scope="details-shell" role="status" aria-busy="true" aria-live="polite" aria-label="正在載入營運總覽明細" className="grid gap-6">
+       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+         <div className="h-72 animate-pulse motion-reduce:animate-none rounded-xl border border-slate-200 bg-white" />
+
+--- src/app/(app)/dashboard/dashboard-kpis-loading.test.tsx (before)
++++ src/app/(app)/dashboard/dashboard-kpis-loading.test.tsx
+@@ -8,5 +8,5 @@
+     expect(html).toContain('data-dashboard-scope="kpis-shell"');
+     expect(html).toContain('aria-busy="true"');
+-    expect(html).toContain("正在載入 Dashboard KPI");
++    expect(html).toContain("正在載入營運總覽關鍵指標");
+   });
+ });
+
+--- src/app/(app)/dashboard/dashboard-kpis-loading.tsx (before)
++++ src/app/(app)/dashboard/dashboard-kpis-loading.tsx
+@@ -1,5 +1,5 @@
+ export default function DashboardKpisLoading() {
+   return (
+-    <section data-dashboard-scope="kpis-shell" aria-busy="true" aria-live="polite" aria-label="正在載入 Dashboard KPI" className="grid gap-6">
++    <section data-dashboard-scope="kpis-shell" aria-busy="true" aria-live="polite" aria-label="正在載入營運總覽關鍵指標" className="grid gap-6">
+       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" aria-hidden="true">
+         {Array.from({ length: 10 }, (_, index) => (
+
+--- src/app/(app)/dashboard/loading.tsx (before)
++++ src/app/(app)/dashboard/loading.tsx
+@@ -6,5 +6,5 @@
+         <p className="mt-2 text-sm text-slate-500">正在整理報名、觀看、訂單與 Email 寄送狀態。</p>
+       </div>
+-      <span role="status" className="sr-only">正在載入 Dashboard，請稍候。</span>
++      <span role="status" className="sr-only">正在載入營運總覽，請稍候。</span>
+       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" aria-hidden="true">
+         {Array.from({ length: 10 }, (_, index) => (
+
+--- src/app/(app)/dashboard/page.tsx (before)
++++ src/app/(app)/dashboard/page.tsx
+@@ -39,10 +39,10 @@
+     <>
+       <PageHeader
+-        title="Dashboard"
++        title="營運總覽"
+         description="Cloudflare-first 直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。"
+         action={isManager ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
+       />
+ 
+-      <section data-dashboard-region="kpis" aria-label="Dashboard KPI 區域">
++      <section data-dashboard-region="kpis" aria-label="營運總覽關鍵指標 區域">
+         <Suspense fallback={<DashboardKpisLoading />}>
+           <DashboardKpis vendorId={vendor.id} diagnosticFailureScope={diagnosticFailureScope} />
+@@ -50,5 +50,5 @@
+       </section>
+ 
+-      <section data-dashboard-region="details" aria-label="Dashboard 明細區域">
++      <section data-dashboard-region="details" aria-label="營運總覽明細區域">
+         <DashboardDetailsClient diagnosticDelayMs={diagnosticDelayMs} />
+       </section>
+
+--- src/app/(app)/forms/page.tsx (before)
++++ src/app/(app)/forms/page.tsx
+@@ -78,5 +78,5 @@
+   return (
+     <>
+-      <PageHeader title="報名表管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink>} />
++      <PageHeader title="報名管理" description="建立可嵌在直播頁或單獨分享的 lead 表單。" action={<ButtonLink href="/forms/new"><Plus size={16} />新增表單</ButtonLink>} />
+       <Card className="mb-5">
+         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
+
+--- src/app/(app)/interaction-scripts/page.tsx (before)
++++ src/app/(app)/interaction-scripts/page.tsx
+@@ -36,5 +36,5 @@
+   return (
+     <>
+-      <PageHeader title="留言組" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增留言組</ButtonLink>} />
++      <PageHeader title="互動腳本" description="管理直播互動腳本、綁定直播與影片，並快速複製整組節奏。" action={<ButtonLink href="/interaction-scripts/new"><Plus size={16} />新增互動腳本</ButtonLink>} />
+       {params.error === "invalid_event" ? (
+         <p role="alert" className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+@@ -49,9 +49,9 @@
+       {params.error === "missing_script" ? (
+         <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+-          這份留言組已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
++          這份互動腳本已不存在或不屬於目前商店，清單已重新整理，請重新選擇。
+         </p>
+       ) : null}
+       {scripts.length === 0 ? (
+-        <EmptyState title="還沒有留言組" description="建立留言組後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增留言組</ButtonLink>} />
++        <EmptyState title="還沒有互動腳本" description="建立互動腳本後，可綁定到直播間並依影片秒數自動觸發。" action={<ButtonLink href="/interaction-scripts/new">新增互動腳本</ButtonLink>} />
+       ) : (
+         <Card>
+
+--- src/app/(app)/landing-pages/page.tsx (before)
++++ src/app/(app)/landing-pages/page.tsx
+@@ -10,10 +10,10 @@
+ 
+   return <>
+-    <PageHeader title="Funnels" description="建立銷售、名單蒐集與自訂流程，集中管理每個全畫面頁面。" action={!scope.isAggregate ? <ButtonLink href="/landing-pages/new">建立 Funnel</ButtonLink> : undefined} />
++    <PageHeader title="一頁式網站" description="建立銷售、名單蒐集與自訂流程，集中管理每個全畫面頁面。" action={!scope.isAggregate ? <ButtonLink href="/landing-pages/new">建立一頁式網站</ButtonLink> : undefined} />
+     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+       <p className="text-sm text-slate-500">{scope.projectName ?? (scope.isAggregate ? "全部專案總覽（唯讀）" : "目前工作區")}</p>
+       <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500"><span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">全部 {pages.length}</span><span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700">已發布 {publishedCount}</span></div>
+     </div>
+-    {pages.length ? <FunnelList pages={pages} readOnly={scope.isAggregate} /> : <Card className="border-dashed border-slate-300 bg-slate-50/60"><div className="mx-auto max-w-md py-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl text-blue-700">✦</div><h2 className="mt-4 text-lg font-bold text-slate-950">開始建立第一個 Funnel</h2><p className="mt-2 text-sm leading-6 text-slate-500">選擇銷售、名單蒐集或自訂用途，再進入中文版全畫面編輯器。</p>{!scope.isAggregate ? <div className="mt-5"><ButtonLink href="/landing-pages/new">建立 Funnel</ButtonLink></div> : null}</div></Card>}
++    {pages.length ? <FunnelList pages={pages} readOnly={scope.isAggregate} /> : <Card className="border-dashed border-slate-300 bg-slate-50/60"><div className="mx-auto max-w-md py-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl text-blue-700">✦</div><h2 className="mt-4 text-lg font-bold text-slate-950">開始建立第一個一頁式網站</h2><p className="mt-2 text-sm leading-6 text-slate-500">選擇銷售、名單蒐集或自訂用途，再進入中文版全畫面編輯器。</p>{!scope.isAggregate ? <div className="mt-5"><ButtonLink href="/landing-pages/new">建立一頁式網站</ButtonLink></div> : null}</div></Card>}
+   </>;
+ }
+
+--- src/app/(app)/lives/page.tsx (before)
++++ src/app/(app)/lives/page.tsx
+@@ -15,5 +15,5 @@
+   return (
+     <>
+-      <PageHeader title="直播間管理" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
++      <PageHeader title="直播間" description="管理每一場直播頁的播放素材、商品、表單與公開連結。" action={<ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink>} />
+       {lives.length === 0 ? (
+         <EmptyState title="還沒有直播間" description="用 stepper 建立第一場直播，把影片、商品與報名表串起來。" action={<ButtonLink href="/lives/new" tone="cta">建立直播</ButtonLink>} />
+
+--- src/app/(app)/messages/deliveries/page.tsx (before)
++++ src/app/(app)/messages/deliveries/page.tsx
+@@ -23,5 +23,5 @@
+     <>
+       <PageHeader
+-        title="Email 寄送營運"
++        title="寄送管理"
+         description="安全查找、篩選並處理寄送失敗；收件資訊維持遮罩，重新排程也不會直接呼叫外部寄信服務。"
+         action={<ButtonLink href="/messages/templates" tone="secondary">管理訊息模板</ButtonLink>}
+
+--- src/app/(app)/onboarding/page.tsx (before)
++++ src/app/(app)/onboarding/page.tsx
+@@ -79,5 +79,5 @@
+     <>
+       <PageHeader
+-        title="商家上線導引"
++        title="上線導引"
+         description="依真實商店設定自動保存進度；完成一項設定後回到這裡即可接著做，不需要重複填表。"
+         action={progress.nextStep ? (
+
+--- src/app/(app)/products/page.tsx (before)
++++ src/app/(app)/products/page.tsx
+@@ -44,5 +44,5 @@
+   return (
+     <>
+-      <PageHeader title="商品管理" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href="/products/new"><Plus size={16} />新增商品</ButtonLink>} />
++      <PageHeader title="商品" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href="/products/new"><Plus size={16} />新增商品</ButtonLink>} />
+       {updated === "created" || updated === "saved" ? <p role="status" className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">商品已{updated === "created" ? "建立為草稿" : "儲存"}。</p> : null}
+       <Card className="mb-5">
+
+--- src/app/(app)/settings/automations/page.tsx (before)
++++ src/app/(app)/settings/automations/page.tsx
+@@ -27,5 +27,5 @@
+   ]);
+   return <>
+-    <PageHeader title="自動化工作室" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
++    <PageHeader title="自動化" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
+     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">自動化規則已更新。</p> : null}
+     {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{params.dryRun === "would_dispatch" ? "條件符合，正式事件會執行動作。" : params.dryRun === "would_skip" ? "條件未符合，正式事件會略過。" : "規則無效。"}</p> : null}
+
+--- src/app/(app)/settings/features/page.tsx (before)
++++ src/app/(app)/settings/features/page.tsx
+@@ -1 +1 @@
+-import { VendorFeatureManagement } from "@/components/vendor-feature-management"; import { PageHeader } from "@/components/ui"; import { requireVendorManagerContext } from "@/lib/auth"; import { getCsrfToken } from "@/lib/csrf"; import { normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";  export default async function VendorFeaturesPage() {   const [{ vendor }, csrfToken] = await Promise.all([requireVendorManagerContext(), getCsrfToken()]);   return (     <>       <PageHeader title="功能模組管理" description="只留下目前需要的工作區入口；停用功能不會刪除任何歷史資料。" />       <VendorFeatureManagement initialModules={normalizeVendorFeatureModules(vendor.enabledFeatureModules)} csrfToken={csrfToken} />     </>   ); }+import { VendorFeatureManagement } from "@/components/vendor-feature-management"; import { PageHeader } from "@/components/ui"; import { requireVendorManagerContext } from "@/lib/auth"; import { getCsrfToken } from "@/lib/csrf"; import { normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";  export default async function VendorFeaturesPage() {   const [{ vendor }, csrfToken] = await Promise.all([requireVendorManagerContext(), getCsrfToken()]);   return (     <>       <PageHeader title="功能模組" description="只留下目前需要的工作區入口；停用功能不會刪除任何歷史資料。" />       <VendorFeatureManagement initialModules={normalizeVendorFeatureModules(vendor.enabledFeatureModules)} csrfToken={csrfToken} />     </>   ); }
+--- src/app/(app)/settings/security/page.tsx (before)
++++ src/app/(app)/settings/security/page.tsx
+@@ -116,5 +116,5 @@
+   return (
+     <>
+-      <PageHeader title="安全設定" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">管理團隊與上下線</ButtonLink> : undefined} />
++      <PageHeader title="安全性" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">管理團隊與上下線</ButtonLink> : undefined} />
+       {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
+       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
+
+--- src/app/(app)/settings/team/page.tsx (before)
++++ src/app/(app)/settings/team/page.tsx
+@@ -69,5 +69,5 @@
+   return (
+     <>
+-      <PageHeader title="團隊與上下線" description="建立銷售團隊、加入商家成員，並以可追溯的關係設定 payout 與展業歸屬。" />
++      <PageHeader title="團隊管理" description="建立銷售團隊、加入商家成員，並以可追溯的關係設定 payout 與展業歸屬。" />
+       {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
+       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請重新整理後再試。"}</p> : null}
+
+--- src/app/(app)/team-templates/page.tsx (before)
++++ src/app/(app)/team-templates/page.tsx
+@@ -47,5 +47,5 @@
+   return (
+     <>
+-      <PageHeader title="團隊展業" description="建立 A 端原始頁、發佈不可變版本，並用受控分享連結讓夥伴複製。" action={<ButtonLink href="/team-templates/new" tone="cta"><Plus size={16} />建立模板</ButtonLink>} />
++      <PageHeader title="團隊模板" description="建立 A 端原始頁、發佈不可變版本，並用受控分享連結讓夥伴複製。" action={<ButtonLink href="/team-templates/new" tone="cta"><Plus size={16} />建立模板</ButtonLink>} />
+       {memberships.length === 0 ? <p role="status" className="mb-4 rounded-md bg-orange-50 p-3 text-sm text-orange-800">你目前沒有可管理的有效團隊，無法建立或發佈團隊模板。</p> : null}
+       <TeamTemplateList templates={items} csrfToken={csrfToken} action={manageTeamFunnelTemplateAction} nativeAction="/api/team-funnel/template-actions" />
+
+--- src/app/(app)/videos/page.tsx (before)
++++ src/app/(app)/videos/page.tsx
+@@ -83,5 +83,5 @@
+   return (
+     <>
+-      <PageHeader title="影片庫" description="管理直播回放、預錄影片與可綁定到直播間的播放素材。" action={<ButtonLink href="/videos/new"><Plus size={16} />新增影片</ButtonLink>} />
++      <PageHeader title="媒體素材" description="管理直播回放、預錄影片與可綁定到直播間的播放素材。" action={<ButtonLink href="/videos/new"><Plus size={16} />新增影片</ButtonLink>} />
+       <Card className="mb-5">
+         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
+
+--- src/components/__snapshots__/app-shell.test.ts.snap (before)
++++ src/components/__snapshots__/app-shell.test.ts.snap
+@@ -0,0 +1,154 @@
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
++
++exports[`keeps every merchant navigation label aligned with its destination title 1`] = `
++[
++  {
++    "href": "/dashboard",
++    "label": "營運總覽",
++  },
++  {
++    "href": "/projects",
++    "label": "銷售專案",
++  },
++  {
++    "href": "/lives",
++    "label": "直播間",
++  },
++  {
++    "href": "/videos",
++    "label": "媒體素材",
++  },
++  {
++    "href": "/landing-pages",
++    "label": "一頁式網站",
++  },
++  {
++    "href": "/forms",
++    "label": "報名管理",
++  },
++  {
++    "href": "/products",
++    "label": "商品",
++  },
++  {
++    "href": "/orders",
++    "label": "訂單與履約",
++  },
++  {
++    "href": "/consultations",
++    "label": "諮詢預約",
++  },
++  {
++    "href": "/customers",
++    "label": "學員 CRM",
++  },
++  {
++    "href": "/support-cases",
++    "label": "客服案件",
++  },
++  {
++    "href": "/messages/templates",
++    "label": "訊息模板",
++  },
++  {
++    "href": "/messages/deliveries",
++    "label": "寄送管理",
++  },
++  {
++    "href": "/interaction-scripts",
++    "label": "互動腳本",
++  },
++  {
++    "href": "/interaction-roles",
++    "label": "互動角色",
++  },
++  {
++    "href": "/blacklists",
++    "label": "封鎖名單",
++  },
++  {
++    "href": "/affiliates",
++    "label": "推廣夥伴",
++  },
++  {
++    "href": "/team-templates",
++    "label": "團隊模板",
++  },
++  {
++    "href": "/partner-pages",
++    "label": "我的夥伴頁",
++  },
++  {
++    "href": "/team-performance",
++    "label": "成效分析",
++  },
++  {
++    "href": "/billing/usage",
++    "label": "用量與扣點",
++  },
++  {
++    "href": "/billing/payment-methods",
++    "label": "付款方式",
++  },
++  {
++    "href": "/billing/plans",
++    "label": "方案",
++  },
++  {
++    "href": "/billing/invoices",
++    "label": "帳單",
++  },
++  {
++    "href": "/billing/electronic-invoices",
++    "label": "電子發票",
++  },
++  {
++    "href": "/billing/settlements",
++    "label": "月結",
++  },
++  {
++    "href": "/billing/payouts",
++    "label": "批次出款",
++  },
++  {
++    "href": "/affiliates/commissions",
++    "label": "佣金結算",
++  },
++  {
++    "href": "/billing/course-payouts",
++    "label": "課程分潤",
++  },
++  {
++    "href": "/onboarding",
++    "label": "上線導引",
++  },
++  {
++    "href": "/settings/brand",
++    "label": "品牌設定",
++  },
++  {
++    "href": "/settings/tracking",
++    "label": "追蹤設定",
++  },
++  {
++    "href": "/settings/features",
++    "label": "功能模組",
++  },
++  {
++    "href": "/settings/line",
++    "label": "LINE 整合",
++  },
++  {
++    "href": "/settings/automations",
++    "label": "自動化",
++  },
++  {
++    "href": "/settings/team",
++    "label": "團隊管理",
++  },
++  {
++    "href": "/settings/security",
++    "label": "安全性",
++  },
++]
++`;
+
+--- src/components/app-shell.test.ts (before)
++++ src/components/app-shell.test.ts
+@@ -1,3 +1,5 @@
+ import { createElement, type ReactNode } from "react";
++import { existsSync, readFileSync } from "node:fs";
++import path from "node:path";
+ import { renderToStaticMarkup } from "react-dom/server";
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+@@ -48,4 +50,32 @@
+ 
+ describe("AppShell role navigation", () => {
++  it("exposes LINE only to the owner allowed by the existing settings page", () => {
++    expect(linksFor("owner")).toContain("/settings/line");
++    for (const role of ["admin", "accountant", "support", "member", null]) {
++      expect(linksFor(role)).not.toContain("/settings/line");
++    }
++    expect(linksFor(null, true)).not.toContain("/settings/line");
++    expect(renderShell({ memberRole: "owner" })).toContain('href="/settings/line"');
++  });
++
++  it("makes partner pages discoverable with the funnel feature", () => {
++    for (const role of ["owner", "admin", "accountant"]) {
++      expect(linksFor(role, false, ["funnel_builder"])).toContain("/partner-pages");
++      expect(linksFor(role, false, [])).not.toContain("/partner-pages");
++    }
++    expect(linksFor("support")).not.toContain("/partner-pages");
++    expect(renderShell({ memberRole: "owner" })).toContain('href="/partner-pages"');
++  });
++
++  it("links every supported role to an existing page rather than a missing settings route", () => {
++    const links = new Set(["owner", "admin", "accountant", "support"].flatMap((role) => linksFor(role))
++      .concat(linksFor(null, true)));
++    expect(links.has("/settings/commissions")).toBe(false);
++    for (const href of links) {
++      const route = href.replace(/^\//, "");
++      expect(["src/app", "src/app/(app)"].some((root) =>
++        existsSync(path.join(process.cwd(), root, route, "page.tsx"))), href).toBe(true);
++    }
++  });
+   it("keeps accountant navigation tenant-scoped and read-oriented", () => {
+     const links = linksFor("accountant");
+@@ -199,2 +229,14 @@
+   });
+ });
++
++it("keeps every merchant navigation label aligned with its destination title", () => {
++  const labels = navigationForRole("owner").flatMap((group) => group.items.map((item) => ({ href: item.href, label: item.label })));
++  const componentTitles: Record<string, string> = { "/team-performance": "src/components/team-performance-dashboard.tsx" };
++  for (const { href, label } of labels) {
++    const filename = componentTitles[href] ?? `src/app/(app)${href}/page.tsx`;
++    const source = readFileSync(path.join(process.cwd(), filename), "utf8");
++    const title = source.match(/<PageHeader\b[^>]*?title="([^"]+)"/)?.[1];
++    expect(title, href).toBe(label);
++  }
++  expect(labels).toMatchSnapshot();
++});
+
+--- src/components/app-shell.tsx (before)
++++ src/components/app-shell.tsx
+@@ -17,5 +17,5 @@
+     label: "營運總覽",
+     items: [
+-      { href: "/dashboard", label: "Dashboard", icon: Gauge },
++      { href: "/dashboard", label: "營運總覽", icon: Gauge },
+       { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
+     ],
+@@ -34,8 +34,8 @@
+     items: [
+       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
+-      { href: "/orders", label: "訂單管理", icon: PackageCheck, managerOnly: true },
++      { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
+       { href: "/consultations", label: "諮詢預約", icon: CalendarCheck, managerOnly: true, feature: "consultation_booking" },
+       { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },
+-      { href: "/support-cases", label: "售後服務", icon: Headphones, managerOnly: true },
++      { href: "/support-cases", label: "客服案件", icon: Headphones, managerOnly: true },
+     ],
+   },
+@@ -44,5 +44,5 @@
+     items: [
+       { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
+-      { href: "/messages/deliveries", label: "寄送紀錄", icon: ReceiptText, managerOnly: true },
++      { href: "/messages/deliveries", label: "寄送管理", icon: ReceiptText, managerOnly: true },
+       { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
+       { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
+@@ -68,10 +68,10 @@
+       { href: "/billing/electronic-invoices", label: "電子發票", icon: ReceiptText, financeOnly: true },
+       { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true },
+-      { href: "/billing/payouts", label: "稅務匯出", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
++      { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
+       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
+-      { href: "/billing/course-payouts", label: "勞報單審核", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
++      { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
+       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
+       { href: "/settings/brand", label: "品牌設定", icon: Palette, managerOnly: true },
+-      { href: "/settings/tracking", label: "追蹤", icon: BarChart3, managerOnly: true },
++      { href: "/settings/tracking", label: "追蹤設定", icon: BarChart3, managerOnly: true },
+       { href: "/settings/features", label: "功能模組", icon: Settings2, managerOnly: true },
+       { href: "/settings/line", label: "LINE 整合", icon: Bell, ownerOnly: true },
+
+--- src/components/landing-page-workspace.tsx (before)
++++ src/components/landing-page-workspace.tsx
+@@ -168,5 +168,5 @@
+       if (pendingOperation.current === "save") {
+         setExitQueued(true);
+-        setMessage("儲存完成後會返回原本的 Configuration。");
++        setMessage("儲存完成後會返回原本的頁面設定。");
+       }
+       return;
+@@ -183,5 +183,5 @@
+   return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
+     <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
+-      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回 Configuration" : "返回"}</button>
++      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回頁面設定" : "返回"}</button>
+       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name}</p>
+
+--- src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap (before)
++++ src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap
+@@ -0,0 +1,49 @@
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
++
++exports[`merchant display terminology > keeps the approved display dictionary reviewable 1`] = `
++{
++  "experimentArmLabels": {
++    "control": "對照組",
++    "variant": "測試組",
++  },
++  "experimentStatusLabels": {
++    "draft": "草稿",
++    "running": "進行中",
++    "stopped": "已停止",
++    "winner": "已選定勝出組別",
++  },
++  "funnelGoalLabels": {
++    "audience": "建立名單",
++    "custom": "自訂流程",
++    "sell": "銷售商品",
++    "webinar": "線上講座",
++  },
++  "funnelStepLabels": {
++    "contact_us_page": "聯絡我們",
++    "downsell": "降價加購頁",
++    "inactive_page": "停用頁",
++    "info_page": "資訊頁",
++    "inline_form": "內嵌表單",
++    "link_in_bio": "個人簡介連結頁",
++    "opt_in_page": "名單頁",
++    "opt_in_thank_you_page": "名單感謝頁",
++    "order_form": "訂單表單",
++    "popup_form": "彈出表單",
++    "sales_page": "銷售頁",
++    "thank_you_page": "感謝頁",
++    "upsell": "加購頁",
++    "webinar_broadcast_page": "線上講座播放頁",
++    "webinar_registration_page": "線上講座報名頁",
++    "webinar_thank_you_page": "線上講座感謝頁",
++  },
++  "funnelTabLabels": {
++    "A/B test": "A/B 測試",
++    "Automation Rules": "自動化規則",
++    "Configuration": "頁面設定",
++    "Deadline settings": "截止設定",
++    "Leads": "報名名單",
++    "Sales": "銷售紀錄",
++    "Stats": "成效統計",
++  },
++}
++`;
+
+--- src/components/landing-pages/funnel-display-labels.test.ts (before)
++++ src/components/landing-pages/funnel-display-labels.test.ts
+@@ -0,0 +1,57 @@
++import { resolvePaymentStatus, type PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
++import { describe, expect, it } from "vitest";
++import { FUNNEL_GOALS, FUNNEL_STEP_TYPES } from "@/lib/funnel-flow";
++import { funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel, referenceOptions } from "./funnel-display-labels";
++
++describe("merchant display terminology", () => {
++  it("covers every persisted goal and step type without changing its key", () => {
++    expect(Object.keys(funnelGoalLabels)).toEqual([...FUNNEL_GOALS]);
++    expect(Object.keys(funnelStepLabels)).toEqual([...FUNNEL_STEP_TYPES]);
++    for (const key of FUNNEL_STEP_TYPES) {
++      expect(funnelStepLabels[key]).toMatch(/[\u4e00-\u9fff]/u);
++      expect(funnelStepLabels[key]).not.toBe(key);
++    }
++  });
++  it("keeps the approved display dictionary reviewable", () => {
++    expect({ funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels }).toMatchSnapshot();
++  });
++});
++
++it("never labels an unknown or inherited status as successful", () => {
++  expect(reportStatusLabel("paid", "payment")).toBe("已付款");
++  expect(reportStatusLabel("VERIFIED", "verification")).toBe("已驗證");
++  for (const domain of ["order", "payment", "verification"] as const) {
++    for (const status of ["new_future_state", "__proto__", "constructor", "toString"]) expect(reportStatusLabel(status, domain)).toBe("未知狀態");
++  }
++});
++
++it("preserves reference values while naming duplicate and unnamed options", () => {
++  const ids = ["internal_a", "internal_b", "internal_c", "constructor"];
++  const names = { internal_a: "報名頁", internal_b: "報名頁" };
++  const options = referenceOptions(ids, names, "步驟");
++  expect(options.map((item) => item.value)).toEqual(ids);
++  expect(options.map((item) => item.label)).toEqual(["報名頁（第 1 項）", "報名頁（第 2 項）", "未命名步驟 3", "未命名步驟 4"]);
++  expect(referenceOptions(["popup_internal"], { popup_internal: "活動提醒" }, "彈出視窗")).toEqual([{ value: "popup_internal", label: "活動提醒" }]);
++  expect(names).toEqual({ internal_a: "報名頁", internal_b: "報名頁" });
++});
++
++it("distinguishes visually identical reference names without mutating source values", () => {
++  const names = { a: "報名頁", b: " 報名頁 ", c: "   " };
++  expect(referenceOptions(["a", "b", "c"], names, "步驟")).toEqual([
++    { value: "a", label: "報名頁（第 1 項）" },
++    { value: "b", label: "報名頁（第 2 項）" },
++    { value: "c", label: "未命名步驟 3" },
++  ]);
++  expect(names).toEqual({ a: "報名頁", b: " 報名頁 ", c: "   " });
++});
++
++it("labels the transaction writer event results and checkout states", () => {
++  const events = { paid: "已付款", refunded: "已退款", partially_refunded: "部分退款", failed: "付款失敗", dispute_opened: "付款爭議處理中", dispute_released: "付款爭議已解除", dispute_lost: "付款爭議敗訴" } satisfies Record<PaymentWebhookEventType, string>;
++  for (const event of Object.keys(events) as PaymentWebhookEventType[]) {
++    expect(reportStatusLabel(resolvePaymentStatus(null, event), "payment")).toBe(events[event]);
++    expect(reportStatusLabel(resolvePaymentStatus("pending", event), "payment")).toBe(events[event]);
++  }
++  expect(reportStatusLabel("pending", "payment")).toBe("待付款");
++  expect(reportStatusLabel("expired", "payment")).toBe(reportStatusLabel("expired", "order"));
++  expect(reportStatusLabel("cancelled", "payment")).toBe("已取消");
++});
+
+--- src/components/landing-pages/funnel-display-labels.ts (before)
++++ src/components/landing-pages/funnel-display-labels.ts
+@@ -1,28 +1,43 @@
++import type { PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
++import type { FormSubmissionVerificationStatus } from "@prisma/client";
++import type { CommerceOrderStatus } from "@/lib/commerce-order-domain";
++import type { FunnelExperiment } from "@/lib/funnel-operations";
+ import type { FunnelGoal, FunnelStepType } from "@/lib/funnel-flow";
+ 
+ // 僅顯示層對照；儲存、路由與 API 使用原本的識別值。
++export const funnelTabKeys = ["Configuration", "Automation Rules", "A/B test", "Stats", "Leads", "Sales", "Deadline settings"] as const;
+ export const funnelTabLabels = {
+   Configuration: "頁面設定", "Automation Rules": "自動化規則", "A/B test": "A/B 測試",
+   Stats: "成效統計", Leads: "報名名單", Sales: "銷售紀錄", "Deadline settings": "截止設定",
+-} as const;
++} satisfies Record<typeof funnelTabKeys[number], string>;
+ export const funnelGoalLabels = {
+-  audience: "建立名單", sell: "銷售商品", custom: "自訂流程", webinar: "網路研討會",
++  audience: "建立名單", sell: "銷售商品", custom: "自訂流程", webinar: "線上講座",
+ } satisfies Record<FunnelGoal, string>;
+ export const funnelStepLabels = {
+   sales_page: "銷售頁", order_form: "訂單表單", upsell: "加購頁", downsell: "降價加購頁", thank_you_page: "感謝頁",
+   opt_in_page: "名單頁", opt_in_thank_you_page: "名單感謝頁", inline_form: "內嵌表單", popup_form: "彈出表單", link_in_bio: "個人簡介連結頁",
+-  info_page: "資訊頁", contact_us_page: "聯絡我們", webinar_registration_page: "網路研討會報名頁",
+-  webinar_thank_you_page: "網路研討會感謝頁", webinar_broadcast_page: "網路研討會播放頁", inactive_page: "停用頁",
++  info_page: "資訊頁", contact_us_page: "聯絡我們", webinar_registration_page: "線上講座報名頁",
++  webinar_thank_you_page: "線上講座感謝頁", webinar_broadcast_page: "線上講座播放頁", inactive_page: "停用頁",
+ } satisfies Record<FunnelStepType, string>;
+-export const experimentStatusLabels = { draft: "草稿", running: "進行中", stopped: "已停止", winner: "已選定勝出組別" } as const;
+-export const experimentArmLabels = { control: "對照組", variant: "測試組" } as const;
++export const experimentStatusLabels = { draft: "草稿", running: "進行中", stopped: "已停止", winner: "已選定勝出組別" } satisfies Record<FunnelExperiment["status"], string>;
++export const experimentArmLabels = { control: "對照組", variant: "測試組" } satisfies Record<NonNullable<FunnelExperiment["winner"]>, string>;
+ 
+-const reportStatusLabels: Record<string, string> = {
+-  UNVERIFIED: "尚未驗證", VERIFIED: "已驗證", draft: "草稿", pending: "處理中", pending_payment: "待付款",
+-  paid: "已付款", payment_failed: "付款失敗", failed: "失敗", expired: "已逾期", cancelled: "已取消",
+-  partially_refunded: "部分退款", refunded: "已退款",
+-};
+-/** 未知狀態不可冒充成功，也不直接把內部 enum 當成產品文案。 */
+-export function reportStatusLabel(value: string): string {
+-  return Object.hasOwn(reportStatusLabels, value) ? reportStatusLabels[value] : "未知狀態";
++const verificationStatusLabels = { UNVERIFIED: "尚未驗證", VERIFIED: "已驗證" } satisfies Record<FormSubmissionVerificationStatus, string>;
++const orderStatusLabels = {
++  draft: "草稿", pending_payment: "待付款", paid: "已付款", payment_failed: "付款失敗", expired: "付款逾期",
++  cancelled: "已取消", partially_refunded: "部分退款", refunded: "已退款",
++} satisfies Record<CommerceOrderStatus, string>;
++// 交易狀態目前是後端字串欄位；遇到未支援值明示未知，不推測為成功。
++const paymentStatusLabels = { pending: "待付款", paid: "已付款", failed: "付款失敗", refunded: "已退款", partially_refunded: "部分退款", cancelled: "已取消", expired: "付款逾期", dispute_opened: "付款爭議處理中", dispute_released: "付款爭議已解除", dispute_lost: "付款爭議敗訴" } satisfies Record<PaymentWebhookEventType | "pending" | "cancelled" | "expired", string>;
++export function reportStatusLabel(value: string, domain: "order" | "verification" | "payment"): string {
++  const labels: Readonly<Record<string, string>> = domain === "order" ? orderStatusLabels : domain === "verification" ? verificationStatusLabels : paymentStatusLabels;
++  return Object.hasOwn(labels, value) ? labels[value] : "未知狀態";
+ }
++
++/** 下拉選單顯示名稱；value 保留原識別值，重名與未命名項目仍可區分。 */
++export function referenceOptions(ids: readonly string[], names: Readonly<Record<string, string>> | undefined, kind: "步驟" | "彈出視窗") {
++  const labels = ids.map((id, index) => names && Object.hasOwn(names, id) && names[id].trim() ? names[id].trim() : `未命名${kind} ${index + 1}`);
++  const counts = new Map<string, number>();
++  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
++  return ids.map((value, index) => ({ value, label: counts.get(labels[index])! > 1 ? `${labels[index]}（第 ${index + 1} 項）` : labels[index] }));
++}
+
+--- src/components/landing-pages/funnel-element-inspector.tsx (before)
++++ src/components/landing-pages/funnel-element-inspector.tsx
+@@ -2,4 +2,5 @@
+ 
+ import { useMemo, useState } from "react";
++import { referenceOptions } from "./funnel-display-labels";
+ 
+ import {
+@@ -21,4 +22,6 @@
+   popupIds?: readonly string[];
+   stepIds?: readonly string[];
++  stepNames?: Readonly<Record<string, string>>;
++  popupNames?: Readonly<Record<string, string>>;
+   onCommand: (command: FunnelPageCommand) => void;
+ };
+@@ -28,5 +31,5 @@
+   { value: "none", label: "不設定動作" },
+   { value: "open_url", label: "開啟網址" },
+-  { value: "show_popup", label: "顯示 Popup" },
++  { value: "show_popup", label: "顯示彈出視窗" },
+   { value: "submit_form", label: "送出表單" },
+   { value: "next_step", label: "前往下一個步驟" },
+@@ -61,9 +64,9 @@
+   else input = <input {...common} className={control} type={field.kind === "number" ? "number" : "text"} min={field.min} max={field.max} step={field.step} value={String(value)} onChange={(event) => commit(event.currentTarget.value)} />;
+   return <label className={field.kind === "checkbox" ? "flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm font-semibold text-slate-700" : "grid gap-1 text-sm font-semibold text-slate-700"}>
+-    <span>{field.label}</span>{input}{field.description ? <span id={describedBy} className="text-xs font-normal leading-5 text-slate-500">{field.description}</span> : null}
++    <span>{field.label}</span>{input}{field.description ? <span id={describedBy} className="text-xs font-normal leading-5 text-slate-600">{field.description}</span> : null}
+   </label>;
+ }
+ 
+-function ActionFields({ node, popupIds, stepIds, disabled, onCommand }: { node: FunnelNode; popupIds: readonly string[]; stepIds?: readonly string[]; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
++function ActionFields({ node, popupIds, stepIds, stepNames, popupNames, disabled, onCommand }: { node: FunnelNode; popupIds: readonly string[]; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; popupNames?: Readonly<Record<string, string>>; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
+   const [action, setAction] = useState<FunnelInspectorActionInput>(() => initialAction(node));
+   const set = <Key extends keyof FunnelInspectorActionInput>(key: Key, value: FunnelInspectorActionInput[Key]) => setAction((current) => ({ ...current, [key]: value }));
+@@ -81,14 +84,14 @@
+     {action.type === "open_url" ? <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={action.newTab === true} disabled={disabled} onChange={(event) => set("newTab", event.currentTarget.checked)} />另開分頁</label> : null}
+     {action.type === "download" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">檔案名稱（選填）<input className={control} disabled={disabled} value={action.fileName ?? ""} onChange={(event) => set("fileName", event.currentTarget.value)} /></label> : null}
+-    {action.type === "show_popup" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">選擇 Popup<select className={control} disabled={disabled || !popupIds.length} value={action.popupId ?? ""} onChange={(event) => set("popupId", event.currentTarget.value)}><option value="">請選擇</option>{popupIds.map((id) => <option key={id} value={id}>{id}</option>)}</select>{!popupIds.length ? <span className="text-xs font-normal text-amber-700">請先在 Popups 建立一個視窗。</span> : null}</label> : null}
+-    {action.type === "submit_form" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">表單 ID（選填）<input className={control} disabled={disabled} value={action.formId ?? ""} onChange={(event) => set("formId", event.currentTarget.value)} /></label> : null}
+-    {action.type === "next_step" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">下一個步驟 ID{stepIds ? <select className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)}><option value="">請選擇</option>{stepIds.map((id) => <option key={id} value={id}>{id}</option>)}</select> : <input className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)} />}</label> : null}
++    {action.type === "show_popup" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">選擇彈出視窗<select className={control} disabled={disabled || !popupIds.length} value={action.popupId ?? ""} onChange={(event) => set("popupId", event.currentTarget.value)}><option value="">請選擇</option>{referenceOptions(popupIds, popupNames, "彈出視窗").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{!popupIds.length ? <span className="text-xs font-normal text-amber-700">請先在彈出視窗建立一個視窗。</span> : null}</label> : null}
++    {action.type === "submit_form" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">表單編號（選填）<input className={control} disabled={disabled} value={action.formId ?? ""} onChange={(event) => set("formId", event.currentTarget.value)} /></label> : null}
++    {action.type === "next_step" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">下一個步驟{stepIds ? <select className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)}><option value="">請選擇</option>{referenceOptions(stepIds, stepNames, "步驟").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select> : <input className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)} />}</label> : null}
+     <button type="button" disabled={disabled} className="min-h-10 rounded-lg bg-blue-700 px-3 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50" onClick={apply}>套用動作</button>
+-    <p className="text-xs leading-5 text-slate-500">網址只接受 HTTPS、同源路徑或頁面錨點；不會在編輯器內執行自訂程式碼。</p>
++    <p className="text-xs leading-5 text-slate-600">網址只接受 HTTPS、同源路徑或頁面錨點；不會在編輯器內執行自訂程式碼。</p>
+   </div>;
+ }
+ 
+ /** Shared inspector UI for every node in a structured Funnel document. */
+-export function FunnelElementInspector({ node, disabled = false, popupIds = [], stepIds, onCommand }: InspectorProps) {
++export function FunnelElementInspector({ node, disabled = false, popupIds = [], stepIds, stepNames, popupNames, onCommand }: InspectorProps) {
+   const [group, setGroup] = useState<FunnelInspectorGroup>("content");
+   const [scope, setScope] = useState<FunnelInspectorScope>("base");
+@@ -99,6 +102,6 @@
+     <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="元件設定分類">{groups.map((item) => <button key={item} type="button" role="tab" aria-selected={group === item} className={`min-h-9 rounded-lg border px-2 text-sm font-semibold ${group === item ? "border-blue-600 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-700"}`} onClick={() => setGroup(item)}>{({ content: "內容", design: "設計", actions: "動作", advanced: "進階" })[item]}</button>)}</div>
+     {definition.capabilityNote ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">{definition.capabilityNote}</p> : null}
+-    {group === "design" || group === "content" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-500">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
+-    {group === "actions" ? <ActionFields stepIds={stepIds} key={node.id} node={node} popupIds={popupIds} disabled={disabled} onCommand={onCommand} /> : fields.length ? <div className="grid gap-3">{fields.map((field) => <FieldControl key={field.id} field={field} node={node} scope={scope} disabled={disabled || Boolean(definition.capabilityNote && field.target === "props")} onCommand={onCommand} />)}</div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">這個分類沒有可調整的設定。</p>}
++    {group === "design" || group === "content" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-600">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
++    {group === "actions" ? <ActionFields stepNames={stepNames} popupNames={popupNames} stepIds={stepIds} key={node.id} node={node} popupIds={popupIds} disabled={disabled} onCommand={onCommand} /> : fields.length ? <div className="grid gap-3">{fields.map((field) => <FieldControl key={field.id} field={field} node={node} scope={scope} disabled={disabled || Boolean(definition.capabilityNote && field.target === "props")} onCommand={onCommand} />)}</div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-600">這個分類沒有可調整的設定。</p>}
+   </section>;
+ }
+
+--- src/components/landing-pages/funnel-goal-picker.tsx (before)
++++ src/components/landing-pages/funnel-goal-picker.tsx
+@@ -11,6 +11,6 @@
+   { id: "audience", title: "建立名單", description: "收集 Email，預設建立名單頁與感謝頁流程。" },
+   { id: "sell", title: "銷售商品或服務", description: "建立訂單與感謝頁；正式付款會在完成商品與金流設定後啟用。" },
+-  { id: "custom", title: "自訂 Funnel", description: "從空白流程開始，自行加入資訊、表單或銷售頁。" },
+-  { id: "webinar", title: "自動化 Webinar", description: "建立報名、感謝與播放頁，串接既有活動並設定播放與重播期間。" },
++  { id: "custom", title: "自訂 一頁式網站", description: "從空白流程開始，自行加入資訊、表單或銷售頁。" },
++  { id: "webinar", title: "自動化線上講座", description: "建立報名、感謝與播放頁，串接既有活動並設定播放與重播期間。" },
+ ];
+ 
+@@ -45,5 +45,5 @@
+         setMessage(result.message);
+         if (result.status === "success" && result.id) router.push(`/landing-pages/${result.id}/operations`);
+-      } catch { setMessage("連線中斷，Funnel 尚未建立，請稍後再試。"); }
++      } catch { setMessage("連線中斷，一頁式網站尚未建立，請稍後再試。"); }
+       finally { inFlight.current = false; }
+     });
+@@ -51,14 +51,14 @@
+   const field = "mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
+   return <main className="mx-auto max-w-5xl py-8">
+-    <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Create funnel</p>
+-    <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">建立新的 Funnel</h1>
+-    <p className="mt-2 text-slate-600">先設定基本資料與用途；建立後會進入 Funnel 管理與模板選擇。</p>
++    <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">建立一頁式網站</p>
++    <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">建立新的 一頁式網站</h1>
++    <p className="mt-2 text-slate-600">先設定基本資料與用途；建立後會進入一頁式網站管理與模板選擇。</p>
+     <div className="mt-8 grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2">
+       <label className="text-sm font-semibold text-slate-700">名稱 *<input required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} className={field} placeholder="例如：秋季新品名單頁" /></label>
+-      <label className="text-sm font-semibold text-slate-700">Funnel 網址 *<div className="mt-1 flex min-h-11 items-center rounded-xl border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="pl-3 text-sm text-slate-400">/lp/</span><input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={domain} onChange={(event) => setDomain(event.target.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} className="min-w-0 flex-1 bg-transparent px-1 pr-3 text-sm outline-none" placeholder="autumn-launch" /></div></label>
++      <label className="text-sm font-semibold text-slate-700">一頁式網站 網址 *<div className="mt-1 flex min-h-11 items-center rounded-xl border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="pl-3 text-sm text-slate-400">/lp/</span><input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={domain} onChange={(event) => setDomain(event.target.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} className="min-w-0 flex-1 bg-transparent px-1 pr-3 text-sm outline-none" placeholder="autumn-launch" /></div></label>
+       <label className="text-sm font-semibold text-slate-700">幣別<select value={currency} onChange={(event) => setCurrency(event.target.value)} className={field}><option value="TWD">新台幣 TWD</option><option value="USD">美元 USD</option><option value="EUR">歐元 EUR</option><option value="JPY">日圓 JPY</option></select><span className="mt-1 block text-xs font-normal text-slate-500">此為建頁偏好；實際結帳幣別以綁定商品為準，不會自動換匯。</span></label>
+     </div>
+-    <fieldset className="mt-8"><legend className="text-lg font-bold text-slate-950">選擇 Funnel 目標 *</legend><div className="mt-3 grid gap-4 md:grid-cols-2">{GOALS.map((item) => <button key={item.id} type="button" aria-pressed={goal === item.id} onClick={() => setGoal(item.id)} className={`rounded-2xl border p-5 text-left transition ${goal === item.id ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100" : "border-slate-200 bg-white hover:border-blue-300"}`}><span className="flex items-center justify-between gap-3"><strong className="text-base text-slate-950">{item.title}</strong>{item.disabled ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">開發中</span> : null}</span><span className="mt-2 block text-sm leading-6 text-slate-600">{item.description}</span></button>)}</div></fieldset>
+-    {selected?.disabled ? <p role="status" className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">自動化 Webinar 目前仍在開發中，完成編輯、排程與播放流程後會開放建立。</p> : null}
++    <fieldset className="mt-8"><legend className="text-lg font-bold text-slate-950">選擇一頁式網站目標 *</legend><div className="mt-3 grid gap-4 md:grid-cols-2">{GOALS.map((item) => <button key={item.id} type="button" aria-pressed={goal === item.id} onClick={() => setGoal(item.id)} className={`rounded-2xl border p-5 text-left transition ${goal === item.id ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100" : "border-slate-200 bg-white hover:border-blue-300"}`}><span className="flex items-center justify-between gap-3"><strong className="text-base text-slate-950">{item.title}</strong>{item.disabled ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">開發中</span> : null}</span><span className="mt-2 block text-sm leading-6 text-slate-600">{item.description}</span></button>)}</div></fieldset>
++    {selected?.disabled ? <p role="status" className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">自動化線上講座 目前仍在開發中，完成編輯、排程與播放流程後會開放建立。</p> : null}
+     {message ? <p role="status" className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">{message}</p> : null}
+     <div className="mt-8 flex justify-end"><button type="button" disabled={!ready || pending} onClick={createFunnel} className="min-h-11 cursor-pointer rounded-xl bg-blue-700 px-6 font-semibold text-white transition-colors duration-200 hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "建立中…" : "儲存"}</button></div>
+
+--- src/components/landing-pages/funnel-list.tsx (before)
++++ src/components/landing-pages/funnel-list.tsx
+@@ -29,5 +29,5 @@
+   }
+ 
+-  return <section aria-label="Funnel 清單" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
++  return <section aria-label="一頁式網站 清單" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+     <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 bg-slate-50/70 p-4">
+       <label className="min-w-56 flex-1 text-sm font-semibold text-slate-700">搜尋
+@@ -52,9 +52,9 @@
+           <td className="px-5 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${page.status === "published" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{page.status === "published" ? "✓ 已發布" : "草稿"}</span></td>
+           <td className="px-5 py-4 text-slate-600"><time dateTime={page.updatedAt.toISOString()}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short" }).format(page.updatedAt)}</time></td>
+-          <td className="px-5 py-4 text-right">{readOnly ? <span className="text-xs text-slate-400">唯讀</span> : <Link href={`/landing-pages/${page.id}/operations`} className="font-semibold text-blue-700 hover:text-blue-900">開啟 Funnel →</Link>}</td>
++          <td className="px-5 py-4 text-right">{readOnly ? <span className="text-xs text-slate-400">唯讀</span> : <Link href={`/landing-pages/${page.id}/operations`} className="font-semibold text-blue-700 hover:text-blue-900">開啟 一頁式網站 →</Link>}</td>
+         </tr>)}</tbody>
+       </table>
+     </div>
+-    {!visible.length ? <div className="px-5 py-12 text-center"><p className="font-semibold text-slate-800">找不到符合條件的 Funnel</p><p className="mt-1 text-sm text-slate-500">調整搜尋字詞或狀態篩選。</p></div> : null}
++    {!visible.length ? <div className="px-5 py-12 text-center"><p className="font-semibold text-slate-800">找不到符合條件的 一頁式網站</p><p className="mt-1 text-sm text-slate-500">調整搜尋字詞或狀態篩選。</p></div> : null}
+     <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3 text-sm text-slate-500"><span>共 {filtered.length} 筆</span><div className="flex items-center gap-2"><button type="button" disabled={safePage <= 1} onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40">上一頁</button><span>{safePage} / {totalPages}</span><button type="button" disabled={safePage >= totalPages} onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40">下一頁</button></div></div>
+   </section>;
+
+--- src/components/landing-pages/funnel-operations-panel.test.tsx (before)
++++ src/components/landing-pages/funnel-operations-panel.test.tsx
+@@ -0,0 +1,28 @@
++import { renderToStaticMarkup } from "react-dom/server";
++import { describe, expect, it, vi } from "vitest";
++import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
++import { defaultFunnelOperations } from "@/lib/funnel-operations";
++import { FunnelOperationsPanel } from "./funnel-operations-panel";
++
++vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
++vi.mock("@/app/actions/landing-page-actions", () => ({ landingPageAction: vi.fn() }));
++vi.mock("@/app/actions/funnel-operations-actions", () => ({ readFunnelOperations: vi.fn(), updateFunnelOperations: vi.fn() }));
++vi.mock("@/components/landing-pages/funnel-automation-settings", () => ({ FunnelAutomationSettings: () => null }));
++
++// 真實 flow 與 panel：可見名稱改變，但頁面路徑、步驟識別值與資料完全保留。
++describe("localized merchant operations", () => {
++  it("renders translated tabs and step labels without mutating stored content", () => {
++    const content = createGoalFunnelStepPages({ id: "synthetic", name: "測試網站", goal: "audience", domain: "synthetic" })!;
++    const initial: Parameters<typeof FunnelOperationsPanel>[0]["initial"] = {
++      pageId: "synthetic", name: "測試網站", slug: "synthetic", currency: "TWD", revision: 7,
++      status: "draft", operations: defaultFunnelOperations(), content, formId: null, liveId: null,
++      steps: content.flow.steps.filter((step) => !step.isSystem).map(({ id, name, path }) => ({ id, name, path })),
++    };
++    const before = structuredClone(initial);
++    const html = renderToStaticMarkup(<FunnelOperationsPanel initial={initial} initialStepId={content.activeStepId} csrfName="synthetic" csrfToken="synthetic" />);
++    for (const label of ["一頁式網站", "建立名單", "版本", "名單頁", "頁面設定", "自動化規則", "成效統計", "報名名單", "銷售紀錄", "截止設定"]) expect(html).toContain(label);
++    for (const oldLabel of ["Configuration", "Automation Rules", "opt_in_page", "audience · revision"]) expect(html).not.toContain(oldLabel);
++    expect(html).toContain('href="/lp/synthetic"');
++    expect(initial).toEqual(before);
++  });
++});
+
+--- src/components/landing-pages/funnel-operations-panel.tsx (before)
++++ src/components/landing-pages/funnel-operations-panel.tsx
+@@ -2,4 +2,5 @@
+ 
+ import { useEffect, useRef, useState } from "react";
++import { funnelTabKeys, funnelTabLabels, funnelGoalLabels, funnelStepLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel } from "./funnel-display-labels";
+ import Link from "next/link";
+ import { useRouter } from "next/navigation";
+@@ -25,5 +26,5 @@
+ } from "@/lib/funnel-step-pages";
+ 
+-const tabs = ["Configuration", "Automation Rules", "A/B test", "Stats", "Leads", "Sales", "Deadline settings"] as const;
++const tabs = funnelTabKeys;
+ type Tab = typeof tabs[number];
+ const control = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:opacity-50";
+@@ -37,5 +38,5 @@
+   { group: "名單", items: [{ value: "opt_in_page", label: "名單頁" }, { value: "opt_in_thank_you_page", label: "名單感謝頁" }, { value: "inline_form", label: "內嵌表單" }, { value: "popup_form", label: "彈出表單" }, { value: "link_in_bio", label: "個人簡介連結頁" }] },
+   { group: "資訊", items: [{ value: "info_page", label: "資訊頁" }, { value: "contact_us_page", label: "聯絡我們" }] },
+-  { group: "Webinar", items: [{ value: "webinar_registration_page", label: "Webinar 報名頁" }, { value: "webinar_thank_you_page", label: "Webinar 感謝頁" }, { value: "webinar_broadcast_page", label: "Webinar 播放頁" }] },
++  { group: "Webinar", items: [{ value: "webinar_registration_page", label: "網路研討會報名頁" }, { value: "webinar_thank_you_page", label: "網路研討會感謝頁" }, { value: "webinar_broadcast_page", label: "網路研討會播放頁" }] },
+ ];
+ 
+@@ -218,27 +219,27 @@
+   }
+ 
+-  return <section aria-label="Funnel 管理" className="min-w-0 space-y-4">
++  return <section aria-label="一頁式網站管理" className="min-w-0 space-y-4">
+     <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+-      <div className="min-w-0"><p className="text-xs font-semibold text-slate-500"><Link href="/landing-pages" className="hover:text-blue-700">Funnels</Link> <span aria-hidden>›</span> {editor.name}</p><h1 className="mt-1 truncate text-2xl font-bold text-slate-950">{editor.name}</h1><p className="mt-1 text-sm text-slate-500">{content.flow.goal} · revision {editor.revision}</p></div>
+-      <div className="flex flex-wrap gap-2"><Link href={`/lp/${editor.slug}`} target="_blank" className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-sky-600"><Eye size={17} />查看 Funnel</Link><button type="button" onClick={() => setSettingsOpen(true)} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-sky-600"><Settings size={17} />Funnel settings</button></div>
++      <div className="min-w-0"><p className="text-xs font-semibold text-slate-600"><Link href="/landing-pages" className="hover:text-blue-700">一頁式網站</Link> <span aria-hidden>›</span> {editor.name}</p><h1 className="mt-1 truncate text-2xl font-bold text-slate-950">{editor.name}</h1><p className="mt-1 text-sm text-slate-600">{funnelGoalLabels[content.flow.goal]} · 版本 {editor.revision}</p></div>
++      <div className="flex flex-wrap gap-2"><Link href={`/lp/${editor.slug}`} target="_blank" className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-800"><Eye size={17} />查看網站</Link><button type="button" onClick={() => setSettingsOpen(true)} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-800"><Settings size={17} />網站設定</button></div>
+     </header>
+     <div className="grid min-h-[70dvh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100dvh-13rem)] lg:min-h-[36rem] lg:grid-cols-[18rem_minmax(0,1fr)]">
+-      <aside aria-label="Funnel steps" className="flex min-h-0 flex-col border-b border-slate-200 bg-white lg:border-r lg:border-b-0">
++      <aside aria-label="網站步驟" className="flex min-h-0 flex-col border-b border-slate-200 bg-white lg:border-r lg:border-b-0">
+         <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-auto">{content.flow.steps.map((step, index) => <article key={step.id} className={content.activeStepId === step.id ? "bg-sky-50" : "bg-white hover:bg-slate-50"}>
+-          <div className="flex items-start gap-2 px-4 py-4"><button type="button" onClick={() => selectStep(step.id)} className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><strong className="block truncate text-sm text-slate-900">{step.name}</strong><span className="mt-1 block text-xs text-slate-500">{step.isSystem ? "Funnel 停用時顯示" : step.type}</span></button>{!step.isSystem ? <div className="flex gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={pending || index === 0} onClick={() => { const result = moveFunnelStepPage(content, step.id, Math.max(0, index - 1)); if (result.ok) persistContent(result.state, "步驟順序已儲存。"); }} className="cursor-pointer rounded p-1 text-slate-500 hover:bg-white disabled:opacity-30">↑</button><button type="button" aria-label={`移除 ${step.name}`} disabled={pending} onClick={() => { if (!window.confirm(`確定移除「${step.name}」及其頁面內容？`)) return; const result = removeFunnelStepPage(content, step.id); if (result.ok) persistContent(result.state, "步驟已移除。"); else setMessage(result.error); }} className="cursor-pointer rounded p-1 text-red-600 hover:bg-red-50">×</button></div> : <MoreHorizontal size={17} className="text-slate-400" />}</div>
++          <div className="flex items-start gap-2 px-4 py-4"><button type="button" onClick={() => selectStep(step.id)} className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><strong className="block truncate text-sm text-slate-900">{step.name}</strong><span className="mt-1 block text-xs text-slate-600">{step.isSystem ? "網站停用時顯示" : funnelStepLabels[step.type]}</span></button>{!step.isSystem ? <div className="flex gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={pending || index === 0} onClick={() => { const result = moveFunnelStepPage(content, step.id, Math.max(0, index - 1)); if (result.ok) persistContent(result.state, "步驟順序已儲存。"); }} className="cursor-pointer rounded p-1 text-slate-600 hover:bg-white disabled:opacity-30">↑</button><button type="button" aria-label={`移除 ${step.name}`} disabled={pending} onClick={() => { if (!window.confirm(`確定移除「${step.name}」及其頁面內容？`)) return; const result = removeFunnelStepPage(content, step.id); if (result.ok) persistContent(result.state, "步驟已移除。"); else setMessage(result.error); }} className="cursor-pointer rounded p-1 text-red-600 hover:bg-red-50">×</button></div> : <MoreHorizontal size={17} className="text-slate-400" />}</div>
+         </article>)}</div>
+-        <button type="button" onClick={() => setAddOpen(true)} className="m-3 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-sky-600 transition-colors hover:bg-sky-50"><Plus size={17} />Add step</button>
++        <button type="button" onClick={() => setAddOpen(true)} className="m-3 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-blue-700 transition-colors hover:bg-sky-50"><Plus size={17} />新增步驟</button>
+       </aside>
+       <div className="min-w-0 overflow-auto">
+-        <nav aria-label="Funnel 次要分頁" className="flex min-w-max border-b border-slate-200 px-4">{tabs.map((item) => <button type="button" key={item} disabled={item !== "Configuration" && secondaryDisabled} aria-pressed={tab === item} className={`cursor-pointer border-b-2 px-4 py-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:text-slate-300 ${tab === item ? "border-sky-500 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-900"}`} onClick={() => setTab(item)}>{item}</button>)}</nav>
++        <nav aria-label="網站功能分頁" className="flex min-w-max border-b border-slate-200 px-4">{tabs.map((item) => <button type="button" key={item} disabled={item !== "Configuration" && secondaryDisabled} aria-pressed={tab === item} className={`cursor-pointer border-b-2 px-4 py-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:text-slate-300 ${tab === item ? "border-sky-500 text-slate-950" : "border-transparent text-slate-600 hover:text-slate-900"}`} onClick={() => setTab(item)}>{funnelTabLabels[item]}</button>)}</nav>
+         <div className="p-5 sm:p-7">
+           {tab === "Configuration" ? <ConfigurationPanel active={active} content={content} editor={editor} templates={templates} selectedTemplateId={effectiveSelectedTemplateId} needsTemplate={needsTemplate} changeTemplate={changeTemplate} disabled={pending} setContent={(next) => { setContent(next); setDirty(true); }} setSelectedTemplateId={setSelectedTemplateId} setChangeTemplate={setChangeTemplate} onBlur={saveActiveMetadata} onApply={applyTemplate} navigate={navigate} /> : null}
+           {tab === "Automation Rules" ? <FunnelAutomationSettings pageId={editor.pageId} csrfName={csrfName} csrfToken={csrfToken} /> : null}
+-          {tab !== "Configuration" && tab !== "Automation Rules" ? <fieldset disabled={pending} className="space-y-4"><legend className="mb-4 text-lg font-bold">{tab}</legend>{tab === "A/B test" ? <ExperimentSettings value={editor.operations.experiment} steps={editor.steps} onChange={(experiment) => operations({ ...editor.operations, experiment })} /> : null}{tab === "Deadline settings" ? <DeadlineSettings value={editor.operations.deadline} steps={editor.steps} onChange={(deadline) => operations({ ...editor.operations, deadline })} /> : null}{tab === "Stats" || tab === "Leads" || tab === "Sales" ? <ReportSettings tab={tab} editor={editor} reports={reports} reportError={reportError} retry={() => { setReports(null); setReportError(false); setReportRequest((value) => value + 1); }} onChange={operations} /> : null}<SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></fieldset> : null}
++          {tab !== "Configuration" && tab !== "Automation Rules" ? <fieldset disabled={pending} className="space-y-4"><legend className="mb-4 text-lg font-bold">{funnelTabLabels[tab]}</legend>{tab === "A/B test" ? <ExperimentSettings value={editor.operations.experiment} steps={editor.steps} onChange={(experiment) => operations({ ...editor.operations, experiment })} /> : null}{tab === "Deadline settings" ? <DeadlineSettings value={editor.operations.deadline} steps={editor.steps} onChange={(deadline) => operations({ ...editor.operations, deadline })} /> : null}{tab === "Stats" || tab === "Leads" || tab === "Sales" ? <ReportSettings tab={tab} editor={editor} reports={reports} reportError={reportError} retry={() => { setReports(null); setReportError(false); setReportRequest((value) => value + 1); }} onChange={operations} /> : null}<SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></fieldset> : null}
+           {message ? <p role="status" className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">{message}</p> : null}
+         </div>
+       </div>
+     </div>
+-    {settingsOpen ? <div role="dialog" aria-modal="true" aria-labelledby="funnel-settings-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 id="funnel-settings-title" className="text-xl font-bold">Funnel settings</h2><p className="mt-1 text-sm text-slate-500">管理整個 Funnel 的名稱、網址與幣別。</p></div><button type="button" aria-label="關閉 Funnel settings" onClick={() => setSettingsOpen(false)} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><GlobalSettings editor={editor} change={change} /><SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></div></div> : null}
++    {settingsOpen ? <div role="dialog" aria-modal="true" aria-labelledby="funnel-settings-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 id="funnel-settings-title" className="text-xl font-bold">網站設定</h2><p className="mt-1 text-sm text-slate-600">管理整個網站的名稱、網址與幣別。</p></div><button type="button" aria-label="關閉 網站設定" onClick={() => setSettingsOpen(false)} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><GlobalSettings editor={editor} change={change} /><SettingsFooter pending={pending} dirty={dirty} save={saveSettings} reload={reload} /></div></div> : null}
+     {addOpen ? <AddStepDialog goal={content.flow.goal} name={newStepName} path={newStepPath} type={newStepType} source={newStepSource} templateId={effectiveNewTemplateId} templates={newTemplates} disabled={pending} onName={setNewStepName} onPath={setNewStepPath} onType={setNewStepType} onSource={setNewStepSource} onTemplate={setNewTemplateId} onClose={() => setAddOpen(false)} onSave={addStep} /> : null}
+   </section>;
+@@ -246,13 +247,13 @@
+ 
+ function ConfigurationPanel({ active, content, editor, templates, selectedTemplateId, needsTemplate, changeTemplate, disabled, setContent, setSelectedTemplateId, setChangeTemplate, onBlur, onApply, navigate }: { active: ReturnType<typeof getActiveFunnelStepPage>; content: FunnelStepPages; editor: FunnelOperationsEditor; templates: ReturnType<typeof listFunnelTemplateGallery>; selectedTemplateId: string; needsTemplate: boolean; changeTemplate: boolean; disabled: boolean; setContent: (next: FunnelStepPages) => void; setSelectedTemplateId: (id: string) => void; setChangeTemplate: (value: boolean) => void; onBlur: () => void; onApply: (id: string) => void; navigate: (href: string) => void }) {
+-  if (!active || active.step.isSystem) return <div className="grid min-h-[28rem] place-items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center"><div className="max-w-md p-8"><h2 className="text-xl font-bold text-slate-900">尚未建立 Funnel step</h2><p className="mt-2 text-sm leading-6 text-slate-500">Custom Funnel 會從空白流程開始。請使用左側的 Add step 選擇頁面類型，再決定套用模板或從空白開始。</p></div></div>;
+-  if (needsTemplate || changeTemplate) return <div><div className="mb-5"><p className="text-xs font-bold uppercase tracking-wider text-sky-600">Configuration</p><h2 className="mt-1 text-xl font-bold">為「{active.step.name}」選擇模板</h2><p className="mt-2 text-sm text-slate-500">模板已依 {content.flow.goal} 與 {active.step.type} 過濾。完整預覽後再套用。</p></div>{templates.length ? <FunnelTemplateGalleryPicker templates={templates} selectedId={selectedTemplateId} disabled={disabled} onSelect={setSelectedTemplateId} onApply={onApply} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">這個 step type 沒有相容模板。請新增步驟時選擇「從空白開始」。</div>}{changeTemplate ? <button type="button" onClick={() => setChangeTemplate(false)} className={`${button} mt-4`}>取消更換模板</button> : null}</div>;
++  if (!active || active.step.isSystem) return <div className="grid min-h-[28rem] place-items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-center"><div className="max-w-md p-8"><h2 className="text-xl font-bold text-slate-900">尚未建立網站步驟</h2><p className="mt-2 text-sm leading-6 text-slate-600">自訂流程會從空白開始。請使用左側的「新增步驟」 選擇頁面類型，再決定套用模板或從空白開始。</p></div></div>;
++  if (needsTemplate || changeTemplate) return <div><div className="mb-5"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">頁面設定</p><h2 className="mt-1 text-xl font-bold">為「{active.step.name}」選擇模板</h2><p className="mt-2 text-sm text-slate-600">模板已依 {funnelGoalLabels[content.flow.goal]} 與 {funnelStepLabels[active.step.type]} 過濾。完整預覽後再套用。</p></div>{templates.length ? <FunnelTemplateGalleryPicker templates={templates} selectedId={selectedTemplateId} disabled={disabled} onSelect={setSelectedTemplateId} onApply={onApply} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">這個頁面類型 沒有相容模板。請新增步驟時選擇「從空白開始」。</div>}{changeTemplate ? <button type="button" onClick={() => setChangeTemplate(false)} className={`${button} mt-4`}>取消更換模板</button> : null}</div>;
+   const nextName = (name: string) => { const result = renameFunnelStepPage(content, active.step.id, name); if (result.ok) setContent(result.state); };
+   const nextPath = (path: string) => { const result = setFunnelStepPathPage(content, active.step.id, path); if (result.ok) setContent(result.state); };
+-  return <div><div className="mb-6"><p className="text-xs font-bold uppercase tracking-wider text-sky-600">Configuration</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">URL Path *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-500">/lp/{editor.slug}/</span><input aria-label="步驟 URL Path" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-500">模板：{active.step.template.templateId ?? "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-sky-500 px-4 text-sm font-bold text-white hover:bg-sky-600"><ExternalLink size={17} />查看 Funnel step</Link><button type="button" disabled={disabled} onClick={() => navigate(`/landing-pages/${editor.pageId}?step=${encodeURIComponent(active.step.id)}`)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-sky-500 px-4 text-sm font-bold text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />Edit Page</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-sky-500 px-4 text-sm font-bold text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
++  return <div><div className="mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">頁面設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(`/landing-pages/${editor.pageId}?step=${encodeURIComponent(active.step.id)}`)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
+ }
+ 
+ function SettingsFooter({ pending, dirty, save, reload }: { pending: boolean; dirty: boolean; save: () => void; reload: () => void }) {
+-  return <div className="mt-6 flex flex-wrap items-center gap-3 border-t pt-4"><button type="button" disabled={pending || !dirty} className={`${button} border-blue-600 text-blue-700`} onClick={save}>儲存設定</button><button type="button" disabled={pending} className={button} onClick={reload}>重新載入</button><span className="text-sm text-slate-500">{pending ? "處理中…" : dirty ? "尚未儲存" : "已儲存"}</span></div>;
++  return <div className="mt-6 flex flex-wrap items-center gap-3 border-t pt-4"><button type="button" disabled={pending || !dirty} className={`${button} border-blue-600 text-blue-700`} onClick={save}>儲存設定</button><button type="button" disabled={pending} className={button} onClick={reload}>重新載入</button><span className="text-sm text-slate-600">{pending ? "處理中…" : dirty ? "尚未儲存" : "已儲存"}</span></div>;
+ }
+ 
+@@ -260,5 +261,5 @@
+   const allowedGroups = stepTypeOptions.filter((group) => goal === "webinar" ? group.group === "Webinar" || group.group === "資訊" : group.group !== "Webinar");
+   const canSave = Boolean(name.trim() && path.trim() && (source === "blank" || templateId));
+-  return <div role="dialog" aria-modal="true" aria-labelledby="add-step-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-3"><div><h2 id="add-step-title" className="text-xl font-bold">Add step</h2><p className="mt-1 text-sm text-slate-500">選擇頁面類型與起始方式後一次建立，避免留下半完成步驟。</p></div><button type="button" aria-label="關閉 Add step" onClick={onClose} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><div className="grid gap-4"><label className="grid gap-1 text-sm font-semibold">名稱 *<input className={control} value={name} onChange={(event) => onName(event.currentTarget.value)} /></label><label className="grid gap-1 text-sm font-semibold">URL Path *<input className={control} value={path} onChange={(event) => onPath(event.currentTarget.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} /></label><label className="grid gap-1 text-sm font-semibold">Type *<select className={control} value={type} onChange={(event) => onType(event.currentTarget.value as EditableStepType)}>{allowedGroups.map((group) => <optgroup key={group.group} label={group.group}>{group.items.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select></label><fieldset><legend className="text-sm font-semibold">起始內容 *</legend><div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "template"} onChange={() => onSource("template")} />選擇模板</label><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "blank"} onChange={() => onSource("blank")} />從空白開始</label></div></fieldset>{source === "template" ? <label className="grid gap-1 text-sm font-semibold">相容模板<select className={control} value={templateId} onChange={(event) => onTemplate(event.currentTarget.value)}><option value="">請選擇模板</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>{templates.length === 0 ? <span className="font-normal text-amber-700">這個類型目前沒有模板，請改選從空白開始。</span> : null}</label> : null}</div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} className={button}>取消</button><button type="button" disabled={disabled || !canSave} onClick={onSave} className="min-h-10 cursor-pointer rounded-lg bg-blue-700 px-5 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">儲存</button></div></div></div>;
++  return <div role="dialog" aria-modal="true" aria-labelledby="add-step-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-3"><div><h2 id="add-step-title" className="text-xl font-bold">新增步驟</h2><p className="mt-1 text-sm text-slate-600">選擇頁面類型與起始方式後一次建立，避免留下半完成步驟。</p></div><button type="button" aria-label="關閉新增步驟" onClick={onClose} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><div className="grid gap-4"><label className="grid gap-1 text-sm font-semibold">名稱 *<input className={control} value={name} onChange={(event) => onName(event.currentTarget.value)} /></label><label className="grid gap-1 text-sm font-semibold">網址路徑 *<input className={control} value={path} onChange={(event) => onPath(event.currentTarget.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} /></label><label className="grid gap-1 text-sm font-semibold">類型 *<select className={control} value={type} onChange={(event) => onType(event.currentTarget.value as EditableStepType)}>{allowedGroups.map((group) => <optgroup key={group.group} label={group.group === "Webinar" ? "網路研討會" : group.group}>{group.items.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select></label><fieldset><legend className="text-sm font-semibold">起始內容 *</legend><div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "template"} onChange={() => onSource("template")} />選擇模板</label><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "blank"} onChange={() => onSource("blank")} />從空白開始</label></div></fieldset>{source === "template" ? <label className="grid gap-1 text-sm font-semibold">相容模板<select className={control} value={templateId} onChange={(event) => onTemplate(event.currentTarget.value)}><option value="">請選擇模板</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>{templates.length === 0 ? <span className="font-normal text-amber-700">這個類型目前沒有模板，請改選從空白開始。</span> : null}</label> : null}</div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} className={button}>取消</button><button type="button" disabled={disabled || !canSave} onClick={onSave} className="min-h-10 cursor-pointer rounded-lg bg-blue-700 px-5 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">儲存</button></div></div></div>;
+ }
+ 
+@@ -266,6 +267,6 @@
+   return <div className="grid max-w-2xl gap-4">
+     <label className="grid gap-1 text-sm">名稱<input className={control} value={editor.name} onChange={(event) => change({ name: event.target.value })} maxLength={160} /></label>
+-    <label className="grid gap-1 text-sm">Domain / slug<input className={control} value={editor.slug} disabled={editor.status === "published"} onChange={(event) => change({ slug: event.target.value })} /><span className="text-slate-500">公開網址：/lp/{editor.slug}。已發布的 slug 須先取消發布才能修改。此設定不會綁定自訂網域。</span></label>
+-    <label className="grid gap-1 text-sm">Currency<select className={control} value={editor.currency} onChange={(event) => change({ currency: event.target.value })}>{["TWD", "USD", "EUR", "JPY", "HKD", "SGD"].map((currency) => <option key={currency}>{currency}</option>)}</select><span className="text-slate-500">須與商品幣別一致，不會換算既有價格或訂單。</span></label>
++    <label className="grid gap-1 text-sm">網址名稱<input className={control} value={editor.slug} disabled={editor.status === "published"} onChange={(event) => change({ slug: event.target.value })} /><span className="text-slate-600">公開網址：/lp/{editor.slug}。已發布的網址名稱 須先取消發布才能修改。此設定不會綁定自訂網域。</span></label>
++    <label className="grid gap-1 text-sm">幣別<select className={control} value={editor.currency} onChange={(event) => change({ currency: event.target.value })}>{["TWD", "USD", "EUR", "JPY", "HKD", "SGD"].map((currency) => <option key={currency}>{currency}</option>)}</select><span className="text-slate-600">須與商品幣別一致，不會換算既有價格或訂單。</span></label>
+   </div>;
+ }
+@@ -280,17 +281,17 @@
+     onChange({ id: crypto.randomUUID(), status: "draft", controlStepId: steps[0]?.id ?? "", variantStepId: steps[1]?.id ?? "", controlWeight: 50, variantWeight: 50, winner: null });
+   }
+-  if (!value) return <div className="space-y-3"><p>選擇已建立的兩個步驟作為 Control 與 Variant；先發布頁面再開始實驗。</p><button type="button" className={button} disabled={steps.length < 2} onClick={create}>建立 A/B 實驗</button></div>;
++  if (!value) return <div className="space-y-3"><p>選擇已建立的兩個步驟作為對照組與測試組；先發布頁面再開始實驗。</p><button type="button" className={button} disabled={steps.length < 2} onClick={create}>建立 A/B 實驗</button></div>;
+   return <div className="grid max-w-2xl gap-4">
+-    <p className="text-sm">實驗 {value.id} · 狀態：<strong>{value.status}</strong>{value.winner ? ` · Winner: ${value.winner}` : ""}</p>
+-    <StepSelect label="Control" value={value.controlStepId} steps={steps} disabled={locked} onChange={(controlStepId) => onChange({ ...value, controlStepId })} />
+-    <StepSelect label="Variant" value={value.variantStepId} steps={steps} disabled={locked} onChange={(variantStepId) => onChange({ ...value, variantStepId })} />
+-    <div className="grid grid-cols-2 gap-3">{(["control", "variant"] as const).map((arm) => <label key={arm} className="grid gap-1 text-sm">{arm === "control" ? "Control 權重" : "Variant 權重"}<input className={control} type="number" min={0} max={100} disabled={locked} value={value[`${arm}Weight`]} onChange={(event) => onChange({ ...value, [`${arm}Weight`]: Number(event.target.value) })} /></label>)}</div>
+-    <p className={value.controlWeight + value.variantWeight !== 100 ? "text-red-700" : "text-slate-500"}>權重合計：{value.controlWeight + value.variantWeight} / 100。相同訪客在同一實驗維持相同組別；開始後配置鎖定。</p>
++    <p className="text-sm">實驗 {value.id} · 狀態：<strong>{experimentStatusLabels[value.status]}</strong>{value.winner ? ` · 勝出組別：${experimentArmLabels[value.winner]}` : ""}</p>
++    <StepSelect label="對照組" value={value.controlStepId} steps={steps} disabled={locked} onChange={(controlStepId) => onChange({ ...value, controlStepId })} />
++    <StepSelect label="測試組" value={value.variantStepId} steps={steps} disabled={locked} onChange={(variantStepId) => onChange({ ...value, variantStepId })} />
++    <div className="grid grid-cols-2 gap-3">{(["control", "variant"] as const).map((arm) => <label key={arm} className="grid gap-1 text-sm">{arm === "control" ? "對照組權重" : "測試組權重"}<input className={control} type="number" min={0} max={100} disabled={locked} value={value[`${arm}Weight`]} onChange={(event) => onChange({ ...value, [`${arm}Weight`]: Number(event.target.value) })} /></label>)}</div>
++    <p className={value.controlWeight + value.variantWeight !== 100 ? "text-red-700" : "text-slate-600"}>權重合計：{value.controlWeight + value.variantWeight} / 100。相同訪客在同一實驗維持相同組別；開始後配置鎖定。</p>
+     <div className="flex flex-wrap gap-2">
+       {value.status === "draft" ? <button type="button" className={button} onClick={() => onChange({ ...value, status: "running" })}>開始實驗</button> : null}
+       {value.status === "running" ? <button type="button" className={button} onClick={() => onChange({ ...value, status: "stopped" })}>停止實驗</button> : null}
+-      {value.status === "running" || value.status === "stopped" ? (["control", "variant"] as const).map((winner) => <button type="button" key={winner} className={button} onClick={() => onChange({ ...value, status: "winner", winner })}>選定 {winner} 為 Winner</button>) : null}
++      {value.status === "running" || value.status === "stopped" ? (["control", "variant"] as const).map((winner) => <button type="button" key={winner} className={button} onClick={() => onChange({ ...value, status: "winner", winner })}>選定{experimentArmLabels[winner]}為勝出組別</button>) : null}
+       {value.status === "stopped" || value.status === "winner" ? <button type="button" className={button} onClick={create}>建立新實驗</button> : null}
+-    </div><p className="text-sm text-slate-500">按「儲存設定」後生效。停止後回到 Control，Winner 會固定使用勝出組別。</p>
++    </div><p className="text-sm text-slate-600">按「儲存設定」後生效。停止後回到對照組，選定勝出組別後會固定使用該組別。</p>
+   </div>;
+ }
+@@ -302,5 +303,5 @@
+     <label className="flex items-center gap-2"><input type="checkbox" checked={value.enabled} onChange={(event) => onChange({ ...value, enabled: event.target.checked })} />啟用截止時間</label>
+     <label className="grid gap-1 text-sm">時區<input className={control} value={value.timezone} onChange={(event) => onChange({ ...value, timezone: event.target.value })} placeholder="Asia/Taipei" /></label>
+-    <label className="grid gap-1 text-sm">截止時間（含時區偏移）<input className={control} value={value.expiresAt ?? ""} onChange={(event) => onChange({ ...value, expiresAt: event.target.value || null })} placeholder="2026-12-31T23:59:00+08:00" /><span className="text-slate-500">例如 2026-12-31T23:59:00+08:00；DST 地區請明確填入當時 offset。</span></label>
++    <label className="grid gap-1 text-sm">截止時間（含時區偏移）<input className={control} value={value.expiresAt ?? ""} onChange={(event) => onChange({ ...value, expiresAt: event.target.value || null })} placeholder="2026-12-31T23:59:00+08:00" /><span className="text-slate-600">例如 2026-12-31T23:59:00+08:00；採夏令時間的地區請明確填入當時的時區偏移。</span></label>
+     {/* ICU punctuation can differ between Node and Chromium even with the same
+         locale/time zone. The persisted ISO value remains the source of truth. */}
+@@ -308,5 +309,5 @@
+     <label className="grid gap-1 text-sm">截止行為<select className={control} value={value.behavior} onChange={(event) => onChange({ ...value, behavior: event.target.value as "closed" | "redirect" })}><option value="closed">顯示已截止</option><option value="redirect">導向指定步驟</option></select></label>
+     {value.behavior === "redirect" ? <label className="grid gap-1 text-sm">過期導向<select className={control} value={value.redirectPath} onChange={(event) => onChange({ ...value, redirectPath: event.target.value })}><option value="">請選擇已發布步驟</option>{steps.slice(1).map((step) => <option key={step.id} value={step.path}>{step.name} · {step.path}</option>)}</select></label> : null}
+-    <p className="text-sm text-slate-500">截止瞬間即生效，公開頁及提交／結帳均由伺服器判定。到期導向頁可繼續閱讀，不能繼續提交或結帳。</p>
++    <p className="text-sm text-slate-600">截止瞬間即生效，公開頁及提交／結帳均由伺服器判定。到期導向頁可繼續閱讀，不能繼續提交或結帳。</p>
+   </div>;
+ }
+@@ -318,19 +319,19 @@
+   return <div className="space-y-4">
+     <div className="flex flex-wrap gap-3"><label className="grid gap-1 text-sm">報表步驟<select className={control} value={filter.stepId} onChange={(event) => change({ stepId: event.target.value })}><option value="">全部步驟</option>{editor.steps.map((step) => <option key={step.id} value={step.id}>{step.name}</option>)}</select></label><label className="grid gap-1 text-sm">最近天數<input className={control} type="number" min={1} max={90} value={filter.days} onChange={(event) => change({ days: Number(event.target.value) })} /></label></div>
+-    <p className="text-sm text-slate-500">儲存後套用篩選條件。來源紀錄唯讀。{reports ? `以下為已儲存條件的結果，更新時間：${reports.generatedAt}。` : null}</p>
+-    {reports ? tab === "Stats" ? <StatsReport reports={reports} /> : tab === "Leads" ? <LeadsReport reports={reports} /> : <SalesReport reports={reports} /> : reportError ? <p role="alert">報表暫時無法載入。<button type="button" className="ml-2 underline" onClick={retry}>重試</button></p> : <p role="status">報表載入中…</p>}
++    <p className="text-sm text-slate-600">儲存後套用篩選條件。來源紀錄唯讀。{reports ? `以下為已儲存條件的結果，更新時間：${reports.generatedAt}。` : null}</p>
++    {reports ? tab === "Stats" ? <StatsReport reports={reports} /> : tab === "Leads" ? <LeadsReport reports={reports} editor={editor} /> : <SalesReport reports={reports} editor={editor} /> : reportError ? <p role="alert">報表暫時無法載入。<button type="button" className="ml-2 underline" onClick={retry}>重試</button></p> : <p role="status">報表載入中…</p>}
+   </div>;
+ }
+ function StatsReport({ reports }: { reports: FunnelReports }) {
+-  return <div className="overflow-auto"><p className="mb-3 text-sm">Page view 為伺服器公開頁交付紀錄，包含重新整理；conversion 為同一匿名訪客依序到達下一步，非成交。未取得匿名識別的瀏覽不計入。</p>{reports.statsTruncated ? <p role="alert">已達 10,000 筆上限，以下為部分資料，請縮短日期範圍。</p> : null}
+-    <table className="w-full text-left text-sm"><thead><tr>{["Step", "Page view", "訪客", "Submission", "Step conversion", "Drop-off"].map((label) => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{reports.stats.map((row) => <tr key={row.stepId} className="border-t"><td className="p-2">{row.name}</td><td>{row.pageViews}</td><td>{row.visitors}</td><td>{row.submissions}</td><td>{row.conversionRate === null ? "—" : `${(row.conversionRate * 100).toFixed(1)}% (${row.conversions})`}</td><td>{row.dropOff ?? "—"}</td></tr>)}</tbody></table>
+-    <div className="mt-4">{reports.experiments.map((row) => <p key={`${row.id}-${row.arm}`} className="text-sm">實驗 {row.id} · {row.arm} · Page view {row.pageViews} · Submission {row.submissions}</p>)}</div>
+-    <details className="mt-4"><summary>檢視來源事件 ID（前 20 筆）</summary>{reports.sources.map((source) => <p key={source.id} className="break-all font-mono text-xs">{source.id} · {source.stepId} · {source.createdAt}</p>)}</details>
+-  </div>;
+-}
+-function LeadsReport({ reports }: { reports: FunnelReports }) {
+-  return <div className="overflow-auto"><p className="mb-3 text-sm">只列出伺服器驗證 Funnel 來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。</p>{reports.leadsTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["Funnel", "Step", "時間", "Submission ID", "驗證狀態"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.leads.map((row) => <tr className="border-t" key={row.id}><td className="p-2">{row.pageId}</td><td>{row.stepId}</td><td>{row.createdAt}</td><td className="font-mono">{row.submissionId}</td><td>{row.verificationStatus}</td></tr>)}</tbody></table>{!reports.leads.length ? <p className="p-3">此範圍尚無可信提交紀錄。</p> : null}</div>;
+-}
+-function SalesReport({ reports }: { reports: FunnelReports }) {
+-  return <div className="overflow-auto"><p className="mb-3 text-sm">來源為 CommerceOrder／PaymentTransaction 的已付款 projection，排除測試訂單；退款另列，不將不同幣別相加。</p>{reports.salesTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["Order", "Step", "付款時間", "Currency", "已付／退款（分）", "Order／Payment 狀態", "Payment ID"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.sales.map((row) => <tr className="border-t" key={row.id}><td className="p-2"><span>{row.orderNumber}</span><small className="block">{row.id}</small></td><td>{row.stepId}</td><td>{row.paidAt}</td><td>{row.currency}</td><td>{row.paidAmountCents} / {row.refundedAmountCents}</td><td>{row.status} / {row.paymentStatus}</td><td className="font-mono">{row.paymentId}</td></tr>)}</tbody></table>{!reports.sales.length ? <p className="p-3">此範圍尚無已付款訂單。</p> : null}</div>;
+-}
++  return <div className="overflow-auto"><p className="mb-3 text-sm">瀏覽次數為伺服器公開頁交付紀錄，包含重新整理；步驟轉換為同一匿名訪客依序到達下一步，非成交。未取得匿名識別的瀏覽不計入。</p>{reports.statsTruncated ? <p role="alert">已達 10,000 筆上限，以下為部分資料，請縮短日期範圍。</p> : null}
++    <table className="w-full text-left text-sm"><thead><tr>{["步驟", "瀏覽次數", "訪客", "報名次數", "步驟轉換", "流失人數"].map((label) => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{reports.stats.map((row) => <tr key={row.stepId} className="border-t"><td className="p-2">{row.name}</td><td>{row.pageViews}</td><td>{row.visitors}</td><td>{row.submissions}</td><td>{row.conversionRate === null ? "—" : `${(row.conversionRate * 100).toFixed(1)}% (${row.conversions})`}</td><td>{row.dropOff ?? "—"}</td></tr>)}</tbody></table>
++    <div className="mt-4">{reports.experiments.map((row) => <p key={`${row.id}-${row.arm}`} className="text-sm">實驗 {row.id} · {row.arm === "control" || row.arm === "variant" ? experimentArmLabels[row.arm] : "未知組別"} · 瀏覽次數 {row.pageViews} · 報名次數 {row.submissions}</p>)}</div>
++    <details className="mt-4"><summary>檢視來源事件編號（前 20 筆）</summary>{reports.sources.map((source) => <p key={source.id} className="break-all font-mono text-xs">{source.id} · {source.stepId} · {source.createdAt}</p>)}</details>
++  </div>;
++}
++function LeadsReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
++  return <div className="overflow-auto"><p className="mb-3 text-sm">只列出伺服器驗證網站來源後建立的提交紀錄；不顯示姓名、Email、電話或表單答案。</p>{reports.leadsTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["網站", "步驟", "時間", "報名編號", "驗證狀態"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.leads.map((row) => <tr className="border-t" key={row.id}><td className="p-2">{editor.name}</td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "無法辨識的步驟"}</td><td>{row.createdAt}</td><td className="font-mono">{row.submissionId}</td><td>{reportStatusLabel(row.verificationStatus, "verification")}</td></tr>)}</tbody></table>{!reports.leads.length ? <p className="p-3">此範圍尚無可信提交紀錄。</p> : null}</div>;
++}
++function SalesReport({ reports, editor }: { reports: FunnelReports; editor: FunnelOperationsEditor }) {
++  return <div className="overflow-auto"><p className="mb-3 text-sm">來源為訂單與付款紀錄的已付款資料，排除測試訂單；退款另列，不將不同幣別相加。</p>{reports.salesTruncated ? <p role="alert">顯示最新 100 筆，請縮短日期或選擇步驟。</p> : null}<table className="w-full text-left text-sm"><thead><tr>{["訂單", "步驟", "付款時間", "幣別", "已付／退款（分）", "訂單／付款狀態", "付款編號"].map((label) => <th className="p-2" key={label}>{label}</th>)}</tr></thead><tbody>{reports.sales.map((row) => <tr className="border-t" key={row.id}><td className="p-2"><span>{row.orderNumber}</span><small className="block">{row.id}</small></td><td>{editor.steps.find((step) => step.id === row.stepId)?.name ?? "無法辨識的步驟"}</td><td>{row.paidAt}</td><td>{row.currency}</td><td>{row.paidAmountCents} / {row.refundedAmountCents}</td><td>{reportStatusLabel(row.status, "order")} / {reportStatusLabel(row.paymentStatus, "payment")}</td><td className="font-mono">{row.paymentId}</td></tr>)}</tbody></table>{!reports.sales.length ? <p className="p-3">此範圍尚無已付款訂單。</p> : null}</div>;
++}
+
+--- src/components/landing-pages/funnel-page-editor.tsx (before)
++++ src/components/landing-pages/funnel-page-editor.tsx
+@@ -20,8 +20,8 @@
+ import { addFunnelStep, moveFunnelStep, removeFunnelStep, renameFunnelStep, setFunnelStepPath, type FunnelFlowMutationResult } from "@/lib/funnel-flow";
+ 
+-type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };
++type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };
+ 
+ const palette: Array<{ type: FunnelNodeType; label: string }> = [
+-  { type: "section", label: "Section" }, { type: "row", label: "Row" },
++  { type: "section", label: "區塊" }, { type: "row", label: "欄列" },
+   { type: "columns_2", label: "2 欄" }, { type: "columns_3", label: "3 欄" }, { type: "columns_4", label: "4 欄" },
+   { type: "text", label: "文字" }, { type: "headline", label: "標題" }, { type: "image", label: "圖片" },
+@@ -31,6 +31,6 @@
+   { type: "form", label: "表單" }, { type: "form_input", label: "表單欄位" }, { type: "checkbox", label: "核取方塊" },
+   { type: "calendar", label: "行事曆" }, { type: "x_share_button", label: "X 分享" }, { type: "survey", label: "問卷" },
+-  { type: "countdown", label: "倒數計時" }, { type: "menu", label: "選單" }, { type: "faq", label: "FAQ" },
+-  { type: "raw_html", label: "Raw HTML" }, { type: "recaptcha", label: "reCAPTCHA" },
++  { type: "countdown", label: "倒數計時" }, { type: "menu", label: "選單" }, { type: "faq", label: "常見問題" },
++  { type: "raw_html", label: "自訂 HTML" }, { type: "recaptcha", label: "reCAPTCHA" },
+   { type: "payment_button", label: "付款按鈕" }, { type: "payment_method", label: "付款方式" }, { type: "offer_price", label: "方案價格" },
+   { type: "physical_product", label: "實體商品" }, { type: "customer_type", label: "客戶類型" }, { type: "agreement", label: "同意條款" },
+@@ -113,5 +113,5 @@
+ // The editor coordinates the palette, history, inspector, templates, Popups and canvas in one persisted session.
+ // eslint-disable-next-line complexity -- one session boundary owns the mutually exclusive editor panels.
+-function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds }: Props) {
++function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds, stepNames }: Props) {
+   const [history, setHistory] = useState(() => createFunnelPageHistory(document));
+   const historyRef = useRef(history);
+@@ -224,33 +224,33 @@
+       {sidebarCollapsed ? null : <>
+       <div className="grid grid-cols-3 gap-1 border-b border-slate-200 p-2">
+-        <button className={`${control} ${panel === "elements" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("elements")}>Elements</button>
+-        <button className={`${control} ${panel === "blocks" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("blocks")}>Blocks</button>
++        <button className={`${control} ${panel === "elements" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("elements")}>元件</button>
++        <button className={`${control} ${panel === "blocks" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("blocks")}>版型區塊</button>
+         <button className={`${control} ${panel === "settings" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("settings")}>設定</button>
+         <button id="funnel-page-settings-tab" className={`${control} ${panel === "page" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("page")}>頁面</button>
+-        <button id="funnel-popups-tab" className={`${control} ${panel === "popups" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("popups")}>Popups</button>
++        <button id="funnel-popups-tab" className={`${control} ${panel === "popups" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("popups")}>彈出視窗</button>
+         <button className={`${control} ${panel === "templates" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("templates")}>換模板</button>
+         <button className={`${control} ${panel === "flow" ? "border-blue-600 text-blue-700" : ""}`} disabled={!history.present.flow} onClick={() => setPanel("flow")}>流程</button>
+       </div>
+       <div className="flex items-center gap-2 border-b border-slate-200 p-2">
+-        <button className={control} disabled={disabled || !history.past.length} onClick={() => stepHistory("undo")}>Undo</button>
+-        <button className={control} disabled={disabled || !history.future.length} onClick={() => stepHistory("redo")}>Redo</button>
++        <button className={control} disabled={disabled || !history.past.length} onClick={() => stepHistory("undo")}>復原</button>
++        <button className={control} disabled={disabled || !history.future.length} onClick={() => stepHistory("redo")}>重做</button>
+         <button className={control} onClick={() => setViewport(viewport === "desktop" ? "mobile" : "desktop")}>{viewport === "desktop" ? "桌機" : "手機"}</button>
+       </div>
+       <div className="min-h-0 flex-1 overflow-auto p-3">
+-        {panel === "elements" ? <div className="grid gap-2"><input aria-label="搜尋 Elements" value={elementQuery} onChange={(event) => setElementQuery(event.currentTarget.value)} placeholder="搜尋元件" className={control} /><div className="grid grid-cols-2 gap-2">{visiblePalette.map((item) => <PaletteButton key={item.type} item={item} disabled={disabled} onAdd={add} />)}</div>{!visiblePalette.length ? <p className="py-6 text-center text-sm text-slate-500">找不到符合的元件。</p> : null}</div> : panel === "blocks" ? <div className="grid gap-2">{Object.values(FUNNEL_BLOCK_REGISTRY).map((block) => <button key={block.id} draggable={!disabled} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-celebratedeal-funnel-block", block.id); }} disabled={disabled} className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-blue-400" onClick={() => addBlock(block.id)}><span className="block text-sm font-bold text-slate-800">{block.label}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{block.description}</span><BlockCapability limited={Boolean(block.capability)} /></button>)}</div> : panel === "flow" && history.present.flow ? <div className="grid gap-3"><div><h2 className="font-bold">Funnel 流程</h2><p className="mt-1 text-xs text-slate-500">{history.present.flow.name} · {history.present.flow.currency}</p></div>{history.present.flow.steps.map((step, index) => <article key={step.id} className="grid gap-2 rounded-xl border bg-white p-3"><input aria-label={`${step.name} 名稱`} disabled={step.isSystem} className={control} value={step.name} onChange={(event) => commitFlow(renameFunnelStep(history.present.flow!, step.id, event.currentTarget.value))} /><label className="text-xs text-slate-500">URL Path<input disabled={step.isSystem} className={control} value={step.path} onChange={(event) => commitFlow(setFunnelStepPath(history.present.flow!, step.id, event.currentTarget.value))} /></label>{!step.isSystem ? <div className="grid grid-cols-3 gap-1"><button className={control} disabled={index === 0} onClick={() => commitFlow(moveFunnelStep(history.present.flow!, step.id, index - 1))}>上移</button><button className={control} disabled={index >= history.present.flow!.steps.length - 2} onClick={() => commitFlow(moveFunnelStep(history.present.flow!, step.id, index + 1))}>下移</button><button className={`${control} text-red-700`} onClick={() => { if (window.confirm(`確定移除「${step.name}」？`)) commitFlow(removeFunnelStep(history.present.flow!, step.id)); }}>移除</button></div> : <p className="text-xs text-slate-500">系統停用頁</p>}</article>)}<button className={control} onClick={() => commitFlow(addFunnelStep(history.present.flow!, { name: "新資訊頁", path: `info-${history.present.flow!.steps.length}`, type: "info_page", templateSource: "blank" }))}>＋ 新增資訊頁</button><p className="mt-3 text-sm text-slate-500">請由上方「Funnel 管理」開啟 Automation、A/B、報表、期限與全域設定。</p></div> : panel === "templates" ? <div className="grid gap-3"><h2 className="font-bold">更換頁面模板</h2><p className="text-xs leading-5 text-amber-800">套用後會替換目前畫布與 Popup；頁面名稱、版本及設定會保留。</p>{Object.values(FUNNEL_TEMPLATE_TRANSACTION_TEMPLATES).map((template) => <button key={template.id} disabled={disabled || template.status !== "available"} title={template.reason} className="rounded-xl border border-slate-200 bg-white p-3 text-left disabled:cursor-not-allowed disabled:bg-slate-100" onClick={() => changeTemplate(template.id)}><span className="font-bold text-slate-800">{template.name}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{template.description}</span>{template.status !== "available" ? <span className="mt-2 inline-flex rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">待驗證</span> : null}</button>)}</div> : panel === "popups" ? <div className="grid gap-3">
+-          <div className="flex items-center justify-between"><h2 className="font-bold">Popups</h2><button className={control} onClick={() => replaceDocument(createFunnelPopup(history.present, { name: `Popup ${history.present.popups.length + 1}` }))}>＋ 新增</button></div>
+-          {!history.present.popups.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-slate-500">尚未建立 Popup。</p> : history.present.popups.map((popup) => { const auto = validatePopupTrigger(popup, "automatic_delay"); const exit = validatePopupTrigger(popup, "exit_intent"); return <article key={popup.id} className="grid gap-2 rounded-xl border bg-white p-3"><input className={control} value={popup.name} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { name: event.currentTarget.value }))} /><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openAutomatically} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openAutomatically: event.currentTarget.checked } }))} />自動開啟</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.showCloseButton} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { showCloseButton: event.currentTarget.checked } }))} />顯示關閉按鈕</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openOnExitIntent} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openOnExitIntent: event.currentTarget.checked } }))} />Exit intent（桌機單次觸發；手機不支援）</label><label className="grid gap-1 text-xs">顯示延遲（秒）<input className={control} type="number" min="0" value={popup.settings.automaticDelaySeconds} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { automaticDelaySeconds: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">背景色<input className={control} value={popup.settings.backgroundColor} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { backgroundColor: event.currentTarget.value } }))} /></label><label className="grid gap-1 text-xs">Padding<input type="number" min="0" className={control} value={popup.settings.padding} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { padding: Number(event.currentTarget.value) } }))} /></label><div className="grid grid-cols-2 gap-2"><label className="grid gap-1 text-xs">Border<input type="number" min="0" className={control} value={popup.settings.borderWidth} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { borderWidth: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">Shadow<select className={control} value={popup.settings.shadow} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { shadow: event.currentTarget.value as typeof popup.settings.shadow } }))}><option value="none">無</option><option value="soft">柔和</option><option value="medium">中等</option><option value="strong">明顯</option></select></label></div><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.pageId === history.present.id} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { pageId: event.currentTarget.checked ? history.present.id : undefined }))} />只綁定目前頁面</label><p className="text-[11px] text-slate-500">自動顯示：{auto.executable ? `${auto.delayMs}ms` : auto.reason}</p><p className="text-[11px] text-amber-700">Exit intent：{exit.reason}</p><p className="text-[11px] text-slate-500">寬度與圓角可進入「編輯」後選取 Popup Section 調整。</p><div className="grid grid-cols-3 gap-2"><button className={control} onClick={() => { setEditingPopupId(popup.id); setSelectedId(undefined); }}>編輯</button><button className={control} onClick={() => setPreviewPopupId(popup.id)}>預覽</button><button className={`${control} text-red-700`} onClick={() => { if (editingPopupId === popup.id) setEditingPopupId(undefined); replaceDocument(deleteFunnelPopup(history.present, popup.id)); }}>刪除</button></div></article>; })}
++        {panel === "elements" ? <div className="grid gap-2"><input aria-label="搜尋 元件" value={elementQuery} onChange={(event) => setElementQuery(event.currentTarget.value)} placeholder="搜尋元件" className={control} /><div className="grid grid-cols-2 gap-2">{visiblePalette.map((item) => <PaletteButton key={item.type} item={item} disabled={disabled} onAdd={add} />)}</div>{!visiblePalette.length ? <p className="py-6 text-center text-sm text-slate-500">找不到符合的元件。</p> : null}</div> : panel === "blocks" ? <div className="grid gap-2">{Object.values(FUNNEL_BLOCK_REGISTRY).map((block) => <button key={block.id} draggable={!disabled} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-celebratedeal-funnel-block", block.id); }} disabled={disabled} className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-blue-400" onClick={() => addBlock(block.id)}><span className="block text-sm font-bold text-slate-800">{block.label}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{block.description}</span><BlockCapability limited={Boolean(block.capability)} /></button>)}</div> : panel === "flow" && history.present.flow ? <div className="grid gap-3"><div><h2 className="font-bold">一頁式網站 流程</h2><p className="mt-1 text-xs text-slate-500">{history.present.flow.name} · {history.present.flow.currency}</p></div>{history.present.flow.steps.map((step, index) => <article key={step.id} className="grid gap-2 rounded-xl border bg-white p-3"><input aria-label={`${step.name} 名稱`} disabled={step.isSystem} className={control} value={step.name} onChange={(event) => commitFlow(renameFunnelStep(history.present.flow!, step.id, event.currentTarget.value))} /><label className="text-xs text-slate-500">網址路徑<input disabled={step.isSystem} className={control} value={step.path} onChange={(event) => commitFlow(setFunnelStepPath(history.present.flow!, step.id, event.currentTarget.value))} /></label>{!step.isSystem ? <div className="grid grid-cols-3 gap-1"><button className={control} disabled={index === 0} onClick={() => commitFlow(moveFunnelStep(history.present.flow!, step.id, index - 1))}>上移</button><button className={control} disabled={index >= history.present.flow!.steps.length - 2} onClick={() => commitFlow(moveFunnelStep(history.present.flow!, step.id, index + 1))}>下移</button><button className={`${control} text-red-700`} onClick={() => { if (window.confirm(`確定移除「${step.name}」？`)) commitFlow(removeFunnelStep(history.present.flow!, step.id)); }}>移除</button></div> : <p className="text-xs text-slate-500">系統停用頁</p>}</article>)}<button className={control} onClick={() => commitFlow(addFunnelStep(history.present.flow!, { name: "新資訊頁", path: `info-${history.present.flow!.steps.length}`, type: "info_page", templateSource: "blank" }))}>＋ 新增資訊頁</button><p className="mt-3 text-sm text-slate-500">請由上方「一頁式網站 管理」開啟 自動化規則、A/B、報表、期限與全域設定。</p></div> : panel === "templates" ? <div className="grid gap-3"><h2 className="font-bold">更換頁面模板</h2><p className="text-xs leading-5 text-amber-800">套用後會替換目前畫布與 彈出視窗；頁面名稱、版本及設定會保留。</p>{Object.values(FUNNEL_TEMPLATE_TRANSACTION_TEMPLATES).map((template) => <button key={template.id} disabled={disabled || template.status !== "available"} title={template.reason} className="rounded-xl border border-slate-200 bg-white p-3 text-left disabled:cursor-not-allowed disabled:bg-slate-100" onClick={() => changeTemplate(template.id)}><span className="font-bold text-slate-800">{template.name}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{template.description}</span>{template.status !== "available" ? <span className="mt-2 inline-flex rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">待驗證</span> : null}</button>)}</div> : panel === "popups" ? <div className="grid gap-3">
++          <div className="flex items-center justify-between"><h2 className="font-bold">彈出視窗</h2><button className={control} onClick={() => replaceDocument(createFunnelPopup(history.present, { name: `彈出視窗 ${history.present.popups.length + 1}` }))}>＋ 新增</button></div>
++          {!history.present.popups.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-slate-500">尚未建立 彈出視窗。</p> : history.present.popups.map((popup) => { const auto = validatePopupTrigger(popup, "automatic_delay"); const exit = validatePopupTrigger(popup, "exit_intent"); return <article key={popup.id} className="grid gap-2 rounded-xl border bg-white p-3"><input className={control} value={popup.name} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { name: event.currentTarget.value }))} /><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openAutomatically} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openAutomatically: event.currentTarget.checked } }))} />自動開啟</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.showCloseButton} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { showCloseButton: event.currentTarget.checked } }))} />顯示關閉按鈕</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openOnExitIntent} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openOnExitIntent: event.currentTarget.checked } }))} />離開頁面時顯示（桌機單次觸發；手機不支援）</label><label className="grid gap-1 text-xs">顯示延遲（秒）<input className={control} type="number" min="0" value={popup.settings.automaticDelaySeconds} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { automaticDelaySeconds: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">背景色<input className={control} value={popup.settings.backgroundColor} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { backgroundColor: event.currentTarget.value } }))} /></label><label className="grid gap-1 text-xs">內距<input type="number" min="0" className={control} value={popup.settings.padding} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { padding: Number(event.currentTarget.value) } }))} /></label><div className="grid grid-cols-2 gap-2"><label className="grid gap-1 text-xs">邊框<input type="number" min="0" className={control} value={popup.settings.borderWidth} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { borderWidth: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">陰影<select className={control} value={popup.settings.shadow} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { shadow: event.currentTarget.value as typeof popup.settings.shadow } }))}><option value="none">無</option><option value="soft">柔和</option><option value="medium">中等</option><option value="strong">明顯</option></select></label></div><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.pageId === history.present.id} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { pageId: event.currentTarget.checked ? history.present.id : undefined }))} />只綁定目前頁面</label><p className="text-[11px] text-slate-500">自動顯示：{auto.executable ? `${auto.delayMs}ms` : auto.reason}</p><p className="text-[11px] text-amber-700">離開頁面時顯示：{exit.reason}</p><p className="text-[11px] text-slate-500">寬度與圓角可進入「編輯」後選取 彈出視窗區塊 調整。</p><div className="grid grid-cols-3 gap-2"><button className={control} onClick={() => { setEditingPopupId(popup.id); setSelectedId(undefined); }}>編輯</button><button className={control} onClick={() => setPreviewPopupId(popup.id)}>預覽</button><button className={`${control} text-red-700`} onClick={() => { if (editingPopupId === popup.id) setEditingPopupId(undefined); replaceDocument(deleteFunnelPopup(history.present, popup.id)); }}>刪除</button></div></article>; })}
+         </div> : panel === "page" ? <div className="grid gap-4">
+           <h2 className="text-base font-bold">頁面設定</h2>
+           {commerceEnabled ? <FunnelCommerceSettings binding={history.present.commerce} products={commerceProducts} disabled={disabled} onChange={(commerce) => replaceDocument({ ...history.present, commerce })} /> : <p className="text-xs text-slate-600">商品與結帳設定位於「訂單表單」步驟的頁面設定。</p>}
+-          <label className="grid gap-1 text-sm font-semibold">語言<select className={control} value={history.present.settings.language} onChange={(event) => commit({ type: "update_settings", settings: { language: event.currentTarget.value as PageDocument["settings"]["language"] } })}><option value="zh-TW">繁體中文</option><option value="en">English</option><option value="ja">日本語</option></select></label>
+-          <label className="grid gap-1 text-sm font-semibold">SEO 標題<input className={control} value={history.present.settings.seo.title ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, title: event.currentTarget.value } } })} /></label>
+-          <label className="grid gap-1 text-sm font-semibold">SEO 描述<textarea className={control} value={history.present.settings.seo.description ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, description: event.currentTarget.value } } })} /></label>
++          <label className="grid gap-1 text-sm font-semibold">語言<select className={control} value={history.present.settings.language} onChange={(event) => commit({ type: "update_settings", settings: { language: event.currentTarget.value as PageDocument["settings"]["language"] } })}><option value="zh-TW">繁體中文</option><option value="en">英文</option><option value="ja">日本語</option></select></label>
++          <label className="grid gap-1 text-sm font-semibold">搜尋引擎 標題<input className={control} value={history.present.settings.seo.title ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, title: event.currentTarget.value } } })} /></label>
++          <label className="grid gap-1 text-sm font-semibold">搜尋引擎 描述<textarea className={control} value={history.present.settings.seo.description ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, description: event.currentTarget.value } } })} /></label>
+           <label className="grid gap-1 text-sm font-semibold">背景色<input className={control} value={history.present.settings.background.color} onChange={(event) => commit({ type: "update_settings", settings: { background: { ...history.present.settings.background, color: event.currentTarget.value } } })} /></label>
+           <label className="grid gap-1 text-sm font-semibold">內文字型<input className={control} value={history.present.settings.typography.bodyFont} onChange={(event) => commit({ type: "update_settings", settings: { typography: { ...history.present.settings.typography, bodyFont: event.currentTarget.value } } })} /></label>
+-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">Tracking：{history.present.settings.tracking.reason}<br />Affiliate：{history.present.settings.affiliate.reason}</div>
++          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">追蹤設定：{history.present.settings.tracking.reason}<br />推薦夥伴：{history.present.settings.affiliate.reason}</div>
+         </div> : selected ? <div className="grid gap-4">
+-          <div><p className="text-xs font-bold text-slate-500">Breadcrumb</p><p className="mt-1 text-sm text-slate-700">{path?.map((item) => getFunnelNodeDefinition(item.type).label).join(" › ")}</p></div>
+-          <FunnelElementInspector node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} stepIds={stepIds} onCommand={commit} />
++          <div><p className="text-xs font-bold text-slate-500">目前位置</p><p className="mt-1 text-sm text-slate-700">{path?.map((item) => getFunnelNodeDefinition(item.type).label).join(" › ")}</p></div>
++          <FunnelElementInspector node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} popupNames={Object.fromEntries(history.present.popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds ?? history.present.flow?.steps.map((step) => step.id)} stepNames={stepNames ?? Object.fromEntries((history.present.flow?.steps ?? []).map((step) => [step.id, step.name]))} onCommand={commit} />
+           <div className="grid grid-cols-2 gap-2"><button className={control} onClick={() => commit({ type: "move_up", nodeId: selected.id })}>上移</button><button className={control} onClick={() => commit({ type: "move_down", nodeId: selected.id })}>下移</button><button className={control} onClick={() => commit({ type: "duplicate", nodeId: selected.id })}>複製</button><button className={`${control} text-red-700`} onClick={() => { commit({ type: "delete", nodeId: selected.id }); setSelectedId(undefined); }}>刪除</button></div>
+         </div> : <p className="text-sm text-slate-500">請先在畫布選取節點。</p>}
+@@ -259,5 +259,5 @@
+     </aside>
+     <div className="min-h-0 overflow-auto bg-slate-200/70 p-5" onDragOver={(event) => { if (event.dataTransfer.types.some((type) => type.includes("celebratedeal-funnel-element") || type.includes("celebratedeal-funnel-block"))) event.preventDefault(); }} onDrop={(event) => { const type = event.dataTransfer.getData("application/x-celebratedeal-funnel-element") as FunnelNodeType; const blockId = event.dataTransfer.getData("application/x-celebratedeal-funnel-block"); if (type) { event.preventDefault(); add(type); } else if (blockId) { event.preventDefault(); addBlock(blockId); } }}>
+-      <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><span className="font-semibold text-slate-700">{editingPopup ? `正在編輯 Popup：${editingPopup.name}` : "正在編輯頁面"}</span>{editingPopup ? <button type="button" className={control} onClick={() => { setEditingPopupId(undefined); setSelectedId(undefined); }}>返回頁面畫布</button> : null}</div>
++      <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><span className="font-semibold text-slate-700">{editingPopup ? `正在編輯彈出視窗：${editingPopup.name}` : "正在編輯頁面"}</span>{editingPopup ? <button type="button" className={control} onClick={() => { setEditingPopupId(undefined); setSelectedId(undefined); }}>返回頁面畫布</button> : null}</div>
+       <div className={`mx-auto min-h-full bg-white shadow-xl transition-[width] ${viewport === "mobile" ? "w-[375px] max-w-full rounded-[2rem] border-[10px] border-slate-900" : "w-full max-w-[1440px]"}`}>
+         <FunnelPageDocumentRenderer document={canvasDocument} commerce={commerceViewForBinding(canvasDocument.commerce, commerceProducts)} viewport={viewport} mode="editor" selectedNodeId={selectedId} onMoveNode={moveNode} onSelectNode={(id) => { setSelectedId(id); setPanel("settings"); }} />
+
+--- src/components/landing-pages/funnel-popup-preview.test.tsx (before)
++++ src/components/landing-pages/funnel-popup-preview.test.tsx
+@@ -62,5 +62,5 @@
+     expect(html).toContain('data-funnel-popup-state="open"');
+     expect(html).toContain('data-funnel-popup-close');
+-    expect(html).toContain('aria-label="關閉 Popup"');
++    expect(html).toContain('aria-label="關閉彈出視窗"');
+     expect(html).toContain('tabindex="-1"');
+     expect(html).toContain("background-color:#fff7ed");
+
+--- src/components/landing-pages/funnel-popup-preview.tsx (before)
++++ src/components/landing-pages/funnel-popup-preview.tsx
+@@ -136,5 +136,5 @@
+ function statusLabel(status: PopupTriggerEligibility): string {
+   if (status.status === "unverified") return `Exit intent：unverified（${status.reason}）`;
+-  return status.status === "disabled" ? `Popup：${status.reason}` : status.reason;
++  return status.status === "disabled" ? `彈出視窗：${status.reason}` : status.reason;
+ }
+ 
+@@ -158,5 +158,5 @@
+   const popup = parsed?.popups.find((candidate) => candidate.id === popupId) ?? null;
+   if (!parsed || !popup) {
+-    return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">找不到可預覽的 Popup。</div>;
++    return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">找不到可預覽的彈出視窗。</div>;
+   }
+   return (
+@@ -305,5 +305,5 @@
+           <button
+             type="button"
+-            aria-label="關閉 Popup"
++            aria-label="關閉彈出視窗"
+             data-funnel-popup-close
+             className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-lg leading-none text-slate-700 shadow-sm"
+
+--- src/components/landing-pages/funnel-step-pages-editor.tsx (before)
++++ src/components/landing-pages/funnel-step-pages-editor.tsx
+@@ -83,5 +83,5 @@
+     if (publishState(result.state)) { publishHistory(result.history); setError(undefined); }
+   };
+-  if (!active) return <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">Funnel steps 資料無法通過驗證。</p>;
++  if (!active) return <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">網站步驟 資料無法通過驗證。</p>;
+   const editableSteps = state.flow.steps.filter((step) => !step.isSystem);
+   const addStep = () => {
+@@ -101,17 +101,17 @@
+   return <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-hidden lg:grid-cols-[18rem_minmax(0,1fr)]">
+     {error ? <p role="alert" className="col-span-full bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+-    <aside className="max-h-[48dvh] min-h-0 min-w-0 overflow-auto border-b border-slate-200 bg-slate-50 p-3 lg:max-h-none lg:border-r lg:border-b-0" aria-label="Funnel steps">
+-      <div className="mb-3"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">Funnel steps</p><h2 className="mt-1 font-bold text-slate-950">{state.flow.name}</h2></div>
+-      <div className="mb-3 grid grid-cols-2 gap-2"><button type="button" disabled={disabled || flowHistory.past.length === 0} onClick={undoFlow} className="min-h-9 rounded-lg border border-slate-300 bg-white text-xs font-bold disabled:opacity-40">流程 Undo</button><button type="button" disabled={disabled || flowHistory.future.length === 0} onClick={redoFlow} className="min-h-9 rounded-lg border border-slate-300 bg-white text-xs font-bold disabled:opacity-40">流程 Redo</button></div>
++    <aside className="max-h-[48dvh] min-h-0 min-w-0 overflow-auto border-b border-slate-200 bg-slate-50 p-3 lg:max-h-none lg:border-r lg:border-b-0" aria-label="網站步驟">
++      <div className="mb-3"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">網站步驟</p><h2 className="mt-1 font-bold text-slate-950">{state.flow.name}</h2></div>
++      <div className="mb-3 grid grid-cols-2 gap-2"><button type="button" disabled={disabled || flowHistory.past.length === 0} onClick={undoFlow} className="min-h-9 rounded-lg border border-slate-300 bg-white text-xs font-bold disabled:opacity-40">流程 復原</button><button type="button" disabled={disabled || flowHistory.future.length === 0} onClick={redoFlow} className="min-h-9 rounded-lg border border-slate-300 bg-white text-xs font-bold disabled:opacity-40">流程 重做</button></div>
+       <div className="grid gap-2">{state.flow.steps.map((step, index) => <article key={step.id} className={`rounded-xl border p-2 ${state.activeStepId === step.id ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white"}`}>
+         <button type="button" disabled={disabled} onClick={() => commit(switchFunnelStep(stateRef.current, step.id), false)} className="w-full text-left"><span className="block text-sm font-bold text-slate-800">{step.name}</span><span className="mt-0.5 block font-mono text-[11px] text-slate-500">/{step.path}</span></button>
+         {!step.isSystem ? <div className="mt-2 grid grid-cols-3 gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={disabled || index === 0} onClick={() => commit(moveFunnelStepPage(state, step.id, index - 1), true)} className="rounded border bg-white py-1 text-xs disabled:opacity-40">↑</button><button type="button" aria-label={`下移 ${step.name}`} disabled={disabled || index >= editableSteps.length - 1} onClick={() => commit(moveFunnelStepPage(state, step.id, index + 1), true)} className="rounded border bg-white py-1 text-xs disabled:opacity-40">↓</button><button type="button" aria-label={`移除 ${step.name}`} disabled={disabled} onClick={() => { if (window.confirm(`確定移除「${step.name}」及其頁面內容？`)) commit(removeFunnelStepPage(state, step.id), true); }} className="rounded border bg-white py-1 text-xs text-red-700 disabled:opacity-40">×</button></div> : <p className="mt-2 text-[11px] text-slate-500">系統頁，只能預覽</p>}
+       </article>)}</div>
+-      <div className="mt-3 grid gap-2 rounded-xl border border-blue-100 bg-blue-50 p-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">新步驟類型<select className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={newStepType} disabled={disabled} onChange={(event) => setNewStepType(event.currentTarget.value as Exclude<FunnelStepType, "inactive_page">)}>{state.flow.goal === "webinar" ? <><option value="webinar_registration_page">Webinar 報名頁</option><option value="webinar_thank_you_page">Webinar 感謝頁</option><option value="webinar_broadcast_page">Webinar 播放頁</option></> : null}<option value="info_page">資訊頁</option><option value="contact_us_page">聯絡我們</option><option value="opt_in_page">名單頁</option><option value="opt_in_thank_you_page">名單感謝頁</option><option value="sales_page">銷售頁</option><option value="order_form">訂單表單</option><option value="upsell">加購頁</option><option value="downsell">降價加購頁</option><option value="thank_you_page">感謝頁</option><option value="inline_form">內嵌表單</option><option value="popup_form">彈出表單</option><option value="link_in_bio">個人簡介連結頁</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">起始內容<select className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={newStepSource} disabled={disabled} onChange={(event) => setNewStepSource(event.currentTarget.value as "blank" | "template")}><option value="blank">空白頁</option><option value="template">套用目前模板</option></select></label><button type="button" disabled={disabled} onClick={addStep} className="min-h-10 w-full rounded-lg border border-blue-200 bg-white text-sm font-bold text-blue-700 disabled:opacity-40">＋ 新增步驟</button></div>
++      <div className="mt-3 grid gap-2 rounded-xl border border-blue-100 bg-blue-50 p-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">新步驟類型<select className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={newStepType} disabled={disabled} onChange={(event) => setNewStepType(event.currentTarget.value as Exclude<FunnelStepType, "inactive_page">)}>{state.flow.goal === "webinar" ? <><option value="webinar_registration_page">網路研討會 報名頁</option><option value="webinar_thank_you_page">網路研討會 感謝頁</option><option value="webinar_broadcast_page">網路研討會 播放頁</option></> : null}<option value="info_page">資訊頁</option><option value="contact_us_page">聯絡我們</option><option value="opt_in_page">名單頁</option><option value="opt_in_thank_you_page">名單感謝頁</option><option value="sales_page">銷售頁</option><option value="order_form">訂單表單</option><option value="upsell">加購頁</option><option value="downsell">降價加購頁</option><option value="thank_you_page">感謝頁</option><option value="inline_form">內嵌表單</option><option value="popup_form">彈出表單</option><option value="link_in_bio">個人簡介連結頁</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">起始內容<select className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={newStepSource} disabled={disabled} onChange={(event) => setNewStepSource(event.currentTarget.value as "blank" | "template")}><option value="blank">空白頁</option><option value="template">套用目前模板</option></select></label><button type="button" disabled={disabled} onClick={addStep} className="min-h-10 w-full rounded-lg border border-blue-200 bg-white text-sm font-bold text-blue-700 disabled:opacity-40">＋ 新增步驟</button></div>
+       {!active.step.isSystem ? <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-600">步驟名稱<input className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={active.step.name} disabled={disabled} onChange={(event) => commit(renameFunnelStepPage(state, active.step.id, event.currentTarget.value), true)} /></label> : null}
+-      {!active.step.isSystem ? <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-600">URL Path<input aria-label="步驟 URL Path" className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 font-mono text-sm" value={active.step.path} disabled={disabled} onChange={(event) => commit(setFunnelStepPathPage(state, active.step.id, event.currentTarget.value), true)} /></label> : null}
+-      {!active.step.isSystem ? <div className="mt-4 border-t border-slate-200 pt-4"><div className="mb-3"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">模板 Gallery</p><h3 className="mt-1 text-sm font-bold text-slate-950">選擇適合這個步驟的起點</h3><p className="mt-1 text-[11px] leading-5 text-slate-500">縮圖與完整預覽都使用正式 renderer；套用後會展開成可獨立編輯節點。</p></div><FunnelTemplateGalleryPicker templates={templates} selectedId={templateId} disabled={disabled} onSelect={setTemplateId} onApply={(id) => { const template = templates.find((item) => item.id === id); if (!template || !window.confirm(`套用「${template.name}」會取代目前步驟內容，確定繼續？`)) return; setTemplateId(id); commit(replaceFunnelStepPage(state, active.step.id, instantiateFunnelTemplate(id, active.page.id), id)); }} /><p className="mt-3 text-[11px] leading-5 text-slate-500">付款元件只消費既有安全結帳能力；需先在訂單步驟綁定商品，未綁定時不會送出付款。</p></div> : null}
++      {!active.step.isSystem ? <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-600">網址路徑<input aria-label="步驟 網址路徑" className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 font-mono text-sm" value={active.step.path} disabled={disabled} onChange={(event) => commit(setFunnelStepPathPage(state, active.step.id, event.currentTarget.value), true)} /></label> : null}
++      {!active.step.isSystem ? <div className="mt-4 border-t border-slate-200 pt-4"><div className="mb-3"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">模板庫</p><h3 className="mt-1 text-sm font-bold text-slate-950">選擇適合這個步驟的起點</h3><p className="mt-1 text-[11px] leading-5 text-slate-500">縮圖與完整預覽都使用公開頁面相同的顯示方式；套用後會展開成可獨立編輯節點。</p></div><FunnelTemplateGalleryPicker templates={templates} selectedId={templateId} disabled={disabled} onSelect={setTemplateId} onApply={(id) => { const template = templates.find((item) => item.id === id); if (!template || !window.confirm(`套用「${template.name}」會取代目前步驟內容，確定繼續？`)) return; setTemplateId(id); commit(replaceFunnelStepPage(state, active.step.id, instantiateFunnelTemplate(id, active.page.id), id)); }} /><p className="mt-3 text-[11px] leading-5 text-slate-500">付款元件只消費既有安全結帳能力；需先在訂單步驟綁定商品，未綁定時不會送出付款。</p></div> : null}
+     </aside>
+-    <div className="min-h-0 overflow-auto"><FunnelPageEditor key={active.page.id} document={active.page} commerceProducts={commerceProducts} commerceEnabled={active.step.type === "order_form"} stepIds={state.flow.steps.map((step) => step.id)} disabled={disabled || !active.editable} onChange={(page) => {
++    <div className="min-h-0 overflow-auto"><FunnelPageEditor key={active.page.id} document={active.page} commerceProducts={commerceProducts} commerceEnabled={active.step.type === "order_form"} stepIds={state.flow.steps.map((step) => step.id)} stepNames={Object.fromEntries(state.flow.steps.map((step) => [step.id, step.name]))} disabled={disabled || !active.editable} onChange={(page) => {
+       if (disabled) return false;
+       const result = replaceFunnelStepPage(stateRef.current, active.step.id, page);
+
+--- src/components/landing-pages/funnel-template-gallery-picker.tsx (before)
++++ src/components/landing-pages/funnel-template-gallery-picker.tsx
+@@ -31,5 +31,5 @@
+   }, [preview]);
+ 
+-  if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 Funnel 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入 Blocks。</span></div>;
++  if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 一頁式網站 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入 版型區塊。</span></div>;
+ 
+   const apply = (templateId: string) => {
+@@ -68,5 +68,5 @@
+         </div>
+         <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3 sm:p-6"><div data-template-preview-viewport={viewport} className={`mx-auto min-w-0 overflow-x-hidden rounded-xl bg-white shadow-sm transition-[max-width] ${viewport === "mobile" ? "max-w-[390px]" : "max-w-5xl"}`}><FunnelPageDocumentRenderer document={documents.get(preview.id)!} viewport={viewport} mode="preview" /></div></div>
+-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4"><p className="text-xs leading-5 text-slate-600">預覽與套用共用同一份 PageDocument 與 renderer。</p><button type="button" disabled={disabled} onClick={() => apply(preview.id)} className="min-h-10 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{disabled ? "套用中…" : "套用這個模板"}</button></div>
++        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 p-4"><p className="text-xs leading-5 text-slate-600">預覽與套用共用相同的頁面內容與顯示方式。</p><button type="button" disabled={disabled} onClick={() => apply(preview.id)} className="min-h-10 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{disabled ? "套用中…" : "套用這個模板"}</button></div>
+       </div>
+     </div> : null}
+
+--- src/components/landing-pages/funnel-webinar-experience.tsx (before)
++++ src/components/landing-pages/funnel-webinar-experience.tsx
+@@ -28,5 +28,5 @@
+   const step = state.flow.steps.find((item) => item.id === stepId);
+   const page = state.pages[stepId];
+-  if (!step || !page) return <p role="alert">找不到 Webinar 頁面。</p>;
++  if (!step || !page) return <p role="alert">找不到線上講座頁面。</p>;
+   // Legacy or tampered published snapshots must not bypass the Live admission
+   // boundary through the general-purpose video's raw URL renderer.
+
+--- src/components/landing-pages/funnel-webinar-settings.tsx (before)
++++ src/components/landing-pages/funnel-webinar-settings.tsx
+@@ -11,8 +11,8 @@
+   const draftRef = useRef(draft);
+   const [error, setError] = useState("");
+-  const fields = [["timezone", "Webinar 時區"], ["startsAt", "Webinar 開始時間（UTC）"], ["endsAt", "Webinar 結束時間（UTC）"], ["replayEndsAt", "重播截止時間（UTC）"]] as const;
+-  return <section aria-label="Webinar 排程" className="mb-4 rounded-xl border border-blue-200 bg-white p-4">
+-    <h2 className="font-bold">Webinar 排程與重播</h2>
+-    <p className="my-2 text-sm text-slate-600">選擇既有活動與報名表，並在活動 Studio 確認來源影片。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。</p>
++  const fields = [["timezone", "線上講座時區"], ["startsAt", "線上講座開始時間（UTC）"], ["endsAt", "線上講座結束時間（UTC）"], ["replayEndsAt", "重播截止時間（UTC）"]] as const;
++  return <section aria-label="線上講座排程" className="mb-4 rounded-xl border border-blue-200 bg-white p-4">
++    <h2 className="font-bold">線上講座排程與重播</h2>
++    <p className="my-2 text-sm text-slate-600">選擇既有活動與報名表，並在活動工作室 確認來源影片。時間以 UTC 保存，訪客依指定時區查看；留空重播截止時間表示不提供重播。</p>
+     <div className="grid gap-3 md:grid-cols-2">{fields.map(([key, label]) => <label key={key} className="grid gap-1 text-sm">{label}<input disabled={disabled} value={draft[key] ?? ""} placeholder={key === "timezone" ? "Asia/Taipei" : "2026-09-17T10:00:00.000Z"} className="min-h-10 rounded border px-3" onChange={(event) => {
+       // Playwright and fast keyboard input can dispatch several changes before
+
+--- src/components/landing-pages/landing-page-puck-config.tsx (before)
++++ src/components/landing-pages/landing-page-puck-config.tsx
+@@ -69,7 +69,7 @@
+   const config: Config = {
+     categories: {
+-      basic: { title: "Elements · 基本內容", components: ["Heading", "Text", "Image", "Video", "Button"] },
+-      layout: { title: "Elements · 版面配置", components: ["Section", "Columns"] },
+-      conversion: { title: "Blocks · Webinar 轉換", components: ["Hero", "Speaker", "Benefits", "Agenda", "Carousel", "Pricing", "Countdown", "Testimonials", "FAQ", "CTA"] },
++      basic: { title: "元件 · 基本內容", components: ["Heading", "Text", "Image", "Video", "Button"] },
++      layout: { title: "元件 · 版面配置", components: ["Section", "Columns"] },
++      conversion: { title: "區塊 · 線上講座轉換", components: ["Hero", "Speaker", "Benefits", "Agenda", "Carousel", "Pricing", "Countdown", "Testimonials", "FAQ", "CTA"] },
+     },
+     root: { fields: { title: textField("頁面標題"), description: textField("SEO 描述", true), shareImage: textField("分享圖片 HTTPS 網址") }, render: ({ children }: { children: ReactNode }) => <main className="mx-auto min-h-screen w-full max-w-6xl bg-white px-4 py-8 text-slate-950 sm:px-6">{children}</main> },
+@@ -88,5 +88,5 @@
+       Carousel: { label: "圖片輪播", fields: { title: textField("標題"), slides: { type: "array", label: "投影片", min: 1, max: 12, arrayFields: { imageUrl: textField("圖片網址"), alt: textField("替代文字"), title: textField("標題"), description: textField("說明", true) }, defaultItemProps: { imageUrl: "/images/funnel-templates/low-barrier-lead-magnet.svg", alt: "" } } }, defaultProps: { title: "精彩內容", slides: [{ imageUrl: "/images/funnel-templates/low-barrier-lead-magnet.svg", alt: "" }] }, render: ({ title, slides }) => <section><h2 className="text-3xl font-black">{title}</h2><div className="mt-5 grid gap-4 md:grid-cols-3">{slides.map((slide: { imageUrl: string; alt: string; title?: string }, index: number) => <figure key={index}><img src={slide.imageUrl} alt={slide.alt} className="aspect-video w-full rounded-2xl object-cover" />{slide.title ? <figcaption className="mt-2 font-bold">{slide.title}</figcaption> : null}</figure>)}</div></section> },
+       Pricing: { label: "方案價格", fields: { title: textField("標題"), plans: { type: "array", label: "方案", min: 1, max: 6, arrayFields: { name: textField("方案名稱"), price: textField("價格"), description: textField("說明", true), label: textField("標籤"), features: { type: "custom", label: "方案特色", render: (props: FieldProps) => <StringListField {...props} /> }, action }, defaultItemProps: { name: "方案", price: "NT$ 0", features: [] } } }, defaultProps: { title: "選擇適合你的方案", plans: [{ name: "標準方案", price: "NT$ 0", features: [] }] }, render: ({ title, plans }) => <section><h2 className="text-3xl font-black">{title}</h2><div className="mt-5 grid gap-4 md:grid-cols-3">{plans.map((plan: { name: string; price: string; description?: string }, index: number) => <article key={index} className="rounded-2xl border p-6"><h3 className="font-bold">{plan.name}</h3><p className="mt-2 text-3xl font-black">{plan.price}</p><p className="mt-3 text-slate-600">{plan.description}</p></article>)}</div></section> },
+-      Countdown: { label: "倒數計時＋報名 CTA", fields: { title: textField("標題"), mode: { type: "select", label: "倒數模式", options: [{ label: "固定截止時間", value: "fixed_date" }, { label: "依直播開播時間", value: "live_linked" }] }, targetAt: textField("固定截止時間（ISO 8601，包含時區）"), ctaLabel: textField("倒數下方按鈕文字"), ctaAction: action, expiredMessage: textField("結束訊息"), expiredAction: { type: "select", label: "倒數結束後", options: [{ label: "顯示結束訊息", value: "show_message" }, { label: "隱藏報名按鈕", value: "hide_cta" }, { label: "轉址到指定頁面", value: "redirect" }] }, expiredRedirect: actionField(context.forms, "到期後前往") }, defaultProps: { title: "報名即將截止", mode: "fixed_date", targetAt: "2030-01-01T00:00:00+08:00", ctaLabel: "立即保留席次", ctaAction: { type: "anchor", targetId: "register" }, expiredMessage: "本次報名已截止", expiredAction: "show_message" }, render: ({ title, mode, targetAt, ctaLabel }) => <section className="rounded-2xl border border-amber-200 bg-gradient-to-b from-amber-50 to-orange-50 p-6 text-center"><h2 className="text-2xl font-black">{title}</h2><time className="mt-3 block font-bold tabular-nums text-amber-900">{mode === "live_linked" ? "依直播開播時間倒數" : `截止：${targetAt}`}</time>{ctaLabel ? <button type="button" className="mt-5 rounded-xl bg-amber-500 px-5 py-3 font-bold text-slate-950 shadow-sm">{ctaLabel}</button> : null}</section> },
++      Countdown: { label: "倒數計時＋報名按鈕", fields: { title: textField("標題"), mode: { type: "select", label: "倒數模式", options: [{ label: "固定截止時間", value: "fixed_date" }, { label: "依直播開播時間", value: "live_linked" }] }, targetAt: textField("固定截止時間（ISO 8601，包含時區）"), ctaLabel: textField("倒數下方按鈕文字"), ctaAction: action, expiredMessage: textField("結束訊息"), expiredAction: { type: "select", label: "倒數結束後", options: [{ label: "顯示結束訊息", value: "show_message" }, { label: "隱藏報名按鈕", value: "hide_cta" }, { label: "轉址到指定頁面", value: "redirect" }] }, expiredRedirect: actionField(context.forms, "到期後前往") }, defaultProps: { title: "報名即將截止", mode: "fixed_date", targetAt: "2030-01-01T00:00:00+08:00", ctaLabel: "立即保留席次", ctaAction: { type: "anchor", targetId: "register" }, expiredMessage: "本次報名已截止", expiredAction: "show_message" }, render: ({ title, mode, targetAt, ctaLabel }) => <section className="rounded-2xl border border-amber-200 bg-gradient-to-b from-amber-50 to-orange-50 p-6 text-center"><h2 className="text-2xl font-black">{title}</h2><time className="mt-3 block font-bold tabular-nums text-amber-900">{mode === "live_linked" ? "依直播開播時間倒數" : `截止：${targetAt}`}</time>{ctaLabel ? <button type="button" className="mt-5 rounded-xl bg-amber-500 px-5 py-3 font-bold text-slate-950 shadow-sm">{ctaLabel}</button> : null}</section> },
+       Testimonials: { label: "見證", fields: { title: textField("標題"), items: { type: "array", label: "見證內容", min: 1, max: 12, arrayFields: { quote: textField("心得", true), name: textField("姓名"), role: textField("身分") }, defaultItemProps: { quote: "這是一段心得。", name: "參與者" } } }, defaultProps: { title: "參與者怎麼說", items: [{ quote: "這是一段心得。", name: "參與者" }] }, render: ({ title, items }) => <section><h2 className="text-3xl font-black">{title}</h2>{items.map((item: { quote: string; name: string; role?: string }, index: number) => <blockquote key={index} className="mt-4 rounded-2xl bg-slate-50 p-5">「{item.quote}」<footer className="mt-3 font-bold">{item.name}{item.role ? `｜${item.role}` : ""}</footer></blockquote>)}</section> },
+       FAQ: { label: "常見問題", fields: { title: textField("標題"), items: { type: "array", label: "問題", min: 1, max: 24, arrayFields: { question: textField("問題"), answer: textField("答案", true) }, defaultItemProps: { question: "常見問題", answer: "在這裡回答問題。" } } }, defaultProps: { title: "常見問題", items: [{ question: "常見問題", answer: "在這裡回答問題。" }] }, render: ({ title, items }) => <section><h2 className="text-3xl font-black">{title}</h2>{items.map((item: { question: string; answer: string }, index: number) => <details key={index} className="mt-3 rounded-xl border p-4"><summary className="cursor-pointer font-bold">{item.question}</summary><p className="mt-3 whitespace-pre-line text-slate-600">{item.answer}</p></details>)}</section> },
+
+--- src/components/landing-pages/workspace-editor.tsx (before)
++++ src/components/landing-pages/workspace-editor.tsx
+@@ -9,7 +9,7 @@
+ 
+ const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
+-const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
++const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入網站編輯器…</p> });
+ 
+-const FunnelStepsEditor = dynamic(() => import("@/components/landing-pages/funnel-step-pages-editor").then((module) => module.FunnelStepPagesEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 流程…</p> });
++const FunnelStepsEditor = dynamic(() => import("@/components/landing-pages/funnel-step-pages-editor").then((module) => module.FunnelStepPagesEditor), { ssr: false, loading: () => <p className="p-8">正在載入網站流程…</p> });
+ 
+ function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
+
+--- src/components/team-performance-dashboard.tsx (before)
++++ src/components/team-performance-dashboard.tsx
+@@ -16,5 +16,5 @@
+   return (
+     <>
+-      <PageHeader title="展業成效" description="依真實頁面歸因、點擊、報名與可明確對應頁面的瀏覽事件彙整；不會推估缺少的資料。" />
++      <PageHeader title="成效分析" description="依真實頁面歸因、點擊、報名與可明確對應頁面的瀏覽事件彙整；不會推估缺少的資料。" />
+       <Card className="mb-6">
+         <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" method="get">
+
+--- src/lib/funnel-block-library.ts (before)
++++ src/lib/funnel-block-library.ts
+@@ -86,5 +86,5 @@
+   page_footers: { id: "page_footers", label: "頁尾", description: "品牌資訊、導覽與社群連結", variantCount: 3 },
+   team_presentation: { id: "team_presentation", label: "團隊介紹", description: "團隊成員照片、職稱與介紹", variantCount: 3 },
+-  welcome: { id: "welcome", label: "歡迎區塊", description: "Hero 歡迎訊息與行動按鈕", variantCount: 3 },
++  welcome: { id: "welcome", label: "歡迎區塊", description: "主視覺歡迎訊息與行動按鈕", variantCount: 3 },
+   price_plans: { id: "price_plans", label: "價格方案", description: "方案比較、推薦方案與行動按鈕", variantCount: 3 },
+   page_headers: { id: "page_headers", label: "頁首", description: "品牌名稱與導覽選單", variantCount: 3 },
+@@ -253,5 +253,5 @@
+ registerVariants("page-footer", "page_footers", "品牌導覽頁尾", "品牌資訊、導覽選單與社群分享。", pageFooter);
+ registerVariants("team", "team_presentation", "團隊介紹", "團隊照片、職稱與介紹。", teamPresentation);
+-registerVariants("welcome", "welcome", "歡迎 Hero", "品牌歡迎訊息與主要行動按鈕。", welcome);
++registerVariants("welcome", "welcome", "歡迎主視覺", "品牌歡迎訊息與主要行動按鈕。", welcome);
+ registerVariants("price-plans", "price_plans", "價格方案", "含推薦方案標示的價格比較。", pricePlans);
+ registerVariants("page-header", "page_headers", "品牌導覽頁首", "品牌名稱與頁內導覽。", pageHeader);

@@ -1,0 +1,110 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "name": "report lease service isolates claim ownership and aggregate completion",
+      "status": "PASS"
+    },
+    {
+      "name": "lease compare-and-delete preserves renewed and foreign admissions",
+      "status": "PASS"
+    },
+    {
+      "name": "authorization callback and interval append share one real transaction",
+      "status": "PASS"
+    },
+    {
+      "name": "authorization denial rolls back callback writes and appends nothing",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid callback identity rolls back prior callback writes",
+      "status": "PASS"
+    },
+    {
+      "name": "blacklist committed on another connection after identity resolution prevents append",
+      "status": "PASS"
+    },
+    {
+      "name": "identity changing during locked revalidation cannot append",
+      "status": "PASS"
+    },
+    {
+      "name": "close seals a complete delivered sequence and exact retries preserve the close timestamp",
+      "status": "PASS"
+    },
+    {
+      "name": "pending close allows missing sequences but cannot claim delivery completion early",
+      "status": "PASS"
+    },
+    {
+      "name": "declared final sequence cannot grow and a batch beyond it rolls back atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "close refuses another tenant or registration and permits an explicit empty stream",
+      "status": "PASS"
+    },
+    {
+      "name": "expired metric sessions can acknowledge stored history but cannot append",
+      "status": "PASS"
+    },
+    {
+      "name": "racing append and close never skip or duplicate the final event",
+      "status": "PASS"
+    },
+    {
+      "name": "released admission cannot close or read historical delivery receipts",
+      "status": "PASS"
+    },
+    {
+      "name": "a changed version after lock acquisition aborts interval ingestion",
+      "status": "PASS"
+    },
+    {
+      "name": "expired pending close becomes terminal unknown and exact retries remain idempotent",
+      "status": "PASS"
+    },
+    {
+      "name": "unavailable current content terminates pending old delivery without fabricating completion",
+      "status": "PASS"
+    },
+    {
+      "name": "resolver infrastructure failure never turns missing evidence into a terminal receipt",
+      "status": "PASS"
+    },
+    {
+      "name": "append expiry and historical close remain exact in UTC",
+      "status": "PASS"
+    },
+    {
+      "name": "append expiry and historical close remain exact in America/Los_Angeles",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent session issuance and replay return one stable server-anchored session",
+      "status": "FAIL",
+      "code": "ASSERTION_OR_RUNNER_ERROR",
+      "guard": null,
+      "assertion": null
+    }
+  ],
+  "loadMetrics": null,
+  "indexMetrics": null,
+  "visitDeletionMetrics": null,
+  "passed": 20,
+  "migration": {
+    "status": "BLOCKED_OR_FAILED",
+    "count": 99,
+    "failure": {
+      "category": "wp20-persistence-check-failed",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

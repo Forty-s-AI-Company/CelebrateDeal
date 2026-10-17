@@ -1,0 +1,371 @@
+       {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
+       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
+
+--- src/app/(app)/settings/team/page.tsx (before)
++++ src/app/(app)/settings/team/page.tsx
+@@ -69,5 +69,5 @@
+   return (
+     <>
+-      <PageHeader title="團隊與上下線" description="建立銷售團隊、加入商家成員，並以可追溯的關係設定 payout 與展業歸屬。" />
++      <PageHeader title="團隊管理" description="建立銷售團隊、加入商家成員，並以可追溯的關係設定 payout 與展業歸屬。" />
+       {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
+       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請重新整理後再試。"}</p> : null}
+
+--- src/app/(app)/team-templates/page.tsx (before)
++++ src/app/(app)/team-templates/page.tsx
+@@ -47,5 +47,5 @@
+   return (
+     <>
+-      <PageHeader title="團隊展業" description="建立 A 端原始頁、發佈不可變版本，並用受控分享連結讓夥伴複製。" action={<ButtonLink href="/team-templates/new" tone="cta"><Plus size={16} />建立模板</ButtonLink>} />
++      <PageHeader title="團隊模板" description="建立 A 端原始頁、發佈不可變版本，並用受控分享連結讓夥伴複製。" action={<ButtonLink href="/team-templates/new" tone="cta"><Plus size={16} />建立模板</ButtonLink>} />
+       {memberships.length === 0 ? <p role="status" className="mb-4 rounded-md bg-orange-50 p-3 text-sm text-orange-800">你目前沒有可管理的有效團隊，無法建立或發佈團隊模板。</p> : null}
+       <TeamTemplateList templates={items} csrfToken={csrfToken} action={manageTeamFunnelTemplateAction} nativeAction="/api/team-funnel/template-actions" />
+
+--- src/app/(app)/videos/page.tsx (before)
++++ src/app/(app)/videos/page.tsx
+@@ -83,5 +83,5 @@
+   return (
+     <>
+-      <PageHeader title="影片庫" description="管理直播回放、預錄影片與可綁定到直播間的播放素材。" action={<ButtonLink href="/videos/new"><Plus size={16} />新增影片</ButtonLink>} />
++      <PageHeader title="媒體素材" description="管理直播回放、預錄影片與可綁定到直播間的播放素材。" action={<ButtonLink href="/videos/new"><Plus size={16} />新增影片</ButtonLink>} />
+       <Card className="mb-5">
+         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
+
+--- src/components/__snapshots__/app-shell.test.ts.snap (before)
++++ src/components/__snapshots__/app-shell.test.ts.snap
+@@ -0,0 +1,154 @@
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
++
++exports[`keeps every merchant navigation label aligned with its destination title 1`] = `
++[
++  {
++    "href": "/dashboard",
++    "label": "營運總覽",
++  },
++  {
++    "href": "/projects",
++    "label": "銷售專案",
++  },
++  {
++    "href": "/lives",
++    "label": "直播間",
++  },
++  {
++    "href": "/videos",
++    "label": "媒體素材",
++  },
++  {
++    "href": "/landing-pages",
++    "label": "一頁式網站",
++  },
++  {
++    "href": "/forms",
++    "label": "報名管理",
++  },
++  {
++    "href": "/products",
++    "label": "商品",
++  },
++  {
++    "href": "/orders",
++    "label": "訂單與履約",
++  },
++  {
++    "href": "/consultations",
++    "label": "諮詢預約",
++  },
++  {
++    "href": "/customers",
++    "label": "學員 CRM",
++  },
++  {
++    "href": "/support-cases",
++    "label": "客服案件",
++  },
++  {
++    "href": "/messages/templates",
++    "label": "訊息模板",
++  },
++  {
++    "href": "/messages/deliveries",
++    "label": "寄送管理",
++  },
++  {
++    "href": "/interaction-scripts",
++    "label": "互動腳本",
++  },
++  {
++    "href": "/interaction-roles",
++    "label": "互動角色",
++  },
++  {
++    "href": "/blacklists",
++    "label": "封鎖名單",
++  },
++  {
++    "href": "/affiliates",
++    "label": "推廣夥伴",
++  },
++  {
++    "href": "/team-templates",
++    "label": "團隊模板",
++  },
++  {
++    "href": "/partner-pages",
++    "label": "我的夥伴頁",
++  },
++  {
++    "href": "/team-performance",
++    "label": "成效分析",
++  },
++  {
++    "href": "/billing/usage",
++    "label": "用量與扣點",
++  },
++  {
++    "href": "/billing/payment-methods",
++    "label": "付款方式",
++  },
++  {
++    "href": "/billing/plans",
++    "label": "方案",
++  },
++  {
++    "href": "/billing/invoices",
++    "label": "帳單",
++  },
++  {
++    "href": "/billing/electronic-invoices",
++    "label": "電子發票",
++  },
++  {
++    "href": "/billing/settlements",
++    "label": "月結",
++  },
++  {
++    "href": "/billing/payouts",
++    "label": "批次出款",
++  },
++  {
++    "href": "/affiliates/commissions",
++    "label": "佣金結算",
++  },
++  {
++    "href": "/billing/course-payouts",
++    "label": "課程分潤",
++  },
++  {
++    "href": "/onboarding",
++    "label": "上線導引",
++  },
++  {
++    "href": "/settings/brand",
++    "label": "品牌設定",
++  },
++  {
++    "href": "/settings/tracking",
++    "label": "追蹤設定",
++  },
++  {
++    "href": "/settings/features",
++    "label": "功能模組",
++  },
++  {
++    "href": "/settings/line",
++    "label": "LINE 整合",
++  },
++  {
++    "href": "/settings/automations",
++    "label": "自動化",
++  },
++  {
++    "href": "/settings/team",
++    "label": "團隊管理",
++  },
++  {
++    "href": "/settings/security",
++    "label": "安全性",
++  },
++]
++`;
+
+--- src/components/app-shell.test.ts (before)
++++ src/components/app-shell.test.ts
+@@ -1,3 +1,5 @@
+ import { createElement, type ReactNode } from "react";
++import { existsSync, readFileSync } from "node:fs";
++import path from "node:path";
+ import { renderToStaticMarkup } from "react-dom/server";
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+@@ -48,4 +50,32 @@
+ 
+ describe("AppShell role navigation", () => {
++  it("exposes LINE only to the owner allowed by the existing settings page", () => {
++    expect(linksFor("owner")).toContain("/settings/line");
++    for (const role of ["admin", "accountant", "support", "member", null]) {
++      expect(linksFor(role)).not.toContain("/settings/line");
++    }
++    expect(linksFor(null, true)).not.toContain("/settings/line");
++    expect(renderShell({ memberRole: "owner" })).toContain('href="/settings/line"');
++  });
++
++  it("makes partner pages discoverable with the funnel feature", () => {
++    for (const role of ["owner", "admin", "accountant"]) {
++      expect(linksFor(role, false, ["funnel_builder"])).toContain("/partner-pages");
++      expect(linksFor(role, false, [])).not.toContain("/partner-pages");
++    }
++    expect(linksFor("support")).not.toContain("/partner-pages");
++    expect(renderShell({ memberRole: "owner" })).toContain('href="/partner-pages"');
++  });
++
++  it("links every supported role to an existing page rather than a missing settings route", () => {
++    const links = new Set(["owner", "admin", "accountant", "support"].flatMap((role) => linksFor(role))
++      .concat(linksFor(null, true)));
++    expect(links.has("/settings/commissions")).toBe(false);
++    for (const href of links) {
++      const route = href.replace(/^\//, "");
++      expect(["src/app", "src/app/(app)"].some((root) =>
++        existsSync(path.join(process.cwd(), root, route, "page.tsx"))), href).toBe(true);
++    }
++  });
+   it("keeps accountant navigation tenant-scoped and read-oriented", () => {
+     const links = linksFor("accountant");
+@@ -199,2 +229,14 @@
+   });
+ });
++
++it("keeps every merchant navigation label aligned with its destination title", () => {
++  const labels = navigationForRole("owner").flatMap((group) => group.items.map((item) => ({ href: item.href, label: item.label })));
++  const componentTitles: Record<string, string> = { "/team-performance": "src/components/team-performance-dashboard.tsx" };
++  for (const { href, label } of labels) {
++    const filename = componentTitles[href] ?? `src/app/(app)${href}/page.tsx`;
++    const source = readFileSync(path.join(process.cwd(), filename), "utf8");
++    const title = source.match(/<PageHeader\b[^>]*?title="([^"]+)"/)?.[1];
++    expect(title, href).toBe(label);
++  }
++  expect(labels).toMatchSnapshot();
++});
+
+--- src/components/app-shell.tsx (before)
++++ src/components/app-shell.tsx
+@@ -17,5 +17,5 @@
+     label: "營運總覽",
+     items: [
+-      { href: "/dashboard", label: "Dashboard", icon: Gauge },
++      { href: "/dashboard", label: "營運總覽", icon: Gauge },
+       { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
+     ],
+@@ -34,8 +34,8 @@
+     items: [
+       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
+-      { href: "/orders", label: "訂單管理", icon: PackageCheck, managerOnly: true },
++      { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
+       { href: "/consultations", label: "諮詢預約", icon: CalendarCheck, managerOnly: true, feature: "consultation_booking" },
+       { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },
+-      { href: "/support-cases", label: "售後服務", icon: Headphones, managerOnly: true },
++      { href: "/support-cases", label: "客服案件", icon: Headphones, managerOnly: true },
+     ],
+   },
+@@ -44,5 +44,5 @@
+     items: [
+       { href: "/messages/templates", label: "訊息模板", icon: Bell, managerOnly: true },
+-      { href: "/messages/deliveries", label: "寄送紀錄", icon: ReceiptText, managerOnly: true },
++      { href: "/messages/deliveries", label: "寄送管理", icon: ReceiptText, managerOnly: true },
+       { href: "/interaction-scripts", label: "互動腳本", icon: ScrollText, managerOnly: true, feature: "live_webinar" },
+       { href: "/interaction-roles", label: "互動角色", icon: Bot, managerOnly: true, feature: "live_webinar" },
+@@ -68,10 +68,10 @@
+       { href: "/billing/electronic-invoices", label: "電子發票", icon: ReceiptText, financeOnly: true },
+       { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true },
+-      { href: "/billing/payouts", label: "稅務匯出", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
++      { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
+       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
+-      { href: "/billing/course-payouts", label: "勞報單審核", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
++      { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
+       { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
+       { href: "/settings/brand", label: "品牌設定", icon: Palette, managerOnly: true },
+-      { href: "/settings/tracking", label: "追蹤", icon: BarChart3, managerOnly: true },
++      { href: "/settings/tracking", label: "追蹤設定", icon: BarChart3, managerOnly: true },
+       { href: "/settings/features", label: "功能模組", icon: Settings2, managerOnly: true },
+       { href: "/settings/line", label: "LINE 整合", icon: Bell, ownerOnly: true },
+
+--- src/components/landing-page-workspace.tsx (before)
++++ src/components/landing-page-workspace.tsx
+@@ -168,5 +168,5 @@
+       if (pendingOperation.current === "save") {
+         setExitQueued(true);
+-        setMessage("儲存完成後會返回原本的 Configuration。");
++        setMessage("儲存完成後會返回原本的頁面設定。");
+       }
+       return;
+@@ -183,5 +183,5 @@
+   return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
+     <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
+-      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回 Configuration" : "返回"}</button>
++      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回頁面設定" : "返回"}</button>
+       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name}</p>
+
+--- src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap (before)
++++ src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap
+@@ -0,0 +1,49 @@
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
++
++exports[`merchant display terminology > keeps the approved display dictionary reviewable 1`] = `
++{
++  "experimentArmLabels": {
++    "control": "對照組",
++    "variant": "測試組",
++  },
++  "experimentStatusLabels": {
++    "draft": "草稿",
++    "running": "進行中",
++    "stopped": "已停止",
++    "winner": "已選定勝出組別",
++  },
++  "funnelGoalLabels": {
++    "audience": "建立名單",
++    "custom": "自訂流程",
++    "sell": "銷售商品",
++    "webinar": "線上講座",
++  },
++  "funnelStepLabels": {
++    "contact_us_page": "聯絡我們",
++    "downsell": "降價加購頁",
++    "inactive_page": "停用頁",
++    "info_page": "資訊頁",
++    "inline_form": "內嵌表單",
++    "link_in_bio": "個人簡介連結頁",
++    "opt_in_page": "名單頁",
++    "opt_in_thank_you_page": "名單感謝頁",
++    "order_form": "訂單表單",
++    "popup_form": "彈出表單",
++    "sales_page": "銷售頁",
++    "thank_you_page": "感謝頁",
++    "upsell": "加購頁",
++    "webinar_broadcast_page": "線上講座播放頁",
++    "webinar_registration_page": "線上講座報名頁",
++    "webinar_thank_you_page": "線上講座感謝頁",
++  },
++  "funnelTabLabels": {
++    "A/B test": "A/B 測試",
++    "Automation Rules": "自動化規則",
++    "Configuration": "頁面設定",
++    "Deadline settings": "截止設定",
++    "Leads": "報名名單",
++    "Sales": "銷售紀錄",
++    "Stats": "成效統計",
++  },
++}
++`;
+
+--- src/components/landing-pages/funnel-display-labels.test.ts (before)
++++ src/components/landing-pages/funnel-display-labels.test.ts
+@@ -0,0 +1,57 @@
++import { resolvePaymentStatus, type PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
++import { describe, expect, it } from "vitest";
++import { FUNNEL_GOALS, FUNNEL_STEP_TYPES } from "@/lib/funnel-flow";
++import { funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel, referenceOptions } from "./funnel-display-labels";
++
++describe("merchant display terminology", () => {
++  it("covers every persisted goal and step type without changing its key", () => {
++    expect(Object.keys(funnelGoalLabels)).toEqual([...FUNNEL_GOALS]);

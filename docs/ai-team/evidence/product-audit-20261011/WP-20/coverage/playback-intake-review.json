@@ -1,0 +1,217 @@
+{
+  "finalModel": "claude-opus-5-5",
+  "accepted": false,
+  "reviewed": true,
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "completed": false,
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "exitCode": -1,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "IDLE_TIMEOUT"
+    },
+    {
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS"
+    }
+  ],
+  "agy_discovery_process_status": "SUCCESS",
+  "execution_provider": "claude_cli",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 12,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 20000,
+      "expected_duration": 60,
+      "code_surface_area": 16,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "Read-only review of the supplied excerpts only: the full 119 migration, the intake service without its Input declaration, the session-binding excerpt, and the reported DB receipt. I found no BLOCKER or MAJOR defects. Within the private foundation, the design holds up. A durable intake row is committed before the URL is returned. The 64-row cap persists one permanent loss boundary. Intake rows, loss markers and session bindings are immutable. Version-cascade cleanup works and the ACL lockdown is sound. The five findings below are hardening and scope items (four MINOR, one NIT). An empty BLOCKER/MAJOR list does not certify release. The full WP, release and synchronized20 remain NOT_READY (7 successes, 13 failures). Deployed runtime role, TTL renewal, signed Next HTTP browser auth, live captureStream/WHEP, and populated upgrades/load remain UNVERIFIED. The browser pass used a synthetic fixture authorizer, not signed HTTP end to end.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "migration 119",
+        "area": "wp20_metric_session_intake_guard (UPDATE branch / INSERT with NULL intakeId)",
+        "issue": "The database enforces the intake bounds only when a session is inserted with intakeId set. An UPDATE can change expiresAt, anchorAt or admissionSessionId without rechecking them against the bound intake. Inserting a session with a NULL intakeId is always allowed, even on versions with a non-NULL playbackIntakeStartedAt.",
+        "evidence": "The UPDATE branch only raises if intakeId changes. The INSERT branch validates only when NEW.intakeId IS NOT NULL. Requiring intake is a service option (requirePlaybackIntake) that only the HTTP endpoint sets.",
+        "impact": "A renewal path (TTL renewal is UNVERIFIED) or any non-HTTP caller could extend a session past its intake lifetime, or create sessions with no intake, in the intake era. A future coverage producer could then count these as covered. Today's HTTP path caps source.expiresAt, so there is no observed defect.",
+        "recommended_fix": "On UPDATE, recheck that NEW.expiresAt <= intake.expiresAt and that admissionSessionId and anchorAt are unchanged when intakeId is set. Optionally reject a NULL intakeId when the version's playbackIntakeStartedAt is non-NULL and anchorAt >= that epoch.",
+        "required_test": "DB test: an UPDATE that extends a bound session's expiresAt past the intake's expiresAt, or changes its admissionSessionId, must fail with 23514. If the NOT NULL rule is adopted, inserting a session with no intake on an epoch version must also fail.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "migration 119",
+        "area": "wp20_metric_playback_intake_guard scope SELECT; epoch column",
+        "issue": "Intake rows and bindings are accepted for versions created before the migration, whose playbackIntakeStartedAt is NULL. Untracked playback without an intake row is also invisible: URLs issued before collectionStartedAt, or through the !context path, keep playing into the collection window with no intake and no loss marker.",
+        "evidence": "The guard checks collectionEnabled and collectionStartedAt <= issuedAt but never playbackIntakeStartedAt. The service returns an untracked source when context and current are both null.",
+        "impact": "Not a defect in this task, since there is no producer here. A future completeness or coverage producer could still certify a pre-epoch version, or count only URLs issued inside the window, and miss viewers already playing.",
+        "recommended_fix": "Scope proposal: the producer must refuse certification when the epoch is NULL. It must define coverage as based on when URLs were issued, from the epoch onward, and treat playback started before the window as uncertifiable. Optionally reject intake in the guard when the epoch is NULL.",
+        "required_test": "Producer test (future WP): a NULL-epoch version and a pre-start URL that keeps playing must both produce a not-certifiable or incomplete result.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "intake service / migration 119",
+        "area": "Live FOR SHARE in the source transaction and guard; Live FOR UPDATE in the epoch trigger",
+        "issue": "Every tracked playback request holds a FOR SHARE lock on the hot Live row, plus admission and version locks, for up to the 10 s transaction timeout. Any Live UPDATE or new-version INSERT waits behind all in-flight playback, and new playback then queues behind that waiting writer.",
+        "evidence": "Live is locked FOR SHARE in both the service and the guard. The epoch trigger runs PERFORM ... FOR UPDATE on Live. The transaction allows maxWait 5000 and timeout 10000.",
+        "impact": "During viewer surges this can cause multixact churn on the Live row, stalls in status changes or version enablement, and lock_timeout failures that block playback. Populated load is UNVERIFIED.",
+        "recommended_fix": "Measure under concurrent load. Consider FOR KEY SHARE where only existence or immutability of the key is needed, and keep the stronger lock only for the epoch-serialization guarantee. Document lock-wait budgets.",
+        "required_test": "Load test: N concurrent playback-source requests interleaved with a Live UPDATE and a new-version INSERT. Assert no deadlocks and bounded p99 latency, with lock_timeout errors under threshold.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "MINOR",
+        "file": "migration 119",
+        "area": "Privilege DO block; ENABLE (not FORCE) RLS",
+        "issue": "The ACL assertion fails if any non-owner holds a grant, so the runtime role must be the table owner. The owner bypasses RLS and can DISABLE or DROP the immutability triggers. The check also ignores column-level ACLs (pg_attribute.attacl).",
+        "evidence": "The check raises when a.grantee <> c.relowner on the relation ACL only. The table has ENABLE ROW LEVEL SECURITY without FORCE.",
+        "impact": "Immutability and the cap hold against the API roles but not against the deployed runtime role if it is the owner. Whether the deployed runtime role is the owner is UNVERIFIED. A column-level grant could slip past the assertion.",
+        "recommended_fix": "Verify which role owns the table at runtime versus migration time. If they are the same, record that immutability depends on the application. Extend the ACL check to pg_attribute.attacl for the table.",
+        "required_test": "Migration test: a column-level GRANT SELECT(id) to anon must make the assertion fail. Deployed check: confirm the runtime role and its ownership and privileges on the intake table.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "NIT",
+        "file": "intake service",
+        "area": "INSERT ... SELECT path and guard 23514 raise",
+        "issue": "If the version expires, or the admission lapses, in the milliseconds between context resolution and the INSERT, the guard raises an exception or the INSERT stores no row. The request then fails with a raw error or a generic 'Playback intake unavailable' instead of a controlled not_authorized or null.",
+        "evidence": "If stored is missing, the service throws a plain Error. The guard's RAISE 23514 surfaces as a Prisma error.",
+        "impact": "Users see a rare 500 instead of a clean denial. Nothing is fabricated and fail-closed behavior holds.",
+        "recommended_fix": "Map the guard's 23514 error and the missing-row case to MetricIngestError('not_authorized') or a retryable null.",
+        "required_test": "Unit test: simulate the version or admission expiring between context resolution and INSERT, and assert a typed not_authorized result with no intake row.",
+        "confidence": 0.5
+      }
+    ]
+  }
+}

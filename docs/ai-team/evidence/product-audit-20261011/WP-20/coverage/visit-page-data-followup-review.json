@@ -1,0 +1,183 @@
+{
+  "completed": false,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "permission",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 3,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "normalized_status": "REVIEW_COMPLETED",
+  "reviewed": true,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "exitCode": 3,
+      "status": "RATE_LIMITED"
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "status": "SUCCESS"
+    }
+  ],
+  "accepted": false,
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-opus-5-5"
+  },
+  "status": "REVIEW_COMPLETED",
+  "agy_discovery_process_status": "SUCCESS",
+  "review": {
+    "summary": "I reviewed only the three supplied files. The earlier fixes look correct in the source:\n- **Cap:** the app and trigger build the same per-live advisory-lock key. The app takes that lock before resolving the canonical context, and the trigger re-takes it before counting, so concurrent issuers can't race the 10000-row count. Because the trigger function is volatile and runs in read committed, multi-row inserts are capped too.\n- **Loss stamp:** at the cap, the app stamps `lossAt` on the earliest row once, by database time, then returns null. The trigger allows only a `lossAt` change from null to a value, and allows deletes only when they cascade from the parent version.\n- **Errors:** only the P2010 error carrying `meta.code` P2090 maps to null. Everything else, including P2091, still throws.\n- **Expired pages:** the expired page error is a subclass of the intent error, so public prepare still maps it to `SCOPE_UNAVAILABLE`.\n- **Privileges:** grants are revoked and verified, and the migration never enables collection.\n\nThere is one new issue, introduced by the cap fix. Every anonymous page render now waits on one lock per live. Under heavy traffic, waiting renders hold pool connections, and a lock-wait timeout throws an error instead of falling back to a page without the collector. There is also a small nit about repeated row locking once the cap is reached.\n\nDesign note, not a defect: with a fixed cap, about 10000 renders of a version (including bots and prefetches) permanently stop tracking for it. The `lossAt` marker records this honestly, but the scope owner should confirm the trade-off.\n\nI didn't run or infer any tests, and nothing here certifies coverage, load, deployment or release readiness.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "issueMetricVisitPage: advisory lock + catch block (PERSISTENCE_UNAVAILABLE rethrow)",
+        "issue": "The cap fix makes one advisory lock per live a choke point on the anonymous page-render path. All issuers for a live run one at a time. Each holds the lock while it resolves the context twice, counts twice (app and trigger), inserts and re-selects. Waiters sit on a pooled connection until `statement_timeout` (5s) expires, and a lock-wait timeout falls through to `throw new MetricVisitorError('PERSISTENCE_UNAVAILABLE')` instead of returning null like the over-cap and scope-unavailable paths do.",
+        "evidence": "`SELECT pg_advisory_xact_lock(hashtextextended(jsonb_build_array('wp20_metric_visit_page',vendorId,liveId)...))` runs first in every issuance transaction. The lock is held until commit, and the trigger re-takes the same key. The catch block only returns null for MetricVisitorError SCOPE/LIFETIME, the expired-page error and P2010/P2090. Code 57014 (statement timeout) and 55P03 (lock timeout) are rethrown. The code comments say the renderer awaits issuance before exposing the nonce.",
+        "impact": "A traffic burst on one popular live page queues renders behind the lock. Each waiting render holds a Prisma pool connection, which can starve unrelated requests. Requests that time out make the public page fail (if the renderer passes this error through) instead of rendering without the collector. Before this fix, issuance had no per-live lock, so this availability risk is new. Load testing is a disclosed open item, but this design choice should be visible now.",
+        "recommended_fix": "Keep the lock, but bound how long a render can wait. Options: use `pg_try_advisory_xact_lock`, or set a short `lock_timeout` (for example 200–500ms) before taking the lock. Map lock-unavailable or timeout (55P03/57014 from this step only) to a stamped-loss-or-null result, using the same no-collector page as the over-cap path, without releasing a nonce. Alternatively, write down an explicit throughput/pool budget per live. Also consider replacing the per-render `count(*)` with a counter row that is locked by the same key.",
+        "required_test": "Disposable DB: hold the per-live advisory lock in one session, start N concurrent `issueMetricVisitPage` calls for the same live, and assert they finish within the chosen bound. Assert no nonce is returned for a row that didn't commit, the page renders without the collector (or the documented behavior happens), and pool connections are released. Add a test that other lives are not blocked.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/lib/live-metric-visit-page.ts",
+        "area": "issueMetricVisitPage over-cap branch (SELECT ... FOR UPDATE / UPDATE lossAt)",
+        "issue": "After the first loss stamp, every later over-cap render still runs `SELECT ... FOR UPDATE` on the earliest row and then an UPDATE that changes nothing.",
+        "evidence": "`ORDER BY \"issuedAt\",\"eventId\" LIMIT 1 FOR UPDATE` runs without checking whether any `lossAt` is already set. The UPDATE is filtered by `\"lossAt\" IS NULL`, so it matches no rows after the first stamp.",
+        "impact": "Each capped render does extra row locking and writing. It also briefly conflicts with a prepare holding `FOR SHARE` on that earliest event. Correctness is not affected.",
+        "recommended_fix": "Before locking, check whether a stamp already exists (`SELECT 1 ... WHERE versionId=... AND \"lossAt\" IS NOT NULL LIMIT 1`) and return null right away if it does. Only lock and stamp when no stamp exists yet. The advisory lock already serializes this.",
+        "required_test": "Disposable DB at the cap: the first over-cap issue stamps exactly one row, and later issues return null without row locks or updates. Verify with `pg_locks` or statement counts, and check that `lossAt` doesn't change.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "finalModel": "claude-opus-5-5"
+}

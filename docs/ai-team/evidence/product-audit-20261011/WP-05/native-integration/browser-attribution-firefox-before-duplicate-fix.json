@@ -1,0 +1,52 @@
+{
+  "checks": [
+    {
+      "engine": "firefox",
+      "entry": "form",
+      "javascript": false,
+      "initialServerFields": true,
+      "twoActualPostPayloadsMatch": true,
+      "metadataExcludedFromAnswers": true,
+      "retainedAfterFailure": true,
+      "reloadPreserved": true,
+      "hydrationErrors": 0,
+      "noAcceptedInvalidRegistration": true
+    },
+    {
+      "engine": "firefox",
+      "entry": "form",
+      "javascript": true,
+      "initialServerFields": true,
+      "twoActualPostPayloadsMatch": true,
+      "metadataExcludedFromAnswers": true,
+      "retainedAfterFailure": true,
+      "reloadPreserved": false,
+      "hydrationErrors": 0,
+      "noAcceptedInvalidRegistration": true
+    },
+    {
+      "engine": "firefox",
+      "entry": "p",
+      "javascript": false,
+      "initialServerFields": true,
+      "twoActualPostPayloadsMatch": true,
+      "metadataExcludedFromAnswers": true,
+      "retainedAfterFailure": true,
+      "reloadPreserved": true,
+      "hydrationErrors": 0,
+      "noAcceptedInvalidRegistration": true
+    }
+  ],
+  "status": "FAIL",
+  "cleanup": true,
+  "currentStep": "invalid-post-1",
+  "failedStage": "firefox:p:true",
+  "errorType": "AssertionError",
+  "errorCode": "ERR_ASSERTION",
+  "lastPath": "/p/wp05-partner-1791903024662",
+  "retryState": null,
+  "errorMessageCount": 1,
+  "retentionFailureCount": 0,
+  "fieldCount": 1,
+  "draftCount": 2
+}

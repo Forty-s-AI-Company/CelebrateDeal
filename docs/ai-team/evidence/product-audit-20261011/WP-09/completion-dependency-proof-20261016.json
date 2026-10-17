@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "wp09Revision": "sha256:b28c4dcf53a016d2039be8b6669740c2adfba3c03cc03b1084e61840ddfeacfb",
+  "wp17LocalRevision": "sha256:9562f738af5486e7c19338ad59f141dc71ba98732da5f6aef5a98b55680f8dd7",
+  "wp17CurrentHashesMatchPinnedRevision": true,
+  "wp17LocalAcceptance": "READY",
+  "wp17Evidence": [
+    "../WP-14/calendar-snapshot.json",
+    "../WP-17/reset-repair-acceptance.json",
+    "../WP-17/browser.json"
+  ],
+  "scope": "WP-09 consumes only the local one-entry creation, generated-page publication, public registration, Email verification and synthetic playback capability. Scheduler and actual external reminder delivery remain open in WP-17.",
+  "browserEvidence": {
+    "source": "renderer-regression-browser.json",
+    "status": "PASS",
+    "journeys": 6,
+    "axeScans": 12,
+    "migrations": 131,
+    "data": "synthetic disposable PostgreSQL"
+  },
+  "currentSourceHashes": {
+    "src/lib/funnel-template-gallery.ts": "9089d29903badf9e62186e980b0d1c3ec636cead2ffb63ca7c0f66dc0bd3e2fa",
+    "src/lib/funnel-template-gallery.test.ts": "d6627fda47346cc791591296cb58284d11a281ac79dfd2844b2feedf1cbfd05a",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "1ec73a1fab9f2d7e65edbbb6c5315c71b6f853cc7489a65f77245d7dd5f9b077",
+    "src/components/landing-pages/funnel-webinar-experience.test.tsx": "3a08bb2074cfa1633031c094ef274dc3032b07be046c5721066d1ccedeec0501",
+    "tests/e2e/wp09-sales-templates.spec.ts": "308bc64cd7f54075fe7c7c4cc535ba58b623f37225f5c59ec49ad729c1f41e38"
+  },
+  "futureGuard": "If the pinned WP-17 local revision changes or loses READY, rerun the six public journeys and 12 axe scans. Enabling reminder, LINE, SMS or settlement promises is new scope and requires WP-17/provider acceptance first. WP-09 evidence cannot close whole WP-17.",
+  "browserReattestation": "The three browser-affecting files and E2E spec are byte-identical to the successful run. Only two unit-test files changed to add negative-copy guards; completion-browser-reattest-20261016.json binds that proof to the current revision."
+}

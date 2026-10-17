@@ -1,4 +1,4 @@
-import { funnelOperationsReferencesValid } from "@/lib/funnel-operations";
+import { funnelOperationsReferencesValid, parseFunnelOperations } from "@/lib/funnel-operations";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -20,7 +20,7 @@ import { listFunnelCommerceProducts, publicFunnelCommerceViews, validateFunnelCo
 import type { FunnelCommerceProduct, FunnelCommerceView } from "@/lib/funnel-commerce";
 export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
-  live: { id: string; slug: string; videoId: string; videoTitle: string };
+  live: { id: string; slug: string; title: string; videoId: string; videoTitle: string };
 };
 const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } as const;
 function webinarContent(content: LandingPageStoredContent) {
@@ -37,7 +37,7 @@ function webinarResource(form: FormRecord | undefined, live: LiveRecord | null, 
   if (live?.status === "ended" && (!live.replayEnabled || (live.replayAvailableUntil && live.replayAvailableUntil.getTime() <= Date.now()))) return undefined;
   const fields = parseRegistrationFormFields(form?.fields);
   if (!form || !fields.success || !live?.videoId || live.video?.id !== live.videoId || live.video.vendorId !== vendorId || !isLiveVideoReady(live.video)) return undefined;
-  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title } };
+  return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, title: live.title, videoId: live.videoId, videoTitle: live.video.title } };
 }
 const MAX_NAME_LENGTH = 160;
 const MAX_SLUG_LENGTH = 100;
@@ -49,6 +49,15 @@ export type LandingPageActionState = {
   message: string;
   id?: string;
   revision?: number;
+  publication?: LandingPagePublicationStatus;
+};
+
+/** 商家端診斷；不改變公開頁或專案發布的判斷。 */
+export type LandingPagePublicationStatus = {
+  available: boolean;
+  message: string;
+  projectHref: string;
+  missing: Array<{ label: string; href: string }>;
 };
 
 export type LandingPageDraftInput = {
@@ -616,9 +625,10 @@ export async function duplicateLandingPage(pageId: string) {
  * fails closed for legacy databases that have not enforced the unique index.
  */
 // eslint-disable-next-line complexity
-export async function loadPublicLandingPage(slug: string): Promise<PublicLandingPage | null> {
+export async function loadPublicLandingPage(slug: string, onUnavailable?: (reason: string) => void, includePresentation = true): Promise<PublicLandingPage | null> {
+  const unavailable = (reason: string) => { onUnavailable?.(reason); return null; };
   const safeSlug = pageSlug(slug);
-  if (!safeSlug) return null;
+  if (!safeSlug) return unavailable("公開網址格式不正確。");
   const candidates = await db().landingPage.findMany({
     where: {
       slug: safeSlug,
@@ -661,13 +671,13 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
       },
     },
   });
-  if (candidates.length !== 1) return null;
+  if (candidates.length !== 1) return unavailable("找不到唯一可公開的 Funnel 版本；請確認 Funnel 與專案發布狀態。");
   const page = candidates[0];
-  if (!page) return null;
+  if (!page) return unavailable("找不到公開頁面。");
   const version = page.publishedVersion;
-  if (!version || !page.publishedAt || version.vendorId !== page.vendorId || version.pageId !== page.id) return null;
+  if (!version || !page.publishedAt || version.vendorId !== page.vendorId || version.pageId !== page.id) return unavailable("Funnel 發布版本不存在或不一致，請重新發布。");
   const content = parseFunnelStepPages(version.content) ?? parsePageDocument(version.content) ?? parseLandingPageContent(version.content);
-  if (!content || invalidWebinarContainer(content)) return null;
+  if (!content || invalidWebinarContainer(content)) return unavailable("已發布版本的頁面內容格式無效，請修復後重新發布。");
 
   const formIds = registrationFormIdsInContent(content);
   if (version.formId) formIds.add(version.formId);
@@ -676,17 +686,17 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     where: { id: { in: ids }, vendorId: page.vendorId, projectId: page.projectId, isActive: true },
     select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true },
   });
-  if (forms.length !== ids.length) return null;
+  if (forms.length !== ids.length) return unavailable("已發布版本的報名表不存在、已停用或不屬於此專案。");
   const live = version.live;
-  if (version.liveId && (!live || live.vendorId !== page.vendorId || live.projectId !== page.projectId || !PUBLIC_LIVE_STATUSES.has(live.status) || !live.formId || ids.length === 0 || ids.some((formId) => formId !== live.formId))) return null;
+  if (version.liveId && (!live || live.vendorId !== page.vendorId || live.projectId !== page.projectId || !PUBLIC_LIVE_STATUSES.has(live.status) || !live.formId || ids.length === 0 || ids.some((formId) => formId !== live.formId))) return unavailable("已發布版本的直播不可公開，或直播與報名表的專案綁定不一致。");
 
   const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content))
     ? webinarResource(forms.find((form) => form.id === version.formId), live, page.vendorId)
     : undefined;
-  const commerceByPageId = page.projectId
+  const commerceByPageId = includePresentation && page.projectId
     ? await publicFunnelCommerceViews({ vendorId: page.vendorId, projectId: page.projectId }, content, page.slug)
     : {};
-  const consultationEvents = await publicConsultationEvents(db(), { vendorId: page.vendorId, projectId: page.projectId }, content);
+  const consultationEvents = includePresentation ? await publicConsultationEvents(db(), { vendorId: page.vendorId, projectId: page.projectId }, content) : [];
   return {
     ...(webinar ? { webinar } : {}),
     ...publicSubmissionProjection(forms, version.formId, live?.id),
@@ -698,4 +708,64 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     ...(Object.keys(commerceByPageId).length > 0 ? { commerceByPageId } : {}),
     ...(consultationEvents.length > 0 ? { consultationEvents } : {}),
   };
+}
+
+/** 先取得已授權的選中專案與頁面，再診斷；不向匿名公開頁揭露原因。 */
+export async function getLandingPagePublicationStatus(pageId: string): Promise<LandingPagePublicationStatus> {
+  const scope = await editorProject();
+  const page = await db().landingPage.findFirst({
+    where: { id: identifier(pageId) ?? "", vendorId: scope.vendorId, projectId: scope.projectId },
+    select: { slug: true, status: true, operations: true },
+  });
+  if (!page) throw new LandingPageNotFoundError();
+  const projectHref = `/projects/${encodeURIComponent(scope.projectId)}`;
+  const project = await db().salesProject.findFirst({
+    where: { id: scope.projectId, vendorId: scope.vendorId },
+    select: { status: true, publishedAt: true, primaryFlow: true },
+  });
+  if (!project) return { available: false, message: "所屬專案不存在，公開網址目前無法開啟。", projectHref, missing: [] };
+  if (project.status !== "published" || !project.publishedAt) {
+    const now = new Date();
+    // Read-only mirror of publishSalesProjectAction: never relax its verified payment predicate.
+    const [products, forms, lives, consultations, paymentMethods] = await Promise.all([
+      db().salesProjectProduct.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId, product: { isActive: true, priceCents: { gt: 0 } } } }),
+      db().registrationForm.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true } }),
+      db().live.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId } }),
+      db().consultationEvent.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { weeklySchedule: true } }),
+      db().paymentMethodReference.count({ where: { vendorId: scope.vendorId, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+    ]);
+    const availability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
+      if (!entry || typeof entry !== "object") return false;
+      const ranges = (entry as { ranges?: unknown }).ranges;
+      return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
+    }));
+    const missing: LandingPagePublicationStatus["missing"] = [];
+    if (!products) missing.push({ label: "尚未連結啟用且價格大於 0 的商品", href: "/products" });
+    if (!forms) missing.push({ label: "尚未建立啟用的報名表", href: "/forms" });
+    if (!paymentMethods) missing.push({ label: "尚無有效且已驗證的商家付款方式", href: "/billing/payment-methods" });
+    if (project.primaryFlow === "live" && !lives) missing.push({ label: "尚未建立直播場次", href: "/lives" });
+    if (project.primaryFlow === "consultation") {
+      if (!consultations.length) missing.push({ label: "尚未建立啟用的諮詢服務", href: "/consultations" });
+      if (!availability) missing.push({ label: "尚未設定可預約時間", href: "/consultations" });
+    }
+    return { available: false, message: "專案尚未發布，公開網址目前無法開啟", projectHref, missing };
+  }
+  if (page.status !== "published") return { available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
+  let reason = "公開頁目前無法開啟，請檢查發布資源。";
+  const publicPage = await loadPublicLandingPage(page.slug, (value) => { reason = value; });
+  if (publicPage && publicPage.id !== pageId) return { available: false, message: "公開網址與目前頁面的發布版本不一致，請確認網址與發布版本。", projectHref, missing: [] };
+  if (publicPage && "pages" in publicPage.content) {
+    const steps = publicPage.content;
+    const operations = parseFunnelOperations(page.operations);
+    if (!operations || !funnelOperationsReferencesValid(page.operations, steps.flow.steps)) {
+      return { available: false, message: "Funnel 的 A/B 或截止設定無效，公開步驟可能回傳 404；請到 Funnel 管理修正。", projectHref, missing: [{ label: "檢查 Funnel 管理設定", href: `/landing-pages/${encodeURIComponent(pageId)}/operations` }] };
+    }
+    if (!steps.flow.steps.some((step) => !step.isSystem) || steps.flow.steps.some((step) => !step.isSystem && !steps.pages[step.id])) {
+      return { available: false, message: "已發布版本缺少可公開的步驟頁面，請補齊後重新發布。", projectHref, missing: [] };
+    }
+    if (operations.deadline.enabled && operations.deadline.expiresAt && new Date(operations.deadline.expiresAt) <= new Date()) {
+      return { available: true, message: "專案與 Funnel 均已發布，但活動已截止；公開頁依設定顯示截止訊息或轉向其他步驟。", projectHref, missing: [] };
+    }
+  }
+  return { available: Boolean(publicPage), message: publicPage ? "專案與 Funnel 均已發布，公開頁目前可開啟。" : reason, projectHref, missing: [] };
 }

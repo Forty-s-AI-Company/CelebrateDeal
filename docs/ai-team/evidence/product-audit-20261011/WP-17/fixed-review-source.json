@@ -1,0 +1,9 @@
+{
+  "sourceHashes": {
+    "src/lib/quick-webinar.ts": "172ad94a4c4a415f9b51fd35d31e3c7348a7c77d6d77d74ba70108f5b2ead4a4",
+    "src/lib/sales-project-publication.ts": "ece7265c8c20c9bf53e7dad0a5a694ad11a45b3505e4bd14d8ae9d5f49c7d567",
+    "src/app/actions/quick-webinar-actions.ts": "7426202d270ea9ed10f858262a0d8c63708bc1cd114b4ec554fbeeef128e0ddf"
+  },
+  "contextChars": 17367,
+  "scope": "Fullcurrent3servermodules; source-backed lifecycle/delivery clarification; no validation claims"
+}

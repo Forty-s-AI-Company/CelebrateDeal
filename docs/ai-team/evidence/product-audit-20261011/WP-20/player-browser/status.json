@@ -1,0 +1,33 @@
+{
+  "status": "IN_PROGRESS",
+  "revision": "sha256:16358ce872be2003dc0cb7b63b5e969799c0a008ec086cc44da9bab348995b0c",
+  "browser": "PASS",
+  "browser_scope": "Real Chromium native video plus actual collector/media/queue, synthetic transport; not full Next app/API/database E2E",
+  "targeted": {
+    "status": "PASS",
+    "count": 13
+  },
+  "scoped_lint": "PASS",
+  "typecheck": "PASS",
+  "review": "NOT_RUN",
+  "metrics": {
+    "completeMediaMs": 3960,
+    "completeRecordedMs": 3704,
+    "completeCloseCount": 1,
+    "timeupdates": 27,
+    "segments": 9,
+    "observedMediaMs": 2399,
+    "recordedMs": 2379,
+    "rowsBeforePause": 9,
+    "rowsAfterPause": 9,
+    "closeCount": 1,
+    "terminal": true
+  },
+  "remaining": [
+    "full app and DB browser reconciliation",
+    "cross-tab ownership",
+    "RTT uncertainty report treatment",
+    "visitor provisioning and report worker/UI",
+    "independent critical review"
+  ]
+}

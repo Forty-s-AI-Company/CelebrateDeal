@@ -1,0 +1,109 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\error-copy\\execution.json"
+  },
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+    "status": "PASS",
+    "independent": true,
+    "role": "senior_review",
+    "model": "claude-sonnet-5-5",
+    "observed_model": "claude-sonnet-5-5",
+    "observed_effort": "unknown",
+    "lineage": [
+      "review-cli.json"
+    ],
+    "scope_files": [
+      "src/lib/registration-submission-client.ts",
+      "src/lib/registration-submission-client.test.ts"
+    ],
+    "limitations": "Two NIT observations retained; no fresh browser run for this copy-only change.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\error-copy\\review-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.641,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\error-copy\\checks\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 20.125,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\error-copy\\checks\\typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.485,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\error-copy\\checks\\unit.json"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "NIT",
+      "file": "formSubmissionErrorMessage (helper module, supplied snippet)",
+      "area": "fallback branch `if (status !== undefined)`",
+      "issue": "The guard treats any defined value, including 0 or NaN, as a received HTTP response. A caller that passes a sentinel such as 0 for a failed/opaque fetch would show \"server rejected\" neutral text instead of network guidance.",
+      "evidence": "`if (status !== undefined) return \"資料暫時無法送出；內容仍保留，請稍後再試。\";` The tests exercise only 409/422/500/502/504 and `undefined`; no 0/NaN case.",
+      "impact": "Low. Real fetch rejections throw rather than yield status 0, so this only matters if a call site normalizes a missing status to 0 or NaN. The result would be network advice mistakenly suppressed.",
+      "recommended_fix": "Treat only valid HTTP statuses as present, e.g. `if (Number.isInteger(status) && status >= 100) ...`. Otherwise fall through to the network message. Alternatively, document that callers must pass `undefined` for transport failures.",
+      "required_test": "Assert that `formSubmissionErrorMessage(0)` and `formSubmissionErrorMessage(NaN)` return the network-check message, if the stricter guard is adopted.",
+      "confidence": 0.3,
+      "disposition": "unresolved"
+    },
+    {
+      "severity": "NIT",
+      "file": "Call sites of postRegistrationSubmission / formSubmissionErrorMessage (not supplied)",
+      "area": "Integration of status propagation (outside supplied scope)",
+      "issue": "The new neutral message only takes effect if call sites pass `response.status` on non-OK responses. The supplied tests cover the helper in isolation, so they cannot show that a caller does not call `formSubmissionErrorMessage()` without a status after an HTTP failure, for example in a catch block after a JSON parse error.",
+      "evidence": "Only the helper and its unit tests were supplied. The original MINOR concerned HTTP failures being given network advice, which depends on caller behavior.",
+      "impact": "If any caller omits the status on an HTTP error, users would still see the misleading network advice. This cannot be confirmed or ruled out from the supplied text.",
+      "recommended_fix": "Have the callers read `response.status` before any body parsing. Pass it to `formSubmissionErrorMessage` for every `!response.ok` result, and pass `undefined` only when `fetch` rejects.",
+      "required_test": "Add a component or integration test with a mocked `fetch` resolving to `{ ok: false, status: 500, json: () => Promise.reject(...) }`, asserting the rendered message lacks \"網路\". Add one with `fetch` rejecting, asserting it contains \"檢查網路\".",
+      "confidence": 0.35,
+      "disposition": "unresolved"
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "issue": "HTTP failures incorrectly advise checking network",
+      "lineage": "../client-submission/review-business-cli.json",
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "unit",
+          "revision": "sha256:ad53fec610c70fa0edaf79470209e0793c44faa09c9a68a5238ff9add49f61cb",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 4.485,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\error-copy\\checks\\unit.json"
+        }
+      ]
+    }
+  ]
+}

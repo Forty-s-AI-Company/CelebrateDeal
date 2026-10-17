@@ -1,0 +1,89 @@
+[
+  {
+    "severity": "MINOR",
+    "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "area": "RegistrationSubmissionFeedback placement after the submit button (diff hunk @@ -324)",
+    "issue": "In the funnel renderer the feedback (focus target) is rendered after the submit button, while in lead-form it is before the button. After a failed submit, focus moves to the alert, so the sequential-focus starting point is after the button. Keyboard retry then requires Shift+Tab, whereas in lead-form a single Tab reaches the button.",
+    "evidence": "Funnel renderer: <button type=\"submit\" ...> is followed by <RegistrationSubmissionFeedback .../>; lead-form: <RegistrationSubmissionFeedback/> precedes <button type=\"submit\">. The effect calls alert.focus() when focus is lost or on the submit button.",
+    "impact": "Inconsistent keyboard retry path between the two real callers; a keyboard user in the funnel form who submitted via the button must navigate backward to retry.",
+    "recommended_fix": "Either place the feedback before the submit button in the funnel renderer, or, when the active element was the same-form submit button/lost focus, restore focus to the (re-enabled) submit button and rely on the role=alert announcement.",
+    "required_test": "Browser keyboard test in the funnel renderer: submit via Enter/Space on the button with a failing endpoint, then verify one Tab/Shift+Tab sequence reaches the submit button and that the error is announced once.",
+    "confidence": 0.4,
+    "disposition": "unresolved"
+  },
+  {
+    "severity": "MINOR",
+    "file": "src/components/registration-submission-feedback.test.tsx",
+    "area": "whole test file (renderToStaticMarkup only)",
+    "issue": "Tests use static server markup only, so the useEffect focus-restoration policy (the core behavior of this change) has no automated coverage: body/lost focus, same-form submit button, focus on another field/link preserved, repeated identical error after pending toggle.",
+    "evidence": "All four tests call renderToStaticMarkup, which does not run effects or touch document.activeElement.",
+    "impact": "Regressions in the focus policy (e.g. stealing intentional outside focus) would not be caught by unit tests; the user states browser validation is separate, but it is not a repeatable regression guard.",
+    "recommended_fix": "Add a jsdom/React Testing Library test that renders inside a <form>, toggles pending true->false with the same errorMessage, and asserts document.activeElement for each focus starting point.",
+    "required_test": "Component tests: (1) activeElement=body -> alert focused; (2) activeElement=form submit button -> alert focused; (3) activeElement=an outside input/link -> unchanged; (4) pending false->true->false with identical errorMessage refocuses again.",
+    "confidence": 0.6,
+    "disposition": "unresolved"
+  },
+  {
+    "severity": "NIT",
+    "file": "src/components/registration-submission-feedback.tsx",
+    "area": "effect, `onSubmit` computation (form = alert.closest(\"form\"))",
+    "issue": "If the component were rendered outside a <form>, form is null and any orphan submit button (button.form === null) would satisfy `active.form === form`, causing a focus steal.",
+    "evidence": "`active.type === \"submit\" && active.form === form` with form possibly null; HTMLButtonElement.form is null when not in a form.",
+    "impact": "Not reachable with the two current callers (both inside forms); latent for future reuse.",
+    "recommended_fix": "Require `form !== null` in the onSubmit condition.",
+    "required_test": "Unit test rendering the component outside a form with a focused standalone button and asserting focus is not moved.",
+    "confidence": 0.3,
+    "disposition": "unresolved"
+  },
+  {
+    "severity": "MINOR",
+    "file": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+    "area": "RegistrationSubmissionFeedback props (errorMessage/successMessage gating by status)",
+    "issue": "The old code rendered `message` whenever it was truthy (alert for error, status for any other state). The new code shows it only when status === \"error\" or \"success\". Any other status that sets `message` (or status===\"error\" with an empty message) would now show no feedback.",
+    "evidence": "Before: `{message ? <p role={status===\"error\"?\"alert\":\"status\"}>…` ; after: errorMessage={status===\"error\" ? message : \"\"} successMessage={status===\"success\" ? message : \"\"}. The full status union is not in the supplied scope, and unlike lead-form there is no fallback error message here.",
+    "impact": "If a third status or an empty error message exists in the renderer, the user would see no result after submit (silent failure), which was previously not the case for non-error statuses.",
+    "recommended_fix": "Verify the status union in the renderer; if other statuses carry messages, route them to successMessage/errorMessage appropriately, and add a fallback like formSubmissionErrorMessage() for status===\"error\" with empty message.",
+    "required_test": "Renderer test enumerating every status value that can set `message` and asserting a visible/announced message for each, including error with empty message.",
+    "confidence": 0.3,
+    "disposition": "rejected_with_reason",
+    "reason": "Current full PublicSubmissionForm has only idle/submitting/success/error. It initializes and clears message to empty before submission, then assigns non-empty messages only for success/error. No other message-bearing status or empty error path exists."
+  },
+  {
+    "severity": "MINOR",
+    "disposition": "resolved",
+    "issue": "Lost focus on failed form submissions and duplicated success feedback",
+    "lineage": "../client-submission/review-business-cli.json; initial-review-cli.json",
+    "resolution_evidence": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "browser-chromium",
+        "revision": "sha256:90ed3342c70ec54c971ac65c0490de8968246f27e2e798fa1d26c004fb7e4016",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 72.25,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\accessible-feedback\\final-checks\\browser-chromium.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "browser-firefox",
+        "revision": "sha256:90ed3342c70ec54c971ac65c0490de8968246f27e2e798fa1d26c004fb7e4016",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 71.281,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\accessible-feedback\\final-checks\\browser-firefox.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "unit",
+        "revision": "sha256:90ed3342c70ec54c971ac65c0490de8968246f27e2e798fa1d26c004fb7e4016",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 5.11,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-05\\accessible-feedback\\final-checks\\unit.json"
+      }
+    ]
+  }
+]

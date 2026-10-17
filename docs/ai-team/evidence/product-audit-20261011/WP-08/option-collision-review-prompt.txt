@@ -1,0 +1,217 @@
+Independent read-only followup. Scope ONLY complete helper and tests below. Check closure of prior final-label suffix collision MINOR and full report status snapshot NIT. Report BLOCKER/MAJOR/MINOR/NIT with evidence. Do not certify whole WP. Current79tests/lint/typecheck pass. Original values must remain unchanged. No tools. Revision sha256:7a5680b3ba8bebe78af3525a9c5f7b0dd0e25147af5680a64b1147e1569c2941
+
+FILE src/components/landing-pages/funnel-display-labels.ts
+import type { PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
+import type { FormSubmissionVerificationStatus } from "@prisma/client";
+import type { CommerceOrderStatus } from "@/lib/commerce-order-domain";
+import type { FunnelExperiment } from "@/lib/funnel-operations";
+import type { FunnelGoal, FunnelStepType } from "@/lib/funnel-flow";
+
+// 僅顯示層對照；儲存、路由與 API 使用原本的識別值。
+export const funnelTabKeys = ["Configuration", "Automation Rules", "A/B test", "Stats", "Leads", "Sales", "Deadline settings"] as const;
+export const funnelTabLabels = {
+  Configuration: "頁面設定", "Automation Rules": "自動化規則", "A/B test": "A/B 測試",
+  Stats: "成效統計", Leads: "報名名單", Sales: "銷售紀錄", "Deadline settings": "截止設定",
+} satisfies Record<typeof funnelTabKeys[number], string>;
+export const funnelGoalLabels = {
+  audience: "建立名單", sell: "銷售商品", custom: "自訂流程", webinar: "線上講座",
+} satisfies Record<FunnelGoal, string>;
+export const funnelStepLabels = {
+  sales_page: "銷售頁", order_form: "訂單表單", upsell: "加購頁", downsell: "降價加購頁", thank_you_page: "感謝頁",
+  opt_in_page: "名單頁", opt_in_thank_you_page: "名單感謝頁", inline_form: "內嵌表單", popup_form: "彈出表單", link_in_bio: "個人簡介連結頁",
+  info_page: "資訊頁", contact_us_page: "聯絡我們", webinar_registration_page: "線上講座報名頁",
+  webinar_thank_you_page: "線上講座感謝頁", webinar_broadcast_page: "線上講座播放頁", inactive_page: "停用頁",
+} satisfies Record<FunnelStepType, string>;
+export const experimentStatusLabels = { draft: "草稿", running: "進行中", stopped: "已停止", winner: "已選定勝出組別" } satisfies Record<FunnelExperiment["status"], string>;
+export const experimentArmLabels = { control: "對照組", variant: "測試組" } satisfies Record<NonNullable<FunnelExperiment["winner"]>, string>;
+
+const verificationStatusLabels = { UNVERIFIED: "尚未驗證", VERIFIED: "已驗證" } satisfies Record<FormSubmissionVerificationStatus, string>;
+const orderStatusLabels = {
+  draft: "草稿", pending_payment: "待付款", paid: "已付款", payment_failed: "付款失敗", expired: "付款逾期",
+  cancelled: "已取消", partially_refunded: "部分退款", refunded: "已退款",
+} satisfies Record<CommerceOrderStatus, string>;
+// 交易狀態目前是後端字串欄位；遇到未支援值明示未知，不推測為成功。
+const paymentStatusLabels = { pending: "待付款", paid: "已付款", failed: "付款失敗", refunded: "已退款", partially_refunded: "部分退款", cancelled: "已取消", expired: "付款逾期", dispute_opened: "付款爭議處理中", dispute_released: "付款爭議已解除", dispute_lost: "付款爭議敗訴" } satisfies Record<PaymentWebhookEventType | "pending" | "cancelled" | "expired", string>;
+export function reportStatusLabel(value: string, domain: "order" | "verification" | "payment"): string {
+  const labels: Readonly<Record<string, string>> = domain === "order" ? orderStatusLabels : domain === "verification" ? verificationStatusLabels : paymentStatusLabels;
+  return Object.hasOwn(labels, value) ? labels[value] : "未知狀態";
+}
+
+/** 下拉選單顯示名稱；value 保留原識別值，重名與未命名項目仍可區分。 */
+export function referenceOptions(ids: readonly string[], names: Readonly<Record<string, string>> | undefined, kind: "步驟" | "彈出視窗") {
+  const labels = ids.map((id, index) => {
+    const name = names && Object.hasOwn(names, id) ? names[id].replace(/[\u200b\ufeff]/gu, "").trim() : "";
+    return name || `未命名${kind} ${index + 1}`;
+  });
+  const counts = new Map<string, number>();
+  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+  const options = ids.map((value, index) => ({ value, label: counts.get(labels[index])! > 1 ? `${labels[index]}（第 ${index + 1} 項）` : labels[index] }));
+  // 自訂名稱也可能包含系統後綴；整組加上唯一位置前綴，避免再次碰撞。
+  return new Set(options.map((option) => option.label)).size === options.length
+    ? options
+    : options.map((option, index) => ({ ...option, label: `${index + 1}. ${option.label}` }));
+}
+
+FILE src/components/landing-pages/funnel-display-labels.test.ts
+import { resolvePaymentStatus, type PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
+import { describe, expect, it } from "vitest";
+import { FUNNEL_GOALS, FUNNEL_STEP_TYPES } from "@/lib/funnel-flow";
+import { funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel, referenceOptions } from "./funnel-display-labels";
+
+describe("merchant display terminology", () => {
+  it("covers every persisted goal and step type without changing its key", () => {
+    expect(Object.keys(funnelGoalLabels)).toEqual([...FUNNEL_GOALS]);
+    expect(Object.keys(funnelStepLabels)).toEqual([...FUNNEL_STEP_TYPES]);
+    for (const key of FUNNEL_STEP_TYPES) {
+      expect(funnelStepLabels[key]).toMatch(/[\u4e00-\u9fff]/u);
+      expect(funnelStepLabels[key]).not.toBe(key);
+    }
+  });
+  it("keeps the approved display dictionary reviewable", () => {
+    expect({ funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels }).toMatchSnapshot();
+  });
+});
+
+it("never labels an unknown or inherited status as successful", () => {
+  expect(reportStatusLabel("paid", "payment")).toBe("已付款");
+  expect(reportStatusLabel("VERIFIED", "verification")).toBe("已驗證");
+  for (const domain of ["order", "payment", "verification"] as const) {
+    for (const status of ["new_future_state", "__proto__", "constructor", "toString"]) expect(reportStatusLabel(status, domain)).toBe("未知狀態");
+  }
+});
+
+it("preserves reference values while naming duplicate and unnamed options", () => {
+  const ids = ["internal_a", "internal_b", "internal_c", "constructor"];
+  const names = { internal_a: "報名頁", internal_b: "報名頁" };
+  const options = referenceOptions(ids, names, "步驟");
+  expect(options.map((item) => item.value)).toEqual(ids);
+  expect(options.map((item) => item.label)).toEqual(["報名頁（第 1 項）", "報名頁（第 2 項）", "未命名步驟 3", "未命名步驟 4"]);
+  expect(referenceOptions(["popup_internal"], { popup_internal: "活動提醒" }, "彈出視窗")).toEqual([{ value: "popup_internal", label: "活動提醒" }]);
+  expect(names).toEqual({ internal_a: "報名頁", internal_b: "報名頁" });
+});
+
+it("distinguishes visually identical reference names without mutating source values", () => {
+  const names = { a: "報名頁", b: " 報名頁 ", c: "   " };
+  expect(referenceOptions(["a", "b", "c"], names, "步驟")).toEqual([
+    { value: "a", label: "報名頁（第 1 項）" },
+    { value: "b", label: "報名頁（第 2 項）" },
+    { value: "c", label: "未命名步驟 3" },
+  ]);
+  expect(names).toEqual({ a: "報名頁", b: " 報名頁 ", c: "   " });
+});
+
+it("labels the transaction writer event results and checkout states", () => {
+  const events = { paid: "已付款", refunded: "已退款", partially_refunded: "部分退款", failed: "付款失敗", dispute_opened: "付款爭議處理中", dispute_released: "付款爭議已解除", dispute_lost: "付款爭議敗訴" } satisfies Record<PaymentWebhookEventType, string>;
+  for (const event of Object.keys(events) as PaymentWebhookEventType[]) {
+    expect(reportStatusLabel(resolvePaymentStatus(null, event), "payment")).toBe(events[event]);
+    expect(reportStatusLabel(resolvePaymentStatus("pending", event), "payment")).toBe(events[event]);
+  }
+  expect(reportStatusLabel("pending", "payment")).toBe("待付款");
+  expect(reportStatusLabel("expired", "payment")).toBe(reportStatusLabel("expired", "order"));
+  expect(reportStatusLabel("cancelled", "payment")).toBe("已取消");
+});
+
+it("keeps final option labels distinct when authored names resemble generated suffixes", () => {
+  const ids = ["a", "b", "c", "d"];
+  const names = { a: "報名頁（第 2 項）", b: "報名頁", c: "報名頁", d: "報名頁\u200b" };
+  const original = { ...names };
+  for (const kind of ["步驟", "彈出視窗"] as const) {
+    const options = referenceOptions(ids, names, kind);
+    expect(new Set(options.map((option) => option.label)).size).toBe(ids.length);
+    expect(options.map((option) => option.value)).toEqual(ids);
+  }
+  expect(names).toEqual(original);
+});
+
+it("snapshots every report status display label", () => {
+  const domains = {
+    order: ["draft", "pending_payment", "paid", "payment_failed", "expired", "cancelled", "partially_refunded", "refunded"],
+    verification: ["UNVERIFIED", "VERIFIED"],
+    payment: ["pending", "paid", "failed", "refunded", "partially_refunded", "cancelled", "expired", "dispute_opened", "dispute_released", "dispute_lost"],
+  };
+  expect(Object.fromEntries((Object.keys(domains) as (keyof typeof domains)[]).map((domain) => [domain,
+    Object.fromEntries(domains[domain].map((status) => [status, reportStatusLabel(status, domain)])),
+  ]))).toMatchSnapshot();
+});
+
+FILE src/components/landing-pages/__snapshots__/funnel-display-labels.test.ts.snap
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`merchant display terminology > keeps the approved display dictionary reviewable 1`] = `
+{
+  "experimentArmLabels": {
+    "control": "對照組",
+    "variant": "測試組",
+  },
+  "experimentStatusLabels": {
+    "draft": "草稿",
+    "running": "進行中",
+    "stopped": "已停止",
+    "winner": "已選定勝出組別",
+  },
+  "funnelGoalLabels": {
+    "audience": "建立名單",
+    "custom": "自訂流程",
+    "sell": "銷售商品",
+    "webinar": "線上講座",
+  },
+  "funnelStepLabels": {
+    "contact_us_page": "聯絡我們",
+    "downsell": "降價加購頁",
+    "inactive_page": "停用頁",
+    "info_page": "資訊頁",
+    "inline_form": "內嵌表單",
+    "link_in_bio": "個人簡介連結頁",
+    "opt_in_page": "名單頁",
+    "opt_in_thank_you_page": "名單感謝頁",
+    "order_form": "訂單表單",
+    "popup_form": "彈出表單",
+    "sales_page": "銷售頁",
+    "thank_you_page": "感謝頁",
+    "upsell": "加購頁",
+    "webinar_broadcast_page": "線上講座播放頁",
+    "webinar_registration_page": "線上講座報名頁",
+    "webinar_thank_you_page": "線上講座感謝頁",
+  },
+  "funnelTabLabels": {
+    "A/B test": "A/B 測試",
+    "Automation Rules": "自動化規則",
+    "Configuration": "頁面設定",
+    "Deadline settings": "截止設定",
+    "Leads": "報名名單",
+    "Sales": "銷售紀錄",
+    "Stats": "成效統計",
+  },
+}
+`;
+
+exports[`snapshots every report status display label 1`] = `
+{
+  "order": {
+    "cancelled": "已取消",
+    "draft": "草稿",
+    "expired": "付款逾期",
+    "paid": "已付款",
+    "partially_refunded": "部分退款",
+    "payment_failed": "付款失敗",
+    "pending_payment": "待付款",
+    "refunded": "已退款",
+  },
+  "payment": {
+    "cancelled": "已取消",
+    "dispute_lost": "付款爭議敗訴",
+    "dispute_opened": "付款爭議處理中",
+    "dispute_released": "付款爭議已解除",
+    "expired": "付款逾期",
+    "failed": "付款失敗",
+    "paid": "已付款",
+    "partially_refunded": "部分退款",
+    "pending": "待付款",
+    "refunded": "已退款",
+  },
+  "verification": {
+    "UNVERIFIED": "尚未驗證",
+    "VERIFIED": "已驗證",
+  },
+}
+`;

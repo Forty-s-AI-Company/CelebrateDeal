@@ -1,0 +1,14 @@
+{
+  "revision": "sha256:b5a94c38467bbcd8b54da5ddbb18d7d4a03c6d9938e259814d56219a7e90a9b0",
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/schema.prisma",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "db": "PASS",
+  "migrationCount": 102,
+  "checks": 151,
+  "independentReview": "NOT_RUN",
+  "reportIntegration": "NOT_IMPLEMENTED",
+  "scope": "merchant generation is conservative; unrelated merchant isolated; pending provider-status change does not increment generation"
+}

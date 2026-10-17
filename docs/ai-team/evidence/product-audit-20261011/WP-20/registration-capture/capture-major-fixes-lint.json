@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "capture-major-fixes-lint", "revision": "sha256:ba827b701c23d7e595a96a03247fab6976f90f720e0d91fecb0866bdc8d48e47", "status": "PASS", "exit_code": 0, "duration_seconds": 4.734}

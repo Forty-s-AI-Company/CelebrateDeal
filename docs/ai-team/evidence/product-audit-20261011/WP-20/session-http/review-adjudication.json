@@ -1,0 +1,56 @@
+{
+  "revision": "sha256:3ece3b1012a2bdb41c64f768e2a1f19f43958e30fd2867f3927a042ab5a9c17b",
+  "original_review": "review-before-quota.json",
+  "review_after_quota": "review-before-quota-refinement.json",
+  "latest_review": "review-current.json",
+  "dispositions": [
+    {
+      "issue": "unbounded session creation",
+      "severity": "MAJOR",
+      "disposition": "resolved",
+      "evidence": "serialized per-admission 16 open/64 total and per-registration/version 256 total; distinct-key boundary contenders one winner; independent follow-up confirms caps"
+    },
+    {
+      "issue": "static context bypass",
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "evidence": "static context is trusted internal provisioning/test input; HTTP route accepts UUID only and always passes canonical resolver; route test asserts resolver argument"
+    },
+    {
+      "issue": "verifiedAt submillisecond loss",
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "evidence": "information_schema confirms both columns precision3; raw microsecond SQL normalizes and real issuance/retry succeeds"
+    },
+    {
+      "issue": "total-limit Retry-After",
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "evidence": "terminal totals return409 retryablefalse no RetryAfter; open uses429; route tests and review confirm"
+    },
+    {
+      "issue": "strong FK lock conflict",
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "evidence": "NO KEY UPDATE locks; actual issuance callback allows second backend key-share on submission/admission"
+    },
+    {
+      "issue": "renewal bypass of registration quota",
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "evidence": "per-registration/version 256 cap serialized by submission lock, renewed admission denied in DB regression"
+    },
+    {
+      "issue": "phase deadline",
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "evidence": "canonical runtime window clamps known VOD/replay deadlines; real DB expected expiry assertions PASS; final patch re-review pending"
+    },
+    {
+      "issue": "transaction timeout mapping",
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "evidence": "P2028/P2024 map retryable_conflict; actual second-backend lock beyond timeout leaves no session rows; final patch re-review pending"
+    }
+  ]
+}

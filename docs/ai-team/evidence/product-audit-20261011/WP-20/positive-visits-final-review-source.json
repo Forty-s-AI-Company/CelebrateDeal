@@ -1,0 +1,9 @@
+{
+  "sourceHashes": {
+    "src/lib/live-metric-ingress-gateway.ts": "e0e82cea866b5e3cc25c4e880581f71bc3f184ce11ec4d779f16f9f7965867da",
+    "src/lib/live-metric-ingress-gateway.test.ts": "09f52bcae9515d91a73ae407017f9432603fa57a75c25449f12e147ef58b9f9c",
+    "src/lib/live-metric-coverage-reader.ts": "3e0a672cd1cdb3a89c34e91895668fc87db119ee73c878d50dae62dd7de83a0e",
+    "src/lib/live-metric-coverage-reader.test.ts": "95e5d02513efbdf78bd1d7817898509976ce55e1b21691caf0ab3b41a2cdfa54"
+  },
+  "supplied": "only exact-window predicate/comment and additional failure/range tests; product gateway SQL publisher unchanged"
+}

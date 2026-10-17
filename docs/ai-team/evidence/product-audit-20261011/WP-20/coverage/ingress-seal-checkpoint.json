@@ -1,0 +1,113 @@
+{
+  "wholeWp": "NOT_READY",
+  "previousGoalTurn": "PROGRESS",
+  "currentGoalTurn": "PROGRESS",
+  "completedWps": [
+    "WP-01",
+    "WP-05",
+    "WP-06",
+    "WP-07",
+    "WP-08",
+    "WP-10",
+    "WP-11",
+    "WP-15"
+  ],
+  "goalPercent": 40,
+  "validation": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 126
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "database": {
+    "migrations": 129,
+    "checks": {
+      "activeRunCannotSeal": "PASS",
+      "pendingFramesCannotSeal": "PASS",
+      "idempotentSealRetainsUnmatchedInterruptedFrame": "PASS",
+      "helperAndRawSqlCannotAppendAfterSeal": "PASS",
+      "sealImmutableRetainedNoTruncate": "PASS",
+      "crossScopeSealRejected": "PASS",
+      "validUnusedPlaybackFrameCannotBindAfterSeal": "PASS",
+      "trustedSqlCannotForgeCountersOrTimestamp": "PASS",
+      "sealWaitsForActualSourceTransactionCommit": "PASS",
+      "waitingLateRawSourceSeesCommittedSealAndRejects": "PASS",
+      "sealTableOwnerOnly": "PASS",
+      "missingDisposableMarkerRejectsAndRollsBack": "PASS",
+      "sourcePredicatePrivateExactSignature": "PASS",
+      "canonicalCascadeRemovesSeal": "PASS"
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "postRunHashesMatch": true
+  },
+  "review": {
+    "observed": {
+      "source": "cli_terminal_model_usage",
+      "effort": "unknown",
+      "model": "claude-opus-5-5"
+    },
+    "provider": "claude_cli",
+    "fallbackEvents": [],
+    "routeFallbackEvents": [],
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "prisma/migrations/20261016170000_live_metric_ingress_source_seal/migration.sql",
+        "area": "wp20_metric_ingress_seal_guard: environment check (shobj_description ... '^prisma-no-dotenv:[a-f0-9]{16}$')",
+        "issue": "This original issue is still open. Sealing still depends on a test-harness comment on the database, and only the seal trigger checks it. The source predicate (wp20_metric_ingress_source_allowed) only checks read committed and not-in-recovery.",
+        "evidence": "The seal guard raises 'metric source seal requires owned primary read committed' unless the pg_database comment matches prisma-no-dotenv:<16 hex>. The predicate that was redefined in the same migration has no matching check.",
+        "impact": "This migration will be applied to every database the migration chain reaches. On any database without the disposable-harness comment, sealing can never succeed and source ingress stays unsealable, while source writes still go through. So the safety behaviour of the schema depends on a database comment, and the guard and predicate disagree about which environment is trusted. This could be a deliberate owner-only gate, but nothing in scope documents it as one.",
+        "recommended_fix": "Choose one of these: (a) move the environment gate out of the schema trigger and into the operator path or test harness; (b) if the gate is intentionally owner-only, document that and apply the same check in the source predicate so both sides agree; or (c) turn it into an explicit, named deployment guard that is documented as part of the migration contract.",
+        "required_test": "On the owned disposable PG16 database, test with and without the marker comment. Without the marker, sealing should be rejected and the behaviour of source INSERTs should match the chosen design. With the marker, sealing should succeed. Also test that a database with the marker under a different prefix or with a wrong-length hex suffix is rejected.",
+        "confidence": 0.6
+      }
+    ],
+    "scope": "129 migration + private seal helper only; harness and full app not supplied"
+  },
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "selectedModel": "sol",
+  "selectedEffort": "xhigh",
+  "rootObservedModel": "unknown",
+  "rootObservedEffort": "unknown",
+  "ownership": {
+    "writer": "root",
+    "reviewer": "readonly sequential",
+    "parallel": 1,
+    "depth": 1,
+    "automaticSpawn": false
+  },
+  "notClaimed": [
+    "No positive coverage, source epoch, full request universe or five-stat acceptance",
+    "Only page/intake INSERTs frozen; visits/intents/sessions/receipts/lossAt still evolve",
+    "Owner disposable role only; no deployed minimum role certification",
+    "Previous actual Next/browser PASS was128 migration snapshot, not129 seal integration",
+    "Later PASS does not resolve prior intermittent page-source null/SSI/HTTP failures"
+  ],
+  "remaining": [
+    "Integrate seal after actual full Next/browser workflow",
+    "Full permitted entry universe and minimum role",
+    "Actual source epochs/typed positive visits+viewing producers",
+    "Full five-stat nonzero M1/M2",
+    "Existing public quota/permanent loss/lock/form availability MAJOR"
+  ],
+  "safety": {
+    "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "base": "efb8b7e9",
+    "originalWorktreeMutated": false,
+    "commitPushDeploy": false,
+    "productionAccess": false
+  }
+}

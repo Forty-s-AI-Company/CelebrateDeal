@@ -1,0 +1,42 @@
+{
+  "status": "PASS",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic webinar creation and actual locally encoded WebM playback. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "a new merchant receives an owned draft and persistent creation feedback within three decisions",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    },
+    {
+      "title": "three-decision entry creates public pages, confirms a synthetic registration, plays real synthetic media, and blocks an unverified method",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T03:24:25.498Z",
+    "duration": 157569.036,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 0,
+  "migrations": 131
+}

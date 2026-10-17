@@ -1,0 +1,9 @@
+{
+  "files": {
+    "src/app/form/[slug]/page.tsx": "22a155575ecf4018f3a93afb52fc88c0f9d19a9896ec87aa8f1587b82b7006d9",
+    "src/components/metric-registration-visit.tsx": "7d7f7c19f04f95ed8ce509826e7be6e243bd4e83ed82eb3a990a66c62d9df1c1",
+    "src/lib/live-metric-registration-page.ts": "fb3f91162c640676cac374bd6eb5c6af4c9a5f9f6a00d221ce00ecded03ccb09"
+  },
+  "scope": "registration-surface-form",
+  "promptCharacters": 13127
+}

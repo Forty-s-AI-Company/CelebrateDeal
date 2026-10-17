@@ -1,0 +1,21 @@
+{
+  "exit_code": 1,
+  "status": null,
+  "reason": null,
+  "deployment": {
+    "id": null,
+    "url": null,
+    "readyState": null,
+    "target": null
+  },
+  "raw_logs_persisted": false,
+  "alias_changes": false,
+  "real_credentials_read": false,
+  "build_database": "synthetic unusable login to fixed staging host; format/identity checks retained; no successful DB access intended",
+  "runtime_database": "closed loopback port; remotebusinessflows intentionally unavailable",
+  "platform_project_id_manually_set": false,
+  "transport_changes": [
+    "remove dotenv file loading from isolated build entrypoints; all preflight assertions retained",
+    "webpack build"
+  ]
+}

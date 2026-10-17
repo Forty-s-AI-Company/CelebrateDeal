@@ -1,0 +1,13 @@
+{
+  "status": "PARTIAL_VALIDATION",
+  "files": {
+    "prisma/migrations/20261016040000_live_metric_order_payment_write_fence/migration.sql": "af53c5ccb8226d1737a2016494c6d95b19234f1211e418487181a96ac7a44bb9",
+    "scripts/wp20-order-window-link-race.mjs": "74aeb14735e318b58ec973afd834b0562968355a061a2da0e659746da30c406d"
+  },
+  "lint": "PASS",
+  "isolationSchedules": 18,
+  "oldSnapshotRejection": "40001/P2034 followed by fresh transaction success",
+  "integration": "order-payment-write-fence-matrix-db.json",
+  "review": "PENDING",
+  "originalSerializableGate": "PENDING"
+}

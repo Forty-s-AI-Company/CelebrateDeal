@@ -1,0 +1,51 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "engine": "chromium",
+      "entry": "root",
+      "javascript": false,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "successFeedbackVisible": "form-status",
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "step",
+      "javascript": false,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "successFeedbackVisible": "configured-thank-you",
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "firefox",
+      "entry": "root",
+      "javascript": false,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "successFeedbackVisible": "form-status",
+      "draftCleared": true,
+      "noMailSent": true
+    },
+    {
+      "engine": "firefox",
+      "entry": "step",
+      "javascript": false,
+      "native303": true,
+      "refill": true,
+      "success": true,
+      "successFeedbackVisible": "configured-thank-you",
+      "draftCleared": true,
+      "noMailSent": true
+    }
+  ],
+  "cleanup": true,
+  "step": "success"
+}

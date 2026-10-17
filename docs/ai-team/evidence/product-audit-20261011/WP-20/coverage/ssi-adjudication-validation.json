@@ -1,0 +1,11 @@
+{
+  "status": "VALID_FINDINGS",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "counts": {
+    "MAJOR": 4,
+    "MINOR": 3,
+    "NIT": 1
+  },
+  "acceptance": "NOT_READY"
+}

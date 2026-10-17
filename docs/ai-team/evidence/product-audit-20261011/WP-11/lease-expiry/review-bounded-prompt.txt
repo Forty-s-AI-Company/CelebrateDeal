@@ -1,0 +1,101 @@
+Read-only critical security review of ONLY the supplied exact repair diff and DB test. No tools or edits. Return findings BLOCKER/MAJOR/MINOR/NIT with file, area, issue, evidence, impact, recommended_fix, required_test, confidence. The previous full file package was blocked locally before dispatch, so this package narrows to the changed scope; no actual credentials/production data are supplied. Do not certify unprovided source. Unchanged context: admitLiveViewer reconciles lifecycle, then executes admitWithinTransaction inside Prisma Serializable transaction with at most3 P2034 retries. Before this diff it validates public availability, runtime readiness, active/refunded subscription, credits and stream quotas and member payment requirements; these guards are not changed. Active count uses vendorId/liveId and expiresAt>now. Existing same-live session renewal previously unconditionally updated expiresAt. New unrecognized/cross-live identities already go through active-count capacity check before create. HTTP POST maps viewer_limit_reached to429 and admission_busy to503; DELETE has independent120/min limit; leaseTTL90seconds. Actual current tests in dedicated loopback PostgreSQL demonstrate the bug before patch and four cases after repair. Clock Date is controlled for exact boundary; DB/route/rate limiter are real, not mocks. Review concurrency, expiration, tenant and quota correctness of this diff. IP trust topology and WP05 remain outside scope.
+--- before/src/lib/live-quota-admission.ts
++++ after/src/lib/live-quota-admission.ts
+@@ -39,6 +39,7 @@
+ };
+ 
+ type LiveViewerSessionIdentity = {
++  expiresAt: Date;
+   id: string;
+   vendorId: string;
+   liveId: string;
+@@ -216,11 +217,16 @@
+   const existing = requestedTokenHash
+     ? await tx.liveViewerSession.findUnique({
+         where: { tokenHash: requestedTokenHash },
+-        select: { id: true, vendorId: true, liveId: true },
++        select: { id: true, vendorId: true, liveId: true, expiresAt: true },
+       }) as LiveViewerSessionIdentity | null
+     : null;
+ 
+   if (requestedToken && existing?.vendorId === input.vendorId && existing.liveId === input.liveId) {
++    // 過期租約已釋放名額，恢復前須在同一Serializable交易重新檢查容量。
++    if (existing.expiresAt <= now) {
++      const active = await tx.liveViewerSession.count({ where: activeSessionWhere(input.vendorId, input.liveId, now) });
++      if (active >= policy.maxConcurrentViewers) throw new LiveQuotaAdmissionError("viewer_limit_reached");
++    }
+     const expiresAt = new Date(now.getTime() + LIVE_VIEWER_SESSION_TTL_MS);
+     await tx.liveViewerSession.update({
+       where: { id: existing.id },
+
+TEST src/app/api/live-admission/route.lease-db.test.ts
+import { randomUUID } from "node:crypto";
+import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
+import { getDb } from "@/lib/db";
+import { POST, DELETE } from "./route";
+import { resetInMemoryRateLimitForTests } from "@/lib/rate-limit";
+import { LIVE_VIEWER_SESSION_TTL_MS } from "@/lib/live-quota-admission";
+
+import { assertLocalTestDatabase } from "../../../../scripts/local-database-safety";
+// 可在本機／CI disposable測試DB重跑，既有guard拒絕正式或互動式DB。
+assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
+const db = getDb();
+const owned: string[] = [];
+const now = new Date("2026-10-12T08:00:00.000Z");
+beforeEach(() => { vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test"); vi.stubEnv("RATE_LIMIT_PROVIDER", "memory"); resetInMemoryRateLimitForTests(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); });
+afterEach(async () => { vi.useRealTimers(); resetInMemoryRateLimitForTests(); await db.vendor.deleteMany({ where: { id: { in: owned.splice(0) } } }); vi.unstubAllEnvs(); });
+afterAll(() => db.$disconnect());
+async function fixture() {
+ const key = `wp11-lease-${randomUUID()}`;
+ const vendor = await db.vendor.create({ data: { name: "Synthetic lease", slug: key, email: key + "@example.test", passwordHash: "synthetic-unused" } }); owned.push(vendor.id);
+ const video = await db.video.create({ data: { vendorId: vendor.id, title: "Synthetic", sourceType: "url", videoUrl: "https://example.test/synthetic-unused.mp4", status: "ready" } });
+ const form = await db.registrationForm.create({ data: { vendorId: vendor.id, slug: key, name: "Synthetic", headline: "Synthetic", fields: [{ key: "name", label: "Name", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }] } });
+ const template = await db.messageTemplate.create({ data: { vendorId: vendor.id, name: "Synthetic", subject: "Synthetic registration", body: "{{name}} {{unsubscribe_url}}" } });
+ const live = await db.live.create({ data: { vendorId: vendor.id, videoId: video.id, formId: form.id, messageTemplateId: template.id, slug: key, title: "Synthetic", streamMode: "live", status: "live", scheduledAt: new Date(+now - 60_000), startedAt: new Date(+now - 60_000), quotaPolicy: { version: 1, affiliateMode: "enabled", maxConcurrentViewers: 1, stopWhenCreditsBelow: 0 } } });
+ return { vendorId: vendor.id, liveId: live.id };
+}
+function request(method: string, payload: { vendorId: string; liveId: string }, value?: string) {
+ return new Request("https://app.example.test/api/live-admission", { method, headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", "x-forwarded-for": "192.0.2.11", ...(value ? { cookie: `celebratedeal_live_viewer=${value}` } : {}) }, body: JSON.stringify(payload) });
+}
+it("rate-limited same-IP release stops counting at exactly the 90-second lease boundary", async () => {
+ const payload = await fixture(); const admitted = await POST(request("POST", payload)); expect(admitted.status).toBe(200);
+ const value = admitted.cookies.get("celebratedeal_live_viewer")!.value;
+ for (let i = 0; i < 120; i++) expect((await DELETE(request("DELETE", payload))).status).toBe(200);
+ expect((await DELETE(request("DELETE", payload, value))).status).toBe(429);
+ expect(await db.liveViewerSession.count({ where: payload })).toBe(1);
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS - 1));
+ expect((await POST(request("POST", payload))).status).toBe(429);
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS));
+ expect((await POST(request("POST", payload))).status).toBe(200);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});
+it("an expired viewer cannot renew past a full viewer cap", async () => {
+ const payload = await fixture(); const admitted = await POST(request("POST", payload)); expect(admitted.status).toBe(200);
+ const value = admitted.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS));
+ expect((await POST(request("POST", payload))).status).toBe(200);
+ expect((await POST(request("POST", payload, value))).status).toBe(429);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});
+
+it("valid renewal keeps its slot and an expired renewal can reclaim an empty slot", async () => {
+ const payload = await fixture(); const initial = await POST(request("POST", payload)); expect(initial.status).toBe(200);
+ const value = initial.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS - 1));
+ expect((await POST(request("POST", payload, value))).status).toBe(200);
+ expect(await db.liveViewerSession.count({ where: payload })).toBe(1);
+ vi.setSystemTime(new Date(+now + 2 * LIVE_VIEWER_SESSION_TTL_MS));
+ expect((await POST(request("POST", payload, value))).status).toBe(200);
+ expect(await db.liveViewerSession.count({ where: payload })).toBe(1);
+});
+it("concurrent expired renewals cannot overfill the last slot", async () => {
+ const payload = await fixture(); const a = await POST(request("POST", payload)); expect(a.status).toBe(200);
+ const first = a.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + LIVE_VIEWER_SESSION_TTL_MS));
+ const b = await POST(request("POST", payload)); expect(b.status).toBe(200);
+ const second = b.cookies.get("celebratedeal_live_viewer")!.value;
+ vi.setSystemTime(new Date(+now + 2 * LIVE_VIEWER_SESSION_TTL_MS));
+ const results = await Promise.all([POST(request("POST", payload, first)), POST(request("POST", payload, second))]);
+ expect(results.map(r => r.status).sort()).toEqual([200, 429]);
+ expect(await db.liveViewerSession.count({ where: { ...payload, expiresAt: { gt: new Date() } } })).toBe(1);
+});

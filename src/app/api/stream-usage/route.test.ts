@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/live-quota-admission", () => ({
   hasActiveLiveViewerSession: mocks.hasActiveLiveViewerSession,

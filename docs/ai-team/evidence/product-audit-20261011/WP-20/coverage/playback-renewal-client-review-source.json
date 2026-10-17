@@ -1,0 +1,12 @@
+{
+  "promptCharacters": 16220,
+  "reviewScope": "client",
+  "serverScope": "Full120 SQL plus session lease-helper/final-decision excerpts",
+  "files": {
+    "src/lib/live-metric-transport.ts": "2e0a4421588b997f7df5dcc873568d98df8488a2581ee1894fdfd064b2b849cc",
+    "src/lib/live-metric-clock.ts": "7445ae150c69ff4e7fd5a7e3b7e077c1dd1d66ae5d6ecef0c1ee7e718ff3a24e",
+    "src/lib/live-metric-collector.ts": "050b0ae622c04e5c15cdf56b2a319645c531408092d34018c76fa35f2ea106cc",
+    "src/lib/live-metric-delivery.ts": "a04cbd317c0a2cfb9cb003e8840f89f3ce63508f29a4f921d3f15b5ec46e3fa2"
+  },
+  "clientScope": "Full collector/clock/delivery/transport"
+}

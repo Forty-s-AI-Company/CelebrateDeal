@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "strict-browser", "revision": "sha256:ff14d8476b6637094924a1739a41489fccf1de1f3576bd08a31981a5f3b75305", "status": "PASS", "exit_code": 0, "duration_seconds": 6.281}

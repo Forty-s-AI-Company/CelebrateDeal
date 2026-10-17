@@ -1,0 +1,42 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "revision": "sha256:073a6a0279f5d94757d8992b172161843601ce58115af10d373b1a61918d2a41",
+  "name": "browser",
+  "status": "PASS",
+  "exit_code": 0,
+  "session": 64921,
+  "completion_chunk": "2eb555",
+  "raw_receipt": "contact-browser.json",
+  "details": {
+    "cases": 6,
+    "known_routes": 5,
+    "unknown_urls": 3,
+    "axe_scans": 10,
+    "widths": [
+      1280,
+      390
+    ],
+    "screenshots": 10,
+    "all_source_hashes_match": true,
+    "migrations": 131,
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "reviewed_product_unchanged": true,
+    "reviewed_product_files": [
+      "src/lib/public-policy-content.ts",
+      "src/components/public-policy.tsx",
+      "src/components/public-policy.test.tsx",
+      "src/app/support/page.tsx",
+      "src/app/support/page.test.tsx"
+    ],
+    "supplemental_test_caller_review": "NOT_RUN; changes limited to stale contact assertions and per-run evidence paths; no new product change",
+    "manual_screenshots": [
+      "wp03-public-presentation-p-cf29d-thful-on-desktop-and-mobile-chromium/public-390.png",
+      "wp03-public-presentation-p-37b29-thful-on-desktop-and-mobile-chromium/public-1280.png"
+    ],
+    "manual_scope": "Only2screenshots inspected; dev overlay and floating announcement button present. No mailto activation or mailbox delivery test."
+  }
+}

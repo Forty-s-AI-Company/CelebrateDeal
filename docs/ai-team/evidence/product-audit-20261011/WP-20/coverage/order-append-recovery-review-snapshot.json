@@ -1,0 +1,16 @@
+{
+  "revision": "sha256:307cbd818a7b1b83efafb43e0529a146361707a9e982115ea683be8bc7e8e566",
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql",
+    "src/lib/live-metric-report-reader.ts"
+  ],
+  "sha256": {
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql": "024fee2d3ab12e9136f74e34bdc733e1d3f0977046130ef6cf5aff97f3648807",
+    "prisma/migrations/20261015150000_live_metric_order_report_binding/migration.sql": "2c6d0c19dad5514297b6c1cec170c89ac4cee27edd6432ad387aaeae7f4417c6",
+    "src/lib/live-metric-report-reader.ts": "91417dcc45549bc322d8fa16f5654c7a3798806fb2909ac6b945d37192c0c45c"
+  },
+  "review": "SUCCESS",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown"
+}

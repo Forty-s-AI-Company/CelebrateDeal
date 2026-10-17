@@ -1,0 +1,269 @@
+{
+  "status": "IN_PROGRESS",
+  "previousGoalTurn": "PROGRESS",
+  "wholeWp": "NOT_READY",
+  "wholeGoalCompleted": 8,
+  "wholeGoalTotal": 20,
+  "checks": {
+    "unit": {
+      "status": "PASS",
+      "exitCode": 0,
+      "testsPassed": 246
+    },
+    "lint": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "status": "PASS",
+      "exitCode": 0
+    },
+    "db": {
+      "status": "PASS",
+      "stage": "complete",
+      "scope": "Actual playback intake/context/session services, owned disposable synthetic DB",
+      "checks": {
+        "unconfiguredPlaybackPreserved": "PASS",
+        "committedBeforeSourceAndLostReplyRetained": "PASS",
+        "canonicalSessionBindingIdempotentAndBounded": "PASS",
+        "missingIntakeForeignScopeAndAdmissionRejected": "PASS",
+        "sameBrowserIntakeSessionAnchorRenewedAndRevisionAdvanced": "PASS",
+        "realBrowserServerUuidSamplingAppendCloseDb": "PASS",
+        "quotaPersistsOnePermanentGapWithoutBlockingPlayback": "PASS",
+        "boundSessionUpdatesCannotChangeIdentityAnchorOrExceedIntake": "PASS",
+        "timestamptzCatalogAndNonUtcBoundUpdates": "PASS",
+        "intakeEpochLossAndSessionBindingImmutable": "PASS",
+        "unexpectedColumnGrantRejectedAndProbeRoleCleaned": "PASS",
+        "expiredSessionAndIntakeCannotResurrectAfterAdmissionRenewal": "PASS",
+        "renewalCounterCannotBeForged": "PASS",
+        "renewalWaitingAcrossOldExpiryRollsBack": "PASS",
+        "databaseRejectsUnboundClosedExpiredAndShortenedLeases": "PASS",
+        "existingSessionGuardRejectsReopeningClosedSession": "PASS",
+        "concurrentCanonicalRenewalsSerializeAndExtendOnlyOnce": "PASS",
+        "admissionDeletionRetainsIntakeVersionCascadeCleans": "PASS"
+      },
+      "browser": {
+        "sessionRequests": 2,
+        "intervals": 7,
+        "terminal": true,
+        "media": "generated recorded VOD; live captureStream/WHEP NOT_VERIFIED",
+        "fixtureAuthorization": "fixed synthetic server identity; Next signed HTTP auth not covered"
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    }
+  },
+  "reviews": {
+    "server": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "sourceHashMatch": false,
+      "scope": "Full120 SQL plus session lease-helper/final-decision excerpts",
+      "findings": [
+        {
+          "severity": "MAJOR",
+          "file": "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql",
+          "area": "wp20_metric_playback_intake_guard renewal branch (TG_OP='UPDATE' AND NEW.expiresAt>OLD.expiresAt) and the unsupplied bound-session trigger",
+          "issue": "The database renewal guard checks only the intake's own expiry and the admission/version cap. It does not require that the intake is bound to a LiveMetricSession, or that the bound session is open (closedAt IS NULL) and unexpired. The described bound-session trigger checks only scope, anchor>=issuedAt and expiry<=intake expiry. Nothing stated makes session expiresAt monotonic or blocks extending an already-expired or closed session. The rule against resurrecting expired sessions is therefore enforced only by the TS checks in bindPlaybackLease and the UPDATE's WHERE clause.",
+          "evidence": "The renewal branch's SELECT joins only LiveMetricVersion, Live and LiveViewerSession (the admission) and tests OLD.\"expiresAt\"<=decision_at. It never reads LiveMetricSession. In TS, the session checks (session.closedAt, session.expiresAt<=now, and \"closedAt\" IS NULL AND \"expiresAt\">clock_timestamp()) exist only in application SQL. The context lists the session trigger's checks, and none of them prevent extending a session whose expiresAt is already in the past.",
+          "impact": "Any other app-role write path, or a future regression, can do two things without database rejection. (1) It can extend an unbound intake, or an intake whose session is closed, keeping an old nonce valid. (2) It can raise an expired, unclosed session's expiresAt when its expiry is below the intake's (for example, after an admission was shortened at session creation), which resurrects the lease. The database-level guarantee for sessions is weaker than the one for intakes, even though the threat model defends against the app role.",
+          "recommended_fix": "In the bound-session trigger, on UPDATE of LiveMetricSession.expiresAt, require all of: NEW.expiresAt>=OLD.expiresAt, OLD.closedAt IS NULL, and OLD.expiresAt>date_trunc('milliseconds',clock_timestamp()). Reject any change to expiresAt on closed rows. Optionally, in the intake renewal branch, require exactly one bound LiveMetricSession with closedAt IS NULL and expiresAt>decision_at, locked FOR NO KEY UPDATE in the same order the caller uses.",
+          "required_test": "Database-level tests using the app role and raw SQL. (a) An UPDATE extending expiresAt on an expired, unclosed session whose expiry is below its intake's must fail. (b) An UPDATE extending expiresAt on a closed session must fail. (c) An UPDATE extending expiresAt on an intake with no bound session, or with a closed bound session, must fail. (d) Shortening a session's expiresAt must be rejected or explicitly defined.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-session.ts",
+          "area": "bindPlaybackLease renewal UPDATE of LiveMetricPlaybackIntake",
+          "issue": "The value source.expiresAt is computed by the caller before the trigger re-reads the admission/version rows under lock. If the admission is shortened or revoked, or the version is disabled, between those two reads, the trigger raises SQLSTATE 23514. That error is not translated to MetricIngestError('not_authorized'), so it probably surfaces as a generic server error.",
+          "evidence": "The $executeRaw UPDATE on the intake has no try/catch, and the trigger raises 'playback intake renewal scope or lifetime invalid' USING ERRCODE='23514'. Per the context, the browser treats non-permanent failures as temporary and throws, which leads to retries.",
+          "impact": "A renewal that should be refused permanently comes back as a temporary error. The client keeps retrying until the lease expires instead of stopping cleanly, and the response does not match the intended refusal contract. Data integrity is not affected, because the transaction rolls back.",
+          "recommended_fix": "Catch SQLSTATE 23514 from this renewal UPDATE only, and from the session UPDATE if applicable, and map it to MetricIngestError('not_authorized'). Let all other errors propagate.",
+          "required_test": "Concurrently shorten or revoke the admission, or disable the version, between the caller's source read and the intake renewal. Assert a typed not_authorized refusal (permanent, so the client gets null), with intake and session expiresAt and renewalCount unchanged.",
+          "confidence": 0.35
+        }
+      ]
+    },
+    "client": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "effort": "unknown",
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage"
+      },
+      "sourceHashMatch": false,
+      "scope": "Full collector/clock/delivery/transport",
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-collector.ts",
+          "area": "renew() catch branch (remainingMs()===0 -> abandon)",
+          "issue": "The success path returns early if delivery is already sealed, but the catch path does not. When a renewal request times out or throws after a media-ended event or finish() has sealed delivery, and the conservative clock has reached 0, abandon() still runs. That marks collectionLost on a collection that was already complete. If a close request is already in flight, the state can end up with both terminal=true and collectionLost=true.",
+          "evidence": "renew(): `if (delivery?.state().sealed) return;` exists only after a resolved http.open. In catch: `if (clock?.remainingMs() === 0) { disabled = true; ...; await delivery?.abandon(); }` has no sealed check. In delivery, abandon() sets collectionLost unconditionally, and deliver() reads collectionLost only before calling close. A close that is already in flight still sets terminal.",
+          "impact": "A collection that was sealed with every sample inside the old lease can be reported as lost, or as both lost and closed. Its close may be suppressed even though the server would accept it. This blurs the difference between loss and a completed close, which the change is meant to keep separate.",
+          "recommended_fix": "In the catch path, skip abandon() when delivery is already sealed and collectionLost is not set, and let the close attempt decide the outcome. Alternatively, make abandon() do nothing once a close has started or terminal is true.",
+          "required_test": "Seal delivery through finish/ended while a renewal is pending. Then make the renewal reject after remainingMs() reaches 0. Assert that collectionLost is not set on the already-sealed delivery and that terminal and collectionLost are never both true.",
+          "confidence": 0.6
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-transport.ts",
+          "area": "close(): terminal derivation",
+          "issue": "The client treats a close as terminal when appendOpen is false and closedAtMs is set. It ignores the parsed deliveryComplete field and never checks that the receipt's lastSequence equals finalSequence.",
+          "evidence": "closeSchema parses deliveryComplete and lastSequence, but the code returns `{ terminal: !receipt.appendOpen && receipt.closedAtMs !== null }`.",
+          "impact": "If the server closed the session as incomplete (for example after expiry or a gap), the client still reports terminal, the same as a certified complete close. Any UI or telemetry reading delivery state cannot tell a completed close from a server-side loss.",
+          "recommended_fix": "Require deliveryComplete === true and lastSequence === finalSequence before reporting a completed close. Report a closed-but-incomplete receipt as a separate non-retryable loss or rejected state.",
+          "required_test": "Return a close receipt with appendOpen=false, closedAtMs set and deliveryComplete=false, and separately one with lastSequence !== finalSequence. Assert that neither yields a completed-close state.",
+          "confidence": 0.55
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-collector.ts",
+          "area": "renew() receipt validation / live-metric-clock.ts extendExpiry",
+          "issue": "The client compares a renewal reply's identity fields and expiry, but ignores its serverNowAtMs, lastSequence and lastElapsedMs. It never checks that the existing monotonic mapping still agrees with the database clock, or that the server's counters match what this writer has acknowledged.",
+          "evidence": "renew() checks sessionId, versionId, anchorAtMs, durationMs and extendExpiry(expiresAtMs) only. extendExpiry takes only a value, and http.open is not timed during renewal. Under the original mapping, server elapsed time must lie between the local elapsed time when the request was sent and the local elapsed time when the reply arrived plus the original uncertainty. None of this is checked.",
+          "impact": "Browser monotonic time can drift or pause during sleep on some platforms. If it does, the conservative expiry stop is computed on a lagging timeline, and the lease extension is accepted without any sign of the drift. A reply showing a foreign writer (lastSequence above this client's acknowledged sequence) is also accepted. Server checks may catch both cases, but those checks were not supplied.",
+          "recommended_fix": "Time the renewal request. Check that serverNowAtMs - anchorAtMs falls within [local elapsed at send, local elapsed at receive + uncertaintyMs], and that lastSequence/lastElapsedMs do not exceed this writer's acknowledged state. Abandon if either check fails.",
+          "required_test": "Use a stubbed clock whose monotonic time stalls or runs fast between open and renew, and a renewal reply whose lastSequence is above the acknowledged sequence. Assert that the collector abandons and does not extend the lease.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-transport.ts",
+          "area": "post(): response.json() on 2xx; open() classification",
+          "issue": "If a successful response has a body that is not valid JSON, response.json() throws. open() then treats this as a temporary error and the caller retries. A body that is valid JSON but fails the schema returns null and is treated as permanent. The documented rule is that permanent failures return null and temporary errors throw, so the same bad server reply is classified two different ways depending on how it is broken. Status 408 is also treated as permanent.",
+          "evidence": "`const responseBody: unknown = response.ok ? await response.json() : null;` sits outside any try/catch. In renew(), the catch block keeps retrying the same nonce until the conservative expiry instead of abandoning straight away.",
+          "impact": "A malformed renewal or issuance reply causes repeated requests until the lease runs out, instead of an immediate permanent refusal. Lease time is not extended, so this is not a security issue. However, the client misses its promised behaviour for malformed renewal replies, and a single 408 permanently disables collection.",
+          "recommended_fix": "Catch JSON parse failures on 2xx responses in post() and return a parse-failure result so that open() returns null. Decide explicitly whether 408 should be treated as temporary.",
+          "required_test": "Return a 200 with a non-JSON body from the sessions endpoint during both open and renew. Assert that the result is a permanent null, the delivery is abandoned and there are no retries. Return a 408 and assert the chosen classification.",
+          "confidence": 0.6
+        }
+      ]
+    },
+    "server-followup": {
+      "status": "REVIEW_COMPLETED",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "model": "claude-opus-5-5",
+        "effort": "unknown"
+      },
+      "sourceHashMatch": true,
+      "scope": "Full120 SQL plus session lease-helper/final-decision excerpts",
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-session.ts",
+          "area": "final decision: `+session.expiresAt > +source.expiresAt` check after bindPlaybackLease",
+          "issue": "Now that sessions can be extended, a later or concurrent open/renewal whose computed source.expiresAt is lower than the extended session expiry fails permanently with not_authorized. Before this change it would have been harmless.",
+          "evidence": "Request A renews intake and session to S_A. Request B, with source S_B < S_A (for example an older signed viewer credential that is still valid, or an in-flight retry), then reaches bindPlaybackLease. There no renewal happens and source.expiresAt = min(S_B, S_A) = S_B. The caller then checks session.expiresAt (S_A) > source.expiresAt (S_B) and throws not_authorized. Before renewals existed, the session expiry was set from source at creation and never grew, so this check could not fire on a monotonic source.",
+          "impact": "Out-of-order or overlapping renewals from the same nonce, or a retry with an earlier credential, permanently end collection (transport.open returns null) for a session that is still validly leased. This hurts gapless lease continuity. Whether it happens depends on whether source.expiresAt can go down between requests; that code was not supplied.",
+          "recommended_fix": "For renewal requests where the session is open, unexpired and bound to the same intake, and source.expiresAt > now but below session.expiresAt, treat it as a no-op. Return the current lease (or cap the returned expiresAtMs to source) instead of not_authorized. Only reject when the source authority has actually been revoked or shortened below now, or show that source.expiresAt is monotonic per admission.",
+          "required_test": "Two overlapping renewals on the same session/nonce with different valid source expiries (higher first, lower second). The second must not permanently end the session. A real admission revocation must still reject.",
+          "confidence": 0.4
+        },
+        {
+          "severity": "MINOR",
+          "file": "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql",
+          "area": "wp20_metric_session_intake_guard UPDATE branch",
+          "issue": "The replaced bound-session guard blocks extending expiry when OLD.closedAt is set, but it does not stop closedAt changing from non-NULL back to NULL. A closed session could therefore be reopened and then extended in a second statement.",
+          "evidence": "The guard checks expiresAt monotonicity, open/unexpired on expiry change, intakeId, anchorAt and admissionSessionId. Nothing compares NEW.closedAt with OLD.closedAt. If closedAt is set to NULL first, the expiry rule sees OLD.closedAt IS NULL on the next UPDATE and allows the extension, up to the intake expiry.",
+          "impact": "If no other supplied or existing trigger makes closedAt write-once, a direct write by the app role can resurrect a completed session, which defeats the never-resurrect guarantee. This only matters if another guard does not already enforce it; such a guard is not in the supplied text.",
+          "recommended_fix": "In the same guard, reject `OLD.\"closedAt\" IS NOT NULL AND NEW.\"closedAt\" IS DISTINCT FROM OLD.\"closedAt\"`, or confirm and cite the existing trigger that makes closedAt immutable.",
+          "required_test": "Using the deployed app role, run UPDATE closedAt=NULL on a closed bound session, then extend its expiresAt. Both must fail with 23514.",
+          "confidence": 0.3
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-session.ts",
+          "area": "PlaybackLeaseOptions / session renewal branch",
+          "issue": "`renewPlaybackIntake` can be set without `requirePlaybackIntake`. In that case the session expiry is extended to source.expiresAt with no intake bound, and the new database monotonic/liveness rule only applies when OLD.intakeId IS NOT NULL.",
+          "evidence": "The type allows `{renewPlaybackIntake:true}` alone. The caller's renewal UPDATE runs whenever `options.renewPlaybackIntake && source > session.expiresAt`. The guard's first IF requires `OLD.\"intakeId\" IS NOT NULL`.",
+          "impact": "Not reachable today (the only caller passes both flags), but a future caller could extend unbound sessions with no database lease bound or revision bump.",
+          "recommended_fix": "Make the options a discriminated union, or throw when renewPlaybackIntake is set without requirePlaybackIntake. Optionally also require session.intakeId in the renewal branch.",
+          "required_test": "Unit test: `{renewPlaybackIntake:true}` without requirePlaybackIntake is rejected and never runs the session UPDATE.",
+          "confidence": 0.5
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-session.ts",
+          "area": "renewal path (intake renewalCount / session ledger writes)",
+          "issue": "Renewals are not limited by count or by minimum extension size. Every request that raises the source expiry by even 1 ms writes the intake row and the session row, adds a viewing-ledger row and bumps the version revision.",
+          "evidence": "The renewal happens whenever `+source.expiresAt > +intake.expiresAt`. renewalCount is an unbounded BIGINT. The ledger records every changed whole session row. Unlike the intake count limit of 64, nothing here bounds renewals.",
+          "impact": "If admission expiry slides on every authorization, one viewer can cause unbounded ledger growth and revision churn, at a rate limited only by the route (not supplied).",
+          "recommended_fix": "Only renew within a window before expiry or when the extension is at least a minimum step, and/or cap renewalCount per intake in the trigger. Report extra rate limiting as a scope proposal if it belongs at the route.",
+          "required_test": "Repeated renewal calls with slightly increasing source expiry: the number of ledger rows and renewalCount stay within the documented limit.",
+          "confidence": 0.35
+        },
+        {
+          "severity": "NIT",
+          "file": "prisma/migrations/20261016080000_live_metric_playback_renewal/migration.sql",
+          "area": "wp20_metric_playback_intake_guard renewal branch lock acquisition",
+          "issue": "On a direct intake UPDATE, the database locks the intake row before the trigger locks Live, viewer session, version and metric session. The app path takes those locks in the opposite order, so the two can deadlock.",
+          "evidence": "A BEFORE ROW UPDATE trigger runs after the target row is locked; the trigger then runs PERFORM ... FOR SHARE / FOR NO KEY UPDATE on the source and session rows. The helper comment says normal callers hold the source and session locks before `FOR UPDATE` on the intake.",
+          "impact": "No integrity loss: PostgreSQL deadlock detection aborts one transaction with 40P01, which is mapped to retryable_conflict. This only affects direct writes outside the app path.",
+          "recommended_fix": "Document that direct intake renewals must lock the session first, or accept the deadlock-retry behaviour explicitly.",
+          "required_test": "Concurrent direct intake UPDATE vs app renewal on the same intake: one succeeds, the other gets 40P01/retryable, and the intake/session state stays consistent.",
+          "confidence": 0.6
+        }
+      ]
+    }
+  },
+  "requestedTeam": "ai-team-pro",
+  "effectiveTeam": "ai-team-pro",
+  "engineeringResolved": {
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "engineeringObserved": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "scope": "Same-intake/session bounded renewal, original anchor/sequence preserved, DB source/clock checks, counter revision, browser loss handling",
+  "notVerified": [
+    "Long-duration browser soak",
+    "signed Next HTTP browser authorization",
+    "live/WHEP",
+    "populated119-to120 upgrade/load",
+    "deployed runtime role",
+    "viewing/visits coverage producer and proof/reader fencing",
+    "scheduler queue/host/cadence integration",
+    "remote GitHub Actions"
+  ],
+  "knownFailedGate": {
+    "originalSynchronized20Serializable": {
+      "successes": 7,
+      "failures": 13,
+      "rerun": false
+    }
+  },
+  "ownership": {
+    "writer": "root",
+    "maxParallel": 1,
+    "maxDepth": 1,
+    "automaticSpawn": false
+  },
+  "git": {
+    "worktree": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+    "mode": "independent detached worktree",
+    "promotion": "NOT_REQUESTED"
+  },
+  "production": "NOT_AUTHORIZED",
+  "nextAction": "Disposition precise renewal reviews, then close viewing/intake and visits source universes and bind producer revisions before scheduler integration",
+  "serverMajorDisposition": "FIXED_AND_REREVIEWED; exact SQL hash matches qualified follow-up. Original stale review retained.",
+  "serverMinorDisposition": "Original excerpt omitted existing catch: SQLSTATE23514 is mapped to evidence_rejected, API409; transport returns null. Include actual mapping in follow-up, not a generic500.",
+  "clientMinorDisposition": {
+    "endedWhileRenewalFails": "FIXED_AND_TESTED; sealed check added to catch; 246 unit PASS. Fix not independently rereviewed; original client hash is stale.",
+    "terminalVersusComplete": "Terminal means closed/no further appends, not positive evidence of complete delivery. API/DB deliveryComplete remains separate; do not force retries against an already closed session. Original finding retained, design interpretation documented.",
+    "renewalClockDriftAndForeignWriterCounters": "DEFERRED; server guards retained, explicit client cross-check remains incomplete.",
+    "malformedJsonAnd408Classification": "DEFERRED; no expiry extension on failure; original bounds/finite timeout remain."
+  },
+  "validationReuse": "Latest246 units and typecheck PASS. Full lint PASS followed by scoped lint of collector/catch regression PASS. Current SQL/service DB PASS; later collector catch-only change tested by unit, no new DB claim for that failure branch."
+}

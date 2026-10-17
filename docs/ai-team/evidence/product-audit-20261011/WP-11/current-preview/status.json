@@ -1,0 +1,21 @@
+{
+  "status": "REMOTE_VALIDATION_PASS_CLEANED",
+  "deployment_id": "dpl_DkFwnuHpCGymGHryyNjmbcVsWtVu",
+  "host": "celebrate-deal-staging-pee8uidcp-a25814740s-projects.vercel.app",
+  "source100_match": true,
+  "mirror_typecheck": "PASS",
+  "remote_compile": "PASS",
+  "remote_typecheck": "PASS",
+  "remote_probes": "PASS",
+  "sandbox_session": "sbx_Qf0EcsunKoXhG7mnyXWlehgx1bcU",
+  "firewall": "owned host removed and published",
+  "retained_staging_id": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+  "retained_staging_unchanged": true,
+  "scope_limit": "remote businessDB unavailable byloopback override; actualbusinesssuccess remains local96migrationDB/browser evidence",
+  "auth_blocker": false,
+  "cleanup_required": false,
+  "sandbox_status": "STOPPED",
+  "deployment_removed": true,
+  "whole_acceptance": "NOT_RUN",
+  "business_database_success_claimed": false
+}

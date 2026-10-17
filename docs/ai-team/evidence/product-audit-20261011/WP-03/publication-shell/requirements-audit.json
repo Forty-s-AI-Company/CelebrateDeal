@@ -1,0 +1,27 @@
+{
+  "changed_files": [
+    "src/components/public-policy.tsx",
+    "src/components/public-policy.test.tsx",
+    "src/app/policies/[slug]/page.test.tsx"
+  ],
+  "legal_content": {
+    "path": "src/lib/public-policy-content.ts",
+    "sha256": "35f8f4be1207fcc62500b16eeea7fcc05a9bb0e97efb99ece2bf35bbdcddc865",
+    "unchanged_from_base": true
+  },
+  "scope_completed": "Unpublished metadata slots, truthful policy notice and common footer; valid status role",
+  "whole_wp": "INCOMPLETE",
+  "remaining": [
+    "Approved policy version and effective date from D5",
+    "Approved formal legal text",
+    "Governance language in existing draft bodies and remaining support/onboarding pages",
+    "Full running-page layout and accessibility verification after content approval"
+  ],
+  "not_claimed": [
+    "All public pages free of internal governance terms",
+    "Published formal policy",
+    "D5 resolved"
+  ],
+  "rollback": "Exact3file before/*.txt; no schema/migration/event edits",
+  "safety": "Isolated worktree only; no original checkout mutation, push, deployment or data access"
+}

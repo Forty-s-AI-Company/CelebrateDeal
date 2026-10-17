@@ -1,0 +1,174 @@
+{
+  "review": {
+    "summary": "I reviewed only the five files you supplied, read-only. I found no BLOCKER or MAJOR defects in them. What looks correct: 1) The wrapper parses the scope strictly with safeParse and checks that the keyring is set before calling connection() or getDb(). It always returns a two-slot Fragment, with the collector or null in slot 0 and the original child in slot 1, and it passes only vendorId, liveId and the random eventId to the client. 2) The owner lookup runs outside the transaction and is only a hint. Inside the existing page transaction, the advisory lock is taken first. A FOR SHARE OF l,f query then rechecks the exact Live.formId/vendor/isActive binding and the project's published state, so a stale owner or binding returns SCOPE_UNAVAILABLE and the function returns null. Under READ COMMITTED, Postgres re-evaluates locked rows that were updated concurrently against that WHERE clause. 3) Unavailable scope and lifetime return null. Other failures throw PERSISTENCE_UNAVAILABLE and propagate, as specified. The quota and loss-marker logic is unchanged. The project row is not locked, as you disclosed. 4) The webinar helper only allows the waiting, live and replay states, and requires complete resources and a thank-you step. I could not verify several things because they are not in the supplied files: the callers (actual runtime.renderedStepId use, the standalone exactly-one-session rule, invalid-fields and already-submitted exclusion, the generic live-binding source), getFunnelNodeDefinition/getFunnelWebinarState, the LiveMetricVisit client, the schema/trigger, and all test or run results. Nothing here certifies tests, real signed Next/browser behaviour, load behaviour or deployment. There is one low-confidence MINOR finding: the positive webinar-funnel path has no reported evidence it works.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-registration-surface.ts",
+        "area": "metricWebinarRegistrationScope guard (step.isSystem / Live.formId binding)",
+        "issue": "No supplied evidence shows the webinar-funnel path ever produces a tracked visit. The helper rejects any registration step with isSystem set. Downstream, the locked SQL requires Live.formId to equal resource.form.id. If webinar templates create the registration step as a system step, or bind a funnel form that is not the Live's own formId, every webinar registration page silently gets no collector.",
+        "evidence": "The guard includes `step.isSystem` in its early `return {}` conditions. The form gate in live-metric-visit-page.ts joins `f.id=l.\"formId\"`. The reported runs cover standalone-form rejects and the valid path. The only webinar note is that an incomplete-resource fixture is now skipped; no positive webinar issuance result is reported.",
+        "impact": "If either assumption is wrong, the visitor denominator undercounts visits to actual webinar registration pages, which inflates registration conversion. No error or loss marker shows the gap, because a skipped issuance looks the same as being out of scope.",
+        "recommended_fix": "Confirm with the funnel template or step schema that webinar_registration_page steps are created with isSystem=false and that the funnel webinar resource form is the Live's formId. If not, change the guard or binding to match the public renderer's actual registration-step rule. Do not loosen the locked SQL beyond the exact form/live/vendor check.",
+        "required_test": "In a disposable database, build a complete webinar funnel fixture using the real template or creation path, with registration and thank-you steps, a ready Live with an enabled version, and the Live's own form. Assert that metricWebinarRegistrationScope returns {formId, liveId} and that withMetricRegistrationVisit issues exactly one page row and renders the collector. Add a negative test for an isSystem registration step if that is the intended exclusion.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "accepted": false,
+  "finalModel": "claude-opus-5-5",
+  "attempts": [
+    {
+      "status": "RATE_LIMITED",
+      "exitCode": 3,
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high"
+    },
+    {
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "reviewed": true,
+  "completed": false,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "agy_discovery_process_status": "SUCCESS",
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper",
+    "source": "process_and_schema"
+  },
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 14,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "payment",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 18000,
+      "expected_duration": 90,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "status": "REVIEW_COMPLETED",
+  "normalized_status": "REVIEW_COMPLETED"
+}

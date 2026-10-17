@@ -1,0 +1,74 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ verify: vi.fn(), consume: vi.fn(), setCookie: vi.fn(), vendor: vi.fn(), limited: vi.fn() }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findFirst: mocks.vendor } }) }));
+vi.mock("@/lib/student-portal-auth", () => ({ verifyStudentPortalAccessToken: mocks.verify, consumeStudentPortalAccessToken: mocks.consume, setStudentPortalSessionCookie: mocks.setCookie }));
+vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limited }));
+import { GET, POST } from "./route";
+const context = (vendorSlug = "teacher") => ({ params: Promise.resolve({ vendorSlug }) });
+const link = "https://app.example.test/portal/teacher/access?token=synthetic";
+async function confirmation() {
+  const response = await GET(new Request(link), context());
+  const html = await response.text(); const fields = new URLSearchParams();
+  for (const key of ["capability", "confirmation", "issued"]) fields.set(key, html.match(new RegExp(`name="${key}" value="([^"]*)"`))![1]);
+  return { fields, cookie: response.headers.get("set-cookie")!.split(";")[0] };
+}
+function request(p: Awaited<ReturnType<typeof confirmation>>, origin = "https://app.example.test", url = "https://app.example.test/portal/teacher/access") {
+  return new Request(url, { method: "POST", headers: { origin, cookie: p.cookie }, body: p.fields });
+}
+afterEach(() => vi.unstubAllEnvs());
+beforeEach(() => { vi.stubEnv("CSRF_SECRET", "synthetic-confirmation-cookie-key-only-20261012"); vi.clearAllMocks(); mocks.limited.mockResolvedValue(null); mocks.verify.mockReturnValue({ vendorId: "vendor-1" }); mocks.vendor.mockResolvedValue({ id: "vendor-1" }); mocks.consume.mockResolvedValue({ vendorId: "vendor-1", customerKeyHash: "hash" }); });
+describe("student portal explicit confirmation", () => {
+  it("GET previews without consuming the link or creating a session", async () => {
+    const response = await GET(new Request(link), context());
+    expect(response.status).toBe(200); expect(await response.text()).toContain("確認登入");
+    expect(mocks.consume).not.toHaveBeenCalled(); expect(mocks.setCookie).not.toHaveBeenCalled();
+    expect(mocks.vendor).toHaveBeenCalledWith({ where: { id: "vendor-1", slug: "teacher" }, select: { id: true, name: true } });
+  });
+  it("checks tenant before consuming and sets the session only after confirmed POST", async () => {
+    const p = await confirmation(); vi.clearAllMocks(); mocks.limited.mockResolvedValue(null);
+    const response = await POST(request(p), context());
+    expect(mocks.consume).toHaveBeenCalledAfter(mocks.vendor);
+    expect(mocks.setCookie).toHaveBeenCalledWith({ vendorId: "vendor-1", customerKeyHash: "hash" });
+    expect(response.status).toBe(303); expect(response.headers.get("location")).toBe("https://app.example.test/portal/teacher");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+  it("rejects confirmation forgery before verifying or consuming", async () => {
+    const p = await confirmation(); vi.clearAllMocks(); mocks.limited.mockResolvedValue(null);
+    expect((await POST(request(p, "https://evil.example"), context())).status).toBe(403);
+    expect(mocks.verify).not.toHaveBeenCalled(); expect(mocks.consume).not.toHaveBeenCalled(); expect(mocks.setCookie).not.toHaveBeenCalled();
+  });
+  it("does not burn a link when the tenant changes between preview and POST", async () => {
+    const p = await confirmation(); mocks.vendor.mockResolvedValue(null);
+    const response = await POST(request(p), context());
+    expect(response.headers.get("location")).toContain("invalid_or_expired"); expect(mocks.consume).not.toHaveBeenCalled();
+  });
+  it("returns an invalid same-origin confirmation to the recoverable login page", async () => {
+    const p = await confirmation(); p.fields.set("issued", "1000000000000");
+    const response = await POST(request(p), context());
+    expect(response.status).toBe(303); expect(response.headers.get("location")).toContain("/login?error=invalid_or_expired");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0"); expect(mocks.consume).not.toHaveBeenCalled(); expect(mocks.setCookie).not.toHaveBeenCalled();
+  });
+  it("rejects replay after the atomic consumer reports the link used", async () => {
+    const p = await confirmation(); mocks.consume.mockResolvedValue(null);
+    const response = await POST(request(p), context());
+    expect(response.headers.get("location")).toContain("invalid_or_expired"); expect(mocks.setCookie).not.toHaveBeenCalled();
+  });
+  it.each(["checkout", "checkout_redirect"])("rejects other purposes %s without creating a session", async (purpose) => {
+    const response = await GET(new Request(`${link}&purpose=${purpose}`), context());
+    expect(response.status).toBe(303); expect(mocks.verify).not.toHaveBeenCalled(); expect(mocks.consume).not.toHaveBeenCalled(); expect(mocks.setCookie).not.toHaveBeenCalled();
+  });
+  it("keeps invalid-link redirects private", async () => {
+    mocks.verify.mockReturnValue(null); const response = await GET(new Request(link), context());
+    expect(response.headers.get("cache-control")).toBe("private, no-store"); expect(response.headers.get("referrer-policy")).toBe("no-referrer"); expect(mocks.consume).not.toHaveBeenCalled();
+  });
+  it("uses canonical origin when the server receives an internal URL", async () => {
+    const p = await confirmation(); const response = await POST(request(p, undefined, "http://localhost:31047/portal/teacher/access"), context());
+    expect(response.headers.get("location")).toBe("https://app.example.test/portal/teacher"); expect(mocks.setCookie).toHaveBeenCalledOnce();
+  });
+  it("stops at rate limits before credential reads", async () => {
+    mocks.limited.mockResolvedValue(new Response(null, { status: 429 }));
+    expect((await GET(new Request(link), context())).status).toBe(429); expect(mocks.verify).not.toHaveBeenCalled();
+    expect((await POST(new Request(link, { method: "POST" }), context())).status).toBe(429); expect(mocks.consume).not.toHaveBeenCalled();
+  });
+});

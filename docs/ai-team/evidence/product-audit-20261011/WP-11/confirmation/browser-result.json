@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "previewGet": 200,
+      "previewHead": 200,
+      "mailPreviewConsumes": false,
+      "axeViolations": 0
+    },
+    {
+      "confirmedPost": 303,
+      "portalReached": true,
+      "consumedCount": 1
+    },
+    {
+      "replayRejected": true
+    }
+  ],
+  "restored": true,
+  "stage": "replay",
+  "axe": [],
+  "requestBoundary": {
+    "postStatus": 303,
+    "originMatches": true,
+    "referrerOriginOnly": true,
+    "referrerAbsent": false,
+    "referrerHasQuery": false
+  }
+}

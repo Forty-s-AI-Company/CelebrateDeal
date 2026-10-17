@@ -1,0 +1,25 @@
+{
+  "kind": "validation",
+  "name": "typecheck",
+  "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+  "status": "PASS",
+  "exit_code": 0,
+  "source": "validation_runner",
+  "details": {
+    "targetedTests": {
+      "exitCode": 0,
+      "tests": 255,
+      "files": 11
+    },
+    "scopedLint": {
+      "exitCode": 0,
+      "files": 8
+    },
+    "typecheck": {
+      "exitCode": 0
+    },
+    "diffCheck": {
+      "exitCode": 0
+    }
+  }
+}

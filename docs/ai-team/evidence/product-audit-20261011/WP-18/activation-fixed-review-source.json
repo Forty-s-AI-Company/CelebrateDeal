@@ -1,0 +1,13 @@
+{
+  "sourceHashes": {
+    "src/lib/automation-workflow.ts": "d26462aacbd98a28b443c1cb2a291cd2810b552a8348e40d0602afe152d76a98",
+    "src/lib/automation-workflow.test.ts": "8fbfb727d4bf894d766bc9285761a04c3716833df6af755923abf10eb9a8f197",
+    "src/app/actions/automation-actions.ts": "93720609e9ef0cff905ff4d777a30d7875ed1f8737efa244a011f97b84e64c2b",
+    "src/app/actions/automation-actions.test.ts": "a07d10e261d71f17a1d7bfdbe9f9fb4cd1aadc7c03574618c6ed40093487523b",
+    "src/app/(app)/settings/automations/page.tsx": "608a1a315f8ef38c29536c65c22526331a80580e7c2580fe117d1091183af7ac",
+    "src/app/(app)/settings/automations/page.test.tsx": "34d3109135dc2e74b56acd1cc8b8e24fbebc771c0bcc8c85fa5894ed2251bb70"
+  },
+  "contextChars": 14034,
+  "supplied": "Full current actions, full Email action and unchanged HMAC creator/URL helpers, exact changed badge expression; earlier qualified readiness/dryrun/generic-guard unchanged",
+  "wholeWP18": "NOT_READY"
+}

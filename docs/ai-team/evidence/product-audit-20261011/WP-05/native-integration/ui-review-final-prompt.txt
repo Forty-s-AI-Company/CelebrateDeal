@@ -1,0 +1,309 @@
+Read-only independent ordinary UI repair review. No tools or edits. Return BLOCKER/MAJOR/MINOR/NIT findings with file/area/evidence/impact/recommended_fix/required_test/confidence. Snapshot sha256:84adebec22219bf698d6a1ebcf27dda1c945f7e1eb2556afb7362a8485e32637.13checks PASS including24entry cases and4success destination cases. Root loading replaced with16nonregistration segment boundaries plus home Suspense; global NavigationProgress exists. Removed unused partner shell. No one-time flash claim or human AT verification. Assess residual impacts.
+
+FILE src/components/registration-retry-context.tsx
+"use client";
+import { createContext, useContext, type ReactNode } from "react";
+import type { RegistrationRetryDraft } from "@/lib/registration-form-retry";
+import { formSubmissionErrorMessage } from "@/lib/registration-submission-client";
+type RetryState = { formId?: string; sourcePath: string; draft: RegistrationRetryDraft | null; failed: boolean; submitted?: boolean };
+const Context = createContext<RetryState | null>(null);
+export function RegistrationRetryProvider({ value, children }: { value: RetryState; children: ReactNode }) {
+  return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+export function useRegistrationRetry(formId: string) {
+  const state = useContext(Context);
+  if (!state || state.formId !== formId) return null;
+  // 網址可被分享或保留；沒有有效草稿時，不把網址旗標當成送出失敗的證據。
+  return { ...state, message: state.failed ? state.draft ? formSubmissionErrorMessage(state.draft.status) : "目前沒有可恢復的填寫內容，無法確認先前的送出結果。若您已報名，請先查看確認信，避免重複送出；若尚未報名，請重新填寫。" : "" };
+}
+
+FILE src/components/registration-submission-feedback.tsx
+"use client";
+
+import { useEffect, useRef } from "react";
+
+/** Keep live regions mounted and restore keyboard position after a failed submit. */
+export function RegistrationSubmissionFeedback({ pending, errorMessage = "", successMessage = "" }: {
+  pending: boolean;
+  errorMessage?: string;
+  successMessage?: string;
+}) {
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const alert = errorRef.current;
+    if (!errorMessage || pending || !alert) return;
+    const active = alert.ownerDocument.activeElement;
+    const form = alert.closest("form");
+    // 不搶走使用者等待期間移往其他欄位或連結的焦點。
+    const lostFocus = !active || active === alert.ownerDocument.body || active === alert;
+    const onSubmit = active instanceof HTMLButtonElement && active.type === "submit" && active.form === form;
+    if (lostFocus || onSubmit) alert.focus();
+  }, [errorMessage, pending]);
+
+  return <>
+    <p ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" className={`text-sm text-red-700 ${pending || !errorMessage ? "sr-only" : ""}`}>{pending ? "" : errorMessage}</p>
+    <p role="status" aria-live="polite" aria-atomic="true" className={pending || !successMessage || errorMessage ? "sr-only" : "text-sm text-emerald-700"}>{pending ? "正在送出，請勿重複操作。" : errorMessage ? "" : successMessage}</p>
+  </>;
+}
+
+FILE src/components/registration-retry-boundary.tsx
+import { registrationResultCookieName, verifyRegistrationResult } from "@/lib/registration-submission-receipt";
+import { cookies, headers } from "next/headers";
+import type { ReactNode } from "react";
+import { getDb } from "@/lib/db";
+import { readRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName } from "@/lib/registration-form-retry";
+import { RegistrationRetryProvider } from "@/components/registration-retry-context";
+
+/** 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。 */
+export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted }: {
+  formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string;
+}) {
+  const failed = typeof retry === "string" && ["400", "403", "404", "429", "503", "unavailable"].includes(retry);
+  let draft = null;
+  if (failed && retry !== "unavailable" && formId) {
+    const jar = await cookies();
+    const host = (await headers()).get("host") ?? "";
+    const capability = jar.get(registrationRetryCookieName(registrationRetrySecureCookies(host)))?.value;
+    try { draft = await readRegistrationRetryDraft(getDb(), { capability, formId, sourcePath }); } catch { /* 明示未保留，不送出敏感診斷。 */ }
+  }
+  const verifiedSubmission = await verifiedRegistrationSubmission(formId, sourcePath, submitted);
+  return function RetryBoundary(children: ReactNode) {
+    return <RegistrationRetryProvider value={{ formId, sourcePath, draft, failed, submitted: verifiedSubmission }}>{children}</RegistrationRetryProvider>;
+  };
+}
+
+
+/** 共用驗證，避免個別入口直接信任網址上的成功旗標。 */
+export async function verifiedRegistrationSubmission(formId: string | undefined, sourcePath: string, submitted?: string) {
+  if (submitted !== "verification_required" || !formId) return false;
+  const jar = await cookies();
+  const secure = registrationRetrySecureCookies((await headers()).get("host") ?? "");
+  return verifyRegistrationResult(jar.get(registrationResultCookieName(secure))?.value, formId, sourcePath);
+}
+
+FILE src/app/loading.test.tsx
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import RootLoading from "./root-loading";
+
+describe("root loading state", () => {
+  it("renders an accessible, non-blocking skeleton", () => {
+    const html = renderToStaticMarkup(<RootLoading />);
+
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("正在載入頁面");
+    expect(html).toContain("animate-pulse");
+  });
+});
+
+
+it("wires loading UI into non-registration page segments only", () => {
+  const app = join(process.cwd(), "src/app");
+  const excluded = new Set(["form", "lp", "p", "registration-error", "browser-qa", "@checkout"]);
+  const hasPage = (path: string): boolean => readdirSync(path, { withFileTypes: true }).some((entry) => entry.isDirectory() ? hasPage(join(path, entry.name)) : entry.name === "page.tsx");
+  for (const segment of readdirSync(app, { withFileTypes: true })) {
+    if (!segment.isDirectory() || excluded.has(segment.name) || !hasPage(join(app, segment.name))) continue;
+    expect(existsSync(join(app, segment.name, "loading.tsx")), segment.name).toBe(true);
+  }
+  for (const segment of ["form", "lp", "p", "registration-error"]) {
+    expect(existsSync(join(app, segment, "loading.tsx"))).toBe(false);
+  }
+  expect(existsSync(join(app, "loading.tsx"))).toBe(false);
+  expect(readFileSync(join(app, "page.tsx"), "utf8")).toContain("<Suspense fallback={<RootLoading />}");
+});
+
+FILE src/app/page.tsx
+import { Suspense } from "react";
+import RootLoading from "./root-loading";
+import { redirect } from "next/navigation";
+import { getCurrentVendor } from "@/lib/auth";
+
+async function HomeRedirect() {
+  const vendor = await getCurrentVendor();
+  // Preserve the public root-entry context after redirecting anonymous visitors
+  // so the announcement can open once without blocking direct login flows.
+  return redirect(vendor ? "/dashboard" : "/login?from=home");
+}
+
+// 根路由的導向有非同步身分查詢；僅包住此頁，不影響報名入口。
+export default function HomePage() {
+  return <Suspense fallback={<RootLoading />}><HomeRedirect /></Suspense>;
+}
+
+EXCERPT src/app/lp/[slug]/page.tsx
+export default async function PublicLandingPage({ params, searchParams }: { searchParams?: Promise<{ registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string }> }) {
+  const query = await searchParams ?? {};
+  const page = await load((await params).slug);
+  if (!page) notFound();
+  const withRetry = await registrationRetryBoundary({ formId: isFunnelStepPages(page.content) && page.content.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}`, retry: query.registrationRetry, submitted: query.submitted });
+  const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
+  if (isFunnelStepPages(page.content)) {
+    const requestedStep = page.content.flow.steps.find((step) => !step.isSystem);
+    if (!requestedStep) notFound();
+    const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
+    const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: requestedStep.id, visitorId });
+    if (!runtime || runtime.decision.status === "unavailable") notFound();
+    if (runtime.decision.status === "closed") return <PublicFunnelClosed />;
+    if (runtime.decision.status === "redirect") redirect(`/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(runtime.decision.path)}`);
+    const decision = runtime.decision;
+    await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
+    if (page.content.flow.goal === "webinar") return withRetry(<FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+    const document = getPublicFunnelPage(page.content, page.content.flow.steps.find((step) => step.id === decision.renderedStepId)?.path);
+    if (!document) notFound();
+    const logicalDocument = getPublicFunnelPage(page.content, requestedStep.path);
+    const nextPath = logicalDocument ? getNextPublicFunnelStepPath(page.content, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
+    return withRetry(<PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+  }
+  if (!isPageDocument(page.content)) return withRetry(<LandingPageRenderer content={page.content} context={page.context} />);
+  return withRetry(<PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />);
+}
+
+
+EXCERPT src/app/lp/[slug]/[stepPath]/page.tsx
+export default async function PublicFunnelStepPage({ params, searchParams }: { searchParams?: Promise<{ registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string; stepPath: string }> }) {
+  const { slug, stepPath } = await params;
+  const { page, document, steps } = await resolve(slug, stepPath);
+  if (!document) notFound();
+  const step = steps?.flow.steps.find((candidate) => candidate.path === stepPath);
+  if (!page || !steps || !step || step.isSystem) notFound();
+  const query = await searchParams ?? {};
+  const withRetry = await registrationRetryBoundary({ formId: steps.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}/${step.path}`, retry: query.registrationRetry, submitted: query.submitted });
+  const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
+  const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: step.id, visitorId });
+  if (!runtime || runtime.decision.status === "unavailable") notFound();
+  if (runtime.decision.status === "closed") return <PublicFunnelClosed />;
+  if (runtime.decision.status === "redirect") redirect(`/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(runtime.decision.path)}`);
+  const decision = runtime.decision;
+  await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
+  if (steps.flow.goal === "webinar") return withRetry(<FunnelWebinarExperience state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+  const rendered = getPublicFunnelPage(steps, steps.flow.steps.find((candidate) => candidate.id === decision.renderedStepId)?.path);
+  if (!rendered) notFound();
+  const logicalDocument = getPublicFunnelPage(steps, step.path);
+  const nextPath = logicalDocument ? getNextPublicFunnelStepPath(steps, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
+  const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
+  return withRetry(<PublicFunnelDocument document={rendered} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
+}
+
+
+EXCERPT src/components/lead-form.tsx
+export function LeadForm({
+  formId,
+  liveId,
+  fields,
+  sessions = [],
+  submitLabel,
+  successMessage,
+  redirectTo,
+  themeColor = "#c2410c",
+}: {
+  formId: string;
+  liveId?: string | null;
+  fields: FieldSpec[];
+  sessions?: LeadFormSession[];
+  submitLabel: string;
+  successMessage: string;
+  redirectTo?: string;
+  themeColor?: string;
+}) {
+  const retry = useRegistrationRetry(formId);
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
+  const [errorMessage, setErrorMessage] = useState(retry?.message ?? "");
+  const submissionInFlight = useRef(false);
+  const [shareCode] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("share") ?? "");
+
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    // React 尚未更新 disabled 前，也要擋住同一輪事件的重複送出。
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    setStatus("loading");
+    setErrorMessage("");
+    const form = event.currentTarget;
+
+    try {
+      const formData = new FormData(form);
+      const selectedLiveId = getSubmittedLiveId(formData, liveId);
+      const payload = Object.fromEntries(
+        [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "redirectTo", "__registrationReturnPath"].includes(key)),
+      );
+      const referralCode = new URLSearchParams(window.location.search).get("ref");
+      const response = await postRegistrationSubmission(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode, landingPageId: new URLSearchParams(window.location.search).get("lp") }));
+
+      if (response.ok) {
+        setStatus("success");
+        form.reset();
+      } else {
+        submissionInFlight.current = false;
+        setStatus("error");
+        setErrorMessage(formSubmissionErrorMessage(response.status));
+      }
+    } catch {
+      submissionInFlight.current = false;
+      setStatus("error");
+      setErrorMessage(formSubmissionErrorMessage());
+    }
+  }
+
+  if (status === "success") {
+    return (
+      <div role="status" aria-live="polite" className="grid gap-3">
+        <p className="rounded-lg bg-emerald-50 p-4 text-sm font-medium text-emerald-800">{successMessage}</p>
+        <p className="rounded-lg border border-emerald-100 bg-white p-4 text-sm leading-6 text-emerald-800">{FORM_SUBMISSION_VERIFICATION_MESSAGE}</p>
+        <LineLoginButton request={{ mode: "registration", redirectPath: retry?.sourcePath ?? (typeof window === "undefined" ? "/" : window.location.pathname) }}>
+          🟢 接收 LINE 開播提醒與電子票券
+        </LineLoginButton>
+      </div>
+    );
+  }
+
+  return (
+    <form method="post" action="/api/form-submissions" onSubmit={onSubmit} aria-busy={status === "loading"} className="grid gap-4">
+      <input type="hidden" name="formId" value={formId} />
+      {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
+      {sessions.length === 0 && liveId ? <input type="hidden" name="liveId" value={liveId} /> : null}
+      <input type="hidden" name="shareCode" value={shareCode} />
+      {redirectTo || retry?.sourcePath ? <input type="hidden" name="redirectTo" value={redirectTo || retry?.sourcePath} /> : null}
+
+      {sessions.length > 0 ? (
+        <fieldset className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <legend className="px-1 text-sm font-bold text-slate-900">選擇場次</legend>
+          <div className="grid gap-2">
+            {sessions.map((session, index) => (
+              <label key={session.id} className="grid cursor-pointer gap-1 rounded-lg border border-slate-200 bg-white p-3 text-sm transition has-[:checked]:border-[var(--registration-form-theme)] has-[:checked]:ring-2 has-[:checked]:ring-blue-100" style={{ "--registration-form-theme": themeColor } as React.CSSProperties}>
+                <span className="flex items-center gap-2 font-semibold text-slate-900">
+                  <input type="radio" name="liveId" value={session.id} required defaultChecked={retry?.draft?.liveId && sessions.some((item) => item.id === retry.draft?.liveId) ? session.id === retry.draft.liveId : index === 0} className="h-4 w-4 accent-[var(--registration-form-theme)]" />
+                  {session.title}
+                </span>
+                <span className="pl-6 text-xs text-slate-500">{sessionStatusLabel(session.status)} · {formatSessionDate(session.scheduledAt)}</span>
+                {session.description ? <span className="pl-6 text-sm leading-6 text-slate-600">{session.description}</span> : null}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
+
+      {fields.map((field) => (
+        <label key={field.key} className="grid gap-1.5 text-sm font-medium text-slate-700">
+          {field.label}
+          <input
+            name={field.key}
+            defaultValue={retry?.draft?.answers[field.key] ?? ""}
+            type={field.type ?? "text"}
+            required={field.required}
+            disabled={status === "loading"}
+            autoComplete={fieldAutoComplete(field)}
+            inputMode={fieldInputMode(field)}
+            className="h-11 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          />
+        </label>
+      ))}
+      <RegistrationSubmissionFeedback pending={status === "loading"} errorMessage={status === "error" ? errorMessage || formSubmissionErrorMessage() : ""} />
+      <button type="submit" disabled={status === "loading"} aria-disabled={status === "loading"} aria-busy={status === "loading"} style={{ backgroundColor: themeColor }} className="h-11 rounded-md text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60">
+        {status === "loading" ? "送出中..." : submitLabel}
+      </button>
+    </form>
+  );
+}

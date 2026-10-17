@@ -1,11 +1,15 @@
+import { attachRegistrationResult } from "@/lib/registration-submission-receipt";
+import { registrationRetryResponse, clearRegistrationRetry } from "@/lib/registration-form-retry-response";
 import { createHash } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { capturePublicMetricRegistration } from "@/lib/live-metric-registration-capture";
+import { metricVisitorProofsFromConfig } from "@/lib/live-metric-visitor-config";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { readFormDataBody, readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { automationCustomerKeyHash, dispatchAutomationEvent } from "@/lib/automation-workflow";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/trusted-entry-rate-limit";
 import {
   attributionCookieFromRequest,
   liveShareCodeFromRequest,
@@ -272,18 +276,41 @@ const verifiableSubmissionSelect = {
   verificationExpiresAt: true,
 } satisfies Prisma.FormSubmissionSelect;
 
-/** The new registration and its immutable Funnel provenance commit together. */
-async function createPublicSubmission(data: Prisma.FormSubmissionCreateArgs["data"], source: TrustedFunnelSource | null): Promise<VerifiableSubmission> {
+type MetricSubmissionSource = {
+  vendorId: string; liveId: string;
+  proofs: NonNullable<ReturnType<typeof metricVisitorProofsFromConfig>>;
+  proof: string | null;
+};
+
+function metricSubmissionSource(request: Request, vendorId: string, liveId: string | null): MetricSubmissionSource | null {
+  if (!liveId) return null;
+  const proofs = metricVisitorProofsFromConfig(process.env.LIVE_METRIC_VISITOR_KEYRING);
+  if (!proofs) return null;
+  // Matches the visit endpoint's scope-specific HttpOnly cookie. Never trust
+  // a submitted visitor ID or Funnel marketing hint as this metric identity.
+  const name = `__Host-cd-metric-${createHash("sha256").update(JSON.stringify([vendorId, liveId])).digest("hex").slice(0, 32)}`;
+  const cookies = new NextRequest(request.url, { headers: request.headers }).cookies.getAll(name);
+  const value = cookies.length === 1 ? cookies[0].value : null;
+  const proof = value && value.length <= 2048 ? value : null;
+  return { vendorId, liveId, proofs, proof };
+}
+
+/** New submission and provenance commit together. Metric unavailability is
+ * isolated by its savepoint; existing Funnel correctness remains mandatory. */
+async function createPublicSubmission(data: Prisma.FormSubmissionCreateArgs["data"], source: TrustedFunnelSource | null,
+  metric: MetricSubmissionSource | null): Promise<VerifiableSubmission> {
   const database = getDb();
-  if (!source) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
+  if (!source && !metric) return database.formSubmission.create({ data, select: verifiableSubmissionSelect });
   return database.$transaction(async (transaction) => {
     const submission = await transaction.formSubmission.create({ data, select: verifiableSubmissionSelect });
-    await transaction.funnelSubmission.upsert({
+    if (source) await transaction.funnelSubmission.upsert({
       where: { submissionId: submission.id },
       create: { vendorId: source.vendorId, pageId: source.pageId, stepId: source.stepId, submissionId: submission.id, visitId: source.visitId },
       update: {},
       select: { id: true },
     });
+    if (metric) await capturePublicMetricRegistration(transaction,
+      { vendorId: metric.vendorId, liveId: metric.liveId, submissionId: submission.id }, metric.proofs, metric.proof);
     return submission;
   });
 }
@@ -382,7 +409,7 @@ function availablePublicForm<T extends { isActive: boolean }>(form: T | null): T
   return form;
 }
 
-export async function POST(request: Request) {
+async function processSubmission(request: Request, retryFormData?: FormData | null) {
   const contentType = request.headers.get("content-type") ?? "";
   const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
   if (isNativeFormPost && !request.headers.get("origin")) {
@@ -394,7 +421,7 @@ export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
   if (limited) return limited;
 
-  const nativeFormData = isNativeFormPost ? await readFormDataBody(request) : null;
+  const nativeFormData = isNativeFormPost ? retryFormData !== undefined ? retryFormData : await readFormDataBody(request) : null;
   const parsed = SubmissionPayload.safeParse(
     isNativeFormPost ? nativeFormPayload(nativeFormData) : await readJsonBody(request),
   );
@@ -540,7 +567,7 @@ export async function POST(request: Request) {
         verificationVersion: 1,
         verificationExpiresAt,
         affiliateClickId: referral?.source === "cookie" ? referral.clickId ?? null : null,
-      }, funnelSource);
+      }, funnelSource, metricSubmissionSource(request, form.vendorId, submittedLiveId));
   } catch (error) {
     if (!isUniqueConflict(error)) throw error;
     const concurrentSubmission = await getDb().formSubmission.findUnique({
@@ -667,4 +694,29 @@ function nativeFormPayload(formData: FormData | null) {
     shareCode: typeof shareCode === "string" && shareCode ? shareCode : null,
     redirectTo: typeof redirectTo === "string" && redirectTo.startsWith("/") ? redirectTo : undefined,
   };
+}
+
+/** 保留JSON契約；native錯誤只在驗證同源後保存加密草稿。 */
+export async function POST(request: Request) {
+  const native = /application\/x-www-form-urlencoded|multipart\/form-data/i.test(request.headers.get("content-type") ?? "");
+  if (!native) {
+    const response = await processSubmission(request);
+    if (response.ok) await clearRegistrationRetry(request, response);
+    return response;
+  }
+  // 有界讀取容納32×2000字元的URL編碼；JSON上限與欄位驗證保持原樣。
+  const formData = await readFormDataBody(request, 1_000_000);
+  let response: NextResponse;
+  try { response = await processSubmission(request, formData); }
+  catch { response = NextResponse.json({ error: "Submission unavailable" }, { status: 503 }); }
+  if (response.status >= 400) {
+    const retryResponse = await registrationRetryResponse(request, formData, response.status);
+    // 保留伺服器限流等待時間；不轉送其他錯誤回應標頭。
+    const retryAfter = response.headers.get("Retry-After");
+    if (response.status === 429 && retryAfter && /^\d{1,8}$/.test(retryAfter)) retryResponse.headers.set("Retry-After", retryAfter);
+    return retryResponse;
+  }
+  await clearRegistrationRetry(request, response);
+  attachRegistrationResult(request, response, formData);
+  return response;
 }

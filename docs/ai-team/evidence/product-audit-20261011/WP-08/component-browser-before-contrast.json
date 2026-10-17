@@ -1,0 +1,160 @@
+{
+  "status": "FAIL",
+  "scope": "Real client components and app CSS, synthetic server-action/report adapters; not authenticated full-app E2E",
+  "checks": [
+    {
+      "engine": "chromium",
+      "mode": "step",
+      "behavior": "PASS",
+      "a11ySerious": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.44 (foreground color: #62748e, background color: #f5f7fb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "mode": "popup",
+      "behavior": "PASS",
+      "a11ySerious": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.44 (foreground color: #62748e, background color: #f5f7fb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "mode": "operations",
+      "behavior": "PASS",
+      "a11ySerious": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "a[href$=\"synthetic\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.7 (foreground color: #ffffff, background color: #00a6f4, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-sky-500.text-white.hover\\:bg-sky-600:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.7 (foreground color: #ffffff, background color: #00a6f4, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-sky-50 > .items-start.gap-2.flex > .focus-visible\\:outline-none.focus-visible\\:ring-blue-500.flex-1 > .text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #62748e, background color: #f0f9ff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".m-3"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #0084d1, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "engine": "firefox",
+      "mode": "step",
+      "behavior": "PASS",
+      "a11ySerious": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.44 (foreground color: #62748e, background color: #f5f7fb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "engine": "firefox",
+      "mode": "popup",
+      "behavior": "PASS",
+      "a11ySerious": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.44 (foreground color: #62748e, background color: #f5f7fb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "engine": "firefox",
+      "mode": "operations",
+      "behavior": "PASS",
+      "a11ySerious": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodes": [
+            {
+              "target": [
+                "a[href$=\"synthetic\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.7 (foreground color: #ffffff, background color: #00a6f4, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-sky-500.text-white.hover\\:bg-sky-600:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.7 (foreground color: #ffffff, background color: #00a6f4, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-sky-50 > .items-start.gap-2.flex > .focus-visible\\:outline-none.focus-visible\\:ring-blue-500.flex-1 > .text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #62748e, background color: #f0f9ff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".m-3"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.02 (foreground color: #0084d1, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cleanup": true,
+  "stage": "firefox:operations",
+  "errorType": "AssertionError",
+  "errorSummary": "Expected values to be strictly equal:\n\n6 !== 0\n"
+}

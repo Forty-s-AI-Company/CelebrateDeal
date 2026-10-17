@@ -1,0 +1,26 @@
+{
+  "files": {
+    "scripts/wp20-completion-publish-probe.mjs": "ec329d01a9f72676233fe1a74dc24eaade5093f4ef9da05cb60676c2db7e39f7",
+    "scripts/wp20-metric-source-invalidation.mjs": "ff347c6ab877ba8574787f164f6869ae4bfe01f4bf941c64e221d2aba094f320",
+    "prisma/migrations/20261015160000_live_metric_completion_projection/migration.sql": "dde5c89f1739f46eaab8eee9be0a6b2f520a15ecea36f7fef1056e360eff30f1"
+  },
+  "lint": "PASS",
+  "verified": [
+    "wrong worker rejected",
+    "wrong source revision rejected",
+    "foreign person rejected",
+    "before-verification and fractional timestamps rejected",
+    "extra fields rejected",
+    "cohort mismatch rejected",
+    "repeated identical publish idempotent",
+    "conflicting repeat rejected and original retained",
+    "API roles cannot execute"
+  ],
+  "remaining": [
+    "expired lease",
+    "concurrent stale source writeback",
+    "writer/reader integration",
+    "complete coverage producer",
+    "independent review"
+  ]
+}

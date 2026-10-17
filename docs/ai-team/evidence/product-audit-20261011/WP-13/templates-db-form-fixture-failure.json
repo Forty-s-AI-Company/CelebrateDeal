@@ -1,0 +1,16 @@
+{
+  "status": "FAIL",
+  "scope": "Actual original LINE materializer, encrypted outbox and worker on owned disposable PostgreSQL. Provider is existing offline MockLineMessagingClient; no external delivery or public registration/auth flow claimed.",
+  "checks": {},
+  "failure": {
+    "step": "form",
+    "kind": "PrismaClientValidationError",
+    "code": null,
+    "argument": "headline"
+  },
+  "migrations": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

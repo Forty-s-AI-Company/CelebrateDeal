@@ -1,0 +1,20 @@
+{
+  "status": "FAIL",
+  "port": 65279,
+  "scope": "Direct Next webpack build with the same explicit synthetic loopback environment; existing disposable runner. No real credentials inherited or external upload.",
+  "exitCode": 1,
+  "diagnostics": [
+    "uncaughtException TypeError: Cannot read properties of undefined (reading 'length')"
+  ],
+  "stackFrames": [
+    "    at ignore-listed frames"
+  ],
+  "phaseMarkers": [
+    "Creating an optimized"
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrations": 131
+}

@@ -82,7 +82,7 @@ export default async function VideosPage({
 
   return (
     <>
-      <PageHeader title="影片庫" description="管理直播回放、預錄影片與可綁定到直播間的播放素材。" action={<ButtonLink href="/videos/new"><Plus size={16} />新增影片</ButtonLink>} />
+      <PageHeader title="影片素材" description="管理直播回放、預錄影片與可綁定到直播間的播放素材。" action={<ButtonLink href="/videos/new"><Plus size={16} />新增影片</ButtonLink>} />
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">

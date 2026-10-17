@@ -1,0 +1,50 @@
+[
+  {
+    "before": "src/lib/course-payment-webhooks.test.ts",
+    "after": "src/lib/course-payment-webhooks.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "b07bd403d9c47d68101c223e667cdbec1fd9c9dd8f8030d9eae932c41041bafd"
+  },
+  {
+    "before": "src/lib/dashboard-read-model.query-event.test.ts",
+    "after": "src/lib/dashboard-read-model.query-event.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "e236d965e61242cb22d61dd0a813fd8237e9b34045becbcfc7c2e0d2d047ce96"
+  },
+  {
+    "before": "src/lib/inventory-reservations.test.ts",
+    "after": "src/lib/inventory-reservations.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "ae8adcd352ebd70e6ce7868665acf1743db5c45d980ed3e6c55c83b9c348f64a"
+  },
+  {
+    "before": "src/lib/password-reset.test.ts",
+    "after": "src/lib/password-reset.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "771c6e7f040f48144d89883ee91fb4ca3560c2a13ca14d310a967e28d0b30e7c"
+  },
+  {
+    "before": "src/lib/payment-webhooks.test.ts",
+    "after": "src/lib/payment-webhooks.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "4ee2d680fa3b8574537af89ee147c16a0be943481a8fd558598eb1402194ab09"
+  },
+  {
+    "before": "src/lib/post-purchase-upsell-access.test.ts",
+    "after": "src/lib/post-purchase-upsell-access.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "02bf7305a2dafd14e6799b1160b8f3dca0973a1a2ca4b1fcf9baf33ac751a4ae"
+  },
+  {
+    "before": "src/lib/tenant-ledger-invariants.test.ts",
+    "after": "src/lib/tenant-ledger-invariants.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "2d2d33762d01a79ab141d83ac8c2e3e9a765588db746d52eacf7d3bf6099a99e"
+  },
+  {
+    "before": "src/app/api/cloudflare/stream-webhook/route.test.ts",
+    "after": "src/app/api/cloudflare/stream-webhook/route.db.test.ts",
+    "content_unchanged": true,
+    "sha256": "d9be3ef79035ade2a90d50dbac23d644dd05f3c6b9e06f063de6a6a2e150d43c"
+  }
+]

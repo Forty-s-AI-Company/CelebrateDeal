@@ -1,0 +1,9 @@
+{
+  "status": "FAIL",
+  "stage": "start",
+  "scope": "Persistent viewing issuance/mutation ledger with private inspection; no positive coverage",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

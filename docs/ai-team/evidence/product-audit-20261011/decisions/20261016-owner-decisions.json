@@ -1,0 +1,40 @@
+{
+  "at": "2026-10-15T20:50:04.220802+00:00",
+  "source": "Human user message in this conversation on2026-10-16",
+  "D-2": {
+    "decision": "Primary payment provider is owner PayUni",
+    "status": "PARTIAL_DECISION_RECORDED",
+    "unresolved": "Whether it collects platform subscriptions only or all merchant buyer funds; settlement/legal responsibility not inferred"
+  },
+  "D-3": {
+    "status": "WAITING_EXTERNAL_INPUT",
+    "unresolved": "Actual PayUni approval and sandbox capability not provided; no credentials requested"
+  },
+  "D-4": {
+    "decision": "Email+LINE+SMS, user-selectable",
+    "status": "DECIDED_CHANNEL_SCOPE",
+    "unresolved": "SMS provider, spending cap, synthetic recipient and LINE sandbox injection still require actual inputs; no external sends"
+  },
+  "D-5": {
+    "decision": "Agent drafts policies",
+    "status": "DRAFT_CREATED",
+    "artifact": "docs/launch/policies-20261016-draft.md",
+    "unresolved": "Operator identity/contact/effective date, actual data flow/retention and final publication facts"
+  },
+  "D-6a": {
+    "status": "LOCAL_CONFIG_INSPECTED",
+    "observed": "vercel.staging.json crons=[]; existing ops doc reports Hobby rejected minute cron. No repo workflow schedule found. External schedulers not inspected.",
+    "next_action": "Prepare original WP04 scoped staging scheduler using existing job endpoints, isolation/duplicate check/heartbeat; no billing-cycle execution, no Production changes"
+  },
+  "D-6b": {
+    "status": "PROVIDER_CAPABILITY_RESEARCHED",
+    "observed": "Official PayUni manual requires merchant electronic-invoice feature enabled; current code contains deterministic test adapter and no invoice references in PayUni payment provider",
+    "unresolved": "Owner merchant invoice enablement and supported invoice API integration; not assumed from successful payment"
+  },
+  "completedWorkPackages": 9,
+  "totalWorkPackages": 20,
+  "progressPercent": 45,
+  "review": "NOT_RUN_DRAFT_ONLY",
+  "productCodeChanged": false,
+  "ownership": "root sole writer; independent worktree; original dirty worktree untouched"
+}

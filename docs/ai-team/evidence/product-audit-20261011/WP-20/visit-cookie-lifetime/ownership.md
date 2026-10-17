@@ -1,0 +1,2 @@
+root sole writer depth0 dispatch0 automatic_spawn=false; visitor and route files/tests plus evidence; Auth review required.
+Additional scope scripts/wp20-visit-cookie-browser.mjs: root owned loopback and fresh browser only.

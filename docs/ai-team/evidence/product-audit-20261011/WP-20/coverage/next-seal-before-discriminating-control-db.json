@@ -1,0 +1,123 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "sourceHashes": {
+    "scripts/wp20-next-runtime-probe.mjs": "2fc816466c83290488358f691410d175e39fb936460b7a064c46cfb65fc5f52d",
+    "scripts/wp20-next-runtime-disposable.mjs": "1bdcdf202f8333db253e03c0cd044e20b8e2a8db3e3e9c15270444d3101b9c32",
+    "src/lib/live-metric-ingress-gateway.ts": "9a786cc7f9f678d5e9521f59412017ea48cc59cad03c26169737a0253c807d38",
+    "src/lib/live-metric-ingress-proof.ts": "0f705bd92ad4317506f2341c7722bcbacc03110f80043723b5893f46ead8165a",
+    "src/lib/live-metric-ingress-source.ts": "197af2ea54aecb4413c7d914c8f8b033f4a6d14e7e6eb1e8910aabd587fabe26",
+    "src/components/metric-registration-visit.tsx": "76af1a5af88ec7df64c133b6925d14aece6498dcb85b97fbfda0b717021af850",
+    "src/app/form/[slug]/page.tsx": "d34f790b8a67c0bd4588331f9f16ab47040fe84ba19f90dac38244f2f3252cd3",
+    "src/app/(viewer)/live/[slug]/page.tsx": "8c72f5b0f55a234b080a588ee9c392ebd9a1dd394af6adc39b31832c47dd24f6",
+    "src/app/api/live-metrics/[vendorId]/[liveId]/visits/route.ts": "8c0629c4d838688e1f97a6610ec3062cd0abf7dbdc17dc777996989e9b79d45c",
+    "prisma/schema.prisma": "e15b9ef839ac03a67c15d13a68e54eac2f65bdc96751348a511ff9d4b0f891f0",
+    "src/lib/live-metric-ingress-seal.ts": "9ac448f0f1b2c5479975616e0479a6f7fa3f421efedd420f47637c91664385d2",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs": "64297162cc2ac41dd4af4acd88a053a8b9d80776be2498177b0946e54341ea3d",
+    "prisma/migrations/20261016170000_live_metric_ingress_source_seal/migration.sql": "f2bacf068d4fff2c55b0278fe23eb9f0aad125f17c90da90769a92a6db975c49",
+    "src/lib/live-metric-ingress.ts": "7c2d967a1ebd5ac68277611714d0c2467397b36c2c9926877d22fbc293d6d823",
+    "src/lib/live-metric-contract.ts": "1f165dc3b020696a8a6ab9b476b1387d9299a764399e51ce55c9be7d81a90c39",
+    "src/lib/live-viewing-evidence.ts": "afb402025c5c343b22bece181cb8d75ef51a42cbff940998ef776fda06240dcf",
+    "src/lib/live-metric-ingestion.ts": "039f4732c6ed6976f3a88aed7cfed1f77b9c029a7abc52c92e3ce3806c530287",
+    "src/lib/live-runtime-state.ts": "d7d04338809f97787f0cc3fa23c382129137334b9c5e68e02d2c4740a861d11e",
+    "src/lib/external-url.ts": "1d11691a7aa3959510d828d5381911b4aabb7ab321c70afe7e96b5b577617e64",
+    "src/lib/live-video-readiness.ts": "2d7f48468ced15b3f4c8803e3116231cd822f2d1e238f31f8f7570a239d1b55e",
+    "src/lib/live-metric-version.ts": "d141b7d964ed80d0a121a547ed8b62402502433d4c0675ef03f171bbd2570008"
+  },
+  "runtime": {
+    "status": "PASS",
+    "stage": "complete",
+    "checks": {
+      "disabledBootstrapSsrLeavesNoPageSource": "PASS",
+      "ownedFullNextStartupWithExactMarker": "PASS",
+      "actualNextFormClientPrepareAndVisitPersist": "PASS",
+      "realBrowserRefreshPreservesFirstPartyVisitorIdentity": "PASS",
+      "actualNextViewerClientVisitUsesSameVisitor": "PASS",
+      "allRealPageSourcesBoundAndSixCanonicalVisitApiResponses": "PASS",
+      "actualBrowserRunStopsDrainsAndSealsSources": "PASS",
+      "actualNextLateSignedSourceCannotAppendAfterSeal": "PASS"
+    },
+    "server": {
+      "started": true,
+      "ready": true,
+      "stopped": true,
+      "classifications": [
+        "READY_MARKER"
+      ],
+      "spawnError": false,
+      "starts": 2
+    },
+    "browser": {
+      "sourceResponses": [
+        200,
+        200,
+        200
+      ],
+      "visitResponses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "blockedExternal": 0,
+      "blockedAuxiliary": 1,
+      "assetStatuses": {
+        "200": 24
+      },
+      "encodedAssets": 23,
+      "firstSourceElapsedMs": 12104,
+      "dom": {
+        "secure": true,
+        "locks": true,
+        "contentType": "text/html",
+        "scripts": 6,
+        "hasFixture": true
+      },
+      "webSocketConnections": 3,
+      "consoleErrors": 1,
+      "consoleClasses": [
+        "RESOURCE_LOAD"
+      ]
+    },
+    "cleanup": {
+      "browser": "PASS",
+      "gateway": "PASS",
+      "nodeModulesLink": "PASS"
+    },
+    "bootstrapResponses": [
+      200,
+      200
+    ],
+    "observedCounts": {
+      "pages": 3,
+      "intents": 3,
+      "visits": 3,
+      "visitors": 1
+    },
+    "gatewayDiagnostics": {
+      "upstreamTimeoutMs": 120000,
+      "socketTimeouts": 0,
+      "errors": {}
+    },
+    "gatewayClose": {
+      "settlementFailures": 0,
+      "admissionFailures": 0,
+      "pendingFrames": 0
+    },
+    "sourceSeal": {
+      "frameCount": 4,
+      "pageCount": 3,
+      "playbackCount": 0,
+      "unmatchedInterruptedFrames": 1,
+      "lateHttpStatus": 200
+    }
+  },
+  "migrationCount": 129,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "postRunHashesMatch": true
+}

@@ -4,12 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getPublicRegistrationForm: vi.fn(),
   findForm: vi.fn(),
+  verifyResult: vi.fn(),
   findSessions: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
+  trackRegistration:vi.fn(),
+  connection:vi.fn(),
 }));
+vi.mock('@/components/metric-registration-visit',()=>({withMetricRegistrationVisit:mocks.trackRegistration}));
+vi.mock('next/server',async original=>({...await original<typeof import('next/server')>(),connection:mocks.connection}));
 
 vi.mock("@/lib/db", () => ({ getDb: () => ({ registrationForm: { findFirst: mocks.findForm }, live: { findMany: mocks.findSessions } }) }));
 
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }), headers: async () => new Headers({host:"example.test"}) }));
+vi.mock("@/lib/registration-submission-receipt", () => ({ registrationResultCookieName: () => "synthetic-result", verifyRegistrationResult: mocks.verifyResult }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/lib/public-registration-form", () => ({ getPublicRegistrationForm: mocks.getPublicRegistrationForm }));
 vi.mock("next/image", () => ({ default: ({ alt, ...props }: { alt: string } & Record<string, unknown>) => <span role="img" aria-label={alt} {...props} /> }));
@@ -52,6 +59,8 @@ const publicForm = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getPublicRegistrationForm.mockResolvedValue(publicForm);
+  mocks.verifyResult.mockReturnValue(false);
+  mocks.trackRegistration.mockImplementation(async child=>child);
 });
 
 describe("public registration form", () => {
@@ -61,7 +70,19 @@ describe("public registration form", () => {
     const html = renderToStaticMarkup(await PublicFormPage({ params: Promise.resolve({ slug: "summer" }), searchParams: Promise.resolve({ liveId: "live-2" }) }));
     expect(html).toContain('data-sessions="live-2"');
     expect(form.sessions).toHaveLength(2);
+    expect(mocks.trackRegistration).toHaveBeenLastCalledWith(expect.anything(),{formId:'form-1',liveId:'live-2'},{kind:'form',target:'/form/summer'});
     await expect(PublicFormPage({ params: Promise.resolve({ slug: "summer" }), searchParams: Promise.resolve({ liveId: "foreign-live" }) })).rejects.toThrow("NOT_FOUND");
+  });
+  it('does not guess or fan out a multi-session registration page metric scope',async()=>{
+    mocks.getPublicRegistrationForm.mockResolvedValue({...publicForm,sessions:[...publicForm.sessions,{...publicForm.sessions[0],id:'live-2'}]});
+    await PublicFormPage({params:Promise.resolve({slug:'summer'}),searchParams:Promise.resolve({})});
+    expect(mocks.trackRegistration).toHaveBeenCalledTimes(1);
+    expect(mocks.trackRegistration).toHaveBeenLastCalledWith(expect.anything(),{formId:'form-1',liveId:undefined},{kind:'form',target:'/form/summer'});
+  });
+  it('does not count invalid form configuration as a tracked registration form',async()=>{
+    mocks.getPublicRegistrationForm.mockResolvedValue({...publicForm,fields:null});
+    await PublicFormPage({params:Promise.resolve({slug:'summer'}),searchParams:Promise.resolve({})});
+    expect(mocks.trackRegistration.mock.calls[0][1].formId).toBeUndefined();
   });
   it("renders stored presentation settings, safe media, promo and public sessions", async () => {
     const html = renderToStaticMarkup(await PublicFormPage({
@@ -95,7 +116,8 @@ describe("public registration form", () => {
     expect(html).not.toContain("<script>不執行</script>");
   });
 
-  it("renders both the custom success copy and fixed verification gate", async () => {
+  it("renders both the custom success copy and fixed verification gate with a verified result", async () => {
+    mocks.verifyResult.mockReturnValue(true);
     const html = renderToStaticMarkup(await PublicFormPage({
       params: Promise.resolve({ slug: "summer" }),
       searchParams: Promise.resolve({ submitted: "verification_required" }),
@@ -157,4 +179,11 @@ it.each([
   expect(JSON.stringify(metadata)).not.toContain(publicForm.heroImageUrl);
   expect(await generateViewport({ params })).toEqual({});
   expect(mocks.findSessions).not.toHaveBeenCalled();
+});
+
+
+it("does not hide the form for an unverified shared success URL", async () => {
+  const html = renderToStaticMarkup(await PublicFormPage({params:Promise.resolve({slug:"summer"}),searchParams:Promise.resolve({submitted:"verification_required"})}));
+  expect(html).toContain('data-testid="lead-form"');
+  expect(html).not.toContain("請到 Email 開啟確認連結");
 });

@@ -1,0 +1,9 @@
+{
+  "scope": "No verification/session/API/source changes in owned calendar patch; unchanged modules tested using existing token/session tests and full browser verification.",
+  "sourceHashes": {
+    "src/lib/form-submission-verification.ts": "a0b0a552c7c7011440cdb1fc0617a2e8794fc3d51fcce846904876e4c7857917",
+    "src/lib/form-submission-chat-session.ts": "3106d95789d44075bbbdd12b2e00e79e144d62cbf8c166fdbfd2c9cf1bcd92da",
+    "src/app/api/form-submissions/verify/route.ts": "4d8b2da513c5df9bab615c05263697a88843589f8db28424d73a38222098c6d0",
+    "src/app/verify-registration/page.tsx": "6f98cb6bc8a93d8b10a597afd79c8914cf962651f92a92c1ced5b4c165b9d15d"
+  }
+}

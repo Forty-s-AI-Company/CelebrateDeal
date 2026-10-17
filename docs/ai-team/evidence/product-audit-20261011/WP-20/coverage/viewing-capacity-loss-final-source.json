@@ -1,0 +1,7 @@
+{
+  "files": {
+    "src/lib/live-metric-delivery.ts": "8fab97bc72d0561860a50abffe29e5a776fb95b9c40a767abdb4556c02bd65af",
+    "src/lib/live-metric-delivery.test.ts": "69024a0c0386ee0269ecd2d99a9ca29ad6266df32ca4b0320a656f4534a5db05"
+  },
+  "review": "Prior capacity-loss source reviewed; subsequent MINOR finish race reproduced and fixed, not independently rereviewed."
+}

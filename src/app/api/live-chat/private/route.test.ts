@@ -81,3 +81,13 @@ it.each([false, true])("rejects an open oversized upload promptly (content-lengt
     expect(mocks.csrf).not.toHaveBeenCalled();
   } finally { clearTimeout(timer); }
 });
+
+
+it("rejects unknown read identity before limiter and private conversation lookup", async () => {
+  mocks.ip.mockReturnValue(null);
+  const response = await GET(request());
+  expect(response.status).toBe(503);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(mocks.rate).not.toHaveBeenCalled(); expect(mocks.getDb).not.toHaveBeenCalled();
+  expect(mocks.list).not.toHaveBeenCalled(); expect(mocks.token).not.toHaveBeenCalled();
+});

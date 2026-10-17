@@ -1,0 +1,133 @@
+{
+  "status": "PASS",
+  "scope": "Real client components and app CSS, synthetic server-action/report adapters; not authenticated full-app E2E",
+  "checks": [
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "variant": "expanded",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "desktop",
+      "variant": "admin",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "variant": "expanded",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "mobile",
+      "variant": "admin",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "small-mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "small-mobile",
+      "variant": "expanded",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "viewport": "small-mobile",
+      "variant": "admin",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "variant": "expanded",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "desktop",
+      "variant": "admin",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "variant": "expanded",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "mobile",
+      "variant": "admin",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "small-mobile",
+      "variant": "default",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "small-mobile",
+      "variant": "expanded",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "viewport": "small-mobile",
+      "variant": "admin",
+      "scope": "actual app shell and dashboard route loading",
+      "a11ySerious": []
+    }
+  ],
+  "cleanup": true
+}

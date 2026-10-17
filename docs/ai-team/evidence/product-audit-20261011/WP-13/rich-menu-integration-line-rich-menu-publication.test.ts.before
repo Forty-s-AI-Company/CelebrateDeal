@@ -1,0 +1,90 @@
+import sharp from "sharp";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { createRichMenuTemplate } from "./line-rich-menu";
+import { prepareLineRichMenuPublication, publishPreparedLineRichMenu, LINE_RICH_MENU_IMAGE_LIMIT } from "./line-rich-menu-publication";
+
+let png: Buffer,jpeg: Buffer;
+const links = { live_url: "https://example.test/live/synthetic", consultation_url: "https://example.test/consultation", portal_url: "https://example.test/portal", voucher_url: "https://example.test/voucher" };
+beforeAll(async () => {
+  const input = { create: { width: 2500, height: 1686, channels: 3 as const, background: "#2563eb" } };
+  png=await sharp(input).png().toBuffer();jpeg=await sharp(input).jpeg().toBuffer();
+});
+
+describe("Rich Menu single-attempt publication protocol", () => {
+  const old=`richmenu-${"b".repeat(32)}`,created=`richmenu-${"c".repeat(32)}`;
+  function client() {
+    return { getDefault:vi.fn().mockResolvedValueOnce(old).mockResolvedValueOnce(old).mockResolvedValue(created),create:vi.fn().mockResolvedValue(created),uploadImage:vi.fn().mockResolvedValue(undefined),setDefault:vi.fn().mockResolvedValue(undefined),delete:vi.fn() };
+  }
+  async function publication() {
+    const ready=await prepareLineRichMenuPublication(createRichMenuTemplate("minimal-4"),png,links);
+    if(ready.status!=="ready")throw new Error("Synthetic publication missing");return ready.publication;
+  }
+  it("reports sync only after image upload, default switch, remote confirmation and current revision checks", async () => {
+    const remote=client(),current=vi.fn().mockResolvedValue(true);
+    const result=await publishPreparedLineRichMenu(remote,await publication(),current);
+    expect(result).toMatchObject({status:"synced",remoteMenuId:created,previousMenuId:old,previousDefaultKnown:true});
+    expect(current).toHaveBeenCalledTimes(4);
+    expect(remote.uploadImage.mock.invocationCallOrder[0]).toBeLessThan(remote.setDefault.mock.invocationCallOrder[0]);
+    expect(remote.delete).not.toHaveBeenCalled();
+  });
+  it("does not create any remote artifact when the authoritative snapshot is already stale", async () => {
+    const remote=client();expect((await publishPreparedLineRichMenu(remote,await publication(),async()=>false)).status).toBe("conflict");
+    expect(remote.getDefault).not.toHaveBeenCalled();expect(remote.create).not.toHaveBeenCalled();
+  });
+  it("does not overwrite a changed default or delete artifacts after a conflict", async () => {
+    const remote=client();remote.getDefault.mockReset().mockResolvedValueOnce(old).mockResolvedValueOnce(`richmenu-${"d".repeat(32)}`);
+    expect((await publishPreparedLineRichMenu(remote,await publication(),async()=>true)).status).toBe("conflict");
+    expect(remote.setDefault).not.toHaveBeenCalled();expect(remote.delete).not.toHaveBeenCalled();
+  });
+  it("keeps default-switch timeouts uncertain instead of falsely claiming sync or rolling back another writer", async () => {
+    const remote=client();remote.setDefault.mockRejectedValueOnce(new Error("private-provider-diagnostic"));
+    const result=await publishPreparedLineRichMenu(remote,await publication(),async()=>true);
+    expect(result).toMatchObject({status:"uncertain",stage:"set_default",remoteMenuId:created});
+    expect(JSON.stringify(result)).not.toContain("private-provider-diagnostic");expect(remote.delete).not.toHaveBeenCalled();expect(remote.setDefault).toHaveBeenCalledTimes(1);
+  });
+  it("keeps an ambiguous create failure uncertain without retrying or claiming no remote side effect", async () => {
+    const remote=client();remote.create.mockRejectedValueOnce(new Error("synthetic ambiguous response"));
+    expect(await publishPreparedLineRichMenu(remote,await publication(),async()=>true)).toMatchObject({status:"uncertain",stage:"create",remoteMenuId:null});
+    expect(remote.create).toHaveBeenCalledTimes(1);expect(remote.setDefault).not.toHaveBeenCalled();expect(remote.delete).not.toHaveBeenCalled();
+  });
+  it("does not report the current draft synced if it changes during remote publication", async () => {
+    const current=vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const remote=client();expect((await publishPreparedLineRichMenu(remote,await publication(),current)).status).toBe("conflict");
+    expect(remote.setDefault).toHaveBeenCalledTimes(1);expect(remote.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe("Rich Menu publication preparation", () => {
+  it.each(["golden-6","minimal-4"] as const)("resolves the %s draft without mutating it and binds image bytes to the fingerprint", async type => {
+    const menu = createRichMenuTemplate(type),before=structuredClone(menu);
+    const result=await prepareLineRichMenuPublication(menu,png,links);
+    expect(result.status).toBe("ready");if(result.status!=="ready")return;
+    expect(menu).toEqual(before);expect(JSON.stringify(result.publication.menu)).not.toContain("{{");
+    expect(result.publication.menu.areas[0].action).toMatchObject({ type:"uri",uri:links.live_url });
+    expect(result.publication.fingerprint).toMatch(/^[a-f0-9]{64}$/u);
+    expect(result.publication.contentType).toBe("image/png");
+    const repeat=await prepareLineRichMenuPublication(menu,png,links);
+    expect(repeat.status==="ready"&&repeat.publication.fingerprint).toBe(result.publication.fingerprint);
+    const changed=await prepareLineRichMenuPublication(menu,jpeg,links);
+    expect(changed.status==="ready"&&changed.publication.contentType).toBe("image/jpeg");
+    expect(changed.status==="ready"&&changed.publication.fingerprint).not.toBe(result.publication.fingerprint);
+  });
+  it("rejects missing placeholder values, unknown markers and unsafe replacement URLs before decoding", async () => {
+    const menu=createRichMenuTemplate("golden-6");
+    expect((await prepareLineRichMenuPublication(menu,png,{})).status).toBe("unresolved_links");
+    expect((await prepareLineRichMenuPublication(menu,png,{...links,live_url:"javascript:alert(1)"})).status).toBe("invalid_menu");
+    menu.areas[0].action={type:"uri",label:"Synthetic",uri:"https://example.test/{{unknown}}"};
+    expect((await prepareLineRichMenuPublication(menu,png,links)).status).toBe("unresolved_links");
+  });
+  it("requires image bytes to match the saved menu dimensions", async () => {
+    const other=await sharp({create:{width:2500,height:843,channels:3,background:"white"}}).png().toBuffer();
+    expect((await prepareLineRichMenuPublication(createRichMenuTemplate("minimal-4"),other,links)).status).toBe("image_size_mismatch");
+  });
+  it("rejects oversized, SVG and truncated images without fetching external references", async () => {
+    const menu=createRichMenuTemplate("minimal-4");
+    expect((await prepareLineRichMenuPublication(menu,new Uint8Array(LINE_RICH_MENU_IMAGE_LIMIT+1),links)).status).toBe("image_too_large");
+    expect((await prepareLineRichMenuPublication(menu,Buffer.from('<svg><image href="https://example.test/never-fetch"/></svg>'),links)).status).toBe("invalid_image");
+    expect((await prepareLineRichMenuPublication(menu,png.subarray(0,64),links)).status).toBe("invalid_image");
+    expect((await prepareLineRichMenuPublication({},png,links)).status).toBe("invalid_menu");
+  });
+});

@@ -45,7 +45,7 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://wp17.invalid" }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/trusted-entry-rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
   encryptMfaSecret: vi.fn(),

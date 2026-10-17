@@ -1,0 +1,662 @@
+--- a/src/components/message-template-form-client.tsx
++++ b/src/components/message-template-form-client.tsx
+@@ -1,11 +1,12 @@
+ "use client";
+ 
+-import { useActionState, type ReactNode } from "react";
++import { useActionState, useState, type ReactNode } from "react";
+ import { upsertTemplateAction } from "@/app/actions";
+ import { RichTextEditor } from "@/components/rich-text-editor";
+ import { Field, SelectField, SubmitButton } from "@/components/ui";
+ import {
+   initialMessageTemplateActionState,
++  LINE_WEBINAR_TEMPLATE_TRIGGERS,
+   MESSAGE_TEMPLATE_VARIABLES,
+   messageTemplateVariableLabel,
+   type MessageTemplateActionError,
+@@ -29,12 +30,34 @@
+     return "原模板已不存在或不屬於目前商店。你輸入的內容已保留；確認後再次儲存會建立新模板。";
+   }
+   if (error === "invalid_template") {
+-    return "模板資料無效，內容已保留。請檢查 Email 主旨、內容、觸發條件與可用變數後再儲存。";
++    return "模板資料無效，內容已保留。請檢查主旨、內容、觸發條件與可用變數後再儲存。";
+   }
+   if (error === "conflict") {
+     return "這個模板在其他分頁已有新版，你輸入的內容已保留。請確認後再次儲存，才會覆蓋目前伺服器版本。";
+   }
+   return null;
++}
++
++function TemplateChannelFields({ draft }: { draft: MessageTemplateFormDraft }) {
++  const [channel, setChannel] = useState(draft.channel);
++  const [trigger, setTrigger] = useState(draft.trigger);
++  return <div className="grid gap-4 md:grid-cols-2">
++    <SelectField label="渠道" name="channel" value={channel} onChange={event => {
++      const next = event.target.value;setChannel(next);
++      if ((next === "line" && !(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(trigger)) || (next === "email" && trigger === "live_started")) setTrigger("registration_confirmed");
++    }}>
++      <option value="email">Email</option>
++      <option value="line">LINE</option>
++      <option value="sms" disabled>SMS（尚未串接，不能啟用）</option>
++    </SelectField>
++    <SelectField label="觸發條件" name="trigger" value={trigger} onChange={event => setTrigger(event.target.value)}>
++      <option value="registration_confirmed">報名成功</option>
++      <option value="live_reminder">開播提醒</option>
++      <option value="live_started" disabled={channel !== "line"}>直播開始（LINE）</option>
++      <option value="post_live_followup" disabled={channel === "line"}>課後通知</option>
++      <option value="cart_followup" disabled>購買追蹤（購物車事件尚未接通）</option>
++    </SelectField>
++  </div>;
+ }
+ 
+ export function MessageTemplateFormClient({
+@@ -66,19 +89,7 @@
+         </p>
+       ) : null}
+       <Field label="模板名稱" name="name" required maxLength={160} defaultValue={draft.name} />
+-      <div className="grid gap-4 md:grid-cols-2">
+-        <SelectField label="渠道" name="channel" defaultValue={draft.channel}>
+-          <option value="email">Email</option>
+-          <option value="sms" disabled>SMS（尚未串接，不能啟用）</option>
+-          <option value="line" disabled>LINE（尚未串接，不能啟用）</option>
+-        </SelectField>
+-        <SelectField label="觸發條件" name="trigger" defaultValue={draft.trigger}>
+-          <option value="registration_confirmed">報名成功</option>
+-          <option value="live_reminder">開播提醒</option>
+-          <option value="post_live_followup">課後通知</option>
+-          <option value="cart_followup" disabled>購買追蹤（購物車事件尚未接通）</option>
+-        </SelectField>
+-      </div>
++      <TemplateChannelFields key={state.version} draft={draft} />
+       <Field label="主旨" name="subject" required maxLength={200} defaultValue={draft.subject} />
+       <RichTextEditor
+         label="內容"
+@@ -98,7 +109,10 @@
+         <p className="mt-1 break-words font-mono text-xs">
+           {MESSAGE_TEMPLATE_VARIABLES.map(messageTemplateVariableLabel).join(" · ")}
+         </p>
+-        <p className="mt-2 text-xs text-blue-700">報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或 provider 完成前保持停用。</p>
++        <p className="mt-2 text-xs text-blue-700">Email 的報名成功、開播提醒與課後通知會自動附上退訂連結。LINE 的退訂變數會顯示封鎖操作說明網址，訊息末尾也會附上停止接收的方法。</p>
++        <p className="mt-2 text-xs text-blue-700">LINE 同一觸發條件以最近儲存的模板為準，套用所有場次；停用它會停止該類通知。更改模板會停止已排入佇列的舊通知，不會補發。報名者須先完成驗證及 LINE 綁定，且商家已連接官方帳號；送達仍受排程與供應商狀態影響。SMS 尚未開放。</p>
++        <p className="mt-2 text-xs text-blue-700">請先儲存 LINE 報名成功模板，再讓學員綁定；已處理的舊綁定不補發確認。更改渠道或觸發條件後，原條件會改用先前模板，或原本的預設通知。LINE 內容展開變數後最多五則，每則 5,000 字元；重複使用長網址變數時請縮短內容。</p>
++        <p className="mt-2 text-xs text-blue-700">修改報名成功模板也會略過在這次儲存前已綁定、尚未處理的學員；請在招生前確認模板。</p>
+       </div>
+       <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+         <input name="isActive" type="checkbox" defaultChecked={draft.isActive} className="h-4 w-4 accent-blue-600" />
+--- a/src/components/message-template-form.test.tsx
++++ b/src/components/message-template-form.test.tsx
+@@ -1,4 +1,7 @@
++// @vitest-environment happy-dom
+ import { renderToStaticMarkup } from "react-dom/server";
++import { createRoot } from "react-dom/client";
++import { act } from "react";
+ import type { MessageTemplate } from "@prisma/client";
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+ 
+@@ -54,13 +57,13 @@
+ });
+ 
+ describe("MessageTemplateForm", () => {
+-  it("renders only Email as available and exposes bounded supported variables", () => {
++  it("renders Email and LINE choices with bounded supported variables and honest delivery conditions", () => {
+     const html = renderToStaticMarkup(<MessageTemplateForm template={template} />);
+ 
+     expect(html).toContain('name="channel"');
+     expect(html).toContain('value="email" selected=""');
+     expect(html).toMatch(/value="sms" disabled=""/u);
+-    expect(html).toMatch(/value="line" disabled=""/u);
++    expect(html).toMatch(/<option value="line">LINE<\/option>/u);
+     expect(html).toMatch(/value="cart_followup" disabled=""/u);
+     expect(html).toContain('value="post_live_followup"');
+     expect(html).toContain("課後通知");
+@@ -91,6 +94,33 @@
+     expect(html).toContain("課後通知");
+   });
+ 
++  it("edits the LINE started template with honest native block and latest-template rules", () => {
++    const html = renderToStaticMarkup(<MessageTemplateForm template={{ ...template, channel: "line", trigger: "live_started" }} />);
++    expect(html).toContain('value="line" selected=""');
++    expect(html).toMatch(/value="live_started" selected=""/u);
++    expect(html).toMatch(/value="post_live_followup" disabled=""/u);
++    expect(html).toContain("以最近儲存的模板為準");
++    expect(html).toContain("封鎖操作說明網址");
++    expect(html).toContain("商家已連接官方帳號");
++  });
++
++  it("changes channel and resets only incompatible trigger choices in the actual React controls", async () => {
++    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
++    const container = document.createElement("div");const root = createRoot(container);
++    try {
++      await act(async () => root.render(<MessageTemplateForm template={{ ...template, trigger: "post_live_followup" }} />));
++      const channel = container.querySelector('select[name="channel"]') as HTMLSelectElement;
++      const trigger = container.querySelector('select[name="trigger"]') as HTMLSelectElement;
++      const choose = async (select: HTMLSelectElement, value: string) => act(async () => { select.value=value;select.dispatchEvent(new Event("change", { bubbles:true })); });
++      expect(trigger.value).toBe("post_live_followup");
++      await choose(channel,"line");expect(trigger.value).toBe("registration_confirmed");
++      expect((trigger.querySelector('option[value="live_started"]') as HTMLOptionElement).disabled).toBe(false);
++      await choose(trigger,"live_started");await choose(channel,"email");
++      expect(trigger.value).toBe("registration_confirmed");
++      expect((trigger.querySelector('option[value="live_started"]') as HTMLOptionElement).disabled).toBe(true);
++    } finally { await act(async () => root.unmount());vi.unstubAllGlobals(); }
++  });
++
+   it.each([
+     ["invalid_template", "模板資料無效"],
+     ["missing_template", "已不存在或不屬於目前商店"],
+--- a/src/lib/message-template.ts
++++ b/src/lib/message-template.ts
+@@ -1,6 +1,8 @@
+ import { z } from "zod";
+ 
+ export const MESSAGE_TEMPLATE_CHANNELS = ["email", "line"] as const;
++export const LINE_WEBINAR_TEMPLATE_TRIGGERS = ["registration_confirmed", "live_reminder", "live_started"] as const;
++export const LINE_TEMPLATE_VARIABLE_LIMITS: Record<string, number> = { name: 160, live_title: 200, live_url: 2048, live_start_at: 160, vendor_name: 200, unsubscribe_url: 2048 };
+ export const MESSAGE_TEMPLATE_TRIGGERS = [
+   "registration_confirmed",
+   "live_reminder",
+@@ -105,6 +107,14 @@
+ export function normalizeMessageTemplateDraft(input: unknown): MessageTemplateDraftResult {
+   const parsed = MessageTemplateDraftSchema.safeParse(input);
+   if (!parsed.success) return { success: false };
++  if (parsed.data.channel === "line" && !(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(parsed.data.trigger)) return { success: false };
++  if (parsed.data.channel === "line") {
++    let maximum = parsed.data.subject.length + parsed.data.body.length + 2600;
++    (parsed.data.subject + parsed.data.body).replace(variablePattern, (match, variable: string) => {
++      maximum += (LINE_TEMPLATE_VARIABLE_LIMITS[variable] ?? 0) - match.length;return match;
++    });
++    if (maximum > 25_000) return { success: false };
++  }
+   if (!hasOnlySupportedMessageTemplateVariables(parsed.data.subject) || !hasOnlySupportedMessageTemplateVariables(parsed.data.body)) {
+     return { success: false };
+   }
+--- a/src/lib/line-notification.ts
++++ b/src/lib/line-notification.ts
+@@ -4,8 +4,11 @@
+ import { LineFetchClient, LineMessagingError, type LineFlexContents, type LineMessage, type LineMessagingClient } from "@/lib/line-client";
+ import { unprotectLineOfficialAccountCredentials, unprotectLineProfileValue } from "@/lib/line-credentials";
+ import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
++import { LINE_WEBINAR_TEMPLATE_TRIGGERS } from "@/lib/message-template";
++import { buildLineWebinarMessages, findLineWebinarTemplate, lineWebinarTemplateFingerprint, type LineWebinarVariables } from "@/lib/line-webinar-template";
+ 
+ export const LINE_NOTIFICATION_TRIGGERS = [
++  "registration_confirmed",
+   "live_reminder",
+   "live_started",
+   "order_created",
+@@ -16,6 +19,7 @@
+ export type LineNotificationTrigger = typeof LINE_NOTIFICATION_TRIGGERS[number];
+ 
+ type LineNotificationDatabase = Pick<PrismaClient, "lineOfficialAccount" | "lineUserIdentity" | "lineDelivery">;
++type LineWebinarDeliveryDatabase = LineNotificationDatabase & Pick<PrismaClient, "messageTemplate" | "formSubmission">;
+ type LineClientFactory = (accessToken: string) => LineMessagingClient;
+ export type LineDeliveryProcessingScope = {
+   /** Limits a worker invocation to one tenant without changing global cron behavior. */
+@@ -119,7 +123,7 @@
+ 
+ /** Materializes an encrypted, tenant-idempotent LINE outbox entry. */
+ export async function enqueueLineNotification(
+-  db: LineNotificationDatabase,
++  db: LineNotificationDatabase & Partial<Pick<PrismaClient, "messageTemplate">>,
+   input: {
+     vendorId: string;
+     subjectType: "user" | "promoter" | "buyer_order" | "buyer_registration";
+@@ -129,6 +133,9 @@
+     messages: readonly LineMessage[];
+     dueAt?: Date;
+     sourceTemplateId?: string | null;
++    templateVariables?: LineWebinarVariables;
++    requireTemplate?: boolean;
++    eventOccurredAt?: Date;
+   },
+ ) {
+   if (!LINE_NOTIFICATION_TRIGGERS.includes(input.trigger) || !input.idempotencyKey || input.idempotencyKey.length > 255) {
+@@ -142,8 +149,24 @@
+     }),
+   ]);
+   if (!account || account.status !== "active" || !identity || identity.revokedAt) return { status: "not_linked" as const };
++  let messages = input.messages;
++  let sourceTemplateId = input.sourceTemplateId ?? null;
++  let templateFingerprint: string | null = null;
++  if (input.requireTemplate && (!input.templateVariables || !(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(input.trigger))) throw new Error("LINE template context is required.");
++  if (input.templateVariables && (LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(input.trigger)) {
++    if (!db.messageTemplate) throw new Error("LINE webinar template storage is required.");
++    const template = await findLineWebinarTemplate({ messageTemplate: db.messageTemplate }, input.vendorId, input.trigger);
++    if (!template && input.requireTemplate) return { status: "not_configured" as const };
++    if (template) {
++      if (input.trigger === "registration_confirmed" && (!input.eventOccurredAt || input.eventOccurredAt < template.updatedAt)) return { status: "event_precedes_template" as const };
++      const rendered = buildLineWebinarMessages(template, input.templateVariables);
++      if (!rendered) return { status: "template_disabled_or_invalid" as const };
++      messages = rendered;sourceTemplateId = template.id;templateFingerprint = lineWebinarTemplateFingerprint(template);
++    }
++  }
++  if (messages.length < 1 || messages.length > 5) throw new Error("Invalid LINE message count.");
+   const id = randomUUID();
+-  const payloadEncrypted = encryptSensitiveValue(JSON.stringify(input.messages), deliveryPurpose(input.vendorId, id));
++  const payloadEncrypted = encryptSensitiveValue(JSON.stringify(templateFingerprint ? { v: 2, templateFingerprint, messages } : messages), deliveryPurpose(input.vendorId, id));
+   try {
+     const delivery = await db.lineDelivery.create({
+       data: {
+@@ -151,7 +174,7 @@
+         vendorId: input.vendorId,
+         lineOfficialAccountId: account.id,
+         lineUserIdentityId: identity.id,
+-        sourceTemplateId: input.sourceTemplateId ?? null,
++        sourceTemplateId,
+         trigger: input.trigger,
+         idempotencyKey: input.idempotencyKey,
+         payloadEncrypted,
+@@ -171,14 +194,40 @@
+   }
+ }
+ 
+-function safeMessages(value: string): LineMessage[] {
++function safePayload(value: string): { messages: LineMessage[]; templateFingerprint: string | null } {
+   const parsed: unknown = JSON.parse(value);
+-  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 5) throw new Error("Invalid LINE delivery payload.");
+-  return parsed as LineMessage[];
++  if (Array.isArray(parsed) && parsed.length >= 1 && parsed.length <= 5) return { messages: parsed as LineMessage[], templateFingerprint: null };
++  if (parsed && typeof parsed === "object" && "v" in parsed && parsed.v === 2 && "templateFingerprint" in parsed && typeof parsed.templateFingerprint === "string" && /^[a-f0-9]{64}$/u.test(parsed.templateFingerprint) && "messages" in parsed && Array.isArray(parsed.messages) && parsed.messages.length >= 1 && parsed.messages.length <= 5) {
++    return { messages: parsed.messages as LineMessage[], templateFingerprint: parsed.templateFingerprint };
++  }
++  throw new Error("Invalid LINE delivery payload.");
++}
++
++type CurrentLineDelivery = Prisma.LineDeliveryGetPayload<{ include: { identity: true } }>;
++
++async function checkWebinarDeliverySource(db: LineWebinarDeliveryDatabase, current: CurrentLineDelivery, fingerprint: string | null, now: Date) {
++  if (!(LINE_WEBINAR_TEMPLATE_TRIGGERS as readonly string[]).includes(current.trigger)) return null;
++  const registration = current.identity.subjectType === "buyer_registration" ? await db.formSubmission.findFirst({
++    where: { id: current.identity.subjectId, verificationStatus: "VERIFIED", form: { vendorId: current.vendorId }, live: { vendorId: current.vendorId } },
++    select: { live: { select: { id: true, status: true, scheduledAt: true, startedAt: true, endedAt: true } } },
++  }) : null;
++  const live = registration?.live;
++  const eligible = live && !live.endedAt && (current.trigger === "live_started"
++    ? live.status === "live" && live.startedAt
++    : live.status === "scheduled" && !live.startedAt && live.scheduledAt > now);
++  if (!eligible || !live) return "line_registration_unavailable";
++  const expectedKey = current.trigger === "registration_confirmed"
++    ? stableLineIdempotencyKey(["registration_confirmed", current.identity.subjectId])
++    : stableLineIdempotencyKey([current.trigger, live.id, current.identity.subjectId, current.trigger === "live_started" ? live.startedAt : live.scheduledAt]);
++  if (current.idempotencyKey !== expectedKey) return "line_event_changed";
++  const template = await findLineWebinarTemplate(db, current.vendorId, current.trigger);
++  if (!template) return current.sourceTemplateId || fingerprint ? "line_template_changed" : null;
++  if (!template.isActive || template.id !== current.sourceTemplateId || fingerprint !== lineWebinarTemplateFingerprint(template)) return "line_template_changed";
++  return null;
+ }
+ 
+ export async function processDueLineDeliveries(
+-  db: LineNotificationDatabase = getDb(),
++  db: LineWebinarDeliveryDatabase = getDb(),
+   clientFactory: LineClientFactory = (accessToken) => new LineFetchClient(accessToken),
+   now = new Date(),
+   scope: LineDeliveryProcessingScope = {},
+@@ -240,10 +289,15 @@
+       continue;
+     }
+     try {
++      const payload = safePayload(decryptSensitiveValue(current.payloadEncrypted, deliveryPurpose(current.vendorId, current.id)));
++      const suppression = await checkWebinarDeliverySource(db, current, payload.templateFingerprint, now);
++      if (suppression) {
++        await db.lineDelivery.updateMany({ where: { id: current.id, vendorId: current.vendorId, status: "sending" }, data: { status: "suppressed", claimedAt: null, nextAttemptAt: null, lastErrorCode: suppression } });
++        results.push({ id: current.id, status: "suppressed" });continue;
++      }
+       const credentials = unprotectLineOfficialAccountCredentials(current.vendorId, current.account);
+       const recipient = unprotectLineProfileValue(current.vendorId, "userId", current.identity.lineUserIdEncrypted);
+-      const messages = safeMessages(decryptSensitiveValue(current.payloadEncrypted, deliveryPurpose(current.vendorId, current.id)));
+-      await clientFactory(credentials.messagingAccessToken).push(recipient, messages, { retryKey: current.id });
++      await clientFactory(credentials.messagingAccessToken).push(recipient, payload.messages, { retryKey: current.id });
+       await db.lineDelivery.updateMany({
+         where: { id: delivery.id, vendorId: delivery.vendorId, status: "sending" },
+         data: { status: "sent", sentAt: now, claimedAt: null, lastErrorCode: null },
+--- a/src/lib/line-notification-materializer.ts
++++ b/src/lib/line-notification-materializer.ts
+@@ -1,5 +1,5 @@
+ import { getCanonicalAppUrl } from "@/lib/app-url";
+-import type { PrismaClient } from "@prisma/client";
++import type { Live, PrismaClient } from "@prisma/client";
+ import { getDb } from "@/lib/db";
+ import { createLiveViewerUrl } from "@/lib/live-public-url";
+ import {
+@@ -18,14 +18,19 @@
+   | "formSubmission"
+   | "commerceOrder"
+   | "affiliateCommission"
++  | "messageTemplate"
+ >;
+ 
+-function formatStart(value: Date) {
++function formatStart(value: Date, timeZone = "Asia/Taipei") {
+   return new Intl.DateTimeFormat("zh-TW", {
+     dateStyle: "medium",
+     timeStyle: "short",
+-    timeZone: "Asia/Taipei",
++    timeZone,
+   }).format(value);
++}
++
++function isUpcoming(live: Pick<Live, "status" | "startedAt" | "endedAt" | "scheduledAt">, now: Date) {
++  return live.status === "scheduled" && !live.startedAt && !live.endedAt && now < live.scheduledAt;
+ }
+ 
+ /**
+@@ -47,9 +52,9 @@
+   const now = dbOrNow instanceof Date ? dbOrNow : requestedNow;
+   const identities = await db.lineUserIdentity.findMany({
+     where: { revokedAt: null, subjectType: { in: ["buyer_registration", "buyer_order", "promoter"] } },
+-    orderBy: [{ lastMaterializedAt: "asc" }, { id: "asc" }],
++    orderBy: [{ lastMaterializedAt: { sort: "asc", nulls: "first" } }, { id: "asc" }],
+     take: MATERIALIZE_LIMIT,
+-    select: { id: true, vendorId: true, subjectType: true, subjectId: true, materializationCursor: true },
++    select: { id: true, vendorId: true, subjectType: true, subjectId: true, linkedAt: true, lastMaterializedAt: true, materializationCursor: true },
+   });
+   const results: Array<{ status: string }> = [];
+ 
+@@ -60,18 +65,31 @@
+           id: identity.subjectId,
+           verificationStatus: "VERIFIED",
+           form: { vendorId: identity.vendorId },
++          live: { vendorId: identity.vendorId },
+         },
+         select: {
+           id: true,
+-          live: { select: { id: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true } },
++          name: true,
++          live: { select: { id: true, slug: true, title: true, status: true, scheduledAt: true, startedAt: true, endedAt: true, vendor: { select: { name: true, timezone: true } } } },
+         },
+       });
+       const live = submission?.live;
+-      if (!live) {
++      if (!submission || !live) {
+         await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });
+         continue;
+       }
+       const viewerUrl = createLiveViewerUrl(live.slug);
++      const templateVariables = { name: submission.name, live_title: live.title, live_url: viewerUrl, live_start_at: formatStart(live.scheduledAt, live.vendor.timezone), vendor_name: live.vendor.name };
++      // Confirmation belongs to the newly observed binding, never a later
++      // template activation/backfill across previously processed identities.
++      if (isUpcoming(live, now) && identity.lastMaterializedAt == null) {
++        const confirmation = await enqueueLineNotification(db, {
++          vendorId: identity.vendorId, subjectType: "buyer_registration", subjectId: identity.subjectId,
++          trigger: "registration_confirmed", idempotencyKey: stableLineIdempotencyKey(["registration_confirmed", identity.subjectId]),
++          messages: [], templateVariables, requireTemplate: true, eventOccurredAt: identity.linkedAt, dueAt: now,
++        });
++        if (confirmation.status === "queued" || confirmation.status === "duplicate") results.push(confirmation);
++      }
+       const reminderAt = new Date(live.scheduledAt.getTime() - 60 * 60_000);
+       if (live.status === "scheduled" && !live.startedAt && now >= reminderAt && now < live.scheduledAt) {
+         results.push(await enqueueLineNotification(db, {
+@@ -81,6 +99,8 @@
+           trigger: "live_reminder",
+           idempotencyKey: stableLineIdempotencyKey(["live_reminder", live.id, identity.subjectId, live.scheduledAt]),
+           messages: [buildLiveLineMessage({ kind: "reminder", liveTitle: live.title, startsAtText: formatStart(live.scheduledAt), viewerUrl })],
++          templateVariables,
++          dueAt: now,
+         }));
+       }
+       if (live.status === "live" && live.startedAt && !live.endedAt) {
+@@ -91,6 +111,8 @@
+           trigger: "live_started",
+           idempotencyKey: stableLineIdempotencyKey(["live_started", live.id, identity.subjectId, live.startedAt]),
+           messages: [buildLiveLineMessage({ kind: "started", liveTitle: live.title, startsAtText: formatStart(live.startedAt), viewerUrl })],
++          templateVariables,
++          dueAt: now,
+         }));
+       }
+       await db.lineUserIdentity.update({ where: { id: identity.id }, data: { lastMaterializedAt: now } });
+--- a/src/lib/line-notification-materializer.test.ts
++++ b/src/lib/line-notification-materializer.test.ts
+@@ -30,6 +30,7 @@
+     ]);
+     runtime.db.formSubmission.findFirst.mockResolvedValue({
+       id: "submission-1",
++      name: "合成報名者",
+       live: {
+         id: "live-1",
+         slug: "ai-live",
+@@ -38,6 +39,7 @@
+         scheduledAt: new Date("2026-09-05T12:00:00Z"),
+         startedAt: new Date("2026-09-05T12:00:00Z"),
+         endedAt: null,
++        vendor: { name: "合成商家", timezone: "Asia/Taipei" },
+       },
+     });
+     runtime.db.commerceOrder.findFirst.mockResolvedValue({
+@@ -84,6 +86,20 @@
+     expect(runtime.db.lineUserIdentity.findMany).not.toHaveBeenCalled();
+   });
+ 
++  it("queues configured confirmation only for a verified tenant-owned upcoming live and keeps stable event identity", async () => {
++    runtime.db.lineUserIdentity.findMany.mockResolvedValue([{ id: "identity-registration", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-1" }]);
++    const upcoming = new Date("2026-09-06T12:00:00Z");
++    runtime.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", name: "合成學員", live: { id: "live-1", slug: "synthetic", title: "合成課程", status: "scheduled", scheduledAt: upcoming, startedAt: null, endedAt: null, vendor: { name: "合成商家", timezone: "Asia/Taipei" } } });
++    const now = new Date("2026-09-05T12:00:00Z");
++    await materializeLineNotifications(now);await materializeLineNotifications(now);
++    expect(runtime.db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "submission-1", verificationStatus: "VERIFIED", form: { vendorId: "vendor-1" }, live: { vendorId: "vendor-1" } } }));
++    expect(runtime.enqueue).toHaveBeenCalledTimes(2);
++    expect(runtime.enqueue.mock.calls[0][1]).toMatchObject({ trigger: "registration_confirmed", requireTemplate: true, templateVariables: { name: "合成學員", vendor_name: "合成商家", live_title: "合成課程" } });
++    expect(runtime.enqueue.mock.calls[0][1].idempotencyKey).toBe(runtime.enqueue.mock.calls[1][1].idempotencyKey);
++    runtime.db.formSubmission.findFirst.mockResolvedValue(null);runtime.enqueue.mockClear();
++    await materializeLineNotifications(now);expect(runtime.enqueue).not.toHaveBeenCalled();
++  });
++
+   it("persists a commission cursor so item 21 is reached on the next batch", async () => {
+     runtime.db.lineUserIdentity.findMany.mockResolvedValue([
+       { id: "identity-promoter", vendorId: "vendor-1", subjectType: "promoter", subjectId: "affiliate-1", materializationCursor: null },
+--- a/src/lib/line-live-started.ts
++++ b/src/lib/line-live-started.ts
+@@ -28,7 +28,7 @@
+ ) {
+   const live = await db.live.findFirst({
+     where: { id: input.liveId, vendorId: input.vendorId, status: "live", startedAt: input.startedAt, endedAt: null },
+-    select: { id: true, slug: true, title: true, startedAt: true },
++    select: { id: true, slug: true, title: true, startedAt: true, scheduledAt: true, vendor: { select: { name: true, timezone: true } } },
+   });
+   if (!live?.startedAt) return { queued: 0, sent: 0, failed: 0 };
+ 
+@@ -38,7 +38,7 @@
+       verificationStatus: "VERIFIED",
+       form: { vendorId: input.vendorId },
+     },
+-    select: { id: true },
++    select: { id: true, name: true },
+     orderBy: { id: "asc" },
+   });
+   const viewerUrl = createLiveViewerUrl(live.slug);
+@@ -57,6 +57,11 @@
+         viewerUrl,
+       })],
+       dueAt: input.startedAt,
++      templateVariables: {
++        name: submission.name, live_title: live.title, live_url: viewerUrl,
++        live_start_at: new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: live.vendor.timezone }).format(live.scheduledAt),
++        vendor_name: live.vendor.name,
++      },
+     });
+     if ((queued.status === "queued" || queued.status === "duplicate") && queued.deliveryId) {
+       deliveryIds.push(queued.deliveryId);
+--- a/src/lib/line-live-started.test.ts
++++ b/src/lib/line-live-started.test.ts
+@@ -34,8 +34,8 @@
+   it("uses tenant-scoped registrations, stable per-viewer keys, and a scoped eager worker", async () => {
+     const startedAt = new Date("2026-09-07T12:00:00.000Z");
+     const db = {
+-      live: { findFirst: vi.fn().mockResolvedValue({ id: "live-1", slug: "safe-live", title: "安全直播", startedAt }) },
+-      formSubmission: { findMany: vi.fn().mockResolvedValue([{ id: "submission-1" }, { id: "submission-2" }]) },
++      live: { findFirst: vi.fn().mockResolvedValue({ id: "live-1", slug: "safe-live", title: "安全直播", startedAt, scheduledAt: startedAt, vendor: { name: "合成商家", timezone: "Asia/Taipei" } }) },
++      formSubmission: { findMany: vi.fn().mockResolvedValue([{ id: "submission-1", name: "甲" }, { id: "submission-2", name: "乙" }]) },
+     };
+ 
+     await expect(dispatchLiveStartedLineNotifications(db as never, {
+--- a/src/lib/line-webinar-template.ts
++++ b/src/lib/line-webinar-template.ts
+@@ -0,0 +1,57 @@
++import type { PrismaClient } from "@prisma/client";
++import { createHash } from "node:crypto";
++import { LINE_TEMPLATE_VARIABLE_LIMITS, normalizeMessageTemplateDraft, renderMessageTemplate, type MessageTemplateVariables } from "@/lib/message-template";
++import { richTextToPlainText } from "@/lib/rich-text";
++import type { LineMessage } from "@/lib/line-client";
++
++export const LINE_BLOCK_HELP_URL = "https://help.line.me/line/ios/?contentId=20000390&lang=zh-Hant";
++export type LineWebinarVariables = Omit<MessageTemplateVariables, "unsubscribe_url">;
++
++/** Latest saved template is authoritative, including an explicit inactive choice. */
++export function findLineWebinarTemplate(db: Pick<PrismaClient, "messageTemplate">, vendorId: string, trigger: string) {
++  return db.messageTemplate.findFirst({
++    where: { vendorId, channel: "line", trigger },
++    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
++    select: { id: true, vendorId: true, name: true, channel: true, trigger: true, subject: true, body: true, isActive: true, updatedAt: true },
++  });
++}
++
++/** Bind queued content to exact source facts, including same-millisecond edits. */
++export function lineWebinarTemplateFingerprint(template: NonNullable<Awaited<ReturnType<typeof findLineWebinarTemplate>>>) {
++  return createHash("sha256").update(JSON.stringify([template.id, template.vendorId, template.name, template.channel, template.trigger, template.subject, template.body, template.isActive, template.updatedAt.toISOString()])).digest("hex");
++}
++
++function splitLineText(text: string): LineMessage[] | null {
++  const chunks: string[] = [];let chunk = "";
++  const append = (part: string) => {
++    if (part.length > 5000) return false;
++    if (chunk.length + part.length > 5000) { chunks.push(chunk);chunk = ""; }
++    chunk += part;return chunks.length < 5;
++  };
++  const segmenter = new Intl.Segmenter("zh-TW", { granularity: "grapheme" });
++  for (const token of text.split(/(https?:\/\/\S+)/gu)) {
++    // Recognize URLs even directly after Chinese copy. Pack other text at
++    // grapheme boundaries so several long paragraphs do not waste whole bubbles.
++    if (/^https?:\/\//u.test(token)) { if (!append(token)) return null;continue; }
++    for (const part of segmenter.segment(token)) if (!append(part.segment)) return null;
++  }
++  if (chunk) chunks.push(chunk);
++  return chunks.map(text => ({ type: "text" as const, text }));
++}
++
++export function buildLineWebinarMessages(
++  template: { name: string; channel: string; trigger: string; subject: string | null; body: string; isActive: boolean },
++  variables: LineWebinarVariables,
++): LineMessage[] | null {
++  const normalized = normalizeMessageTemplateDraft({ name: template.name, channel: template.channel, trigger: template.trigger, subject: template.subject ?? "", body: template.body, isActive: template.isActive });
++  // Pass only the validation contract; callers may supply persistence metadata.
++  if (!normalized.success || !normalized.data.isActive || normalized.data.channel !== "line") return null;
++  if (Object.entries(variables).some(([name, value]) => value.length > LINE_TEMPLATE_VARIABLE_LIMITS[name])) return null;
++  const values = { ...variables, unsubscribe_url: LINE_BLOCK_HELP_URL };
++  const subject = renderMessageTemplate(normalized.data.subject, values);
++  const body = renderMessageTemplate(richTextToPlainText(normalized.data.body), values);
++  const text = [subject, body, variables.live_url && !body.includes(variables.live_url) ? `進場連結：${variables.live_url}` : "", `停止接收：請在 LINE 封鎖本官方帳號。操作說明：${LINE_BLOCK_HELP_URL}`].filter(Boolean).join("\n\n");
++  // LINE permits five text objects of at most 5000 UTF-16 units. Do not truncate
++  // merchant copy or split a surrogate pair when rendered variables expand it.
++  return splitLineText(text);
++}
+--- a/src/lib/line-webinar-template.test.ts
++++ b/src/lib/line-webinar-template.test.ts
+@@ -0,0 +1,110 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { buildLineWebinarMessages, findLineWebinarTemplate, lineWebinarTemplateFingerprint, LINE_BLOCK_HELP_URL } from "./line-webinar-template";
++import { enqueueLineNotification, processDueLineDeliveries, stableLineIdempotencyKey } from "./line-notification";
++import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
++import { normalizeMessageTemplateDraft } from "./message-template";
++
++const at = new Date("2026-10-16T01:00:00Z");
++const template = { id: "template-a", vendorId: "vendor-a", name: "合成LINE提醒", channel: "line", trigger: "live_reminder", subject: "{{live_title}}", body: "**{{name}}**，{{vendor_name}} {{live_start_at}} {{unsubscribe_url}}", isActive: true, updatedAt: new Date(at.getTime()-1000) };
++const variables = { name: "合成報名者", live_title: "合成直播", vendor_name: "合成商家", live_start_at: "20:00", live_url: "https://example.test/live/synthetic" };
++
++describe("merchant LINE webinar templates", () => {
++  beforeEach(() => vi.stubEnv("CSRF_SECRET", "wp13-template-synthetic-key-at-least-32-bytes"));
++  afterEach(() => vi.unstubAllEnvs());
++
++  it("renders merchant copy, preserves literal recipient values, adds entry and native block instructions", () => {
++    const messages = buildLineWebinarMessages(template, variables);
++    expect(messages).toEqual([{ type: "text", text: expect.stringContaining("合成報名者，合成商家 20:00") }]);
++    expect(JSON.stringify(messages)).toContain(variables.live_url);
++    expect(JSON.stringify(messages)).toContain(LINE_BLOCK_HELP_URL);
++    expect(JSON.stringify(messages)).toContain("停止接收：請在 LINE 封鎖本官方帳號");
++    expect(JSON.stringify(messages)).not.toContain("{{");
++  });
++
++  it.each([{ isActive: false }, { channel: "email" }, { trigger: "post_live_followup" }, { subject: null }, { body: "{{unknown}}" }])("rejects unusable or unsupported LINE content", changes => {
++    expect(buildLineWebinarMessages({ ...template, ...changes }, variables)).toBeNull();
++  });
++
++  it("splits long rendered copy without truncation or broken surrogate pairs", () => {
++    const body = "😀".repeat(9999);
++    const messages = buildLineWebinarMessages({ ...template, body }, variables)!;
++    expect(messages.length).toBeLessThanOrEqual(5);
++    const texts = messages.map(message => { expect(message.type).toBe("text");return (message as { text: string }).text; });
++    expect(texts.join("")).toContain(body);
++    expect(texts.every(text => text.length <= 5000 && !/[\uD800-\uDBFF]$/u.test(text) && !/^[\uDC00-\uDFFF]/u.test(text))).toBe(true);
++    expect(buildLineWebinarMessages({ ...template, body: "{{name}}" }, { ...variables, name: "x".repeat(26_000) })).toBeNull();
++  });
++
++  it("keeps multi-codepoint emoji and links together at a text-object boundary", () => {
++    const body = "x".repeat(4980)+"👨‍👩‍👧 🇹🇼 👍🏽 https://example.test/long-link";
++    const messages = buildLineWebinarMessages({ ...template, subject: "Synthetic", body }, variables)!;
++    const texts = messages.map(message => (message as { text: string }).text);
++    expect(texts.join("")).toContain(body);
++    for (const token of ["👨‍👩‍👧", "🇹🇼", "👍🏽", "https://example.test/long-link"]) expect(texts.some(text => text.includes(token))).toBe(true);
++    expect(texts.every(text => text.length<=5000)).toBe(true);
++  });
++
++  it("packs six long Chinese paragraphs and protects a URL attached to Chinese copy", () => {
++    const body = Array(6).fill("文".repeat(3000)).join("\n");
++    const paragraphs = buildLineWebinarMessages({ ...template, body }, variables)!;
++    expect(paragraphs.length).toBeLessThanOrEqual(5);
++    expect(paragraphs.map(message => (message as {text:string}).text).join("")).toContain(body);
++    const attached = buildLineWebinarMessages({ ...template, body: "文".repeat(5200)+"{{live_url}}" }, variables)!;
++    expect(attached.some(message => (message as {text:string}).text.includes(variables.live_url))).toBe(true);
++  });
++
++  it("rejects oversized variable expansion at save time instead of silently accepting an unsendable template", () => {
++    const draft = { name: template.name, channel: template.channel, trigger: template.trigger, subject: template.subject, body: "{{live_url}}".repeat(20), isActive: true };
++    expect(normalizeMessageTemplateDraft(draft)).toEqual({ success: false });
++  });
++
++  it("uses only the tenant's latest saved event template, including its inactive choice", async () => {
++    const findFirst = vi.fn().mockResolvedValue({ ...template, isActive: false });
++    const result = await findLineWebinarTemplate({ messageTemplate: { findFirst } } as never, "vendor-a", "live_reminder");
++    expect(result?.isActive).toBe(false);
++    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-a", channel: "line", trigger: "live_reminder" }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }] }));
++  });
++
++  function queueDb(value: typeof template | null = template) {
++    return {
++      lineOfficialAccount: { findUnique: vi.fn().mockResolvedValue({ id: "account-a", status: "active" }) },
++      lineUserIdentity: { findUnique: vi.fn().mockResolvedValue({ id: "identity-a", revokedAt: null }) },
++      messageTemplate: { findFirst: vi.fn().mockResolvedValue(value) },
++      lineDelivery: { create: vi.fn().mockResolvedValue({ id: "delivery-a" }) },
++    };
++  }
++  const input = { vendorId: "vendor-a", subjectType: "buyer_registration" as const, subjectId: "registration-a", trigger: "live_reminder" as const, idempotencyKey: "synthetic-reminder", messages: [{ type: "text" as const, text: "legacy copy" }], templateVariables: variables };
++
++  it("persists encrypted authored content with its source template", async () => {
++    const db = queueDb();
++    expect((await enqueueLineNotification(db as never, input)).status).toBe("queued");
++    const data = db.lineDelivery.create.mock.calls[0][0].data;
++    expect(data.sourceTemplateId).toBe(template.id);
++    expect(JSON.stringify(data)).not.toContain(variables.name);
++    const body = decryptSensitiveValue(data.payloadEncrypted, `line-delivery:vendor-a:${data.id}`);
++    expect(body).toContain(variables.name);expect(body).not.toContain("legacy copy");
++  });
++
++  it("does not create new registration messages unless the merchant configures them", async () => {
++    const db = queueDb(null);
++    expect((await enqueueLineNotification(db as never, { ...input, trigger: "registration_confirmed", requireTemplate: true, messages: [] })).status).toBe("not_configured");
++    expect(db.lineDelivery.create).not.toHaveBeenCalled();
++    expect((await enqueueLineNotification(db as never, input)).status).toBe("queued");
++  });
++
++  it("stops queuing when the latest merchant choice is inactive", async () => {
++    const db = queueDb({ ...template, isActive: false });
++    expect((await enqueueLineNotification(db as never, input)).status).toBe("template_disabled_or_invalid");
++    expect(db.lineDelivery.create).not.toHaveBeenCalled();
++  });
++
++  it.each([null, { ...template, isActive: false }, { ...template, id: "replacement" }, { ...template, updatedAt: new Date(at.getTime()+1) }, { ...template, body: "same-millisecond changed content" }])("suppresses queued old copy before any provider call", async latest => {
++    const start = new Date(at.getTime()+60000);
++    const current = { id: "delivery-a", vendorId: "vendor-a", trigger: "live_reminder", idempotencyKey: stableLineIdempotencyKey(["live_reminder", "live-a", "registration-a", start]), sourceTemplateId: template.id, createdAt: at, payloadEncrypted: encryptSensitiveValue(JSON.stringify({v:2,templateFingerprint:lineWebinarTemplateFingerprint(template),messages:[{type:"text",text:"old copy"}]}), "line-delivery:vendor-a:delivery-a"), status: "queued", attemptCount: 0, account: { vendorId: "vendor-a", status: "active" }, identity: { vendorId: "vendor-a", subjectType: "buyer_registration", subjectId: "registration-a", revokedAt: null } };
++    const db = { lineDelivery: { findMany: vi.fn().mockResolvedValue([current]), findFirst: vi.fn().mockResolvedValue(current), updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, messageTemplate: { findFirst: vi.fn().mockResolvedValue(latest) }, formSubmission: { findFirst: vi.fn().mockResolvedValue({ live: { id:"live-a", status: "scheduled", scheduledAt: start, startedAt: null, endedAt: null } }) } };
++    const factory = vi.fn();
++    expect(await processDueLineDeliveries(db as never, factory, at)).toEqual([{ id: current.id, status: "suppressed" }]);
++    expect(factory).not.toHaveBeenCalled();
++    expect(db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "registration-a", verificationStatus: "VERIFIED", form: { vendorId: "vendor-a" }, live: { vendorId: "vendor-a" } } }));
++  });
++});

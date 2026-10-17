@@ -1,0 +1,106 @@
+{
+  "status": "SCOPED_REVIEW_COMPLETED_FULL_WP_NOT_READY",
+  "reviews": {
+    "initial": {
+      "status": "REVIEW_COMPLETED",
+      "provider": "claude_cli",
+      "observed": {
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown",
+        "model": "claude-opus-5-5"
+      },
+      "sourceHashesMatch": false,
+      "fileHashMatches": {
+        "src/lib/live-metric-coverage-reader.test.ts": false,
+        "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql": false,
+        "src/lib/live-metric-coverage-reader.ts": false
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 2,
+        "NIT": 0
+      },
+      "findings": [
+        {
+          "severity": "MINOR",
+          "file": "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql",
+          "area": "CREATE TRIGGER \"LiveMetricCoverageAudit_unproven_guard\" BEFORE INSERT ... (trigger definition)",
+          "issue": "The fail-closed guard fires only on INSERT. An UPDATE of an existing LiveMetricCoverageAudit row is not checked. Examples: changing a visits/viewing gap to status='covered', or moving a legacy covered row's sourceRevision to the newly bumped version revision.",
+          "evidence": "The trigger is declared 'BEFORE INSERT ON public.\"LiveMetricCoverageAudit\"' with no UPDATE event. The comment in the migration says old readers/workers are protected because they still compare audit.sourceRevision. That protection only holds while legacy rows cannot be rewritten to match the bumped v.sourceRevision. No append-only/immutability trigger for the audit table appears in the supplied scope.",
+          "impact": "If any path can update audit rows (an existing worker, carry-forward logic, or an owner/maintenance script), old pre-125 readers that compare sourceRevision could again certify visits/viewing as complete. That would reopen the canonical124 defect for old code during rollout. The new reader is not affected, because it ignores covered visits/viewing whatever the revision.",
+          "recommended_fix": "Make the guard fire on BEFORE INSERT OR UPDATE OF status, kind, \"sourceRevision\" and reject when the NEW row is covered visits/viewing. To leave legacy raw rows unedited, either reject every UPDATE of such rows, or allow only updates that leave them non-current. If an audit-table append-only guard already exists, cite it in the migration comment and add a test that relies on it.",
+          "required_test": "On a disposable synthetic DB after 125: (a) UPDATE a visits gap row to status='covered' → expect 23514 or the existing immutability error; (b) UPDATE a legacy covered visits row's sourceRevision to the current v.sourceRevision → expect rejection; (c) confirm the archived pre-fix reader still does not return complete for that version.",
+          "confidence": 0.45
+        },
+        {
+          "severity": "MINOR",
+          "file": "src/lib/live-metric-coverage-reader.ts",
+          "area": "WHERE predicate 'a.status='gap' OR (a.kind IN ('registrations','orders') ...)' and the TS ranges(\"covered\") mapping; test file 'rejects oversized audits' case",
+          "issue": "Visits/viewing positive flags are excluded only inside the SQL text. The TypeScript code passes every returned 'covered' row to assessMetricCoverage without checking the kind. The unit tests mock $queryRaw, so they cannot detect a regression in that predicate. The limit test also feeds 10001 covered visits rows, which the real SQL can no longer return.",
+          "evidence": "ranges = (status) => rows.filter(row => row.status === status) has no kind gate. Feeding a mocked [covered 1000-3000] row for kind 'visits' would make the reader return coverage complete. No unit test asserts that visits/viewing covered rows are ignored. The only stated proof is the DB regression, which was not supplied.",
+          "impact": "A future edit to the SQL (for example a parenthesis or OR change, or removing the kind IN clause) could silently re-enable certification of unproven kinds. Mocked unit tests would still pass, and fail-closed safety would depend on running the separate DB regression.",
+          "recommended_fix": "Add a defense-in-depth gate in TypeScript: for kind 'visits' or 'viewing', treat covered as an empty set (still return null when rows.length is 0, to keep unknown_history). Alternatively, assert that no covered row is returned for those kinds and fail with unavailable if one is. Use registrations, or covered-plus-gap, in the oversized test so the fixture stays realistic.",
+          "required_test": "Unit tests: a mocked [covered 1000-3000] for 'visits' and for 'viewing' must not return complete. A mocked [covered, gap] for visits must return evidence_gap. Keep the DB regression proving the SQL excludes these rows.",
+          "confidence": 0.5
+        }
+      ],
+      "fallbackEvents": [],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "RATE_LIMITED",
+          "exitCode": 3
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    },
+    "-followup": {
+      "status": "REVIEW_COMPLETED",
+      "provider": "claude_cli",
+      "observed": {
+        "model": "claude-opus-5-5",
+        "source": "cli_terminal_model_usage",
+        "effort": "unknown"
+      },
+      "sourceHashesMatch": true,
+      "fileHashMatches": {
+        "src/lib/live-metric-coverage-reader.ts": true,
+        "src/lib/live-metric-coverage-reader.test.ts": true,
+        "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql": true
+      },
+      "counts": {
+        "BLOCKER": 0,
+        "MAJOR": 0,
+        "MINOR": 0,
+        "NIT": 0
+      },
+      "findings": [],
+      "fallbackEvents": [],
+      "attempts": [
+        {
+          "provider": "agy_wrapper",
+          "status": "AGY_RUNTIME_ERROR",
+          "exitCode": 1
+        },
+        {
+          "provider": "claude_cli",
+          "status": "SUCCESS",
+          "exitCode": 0
+        }
+      ]
+    }
+  },
+  "initialUpdateFinding": "Existing20261015120000 coverage guard already rejects ALL audit UPDATEs. Cited in migration; actual gap->covered and old->current revision SQL updates reject23514; archived old reader still cannot certify. Not a missing immutability bug.",
+  "initialTsBoundaryFinding": "Added TS accepted-row gate too, preserving gaps, unknown history and oversized limit; visits/viewing mocked positive-only and mixed gap cases tested; real SQL path verified separately.",
+  "reviewLimitations": [
+    "version/update/report/projection binding and helpers omitted from independent source review",
+    "harness/source snapshot not independently reviewed",
+    "populated Prisma CLI upgrade/continuous live migration load/default privileges on deployed platform not verified",
+    "full source producer/proof/fence/reader and wholeWP incomplete"
+  ]
+}

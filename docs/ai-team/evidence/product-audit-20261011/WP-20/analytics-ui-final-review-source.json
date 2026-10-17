@@ -1,0 +1,12 @@
+{
+  "suppliedRanges": {
+    "src/app/(app)/lives/[id]/analytics/page.tsx": "19-80,331-356",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx": "235-end"
+  },
+  "characters": 16142,
+  "previous": "analytics-ui-review.json",
+  "files": {
+    "src/app/(app)/lives/[id]/analytics/page.tsx": "76e6b03d6034d61c986b3dc9fb9fbbab5f2bdd1c0d694ee8e9d2372e190d17d4",
+    "src/app/(app)/lives/[id]/analytics/page.test.tsx": "51d9d3905fc04a599b342aca98cd47072f257ed6559141baf74de4a9e5329047"
+  }
+}

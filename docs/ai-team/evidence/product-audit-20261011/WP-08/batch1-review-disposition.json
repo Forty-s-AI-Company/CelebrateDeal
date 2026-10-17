@@ -1,0 +1,51 @@
+[
+  {
+    "severity": "MAJOR",
+    "issue": "The test reads `html` but never defines it. `renderToStaticMarkup` is imported but never called, so FunnelOperationsPanel is never rendered.",
+    "status": "rejected_with_reason_confirmed_by_independent_followup",
+    "reason": "Actual source line22 declares html with renderToStaticMarkup; current targeted and tsc PASS. Exact safe prefix and hash supplied; no test assertion removed.",
+    "evidence": "batch1-test-followup-reviewed.json"
+  },
+  {
+    "severity": "MINOR",
+    "issue": "One untyped `Record<string,string>` holds verification, order and payment statuses together. A real status that is missing from the map (for example a fulfilment, completed or disputed order state) shows as 「未知狀態」 and loses its meaning. Shared keys such as `pending` → 「處理中」 also read wrong as a payment status, where the meaning is closer to waiting for payment.",
+    "status": "pending_capability_or_copy_audit",
+    "reason": "Inspect current feature contract before choosing clearer display labels; no new business behavior or human approval requirement inferred."
+  },
+  {
+    "severity": "MINOR",
+    "issue": "These maps use `as const`, unlike the goal and step maps, which use `satisfies Record<...>`. If someone adds or renames a tab or experiment status, `funnelTabLabels[item]` returns undefined (or fails only by accident), and the tab renders with an empty label.",
+    "status": "pending_capability_or_copy_audit",
+    "reason": "Inspect current feature contract before choosing clearer display labels; no new business behavior or human approval requirement inferred."
+  },
+  {
+    "severity": "MINOR",
+    "issue": "Amounts are shown as raw integer minor units labelled 「已付／退款（分）」. For TWD, merchants do not think in 分, so 100000 is easy to misread as NT$100,000.",
+    "status": "inherited_behavior_not_changed",
+    "reason": "Original before file already renders paidAmountCents/refundedAmountCents and labels minor units. No monetary formatting semantics changed in copy batch; metric/currency interpretation must remain explicit."
+  },
+  {
+    "severity": "MINOR",
+    "issue": "Several new titles narrow or shift the page's meaning compared with the old titles. 訂單與履約 → 訂單管理 drops fulfilment. 客服案件 → 售後服務 excludes pre-sale inquiries. Email 寄送營運 → 寄送紀錄 suggests the page is read-only even if it allows actions. 團隊展業 → 團隊模板 changes what the page is understood to be for. 聯盟分潤 → 佣金結算 implies a payout or settlement step, which overlaps with 月結 and 批次出款.",
+    "status": "pending_capability_or_copy_audit",
+    "reason": "Inspect current feature contract before choosing clearer display labels; no new business behavior or human approval requirement inferred."
+  },
+  {
+    "severity": "MINOR",
+    "issue": "The corrected labels remove the earlier 稅務匯出 and 勞報單審核 wording. If these pages still include tax export or labor-report (勞報單) review, which are Taiwan compliance workflows, merchants lose the cue to find them. The old title 課程 F/G 分潤 also carried a specific scope that the new title drops.",
+    "status": "pending_capability_or_copy_audit",
+    "reason": "Inspect current feature contract before choosing clearer display labels; no new business behavior or human approval requirement inferred."
+  },
+  {
+    "severity": "NIT",
+    "issue": "Some terms are ambiguous. 「名單頁」 for opt_in_page reads like a list page rather than a lead-capture page. 「降價加購頁」 mixes discount and add-on ideas; downsell is a cheaper alternative offered after an upsell is declined. 「追蹤」 on its own can read as 'follow', and the old title 追蹤設定 was clearer.",
+    "status": "pending_capability_or_copy_audit",
+    "reason": "Inspect current feature contract before choosing clearer display labels; no new business behavior or human approval requirement inferred."
+  },
+  {
+    "severity": "NIT",
+    "issue": "The Traditional Chinese comment uses the Simplified character 「径」 in 「路径」.",
+    "status": "pending_capability_or_copy_audit",
+    "reason": "Inspect current feature contract before choosing clearer display labels; no new business behavior or human approval requirement inferred."
+  }
+]

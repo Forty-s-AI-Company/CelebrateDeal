@@ -1,0 +1,82 @@
+{
+  "revision": "sha256:b9d3f50d2113bdc68b8887b261b073128a7b67a8bb7e19bc0888f4f7ebf928fb",
+  "scope_files": [
+    "src/lib/capability-confirmation.ts",
+    "src/lib/capability-confirmation.test.ts",
+    "src/app/portal/[vendorSlug]/access/route.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts"
+  ],
+  "only_writer": "primary",
+  "selected_model": "sol",
+  "selected_effort": "xhigh",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "browser_results": {
+    "browser-result.json": {
+      "status": "PASS",
+      "checks": [
+        {
+          "previewGet": 200,
+          "previewHead": 200,
+          "mailPreviewConsumes": false,
+          "axeViolations": 0
+        },
+        {
+          "confirmedPost": 303,
+          "portalReached": true,
+          "consumedCount": 1
+        },
+        {
+          "replayRejected": true
+        }
+      ],
+      "restored": true,
+      "stage": "replay",
+      "axe": [],
+      "requestBoundary": {
+        "postStatus": 303,
+        "originMatches": true,
+        "referrerOriginOnly": true,
+        "referrerAbsent": false,
+        "referrerHasQuery": false
+      }
+    },
+    "browser-firefox-result.json": {
+      "status": "PASS",
+      "checks": [
+        {
+          "previewGet": 200,
+          "previewHead": 200,
+          "mailPreviewConsumes": false,
+          "axeViolations": 0
+        },
+        {
+          "confirmedPost": 303,
+          "portalReached": true,
+          "consumedCount": 1
+        },
+        {
+          "replayRejected": true
+        }
+      ],
+      "restored": true,
+      "stage": "replay",
+      "axe": [],
+      "requestBoundary": {
+        "postStatus": 303,
+        "originMatches": true,
+        "referrerOriginOnly": true,
+        "referrerAbsent": false,
+        "referrerHasQuery": false
+      }
+    }
+  },
+  "known_limits": [
+    "WP11 IP topology remains WAITING_AUTHORIZATION",
+    "Voucher confirmation not implemented in this subitem",
+    "Recipient masked identity is not in existing claim; no new PII lookup/schema introduced",
+    "No production deployment or remote CI"
+  ],
+  "startup_note": "Initial preflight rejected broad .env* existence including nonautoload files. Corrected to check only four Next development autoload filenames without reading any file. Startup failure receipt retained.",
+  "referrer_note": "Initial Chromium succeeded despite no-referrer claim in review; global Next header overrides route header. Actual strict-origin header alone left query Referer, fixed via document meta; failure receipts retained."
+}

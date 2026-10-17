@@ -1,0 +1,22 @@
+{
+  "status": "FAIL",
+  "stage": "positive-publish-and-read",
+  "checks": {
+    "actualHmacIntakeSessionIntervalAndTerminalClose": "PASS"
+  },
+  "browser": "NOT_RUN",
+  "fullFiveMetrics": "NOT_RUN",
+  "failure": {
+    "stage": "positive-publish-and-read",
+    "name": "PrismaClientKnownRequestError",
+    "code": "P2010",
+    "dbCode": "23514",
+    "handlerFailure": null
+  },
+  "migrationStatus": "BLOCKED_OR_FAILED",
+  "migrationCount": 131,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

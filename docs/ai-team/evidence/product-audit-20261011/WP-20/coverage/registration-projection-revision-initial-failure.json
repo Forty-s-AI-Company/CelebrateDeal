@@ -1,0 +1,14 @@
+{
+  "source": "Captured tool output from first 108-migration attempt",
+  "status": "FAIL",
+  "stage": "matched-registration-audit",
+  "auditPhase": "post-race-publish",
+  "sqlState": "23514",
+  "errorCode": "P2010",
+  "guard": null,
+  "cause": "UNCONFIRMED",
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

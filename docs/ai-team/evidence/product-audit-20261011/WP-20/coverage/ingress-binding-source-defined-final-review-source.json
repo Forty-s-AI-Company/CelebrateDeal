@@ -1,0 +1,16 @@
+{
+  "schemaSupplied": true,
+  "files": {
+    "prisma/schema.prisma": "504ebc9b3776a4804918c80e1701a2bd3fe6466f9cbd2ea189c32135add694a7",
+    "src/lib/live-metric-ingress-source.ts": "197af2ea54aecb4413c7d914c8f8b033f4a6d14e7e6eb1e8910aabd587fabe26",
+    "src/lib/live-metric-visit-page.ts": "dc9ee47bf4072a0195e7dc7c3846a7b43b653df6cb9e31ea4c36b3e070d5399b",
+    "prisma/migrations/20261016160000_live_metric_ingress_source_binding/migration.sql": "2c8affc73f23d8069bb8e91feb66f07eeebef4d1027f86275794d7297a8a752b",
+    "src/lib/live-metric-playback-intake.ts": "d64cb0f5e5488ba4107293435553477da8399fdbc72ee0153c0b5930ad48a2f6"
+  },
+  "promptCharacters": 17136,
+  "suppliedRanges": {
+    "prisma/schema.prisma": "Description of new binding fields/relations only; full schema not supplied",
+    "src/lib/live-metric-visit-page.ts": "Only exact diff against prior reviewed source hash 57cb20038b7552ed616c2ef57e904eff599daa7bbb69375766b56bbad81e2b6e; unchanged body not resupplied; actual current INSERT with ingressFrameId also supplied",
+    "src/lib/live-metric-playback-intake.ts": "Only exact diff against prior reviewed source hash 7b5f1949ba5dac7a31e1c8b0ea013717790b8cf9267e985913c692da663b40c1; unchanged body not resupplied; actual current INSERT with ingressFrameId also supplied"
+  }
+}

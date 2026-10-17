@@ -1,0 +1,9 @@
+{
+  "files_sha256": {
+    "src/components/lead-form.tsx": "a1f60577b4409ae9f16cfc19ab4478eb9519b5d7240aca7ced84ef990c85d921",
+    "src/components/registration-submission-feedback.tsx": "8b3f5312f671ccaa75f8c7aed16033f928447d63972b411506f069dfd8f0973d",
+    "src/app/form/[slug]/page.tsx": "6dfc5d3226b9c1b965c6262c062fa3a1453b9e2505366618bb529a28ea94dec3",
+    "src/app/p/[slug]/page.tsx": "332bc40c827a6d91405f8c4747ccefcd9e05575b33e427ca793e6636922ccfce"
+  },
+  "prompt_chars": 18296
+}

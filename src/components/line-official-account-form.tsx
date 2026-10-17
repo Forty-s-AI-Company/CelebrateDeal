@@ -18,11 +18,15 @@ export function LineOfficialAccountForm({
   connected,
   webhookUrl,
   lastValidatedAt,
+  accountId,
+  displayName,
 }: {
   csrfToken: string;
   connected: boolean;
   webhookUrl: string;
   lastValidatedAt: string | null;
+  accountId?: string;
+  displayName?: string;
 }) {
   const [state, action, pending] = useActionState(saveLineOfficialAccountAction, initialState);
   const [connectionState, connectionAction, connectionPending] = useActionState(testLineOfficialAccountAction, initialConnectionState);
@@ -35,7 +39,7 @@ export function LineOfficialAccountForm({
           {connected ? "目前已綁定；更新時請重新填入完整憑證。" : "填入 LINE Developers Console 提供的通道憑證。"}
         </p>
       </div>
-      <div className="grid gap-2 rounded-md border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
+      {accountId ? <div className="grid gap-2 rounded-md border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
         <h3 className="font-semibold text-slate-900">Webhook 設定</h3>
         <p>
           請在{" "}
@@ -54,10 +58,12 @@ export function LineOfficialAccountForm({
             複製網址
           </button>
         </div>
-        <p className="text-xs text-slate-600">路徑已綁定此商家，請勿與其他商家共用；在 LINE 後台完成 Verify 後再測試連線。</p>
-      </div>
+        <p className="text-xs text-slate-600">網址專屬於此官方帳號；共用此帳號的課程使用同一個網址。請在 LINE 後台完成 Verify。</p>
+      </div> : <p className="text-sm text-slate-600">儲存後可在帳號清單選取此帳號，取得專屬 Webhook 網址。</p>}
       <form action={action} className="grid gap-4" autoComplete="off">
         <input type="hidden" name="_csrf" value={csrfToken} />
+        <input type="hidden" name="accountId" value={accountId ?? ""} />
+        <label className="grid gap-1 text-sm font-medium">帳號名稱<input className={inputClass} name="displayName" defaultValue={displayName ?? ""} required maxLength={100} placeholder="例如：課程學員服務" /></label>
         <label className="grid gap-1 text-sm font-medium">
           Messaging Channel ID
           <input className={inputClass} name="messagingChannelId" required maxLength={128} inputMode="numeric" />
@@ -82,7 +88,7 @@ export function LineOfficialAccountForm({
           <input className={inputClass} name="loginChannelSecret" type="password" minLength={16} maxLength={512} />
         </label>
         {state.status === "saved" ? <p role="status" className="text-sm text-emerald-700">LINE 綁定已安全儲存。</p> : null}
-        {state.status === "error" ? <p role="alert" className="text-sm text-destructive">憑證格式不完整，或目前無法儲存，請稍後再試。</p> : null}
+        {state.status === "error" ? <p role="alert" className="text-sm text-destructive">{state.error==="sync_pending"?"圖文選單正在同步或結果尚未確認，暫時不能切換官方帳號。若是更新同一帳號已失效的憑證，可在結果待確認時重新儲存，再確認 LINE 目前狀態。":"憑證格式不完整，或目前無法儲存，請稍後再試。"}</p> : null}
         <SubmitButton disabled={pending} pendingChildren="儲存中…">{connected ? "更新 LINE 綁定" : "綁定 LINE"}</SubmitButton>
       </form>
       <div className="border-t border-border pt-5">
@@ -95,6 +101,7 @@ export function LineOfficialAccountForm({
           </div>
           <form action={connectionAction}>
             <input type="hidden" name="_csrf" value={csrfToken} />
+            <input type="hidden" name="accountId" value={accountId ?? ""} />
             <SubmitButton disabled={connectionPending || !connected} pendingChildren="測試中…">測試連線</SubmitButton>
           </form>
         </div>

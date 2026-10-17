@@ -1,0 +1,107 @@
+Follow-up ordinary UI review after initial report. Final revision sha256:90ed3342c70ec54c971ac65c0490de8968246f27e2e798fa1d26c004fb7e4016. Error focus now restores only from body, same-form submit button, or feedback itself; intentional focus elsewhere is preserved. Single visible success status region; empty regions sr-only. Caller pending transitions are mandatory; no new client-validation paths. Browser validation is separately checking both real callers, repeated identical failures, keyboard retry and intentional outside focus; do not claim execution. Review only supplied code and return canonical JSON.
+
+FILE src/components/registration-submission-feedback.tsx
+"use client";
+
+import { useEffect, useRef } from "react";
+
+/** Keep live regions mounted and restore keyboard position after a failed submit. */
+export function RegistrationSubmissionFeedback({ pending, errorMessage = "", successMessage = "" }: {
+  pending: boolean;
+  errorMessage?: string;
+  successMessage?: string;
+}) {
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const alert = errorRef.current;
+    if (!errorMessage || pending || !alert) return;
+    const active = alert.ownerDocument.activeElement;
+    const form = alert.closest("form");
+    // 不搶走使用者等待期間移往其他欄位或連結的焦點。
+    const lostFocus = !active || active === alert.ownerDocument.body || active === alert;
+    const onSubmit = active instanceof HTMLButtonElement && active.type === "submit" && active.form === form;
+    if (lostFocus || onSubmit) alert.focus();
+  }, [errorMessage, pending]);
+
+  return <>
+    <p ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" className={`text-sm text-red-700 ${pending || !errorMessage ? "sr-only" : ""}`}>{pending ? "" : errorMessage}</p>
+    <p role="status" aria-live="polite" aria-atomic="true" className={pending || !successMessage || errorMessage ? "sr-only" : "text-sm text-emerald-700"}>{pending ? "正在送出，請勿重複操作。" : errorMessage ? "" : successMessage}</p>
+  </>;
+}
+
+FILE src/components/registration-submission-feedback.test.tsx
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import { RegistrationSubmissionFeedback } from "./registration-submission-feedback";
+
+describe("registration feedback announcements", () => {
+  it("keeps empty alert and status regions mounted before submission", () => {
+    const html = renderToStaticMarkup(<RegistrationSubmissionFeedback pending={false} />);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('tabindex="-1"');
+  });
+  it("only announces progress while a previous error is being retried", () => {
+    const html = renderToStaticMarkup(<RegistrationSubmissionFeedback pending errorMessage="previous error" successMessage="old success" />);
+    expect(html).toContain("正在送出");
+    expect(html).not.toContain("previous error");
+    expect(html).not.toContain("old success");
+  });
+  it("announces the error without concurrent success or progress text", () => {
+    const html = renderToStaticMarkup(<RegistrationSubmissionFeedback pending={false} errorMessage="請稍後重試" successMessage="old success" />);
+    expect(html).toContain("請稍後重試");
+    expect(html).not.toContain("old success");
+    expect(html).not.toContain("正在送出");
+    expect(html).toContain('aria-live="assertive"');
+  });
+  it("announces success once through the polite region", () => {
+    const html = renderToStaticMarkup(<RegistrationSubmissionFeedback pending={false} successMessage="已收到" />);
+    expect(html.match(/已收到/g)).toHaveLength(1);
+    expect(html).toContain('aria-live="polite"');
+  });
+});
+
+--- src/components/lead-form.tsx before
++++ src/components/lead-form.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import { useRef, useState } from "react";
++import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+ import { LineLoginButton } from "@/components/line-login-button";
+ import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
+ 
+@@ -186,11 +187,10 @@
+           />
+         </label>
+       ))}
+-      {status === "error" ? <p role="alert" aria-live="assertive" className="text-sm text-red-700">{errorMessage || formSubmissionErrorMessage()}</p> : null}
++      <RegistrationSubmissionFeedback pending={status === "loading"} errorMessage={status === "error" ? errorMessage || formSubmissionErrorMessage() : ""} />
+       <button type="submit" disabled={status === "loading"} aria-disabled={status === "loading"} aria-busy={status === "loading"} style={{ backgroundColor: themeColor }} className="h-11 rounded-md text-sm font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60">
+         {status === "loading" ? "送出中..." : submitLabel}
+       </button>
+-      <span role="status" aria-live="polite" className="sr-only">{status === "loading" ? "正在送出，請勿重複操作。" : ""}</span>
+     </form>
+   );
+ }
+
+--- src/components/landing-pages/funnel-page-document-renderer.tsx before
++++ src/components/landing-pages/funnel-page-document-renderer.tsx
+@@ -3,6 +3,7 @@
+ /* eslint-disable @next/next/no-img-element */
+ 
+ import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
++import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+ import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
+ import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+ import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
+@@ -324,8 +325,7 @@
+     {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
+     {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={status === "submitting" || status === "success"} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
+     <button type="submit" disabled={status === "submitting" || status === "success"} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "submitting" ? "送出中…" : status === "success" ? "已送出" : submission.form.submitLabel}</button>
+-    <span role="status" aria-live="polite" className="sr-only">{status === "submitting" ? "正在送出，請勿重複操作。" : ""}</span>
+-    {message ? <p role={status === "error" ? "alert" : "status"} aria-live={status === "error" ? "assertive" : "polite"} className={status === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>{message}</p> : null}
++    <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
+   </form>;
+ }
+ 

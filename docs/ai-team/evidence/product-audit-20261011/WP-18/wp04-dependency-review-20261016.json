@@ -1,0 +1,195 @@
+{
+  "reviewed": true,
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "security_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "billing",
+        "payment"
+      ],
+      "important_findings": true,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 20,
+      "code_surface_area": 18,
+      "production_impact": "low",
+      "security_impact": "medium",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "security_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "QUOTA_EXHAUSTED",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "finalModel": "claude-opus-5-5",
+  "verification": {
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema"
+  },
+  "review": {
+    "summary": "Verdict: WP-18 cannot truthfully be marked complete while WP-04 is still open. Both questions get a split answer. (Q1) WP-04 is operational infrastructure, and WP-18 explicitly does not need provider delivery: when real LINE Sandbox capability is missing, proving the item was queued (enqueue only) is enough, and Email/LINE delivery stays NOT_RUN. But the authoritative WP-18 contract lists \"Dependency: WP-04\", and the canonical gate turns that into a required check (required_check_unverified:WP04-prerequisite). A reviewer cannot reclassify it as a deployment-only prerequisite. Only the plan owner can do that, by formally amending the contract. (Q2) The original acceptance does not require provider delivery, but it does require Sandbox acceptance of delay and of follow-ups stopping when an order goes from pending to paid. In a deployed system that behavior runs on the scheduler WP-04 owns (job inventory, blocking duplicate runs, heartbeat, timezone). So WP-18 must stay incomplete, or be recorded as \"implementation accepted, waiting on WP-04\", until there is evidence that the WP-18 follow-up job ran on the fixed Sandbox scheduler. The product implementation itself looks complete at d980a258, with no BLOCKER or MAJOR issues in the code. The remaining gaps are about evidence and the gate. (Q3) Evidence needed for a truthful completion: (a) WP-04 closed under its unchanged contract, with its scheduler inventory including the WP-18 follow-up job; (b) a fixed-Sandbox receipt for a pending-payment checkout-incomplete event that is queued, then dispatched by the deployed scheduler after the delay with the timezone checked; this must also show that switching to paid before the due time stops the follow-up, that a replayed event and overlapping scheduler runs produce no duplicate, and that unsubscribe is honored; (c) Email/LINE recorded as ENQUEUED with provider delivery NOT_RUN unless a real Sandbox delivery receipt exists; (d) evidence re-run at revision 2d3ae746…, because a dependency that affects runtime changed; (e) a rollback rehearsal plus checks that price, payment idempotency and order history did not change. The alternative is a recorded contract amendment that splits WP-18's acceptance. Even then, the Goal stays incomplete and no scheduled or external delivery may be claimed.",
+    "findings": [
+      {
+        "severity": "BLOCKER",
+        "file": "Goal Plan / Consolidated audit WP-18 (canonical gate)",
+        "area": "WP-18 dependency declaration and gate status",
+        "issue": "WP-18 cannot be marked complete while its declared dependency WP-04 is incomplete. The canonical gate has turned that dependency into a required check that has not been verified.",
+        "evidence": "The audit contract lists 'Dependency: WP-04'. The canonical gate is BLOCKED by required_check_unverified:WP04-prerequisite. Nothing supplied says the plan owner has amended the contract to downgrade WP-04 to a deployment-only prerequisite.",
+        "impact": "Marking WP-18 complete would bypass a required gate check. On a Critical Payment/Billing path, it would suggest that delayed and stop-on-paid follow-ups have been checked on a scheduler whose job inventory, duplicate-run blocking, heartbeat and timezone handling have not been verified.",
+        "recommended_fix": "Keep WP-18 incomplete, or record it as 'implementation accepted, waiting on WP-04', until WP-04 closes under its unchanged contract. If the owner wants WP-18 split, record a formal contract amendment that separates implementation acceptance from scheduled-execution acceptance. Do not reinterpret the dependency in a review.",
+        "required_test": "After WP-04 closes, re-run the canonical gate and confirm WP04-prerequisite is verified using WP-04's own receipts, not WP-18 enqueue evidence.",
+        "confidence": 0.85
+      },
+      {
+        "severity": "MAJOR",
+        "file": "Goal Plan WP-18 (Sandbox acceptance)",
+        "area": "Delay, stop-on-paid and dedupe under the deployed scheduler",
+        "issue": "The current evidence shows queuing plus delay and replay driven by tests. It does not show the delayed follow-up being dispatched by the deployed fixed-Sandbox scheduler. Stopping on pending-to-paid and dedupe both depend on what happens at dispatch time.",
+        "evidence": "The evidence consists of four disposable PostgreSQL integration receipts and a browser flow covering checkout delay and replay. WP-04 separately owns the deployed scheduler inventory, blocking of duplicate runs, heartbeat and timezone. External delivery is NOT_RUN.",
+        "impact": "The contract calls for Sandbox acceptance and an Integration Sandbox. Disposable test databases do not show that the deployed scheduler fires on time, re-reads payment status at the due time, or avoids a double send when scheduler runs overlap.",
+        "recommended_fix": "Once WP-04's scheduler is verified, capture one fixed-Sandbox receipt for the WP-18 job. Record provider delivery as NOT_RUN unless a real Sandbox delivery receipt exists. Do not treat enqueue as delivery.",
+        "required_test": "Fixed-Sandbox E2E: (1) a pending-payment checkout-incomplete event is queued for Email/LINE; (2) the deployed scheduler dispatches it after the configured delay, with the timezone checked; (3) in a second order, switching to paid before the due time stops the follow-up; (4) a replayed event and two overlapping scheduler runs produce exactly one queued action; (5) an unsubscribed recipient is skipped.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/automation-workflow.ts",
+        "area": "AutomationDb Pick (salesProject, formSubmission, commerceOrder) and the per-Project LINE account dependency",
+        "issue": "All completion evidence comes from the prior snapshot d980a258. The type-only change points to a runtime change in a dependency: the accepted per-Project LINE account integration that the WP-18 LINE enqueue path calls. That dependency's new behavior was not covered by the WP-18 receipts.",
+        "evidence": "The Pick type gained three models because the dependency now uses them. The tests (262), TypeScript, lint, integration receipts and axe scans are all reported at d980a258, not at 2d3ae746….",
+        "impact": "LINE follow-ups may now resolve a different LINE account depending on Project data, or fail to resolve one. Evidence from the prior snapshot cannot vouch for the enqueue target or behavior at the current revision.",
+        "recommended_fix": "Re-run the WP-18 evidence set at 2d3ae746…. List the per-Project LINE account resolution as an affected dependency. Do a delta review of only that interface and this file, not a full re-review.",
+        "required_test": "At 2d3ae746…: TypeScript, lint and the 9-file test suite; a disposable PostgreSQL integration receipt showing a pending-payment follow-up queued for LINE with the correct per-Project account, plus a Project with no LINE account handled safely.",
+        "confidence": 0.65
+      },
+      {
+        "severity": "MAJOR",
+        "file": "Goal Plan WP-18 (rollback and invariants)",
+        "area": "Rollback order and checks that price, payment idempotency and order history are unchanged",
+        "issue": "The completion evidence does not include a rollback rehearsal or an explicit check that price, payment idempotency and order history are unchanged. Both are contract obligations.",
+        "evidence": "The contract says rollback disables synthetic rules and the schedule, then reverts the event patch, and that WP-18 'must not change price, payment idempotency or order history'. The supplied evidence lists tests, integration receipts, browser/axe runs and reviews, but neither of these items.",
+        "impact": "On a Critical Payment path, a checkout-event patch that cannot be safely rolled back, or that quietly changes idempotency keys or order history, could cause duplicate charges or audit gaps.",
+        "recommended_fix": "Add a rollback receipt and a non-regression receipt to the WP-18 evidence. If they already exist, cite them explicitly.",
+        "required_test": "Rollback rehearsal in a disposable database: disable the synthetic rules and schedule, revert the event patch, and confirm no follow-ups remain queued or get dispatched. Before/after check: price, payment idempotency key behavior (replaying a payment produces no duplicate) and order history rows are unchanged when the checkout-incomplete event fires.",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0
+    }
+  ],
+  "status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "completed": false,
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "agy_discovery_status": "QUOTA_EXHAUSTED",
+  "accepted": false
+}

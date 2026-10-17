@@ -1,0 +1,59 @@
+Ordinary review of query-free analytics UI availability display. This only presents missing-data reasons for five requested core metrics; never claims those calculations complete. Existing analytics computations and reads unchanged. Check truthful copy, basic heading structure, scope and tests. No tools or test execution claims. Return canonical JSON. Revision sha256:568dc4e09fcae88e4c30bb293b0ca666ba9f74aeb90cde28eca24587bd7824e3
+
+--- src/app/(app)/lives/[id]/analytics/page.tsx before
++++ src/app/(app)/lives/[id]/analytics/page.tsx
+@@ -15,0 +16,9 @@
++
++// These requested metrics need distinct source contracts; existing activity counts do not supply them.
++const pendingCoreMetrics = [
++  { label: "報名率", reason: "缺少報名頁的不重複訪客數，尚未能計算報名比例。" },
++  { label: "到場率", reason: "同一報名者與到場紀錄尚未完整連結。" },
++  { label: "完看率", reason: "完看標準與每位觀眾的完成紀錄尚未就緒。" },
++  { label: "平均觀看時長", reason: "每位觀眾的有效觀看時間與重複觀看計算方式尚未就緒。" },
++  { label: "看完下單率", reason: "完成觀看與同一位觀眾的下單紀錄尚未完整連結。" },
++] as const;
+@@ -267,0 +277,11 @@
++      <section className="mb-6" aria-labelledby="core-metric-availability-title">
++        <h2 id="core-metric-availability-title" className="text-lg font-semibold text-slate-950">場次核心指標</h2>
++        <p className="mt-1 text-sm text-slate-600">資料與統計口徑就緒後才會顯示數值。</p>
++        <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
++          {pendingCoreMetrics.map((metric) => <Card key={metric.label}>
++            <h3 className="font-semibold text-slate-950">{metric.label}</h3>
++            <p className="mt-2 font-medium text-slate-700">尚不可計算</p>
++            <p className="mt-2 text-sm text-slate-600">{metric.reason}</p>
++          </Card>)}
++        </div>
++      </section>
+
+--- src/app/(app)/lives/[id]/analytics/page.test.tsx before
++++ src/app/(app)/lives/[id]/analytics/page.test.tsx
+@@ -228,0 +229,15 @@
++
++it.each(["existing activity", "no activity"])("keeps unsupported core metrics unavailable with %s", async (scenario) => {
++  if (scenario === "no activity") {
++    mocks.analyticsFindMany.mockReset().mockResolvedValue([]);
++    mocks.formSubmissionCount.mockReset().mockResolvedValue(0);
++  }
++  const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));
++  const section = html.split('<section class="mb-6" aria-labelledby="core-metric-availability-title">')[1]?.split("</section>")[0];
++  expect(section).toBeDefined();
++  for (const label of ["報名率", "到場率", "完看率", "平均觀看時長", "看完下單率"]) expect(section).toContain(label);
++  expect(section?.match(/尚不可計算/g)).toHaveLength(5);
++  expect(section).not.toMatch(/\d+(?:\.\d+)?(?:%| 秒)/);
++  expect(section).toContain("不重複訪客數");
++  expect(section).toContain("完成觀看與同一位觀眾");
++});
+
+Evidence of data gaps (static source inventory, not records):
+# WP-20 事件契約盤點（唯讀）
+
+狀態：受影響指標 WAITING_AUTHORIZATION；未改事件寫入或產品程式碼。
+
+| 指標 | 已觀察來源 | 不能直接當成要求指標的原因 |
+| --- | --- | --- |
+| 報名率 | FormSubmission 的總數/VERIFIED 數；目前 analytics page 的 admitted page_view | page_view 是已取得播放 session 的瀏覽，不是報名前報名頁的獨立訪客分母；不能將既有漏斗百分比重新命名為報名率 |
+| 到場率 | AnalyticsEvent.visitorId 為 viewer token hash；verified form submissions | session 與報名者沒有穩定可核對 join；多 session 不能當多位報名者 |
+| 完看率 | play_progress 固定 30/60/120/300/600 秒 checkpoint | 沒有播放完成事件、精確個人累計或已核准完看門檻；十分鐘 checkpoint 不能當看完整場 |
+| 平均觀看時長 | StreamUsageLedgerEntry.watchSeconds | ledger 目前 create data 未写 viewerKeyHash/customerKeyHash；個人分母與重疊/重播語意不完整。既有 aggregate 可證明用量，不能直接當每人平均 |
+| 看完下單率 | 付款 metadata sourceLiveId/formSubmissionId，可歸屬場次 | 缺少可連接到同一報名者的完成觀看事件，不能把場次訂單率稱為看完下單率 |
+

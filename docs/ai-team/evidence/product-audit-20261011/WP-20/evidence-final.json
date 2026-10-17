@@ -1,0 +1,560 @@
+{
+  "execution": {
+    "kind": "execution",
+    "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+    "status": "COMPLETED",
+    "source": "desktop_native",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "scope": "Authorized nonproduction implementation; no publish/deploy/push",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\execution-final.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "name": "targeted-255",
+      "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+      "status": "PASS",
+      "exit_code": 0,
+      "source": "validation_runner",
+      "details": {
+        "targetedTests": {
+          "exitCode": 0,
+          "tests": 255,
+          "files": 11
+        },
+        "scopedLint": {
+          "exitCode": 0,
+          "files": 8
+        },
+        "typecheck": {
+          "exitCode": 0
+        },
+        "diffCheck": {
+          "exitCode": 0
+        }
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-targeted-255-final.json"
+    },
+    {
+      "kind": "validation",
+      "name": "scoped-lint",
+      "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+      "status": "PASS",
+      "exit_code": 0,
+      "source": "validation_runner",
+      "details": {
+        "targetedTests": {
+          "exitCode": 0,
+          "tests": 255,
+          "files": 11
+        },
+        "scopedLint": {
+          "exitCode": 0,
+          "files": 8
+        },
+        "typecheck": {
+          "exitCode": 0
+        },
+        "diffCheck": {
+          "exitCode": 0
+        }
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-scoped-lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "name": "typecheck",
+      "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+      "status": "PASS",
+      "exit_code": 0,
+      "source": "validation_runner",
+      "details": {
+        "targetedTests": {
+          "exitCode": 0,
+          "tests": 255,
+          "files": 11
+        },
+        "scopedLint": {
+          "exitCode": 0,
+          "files": 8
+        },
+        "typecheck": {
+          "exitCode": 0
+        },
+        "diffCheck": {
+          "exitCode": 0
+        }
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "name": "diff-check",
+      "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+      "status": "PASS",
+      "exit_code": 0,
+      "source": "validation_runner",
+      "details": {
+        "targetedTests": {
+          "exitCode": 0,
+          "tests": 255,
+          "files": 11
+        },
+        "scopedLint": {
+          "exitCode": 0,
+          "files": 8
+        },
+        "typecheck": {
+          "exitCode": 0
+        },
+        "diffCheck": {
+          "exitCode": 0
+        }
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-diff-check-final.json"
+    },
+    {
+      "kind": "validation",
+      "name": "full-five-pipeline",
+      "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+      "status": "PASS",
+      "exit_code": 0,
+      "source": "validation_runner",
+      "details": "full-five-pipeline-db.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-full-five-pipeline-final.json"
+    },
+    {
+      "kind": "validation",
+      "name": "viewing-integrity",
+      "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+      "status": "PASS",
+      "exit_code": 0,
+      "source": "validation_runner",
+      "details": "positive-viewing-db.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-viewing-integrity-final.json"
+    },
+    {
+      "kind": "validation",
+      "name": "exact-window-db",
+      "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+      "status": "PASS",
+      "exit_code": 0,
+      "source": "validation_runner",
+      "details": "exact-window-db.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-exact-window-db-final.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+    "status": "PASS",
+    "independent": true,
+    "source": "claude_cli",
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "raw_receipts": [
+      "positive-viewing-sql-review.json",
+      "positive-viewing-final-review.json",
+      "final-presentation-review.json",
+      "final-window-review.json",
+      "final-copy-qualified-review.json"
+    ],
+    "coverage": "Incremental scoped reviews; unchanged backend sources verified against previous hashes. Final copy qualified review only closes copy delta. Root adjudication below; raw findings preserved.",
+    "excluded_receipts": {
+      "final-copy-review.json": "model unknown; not qualified Claude review"
+    },
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\review-final.json"
+  },
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "disposition": "rejected_with_reason",
+      "reason": "Actual disposable catalog proves NOT NULL parent keys and validated nondeferrable composite scope FKs; counterexample cannot exist. See viewing-parent-bindings-db.json.",
+      "raw_finding": {
+        "severity": "MAJOR",
+        "file": "wp20_metric_ingress_visit_frontier (SQL)",
+        "area": "DELETE branch, Session/Interval parent-missing checks",
+        "issue": "The 'parent missing' test also requires the parent's vendor/live/version to match the child, and has no NULL guard. If `registrationId` or `sessionId` is NULL, or the parent's scope is different, NOT EXISTS is true while the real FK parent still exists. A direct DELETE then returns before the seal check.",
+        "evidence": "`IF NOT EXISTS(SELECT 1 FROM LiveMetricRegistration WHERE id=OLD.registrationId AND vendorId=... AND versionId=...) THEN RETURN OLD`. The Interval branch is built the same way. Neither checks `OLD.<fk> IS NOT NULL`. Registration revision is keyed only by (vendor, live), which suggests registration scope may not include the version.",
+        "impact": "Sealed viewing facts could be erased directly with no trigger-depth trick, which undoes the immutability fix.",
+        "recommended_fix": "Allow the delete only when `OLD.fk IS NOT NULL AND NOT EXISTS(SELECT 1 FROM parent WHERE id=OLD.fk)`, so the check matches the FK exactly. Enforce scope separately with a composite FK or CHECK.",
+        "required_test": "Real PG: after the seal, a direct DELETE of a session with a NULL registrationId, or whose registration has a different scope, must be rejected. The same goes for an interval whose session has a mismatched scope.",
+        "confidence": 0.4
+      }
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "reason": "Existing viewing audit digest includes source/registration/viewing revisions and intake.digest includes intake revision; proofId hashes audit.digest. No missing revision binding.",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "live-metric viewing publisher",
+        "area": "proofId computation and ON CONFLICT handling",
+        "issue": "`proofId` hashes only the run, the receipt and the audit digest. The stored row also binds sourceRevision and the viewing/intake/registration revisions. If a revision changes but the digest doesn't, the publisher gets the same id, the existing-row comparison fails, and it returns `conflict`.",
+        "evidence": "`createHash(...).update(JSON.stringify(['viewing-coverage-v1',run,receipt,audit.digest]))`. The match check then compares sourceRevision, viewingRevision, intakeRevision and registrationRevision.",
+        "impact": "Re-publishing after a ledger or revision change (for example, after an erasure) may be blocked for good, and that run's viewing coverage can never be re-certified.",
+        "recommended_fix": "Add startAt, endAt, sourceRevision and the three revisions to the hash, converting bigints to strings. Alternatively, show that the audit digest already covers them.",
+        "required_test": "Publish, then change only a ledger revision while the digest stays the same, then publish again. The second publish must record a new proof, not return `conflict`.",
+        "confidence": 0.45
+      }
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "reason": "Actual disposable catalog proves Session.anchorAt NOT NULL. See viewing-parent-bindings-db.json.",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "session interval violation SQL",
+        "area": "intervals CTE first_start check",
+        "issue": "The new check `i.first_start<s.\"anchorAt\"` has no NULL guard on anchorAt. If anchorAt is nullable, the comparison returns NULL and the violation is silently skipped.",
+        "evidence": "`OR (coalesce(i.n,0)>0 AND (i.first_start IS NULL OR i.first_start<s.\"anchorAt\"))`. first_start is NULL-checked but anchorAt is not.",
+        "impact": "A session with intervals but no anchor could pass as contiguous. This only matters if the column is nullable.",
+        "recommended_fix": "Add `OR s.\"anchorAt\" IS NULL` to the violation, or confirm anchorAt is NOT NULL in the schema.",
+        "required_test": "Real PG: a session with anchorAt NULL and at least one interval must be classified as a violation.",
+        "confidence": 0.3
+      }
+    },
+    {
+      "severity": "MAJOR",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "MAJOR",
+        "file": "migration 131",
+        "area": "wp20_metric_ingress_visit_frontier DELETE/UPDATE branch",
+        "issue": "After seal, a source row can be deleted only if its LiveMetricVersion row is already gone. A cascade or SET NULL from another parent fails if it fires while the version row still exists. Examples: Live, Vendor, LiveMetricRegistration, FormSubmission.",
+        "evidence": "The DELETE branch returns early only when NOT EXISTS(version). Otherwise it raises 'frontier sealed' for any UPDATE/DELETE once the seal exists. Postgres FK cascade order between sibling FKs follows trigger-name order, not the version-first order the code relies on.",
+        "impact": "Deleting a Live, vendor, or registration (including erasure requests) can fail with 23514 after seal.",
+        "recommended_fix": "Make sure every parent path reaches source rows only through the version cascade. Or explicitly allow cascades from a deleted Live, Vendor, or registration.",
+        "required_test": "Real-DB test: seal a run, then delete the Live, the vendor, and a referenced registration/FormSubmission. Each delete must succeed, or fail only by design.",
+        "confidence": 0.45
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "viewing-integrity",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "positive-viewing-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-viewing-integrity-final.json"
+        }
+      ],
+      "reason": "Parent cascades, first interval anchor, conflict match and duplicated heavyweight check repaired; real DB guard/cascade path passes."
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "migration 131",
+        "area": "wp20_metric_viewing_proof_ready interval CTE / session predicate",
+        "issue": "Nothing checks that the first interval's wallStartAt is at or after the session's anchorAt. Elapsed time and contiguity are measured only from previous_end and last_end.",
+        "evidence": "previous_end is NULL for sequence 0, so the first interval has no lower bound. The elapsed check uses only last_end minus anchorAt.",
+        "impact": "Viewing time from before the anchor, and possibly before start_at (the run's openedAt), could pass the DB proof. That makes the SQL proof weaker than a strict closed_contiguous check.",
+        "recommended_fix": "Add min(\"wallStartAt\") to the intervals CTE. Reject the proof when it is below s.\"anchorAt\".",
+        "required_test": "Negative DB test: a session whose first interval starts before anchorAt must make proof_ready return FALSE.",
+        "confidence": 0.35
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "viewing-integrity",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "positive-viewing-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-viewing-integrity-final.json"
+        }
+      ],
+      "reason": "Parent cascades, first interval anchor, conflict match and duplicated heavyweight check repaired; real DB guard/cascade path passes."
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "PRIVATE WRITER",
+        "area": "INSERT ... ON CONFLICT (id) DO NOTHING",
+        "issue": "The writer returns 'recorded' even when the insert hit a conflict and wrote nothing. An existing row may hold different revisions or a different receipt.",
+        "evidence": "$queryRaw INSERT has no RETURNING and no row-count check, and status 'recorded' is returned unconditionally.",
+        "impact": "The caller can be told a proof exists when the stored row doesn't match the current tuple. The reader then rejects it, so coverage silently stays missing.",
+        "recommended_fix": "Use RETURNING id, or on conflict compare the stored row to the intended values. Return a distinct status when they differ.",
+        "required_test": "Pre-insert a row with the same proofId but different revisions. The writer must not report 'recorded'.",
+        "confidence": 0.5
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "viewing-integrity",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "positive-viewing-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-viewing-integrity-final.json"
+        }
+      ],
+      "reason": "Parent cascades, first interval anchor, conflict match and duplicated heavyweight check repaired; real DB guard/cascade path passes."
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "PRIVATE WRITER",
+        "area": "statement_timeout 5000 / transaction timeout 10000",
+        "issue": "proof_ready runs twice per write: once explicitly in the writer, then again in the unproven guard. Each run includes the frame digest and up to a 1M-row window-function scan, under a 5 s statement timeout and a 10 s transaction timeout.",
+        "evidence": "The writer calls proof_ready before the INSERT, and the trigger runs it again on NEW values.",
+        "impact": "At the stated 1M retained-source bound, timeouts can block legitimate proofs. This fails closed, so the cost is availability, not soundness.",
+        "recommended_fix": "Rely on the trigger as the authority and map its 23514 to source_changed. Or measure at the bound and size the timeouts to fit.",
+        "required_test": "Seeded DB test at the upper bound (10k sessions, about 1M intervals): the proof must finish within the configured timeouts.",
+        "confidence": 0.35
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "viewing-integrity",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "positive-viewing-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-viewing-integrity-final.json"
+        }
+      ],
+      "reason": "Parent cascades, first interval anchor, conflict match and duplicated heavyweight check repaired; real DB guard/cascade path passes."
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "LiveAnalyticsPage tests (WP-20 delta)",
+        "area": "'formats each existing ready aggregate without recalculating metrics' expected-text list",
+        "issue": "The tests claim to check the exact UTC window, but they only check the start timestamp. The end timestamp and the mode label are never checked.",
+        "evidence": "The page shows `{windowStartAt.toISOString()} 至 {windowEndAt.toISOString()}（UTC）` with a '回放'/'直播' prefix. The test's expected strings include '2026-10-14T00:00:00.000Z' and '（UTC）', but not '2026-10-14T01:00:00.000Z' (the fixture's windowEndAt) and not '直播報表期間'. No test uses `mode:'replay'`.",
+        "impact": "If a change showed the wrong end bound (for example windowStartAt twice, or a local-time format), or flipped the live/replay label, these tests would still pass. That would weaken the evidence for the approved UTC window requirement.",
+        "recommended_fix": "In the ready-render test, check the full string '直播報表期間：2026-10-14T00:00:00.000Z 至 2026-10-14T01:00:00.000Z（UTC）'. Optionally add one case with `version:{mode:'replay'}` that checks for '回放報表期間'.",
+        "required_test": "Assert the full window string, including the end timestamp, in the existing ready-render test, plus one replay-mode label assertion.",
+        "confidence": 0.8
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "targeted-255",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": {
+            "targetedTests": {
+              "exitCode": 0,
+              "tests": 255,
+              "files": 11
+            },
+            "scopedLint": {
+              "exitCode": 0,
+              "files": 8
+            },
+            "typecheck": {
+              "exitCode": 0
+            },
+            "diffCheck": {
+              "exitCode": 0
+            }
+          },
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-targeted-255-final.json"
+        },
+        {
+          "kind": "validation",
+          "name": "exact-window-db",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "exact-window-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-exact-window-db-final.json"
+        }
+      ],
+      "reason": "Full UTC start/end/mode assertions, period-specific/invalid status copy and real exact SQL query against stored report verified. Minute/fraction normalization unit tested; timestamp(3) timezone DB check passed."
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "live analytics page (coreReportStateMessage / loadCoreMetricReport)",
+        "area": "coreReportStateMessage fallthrough; loadCoreMetricReport `if (window === false) return { state: 'invalid_window', ... }`",
+        "issue": "The 'invalid_window' state has no case in coreReportStateMessage, so it falls through to the default message '最新報表已失效，暫時無法顯示數值。' ('the latest report has expired').",
+        "evidence": "coreReportStateMessage only handles ready/queued/running/failed/none and returns the 'expired' copy for anything else. The page always renders `{coreReportStateMessage(coreReport.state)}`, and loadCoreMetricReport returns state 'invalid_window' for malformed input. The invalid-window tests only check for the '請選取有效的 UTC' alert and that no metric numbers appear. They never check the status line.",
+        "impact": "When a manager enters a bad period, the page says the latest report has expired, which is untrue. The real latest report was never looked at. This false status sits right next to the input-error alert and could lead the manager to think the reporting pipeline is broken.",
+        "recommended_fix": "Add an explicit case for 'invalid_window' with neutral copy (for example, '所選期間無效，未查詢報表。'), or hide the status paragraph when selectedWindow === false.",
+        "required_test": "Add an assertion to the existing invalid-window it.each: the html must not contain '最新報表已失效', and `data-core-report-state=\"invalid_window\"` must show the intended copy.",
+        "confidence": 0.85
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "targeted-255",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": {
+            "targetedTests": {
+              "exitCode": 0,
+              "tests": 255,
+              "files": 11
+            },
+            "scopedLint": {
+              "exitCode": 0,
+              "files": 8
+            },
+            "typecheck": {
+              "exitCode": 0
+            },
+            "diffCheck": {
+              "exitCode": 0
+            }
+          },
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-targeted-255-final.json"
+        },
+        {
+          "kind": "validation",
+          "name": "exact-window-db",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "exact-window-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-exact-window-db-final.json"
+        }
+      ],
+      "reason": "Full UTC start/end/mode assertions, period-specific/invalid status copy and real exact SQL query against stored report verified. Minute/fraction normalization unit tested; timestamp(3) timezone DB check passed."
+    },
+    {
+      "severity": "MINOR",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "MINOR",
+        "file": "live analytics page (loadCoreMetricReport SQL) + page tests",
+        "area": "`AND r.\"windowStartAt\"=${window.start} AND r.\"windowEndAt\"=${window.end} AND v.mode=${window.mode}`",
+        "issue": "The exact-equality filter on the stored window (JS Date parameters compared with the stored timestamp columns) is only tested through mocks that check `query.values`. Nothing confirms that Postgres matches a stored report for a selected window.",
+        "evidence": "The tests check `mocks.metricCandidateQuery.mock.calls[0][0].values` contains `new Date(...)`. The real pipeline PASS you mention (40/60/66.67/83.33sec/50, unattributed 1) covers the worker and stored report, not this page's selection query. How a Date parameter compares to a `timestamp(3)` column without a time zone depends on the parameter type and the session time zone, and a stored value with sub-millisecond precision would never equal the input.",
+        "impact": "If the types or time zone don't line up in the real database, every explicit selection returns state 'none'. The page would then report 'no report' for windows that do exist. This fails safe (no wrong numbers shown), but the WP-20 period-selection feature would quietly not work.",
+        "recommended_fix": "No code change is needed if the behavior is confirmed. Otherwise, cast both sides explicitly, e.g. `r.\"windowStartAt\" = ${window.start}::timestamptz` with the column type in mind, or compare ISO strings in a single agreed format.",
+        "required_test": "Add a DB-backed test that uses the stored report from the existing five-source pipeline fixture: selecting its exact UTC window and mode (including a minute-precision 'YYYY-MM-DDTHH:MM' input) returns that report. Shifting the window by 1 ms or switching the mode returns 'none'.",
+        "confidence": 0.4
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "targeted-255",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": {
+            "targetedTests": {
+              "exitCode": 0,
+              "tests": 255,
+              "files": 11
+            },
+            "scopedLint": {
+              "exitCode": 0,
+              "files": 8
+            },
+            "typecheck": {
+              "exitCode": 0
+            },
+            "diffCheck": {
+              "exitCode": 0
+            }
+          },
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-targeted-255-final.json"
+        },
+        {
+          "kind": "validation",
+          "name": "exact-window-db",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "exact-window-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-exact-window-db-final.json"
+        }
+      ],
+      "reason": "Full UTC start/end/mode assertions, period-specific/invalid status copy and real exact SQL query against stored report verified. Minute/fraction normalization unit tested; timestamp(3) timezone DB check passed."
+    },
+    {
+      "severity": "NIT",
+      "disposition": "resolved",
+      "raw_finding": {
+        "severity": "NIT",
+        "file": "live analytics page (coreReportStateMessage)",
+        "area": "messages for 'none' / 'ready' / 'queued' when selectedWindow is an object",
+        "issue": "When the user has picked a specific window, the status messages still say '最新報表…' ('latest report…'), and 'none' says '目前影片尚無可用報表' ('this video has no usable report yet'). Both are wrong when reports exist for other windows.",
+        "evidence": "coreReportStateMessage(state) ignores selectedWindow. The 'does not substitute an older…' test renders state 'none' with an explicit window, but the copy is never checked.",
+        "impact": "The wording can mislead managers into thinking no reports exist at all, or that the window they picked is the latest one. The numbers shown are still correct.",
+        "recommended_fix": "Pass selectedWindow into coreReportStateMessage and use period-specific wording when a window is selected, for example '所選期間尚無報表。'",
+        "required_test": "With an explicit selection and a null candidate, the html must contain the period-specific 'none' copy and must not contain '目前影片尚無可用報表'.",
+        "confidence": 0.6
+      },
+      "resolution_evidence": [
+        {
+          "kind": "validation",
+          "name": "targeted-255",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": {
+            "targetedTests": {
+              "exitCode": 0,
+              "tests": 255,
+              "files": 11
+            },
+            "scopedLint": {
+              "exitCode": 0,
+              "files": 8
+            },
+            "typecheck": {
+              "exitCode": 0
+            },
+            "diffCheck": {
+              "exitCode": 0
+            }
+          },
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-targeted-255-final.json"
+        },
+        {
+          "kind": "validation",
+          "name": "exact-window-db",
+          "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+          "status": "PASS",
+          "exit_code": 0,
+          "source": "validation_runner",
+          "details": "exact-window-db.json",
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\validation-exact-window-db-final.json"
+        }
+      ],
+      "reason": "Full UTC start/end/mode assertions, period-specific/invalid status copy and real exact SQL query against stored report verified. Minute/fraction normalization unit tested; timestamp(3) timezone DB check passed."
+    }
+  ],
+  "limits": {
+    "browser": "NOT_RUN",
+    "remoteCI": "NOT_RUN",
+    "millionRowLoad": "NOT_RUN",
+    "production": "NOT_AUTHORIZED",
+    "deploymentRuntime": "NOT_VERIFIED"
+  },
+  "scope": "WP20 local/nonproduction functional acceptance only; not production release or full Goal completion",
+  "source_hash_manifest_verified": true
+}

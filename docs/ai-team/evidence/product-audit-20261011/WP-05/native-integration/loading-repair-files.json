@@ -1,0 +1,20 @@
+[
+  "src/app/(viewer)/loading.tsx",
+  "src/app/admin/loading.tsx",
+  "src/app/affiliate-portal/loading.tsx",
+  "src/app/checkout/loading.tsx",
+  "src/app/login/loading.tsx",
+  "src/app/merchant-onboarding/loading.tsx",
+  "src/app/mfa/loading.tsx",
+  "src/app/password-reset/loading.tsx",
+  "src/app/policies/loading.tsx",
+  "src/app/portal/loading.tsx",
+  "src/app/register/loading.tsx",
+  "src/app/support/loading.tsx",
+  "src/app/team-template/loading.tsx",
+  "src/app/unsubscribe/loading.tsx",
+  "src/app/verify-registration/loading.tsx",
+  "src/app/welcome/loading.tsx",
+  "src/app/page.tsx",
+  "src/app/loading.test.tsx"
+]

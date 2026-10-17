@@ -1,0 +1,10 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "unit",
+  "revision": "sha256:7a2dd025babcbfe27a83eb230f313a3d32c0d6f59a6a64c56ed94f58c5064944",
+  "status": "PASS",
+  "exit_code": 0,
+  "source_receipt": "renderer-regression-unit.json",
+  "detail": "37current targeted gallery/renderer tests"
+}

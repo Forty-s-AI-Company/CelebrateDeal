@@ -1,0 +1,30 @@
+{
+  "source_revision": "sha256:25db39dca621e11af50febb6d0fd6a4b2f53142027333270344cee1ef58deea0",
+  "provider_findings_unchanged": true,
+  "initial_invalid_schema": "templates-transport-review.json retained as candidate evidence only; not canonical PASS",
+  "prior_canonical_major": {
+    "source": "templates-fixed-transport-review.json",
+    "finding_index": 0,
+    "disposition": "resolved",
+    "evidence": [
+      "templates-disposable-pg-receipt.json",
+      "templates-db.json",
+      "templates-final-transport-review.json"
+    ],
+    "reason": "Explicit nulls:first plus actual150observed+newNULL binding case passed."
+  },
+  "latest_findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/line-webinar-template.ts",
+      "area": "splitLineText, the URL split pattern `/(https?:\\/\\/\\S+)/gu`",
+      "issue": "`\\S+` matches until the next whitespace. In Chinese copy, the text after a URL usually has no space (for example `{{live_url}}，請準時進場…`), so the URL token also takes in the punctuation and all the Chinese text up to the next space or newline. That whole span is treated as one piece that is never split at grapheme boundaries.",
+      "evidence": "`for (const token of text.split(/(https?:\\/\\/\\S+)/gu))` followed by `if (/^https?:\\/\\//u.test(token)) { if (!append(token)) return null; continue; }`. `append` returns false whenever `part.length > 5000`. The comment says URLs are recognized after Chinese copy, but nothing stops the match before Chinese text that follows the URL.",
+      "impact": "If a URL is directly followed by a long Chinese paragraph with no whitespace, that text can't be packed into the space left in the current bubble. This wastes bubble space and can push a message that would fit into 5 bubbles over the limit, so it returns null. If the combined span is over 5000 UTF-16 units, the function always returns null and the merchant's notification is suppressed. This only happens with unusual templates. It never truncates text or splits a surrogate pair.",
+      "recommended_fix": "End URL tokens at whitespace and at CJK or full-width characters and punctuation. For example: `/(https?:\\/\\/[^\\s　-〿㐀-鿿＀-￯]+)/gu`, or `[\\x21-\\x7E]+` for ASCII-only URLs. Any text after the URL then goes through the grapheme packing path.",
+      "required_test": "Build the input `https://example.com/x` + `，` + 4990 CJK characters (no whitespace), plus enough other text that grapheme packing fits in 5 bubbles but atomic URL handling does not. Assert that the result is not null, that every chunk is ≤5000 units, that the URL is never split across chunks, and that joining the chunks reproduces the original text.",
+      "confidence": 0.6,
+      "disposition": "unresolved"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "status": "IN_PROGRESS",
+  "changed_files": [
+    "src/components/app-shell.tsx",
+    "src/app/(app)/layout.tsx",
+    "src/app/actions/registration-actions.ts",
+    "src/app/actions/sales-workspace-actions.ts",
+    "src/app/(app)/layout.test.tsx",
+    "src/app/actions/registration-actions.test.ts",
+    "src/app/actions/sales-workspace-actions.test.ts"
+  ],
+  "behavior": "New preference creation defaults collapsed; questionnaire completion preserves saved choice; restart and explicit persistence actions unchanged; legacy records retained without migration",
+  "checks": {
+    "targeted_tests": "PASS 38 tests /3 files including explicit expand/collapse and restart",
+    "exact_scoped_replacements": "PASS",
+    "whole_wp_acceptance": "NOT_RUN",
+    "eslint": "PASS before final test-only additions",
+    "browser_default_keyboard_a11y": "PASS 4 states Chromium/Firefox desktop/mobile; fixture omits collapse prop; real shell default exercised; synthetic boundaries"
+  },
+  "next": "Browser default proof, full current snapshot checks, independent review; primary mobile viewport and operations target sizing remain unverified"
+}

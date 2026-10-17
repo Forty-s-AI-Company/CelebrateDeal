@@ -1,0 +1,10 @@
+{
+  "command": [
+    "C:\\Program Files\\Python311\\python.exe",
+    "-B",
+    "-c",
+    "import re,subprocess\nfrom pathlib import Path\np=Path('docs/launch/goal-plan-20261011-product-audit.md')\ns=p.read_text(encoding='utf-8')\nassert len(re.findall(r'^\\| \\*\\*WP-\\d{2}\\*\\*',s,re.M))==20\nassert len(re.findall(r'^\\| WP-\\d{2}／WP-\\d{2}-owner',s,re.M))==20\nfor n in range(1,21):\n    assert f'WP-{n:02}' in s\nfor n in range(1,7):\n    assert f'D-{n}' in s\nfor n in range(5):\n    assert f'Batch {n}' in s\nfor x in ['WAITING_AUTHORIZATION','獨立深度審查','單一 writer','complexity','context_size','production','security','data_integrity','ownership','回滾','evidence','assess_acceptance','NOT_RUN','不寫入 runtime state']:\n    assert x in s,x\nassert 'Warning: truncated' not in s\nassert all(l.rstrip()==l for l in s.splitlines())\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='efb8b7e9a737ea30ea691870318d85bf74830331'\nassert subprocess.check_output(['git','diff','--name-only'],text=True).strip()==''\nassert subprocess.check_output(['git','diff','--cached','--name-only'],text=True).strip()==''\n"
+  ],
+  "environment": "local isolated worktree; no network or database",
+  "limitations": "Document inventory and scope assertions only; no product tests or independent review."
+}

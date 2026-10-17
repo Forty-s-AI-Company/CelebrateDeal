@@ -1,0 +1,13 @@
+{
+  "revision": "sha256:b8f9d043c1db9e161741c1cc19959b4a76e4a4c926f31c69fb6276208a5cee8e",
+  "files": [
+    "scripts/wp20-metric-persistence-disposable.mjs",
+    "src/lib/live-metric-report-job.ts",
+    "src/lib/live-metric-executor.ts",
+    "src/lib/live-metric-worker.ts",
+    "src/lib/live-metric-snapshot-input.ts",
+    "src/lib/live-metric-report-snapshot.ts"
+  ],
+  "actual_worker": true,
+  "actual_disposable_db": true
+}

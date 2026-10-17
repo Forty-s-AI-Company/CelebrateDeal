@@ -1,0 +1,16 @@
+{
+  "status": "IN_PROGRESS",
+  "source": "prisma/migrations/20261014120000_live_metric_evidence/migration.sql",
+  "mapping": {
+    "FormSubmission": "source_changed trigger checks verificationStatus/verifiedAt/liveId/formId; stales cohort windows",
+    "Live": "videoId/formId changes increment version sourceRevision",
+    "LiveMetricRegistration": "evidence_changed trigger on INSERT/UPDATE/DELETE; identity immutable guard",
+    "RegistrationForm": "No metric-specific invalidation found for vendorId changes; inspect composite FK/tenant invariants before change"
+  },
+  "limitations": [
+    "Source inspection only; ready-result regression for each field NOT_RUN",
+    "Reviewer lacked this earlier migration, so blanket missing-trigger finding needs evidence-based refinement",
+    "Deployed scheduler not supplied to reviewer means unverified, not proven nonexistent"
+  ],
+  "next": "Verify ready report invalidation for all joined fields; examine RegistrationForm ownership constraints"
+}

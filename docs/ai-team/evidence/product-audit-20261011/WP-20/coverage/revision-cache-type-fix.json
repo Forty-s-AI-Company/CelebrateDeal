@@ -1,0 +1,13 @@
+{
+  "files": {
+    "src/lib/live-metric-report-reader.ts": "703d6a5caf5a4e4a47c9382d57a09964dd58ed136f2f90711c0f3c3f7e59de09",
+    "src/lib/live-metric-order-revision-snapshot.test.ts": "5b16d19686056f62b04c76a66c91ca47d6e000820ea87b9655823680f4f0b4ce",
+    "src/lib/live-metric-report-snapshot.test.ts": "f6b83c8b3a871875d51d1a2fd45c02dc2a7cb02bcc30bb5eff821116e253b7a1",
+    "scripts/wp20-metric-persistence-disposable.mjs": "049fb04adc4bc66c721265cf64f1a172c1efd7079b510c68c679226486242c02"
+  },
+  "unit_tests": 36,
+  "unit_status": "PASS",
+  "post_fix_typecheck": "NOT_RUN",
+  "integration": "FAIL: 6/20 concurrent writes; valid report snapshot assertions reached and passed",
+  "registration_clock_root_cause": "UNCONFIRMED"
+}

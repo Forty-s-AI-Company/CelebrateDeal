@@ -1,0 +1,15 @@
+{
+  "hashes": {
+    "prisma/migrations/20261015180000_live_metric_registration_report_binding/migration.sql": "a0bbe40a79af4c7db8ee8d6c9f8396a2b854fa9b55f3fe982d2a82bd76bbfadf",
+    "prisma/schema.prisma": "10c5b6ab830727ad1f4f80f2346317dde82fd0ff262fbae16bda8d5146da7511",
+    "src/lib/live-metric-report-reader.ts": "228420600149c24a0149b6d02401403b1a9070992d106702656c05ca139fa664",
+    "src/lib/live-metric-completion-store.ts": "b8b71f37d50596dffbadce94ba7ef7dee98e750c50382e9df8027565a37eb7de",
+    "scripts/wp20-metric-source-invalidation.mjs": "fa87d92eb137a90ad765d773298bc2447758d77088275b1d136dcd5eb4b39ce4"
+  },
+  "unit": "29 PASS",
+  "lint": "reader/store PASS",
+  "latestDB": "106 migrations PASS; uncaptured verified insert invalidates ready reader in5 fixtures",
+  "intermittentFailure": "Previous run failed registration-source-concurrency assertion; cause unconfirmed; preserved registration-binding-initial-failure.json",
+  "review": "PENDING",
+  "proofCoverageBinding": "NOT_IMPLEMENTED"
+}

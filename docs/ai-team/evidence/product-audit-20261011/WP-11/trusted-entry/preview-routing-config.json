@@ -1,0 +1,10 @@
+{
+  "exit": 0,
+  "configuration": {
+    "rate_limit_provider": "unset_or_unknown",
+    "entry_mode_configured": false,
+    "entry_source_configured": false
+  },
+  "credential_values_read_by_checker": false,
+  "raw_output_persisted": false
+}

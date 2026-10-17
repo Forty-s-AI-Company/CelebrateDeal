@@ -1,0 +1,7 @@
+{
+  "files": {
+    "src/lib/live-metric-coverage-reader.ts": "daa94fe0f2213972c37e103ad9f3fcf75ec53b112a90344869691799f073862f",
+    "src/lib/live-metric-visit-reconciliation.ts": "570681500cdfe526b8b6cd937c17d4f8cbafe8f071c27a47e45854a93c7f67a4"
+  },
+  "promptCharacters": 19162
+}

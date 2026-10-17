@@ -1,0 +1,258 @@
+[
+  {
+    "file": "src\\app\\(app)\\affiliates\\page.tsx",
+    "title": "聯盟夥伴"
+  },
+  {
+    "file": "src\\app\\(app)\\affiliates\\commissions\\page.tsx",
+    "title": "聯盟分潤"
+  },
+  {
+    "file": "src\\app\\(app)\\affiliates\\new\\page.tsx",
+    "title": "新增聯盟夥伴"
+  },
+  {
+    "file": "src\\app\\(app)\\affiliates\\payout-policy\\page.tsx",
+    "title": "聯盟提領費用"
+  },
+  {
+    "file": "src\\app\\(app)\\affiliates\\policy\\page.tsx",
+    "title": "聯盟佣金政策"
+  },
+  {
+    "file": "src\\app\\(app)\\affiliates\\[id]\\edit\\page.tsx",
+    "title": "編輯聯盟夥伴"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\course-payouts\\page.tsx",
+    "title": "課程 F/G 分潤"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\electronic-invoices\\page.tsx",
+    "title": "電子發票"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\invoices\\page.tsx",
+    "title": "帳單"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\payment-methods\\page.tsx",
+    "title": "付款方式設定"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\payouts\\page.tsx",
+    "title": "批次出款"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\plans\\page.tsx",
+    "title": "方案"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\settlements\\page.tsx",
+    "title": "月結"
+  },
+  {
+    "file": "src\\app\\(app)\\billing\\usage\\page.tsx",
+    "title": "用量與扣點"
+  },
+  {
+    "file": "src\\app\\(app)\\blacklists\\page.tsx",
+    "title": "黑名單管理"
+  },
+  {
+    "file": "src\\app\\(app)\\consultations\\page.tsx",
+    "title": "諮詢預約工作台"
+  },
+  {
+    "file": "src\\app\\(app)\\customers\\page.tsx",
+    "title": "學員 CRM"
+  },
+  {
+    "file": "src\\app\\(app)\\dashboard\\page.tsx",
+    "title": "營運總覽"
+  },
+  {
+    "file": "src\\app\\(app)\\forms\\page.tsx",
+    "title": "報名表管理"
+  },
+  {
+    "file": "src\\app\\(app)\\forms\\new\\page.tsx",
+    "title": "新增報名表"
+  },
+  {
+    "file": "src\\app\\(app)\\forms\\[id]\\edit\\page.tsx",
+    "title": "編輯報名表"
+  },
+  {
+    "file": "src\\app\\(app)\\interaction-roles\\page.tsx",
+    "title": "互動角色"
+  },
+  {
+    "file": "src\\app\\(app)\\interaction-roles\\new\\page.tsx",
+    "title": "互動角色"
+  },
+  {
+    "file": "src\\app\\(app)\\interaction-roles\\[id]\\edit\\page.tsx",
+    "title": "互動角色"
+  },
+  {
+    "file": "src\\app\\(app)\\interaction-scripts\\page.tsx",
+    "title": "互動腳本"
+  },
+  {
+    "file": "src\\app\\(app)\\interaction-scripts\\new\\page.tsx",
+    "title": "新增互動腳本"
+  },
+  {
+    "file": "src\\app\\(app)\\interaction-scripts\\[id]\\edit\\page.tsx",
+    "title": "編輯互動腳本"
+  },
+  {
+    "file": "src\\app\\(app)\\landing-pages\\page.tsx",
+    "title": "一頁式網站"
+  },
+  {
+    "file": "src\\app\\(app)\\landing-pages\\new\\page.tsx",
+    "title": "建立一頁式網站"
+  },
+  {
+    "file": "src\\app\\(app)\\lives\\page.tsx",
+    "title": "直播間管理"
+  },
+  {
+    "file": "src\\app\\(app)\\lives\\new\\page.tsx",
+    "title": "建立直播間"
+  },
+  {
+    "file": "src\\app\\(app)\\lives\\[id]\\chat\\page.tsx",
+    "title": "講師私訊"
+  },
+  {
+    "file": "src\\app\\(app)\\lives\\[id]\\edit\\page.tsx",
+    "title": "編輯直播間"
+  },
+  {
+    "file": "src\\app\\(app)\\lives\\[id]\\presenter\\page.tsx",
+    "title": "講師與 PPT 排版"
+  },
+  {
+    "file": "src\\app\\(app)\\lives\\[id]\\preview\\page.tsx",
+    "title": "直播預覽"
+  },
+  {
+    "file": "src\\app\\(app)\\messages\\deliveries\\page.tsx",
+    "title": "Email 寄送營運"
+  },
+  {
+    "file": "src\\app\\(app)\\messages\\templates\\page.tsx",
+    "title": "訊息模板"
+  },
+  {
+    "file": "src\\app\\(app)\\messages\\templates\\new\\page.tsx",
+    "title": "新增訊息模板"
+  },
+  {
+    "file": "src\\app\\(app)\\messages\\templates\\[id]\\edit\\page.tsx",
+    "title": "編輯訊息模板"
+  },
+  {
+    "file": "src\\app\\(app)\\messages\\templates\\[id]\\preview\\page.tsx",
+    "title": "訊息模板預覽"
+  },
+  {
+    "file": "src\\app\\(app)\\onboarding\\page.tsx",
+    "title": "商家上線導引"
+  },
+  {
+    "file": "src\\app\\(app)\\orders\\page.tsx",
+    "title": "訂單與履約"
+  },
+  {
+    "file": "src\\app\\(app)\\partner-pages\\page.tsx",
+    "title": "我的夥伴頁"
+  },
+  {
+    "file": "src\\app\\(app)\\partner-pages\\[id]\\edit\\page.tsx",
+    "title": "編輯夥伴頁"
+  },
+  {
+    "file": "src\\app\\(app)\\products\\page.tsx",
+    "title": "商品管理"
+  },
+  {
+    "file": "src\\app\\(app)\\products\\new\\page.tsx",
+    "title": "新增商品"
+  },
+  {
+    "file": "src\\app\\(app)\\products\\[id]\\edit\\page.tsx",
+    "title": "編輯商品"
+  },
+  {
+    "file": "src\\app\\(app)\\products\\[id]\\preview\\page.tsx",
+    "title": "商品預覽"
+  },
+  {
+    "file": "src\\app\\(app)\\projects\\page.tsx",
+    "title": "銷售專案"
+  },
+  {
+    "file": "src\\app\\(app)\\projects\\new\\page.tsx",
+    "title": "建立銷售專案"
+  },
+  {
+    "file": "src\\app\\(app)\\settings\\automations\\page.tsx",
+    "title": "自動化工作室"
+  },
+  {
+    "file": "src\\app\\(app)\\settings\\brand\\page.tsx",
+    "title": "品牌設定"
+  },
+  {
+    "file": "src\\app\\(app)\\settings\\features\\page.tsx",
+    "title": "功能模組管理"
+  },
+  {
+    "file": "src\\app\\(app)\\settings\\line\\page.tsx",
+    "title": "LINE 整合"
+  },
+  {
+    "file": "src\\app\\(app)\\settings\\security\\page.tsx",
+    "title": "安全設定"
+  },
+  {
+    "file": "src\\app\\(app)\\settings\\team\\page.tsx",
+    "title": "團隊與上下線"
+  },
+  {
+    "file": "src\\app\\(app)\\settings\\tracking\\page.tsx",
+    "title": "追蹤設定"
+  },
+  {
+    "file": "src\\app\\(app)\\support-cases\\page.tsx",
+    "title": "客服案件"
+  },
+  {
+    "file": "src\\app\\(app)\\team-templates\\page.tsx",
+    "title": "團隊展業"
+  },
+  {
+    "file": "src\\app\\(app)\\team-templates\\new\\page.tsx",
+    "title": "建立團隊原始頁"
+  },
+  {
+    "file": "src\\app\\(app)\\videos\\page.tsx",
+    "title": "影片庫"
+  },
+  {
+    "file": "src\\app\\(app)\\videos\\new\\page.tsx",
+    "title": "新增影片"
+  },
+  {
+    "file": "src\\app\\(app)\\videos\\[id]\\edit\\page.tsx",
+    "title": "編輯影片"
+  },
+  {
+    "file": "src\\app\\(app)\\videos\\[id]\\preview\\page.tsx",
+    "title": "影片預覽"
+  }
+]

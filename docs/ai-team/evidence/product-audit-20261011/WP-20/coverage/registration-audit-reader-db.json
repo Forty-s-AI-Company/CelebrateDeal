@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "stage": "complete",
+  "people": 50000,
+  "constraintsAndTriggersEnabled": true,
+  "setupMs": 44543,
+  "authoritativeMissingCaptureAudit": "PASS",
+  "publishMs": 965,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

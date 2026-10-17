@@ -1,0 +1,10 @@
+{
+  "revision": "sha256:59ef00ebf6917f47322bca115bb03f72425e3a832280eb3213b50ddaa09b8aef",
+  "files": [
+    "src/lib/live-metric-session.ts",
+    "src/lib/live-metric-session.test.ts",
+    "src/lib/live-metric-ingestion.ts",
+    "scripts/wp20-metric-persistence-disposable.mjs",
+    "prisma/migrations/20261014120000_live_metric_evidence/migration.sql"
+  ]
+}

@@ -1,0 +1,11 @@
+# Bounded pass and actual local HTTP job integration
+
+IN_PROGRESS; no deployed timer or final independent acceptance. Revision sha256:635774ef5891d0820974b9cf0dd9e5215f80c403872f5566fa125dbf3371e23f. DB143 expanded integration / migrations100 / targeted pass tests / lint / TypeScript / cleanup PASS.
+
+runMetricRegistrationPass accepts an injected authenticated transport and explicit scope, continues acknowledged cursors for at most5 pages by default (hard10), and enforces a60s pass deadline with cancellation. It validates receipt shape/counter consistency, rejects false coverage-complete claims, stops cursor cycles/no-progress and preserves the last acknowledged cursor on transport failure. A later full pass must restart at null; pass_complete never means complete data. It does not choose hosts, discover credentials or install a timer.
+
+Unit cases: two-page continuation preserving pending counts, transport failure resume cursor, cursor cycles/page cap, invalid counters/coverage and fake-timer deadline with aborted transport. Actual owned127.0.0.1 HTTP integration uses the real POST handler, real authentication checker with a build-time synthetic key, actual reconciliation/materialization and disposable DB. Three pages process5 captures, retain1 terminal gap, yield4 stable registration rows and coverage unknown. Unauthenticated POST401, private/no-store responses and cleanup PASS. No raw authorization values or identities stored in evidence.
+
+Excluded: Next server routing, remote TLS and deployed periodic scheduling. The local HTTP adapter is not a full Next app. Independent review of pass/transport/expanded Auth flow NOT_RUN. Durable collection coverage/report pipeline and lifecycle/lock-order findings remain incomplete.
+
+Scope: src/lib/live-metric-registration-pass.ts; src/lib/live-metric-registration-pass.test.ts; scripts/wp20-registration-job-disposable.mjs; scripts/wp20-metric-persistence-disposable.mjs; evidence/handoff/checkpoint. Root sole writer independent worktree; requested/effective ai-team-pro; route-pass.json recommendation, implementation observed unknown; depth0 no external dispatch automatic_spawn=false. Rollback only pass module/tests and owned integration helper/import/call. No push/deployment/production access.

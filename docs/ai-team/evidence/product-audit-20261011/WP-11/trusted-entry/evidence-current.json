@@ -1,0 +1,132 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\execution-current.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 94.563,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\checks-current\\browser.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db",
+      "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 18.391,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\checks-current\\db.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "http",
+      "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 1.671,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\checks-current\\http.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 7.813,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\checks-current\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "targeted",
+      "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 9.0,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\checks-current\\targeted.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.969,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\checks-current\\typecheck.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:58180fc4ceb136203ef71a331ef02aa4a1919fcecce5371d51d3a84a0bb8aa29",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "claude-opus-5-5",
+    "observed_model": "claude-opus-5-5",
+    "observed_effort": "unknown",
+    "scope": "WP11 approved local trusted-entry patch only; fixed loopback proof ingress with memory provider, not cloudflare_waf; real Next dev Chromium/Firefox and disposable DB. Redacted credential references explicitly described; no deployment or whole-WP acceptance",
+    "lineage": [
+      "review-initial.json",
+      "review-excerpt.json",
+      "review-current.json",
+      "review-followup.json"
+    ],
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-11\\trusted-entry\\review-current-receipt.json"
+  },
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "rate-limit module (checkRateLimit / client IP resolution)",
+      "area": "runtime provider path (memory / upstash_redis) client identity",
+      "issue": "Runtime rate-limit mode only works when the hosting adapter supplies `request.ip`. Running ordinary `next dev` or `next start` in runtime mode is unsupported. This is a documented residual risk, not part of the shipping configuration.",
+      "evidence": "The legacy `clientIp` fell back from `cf-connecting-ip` to `x-forwarded-for` to \"unknown\". Callers can set those headers themselves, and every caller without them shared one \"unknown\" bucket. The task says the patched path relies on the adapter's `request.ip` and that the tested local deployment uses the proof-backed `cloudflare_waf` provider.",
+      "impact": "If runtime mode is ever turned on where `request.ip` is missing, requests either fail closed (503) or share one bucket. Either way, access, voucher, referral and live-admission availability would suffer. This does not affect the tested cloudflare configuration.",
+      "recommended_fix": "Keep this documented as unsupported. Also add a startup or config guard that rejects the memory and upstash providers when the runtime cannot supply `request.ip`.",
+      "required_test": "Unit test: with the memory provider and no `request.ip`, check that `checkRateLimit` never reads `cf-connecting-ip` or `x-forwarded-for` and that its fail-closed or rejection behavior is deterministic.",
+      "confidence": 0.8,
+      "disposition": "confirmed"
+    },
+    {
+      "severity": "MINOR",
+      "file": "rate-limit module / edge (Cloudflare) configuration",
+      "area": "`cloudflare_waf` early return; proof header shared by the entry and live-chat paths",
+      "issue": "Under `cloudflare_waf`, `checkRateLimit` returns null with no checks inside the app. All enforcement, including separate per-key counting, therefore depends on edge rules. The proof header also needs the same injected value on the entry and live-chat paths when the edge injects one global value. Using different values requires path-specific edge injection.",
+      "evidence": "`if (provider === \"cloudflare_waf\") return null;`. The call sites use separate keys and limits: portal access preview at 60 and confirm at 30, voucher redeem at 60 and confirm at 30, referral entry at 60, and live-admission and live-admission-release at 120 each. The route comment says DELETE requests must have their own count so they can't use up the admission quota.",
+      "impact": "If the edge rules don't match each path, method and limit, the app enforces nothing. For example, a single shared WAF rule would let a flood of DELETE requests to live-admission use up the admission quota. A mismatched proof-header value would break either entry or live-chat requests.",
+      "recommended_fix": "In the deployment runbook, list the required WAF rules for each path and method, with limits matching the keys above. Also state the rule for injecting the proof header: one global value, or path-specific values.",
+      "required_test": "Deployment checklist and edge smoke test: confirm separate counting for POST and DELETE on live-admission, and confirm the proof header is accepted on both the entry and live-chat paths. This applies to cloud deployment, which stays unapproved and outside this local acceptance.",
+      "confidence": 0.7,
+      "disposition": "confirmed"
+    },
+    {
+      "severity": "NIT",
+      "file": "rate-limit tests",
+      "area": "provider-ordering test claim",
+      "issue": "The claim that a test covers provider ordering is kept as a residual and hasn't been independently verified here. The implementation order itself is visible in the code.",
+      "evidence": "The code checks `cloudflare_waf` first and returns early, then chooses `upstash_redis` or memory inside a try/catch that falls back to `serviceUnavailable()`.",
+      "impact": "This only affects how well regressions are caught. Runtime behavior is unaffected.",
+      "recommended_fix": "Add or point to a test that checks provider selection order and that provider errors fail closed.",
+      "required_test": "Parameterized test over each provider ID, including a provider that throws, checking that the result is null, 429 or 503 as expected.",
+      "confidence": 0.6,
+      "disposition": "confirmed"
+    }
+  ]
+}

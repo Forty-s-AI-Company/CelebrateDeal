@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "a11y", "revision": "sha256:f232a4fdee800192ab45c3f865947b309759a4f777bec62f48fa4bf8c4965ef5", "status": "PASS", "exit_code": 0, "duration_seconds": 51.843}

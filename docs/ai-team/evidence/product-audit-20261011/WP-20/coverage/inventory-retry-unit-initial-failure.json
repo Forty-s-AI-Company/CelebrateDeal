@@ -1,0 +1,1 @@
+{"status": "FAIL", "tests": 2, "reason": "beforeEach returned mockReset() mock function; Vitest invoked it as cleanup and it rejected", "fix": "Use braced beforeEach returning undefined; assertions and retry budget unchanged", "verifiedBy": "order-payment-deadlock-final-unit.json"}

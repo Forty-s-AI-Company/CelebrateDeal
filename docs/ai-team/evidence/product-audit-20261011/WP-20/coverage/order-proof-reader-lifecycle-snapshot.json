@@ -1,0 +1,6 @@
+{
+  "scripts/wp20-order-coverage-guard-probe.mjs": "4c7229b199a53bcb39e0d69edfc746ecbcfa1b6e48c99f1913ea9f50dfffbd2a",
+  "scripts/wp20-order-source-audit-probe.mjs": "9a0e6385b951af4dbef52d64ebf40239dd609686e346158c9d6f69366f7c4dd0",
+  "src/lib/live-metric-coverage-reader.ts": "dcf9f861e66cce8483546680d9644642d2803b7f22d0a5d8e091a8390234e2bf",
+  "prisma/migrations/20261015220000_live_metric_order_coverage_proof/migration.sql": "b6b4848ccf2786fd2b6c248e4d2d6439407f67708babfd985e34f34c118c9e14"
+}

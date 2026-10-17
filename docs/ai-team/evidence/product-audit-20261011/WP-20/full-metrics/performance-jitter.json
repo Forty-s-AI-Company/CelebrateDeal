@@ -1,0 +1,118 @@
+{
+  "runtime": {
+    "node": "v22.23.1",
+    "cpu": "Intel(R) Core(TM) i7-7700 CPU @ 3.60GHz"
+  },
+  "scope": "Synthetic arithmetic only; same exact rational reference before optimization; no DB or network",
+  "measurements": [
+    {
+      "name": "sequential_jitter",
+      "segments": 10000,
+      "recorded_before_ms": 131,
+      "reference_source": "hash_verified_historical_exact_reference",
+      "after_ms": 173,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 8996490
+      }
+    },
+    {
+      "name": "simultaneous_disjoint_jitter",
+      "segments": 10000,
+      "recorded_before_ms": 19013,
+      "reference_source": "hash_verified_historical_exact_reference",
+      "after_ms": 105,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 897
+      }
+    },
+    {
+      "name": "partially_overlapping_jitter",
+      "segments": 10000,
+      "recorded_before_ms": 18543,
+      "reference_source": "hash_verified_historical_exact_reference",
+      "after_ms": 99,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 530
+      }
+    },
+    {
+      "name": "scale_durations_1_to_5000",
+      "segments": 10000,
+      "reference_source": "independent_directed_rounding_oracle",
+      "after_ms": 488,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 3420
+      }
+    },
+    {
+      "name": "scale_durations_1_to_5600",
+      "segments": 10000,
+      "reference_source": "independent_directed_rounding_oracle",
+      "after_ms": 542,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 3526
+      }
+    },
+    {
+      "name": "epoch_week_spread_5000",
+      "segments": 10000,
+      "reference_source": "independent_directed_rounding_oracle",
+      "runs": 5,
+      "median_ms": 825,
+      "max_ms": 900,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 1700564001597
+      }
+    },
+    {
+      "name": "epoch_week_spread_5600",
+      "segments": 10000,
+      "reference_source": "independent_directed_rounding_oracle",
+      "runs": 5,
+      "median_ms": 720,
+      "max_ms": 880,
+      "equal": true,
+      "budget_ms": 2000,
+      "budget_pass": true,
+      "result": {
+        "status": "available",
+        "firstCompletedAtMs": 1700552003318
+      }
+    },
+    {
+      "name": "100_viewers_one_hour_72000_segments",
+      "segments": 72000,
+      "after_ms": 246,
+      "equal": true,
+      "budget_ms": 5000,
+      "budget_pass": true
+    }
+  ],
+  "random_cases": 200,
+  "mismatches": 0,
+  "status": "PASS"
+}

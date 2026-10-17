@@ -1,0 +1,98 @@
+{
+  "execution": {
+    "kind": "execution",
+    "source": "desktop_native",
+    "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+    "status": "COMPLETED",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\public-presentation-execution.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "public-presentation-unit",
+      "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "public-presentation-final-unit.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\public-presentation-unit-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "public-presentation-browser-a11y-dev",
+      "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "public-presentation-browser.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\public-presentation-browser-a11y-dev-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "public-presentation-preservation",
+      "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "public-presentation-preservation.json",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\public-presentation-preservation-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "public-presentation-typecheck",
+      "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "desktop_exec_session74944",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\public-presentation-typecheck-receipt.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "public-presentation-lint",
+      "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+      "status": "PASS",
+      "exit_code": 0,
+      "source_receipt": "desktop_exec_chunk060ce5",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\public-presentation-lint-receipt.json"
+    }
+  ],
+  "review": {
+    "kind": "review",
+    "source": "claude_cli",
+    "revision": "sha256:d3555aedcea28043390e41f99e6817f42825b91178b71e5ee7b219b22213a24c",
+    "status": "PASS",
+    "independent": true,
+    "role": "senior_review",
+    "model": "claude-sonnet-5-5",
+    "observed_model": "claude-sonnet-5-5",
+    "observed_effort": "unknown",
+    "provider_receipts": [
+      "public-presentation-review.json",
+      "public-presentation-fixed-review.json",
+      "public-presentation-status-review.json"
+    ],
+    "coverage": "All10current product/test files exact through immutable initial/full and two affected reviews. All5product files current, no content publication/approval inferred.",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-03\\public-presentation-review-qualification.json"
+  },
+  "findings": [
+    {
+      "severity": "NIT",
+      "file": "src/app/policies/[slug]/page.test.tsx",
+      "area": "it.each inherited key test, rejects.toThrow(\"NEXT_HTTP_ERROR_FALLBACK;404\")",
+      "issue": "The unit test asserts a Next.js internal error-message string for the 404, so it depends on how Next.js builds the `notFound()` error.",
+      "evidence": "`await expect(PolicyPage(...)).rejects.toThrow(\"NEXT_HTTP_ERROR_FALLBACK;404\")` matches the thrown error's message. Some Next versions put the `;404` part only in `error.digest`, and the message holds only the base code. The current 13 unit tests are reported as passing, so it works on the installed version.",
+      "impact": "A Next.js upgrade could break this test without any behaviour change. The real 404 is already covered by the e2e HTTP 404 assertion.",
+      "recommended_fix": "Assert on the digest instead: `rejects.toMatchObject({ digest: expect.stringContaining(\"404\") })`. Alternatively, use `unstable_rethrow` or `isNotFoundError` from Next if that fits the repo's conventions.",
+      "required_test": "Re-run the 6-case rerun (still pending) and the unit suite, which must still pass after any change.",
+      "confidence": 0.35,
+      "disposition": "unresolved",
+      "provider_receipt": "public-presentation-fixed-review.json"
+    }
+  ]
+}

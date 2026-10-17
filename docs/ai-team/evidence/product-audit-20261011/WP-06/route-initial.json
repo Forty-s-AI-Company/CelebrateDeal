@@ -1,0 +1,132 @@
+{
+  "status": "planned",
+  "execution": "recommendation_only",
+  "task_id": "product-audit-WP-06",
+  "signals": {
+    "task_type": "ui",
+    "complexity": "medium",
+    "risk": "low",
+    "risk_score": 0,
+    "engineering_profile": "large",
+    "large_workload": true,
+    "risk_categories": [
+      "ui_only"
+    ],
+    "important_findings": false,
+    "required_capabilities": [
+      "ux_ui"
+    ],
+    "task_type_floor": "low",
+    "complexity_requirement": "low",
+    "risk_requirement": "low",
+    "size_requirement": "medium",
+    "changed_files": [
+      "src/components/app-shell.tsx",
+      "src/components/app-shell.test.ts"
+    ],
+    "context_size": 10000,
+    "expected_duration": 90,
+    "code_surface_area": 4,
+    "production_impact": "low",
+    "security_impact": "low",
+    "data_integrity_impact": "low"
+  },
+  "task_type": "ui",
+  "difficulty": "medium",
+  "requested_team": "ai-team-pro",
+  "team": "ai-team-pro",
+  "escalated": false,
+  "selected_model": "sol",
+  "fallback_events": [],
+  "fallback_chain": [],
+  "limits": {
+    "max_agent_depth": 1,
+    "max_parallel_agents": 1,
+    "max_writers": 1,
+    "max_readonly_helpers": 1,
+    "max_dispatches_per_task": 4,
+    "max_attempts_per_model": 1,
+    "max_external_attempts": 2,
+    "automatic_spawn": false
+  },
+  "spawn_count": 0,
+  "review_plan": [
+    {
+      "role": "senior_review",
+      "required": true,
+      "fallback_events": [
+        {
+          "model": "sonnet",
+          "reason": "discovery_required"
+        }
+      ],
+      "status": "AGY_DISCOVERY_REQUIRED"
+    }
+  ],
+  "escalation_reasons": [],
+  "astra_reason": null,
+  "source_revision": "sha256:0465538b2f331ab69ed91b50d293070165f2c3f2420872766bae502ee1621829",
+  "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal",
+  "snapshot_files": [
+    "src/components/app-shell.tsx",
+    "src/components/app-shell.test.ts"
+  ],
+  "required_checks": [
+    "navigation-tests",
+    "navigation-browser-smoke"
+  ],
+  "requested": {
+    "model_key": "sol",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown",
+    "source": "not_executed"
+  },
+  "provider_availability": "AVAILABLE",
+  "provider_failure_category": null,
+  "review_scope_files": [
+    "src/components/app-shell.test.ts",
+    "src/components/app-shell.tsx"
+  ],
+  "role": "developer",
+  "model_key": "sol",
+  "model": "gpt-6.1-sol",
+  "provider": "native_agent",
+  "reasoning_effort": "high",
+  "effort_floor": "high",
+  "effort_reason": null,
+  "sandbox_mode": "workspace-write",
+  "candidate_findings_only": false,
+  "may_spawn": false,
+  "resolved": {
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "handoff": {
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "high",
+    "effort_floor": "high",
+    "effort_reason": null,
+    "sandbox_mode": "workspace-write",
+    "execution": "native_agent_handoff_only",
+    "candidate_findings_only": false,
+    "may_spawn": false
+  },
+  "target": "worker-deep",
+  "execution_requirement": {
+    "explicit_model": true,
+    "explicit_effort": true,
+    "verify_observed": true
+  },
+  "review_status": "AGY_DISCOVERY_REQUIRED",
+  "self_review": false,
+  "finding_escalation": null
+}

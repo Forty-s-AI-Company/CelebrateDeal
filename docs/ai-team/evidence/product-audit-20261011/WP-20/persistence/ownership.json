@@ -1,0 +1,13 @@
+{
+  "writer": "root",
+  "depth": 0,
+  "files": [
+    "prisma/schema.prisma",
+    "prisma/migrations/20261014120000_live_metric_evidence/migration.sql",
+    "scripts/wp20-metric-persistence-disposable.mjs"
+  ],
+  "automatic_spawn": false,
+  "authorization": "User explicit full M1/M2 approval, nonproduction synthetic only",
+  "review": "Independent critical Migration review required",
+  "rollback": "Before image for schema; new migration only adds metric tables/index; disposable teardown only. No production/down migration."
+}

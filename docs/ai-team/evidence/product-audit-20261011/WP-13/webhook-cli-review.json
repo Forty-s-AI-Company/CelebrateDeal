@@ -1,0 +1,210 @@
+{
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "effort": "unknown",
+    "source": "cli_terminal_model_usage"
+  },
+  "completed": false,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "finalModel": "claude-opus-5-5",
+  "review": {
+    "summary": "This review covers only the supplied code. The signature check is the only way into event persistence. The body is checked against the raw text using the tenant's own decrypted channel secret, and any error while decrypting falls back to 401. Revocation stays inside one tenant: the update matches on vendorId, and the LINE user ID is hashed together with vendorId. The update is a single conditional updateMany, so a repeated delivery has no further effect, and a concurrent commit cannot reverse an OAuth renewal that is already saved. A follow event is acknowledged but never restores permission. The `linkedAt <= occurredAt` condition stops a late redelivery from revoking a binding the user explicitly renewed afterwards. There are no schema changes and provider IDs are only stored as hashes.\n\nRemaining problems: in several cases a revocation is lost without any error while LINE still gets a success response or no retry is guaranteed. These are listed below; in each case the system keeps permission it should have revoked.\n\nKnown limitations I accept as residual risk, not defects:\n- A push that is already in flight when the unfollow arrives cannot be recalled. The send-time check reads `identity.revokedAt` and then pushes, so there is a small window where both can happen.\n- OAuth renewal sets `revokedAt=null` and `linkedAt=now`. The owner treats this as the explicit way to grant permission again, even though it does not check that the user is a friend of the account again. If that is wrong, it should come back as a scope proposal.\n\nNot checked because the code wasn't supplied:\n- Whether `verifyLineSignature` uses a constant-time comparison and rejects signatures of the wrong length.\n- Whether `lineUserIdHash(vendorId, userId)` produces exactly the same value as the OAuth flow's `lookupHash`. If they differ, every revocation silently matches no rows. Add a test that links through OAuth and then revokes through the webhook.\n\nNo findings here mean delivery, tests or acceptance of the whole WP are proven.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/line-webhook-events.ts",
+        "area": "event loop: `if (!event.success || event.data.timestamp > now.getTime()) continue;`",
+        "issue": "A genuine, correctly signed unfollow event whose provider timestamp is later than the server clock is skipped, yet the route still returns 200 `{ok:true}`. That permanently drops the revocation.",
+        "evidence": "The future-timestamp check is applied to every event before the follow/unfollow branch. Skipped events have no other effect and the function still returns `{status:'accepted'}`, which the route turns into a 200. LINE does not redeliver events it received a 2xx for. The timestamp comes from LINE's clock and `now` from the server's, so the server only has to be behind LINE by more than the delivery delay.",
+        "impact": "The system keeps permission after the user blocked or unfollowed. The identity row keeps `revokedAt=null` and the send-time check keeps letting pushes through, with no log, error or retry. A future timestamp on a signed body is not a sign of forgery, so dropping the event protects nothing and leaves permission in place.",
+        "recommended_fix": "Don't drop signed unfollow events because their timestamp is in the future. Use `occurredAt = new Date(Math.min(event.data.timestamp, now.getTime()))`, or allow a bounded skew and clamp. If you keep rejecting some timestamps, make the request fail (5xx) instead of acknowledging it.",
+        "required_test": "Send a signed unfollow with timestamp = now + 5s for an active identity with linkedAt < now. Expect the identity to be revoked (revokedAt <= now) and the response to be 200. Also check that the clamped value never lets a late redelivery revoke a binding renewed after the real event.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/line-webhook-events.ts",
+        "area": "updateMany where-clause `linkedAt: { lte: occurredAt }`",
+        "issue": "The replay guard compares LINE's event time with the server's `linkedAt`, which is set to `now` when the OAuth upsert commits, not when the user acted. An unfollow that happens shortly after or during an OAuth link can be dropped.",
+        "evidence": "The OAuth excerpt sets `linkedAt: now` and `revokedAt: null` at upsert time. That is after the profile was fetched and possibly after the user blocked the account. If the user unfollows at LINE time B and the upsert commits at server time C > B, then `linkedAt (C) > occurredAt (B)` and updateMany matches no rows. Clock skew between the server and LINE makes this window wider in the same direction.",
+        "impact": "A user who links and then blocks within the window (often seconds, for example declining right after an add-friend prompt) stays unrevoked and gets pushes. This is the same unsafe failure mode as above, but much less likely.",
+        "recommended_fix": "Accept this as a documented limitation, or narrow it: record linkedAt as the time the OAuth callback started (before fetching the profile), and/or treat an unfollow as covering a renewal if it arrives within a small tolerance after linkedAt. Any tolerance must still stop real late redeliveries from revoking explicit renewals made well after the event.",
+        "required_test": "Unit test: identity has linkedAt = T and an unfollow with timestamp T-200ms arrives. Write down the expected result explicitly. Also run a concurrency test where the OAuth upsert and the unfollow webhook interleave both ways, and check the final state matches the documented rule.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/webhooks/line/[vendorId]/route.ts",
+        "area": "account lookup `if (!account || account.status !== 'active') return 404`",
+        "issue": "Webhooks for an account that exists but isn't active are rejected before the signature check. Unfollows that happen while the account is inactive are never recorded.",
+        "evidence": "The status check returns 404 before the body is read or verified. When the account is set back to active, the send-time check only looks at `account.status` and `identity.revokedAt`, so users who unfollowed while it was inactive still look active.",
+        "impact": "After reactivation, pushes go to users who withdrew permission while the account was inactive. Whether LINE redelivers depends on its redelivery setting, which is off by default.",
+        "recommended_fix": "If the account's stored credentials can still be decrypted, verify the signature and apply unfollow-only revocation regardless of the account's status. Keep any other processing limited to active accounts.",
+        "required_test": "Set the account inactive, send a signed unfollow, set the account active again, and check that the identity has revokedAt set and its delivery is suppressed.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/webhooks/line/[vendorId]/route.ts",
+        "area": "catch block returning 503; per-event awaits in applyVerifiedLineWebhookEvents",
+        "issue": "If the database fails partway through a batch, the route returns 503 and relies entirely on LINE redelivering. LINE only does that if the per-channel 'Webhook redelivery' setting is turned on, and it is off by default.",
+        "evidence": "Events are applied one by one with separate updateMany calls and no transaction, outbox or local retry. One thrown error turns into a fixed 503. Partial application is safe because each update is idempotent, but nothing on our side keeps the events that weren't applied.",
+        "impact": "If redelivery is off, revocations in a batch that hit a transient database error are lost and permission stays in place.",
+        "recommended_fix": "Make it a deployment requirement that webhook redelivery is enabled for each channel, and check this during onboarding. Alternatively, keep failed unfollow events (hashed IDs only) for a local retry. You could also run the batch in one transaction so its outcome is all or nothing.",
+        "required_test": "Make the second updateMany fail in a two-unfollow batch. Expect 503, the first identity revoked, and a redelivery of the same body that revokes the second identity without changing the first identity's revokedAt.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "NIT",
+        "file": "src/app/api/webhooks/line/[vendorId]/route.ts",
+        "area": "`const rawBody = await request.text()` after content-length check",
+        "issue": "The size limit is only enforced after the whole body has been read into memory. A chunked request without content-length (which defaults to 0) bypasses the up-front check.",
+        "evidence": "`Number(request.headers.get('content-length') ?? '0')` lets a missing header through, and `Buffer.byteLength(rawBody)` runs only after `request.text()` has finished reading.",
+        "impact": "Anyone who knows an active vendorId can make the server buffer very large bodies before the signature check. This is a resource-exhaustion risk, not a permission bypass.",
+        "recommended_fix": "Read the body as a stream and stop once it exceeds MAX_WEBHOOK_BYTES, or reject requests that have no content-length header.",
+        "required_test": "Send a chunked request with no content-length and more than 1 MB of body. Expect a 413 without the whole body being held in memory.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "source": "process_and_schema",
+    "status": "REVIEW_COMPLETED",
+    "kind": "local_wrapper"
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "permission",
+        "security",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 8000,
+      "expected_duration": 30,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "high",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "accepted": false,
+  "normalized_status": "REVIEW_COMPLETED",
+  "execution_provider": "claude_cli",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  }
+}

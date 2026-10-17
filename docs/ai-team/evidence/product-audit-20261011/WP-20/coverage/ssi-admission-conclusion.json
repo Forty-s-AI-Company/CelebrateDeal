@@ -1,0 +1,16 @@
+{
+  "runner_sha256": "2f379b2642e61024fbfd3c4e4c545b9b87a555378616d5e3fcd8c72b19b98313",
+  "lint": "PASS",
+  "results": {
+    "plain_snapshot_barrier": 20,
+    "indexed_snapshot_barrier": 2,
+    "indexed_request_barrier_with_pre_snapshot_table_lock": 20
+  },
+  "accepted_as_product_fix": false,
+  "limitations": [
+    "Admission changes scheduling: request barrier is not snapshot barrier",
+    "Table lock serializes all writers; not appropriate to adopt without throughput and cross-path design",
+    "Original product20/20 gate still FAIL"
+  ],
+  "next": "Independent Critical adjudication of acceptance semantics and admission design before changing payment code; retain failed original gate"
+}

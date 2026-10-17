@@ -1,0 +1,37 @@
+{
+  "status": "FAIL",
+  "stage": "source-invalidation-matrix",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "matchedRegistrationAudit": {
+    "status": "PASS",
+    "matchedBothDirections": "PASS",
+    "stableDigest": "PASS",
+    "revokedSourceDetected": "PASS",
+    "privateProofPublish": "PASS",
+    "staleProofRejected": "PASS",
+    "coverage": "complete before revoke; unknown after revoke"
+  },
+  "registrationSourceConcurrency": {
+    "status": "PASS",
+    "submitted": 20,
+    "committed": 20,
+    "concurrentMs": 165,
+    "snapshotIsolation": "PASS",
+    "nextSnapshotSeesLateSource": "PASS",
+    "oldFormRowsRemainVisible": "PASS",
+    "reverseProjectionAudit": "PASS",
+    "bidirectionalSummary": "PASS",
+    "scope": "ReadCommitted concurrent calls; not synchronized Serializable payment acceptance"
+  },
+  "assertion": null,
+  "sqlState": "23514",
+  "guard": "metric report",
+  "errorCode": "P2010"
+}

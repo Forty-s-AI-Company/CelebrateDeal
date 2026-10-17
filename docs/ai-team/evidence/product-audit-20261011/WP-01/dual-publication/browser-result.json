@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "funnelPublished": true,
+      "projectStillDraft": true,
+      "publicStatus": 404,
+      "merchantReason": true,
+      "missingItemLinks": 4
+    },
+    {
+      "syntheticPublishedProject": true,
+      "publicStatus": 200
+    }
+  ],
+  "restored": true,
+  "stage": "published-fixture",
+  "publicStatus": 404,
+  "http404Matches": true,
+  "notFoundUi": true
+}

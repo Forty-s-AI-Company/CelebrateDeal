@@ -1,0 +1,14 @@
+{
+  "status": "FAIL",
+  "stage": "revision-snapshot-concurrency",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "roleSafeRevision": "PASS",
+  "errorCode": "ASSERTION_OR_RUNNER_ERROR"
+}

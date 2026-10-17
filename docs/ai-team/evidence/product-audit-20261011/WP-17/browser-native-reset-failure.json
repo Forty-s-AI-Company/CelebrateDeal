@@ -1,0 +1,42 @@
+{
+  "status": "FAIL",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic webinar creation and actual locally encoded WebM playback. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "a new merchant receives an owned draft and persistent creation feedback within three decisions",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(locator).toHaveValue(expected) failed\n\nLocator:  getByRole('form', { name: '一場即上線', exact: true }).getByRole('combobox', { name: '選擇影片', exact: true })\nExpected: \"cmvaeah1z000nvdbk16orp8b0\"\nReceived: \"\"\nTimeout:  30000ms\n\nCall log:\n  - Expect \"toHaveValue\" with timeout 30000ms\n  - waiting for getByRole('form', { name: '一場即上線', exact: true }).getByRole('combobox', { name: '選擇影片', exact: true })\n    63 × locator resolved to <select disabled required=\"\" name=\"videoId\" class=\"min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2\">…</select>\n       - unexpected value \"\""
+        }
+      ]
+    },
+    {
+      "title": "three-decision entry creates public pages, confirms a synthetic registration, plays real synthetic media, and blocks an unverified method",
+      "status": "unexpected",
+      "results": [
+        {
+          "status": "failed",
+          "error": "Error: expect(locator).toHaveValue(expected) failed\n\nLocator:  getByRole('form', { name: '一場即上線', exact: true }).getByRole('combobox', { name: '選擇影片', exact: true })\nExpected: \"cmvaeba93000gvde4wbsoj97r\"\nReceived: \"\"\nTimeout:  30000ms\n\nCall log:\n  - Expect \"toHaveValue\" with timeout 30000ms\n  - waiting for getByRole('form', { name: '一場即上線', exact: true }).getByRole('combobox', { name: '選擇影片', exact: true })\n    63 × locator resolved to <select disabled required=\"\" name=\"videoId\" class=\"min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2\">…</select>\n       - unexpected value \"\""
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T03:15:20.505Z",
+    "duration": 81993.528,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 1,
+  "migrations": 131
+}

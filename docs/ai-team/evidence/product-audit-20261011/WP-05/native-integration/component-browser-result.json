@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "engine": "chromium",
+      "persistentStatus": true,
+      "successFocus": true,
+      "staleQueryRemoved": true,
+      "unrelatedQueryPreserved": true,
+      "oneSyntheticPost": true,
+      "readonlyClosedView": true
+    },
+    {
+      "engine": "firefox",
+      "persistentStatus": true,
+      "successFocus": true,
+      "staleQueryRemoved": true,
+      "unrelatedQueryPreserved": true,
+      "oneSyntheticPost": true,
+      "readonlyClosedView": true
+    }
+  ],
+  "scope": "Actual React components; synthetic HTTP submission stub, no database, no CSS/AT certification"
+}

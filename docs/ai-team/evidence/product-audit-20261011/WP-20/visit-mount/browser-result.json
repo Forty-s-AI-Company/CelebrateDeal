@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "checks": [
+    "two_real_tabs_serialized",
+    "strict_mode_one_event_per_mount",
+    "unmount_cancels_retry"
+  ],
+  "cleanup": "PASS"
+}

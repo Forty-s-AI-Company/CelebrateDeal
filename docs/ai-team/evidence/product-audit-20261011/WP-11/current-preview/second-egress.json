@@ -1,0 +1,6 @@
+{
+  "mode": "one",
+  "http_status": 400,
+  "validation_reached": true,
+  "rate_limited": false
+}

@@ -1,0 +1,175 @@
+Read-only current WP05 Funnel form integration review. No tools/edits. Only actionable BLOCKER/MAJOR/MINOR/NIT. Generic renderer shown as exact git diff from user-authorized baseline efb8b7e9; webinar component and shared request helper full source. Unchanged visual renderer sections excluded. Verify native and JS form payloads, source/form identity, value retention, shared feedback, success navigation and avoid false success. API processing and draft/receipt storage separately reviewed. Real Chromium/Firefox generic and webinar root/step native+JS cases pass at current source. No email verification, publish gates or deadline conditions changed. No full-WP acceptance from this partial review.
+
+src/components/landing-pages/funnel-page-document-renderer.tsx
+diff --git a/src/components/landing-pages/funnel-page-document-renderer.tsx b/src/components/landing-pages/funnel-page-document-renderer.tsx
+index cb730eb6..bcb80717 100644
+--- a/src/components/landing-pages/funnel-page-document-renderer.tsx
++++ b/src/components/landing-pages/funnel-page-document-renderer.tsx
+@@ -1,8 +1,11 @@
+ "use client";
++import { useRegistrationRetry } from "@/components/registration-retry-context";
+ 
+ /* eslint-disable @next/next/no-img-element */
+ 
+-import { createContext, useContext, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
++import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
++import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
++import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
+ import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
+ import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
+ import { FunnelCommerceElement } from "./funnel-commerce-element";
+@@ -294,35 +297,43 @@ function HeadlineMarkup({ level, text }: { level: string; text: string }) {
+ }
+ 
+ function PublicSubmissionForm({ submission, label, requireConsent }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean }) {
+-  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+-  const [message, setMessage] = useState("");
++  const retry = useRegistrationRetry(submission.form.id);
++  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
++  const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
++  const submissionInFlight = useRef(false);
+   async function submit(event: FormEvent<HTMLFormElement>) {
+     event.preventDefault();
+-    if (status === "submitting" || status === "success") return;
++    // Lock synchronously: disabled is only applied after the next React render.
++    if (submissionInFlight.current) return;
++    submissionInFlight.current = true;
+     setStatus("submitting"); setMessage("");
+-    const values = new FormData(event.currentTarget);
+-    const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
+     try {
+-      const response = await fetch("/api/form-submissions", {
+-        method: "POST",
+-        headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
+-        body: JSON.stringify({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload }),
+-      });
++      const values = new FormData(event.currentTarget);
++      const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
++      const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload });
+       if (!response.ok) {
+-        setStatus("error"); setMessage(response.status === 429 ? "送出次數過多，請稍後再試。" : "資料未能送出，請檢查欄位後再試。");
++        submissionInFlight.current = false;
++        setStatus("error"); setMessage(formSubmissionErrorMessage(response.status));
+         return;
+       }
+-      setStatus("success"); setMessage(submission.form.successMessage);
++      setStatus("success"); setMessage(`${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
+       if (submission.redirectTo) window.location.assign(submission.redirectTo);
+     } catch {
+-      setStatus("error"); setMessage("連線中斷，資料尚未送出，請稍後再試。");
++      submissionInFlight.current = false;
++      setStatus("error"); setMessage(formSubmissionErrorMessage());
+     }
+   }
+-  return <form aria-label={label} onSubmit={submit} className="space-y-4">
+-    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
++  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting"} onSubmit={submit} className="space-y-4">
++    <input type="hidden" name="formId" value={submission.form.id} />
++    <input type="hidden" name="landingPageId" value={submission.landingPageId ?? ""} />
++    <input type="hidden" name="funnelStepId" value={submission.funnelStepId ?? ""} />
++    <input type="hidden" name="liveId" value={submission.liveId ?? ""} />
++    <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
++    {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
++    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
+     {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={status === "submitting" || status === "success"} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
+     <button type="submit" disabled={status === "submitting" || status === "success"} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "submitting" ? "送出中…" : status === "success" ? "已送出" : submission.form.submitLabel}</button>
+-    {message ? <p role={status === "error" ? "alert" : "status"} className={status === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>{message}</p> : null}
++    <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
+   </form>;
+ }
+ 
+
+
+src/components/landing-pages/funnel-webinar-experience.tsx
+"use client";
+import { useRegistrationRetry } from "@/components/registration-retry-context";
+import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+
+import { useEffect, useState } from "react";
+import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
+import { getFunnelWebinarState } from "@/lib/funnel-webinar";
+import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
+import type { FunnelStepPages } from "@/lib/funnel-step-pages";
+
+export type WebinarExperienceResource = {
+  live: { id: string; slug: string; videoId: string; videoTitle: string };
+  form: { id: string; fields: Array<{ key: string; label: string; type?: string; required?: boolean }>; submitLabel: string; successMessage: string };
+};
+
+function funnelSourceFields(source: { landingPageId: string; stepId: string } | undefined) {
+  return { landingPageId: source?.landingPageId ?? "", stepId: source?.stepId ?? "" };
+}
+
+/** Preview and public pages share the same document and state rendering path. */
+export function FunnelWebinarExperience({ state, stepId, slug, resource, preview = false, viewport, funnelSource }: {
+  state: FunnelStepPages; stepId: string; slug: string; resource?: WebinarExperienceResource;
+  preview?: boolean; viewport?: "desktop" | "mobile"; funnelSource?: { landingPageId: string; stepId: string };
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  const step = state.flow.steps.find((item) => item.id === stepId);
+  const page = state.pages[stepId];
+  if (!step || !page) return <p role="alert">找不到 Webinar 頁面。</p>;
+  // Legacy or tampered published snapshots must not bypass the Live admission
+  // boundary through the general-purpose video's raw URL renderer.
+  if (step.type === "webinar_broadcast_page" && hasDirectWebinarVideo(state)) return <p role="alert" className="rounded-xl border border-amber-200 p-4">播放頁含有直接影片節點。請在編輯器移除該節點，並於頁面設定綁定活動與授權來源影片。</p>;
+  const status = getFunnelWebinarState(state.flow.webinar, { liveId: resource?.live.id, formId: resource?.form.id }, now);
+  const thankYou = state.flow.steps.find((item) => item.type === "webinar_thank_you_page");
+  const broadcast = state.flow.steps.find((item) => item.type === "webinar_broadcast_page");
+  const path = (value: string) => `/lp/${encodeURIComponent(slug)}/${encodeURIComponent(value)}`;
+  const ready = resource && status.status !== "missing" && status.status !== "expired";
+  const start = state.flow.webinar?.startsAt;
+  const source = funnelSourceFields(funnelSource);
+  return <div className="mx-auto w-full max-w-5xl p-4" data-webinar-state={status.status}>
+    <PublicFunnelDocument document={{ ...page, flow: { ...state.flow, domain: slug } }} viewport={viewport} />
+    {!step.isSystem ? <section className="mt-5 rounded-xl border border-slate-200 p-5">
+      <p role={status.status === "missing" ? "alert" : "status"}>{status.message}</p>
+      {start ? <p className="mt-2 text-sm">開始時間：<time dateTime={start}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: state.flow.webinar?.timezone }).format(new Date(start))}</time> · {state.flow.webinar?.timezone}</p> : null}
+      {step.type === "webinar_registration_page" && ready && thankYou ? <WebinarRegistrationForm resource={resource} source={source} redirectTo={path(thankYou.path)} preview={preview} /> : null}
+      {step.type === "webinar_thank_you_page" && ready && broadcast ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={path(broadcast.path)}>查看播放／重播頁</a> : null}
+      {step.type === "webinar_broadcast_page" && ready && (status.status === "live" || status.status === "replay") ? <a className="mt-4 inline-block rounded-lg bg-blue-700 p-3 text-white" href={`${path(step.path)}/play`}>前往授權播放：{resource.live.videoTitle}</a> : null}
+      {status.status === "missing" ? <p className="mt-2 text-sm">{preview ? "請開啟頁面設定，選擇報名表、活動與可播放來源影片，並補齊排程後儲存。" : "活動設定尚未完成，請聯絡活動主辦方確認資源與排程。"}</p> : null}
+    </section> : null}
+  </div>;
+}
+
+function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
+  resource: WebinarExperienceResource; source: ReturnType<typeof funnelSourceFields>; redirectTo: string; preview: boolean;
+}) {
+  const retry = useRegistrationRetry(resource.form.id);
+  return <form method="post" action="/api/form-submissions" className="mt-4 grid gap-3" onSubmit={preview ? (event) => event.preventDefault() : undefined}>
+        {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
+        <input type="hidden" name="formId" value={resource.form.id} />
+        <input type="hidden" name="liveId" value={resource.live.id} />
+        <input type="hidden" name="landingPageId" value={source.landingPageId} />
+        <input type="hidden" name="funnelStepId" value={source.stepId} />
+        <input type="hidden" name="redirectTo" value={redirectTo} />
+        {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
+        <RegistrationSubmissionFeedback pending={false} errorMessage={retry?.message ?? ""} />
+        <button disabled={preview} className="min-h-11 rounded-lg bg-blue-700 px-4 text-white">{preview ? "預覽模式，不送出報名" : resource.form.submitLabel}</button>
+        <p className="text-sm text-slate-600">送出後請至 Email 完成確認，才會列入正式名單。</p>
+      </form>;
+}
+
+
+src/lib/registration-submission-client.ts
+/** Shared browser transport: keep attribution payloads intact and never expose server errors. */
+export function postRegistrationSubmission(body: Record<string, unknown>): Promise<Response> {
+  return fetch("/api/form-submissions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function formSubmissionErrorMessage(status?: number) {
+  if (status === 400) return "請確認必填欄位與資料格式後再送出。";
+  if (status === 403) return "這次送出未通過安全檢查，請重新整理頁面後再試。";
+  if (status === 429) return "送出次數太頻繁，請稍候一分鐘再試。";
+  if (status === 404 || status === 503) return "這張表單目前無法接收資料，請稍後再試。";
+  // 已收到 HTTP 回應時，不把伺服器拒絕或故障誤指為網路問題。
+  if (status !== undefined) return "資料暫時無法送出；內容仍保留，請稍後再試。";
+  return "送出失敗；內容仍保留，請檢查網路後再試。";
+}
+
+export const FORM_SUBMISSION_VERIFICATION_MESSAGE = "請到 Email 開啟確認連結；完成確認後才會列入正式名單。";

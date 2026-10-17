@@ -1,0 +1,562 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "report lease service isolates claim ownership and aggregate completion",
+      "status": "PASS"
+    },
+    {
+      "name": "lease compare-and-delete preserves renewed and foreign admissions",
+      "status": "PASS"
+    },
+    {
+      "name": "authorization callback and interval append share one real transaction",
+      "status": "PASS"
+    },
+    {
+      "name": "authorization denial rolls back callback writes and appends nothing",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid callback identity rolls back prior callback writes",
+      "status": "PASS"
+    },
+    {
+      "name": "blacklist committed on another connection after identity resolution prevents append",
+      "status": "PASS"
+    },
+    {
+      "name": "identity changing during locked revalidation cannot append",
+      "status": "PASS"
+    },
+    {
+      "name": "close seals a complete delivered sequence and exact retries preserve the close timestamp",
+      "status": "PASS"
+    },
+    {
+      "name": "pending close allows missing sequences but cannot claim delivery completion early",
+      "status": "PASS"
+    },
+    {
+      "name": "declared final sequence cannot grow and a batch beyond it rolls back atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "close refuses another tenant or registration and permits an explicit empty stream",
+      "status": "PASS"
+    },
+    {
+      "name": "expired metric sessions can acknowledge stored history but cannot append",
+      "status": "PASS"
+    },
+    {
+      "name": "racing append and close never skip or duplicate the final event",
+      "status": "PASS"
+    },
+    {
+      "name": "released admission cannot close or read historical delivery receipts",
+      "status": "PASS"
+    },
+    {
+      "name": "a changed version after lock acquisition aborts interval ingestion",
+      "status": "PASS"
+    },
+    {
+      "name": "expired pending close becomes terminal unknown and exact retries remain idempotent",
+      "status": "PASS"
+    },
+    {
+      "name": "unavailable current content terminates pending old delivery without fabricating completion",
+      "status": "PASS"
+    },
+    {
+      "name": "resolver infrastructure failure never turns missing evidence into a terminal receipt",
+      "status": "PASS"
+    },
+    {
+      "name": "append expiry and historical close remain exact in UTC",
+      "status": "PASS"
+    },
+    {
+      "name": "append expiry and historical close remain exact in America/Los_Angeles",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent session issuance and replay return one stable server-anchored session",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance rejects other tenant version and forged identity scope",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance refuses disabled collection without enabling it",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance refuses revoked verification and expired provisioning",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance creates verified registration but rolls it back on revalidation denial",
+      "status": "PASS"
+    },
+    {
+      "name": "a different proven browser permits issuance without rewriting first registration attribution",
+      "status": "PASS"
+    },
+    {
+      "name": "session issuance rejects identity drift after locks",
+      "status": "PASS"
+    },
+    {
+      "name": "session lifetime cannot exceed version or active admission",
+      "status": "PASS"
+    },
+    {
+      "name": "session replay cannot exceed a shortened server lifetime",
+      "status": "PASS"
+    },
+    {
+      "name": "issued sessions accept ingestion and closed keys cannot restart",
+      "status": "PASS"
+    },
+    {
+      "name": "admission open-session quota rejects N plus one while preserving idempotent retries",
+      "status": "PASS"
+    },
+    {
+      "name": "admission lifetime session quota also bounds already-closed session history",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy verification timestamps normalize SQL microseconds to the schema millisecond precision",
+      "status": "PASS"
+    },
+    {
+      "name": "registration lifetime quota survives renewal of the admission credential",
+      "status": "PASS"
+    },
+    {
+      "name": "actual issuance locks allow concurrent foreign-key-style key-share reads",
+      "status": "PASS"
+    },
+    {
+      "name": "issuance transaction timeout under a second backend lock is retryable and leaves no rows",
+      "status": "PASS"
+    },
+    {
+      "name": "HTTP context resolver chooses an enabled matching live content version inside issuance",
+      "status": "PASS"
+    },
+    {
+      "name": "HTTP interval ingestion accepts the current content version with server-bound time",
+      "status": "PASS"
+    },
+    {
+      "name": "issuance rolls back when runtime context changes before final authorization",
+      "status": "PASS"
+    },
+    {
+      "name": "canonical runtime selects replay independently of browser input",
+      "status": "PASS"
+    },
+    {
+      "name": "waiting and unavailable runtimes refuse metric sessions",
+      "status": "PASS"
+    },
+    {
+      "name": "disabled version is neither enabled nor bypassed by the context resolver",
+      "status": "PASS"
+    },
+    {
+      "name": "same video ID with replaced content cannot reuse the old fingerprint",
+      "status": "PASS"
+    },
+    {
+      "name": "version duration must agree with current stored video configuration",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service persists and acknowledges an exact replay",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service rejects conflicting retry payload",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service refuses another tenant or another registration",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion service accepts a replay prefix and new suffix atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent ingestion retries append once and acknowledge once",
+      "status": "PASS"
+    },
+    {
+      "name": "ingestion batch rejects gaps without partial persistence",
+      "status": "PASS"
+    },
+    {
+      "name": "different ingestion sessions on one version commit without upgrading its revision lock",
+      "status": "PASS"
+    },
+    {
+      "name": "released admission cannot replay but historical service evidence survives",
+      "status": "PASS"
+    },
+    {
+      "name": "database guard rejection becomes a typed ingestion error",
+      "status": "PASS"
+    },
+    {
+      "name": "visit facts count revisits in selected windows and invalidate overlapping reports",
+      "status": "PASS"
+    },
+    {
+      "name": "visit insertion and report finish cannot leave stale ready output in either lock order",
+      "status": "PASS"
+    },
+    {
+      "name": "complete visit collection commits once and final-write failure rolls back new identity",
+      "status": "PASS"
+    },
+    {
+      "name": "visitor provisioning persists identity, reuses proof and rejects disabled or deleted scopes",
+      "status": "PASS"
+    },
+    {
+      "name": "authentic expired visitor proof recovers the same persisted identity in nonUTC sessions",
+      "status": "PASS"
+    },
+    {
+      "name": "server visit writer serializes retries and preserves the original timestamp",
+      "status": "PASS"
+    },
+    {
+      "name": "visit writer visitor lock does not block unrelated FK inserts",
+      "status": "PASS"
+    },
+    {
+      "name": "closed collection replays existing receipts but never creates or resurrects events",
+      "status": "PASS"
+    },
+    {
+      "name": "server visit precision agrees with rounded visitor timestamps at submillisecond boundaries",
+      "status": "PASS"
+    },
+    {
+      "name": "bulk visit deletion invalidates overlapping reports within a bounded statement",
+      "status": "PASS"
+    },
+    {
+      "name": "bounded visit cleanup serializes with writer without deleting outside cutoff",
+      "status": "PASS"
+    },
+    {
+      "name": "visit loss provenance survives visitor erasure atomically without retaining visitor identity",
+      "status": "PASS"
+    },
+    {
+      "name": "all metric tables retain default-deny RLS",
+      "status": "PASS"
+    },
+    {
+      "name": "ordinary database role cannot read tables or execute trigger functions",
+      "status": "PASS"
+    },
+    {
+      "name": "RLS still denies rows after an accidental table grant",
+      "status": "PASS"
+    },
+    {
+      "name": "valid interval preserves structural revision",
+      "status": "PASS"
+    },
+    {
+      "name": "collection defaults disabled",
+      "status": "PASS"
+    },
+    {
+      "name": "disabled version cannot collect browser visits",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant version/live binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant video binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-version visitor binding rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "unverified submission cannot be linked",
+      "status": "PASS"
+    },
+    {
+      "name": "wrong verified timestamp rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant admission rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-version interval rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "same session and sequence cannot duplicate",
+      "status": "PASS"
+    },
+    {
+      "name": "negative sequence",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid payload hash",
+      "status": "PASS"
+    },
+    {
+      "name": "negative media",
+      "status": "PASS"
+    },
+    {
+      "name": "past content duration",
+      "status": "PASS"
+    },
+    {
+      "name": "seek jump",
+      "status": "PASS"
+    },
+    {
+      "name": "oversized wall interval",
+      "status": "PASS"
+    },
+    {
+      "name": "future exposure",
+      "status": "PASS"
+    },
+    {
+      "name": "sequence gaps cannot be stored",
+      "status": "PASS"
+    },
+    {
+      "name": "new sequence cannot repeat an overlapping wall interval",
+      "status": "PASS"
+    },
+    {
+      "name": "complete session must declare its final contiguous sequence",
+      "status": "PASS"
+    },
+    {
+      "name": "intervals are append-only",
+      "status": "PASS"
+    },
+    {
+      "name": "version identity is immutable",
+      "status": "PASS"
+    },
+    {
+      "name": "evidence cannot move scopes",
+      "status": "PASS"
+    },
+    {
+      "name": "session progress cannot be forged without evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "new session cannot claim preexisting progress",
+      "status": "PASS"
+    },
+    {
+      "name": "session completion requires an explicit close",
+      "status": "PASS"
+    },
+    {
+      "name": "session admission identity cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "in-flight verification revocation blocks and rejects interval insertion",
+      "status": "PASS"
+    },
+    {
+      "name": "in-flight admission revocation blocks and rejects interval insertion",
+      "status": "PASS"
+    },
+    {
+      "name": "in-flight video revocation blocks and rejects interval insertion",
+      "status": "PASS"
+    },
+    {
+      "name": "expired admission cannot supply viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "backdated receipt cannot bypass expired admission",
+      "status": "PASS"
+    },
+    {
+      "name": "new session cannot start already expired",
+      "status": "PASS"
+    },
+    {
+      "name": "changed live video rejects old-version evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "revoked verification cannot supply viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "queued report stores its exact input revision",
+      "status": "PASS"
+    },
+    {
+      "name": "queued report cannot acquire reverse-order locks through raw updates",
+      "status": "PASS"
+    },
+    {
+      "name": "report cannot be ready without a result",
+      "status": "PASS"
+    },
+    {
+      "name": "report cannot run without a lease",
+      "status": "PASS"
+    },
+    {
+      "name": "source changes invalidate report and its lease",
+      "status": "PASS"
+    },
+    {
+      "name": "stale report cannot be resurrected as ready",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent duplicate sequence stores exactly one row",
+      "status": "PASS"
+    },
+    {
+      "name": "disabled collection rejects new intervals",
+      "status": "PASS"
+    },
+    {
+      "name": "closed session rejects new intervals",
+      "status": "PASS"
+    },
+    {
+      "name": "final sequence cannot change after it is declared",
+      "status": "PASS"
+    },
+    {
+      "name": "closed metric session cannot be reopened",
+      "status": "PASS"
+    },
+    {
+      "name": "individual deletion cannot invalidate a completed session",
+      "status": "PASS"
+    },
+    {
+      "name": "current report claim has one winner under concurrency",
+      "status": "PASS"
+    },
+    {
+      "name": "only the active report worker can finalize",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent ingestion and report work preserve current revision without deadlock",
+      "status": "PASS"
+    },
+    {
+      "name": "closed-window report finishes while later viewing continues",
+      "status": "PASS"
+    },
+    {
+      "name": "raw report claim is rejected even with a valid lease",
+      "status": "PASS"
+    },
+    {
+      "name": "expired worker leases recover and stop after five attempts",
+      "status": "PASS"
+    },
+    {
+      "name": "registration verification identity cannot be rewritten",
+      "status": "PASS"
+    },
+    {
+      "name": "normal admission release preserves historical viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "released admission cannot append viewing evidence",
+      "status": "PASS"
+    },
+    {
+      "name": "deleting a live preserves the other tenant and removes metric children",
+      "status": "PASS"
+    },
+    {
+      "name": "deleting a vendor preserves the other tenant",
+      "status": "PASS"
+    },
+    {
+      "name": "deleting a version preserves the other tenant",
+      "status": "PASS"
+    },
+    {
+      "name": "session and receipt lifetime remain valid under Asia/Taipei",
+      "status": "PASS"
+    },
+    {
+      "name": "report windows and worker expiry remain exact in UTC",
+      "status": "PASS"
+    },
+    {
+      "name": "report windows and worker expiry remain exact in Asia/Taipei",
+      "status": "PASS"
+    },
+    {
+      "name": "repeatable-read metric writes fail closed before stale snapshots are accepted",
+      "status": "PASS"
+    },
+    {
+      "name": "metric guard functions pin UTC and source lookup indexes exist",
+      "status": "PASS"
+    },
+    {
+      "name": "scoped DDL rollback preserves existing product tables",
+      "status": "PASS"
+    }
+  ],
+  "loadMetrics": null,
+  "indexMetrics": null,
+  "visitDeletionMetrics": {
+    "rows": 10000,
+    "elapsedMs": 56
+  },
+  "passed": 134,
+  "migration": {
+    "status": "PASS",
+    "count": 99,
+    "failure": {
+      "category": "none",
+      "errorCode": null,
+      "rootCauseConfirmed": false
+    }
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Owned loopback disposable PostgreSQL, synthetic data, no raw output or source dotenv files"
+}

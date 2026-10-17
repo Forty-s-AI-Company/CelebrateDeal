@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "job-adapter-lint", "revision": "sha256:bf99e5b069caf1e4808142824008aff600e6441c574e262ddebcf638f7a65ad8", "status": "PASS", "exit_code": 0, "duration_seconds": 5.234}

@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "postgresql", "revision": "sha256:908e6c167031285a1c61dd45aa0704053211d042417f50c34ca776196b067584", "status": "PASS", "exit_code": 0, "duration_seconds": 4.453}

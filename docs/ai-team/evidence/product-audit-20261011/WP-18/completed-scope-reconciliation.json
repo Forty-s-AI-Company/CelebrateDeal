@@ -1,0 +1,10 @@
+{
+  "originalAuditReadOnly": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\reviews\\2026-10-11-product-audit-consolidated.md",
+  "originalAuditSha256": "4286d38f36f33ad11b0202165eee3def61550756d5cc1cb4a6ae1e2237c14662",
+  "authoritativeRequirements": [
+    "Original audit WP18:checkout_incomplete plus3one-click followup templates; sandbox queue Email/LINE; dedup/unsubscribe; checkout event only, no price/idempotency mutations",
+    "Goal Plan WP18 acceptance:pending->paid stops;dedup/unsubscribe/replay/delay;LINE enqueue if sandbox capability absent;checkout E2E/axe;independent review;WP04 dependency"
+  ],
+  "scopeCorrection": "Earlier handoff added automatic repair of observations never persisted after best-effort checkout failure. Original audit/Goal Plan do not require that new reconciliation feature. Retain best-effort capture as an operational limitation; do not expand it into a new completion gate under the explicit user instruction to finish original20WPs without underlying wiring/verification expansion. All original requirements retained.",
+  "next": "Original trigger activation, recipe flows, bounded Sandbox/enqueue and required E2E/axe/acceptance only."
+}

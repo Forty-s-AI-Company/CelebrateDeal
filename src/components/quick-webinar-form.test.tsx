@@ -1,0 +1,56 @@
+// @vitest-environment happy-dom
+import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot } from "react-dom/client";
+import { act } from "react";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("@/app/actions/quick-webinar-actions", () => ({ createQuickWebinarAction: vi.fn() }));
+import { QuickWebinarForm } from "./quick-webinar-form";
+
+describe("quick webinar entry", () => {
+  it("has only video/time/optional-title decisions and states publication prerequisites", () => {
+    const html=renderToStaticMarkup(<QuickWebinarForm videos={[{id:"video",title:"合成影片"}]} timeZone="Asia/Taipei" csrfToken="synthetic" requestId="synthetic-request" />);
+    expect(html).toContain('aria-label="一場即上線"');
+    expect(html.match(/<select\b/g)).toHaveLength(1);
+    expect(html.match(/<input(?![^>]*type="hidden")/g)).toHaveLength(2);
+    expect(html).toContain('name="videoId"');expect(html).toContain('name="startsAtLocal"');expect(html).toContain('name="title"');
+    expect(html).toContain("Asia/Taipei");expect(html).toContain("已驗證付款方式");expect(html).toContain("保留草稿並列出缺項");
+    expect(html).not.toContain("已發布報名");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toMatch(/<select[^>]*disabled/u);
+    expect(html).toMatch(/<input[^>]*type="datetime-local"[^>]*disabled/u);
+    expect(html).toMatch(/<button[^>]*disabled/u);
+  });
+  it("offers the real video library and disables creation with no supported media", () => {
+    const html=renderToStaticMarkup(<QuickWebinarForm videos={[]} timeZone="Asia/Taipei" csrfToken="synthetic" requestId="synthetic-request" />);
+    expect(html).toContain('href="/videos"');expect(html).toMatch(/<button[^>]*disabled/u);
+  });
+  it("keeps the same request identity when layout revalidation sends new server props", async () => {
+    const props = { videos: [{ id: "video", title: "合成影片" }], timeZone: "Asia/Taipei", csrfToken: "synthetic" };
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");const root = createRoot(container);
+    try {
+      await act(async () => root.render(<QuickWebinarForm {...props} requestId="original-request" />));
+      expect(container.querySelector("select")!.disabled).toBe(false);
+      await act(async () => root.render(<QuickWebinarForm {...props} requestId="new-server-render" />));
+      expect((container.querySelector('input[name="requestId"]') as HTMLInputElement).value).toBe("original-request");
+    } finally { await act(async () => root.unmount());vi.unstubAllGlobals(); }
+  });
+  it("preserves the selected video through the native reset used by React action completion",async()=>{
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
+    const container=document.createElement("div"),root=createRoot(container);
+    try {
+      await act(async()=>root.render(<QuickWebinarForm videos={[{id:"video",title:"合成影片"}]} timeZone="Asia/Taipei" csrfToken="synthetic" requestId="synthetic-request"/>));
+      const select=container.querySelector("select")!;
+      await act(async()=>{select.value="video";select.dispatchEvent(new Event("change",{bubbles:true}));});
+      expect(select.value).toBe("video");
+      const form=container.querySelector("form")!;
+      // happy-dom resets controls before dispatching reset. Model the browser's
+      // cancelable event first; the real action/reset sequence is covered by E2E.
+      const reset=new Event("reset",{bubbles:true,cancelable:true});
+      await act(async()=>{if(form.dispatchEvent(reset))form.reset();});
+      expect(reset.defaultPrevented).toBe(true);
+      expect(select.value).toBe("video");
+      expect((container.querySelector('input[name="requestId"]') as HTMLInputElement).value).toBe("synthetic-request");
+    } finally {await act(async()=>root.unmount());vi.unstubAllGlobals();}
+  });
+});

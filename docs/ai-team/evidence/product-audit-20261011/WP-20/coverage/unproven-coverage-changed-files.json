@@ -1,0 +1,23 @@
+{
+  "scope": "Incremental source trust-boundary fix, not full Goal diff",
+  "files": {
+    "src/lib/live-metric-coverage-reader.ts": "cabfd232d0ae217a85dec0df75a121a74c87f68a6daf47f6a5d274fafb0be12c",
+    "src/lib/live-metric-coverage-reader.test.ts": "2b419bcbcd19d7c79a261804e5662786dcb78e2bf4e53511d9892dbcb4c96675",
+    "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql": "4d2523a2a88a351e3161fa72707b3b61b54839fe1529febc17b3bed3b9d406a0",
+    "scripts/wp20-unproven-coverage-disposable.mjs": "80fc183064d9efd41322938888cc6874f42d215755ffd65f277b9752cd0fd0a5",
+    "src/lib/live-metric-coverage.test.ts": "3a545866256b4c15180a8b83ed2594f92d2c8508f429dbbc4813129b557cdd5b",
+    "src/lib/live-metric-report-snapshot.test.ts": "f98d191732d086040e6d60b3b368b7552851ab442aec4c2364a738808ce8f7e9",
+    "src/lib/live-metric-snapshot-input.test.ts": "eeeb7d2eec12e2ef32d2610642aeb79784c632f7ed7524a40376918daffa5224",
+    "src/lib/live-metric-report-job.test.ts": "6f11f2313a289d279c8461365f63b884c14c7695b143cc1af883fbbe4d33425c",
+    "src/lib/live-metric-registration-coverage.test.ts": "e19b38ae1c3b0e3e893b4e724fea0871e1623d126facf4680887cad08e7f1656",
+    "src/lib/live-metric-order-coverage.test.ts": "2ababe347d7025a98720d97eae280185457dafb70b1763afa1934c4c3eb09414",
+    "docs/launch/wp20-unproven-coverage.md": "830f1869265c2925a6983c913b0e630929a1af7a96ebd15cebb8e6865ba7b488",
+    ".ai-team/reports/wp20-unproven-coverage-review.ps1": "9e1a0f809cbdab6b6f1875e2c7b2c348e9e190970cc35419d4d3e3a81b4f5107",
+    ".ai-team/reports/wp20-unproven-coverage-checkpoint.py": "1309a6e572efef5d7fdc90f81f21c6dffc2d45aaf42c788a5f7bfdfffeb40dff",
+    "docs/launch/product-audit-20261012-handoff.md": "7d38fd9f045dec6c0d4cc10f7057131dc6f8af5d6cef0de2587bfa3f9a205373",
+    "docs/launch/product-audit-20261011-progress.md": "9955c070861b349f37e9459ae056fc04b50b63a9ec07e735878d81f18e6abf3b",
+    "docs/launch/wp20-coverage-producer-contract.md": "257dfb6f05123f6a99174d9f03412994d369762c93c2756f1d2ca4b011eaddb1",
+    ".ai-team/state/goal-state.json": "04123b38fb791b02e0f19db7976ddc3feaedd04be343deab5469c267e49f22f8",
+    ".ai-team/logs/goal-progress.md": "2685cff25248645e78ebb7ced8e5c4aca5624b15c6a9b96a65d960d4642b22dc"
+  }
+}

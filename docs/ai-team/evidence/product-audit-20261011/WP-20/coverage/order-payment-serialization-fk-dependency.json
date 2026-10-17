@@ -1,0 +1,13 @@
+{
+  "status": "DEPENDENCY_LOCATED_NOT_REVIEW_CLOSED",
+  "file": "prisma/migrations/20260808110000_g7_04_commerce_orders/migration.sql",
+  "sha256": "e5dda497cee70bf0bca99fa78eccda5fde5ffb8324892dde919841b10e8eab3e",
+  "definition": [
+    {
+      "line": 270,
+      "sql": "ADD CONSTRAINT \"CommerceOrder_primaryPayment_tenant_fkey\" FOREIGN KEY (\"vendorId\", \"primaryPaymentTransactionId\") REFERENCES \"PaymentTransaction\"(\"vendorId\", \"id\") ON DELETE RESTRICT ON UPDATE CASCADE;"
+    }
+  ],
+  "reviewFinding": 3,
+  "next": "Supply exact constraint and real DB catalog evidence to independent follow-up review"
+}

@@ -1,0 +1,13 @@
+{
+  "status": "AUTHORIZED_NONPRODUCTION",
+  "user_decision": "核准",
+  "approved": {
+    "completion_threshold_percent": 90,
+    "post_completion_order_window_days": 7,
+    "qualifying_order": "成立且未取消；不等同已付款"
+  },
+  "scope": "Full M1 formulas and necessary M2 identity, interval records and additive persistence implementation; nonproduction synthetic verification only.",
+  "other_rules": "D2-D6 remain deferred. No production collection or deployment. Production retention and legal notices remain undecided; disposable synthetic data is deleted at test teardown.",
+  "next": "Implement complete metrics read model, then bounded collection/persistence and integration; independent deep review for Auth/Permission/Migration.",
+  "authorization_context": "User explicitly approved proceeding with the full WP20 statistics proposal and necessary new records after direct clarification."
+}

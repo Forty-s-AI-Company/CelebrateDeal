@@ -1,0 +1,10 @@
+{
+  "scope": "private local host, launcher, fixed builder, scheduler stop boundary",
+  "promptCharacters": 18717,
+  "files": {
+    "scripts/run-metric-report-host.mjs": "b07cfe2f9d1054f5556721dc2b8406b1be11ba9af249e2a7282839159a19d966",
+    "src/lib/live-metric-report-host.ts": "04c73122288b8a3ffd32e8b9911a22245fa02763b95b8699f546a4d448165c52",
+    "src/lib/live-metric-report-scheduler.ts": "aec9c44b548a2007e397ee6e805b95a4816c00a428c0edd9afefb9da68a61d98",
+    "scripts/build-metric-report-host.mjs": "899d213bcdfb0ffc0916a7712bbe6ea6ac73a0d5327427dee2dd63945de31afd"
+  }
+}

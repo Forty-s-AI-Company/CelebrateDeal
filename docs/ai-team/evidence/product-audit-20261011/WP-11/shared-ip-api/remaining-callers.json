@@ -1,0 +1,15 @@
+{
+  "raw_caller_files": [
+    "src/app/actions/auth-security-actions.ts",
+    "src/app/actions/buyer-support-actions.ts",
+    "src/app/actions/consultation-actions.ts",
+    "src/app/actions/registration-actions.ts",
+    "src/app/actions/student-portal-actions.ts",
+    "src/app/actions/vendor-member-actions.ts",
+    "src/lib/mfa-recovery-regeneration.ts",
+    "src/lib/registration-form-retry-response.ts"
+  ],
+  "remaining_count": 8,
+  "verified_adapter_review_pending": 4,
+  "whole_wp_complete": false
+}

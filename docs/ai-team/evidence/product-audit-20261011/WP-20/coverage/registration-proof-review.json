@@ -1,0 +1,8 @@
+{
+  "review_output": null,
+  "observed_model": "unknown",
+  "process_status": "HARD_TIMEOUT",
+  "exit_code": -1,
+  "status": "CLAUDE_CLI_RUNTIME_ERROR",
+  "observed_effort": "unknown"
+}

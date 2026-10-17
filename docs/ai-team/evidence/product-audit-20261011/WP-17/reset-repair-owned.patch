@@ -1,0 +1,13 @@
+--- a/src/components/quick-webinar-form.tsx
++++ b/src/components/quick-webinar-form.tsx
+@@ -20,7 +20,9 @@
+   return <section aria-labelledby="quick-webinar-title" className="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-5">
+     <h2 id="quick-webinar-title" className="text-xl font-bold text-slate-950">一場即上線</h2>
+     <p className="mt-2 text-sm text-slate-700">選影片與開始時間，名稱可留空。系統自動建立報名、確認、播放頁與開播前一小時的 Email 提醒設定，回放保留七天。</p>
+-    <form action={action} aria-label="一場即上線" aria-busy={pending} className="mt-4 grid gap-4">
++    {/* React resets action forms after submission. Keep this intent's values;
++        only the explicit full navigation below starts a blank creation intent. */}
++    <form action={action} onReset={event => event.preventDefault()} aria-label="一場即上線" aria-busy={pending} className="mt-4 grid gap-4">
+       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+       <input type="hidden" name="requestId" value={submissionId} />
+       <label className="grid gap-1 text-sm font-medium">選擇影片<select required name="videoId" value={videoId} onChange={e => setVideoId(e.target.value)} disabled={pending || completed || !videos.length} className={control}><option value="">請選擇已就緒且有長度的影片</option>{videos.map(video => <option key={video.id} value={video.id}>{video.title}</option>)}</select></label>

@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic demo checkout. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [
+    {
+      "title": "owner activates three draft recipes; real checkout produces one delayed follow-up; desktop/mobile axe",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "stats": {
+    "startTime": "2026-10-15T23:44:49.058Z",
+    "duration": 20252.985,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 0,
+  "migrations": 131
+}

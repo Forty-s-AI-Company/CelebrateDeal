@@ -1,0 +1,18 @@
+{
+  "status": "FAIL",
+  "scope": "Owned loopback HTTP/browser, real disposable PostgreSQL, synthetic demo checkout. No cookies/tokens/traces/raw logs persisted; no provider delivery.",
+  "tests": [],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "reportParse": "FAILED",
+  "buildFailureMarkers": [
+    "Error:"
+  ],
+  "sanitizedDiagnostics": [
+    "Error: Cannot find module './scripts/playwright-ci-reporter.ts'"
+  ],
+  "exitCode": 1,
+  "migrations": 131
+}

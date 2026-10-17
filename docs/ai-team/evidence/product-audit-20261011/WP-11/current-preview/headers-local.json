@@ -1,0 +1,46 @@
+{
+  "mode": "headers",
+  "rows": [
+    {
+      "case": "baseline",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "ipv4",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "ipv6",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "duplicate",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "case",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "list",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "empty",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "combined",
+      "http_status": 400,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-16T15:02:04.7972774Z",
+  "workPackage": "WP-04",
+  "status": "THIRD_CONSECUTIVE_EXTERNAL_BLOCKER",
+  "projectId": "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn",
+  "projectLive": false,
+  "latestDeployment": {
+    "id": "dpl_E9wbsvtxx8ChBjZnUifufjgs93dC",
+    "state": "READY",
+    "target": null,
+    "metadataPresent": false
+  },
+  "cronInventory": {
+    "registered": 0,
+    "undeployed": 0,
+    "modified": 0,
+    "enabled": true,
+    "exitCode": 0
+  },
+  "unchangedMissing": [
+    "fixed isolated non-Production target",
+    "current Goal source provenance",
+    "database isolation",
+    "payment isolation",
+    "job authentication",
+    "single scheduler ownership",
+    "two continuous heartbeats",
+    "failure visibility",
+    "synthetic confirmation Email and reminder receipt",
+    "LINE provider delivery"
+  ],
+  "consecutiveGoalTurns": 3,
+  "mutations": false,
+  "goalAction": "BLOCKED_THRESHOLD_REACHED"
+}

@@ -1,0 +1,106 @@
+{
+  "status": "FAIL",
+  "scope": "Actual owner-scoped RichMenu service and existing draft actions, real disposable PostgreSQL, synthetic image/credentials, injected offline client only; no actual LINE or browser authentication claimed.",
+  "tests": [
+    {
+      "title": "reuses one account across Projects, allows a distinct account and enforces tenant ownership",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "keeps multiple course bindings for one LINE user and revokes only the signed account",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "suppresses queued work after a Project switch and requires a binding for the new account",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "backfills exact legacy rows and invalidates pending OAuth without decrypting credentials",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "enables RLS without public policies on the draft table",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "allows one first save and one writer per revision, rejects stale deletion and old identities after recreation",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "prevents another tenant from updating or deleting a known draft and cascades only its owner",
+      "status": "failed",
+      "diagnostic": []
+    },
+    {
+      "title": "rejects malformed stored links before any claim or audit",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "rejects malformed stored links before any claim or audit",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "rejects a first-sync snapshot when credentials change before its Serializable claim",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "persists a confirmed snapshot, omits configured URLs from audit and marks subsequent edits outdated",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "allows only one concurrent first publication and never reads a foreign draft as owned",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "blocks fresh-tab edits, deletion, duplicate sync and credential switching while the remote operation is pending",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "reconciles an applied timeout using only a read, without repeating the default mutation",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "unlocks through read-only reconciliation when the pre-switch lease check fails without sending a switch",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "keeps unapplied ambiguous switches locked, allows same-channel repair, and rejects switching to a different channel",
+      "status": "passed",
+      "diagnostic": []
+    },
+    {
+      "title": "does not reconcile an active lease, but can recover the persisted remote ID after a simulated interrupted operation",
+      "status": "passed",
+      "diagnostic": []
+    }
+  ],
+  "passed": 16,
+  "failed": 1,
+  "errors": [
+    {
+      "file": "lib/line-rich-menu-draft.db.test.ts",
+      "prismaCode": null,
+      "timedOut": false
+    }
+  ],
+  "exitCode": 1,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "migrations": 132
+}

@@ -1,0 +1,22 @@
+{
+  "kind": "review",
+  "revision": "sha256:b6f0d0e3f1a87b3f77fa8a39309b9ea3ccb788933e7c25f321e7c9ccc008cf5b",
+  "status": "PASS",
+  "independent": true,
+  "source": "claude_cli",
+  "role": "critical_review",
+  "model": "claude-opus-5-5",
+  "observed_model": "claude-opus-5-5",
+  "observed_effort": "unknown",
+  "raw_receipts": [
+    "positive-viewing-sql-review.json",
+    "positive-viewing-final-review.json",
+    "final-presentation-review.json",
+    "final-window-review.json",
+    "final-copy-qualified-review.json"
+  ],
+  "coverage": "Incremental scoped reviews; unchanged backend sources verified against previous hashes. Final copy qualified review only closes copy delta. Root adjudication below; raw findings preserved.",
+  "excluded_receipts": {
+    "final-copy-review.json": "model unknown; not qualified Claude review"
+  }
+}

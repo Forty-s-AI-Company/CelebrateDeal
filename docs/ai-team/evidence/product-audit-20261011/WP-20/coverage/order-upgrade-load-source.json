@@ -1,0 +1,10 @@
+{
+  "files": {
+    "prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql": "8863aec09dedc16d24b774e3a2ae2d99823070fe530862045816c405921b4a75",
+    "scripts/wp20-order-upgrade-load-disposable.mjs": "3122f355d8f722c513ff8df1643830495e5792a6dd44e8c290045c3909271a58",
+    "scripts/wp20-order-upgrade-snapshot-disposable.mjs": "12d374d8a7c87fb99e649de07807ba9a642a4ba0e145ec4da227dd0c7cd57d43"
+  },
+  "execution_provider": "claude_cli",
+  "requested_model": "opus",
+  "scope": "117 bounded touch, literal SQL100k load, fail-closed guards"
+}

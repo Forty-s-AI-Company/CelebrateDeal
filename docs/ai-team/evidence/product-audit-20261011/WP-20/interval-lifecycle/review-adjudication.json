@@ -1,0 +1,14 @@
+{
+  "revision": "sha256:8aed7955278d44dd7e69675f1a2e6f4db57c929ae4f86ed6690a583fb415ef71",
+  "review": "review-current.json",
+  "blocker": 0,
+  "major": 0,
+  "findings": [
+    {
+      "severity": "MINOR",
+      "disposition": "rejected_with_reason",
+      "reason": "Database trigger rejects sequence above sealed finalSequence (migration.sql:383); real DB test declared final sequence cannot grow and a batch beyond it rolls back atomically passed. HTTP maps database evidence rejection to 422 rather than suggested 409; integrity invariant remains enforced."
+    }
+  ],
+  "whole_wp_acceptance": "NOT_READY"
+}

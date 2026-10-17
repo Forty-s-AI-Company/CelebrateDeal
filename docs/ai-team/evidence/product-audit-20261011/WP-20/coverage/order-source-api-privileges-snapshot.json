@@ -1,0 +1,8 @@
+{
+  "revision": "sha256:5d9c9c01acfb61a4cab4d460eb82f26ca20c2534006d21f84a6d5dd13b19a957",
+  "files": [
+    "prisma/migrations/20261015140000_live_metric_order_source/migration.sql",
+    "scripts/wp20-payment-retry-disposable.mjs"
+  ],
+  "scope": "Grant all sequence/function privileges to three synthetic API roles, execute actual migration revoke block, assert none remain; canonical payment retry regression PASS"
+}

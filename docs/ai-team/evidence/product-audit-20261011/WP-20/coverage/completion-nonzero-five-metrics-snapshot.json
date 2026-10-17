@@ -1,0 +1,13 @@
+{
+  "runner_sha256": "e41b3afed15ac9effdfffb3f4fc4e77ca28c7d40841717e252d7119729684bb4",
+  "lint": "PASS",
+  "scope": "Synthetic enumerated intake and audit fixtures, actual PostgreSQL guards and worker projection->publish->reload->calculation",
+  "expected_percentages": 100,
+  "expected_average_seconds": 90,
+  "not_proven": [
+    "real collector audit producer",
+    "deployed job scheduling",
+    "concurrency gate",
+    "independent review"
+  ]
+}

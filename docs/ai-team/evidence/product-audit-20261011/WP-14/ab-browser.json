@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "scope": "Actual authenticated loopback built Next API/UI reads of synthetic persisted A/B attribution/status fixtures, disposable PostgreSQL and targeted desktop/mobile axe. No actual experiment activation, token verification flow or provider delivery; no raw credentials/session capture.",
+  "tests": [
+    {
+      "title": "reads attributed current confirmation counts from PostgreSQL through the real merchant API and UI",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sanitizedDiagnostics": [],
+  "stats": {
+    "startTime": "2026-10-16T05:02:53.613Z",
+    "duration": 12488.817,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "errors": [],
+  "exitCode": 0,
+  "migrations": 131
+}

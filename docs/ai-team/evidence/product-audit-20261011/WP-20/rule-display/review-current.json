@@ -1,0 +1,52 @@
+{
+  "kind": "review",
+  "source": "claude_cli",
+  "revision": "sha256:0eb64a757ce97284112940713b59fe381a4228dc0f718f34d894b81a771efa1a",
+  "status": "PASS",
+  "independent": true,
+  "role": "senior_review",
+  "model": "claude-sonnet-5-5",
+  "observed_model": "claude-sonnet-5-5",
+  "observed_effort": "unknown",
+  "review": {
+    "summary": "No BLOCKER or MAJOR in the test. The 90% and 7-day assertions now target the rule paragraph, and the stripped-paragraph check correctly excludes it from the number scan. One real test-validity defect: the section-end delimiter does not match the current render, so the extracted \"section\" is not bounded to the core-metric section. Two smaller hygiene or strength gaps. No product-copy or calculation concerns; the rule text matches the asserted substrings.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "area": "test validity / section extraction",
+        "file": "LiveAnalyticsPage test (it.each 'keeps unsupported core metrics unavailable')",
+        "issue": "The section is cut with split('<div class=\"grid gap-4 md:grid-cols-2 xl:grid-cols-5\">')[0], but the current render's grid div has className \"mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5\". The delimiter never matches, so split returns the whole remainder of the page and `section` is everything after the section opening tag, not just the core-metric section. If the delimiter did match, [0] would be the content before the grid, which excludes the cards, so the label, 尚不可計算 and value assertions would fail. The extraction is wrong in both cases.",
+        "evidence": "Test delimiter: `<div class=\"grid gap-4 md:grid-cols-2 xl:grid-cols-5\">`. Render: `<div className=\"mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5\">`. Per the stated intent the section should contain the cards, so [0] of a split at the grid start is also the wrong half.",
+        "impact": "The blanket no-metric-numbers and exactly-5 尚不可計算 assertions run over the entire rest of the page (the trailing page content is not excluded, e.g. other analytics panels), not the intended section. This makes the test fragile: it can false-fail on unrelated page percentages or seconds, or false-pass on content outside the section. The claim of being scoped to the section is not achieved.",
+        "recommended_fix": "Extract the section by its own boundaries, e.g. html.split(openTag)[1]?.split('</section>')[0], or use a regex like /<section[^>]*aria-labelledby=\"core-metric-availability-title\"[^>]*>([\\s\\S]*?)<\\/section>/. Do not depend on the grid's class string.",
+        "required_test": "After extraction, assert that section contains the heading 場次核心指標, does not contain content from other page sections (a known string from a neighboring panel), and still contains all 5 cards.",
+        "confidence": 0.8
+      },
+      {
+        "severity": "MINOR",
+        "area": "test isolation",
+        "file": "LiveAnalyticsPage test (it.each body)",
+        "issue": "The 'no activity' scenario calls mockReset().mockResolvedValue(...) on shared mocks and never restores them. Later tests in the same file inherit the empty-activity mocks unless a beforeEach/afterEach re-seeds them. The 'existing activity' scenario relies on default mock state with no explicit setup.",
+        "evidence": "`mocks.analyticsFindMany.mockReset().mockResolvedValue([]); mocks.formSubmissionCount.mockReset().mockResolvedValue(0);` is done conditionally inside the test body, and no restore is shown.",
+        "impact": "Order-dependent failures or silently weaker later tests. Cannot be confirmed without the rest of the file.",
+        "recommended_fix": "Seed both mocks explicitly in every scenario, with distinct non-empty data for 'existing activity', and/or reset them in beforeEach. Confirm the file already does so.",
+        "required_test": "Run the file with the it.each cases ordered last and first (or with --sequence.shuffle) and confirm that the other tests in the file behave the same.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "NIT",
+        "area": "test strength",
+        "file": "LiveAnalyticsPage test (valuesAndReasons assertion)",
+        "issue": "The numeric guard only matches `\\d+(\\.\\d+)?(%| 秒)`. Count or duration formats outside the rule paragraph, such as `12 人`, `3 分鐘`, `0 次`, `1:30` or `7 天`, would pass a blanket 'no metric numbers' claim.",
+        "evidence": "Regex: /\\d+(?:\\.\\d+)?(?:%| 秒)/ applied to the section with the rule paragraph removed.",
+        "impact": "A future regression that renders a count or minutes value in a card would not be caught. The per-card value check (metricValues equal 尚不可計算 x5) still covers the value slot, so the residual risk is only in the reason text.",
+        "recommended_fix": "Broaden to /\\d/ on the stripped section (the h2/h3/p copy has no digits), or add units 人|分鐘|分|次|天 to the pattern.",
+        "required_test": "Stripped section contains no digit characters, or inject a fake `3 分鐘` reason and confirm the test fails.",
+        "confidence": 0.6
+      }
+    ]
+  },
+  "terminal_evidence": "review-repair-cli.json",
+  "previous_product_review": "review-final-cli.json",
+  "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\product-audit-goal-plan\\CelebrateDeal\\docs\\ai-team\\evidence\\product-audit-20261011\\WP-20\\rule-display\\review-current.json"
+}

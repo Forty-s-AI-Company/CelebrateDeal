@@ -1,0 +1,8 @@
+{
+  "kind": "validation",
+  "source": "validation_runner",
+  "name": "project-accounts-diff-check",
+  "revision": "sha256:2739c4b14725e0a0cb78a60fb34fc6710fc393678100b02e0b90ac806f5f2fc4",
+  "status": "PASS",
+  "exit_code": 0
+}

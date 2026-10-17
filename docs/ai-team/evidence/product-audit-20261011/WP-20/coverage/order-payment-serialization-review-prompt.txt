@@ -1,0 +1,409 @@
+Independent Critical Payment/Migration review. Review only supplied snapshot. Return JSON summary/findings per schema, at most 5 findings, total output under 5000 characters. Findings must be BLOCKER/MAJOR/MINOR/NIT with concrete file/area, evidence, impact, fix, required_test, confidence. Do not mark overall WP READY. Focus on correctness/security/deadlock/liveness introduced by migration115, especially PostgreSQL ReadCommitted statement snapshots after lock wait and RepeatableRead/Serializable behavior. Existing original synchronized20 Serializable gate failed before115 and remains unverified after115. No production access. Prior114 race: payment UPDATE trigger sees old relation, concurrent relink commits, then payment commits without new-window event. New trigger intends serialization with SHARE. Test success does not prove correctness. Explicitly identify missing dependencies if necessary; do not assume omitted triggers absent. Existing source ledgers append-only and no-truncate. Version sourceRevision guard forces old+1 on every UPDATE; its AFTER update trigger stales reports when revision changes. Existing report functions compare version sourceRevision. Populated-upgrade test pending. Focused review only, not full schema certification.
+
+FILE prisma/migrations/20261016030000_live_metric_order_payment_serialization/migration.sql
+1: -- Serialize changes to the payment/window relation with payment metadata writes.
+2: -- SHARE conflicts with UPDATE's NO KEY UPDATE lock; KEY SHARE would not suffice.
+3: CREATE FUNCTION public.wp20_metric_order_payment_lock() RETURNS trigger
+4: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+5: DECLARE facts JSONB;
+6: BEGIN
+7:  IF TG_LEVEL<>'ROW' OR TG_RELID<>'public."CommerceOrder"'::regclass THEN
+8:   RAISE EXCEPTION 'invalid order payment lock relation' USING ERRCODE='23514';
+9:  END IF;
+10:  IF TG_OP='UPDATE' AND (NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt")
+11:   IS NOT DISTINCT FROM (OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt") THEN RETURN NEW; END IF;
+12:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+13:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+14:  PERFORM p.id FROM public."PaymentTransaction" p WHERE EXISTS (
+15:   SELECT 1 FROM jsonb_array_elements(facts) f
+16:   WHERE p.id=f->>'primaryPaymentTransactionId' AND p."vendorId"=f->>'vendorId'
+17:  ) ORDER BY p."vendorId",p.id FOR SHARE OF p;
+18:  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+19:  RETURN NEW;
+20: END $$;
+21: CREATE TRIGGER "CommerceOrder_metric_payment_lock" BEFORE INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+22:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_payment_lock();
+23: REVOKE ALL ON FUNCTION public.wp20_metric_order_payment_lock() FROM PUBLIC;
+24: DO $$ DECLARE api_role TEXT; BEGIN
+25:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+26:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+27:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_payment_lock() FROM %I',api_role);
+28:   END IF;
+29:  END LOOP;
+30: END $$;
+31: -- Previously issued proofs might have crossed the unsafe commit ordering.
+32: UPDATE public."LiveMetricVersion" SET "sourceRevision"="sourceRevision"+1;
+
+
+FILE prisma/migrations/20261016010000_live_metric_order_window_source/migration.sql
+1: -- Window-scoped append-only source, initially side-by-side with legacy fences.
+2: -- Consumers must use a new proof format before switching; no legacy proof backfill.
+3: CREATE TABLE public."LiveMetricOrderWindowSource" (
+4:  id BIGSERIAL PRIMARY KEY,
+5:  "vendorId" TEXT NOT NULL REFERENCES public."Vendor"(id) ON DELETE CASCADE ON UPDATE NO ACTION,
+6:  "orderCreatedAt" TIMESTAMP(3) NOT NULL
+7: );
+8: CREATE INDEX "LiveMetricOrderWindowSource_scope_idx" ON public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt");
+9: CREATE FUNCTION public.wp20_metric_order_window_changed() RETURNS trigger
+10: LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public SET timezone='UTC' AS $$
+11: DECLARE facts JSONB;
+12: BEGIN
+13:  IF TG_LEVEL<>'ROW' OR TG_RELID NOT IN ('public."CommerceOrder"'::regclass,'public."PaymentTransaction"'::regclass) THEN
+14:   RAISE EXCEPTION 'invalid order window source relation' USING ERRCODE='23514';
+15:  END IF;
+16:  IF TG_OP='UPDATE' THEN
+17:   IF TG_TABLE_NAME='CommerceOrder' THEN
+18:    IF (NEW.id,NEW."vendorId",NEW."primaryPaymentTransactionId",NEW."createdAt",NEW.status)
+19:     IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD."primaryPaymentTransactionId",OLD."createdAt",OLD.status) THEN RETURN NULL; END IF;
+20:   ELSE
+21:    IF (NEW.id,NEW."vendorId",NEW.metadata) IS NOT DISTINCT FROM (OLD.id,OLD."vendorId",OLD.metadata) THEN RETURN NULL; END IF;
+22:   END IF;
+23:  END IF;
+24:  facts:=(CASE WHEN TG_OP<>'INSERT' THEN jsonb_build_array(to_jsonb(OLD)) ELSE '[]'::jsonb END)
+25:   ||(CASE WHEN TG_OP<>'DELETE' THEN jsonb_build_array(to_jsonb(NEW)) ELSE '[]'::jsonb END);
+26:  IF TG_TABLE_NAME='CommerceOrder' THEN
+27:   INSERT INTO public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt")
+28:    SELECT DISTINCT v.id,(f->>'createdAt')::timestamp(3)
+29:    FROM jsonb_array_elements(facts) f JOIN public."Vendor" v ON v.id=f->>'vendorId'
+30:    ORDER BY v.id,(f->>'createdAt')::timestamp(3);
+31:  ELSE
+32:   -- Payments without an established order have no window yet. The later order
+33:   -- INSERT/link emits its own event even if payment metadata is missing.
+34:   INSERT INTO public."LiveMetricOrderWindowSource"("vendorId","orderCreatedAt")
+35:    SELECT DISTINCT o."vendorId",o."createdAt" FROM public."CommerceOrder" o
+36:    JOIN jsonb_array_elements(facts) f ON o."primaryPaymentTransactionId"=f->>'id' AND o."vendorId"=f->>'vendorId'
+37:    JOIN public."Vendor" v ON v.id=o."vendorId"
+38:    ORDER BY o."vendorId",o."createdAt";
+39:  END IF;
+40:  RETURN NULL;
+41: END $$;
+42: CREATE TRIGGER "CommerceOrder_metric_window_revision" AFTER INSERT OR UPDATE OR DELETE ON public."CommerceOrder"
+43:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_window_changed();
+44: CREATE TRIGGER "PaymentTransaction_metric_window_revision" AFTER INSERT OR UPDATE OR DELETE ON public."PaymentTransaction"
+45:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_window_changed();
+46: CREATE FUNCTION public.wp20_metric_order_window_revision(vendor_id TEXT,window_start TIMESTAMPTZ,window_end TIMESTAMPTZ) RETURNS BIGINT
+47: LANGUAGE sql STABLE STRICT SECURITY DEFINER SET search_path=pg_catalog SET row_security=off AS $$
+48:  SELECT count(*) FROM public."LiveMetricOrderWindowSource" WHERE "vendorId"=vendor_id
+49:   AND "orderCreatedAt">=(window_start AT TIME ZONE 'UTC') AND "orderCreatedAt"<(window_end AT TIME ZONE 'UTC')
+50: $$;
+51: CREATE TRIGGER "LiveMetricOrderWindowSource_immutable" BEFORE UPDATE OR DELETE ON public."LiveMetricOrderWindowSource"
+52:  FOR EACH ROW EXECUTE FUNCTION public.wp20_metric_order_source_immutable();
+53: CREATE TRIGGER "LiveMetricOrderWindowSource_no_truncate" BEFORE TRUNCATE ON public."LiveMetricOrderWindowSource"
+54:  FOR EACH STATEMENT EXECUTE FUNCTION public.wp20_metric_visit_no_truncate();
+55: ALTER TABLE public."LiveMetricOrderWindowSource" ENABLE ROW LEVEL SECURITY;
+56: REVOKE ALL ON TABLE public."LiveMetricOrderWindowSource" FROM PUBLIC;
+57: REVOKE ALL ON SEQUENCE public."LiveMetricOrderWindowSource_id_seq" FROM PUBLIC;
+58: REVOKE ALL ON FUNCTION public.wp20_metric_order_window_changed(),public.wp20_metric_order_window_revision(text,timestamptz,timestamptz) FROM PUBLIC;
+59: DO $$ DECLARE api_role TEXT; BEGIN
+60:  FOREACH api_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+61:   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=api_role) THEN
+62:    EXECUTE format('REVOKE ALL ON TABLE public."LiveMetricOrderWindowSource" FROM %I',api_role);
+63:    EXECUTE format('REVOKE ALL ON SEQUENCE public."LiveMetricOrderWindowSource_id_seq" FROM %I',api_role);
+64:    EXECUTE format('REVOKE ALL ON FUNCTION public.wp20_metric_order_window_changed(),public.wp20_metric_order_window_revision(text,timestamptz,timestamptz) FROM %I',api_role);
+65:   END IF;
+66:  END LOOP;
+67: END $$;
+
+
+FILE scripts/wp20-order-window-link-race.mjs
+1: import assert from 'node:assert/strict';
+2: /** Require real lock contention, not sleeps or an assumed transaction ordering. */
+3: export async function verifyOrderWindowLinkRace(db,scope,payment,{nextStart,nextEnd}) {
+4:  const revision=async(start,end)=>(await db.$queryRawUnsafe(
+5:   'SELECT public.wp20_metric_order_window_revision($1,$2::timestamptz,$3::timestamptz) AS revision',scope.vendorId,start,end))[0].revision;
+6:  const [original]=await db.$queryRawUnsafe('SELECT id FROM "CommerceOrder" WHERE "vendorId"=$1 AND "primaryPaymentTransactionId"=$2',scope.vendorId,payment.id);
+7:  assert.ok(original);
+8:  const relink=async tx=>{
+9:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1',original.id);
+10:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,'outside-window-liveness-order');
+11:  };
+12:  const restore=()=>db.$transaction(async tx=>{
+13:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=NULL WHERE id=$1','outside-window-liveness-order');
+14:   await tx.$executeRawUnsafe('UPDATE "CommerceOrder" SET "primaryPaymentTransactionId"=$1 WHERE id=$2',payment.id,original.id);
+15:   await tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:payment.metadata}});
+16:  },{timeout:15000});
+17:  const schedules=[];
+18:  for(const first of ['payment','relink']) {
+19:   const initial=await revision(scope.startAt,scope.endAt),laterInitial=await revision(nextStart,nextEnd);
+20:   let release,started,following;
+21:   const gate=new Promise(resolve=>{release=resolve;});
+22:   const ready=new Promise(resolve=>{started=resolve;});
+23:   const update=tx=>tx.paymentTransaction.update({where:{id:payment.id},data:{metadata:{...payment.metadata,syntheticLinkRace:first}}});
+24:   const leader=db.$transaction(async tx=>{
+25:    await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+26:    const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');
+27:    await (first==='payment'?update(tx):relink(tx));
+28:    started(pid.pid);await gate;
+29:   },{timeout:15000});
+30:   // Attach rejection handling immediately; the main path still asserts success.
+31:   leader.catch(()=>{});
+32:   try {
+33:    const leaderPid=await Promise.race([ready,leader.then(()=>{throw new Error('leader-ended-before-ready');})]);
+34:    let followerReady;
+35:    const followerPidPromise=new Promise(resolve=>{followerReady=resolve;});
+36:    following=db.$transaction(async tx=>{
+37:     await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+38:     const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');followerReady(pid.pid);
+39:     await (first==='payment'?relink(tx):update(tx));
+40:    },{timeout:15000});
+41:    following.catch(()=>{});
+42:    const followerPid=await Promise.race([followerPidPromise,following.then(()=>{throw new Error('follower-ended-before-ready');})]);
+43:    let blocked=false;
+44:    for(let attempt=0;attempt<60;attempt++) {
+45:     const [state]=await db.$queryRawUnsafe('SELECT $1::integer=ANY(pg_blocking_pids($2::integer)) AS blocked',leaderPid,followerPid);
+46:     if(state.blocked){blocked=true;break;}
+47:     await db.$queryRawUnsafe('SELECT pg_sleep(0.025)::text');
+48:    }
+49:    assert.equal(blocked,true,'payment/link writers must serialize before publishing inconsistent relation');
+50:    release();await leader;await following;
+51:    assert.ok(await revision(scope.startAt,scope.endAt)>initial);
+52:    assert.ok(await revision(nextStart,nextEnd)>laterInitial);
+53:    const [linked]=await db.$queryRawUnsafe(`SELECT p.metadata->>'syntheticLinkRace' AS marker FROM "CommerceOrder" o
+54:     JOIN "PaymentTransaction" p ON p.id=o."primaryPaymentTransactionId" AND p."vendorId"=o."vendorId"
+55:     WHERE o.id=$1 AND o."vendorId"=$2`,'outside-window-liveness-order',scope.vendorId);
+56:    assert.equal(linked?.marker,first);
+57:    schedules.push({first,status:'PASS',blockingObserved:true});
+58:   } finally {release();await Promise.allSettled([leader,...(following?[following]:[])]);await restore();}
+59:  }
+60:  // A bounded lock timeout must roll back the entire attempted relink.
+61:  const beforeTimeout=await revision(scope.startAt,scope.endAt),laterBeforeTimeout=await revision(nextStart,nextEnd);
+62:  await db.$transaction(async holder=>{
+63:   await holder.$queryRawUnsafe('SELECT id FROM "PaymentTransaction" WHERE id=$1 FOR NO KEY UPDATE',payment.id);
+64:   await assert.rejects(db.$transaction(async contender=>{
+65:    await contender.$executeRawUnsafe("SET LOCAL lock_timeout='150ms'");
+66:    await relink(contender);
+67:   },{timeout:5000}),error=>error?.meta?.code==='55P03');
+68:   const [stillLinked]=await db.$queryRawUnsafe('SELECT "primaryPaymentTransactionId" AS payment FROM "CommerceOrder" WHERE id=$1',original.id);
+69:   const [destination]=await db.$queryRawUnsafe('SELECT "primaryPaymentTransactionId" AS payment FROM "CommerceOrder" WHERE id=$1','outside-window-liveness-order');
+70:   assert.equal(stillLinked.payment,payment.id);
+71:   assert.equal(destination.payment,null);
+72:   assert.equal(await revision(scope.startAt,scope.endAt),beforeTimeout);
+73:   assert.equal(await revision(nextStart,nextEnd),laterBeforeTimeout);
+74:  },{timeout:10000});
+75:  // Once the blocker releases, a fresh transaction can relink and be restored.
+76:  try {await db.$transaction(relink,{timeout:10000});}
+77:  finally {await restore();}
+78:  return {status:'PASS',schedules,lockTimeoutRollback:'PASS',recoveryAfterLockRelease:'PASS',oldWindowInvalidated:true,newWindowInvalidated:true,committedMetadataVisible:true};
+79: }
+
+
+SANITIZED TEST EVIDENCE
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 20,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual retry scheduler/payment/inventory/order services, disposable DB and synthetic digital orders; no external delivery or payment provider",
+  "sourceApiPrivileges": "PASS",
+  "registrationVendorCascade": {
+    "status": "PASS",
+    "vendorDeleted": true,
+    "metricOrphans": 0,
+    "sourceOrphans": 0
+  },
+  "registrationTruncateProtection": {
+    "status": "PASS",
+    "cases": [
+      {
+        "table": "FormSubmission",
+        "rejected": true
+      },
+      {
+        "table": "Live",
+        "rejected": true
+      },
+      {
+        "table": "RegistrationForm",
+        "rejected": true
+      },
+      {
+        "table": "LiveMetricRegistration",
+        "rejected": true
+      }
+    ]
+  },
+  "matchedRegistrationAudit": {
+    "status": "PASS",
+    "mutationProtection": {
+      "status": "PASS",
+      "captureImmutable": "PASS",
+      "captureUnique": "PASS",
+      "registrationUnique": "PASS",
+      "projectionDeleteInvalidates": "PASS"
+    },
+    "matchedBothDirections": "PASS",
+    "stableDigest": "PASS",
+    "revokedSourceDetected": "PASS",
+    "privateProofPublish": "PASS",
+    "emptySourceProof": "PASS",
+    "auditToPublishRace": "PASS",
+    "revisionToInsertRace": "PASS",
+    "staleProofRejected": "PASS",
+    "projectionProofLifecycle": "PASS",
+    "coverage": "complete before revoke; unknown after revoke"
+  },
+  "registrationSourceConcurrency": {
+    "status": "PASS",
+    "submitted": 20,
+    "committed": 20,
+    "concurrentMs": 115,
+    "snapshotIsolation": "PASS",
+    "nextSnapshotSeesLateSource": "PASS",
+    "oldFormRowsRemainVisible": "PASS",
+    "reverseProjectionAudit": "PASS",
+    "bidirectionalSummary": "PASS",
+    "scope": "ReadCommitted concurrent calls; not synchronized Serializable payment acceptance"
+  },
+  "sourceInvalidation": [
+    {
+      "field": "verificationStatus",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "verifiedAt",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "formId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    },
+    {
+      "field": "liveFormId",
+      "status": "PASS",
+      "completionPublish": "PASS",
+      "uncapturedSourceRevision": "PASS",
+      "uncapturedReadyReportInvalidation": "PASS"
+    }
+  ],
+  "linkedFormOwnership": "REJECTED_BY_FOREIGN_KEY",
+  "noVideoMetricOwnership": "REJECTED_BY_IMMUTABLE_VERSION",
+  "roleSafeRevision": "PASS",
+  "revisionSnapshotConcurrency": "PASS",
+  "orderSourceAudit": {
+    "status": "PASS",
+    "coverageGuard": {
+      "status": "PASS",
+      "windowSource": {
+        "status": "PASS",
+        "apiRolesDenied": 3,
+        "immutableAndNoTruncate": "PASS",
+        "paymentWindowRevision": "PASS",
+        "repeatableReadSnapshot": "PASS",
+        "outsideWindowUnchanged": true,
+        "movedDateFencesBothWindows": true,
+        "relinkWindows": "PASS",
+        "unlinkedPaymentThenLink": "PASS",
+        "rollbackRestoresRevisions": "PASS",
+        "linkRace": {
+          "status": "PASS",
+          "schedules": [
+            {
+              "first": "payment",
+              "status": "PASS",
+              "blockingObserved": true
+            },
+            {
+              "first": "relink",
+              "status": "PASS",
+              "blockingObserved": true
+            }
+          ],
+          "lockTimeoutRollback": "PASS",
+          "recoveryAfterLockRelease": "PASS",
+          "oldWindowInvalidated": true,
+          "newWindowInvalidated": true,
+          "committedMetadataVisible": true
+        },
+        "scope": "Source ledger including payment commit before order relink commit; other schedules remain pending"
+      },
+      "outsideWindowLiveness": "PASS_WINDOW_ISOLATED",
+      "forcedProofConflict": "PASS",
+      "separateEmptyWindows": "PASS",
+      "auditedEmptyProof": "PASS",
+      "explicitExclusions": [
+        "other_purpose",
+        "other_live"
+      ],
+      "claimTenantFence": "PASS",
+      "finishTenantFence": "PASS",
+      "readyReportTenantFence": "PASS",
+      "revisionToInsertRace": "PASS",
+      "raceWritesNothing": "PASS",
+      "reauditRecovers": "PASS",
+      "producerMatched": "PASS",
+      "producerIdempotent": "PASS",
+      "producerIncompleteRejected": "PASS",
+      "auditToPublishRace": "PASS",
+      "validStored": 1,
+      "invalidRejected": 9,
+      "noRejectedRowsPersisted": true,
+      "legacyPositiveIgnored": true,
+      "tenantOnlyChangeInvalidates": true,
+      "restoringFactsDoesNotRevive": true,
+      "scope": "Storage/reader plus actual matched producer, incomplete refusal and audit-to-publish race; full WP remains incomplete"
+    },
+    "collectionToggleFenced": "PASS",
+    "historicalInventoryRetained": "PASS",
+    "databaseCancellation": "PASS",
+    "recoveryAfterCancellation": "PASS",
+    "tenantLedgerProtection": {
+      "status": "PASS",
+      "identityCases": [
+        {
+          "table": "CommerceOrder",
+          "outcome": "revision-increased"
+        },
+        {
+          "table": "PaymentTransaction",
+          "outcome": "revision-increased"
+        }
+      ],
+      "apiRolesDenied": 3,
+      "immutableUpdate": "PASS",
+      "immutableDelete": "PASS",
+      "truncateRejected": "PASS",
+      "sourceTablesTruncateRejected": "PASS",
+      "leastPrivilegeCount": "PASS"
+    },
+    "matchedOrders": 20,
+    "boundedEnumeration": "PASS",
+    "unattributedTenantRevision": "PASS",
+    "stableDigest": "PASS",
+    "tenantSnapshotConcurrency": "PASS",
+    "oneContextPerSnapshot": "PASS",
+    "overflowRejected": "PASS",
+    "readOnlyRequired": true,
+    "exclusionsVisible": true,
+    "sourceOrders": 20,
+    "missingProjectionsVisible": true,
+    "missingAttributionVisible": true,
+    "foreignScopeRejected": true,
+    "pagination": "PASS",
+    "coverage": "unknown"
+  },
+  "counts": {
+    "payments": 20,
+    "orders": 20,
+    "entitlements": 20
+  }
+}

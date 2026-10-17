@@ -1,0 +1,10 @@
+{
+  "promptCharacters": 17370,
+  "files": {
+    "scripts/wp20-ingress-disposable.mjs": "2ad82f0fb7d9031766234796288d599a62ebfa414d6fe96d8af6d13e51964782",
+    "src/lib/live-metric-ingress-gateway.ts": "5bc1b2f456532cfb59a3574230e397abc37ffa03bae4cba6e4f3cdfdae96c99f"
+  },
+  "suppliedRanges": {
+    "scripts/wp20-ingress-disposable.mjs": "Only const lostScope through end of actual-http section; prior ordinary setup/HTTP tests omitted"
+  }
+}

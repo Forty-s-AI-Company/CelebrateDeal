@@ -1,0 +1,13 @@
+{
+  "hashes": {
+    "src/lib/live-metric-registration-source-audit.ts": "52f30f71fccda16caa06e2f1baed1cdf528e0dfd4066d07dfaabc7e2ecfefb54",
+    "src/lib/live-metric-registration-source-audit.test.ts": "a281532bfba470f28327d60cccba6981572900592b0dd582d6fa787b6b796f61",
+    "scripts/wp20-completion-load-disposable.mjs": "bbe985f6ee3b35031381f1f655dd63c4dd8b1f604676d7ebd5b6192dd9608998"
+  },
+  "unit": "6 tests PASS",
+  "lint": "new source/test PASS",
+  "db": "50000 source rows fully enumerated14787ms; all missing_capture; coverage unknown",
+  "review": "PENDING",
+  "typecheck": "NOT_RUN",
+  "proofWriter": "NOT_IMPLEMENTED"
+}

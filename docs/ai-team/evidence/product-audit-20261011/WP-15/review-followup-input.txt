@@ -1,0 +1,136 @@
+Independently adjudicate prior findings using missing unchanged context below. Respond Traditional Chinese, BLOCKER/MAJOR/MINOR/NIT, explicitly state closures and residual findings. Do not assume author dispositions correct. Desktop task panel never removed: see unchanged aside render. Mobile panel moves from sticky header to normal document flow; comment now precise. Only string KPI is derived percentage: nonzero percentage necessarily implies numeric nonzero numerator/denominator already inspected. NaN remains visible, not collapsed as no activity; existing query counts numeric. No revenue/string metric exists. TWD $ intentionally disambiguates existing currency formatting; retain nonblocking cosmetic MINOR if appropriate. Repeated true initialization retained NIT: no schema change permitted; explicit false/restart override preserved.
+Updated evidence: shell18 states PASS (Chromium/Firefox desktop1280x900/mobile390x844/small375x667 x default/explicit-expanded/platform-admin): exactly1 visible panel for merchant,0 admin; default collapsed, saved false expanded; keyboard and scroll reachability and axe0serious. Operations52 browser states and typecheck PASS. Synthetic component boundaries; complete login E2E not executed. Whole WP not yet claimed ready.
+Prior findings:
+[{"severity": "MAJOR", "file": "src/components/app-shell.tsx", "area": "@@ -303 刪除 / @@ +313-316 新增 lg:hidden 包裝", "issue": "OnboardingTaskPanel 從原本的位置（line 303）移除後，只在 <div className=\"lg:hidden\"> 內重新渲染，桌面版（≥lg）不再顯示上線任務面板。", "evidence": "diff 刪除了 line 303 原本唯一的 <OnboardingTaskPanel …/>，新增的唯一一處渲染被 className=\"lg:hidden\" 包住。diff 中看不到其他桌面版的渲染點，新增的註解也只講行動版。", "impact": "非平台管理員在桌面版會完全看不到商家/專案上線任務與其收合控制，等於上線引導功能在桌面版消失。WP15 原本只打算改預設收合狀態與行動版排版，這是超出範圍的功能回歸。", "recommended_fix": "把原本的渲染保留在桌面版適用的位置（例如加上 hidden lg:block，或維持原位置），行動版另外放在 lg:hidden 區塊；也可以只渲染一次，改用 CSS 調整排列順序。請確認同一時間只有一個實例可互動，以免收合狀態不同步。", "required_test": "AppShell 元件/瀏覽器測試：在 lg（≥1024px）和行動版視窗下，非平台管理員都能看到恰好一個可見的 OnboardingTaskPanel；平台管理員兩種視窗下都看不到。", "confidence": 0.7}, {"severity": "MINOR", "file": "src/components/app-shell.tsx", "area": "@@ +313 註解與 lg:hidden 包裝", "issue": "註解說「Keep expanded guidance scrollable so it cannot cover the mobile workspace」，但包裝的 div 只有 lg:hidden，沒有任何 max-height 或 overflow 設定，實際上不會讓面板變成可捲動。", "evidence": "<div className=\"lg:hidden\"> 沒有 max-h-* 或 overflow-auto 之類的類別，OnboardingTaskPanel 本身在 diff 中也沒有修改。", "impact": "如果面板展開後很長，或面板是 fixed/sticky 定位，行動版工作區仍可能被遮住或被推到很下面，註解描述的保證並不存在，會誤導之後維護的人。", "recommended_fix": "如果確實需要限制高度，就在包裝或面板展開區加上 max-h-[…] overflow-y-auto；如果靠一般文件流就足夠，就把註解改成正確的描述。", "required_test": "行動版（例如 375×667）合成瀏覽器狀態：展開面板且任務很多時，主要工作區的第一個可互動元素仍然可見或可捲動到，而且不會被面板遮住。", "confidence": 0.55}, {"severity": "MINOR", "file": "src/app/(app)/dashboard/dashboard-kpis.tsx", "area": "@@ +106-110 hasActivity 判斷", "issue": "hasActivity 只把 typeof value === \"number\" 的非零 KPI 算成有活動。如果有 KPI 的值是格式化字串（例如金額或百分比），就算有實際數據也會被當成無活動。另外 NaN 會被誤判為有活動。", "evidence": "kpis.some((kpi) => typeof kpi.value === \"number\" && kpi.value !== 0)：字串值永遠回傳 false。NaN !== 0 結果為 true。", "impact": "如果 funnel 全為 0，但營收之類的字串 KPI 有值，所有指標都會被收進 details 裡，摘要文字還寫著「尚無活動資料」，等於向商家顯示錯誤的狀態訊息。", "recommended_fix": "改用原始數值欄位判斷（例如 kpi.rawValue），或明確處理 string/number 兩種型別；可以用 Number.isFinite 排除 NaN。如果 KPI 型別保證全部是 number，請在型別上加上限制並補上測試。", "required_test": "KPI 單元測試涵蓋三種情況：(a) 字串型 KPI 非零但其餘全為 0 時應直接顯示指標；(b) 全部為 0 時應顯示 details；(c) 值為 NaN 時的行為符合預期。", "confidence": 0.45}, {"severity": "MINOR", "file": "src/app/(app)/billing/plans/page.tsx", "area": "@@ +17-20 formatPlanCurrency", "issue": "「TWD ${formatCurrency(cents)}」是在既有格式化結果前面直接加前綴。如果 formatCurrency 已經輸出貨幣符號（$ 或 NT$），會變成「TWD $990」或「TWD NT$990」這種重複標示。", "evidence": "註解寫明是要「disambiguate the dollar symbol」，代表 formatCurrency 原本就會輸出 $ 符號，前綴加上去之後符號並沒有被移除。", "impact": "價格顯示多出一個貨幣符號，視覺上冗餘，螢幕報讀器會念成「TWD dollar 990」，而且跟帳單頁其他沒加前綴的金額不一致，可能讓商家搞不清楚幣別。", "recommended_fix": "改用 Intl.NumberFormat 的 currencyDisplay: \"code\"（輸出例如 TWD 990），或在 formatCurrency 增加選項輸出不含符號的數字再加上 TWD，並保持現有的四捨五入規則。", "required_test": "單元測試鎖定 formatPlanCurrency(99000) 的精確輸出字串（不含重複的貨幣符號），並在 18 項 billing 測試中加入對方案頁實際渲染文字的斷言。", "confidence": 0.5}, {"severity": "NIT", "file": "src/app/actions/sales-workspace-actions.ts", "area": "@@ 33/79/100/163 及 registration-actions.ts @@ 45", "issue": "新偏好預設值 taskPanelCollapsed: true 在 5 個 create 路徑分別寫死，資料庫 schema 預設值（推測仍是 false）沒有同步。", "evidence": "每個 upsert/create 都手動加上 taskPanelCollapsed: true；diff 中沒有修改 schema 或抽出共用常數。", "impact": "將來新增的 create 路徑、seed 或測試工廠很容易漏掉這個欄位，就會產生預設 false 的新偏好，與規格不一致。", "recommended_fix": "抽出共用常數或 helper（例如 defaultOnboardingPreferenceCreate）。schema 預設值是否改成 true 請另外提出範圍提案（本任務限定只改主要寫入點）。", "required_test": "偏好測試新增一項：列舉所有 userOnboardingPreference create/upsert 路徑，確認新建時 taskPanelCollapsed 都是 true，而且既有的 false 不會被覆蓋。", "confidence": 0.5}]
+Shell source:
+199:       <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-200 bg-white px-3 pb-3 pt-4 text-slate-900 lg:flex">
+200:         <Link href={homeHref} className="mb-5 flex min-h-14 shrink-0 items-center gap-3 rounded-xl px-2 transition-colors hover:bg-slate-50">
+201:           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-200">
+202:             <Tags size={19} strokeWidth={2.2} aria-hidden="true" />
+203:           </span>
+204:           <span className="min-w-0 flex-1">
+205:             <span className="block text-sm font-semibold tracking-tight text-slate-900">CelebrateDeal</span>
+206:             <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-600">Live Commerce OS</span>
+207:           </span>
+208:           <span className="rounded-md border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-700">Beta</span>
+209:         </Link>
+210: 
+211:         {!isPlatformAdmin && selectProject ? <WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /> : null}
+212:         {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
+213: 
+214:         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,0.45)_transparent] [scrollbar-width:thin]" aria-label="主要導覽">
+215:           {primaryGroups.map((group) => {
+216:             if (group.items.length === 1 && group.items[0]?.href === "/dashboard") {
+217:               const item = group.items[0];
+218:               return (
+Shell source:
+303:         <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="行動版主要導覽">
+304:           {visibleGroups.flatMap((group) => group.items).map((item) => (
+305:             <AppShellNavLink key={item.href} href={item.href} mobile>
+306:               {item.label}
+307:             </AppShellNavLink>
+308:           ))}
+309:         </nav>
+310:       </header>
+311: 
+312:       <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-72 lg:px-8 xl:px-10">
+313:         {/* Place mobile guidance in normal document flow, outside the sticky header. */}
+314:         <div className="lg:hidden">
+315:         {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
+316:         </div>
+317:         <FeatureAccessBoundary enabledModules={enabledModules}>{children}</FeatureAccessBoundary>
+318:         <footer className="mx-auto mt-12 max-w-5xl border-t border-border pt-5">
+319:           <p className="mb-3 text-xs font-semibold text-slate-600">公開資訊與客服</p>
+320:           <PublicResourceLinks />
+321:         </footer>
+322:       </main>
+323:     </div>
+324:   );
+325: }
+KPI type:
+type DashboardKpiData = {
+  registrationCount: number;
+  verifiedRegistrationCount: number;
+  viewerMessageCount: number;
+  scheduledMessageCount: number;
+  orderCreatedCount: number;
+  emailSentCount: number;
+  emailFailedCount: number;
+  viewCount: number;
+  productClicks: number;
+  funnel: ReturnType<typeof calculateAnalyticsFunnel>;
+};
+
+
+KPI rendering:
+function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
+  const conversionRate = data.viewCount > 0
+    ? Math.round((data.verifiedRegistrationCount / data.viewCount) * 1000) / 10
+    : 0;
+  const kpis = [
+    { label: "近 7 天播放 session", value: data.viewCount, tone: "blue" },
+    { label: "近 7 天報名", value: data.registrationCount, tone: "green" },
+    { label: "完成 Email 驗證", value: data.verifiedRegistrationCount, tone: "green" },
+    { label: "商品點擊", value: data.productClicks, tone: "orange" },
+    { label: "近 7 天訂單建立", value: data.orderCreatedCount, tone: "orange" },
+    { label: "Email 寄送成功", value: data.emailSentCount, tone: "green" },
+    { label: "Email 寄送失敗", value: data.emailFailedCount, tone: "orange" },
+    { label: "已驗證報名／觀看", value: `${conversionRate}%`, tone: "gray" },
+    { label: "近 7 天真實留言", value: data.viewerMessageCount, tone: "green" },
+    { label: "排程留言腳本（設定數）", value: data.scheduledMessageCount, tone: "gray" },
+  ] as const;
+
+  // Zero activity is a display state, not evidence that the merchant is new.
+  // Preserve every metric behind a keyboard-accessible native disclosure.
+  const hasActivity = kpis.some((kpi) => typeof kpi.value === "number" && kpi.value !== 0)
+    || data.funnel.some((step) => step.count !== 0);
+  const metrics = (
+    <>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        {kpis.map((kpi) => (
+          <Card key={kpi.label}>
+            <p className="text-sm text-slate-600">{kpi.label}</p>
+            <p className="mt-3 text-3xl font-semibold text-slate-950">{kpi.value}</p>
+          </Card>
+        ))}
+      </div>
+      <section className="mt-6" aria-labelledby="dashboard-conversion-funnel-title">
+        <Card>
+          <div className="mb-5">
+            <h2 id="dashboard-conversion-funnel-title" className="text-lg font-semibold text-slate-950">近 7 天轉換漏斗</h2>
+            <p className="mt-1 text-sm text-slate-500">觀看與點擊只計入已通過直播 admission 的不重複播放 session；報名只計完成 Email 驗證的正式名單。</p>
+          </div>
+          <ol className="grid gap-4 md:grid-cols-4">
+            {data.funnel.map((step) => (
+              <li key={step.key} aria-label={`${step.label}：${step.count}，相對觀看轉換率 ${step.percentage}%`} className="rounded-md border border-border bg-slate-50 p-4">
+                <div className="flex items-baseline justify-between gap-3"><span className="font-medium text-slate-700">{step.label}</span><span className="text-sm text-slate-500">{step.percentage}%</span></div>
+                <p className="mt-2 text-2xl font-semibold text-slate-950">{step.count}</p>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(step.percentage, 100)}%` }} /></div>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      </section>
+    </>
+  );
+  if (hasActivity) return metrics;
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white p-4">
+      <summary className="min-h-11 cursor-pointer rounded-md py-3 font-semibold text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-700">
+        目前指標尚無活動資料，展開查看全部指標
+      </summary>
+      <div className="mt-3">{metrics}</div>
+    </details>
+  );
+}
+
+
+Currency helper:
+export function formatCurrency(cents: number, currency = "TWD") {
+  return new Intl.NumberFormat("zh-TW", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: currency === "TWD" ? 0 : 2,
+  }).format(cents / 100);
+}
+

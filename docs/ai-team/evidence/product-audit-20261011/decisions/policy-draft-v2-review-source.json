@@ -1,0 +1,15 @@
+{
+  "sourceHash": "b021b0e6aac119cc5c76ca8bdaff67cc88e9c653e8efe58bd439983afd7a4a05",
+  "path": "docs/launch/policies-20261016-draft.md",
+  "status": "REVIEW_COMPLETED",
+  "model": "claude-opus-5-5",
+  "effort": "unknown",
+  "session": 56018,
+  "raw_receipt": "policy-draft-v2-review.json",
+  "findings": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 1,
+    "NIT": 2
+  }
+}

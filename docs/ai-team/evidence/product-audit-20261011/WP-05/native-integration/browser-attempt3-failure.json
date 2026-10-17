@@ -1,0 +1,11 @@
+{
+  "checks": [],
+  "status": "FAIL",
+  "cleanup": true,
+  "currentStep": "error-return",
+  "lastSubmissionStatus": 303,
+  "failedStage": "chromium:no-js",
+  "errorType": "TimeoutError",
+  "lastPath": "/registration-error",
+  "retryState": null
+}

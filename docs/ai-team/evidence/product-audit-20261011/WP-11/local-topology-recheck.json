@@ -1,0 +1,31 @@
+{
+  "status": "DOCUMENTED_OPTIONS_NOT_DEPLOYMENT_PROOF",
+  "sources": [
+    "docs/production-rate-limit-runbook.md",
+    "src/lib/request-client-ip.ts"
+  ],
+  "finding": "Repository documents Vercel staging and Cloudflare/trusted-proxy/runtime alternatives;does not prove active nonproduction routing or direct-origin restrictions",
+  "secrets_read": false,
+  "production_access": false,
+  "next": "Resolve approved application ingress trust configuration before global limiter change; cloud deployment remains unverified",
+  "discovered_local_runner": "scripts/live-private-loopback-ingress.mjs",
+  "local_contract": "Binds127.0.0.1 only; strips client forwarding/proof headers; inserts synthetic IP and injected proof",
+  "validation": "13 resolver unit tests and6 resolver transport cases passed; actual route transport now reveals direct-origin rotating-header bypass",
+  "local_transport_update": {
+    "status": "PASS",
+    "cases": 6,
+    "evidence": "loopback-transport-result.json",
+    "scope": "Real loopback proxy and resolver; synthetic upstream only",
+    "application_routes": "NOT_RUN",
+    "cloud_topology": "NOT_VERIFIED",
+    "whole_wp": "INCOMPLETE"
+  },
+  "application_transport": {
+    "evidence": "route-transport-result.json",
+    "status": "FAIL",
+    "proxy_case": "PASS:120 invalid payload then429",
+    "direct_case": "FAIL:121 invalid payload responses; no429",
+    "database_access": false,
+    "scope": "Actual route handler via Node HTTP adapter, not full Next server or deployed ingress"
+  }
+}

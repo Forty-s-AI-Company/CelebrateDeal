@@ -1,0 +1,10 @@
+{
+  "files": {
+    "prisma/migrations/20261016050000_live_metric_order_upgrade_snapshot_fence/migration.sql": "45bd7e46e84160c5d2c3bd64367487f1831574b81f77423f2e085d120914185a",
+    "prisma/migrations/20261016040000_live_metric_order_payment_write_fence/migration.sql": "af53c5ccb8226d1737a2016494c6d95b19234f1211e418487181a96ac7a44bb9",
+    "scripts/wp20-order-upgrade-snapshot-disposable.mjs": "10b1802c6c90239ae92c74a3e2fda7de0ab7ccc075c26cd13c4b09c3666a6741"
+  },
+  "execution_provider": "claude_cli",
+  "requested_model": "opus",
+  "scope": "117 upgrade snapshot fence"
+}

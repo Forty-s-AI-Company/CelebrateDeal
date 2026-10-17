@@ -1,0 +1,1054 @@
+Independent Critical Payment follow-up. Read only supplied snapshot, no tools. Return JSON summary/findings max5, under5000 characters, severity BLOCKER/MAJOR/MINOR/NIT with all schema fields. Prior focused deadlock review MAJOR: real webhook transaction deadlock recovery and exactly-once effects unproven. New test uses actual signed POST handler, real processPaymentWebhook, disposable PostgreSQL. Side connection holds the actual order row; callback holds payment row and waits on order; side then updates payment with identical metadata to create a real cycle. Callback session deadlock_timeout50ms selects it as victim; proxy only sets session config/records PID/outcome and rethrows original error with NO wait/retry injection. Product wrapper must perform its own unchanged two attempts. First ABORTED at ORDER_TRANSITION, retryable UNKNOWN driver deadlock; second COMMITTED, HTTP200. One commission, accrual ledger, processed webhook, paid-order event, payment audit. Duplicate signed POST leaves all counts unchanged. Synthetic trusted checkout affiliate rate500bps and amount100000 create5000 commission. Test narrows one payment/affiliate path; no inference about other production data or all callbacks. Original synchronized20 SSI remains7/20 FAIL and overallWP is not READY. Previous MINORs retry backoff/order-loser/upgrade remain open unless evidence directly resolves them. Please assess whether new evidence resolves the earlier callback MAJOR, and find actual gaps/risks in this test or changed retry behavior. Do not count missing production deployment as a finding; production access is forbidden.
+
+FILE scripts/wp20-payment-callback-deadlock-probe.mjs
+1: import assert from 'node:assert/strict';
+2: import fs from 'node:fs';
+3: /** Run the real signed POST while only arranging row locks on the owned DB. */
+4: export async function verifyCallbackDeadlock(db,call,body,{vendorId,injection,service}) {
+5:  const proof={status:'FAIL',attempts:[],callbackBlocked:false,sideCommitted:false};
+6:  const [order]=await db.$queryRawUnsafe('SELECT id,"primaryPaymentTransactionId" AS payment FROM "CommerceOrder" WHERE "vendorId"=$1',vendorId);
+7:  assert.ok(order?.payment);
+8:  let releaseSide,announceSide,callbackPid;
+9:  const sideGate=new Promise(resolve=>{releaseSide=resolve;});
+10:  const sideReady=new Promise(resolve=>{announceSide=resolve;});
+11:  const side=db.$transaction(async tx=>{
+12:   await tx.$executeRawUnsafe("SET LOCAL lock_timeout='5s'");
+13:   await tx.$queryRawUnsafe('SELECT id FROM "CommerceOrder" WHERE id=$1 FOR UPDATE',order.id);
+14:   const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');announceSide(pid.pid);
+15:   await sideGate;
+16:   await tx.$executeRawUnsafe('UPDATE "PaymentTransaction" SET metadata=metadata WHERE id=$1',order.payment);
+17:  },{timeout:15000});side.catch(()=>{});
+18:  const proxy=new Proxy(db,{get(target,key){
+19:   if(key==='$transaction')return async(callback,options)=>{
+20:    if(typeof callback!=='function'||options?.isolationLevel!=='Serializable')return target.$transaction(callback,options);
+21:    const attempt={status:'RUNNING'};proof.attempts.push(attempt);
+22:    try {
+23:     const value=await target.$transaction(async tx=>{
+24:      await tx.$executeRawUnsafe("SET LOCAL deadlock_timeout='50ms'");
+25:      const [pid]=await tx.$queryRawUnsafe('SELECT pg_backend_pid() AS pid');callbackPid=pid.pid;
+26:      return callback(tx);
+27:     },options);attempt.status='COMMITTED';return value;
+28:    } catch(error) {
+29:     attempt.status='ABORTED';attempt.retryable=service.isDatabaseWriteConflict(error);attempt.stage=service.paymentWebhookErrorStage(error);
+30:     attempt.deadlock=/deadlock detected|40P01/.test(String(error?.message??''));
+31:     attempt.code=/^(?:P[0-9]{4}|[0-9A-Z]{5})$/.test(error?.meta?.code??error?.code??'')?(error.meta?.code??error.code):'UNKNOWN';
+32:     throw error;
+33:    }
+34:   };
+35:   const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+36:  }});
+37:  let callback;
+38:  try {
+39:   const sidePid=await Promise.race([sideReady,side.then(()=>{throw new Error('side-ended-before-ready');})]);
+40:   globalThis[injection]=proxy;
+41:   callback=call(body);callback.catch(()=>{});
+42:   for(let attempt=0;attempt<120;attempt++) {
+43:    if(callbackPid){const [state]=await db.$queryRawUnsafe('SELECT $1::integer=ANY(pg_blocking_pids($2::integer)) AS blocked',sidePid,callbackPid);if(state.blocked){proof.callbackBlocked=true;break;}}
+44:    await db.$queryRawUnsafe('SELECT pg_sleep(0.025)::text');
+45:   }
+46:   assert.equal(proof.callbackBlocked,true);releaseSide();
+47:   const response=await callback;proof.httpStatus=response.status;
+48:   await side;proof.sideCommitted=true;
+49:   assert.equal(response.status,200);
+50:   assert.equal(proof.attempts.length,2);
+51:   assert.equal(proof.attempts[0].status,'ABORTED');assert.equal(proof.attempts[0].deadlock,true);assert.equal(proof.attempts[0].retryable,true);
+52:   assert.ok(['INVENTORY','ORDER_TRANSITION'].includes(proof.attempts[0].stage),'deadlock must come from the real callback lifecycle');
+53:   assert.equal(proof.attempts[1].status,'COMMITTED');
+54:   const commissions=await db.affiliateCommission.findMany({where:{vendorId,sourceType:'webhook',sourceId:order.payment},select:{id:true,commissionAmountCents:true}});
+55:   assert.equal(commissions.length,1);assert.equal(commissions[0].commissionAmountCents,5000);
+56:   const ledgers=await db.affiliateCommissionLedgerEntry.findMany({where:{vendorId,affiliateCommissionId:commissions[0].id},select:{entryType:true,amountCents:true}});
+57:   assert.deepEqual(ledgers,[{entryType:'accrual',amountCents:5000}]);
+58:   const events=await db.webhookEvent.findMany({where:{vendorId},select:{status:true,retryCount:true}});
+59:   assert.deepEqual(events,[{status:'processed',retryCount:0}]);
+60:   const paidEvents=await db.commerceOrderEvent.count({where:{vendorId,orderId:order.id,eventType:'payment.paid'}});
+61:   assert.equal(paidEvents,1);
+62:   const paymentAudits=await db.auditLog.count({where:{vendorId,action:'payment_webhook_paid'}});assert.equal(paymentAudits,1);
+63:   proof.cardinality={paymentAudits,commissions:commissions.length,ledgerEntries:ledgers.length,processedEvents:events.length,paidOrderEvents:paidEvents};
+64:   proof.status='PASS';return proof;
+65:  } finally {
+66:   releaseSide();await Promise.allSettled([side,...(callback?[callback]:[])]);globalThis[injection]=db;
+67:   fs.writeFileSync('docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/payment-callback-deadlock-proof.json',JSON.stringify(proof,null,2));
+68:  }
+69: }
+
+
+FILE scripts/wp20-payment-callback-deadlock-disposable.mjs
+1: import { verifyCallbackDeadlock } from './wp20-payment-callback-deadlock-probe.mjs';
+2: import assert from "node:assert/strict";
+3: import { createHmac } from "node:crypto";
+4: import fs from "node:fs";
+5: import path from "node:path";
+6: import { createRequire } from "node:module";
+7: import { build } from "esbuild";
+8: import { main } from "./prisma-loopback-disposable-migration-runner.mjs";
+9: const require = createRequire(import.meta.url);
+10: const root = process.cwd();
+11: const output = path.join(root,"docs/ai-team/evidence/product-audit-20261011/WP-20/coverage/payment-callback-deadlock-integration.json");
+12: const receipt = { status: "FAIL", stage: "start", networkAttempts: 0, processed: 0, cleanup: null,
+13:   scope: "Actual signed callback with forced database deadlock, one synthetic affiliate order; original synchronized20 gate is separate" };
+14: const injection = "__wp20PaymentCallbackDb";
+15: const originalFetch = globalThis.fetch;
+16: let migration;
+17: try {
+18:   const clientSource = fs.readFileSync(path.join(root,"node_modules/.prisma/client/index.js"),"utf8");
+19:   const envPaths = JSON.parse(clientSource.match(/"relativeEnvPaths":\s*(\{[^}]*\})/u)?.[1] ?? "null");
+20:   assert.ok(envPaths && Object.values(envPaths).every(value => value === null));
+21:   const prismaModule = require("@prisma/client");
+22:   const { PrismaClient } = prismaModule;
+23:   migration = await main({ afterMigrate: async ({ databaseUrl }) => {
+24:     const target = new URL(databaseUrl);
+25:     assert.equal(target.hostname,"127.0.0.1"); assert.equal(target.pathname,"/celebratedeal_test");
+26:     target.searchParams.set("connection_limit","24");
+27:     const db = new PrismaClient({ datasourceUrl: target.toString() });
+28:     try {
+29:       const [marker] = await db.$queryRawUnsafe("SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()");
+30:       assert.match(marker.marker,/^prisma-no-dotenv:[a-f0-9]{16}$/u);
+31:       assert.equal(globalThis[injection],undefined); globalThis[injection]=db;
+32:       globalThis.fetch = async () => { receipt.networkAttempts += 1; throw new Error("synthetic-network-blocked"); };
+33:       receipt.stage="compile";
+34:       const bundle = await build({ stdin: { contents: 'export { paymentWebhookErrorStage } from "./src/lib/payment-webhook-errors.ts"; export { isDatabaseWriteConflict } from "./src/lib/database-write-conflict.ts"; export { POST } from "./src/app/api/webhooks/payments/route.ts"; export * from "./src/lib/webhook-retry.ts"; export { PaymentWebhookPayload } from "./src/lib/payment-webhooks.ts"; export { createReservedPaymentTransaction } from "./src/lib/inventory-reservations.ts"; export { createCommerceOrderForCheckout } from "./src/lib/commerce-orders.ts"; export { validateProductDeliveryDraft,protectProductDeliveryConfig } from "./src/lib/product-delivery.ts";', resolveDir: root, loader: "ts" },
+35:         bundle:true,platform:"node",format:"cjs",packages:"external",write:false,logLevel:"silent",
+36:         define:{"process.env.CSRF_SECRET":JSON.stringify("synthetic-wp20-payment-retry-encryption-key-32-bytes"),"process.env.SENTRY_DSN":'""',"process.env.PAYMENT_PROVIDER":'"ecpay-like"',"process.env.ECPAY_WEBHOOK_SECRET":JSON.stringify("synthetic-wp20-hmac-proof"),"process.env.VERCEL_ENV":'"development"',"process.env.NODE_ENV":'"test"' },
+37:         plugins:[{name:"owned-db",setup(b){b.onResolve({filter:/^@\/lib\/db$/},args=>({path:args.path,namespace:"owned"}));
+38:           b.onLoad({filter:/.*/,namespace:"owned"},()=>({contents:`export function getDb(){return globalThis.${injection}}`,loader:"js"}));}}] });
+39:       const compiled={exports:{}};
+40:       // Any relative DB module or direct client constructor in compiled source
+41:       // must still bind to the same verified disposable connection.
+42:       const ownedRequire = name => name === "@prisma/client"
+43:         ? { ...prismaModule, PrismaClient: class { constructor(){ return db; } } }
+44:         : require(name);
+45:       new Function("require","module","exports",bundle.outputFiles[0].text)(ownedRequire,compiled,compiled.exports);
+46:       const service=compiled.exports;
+47:       receipt.stage="fixtures";
+48:       const plan=await db.billingPlan.create({data:{name:"Synthetic retry plan",code:"wp20-retry",monthlyPriceCents:100000,transactionFeeRateBps:100}});
+49:       const vendor=await db.vendor.create({data:{name:"Synthetic retry merchant",slug:"wp20-retry",email:"retry@example.test",passwordHash:"synthetic-unused",
+50:         subscriptions:{create:{planId:plan.id,paymentMode:"platform",status:"active"}}}});
+51:       const affiliate=await db.affiliate.create({data:{vendorId:vendor.id,name:"Synthetic affiliate",code:"WP20CALLBACK",commissionRateBps:500}});
+52:       const video=await db.video.create({data:{vendorId:vendor.id,title:"Synthetic",videoUrl:"https://example.test/video.mp4",durationSec:100}});
+53:       const form=await db.registrationForm.create({data:{vendorId:vendor.id,name:"Synthetic",slug:"wp20-retry",headline:"Synthetic",fields:[]}});
+54:       const live=await db.live.create({data:{vendorId:vendor.id,videoId:video.id,formId:form.id,title:"Synthetic",slug:"wp20-retry",scheduledAt:new Date()}});
+55:       const submission=await db.formSubmission.create({data:{formId:form.id,liveId:live.id,name:"Synthetic",email:"viewer@example.test",verificationStatus:"VERIFIED",verifiedAt:new Date()}});
+56:       const product=await db.product.create({data:{vendorId:vendor.id,name:"Synthetic retry product",slug:"wp20-retry-product",priceCents:100000,inventory:1,fulfillmentType:"digital"}});
+57:       const delivery=service.validateProductDeliveryDraft({fulfillmentType:"digital",isActive:true,title:"Synthetic delivery",destinationUrl:"https://delivery.example.com/synthetic",instructions:"Synthetic",hostConfirmed:true});
+58:       const allowlist=await db.vendorDeliveryUrlAllowlist.create({data:{vendorId:vendor.id,hostname:delivery.destinationHostname,pathPrefix:delivery.destinationPathPrefix}});
+59:       const configId="wp20-retry-delivery";
+60:       await db.productDeliveryConfig.create({data:{id:configId,vendorId:vendor.id,productId:product.id,allowlistId:allowlist.id,status:"active",fulfillmentType:"digital",deliveryKind:delivery.deliveryKind,title:delivery.title,
+61:         ...service.protectProductDeliveryConfig(delivery,{vendorId:vendor.id,productId:product.id,configId,revision:1}),activatedAt:new Date()}});
+62:       const bodies=[];
+63:       const call = (body, valid=true) => service.POST(new Request("http://127.0.0.1/api/webhooks/payments?provider=ecpay-like&source=notify", {
+64:         method:"POST",headers:{"content-type":"application/json","x-ecpay-signature":valid?createHmac("sha256","synthetic-wp20-hmac-proof").update(body).digest("hex"):"invalid"},body,
+65:       }));
+66:       for(let i=0;i<1;i+=1){
+67:         const orderNumber=`WP20-RETRY-${i}`,checkoutIdempotencyKey=`wp20-retry-${i}`;
+68:         await service.createReservedPaymentTransaction({vendorId:vendor.id,productId:product.id,checkoutIdempotencyKey,
+69:           transactionData:{vendorId:vendor.id,providerName:"ecpay-like",orderNumber,paymentMode:"platform",grossAmountCents:100000,netAmountCents:100000,currency:"TWD",status:"pending",checkoutIdempotencyKey,
+70:             metadata:{referralCode:affiliate.code,productId:product.id,billingPurpose:"buyer_order",formSubmissionId:submission.id,sourceLiveId:live.id}},
+71:           createCommerceOrder:(tx,payment)=>service.createCommerceOrderForCheckout(tx,{vendorId:vendor.id,productId:product.id,orderNumber,checkoutIdempotencyKey,paymentTransactionId:payment.id,totalAmountCents:100000,currency:"TWD",buyer:{name:"Synthetic",email:`buyer-${i}@example.test`},shipping:null}).then(()=>undefined)});
+72:         bodies.push(JSON.stringify({EventId:`wp20-callback-event-${i}`,EventType:"paid",VendorSlug:vendor.slug,MerchantTradeNo:orderNumber,TradeAmt:1000,NetAmount:1000,GatewayFee:0,PlatformFee:0}));
+73:       }
+74:       receipt.stage="signature";
+75:       assert.equal((await call(bodies[0],false)).status,401);
+76:       assert.equal(await db.webhookEvent.count(),0);
+77:       receipt.stage="actual-callback-deadlock";
+78:       receipt.deadlock=await verifyCallbackDeadlock(db,call,bodies[0],{vendorId:vendor.id,injection,service});
+79:       const counts=async()=>({payments:await db.paymentTransaction.count({where:{vendorId:vendor.id,status:"paid"}}),orders:await db.commerceOrder.count({where:{vendorId:vendor.id,status:"paid"}}),entitlements:await db.commerceEntitlement.count({where:{vendorId:vendor.id}}),commissions:await db.affiliateCommission.count({where:{vendorId:vendor.id}}),ledgerEntries:await db.affiliateCommissionLedgerEntry.count({where:{vendorId:vendor.id}}),events:await db.webhookEvent.count({where:{vendorId:vendor.id}}),paymentAudits:await db.auditLog.count({where:{vendorId:vendor.id,action:"payment_webhook_paid"}})});
+80:       const before=await counts();assert.deepEqual(before,{payments:1,orders:1,entitlements:1,commissions:1,ledgerEntries:1,events:1,paymentAudits:1});
+81:       receipt.stage="duplicate-callback";
+82:       assert.equal((await call(bodies[0])).status,200);
+83:       assert.deepEqual(await counts(),before);assert.equal(receipt.networkAttempts,0);
+84:       receipt.counts=before;receipt.stage="complete";receipt.status="PASS";
+85:     } catch(error){receipt.errorCode=typeof error?.code==="string"&&/^(?:P\d{4}|[0-9A-Z]{5})$/u.test(error.code)?error.code:"ASSERTION_OR_RUNNER_ERROR";throw new Error("wp20-payment-retry-check-failed");}
+86:     finally {delete globalThis[injection];globalThis.fetch=originalFetch;await db.$disconnect();}
+87:   }});
+88: } catch {receipt.status="FAIL";}
+89: finally {delete globalThis[injection];globalThis.fetch=originalFetch;}
+90: receipt.cleanup=migration?.cleanup??"UNKNOWN";
+91: if(migration?.status!=="PASS")receipt.status="FAIL";
+92: fs.writeFileSync(output,JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));process.exitCode=receipt.status==="PASS"?0:1;
+
+
+FILE src/lib/database-write-conflict.ts
+1: import { Prisma } from "@prisma/client";
+2: 
+3: /** Recognize only database serialization/deadlock failures. Callers retain
+4:  * their existing bounded attempt count and must restart the whole transaction.
+5:  */
+6: export function isDatabaseWriteConflict(error: unknown): boolean {
+7:   if (error instanceof Prisma.PrismaClientKnownRequestError) {
+8:     if (error.code === "P2034") return true;
+9:     // Raw queries expose PostgreSQL SQLSTATE rather than Prisma's P2034.
+10:     return error.code === "P2010" && (error.meta?.code === "40001" || error.meta?.code === "40P01");
+11:   }
+12:   // The installed connector can expose a real deadlock as UnknownRequestError.
+13:   // Scope text classification to that driver class; arbitrary application errors,
+14:   // lock timeouts, unique violations and validation failures are not retryable here.
+15:   return error instanceof Prisma.PrismaClientUnknownRequestError
+16:     && /(?:kind:\s*Deadlock\b|\bdeadlock detected\b)/iu.test(error.message);
+17: }
+
+
+FILE src/lib/payment-webhook-conflict-retry.test.ts
+1: import { beforeEach, describe, expect, it, vi } from "vitest";
+2: import { Prisma } from "@prisma/client";
+3: const dependencies = vi.hoisted(() => ({ getDb: vi.fn() }));
+4: vi.mock("@/lib/db", () => ({ getDb: dependencies.getDb }));
+5: import { PaymentWebhookPayload, processPaymentWebhook } from "./payment-webhooks";
+6: const payload = PaymentWebhookPayload.parse({ provider: "synthetic", eventId: "synthetic-retry", eventType: "paid", orderNumber: "synthetic-order" });
+7: beforeEach(() => { dependencies.getDb.mockReset(); });
+8: describe("payment webhook bounded conflict retry", () => {
+9:   it("retries the observed driver deadlock once and rethrows after two attempts", async () => {
+10:     const error = new Prisma.PrismaClientUnknownRequestError("ERROR: deadlock detected", { clientVersion: "synthetic" });
+11:     dependencies.getDb.mockImplementation(() => { throw error; });
+12:     await expect(processPaymentWebhook(payload)).rejects.toBe(error);
+13:     expect(dependencies.getDb).toHaveBeenCalledTimes(2);
+14:   });
+15:   it("does not retry arbitrary application failures containing the same text", async () => {
+16:     const error = new Error("deadlock detected");
+17:     dependencies.getDb.mockImplementation(() => { throw error; });
+18:     await expect(processPaymentWebhook(payload)).rejects.toBe(error);
+19:     expect(dependencies.getDb).toHaveBeenCalledTimes(1);
+20:   });
+21:   it("retains the existing uniqueness-conflict retry budget", async () => {
+22:     const error = new Prisma.PrismaClientKnownRequestError("synthetic", { code: "P2002", clientVersion: "synthetic" });
+23:     dependencies.getDb.mockImplementation(() => { throw error; });
+24:     await expect(processPaymentWebhook(payload)).rejects.toBe(error);
+25:     expect(dependencies.getDb).toHaveBeenCalledTimes(2);
+26:   });
+27: });
+
+
+FILE src/app/api/webhooks/payments/route.ts
+1: import { NextResponse } from "next/server";
+2: import type { PaymentTransaction, Prisma, WebhookEvent } from "@prisma/client";
+3: import { readTextBody } from "@/lib/api-security";
+4: import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+5: import { getDb } from "@/lib/db";
+6: import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-providers";
+7: import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
+8: import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
+9: import { processPaymentWebhook } from "@/lib/payment-webhooks";
+10: import { redactedJsonSnapshot } from "@/lib/redaction";
+11: 
+12: type CallbackSource = "return" | "notify" | "unknown";
+13: type ObservedMethod = "POST" | "HEAD" | "OTHER";
+14: type PayerReturnOutcome = "updated" | "pending" | "unverified";
+15: 
+16: function classifyCallbackSource(searchParams: URLSearchParams): CallbackSource {
+17:   const values = searchParams.getAll("source");
+18:   if (values.length !== 1) return "unknown";
+19:   return values[0] === "return" || values[0] === "notify" ? values[0] : "unknown";
+20: }
+21: 
+22: function observedMethod(method: string): ObservedMethod {
+23:   if (method === "POST" || method === "HEAD") return method;
+24:   return "OTHER";
+25: }
+26: 
+27: /**
+28:  * Vercel request records omit query strings. For preview-only callback proof,
+29:  * emit a fixed schema that keeps only an allowlisted source enum. Never pass
+30:  * request URL, body, headers, identifiers, or exception data to this log.
+31:  */
+32: function observeCallbackRequest(requestUrl: URL, method: ObservedMethod, status: number) {
+33:   if (process.env.VERCEL_ENV !== "preview") return;
+34: 
+35:   try {
+36:     console.info(JSON.stringify({
+37:       event: "payment_webhook_request_v1",
+38:       method,
+39:       path: "/api/webhooks/payments",
+40:       source: classifyCallbackSource(requestUrl.searchParams),
+41:       status,
+42:       timestamp: new Date().toISOString(),
+43:     }));
+44:   } catch {
+45:     // Observability must not change webhook response semantics.
+46:   }
+47: }
+48: 
+49: function observePaymentWebhookFailure(requestUrl: URL, code: ReturnType<typeof classifyPaymentWebhookFailure>) {
+50:   if (process.env.VERCEL_ENV !== "preview") return;
+51: 
+52:   try {
+53:     console.info(JSON.stringify({
+54:       event: "payment_webhook_failure_v1",
+55:       method: "POST",
+56:       path: "/api/webhooks/payments",
+57:       source: classifyCallbackSource(requestUrl.searchParams),
+58:       status: 500,
+59:       code,
+60:       timestamp: new Date().toISOString(),
+61:     }));
+62:   } catch {
+63:     // Observability must not change webhook response semantics.
+64:   }
+65: }
+66: 
+67: function isPayUniPayerReturn(requestUrl: URL) {
+68:   const providerValues = requestUrl.searchParams.getAll("provider");
+69:   return classifyCallbackSource(requestUrl.searchParams) === "return"
+70:     && providerValues.length === 1
+71:     && providerValues[0] === "payuni";
+72: }
+73: 
+74: function payerReturnOutcome(status: number): PayerReturnOutcome {
+75:   if (status >= 200 && status < 300) return "updated";
+76:   if (status >= 500) return "pending";
+77:   return "unverified";
+78: }
+79: 
+80: function webhookResponse(requestUrl: URL, status: number, payload: unknown, platformPlanReturn = false) {
+81:   if (isPayUniPayerReturn(requestUrl)) {
+82:     // The plan page authenticates again and reads the current tenant's actual
+83:     // subscription. No success flag or transaction identifier grants access.
+84:     const destination = new URL(platformPlanReturn ? "/billing/plans" : "/checkout/result", requestUrl.origin);
+85:     if (!platformPlanReturn) destination.searchParams.set("payment", payerReturnOutcome(status));
+86:     observeCallbackRequest(requestUrl, "POST", 303);
+87:     const response = NextResponse.redirect(destination, 303);
+88:     response.headers.set("cache-control", "no-store");
+89:     response.headers.set("referrer-policy", "no-referrer");
+90:     return response;
+91:   }
+92: 
+93:   observeCallbackRequest(requestUrl, "POST", status);
+94:   return NextResponse.json(payload, { status });
+95: }
+96: 
+97: type PayerReturnTransaction = Pick<PaymentTransaction, "vendorId" | "providerName" | "orderNumber" | "paymentMode" | "metadata">;
+98: 
+99: function isPlatformPlanReturnTransaction(transaction: PayerReturnTransaction | null, scope: { vendorId: string; provider: string; orderNumber?: string }) {
+100:   const metadata = transaction?.metadata;
+101:   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+102:   return scope.provider === "payuni" && Boolean(scope.orderNumber)
+103:     && transaction?.vendorId === scope.vendorId && transaction.providerName === scope.provider
+104:     && transaction.orderNumber === scope.orderNumber && transaction.paymentMode === "platform"
+105:     && metadata.billingPurpose === "platform_subscription_checkout"
+106:     && typeof metadata.platformSubscriptionId === "string" && metadata.platformSubscriptionId.length > 0
+107:     && typeof metadata.billingPlanId === "string" && metadata.billingPlanId.length > 0;
+108: }
+109: 
+110: async function processedPayerReturnResponse(requestUrl: URL, event: WebhookEvent, responsePayload: unknown) {
+111:   if (isPayUniPayerReturn(requestUrl) && event.status === "processed" && event.provider === "payuni" && event.vendorId) {
+112:     const stored = event.payload;
+113:     const normalized = stored && typeof stored === "object" && !Array.isArray(stored) ? stored.normalized : null;
+114:     if (normalized && typeof normalized === "object" && !Array.isArray(normalized)
+115:       && normalized.provider === event.provider && typeof normalized.orderNumber === "string" && normalized.orderNumber.length > 0) {
+116:       try {
+117:         // Duplicate returns use the already-processed event's identity, never
+118:         // incoming metadata or query values. Read only the server-owned purpose.
+119:         const scope = { vendorId: event.vendorId, provider: event.provider, orderNumber: normalized.orderNumber };
+120:         const transaction = await getDb().paymentTransaction.findFirst({
+121:           where: { vendorId: scope.vendorId, providerName: scope.provider, orderNumber: scope.orderNumber },
+122:           select: { vendorId: true, providerName: true, orderNumber: true, paymentMode: true, metadata: true },
+123:         });
+124:         return webhookResponse(requestUrl, 200, responsePayload, isPlatformPlanReturnTransaction(transaction, scope));
+125:       } catch {
+126:         // Presentation lookup failures cannot alter a processed callback or
+127:         // retry payment processing; retain the existing neutral buyer result.
+128:       }
+129:     }
+130:   }
+131:   return webhookResponse(requestUrl, 200, responsePayload);
+132: }
+133: 
+134: export async function HEAD(request: Request) {
+135:   const requestUrl = new URL(request.url);
+136:   observeCallbackRequest(requestUrl, observedMethod(request.method), 405);
+137:   return new NextResponse(null, { status: 405, headers: { Allow: "POST" } });
+138: }
+139: 
+140: async function claimWebhookEvent(db: ReturnType<typeof getDb>, event: WebhookEvent) {
+141:   if (event.status === "processed") return { status: "processed" as const, event };
+142:   if (event.status !== "received" && event.status !== "failed") return { status: "pending" as const, event };
+143:   if (event.status === "failed" && event.retryCount >= event.maxRetries) return { status: "pending" as const, event };
+144: 
+145:   // A created event is visible before its first callback finishes. Claim it
+146:   // atomically; a later signed provider retry may reclaim only a failed event.
+147:   const isRetry = event.status === "failed";
+148:   const claimed = await db.webhookEvent.updateMany({
+149:     where: { id: event.id, status: event.status, retryCount: event.retryCount },
+150:     data: {
+151:       status: "retrying",
+152:       retryCount: isRetry ? { increment: 1 } : undefined,
+153:       nextRetryAt: null,
+154:     },
+155:   });
+156:   if (claimed.count !== 1) {
+157:     const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
+158:     return { status: latestEvent?.status === "processed" ? "processed" as const : "pending" as const, event: latestEvent ?? event };
+159:   }
+160:   return {
+161:     status: "claimed" as const,
+162:     event: { ...event, status: "retrying", retryCount: event.retryCount + (isRetry ? 1 : 0) },
+163:     isRetry,
+164:   };
+165: }
+166: 
+167: export async function POST(request: Request) {
+168:   const requestUrl = new URL(request.url);
+169:   let adapter: PaymentProviderAdapter;
+170:   try {
+171:     adapter = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
+172:   } catch {
+173:     return webhookResponse(requestUrl, 500, { error: "Invalid payment provider configuration" });
+174:   }
+175: 
+176:   if (process.env.NODE_ENV === "production" && adapter.id === "demo") {
+177:     return webhookResponse(requestUrl, 403, { error: "Demo payment webhooks are not allowed in production" });
+178:   }
+179: 
+180:   const providerIds = [
+181:     requestUrl.searchParams.get("provider"),
+182:     request.headers.get("x-payment-provider"),
+183:     request.headers.get("x-webhook-provider"),
+184:   ].filter((providerId): providerId is string => providerId !== null);
+185: 
+186:   if (providerIds.length === 0 || providerIds.some((providerId) => providerId !== adapter.id)) {
+187:     return webhookResponse(requestUrl, 400, { error: "Unsupported payment provider" });
+188:   }
+189: 
+190:   const rawBody = await readTextBody(request);
+191:   if (rawBody === null) {
+192:     return webhookResponse(requestUrl, 413, { error: "Webhook payload too large" });
+193:   }
+194: 
+195:   const diagnostics = buildPaymentWebhookDiagnostics(adapter.id, rawBody);
+196:   const verified = await adapter.verifySignature(request, rawBody);
+197: 
+198:   if (!verified) {
+199:     await writeAuditLog({
+200:       actorLabel: `webhook:${adapter.id}`,
+201:       action: "payment_webhook_signature_failed",
+202:       targetType: "WebhookEvent",
+203:       before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
+204:     });
+205:     return webhookResponse(requestUrl, 401, { error: "Invalid signature" });
+206:   }
+207: 
+208:   let normalized;
+209:   try {
+210:     normalized = await adapter.normalizePayload(rawBody);
+211:   } catch {
+212:     await writeAuditLog({
+213:       actorLabel: `webhook:${adapter.id}`,
+214:       action: "payment_webhook_invalid",
+215:       targetType: "WebhookEvent",
+216:       before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
+217:       after: auditSnapshot({ errorCode: "invalid_payload" }),
+218:     });
+219:     return webhookResponse(requestUrl, 400, { error: "Invalid payment webhook payload", code: "invalid_payload" });
+220:   }
+221: 
+222:   const payload = normalized.payload;
+223:   const db = getDb();
+224:   const eventKey = { provider_eventId: { provider: payload.provider, eventId: payload.eventId } };
+225:   let event = await db.webhookEvent.findUnique({ where: eventKey });
+226:   if (!event) {
+227:     try {
+228:       event = await db.webhookEvent.create({
+229:         data: {
+230:           provider: payload.provider,
+231:           eventId: payload.eventId,
+232:           eventType: payload.eventType,
+233:           status: "received",
+234:           maxRetries: 5,
+235:           payload: {
+236:             raw: redactedJsonSnapshot(normalized.rawPayload),
+237:             normalized: redactedJsonSnapshot(payload),
+238:             diagnostics: redactedJsonSnapshot(diagnostics),
+239:           } as Prisma.InputJsonObject,
+240:         },
+241:       });
+242:     } catch (error) {
+243:       // ReturnURL and NotifyURL can both miss the first read. Only converge a
+244:       // unique-key race when the same provider event is visible after the loss.
+245:       if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "P2002") {
+246:         throw error;
+247:       }
+248:       event = await db.webhookEvent.findUnique({ where: eventKey });
+249:       if (!event) throw error;
+250:     }
+251:   }
+252: 
+253:   const claim = await claimWebhookEvent(db, event);
+254:   if (claim.status === "processed") {
+255:     return processedPayerReturnResponse(requestUrl, claim.event, { ok: true, duplicate: true, eventId: event.id });
+256:   }
+257:   if (claim.status === "pending") {
+258:     return webhookResponse(requestUrl, 503, { error: "Payment webhook processing pending", eventId: event.id });
+259:   }
+260:   event = claim.event;
+261: 
+262:   try {
+263:     const result = await processPaymentWebhook(payload, event);
+264:     return webhookResponse(requestUrl, 200, {
+265:       ok: true,
+266:       eventId: event.id,
+267:       vendorId: result.vendor.id,
+268:       transactionId: result.transaction.id,
+269:     }, isPlatformPlanReturnTransaction(result.transaction, { vendorId: result.vendor.id, provider: payload.provider, orderNumber: payload.orderNumber }));
+270:   } catch (error) {
+271:     try {
+272:       const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
+273:       if (latestEvent?.status === "processed") {
+274:         return processedPayerReturnResponse(requestUrl, latestEvent, { ok: true, duplicate: true, eventId: event.id });
+275:       }
+276:     } catch {
+277:       // Keep the original failure path when convergence cannot be confirmed.
+278:     }
+279: 
+280:     const errorCode = classifyPaymentWebhookFailure(error);
+281:     observePaymentWebhookFailure(requestUrl, errorCode);
+282:     const message = paymentWebhookFailureMessage(errorCode);
+283:     await db.webhookEvent.updateMany({
+284:       where: { id: event.id, status: "retrying", retryCount: event.retryCount },
+285:       data: {
+286:         status: "failed",
+287:         errorMessage: message,
+288:         retryCount: claim.isRetry ? undefined : { increment: 1 },
+289:         nextRetryAt: new Date(Date.now() + 1000 * 60 * 15),
+290:       },
+291:     });
+292:     await writeAuditLog({
+293:       actorLabel: `webhook:${payload.provider}`,
+294:       action: "payment_webhook_failed",
+295:       targetType: "WebhookEvent",
+296:       targetId: event.id,
+297:       before: auditSnapshot(payload),
+298:       after: auditSnapshot({ errorCode }),
+299:     });
+300:     return webhookResponse(requestUrl, 500, { error: "Payment webhook processing failed", code: errorCode, eventId: event.id });
+301:   }
+302: }
+
+
+UNCHANGED TRANSACTION AND RETRY CALLER src/lib/payment-webhooks.ts
+1: import { isDatabaseWriteConflict } from "@/lib/database-write-conflict";
+926: async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
+927:   const db = getDb();
+928:   const { vendor, existingTransaction } = await resolveWebhookScope(payload);
+929: 
+930:   const occurredAt = new Date(payload.occurredAt ?? new Date().toISOString());
+931:   if (isDisputeEvent(payload.eventType) && !payload.disputeCaseId) {
+932:     throw new Error("synthetic dispute webhook 缺少 disputeCaseId。");
+933:   }
+934:   const {
+935:     transaction,
+936:     commission,
+937:     refundCommission,
+938:     platformReferralCommission,
+939:     platformReferralRefund,
+940:     platformReferralDispute,
+941:     disputeEntry,
+942:     courseAllocations,
+943:     courseRefundAllocations,
+944:     courseDisputeEntries,
+945:     platformSubscription,
+946:     invoicePayment,
+947:     commerceOrderRefund,
+948:   // The ordered re-read and writes must remain in one serializable closure.
+949:   // eslint-disable-next-line complexity -- splitting this scope weakens its transaction invariant.
+950:   } = await db.$transaction(async (tx) => withPaymentWebhookStage("PAYMENT_UPDATE", async () => {
+951:     // Re-read the logical order inside the serializable transaction. This keeps
+952:     // amount, refund and state checks bound to the row version being updated.
+953:     const currentTransaction = await tx.paymentTransaction.findFirst({
+954:       where: {
+955:         vendorId: vendor.id,
+956:         providerName: payload.provider,
+957:         orderNumber: payload.orderNumber,
+958:       },
+959:       include: { refunds: true, primaryCommerceOrder: { select: { id: true } } },
+960:     });
+961:     // Revalidate the pinned payment inside the serializable write transaction.
+962:     if (expectedScope && (vendor.id !== expectedScope.vendorId || payload.provider !== expectedScope.providerName
+963:       || payload.orderNumber !== expectedScope.orderNumber || currentTransaction?.id !== expectedScope.paymentTransactionId)) {
+964:       throw new Error("Recovery payment identity changed before processing.");
+965:     }
+966:     const invariant = validatePaymentWebhookInvariants({
+967:       eventId: payload.eventId,
+968:       eventType: payload.eventType,
+969:       grossAmountCents: payload.grossAmountCents > 0 ? payload.grossAmountCents : undefined,
+970:       refundAmountCents: payload.refundAmountCents,
+971:       currency: payload.currency,
+972:     }, currentTransaction);
+973:     if (!currentTransaction && payload.eventType === "paid" && payload.grossAmountCents <= 0) {
+974:       throw new Error("付款 webhook 缺少有效訂單金額。");
+975:     }
+976: 
+977:     const hasRefundedOrder = Boolean(currentTransaction && (
+978:       currentTransaction.refundedAmountCents > 0
+979:       || currentTransaction.refunds.length > 0
+980:       || ["refunded", "partially_refunded"].includes(currentTransaction.status)
+981:     ));
+982:     const grossAmountCents = currentTransaction?.grossAmountCents || payload.grossAmountCents;
+983:     const gatewayFeeCents = payload.eventType === "paid"
+984:       ? payload.gatewayFeeCents || currentTransaction?.gatewayFeeCents || 0
+985:       : currentTransaction?.gatewayFeeCents || 0;
+986:     const platformFeeCents = payload.eventType === "paid"
+987:       ? payload.platformFeeCents || currentTransaction?.platformFeeCents || 0
+988:       : currentTransaction?.platformFeeCents || 0;
+989:     const netAmountCents = payload.eventType === "paid"
+990:       ? payload.netAmountCents ?? currentTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents)
+991:       : currentTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents);
+992:     const currency = currentTransaction?.currency ?? payload.currency ?? "TWD";
+993:     const existingMetadata = metadataObject(currentTransaction?.metadata);
+994:     const checkoutReferralCode = referralCodeFromMetadata(existingMetadata);
+995:     const checkoutAffiliateClickId = affiliateClickIdFromMetadata(existingMetadata);
+996:     // Platform referral commission can only use metadata from a server-created
+997:     // pending transaction. A provider payload cannot choose a subscription.
+998:     const platformSubscriptionId = platformSubscriptionIdFromMetadata(existingMetadata);
+999:     // Provider callback metadata is untrusted and may contain buyer PII. The
+1000:     // durable transaction snapshot is owned exclusively by the server-created
+1001:     // checkout; callbacks may advance state, but may not extend or replace it.
+1002:     const formSubmissionId = formSubmissionIdFromMetadata(existingMetadata);
+1003:     const transactionMetadata = {
+1004:       ...existingMetadata,
+1005:       ...(checkoutReferralCode ? { referralCode: checkoutReferralCode } : {}),
+1006:       ...(formSubmissionId ? { formSubmissionId } : {}),
+1007:     } as Prisma.InputJsonObject;
+1008:     const nextStatus = resolvePaymentStatus(currentTransaction?.status ?? null, payload.eventType);
+1009:     const ignoredIncomingState = nextStatus !== payload.eventType;
+1010:     const noOpTransactionEvent = ignoredIncomingState || invariant.duplicateRefundEvent;
+1011:     const clearsTransientCheckoutKey = shouldClearTransientCheckoutKey(payload.eventType, Boolean(currentTransaction?.primaryCommerceOrder));
+1012:     const updatesOccurredAt = !currentTransaction
+1013:       || (currentTransaction.status !== nextStatus && !isRefundEvent(payload.eventType));
+1014: 
+1015:     const savedTransaction = currentTransaction
+1016:       ? await tx.paymentTransaction.update({
+1017:           where: { id: currentTransaction.id },
+1018:           data: noOpTransactionEvent ? {
+1019:             status: nextStatus,
+1020:             ...(clearsTransientCheckoutKey ? { checkoutIdempotencyKey: null } : {}),
+1021:           } : {
+1022:             providerName: payload.provider,
+1023:             providerTradeNo: payload.providerTradeNo ?? currentTransaction.providerTradeNo,
+1024:             paymentMode: payload.paymentMode,
+1025:             grossAmountCents,
+1026:             gatewayFeeCents,
+1027:             platformFeeCents,
+1028:             netAmountCents,
+1029:             currency,
+1030:             status: nextStatus,
+1031:             ...(clearsTransientCheckoutKey ? { checkoutIdempotencyKey: null } : {}),
+1032:             ...(updatesOccurredAt ? { occurredAt } : {}),
+1033:             metadata: transactionMetadata,
+1034:           },
+1035:         })
+1036:       : await tx.paymentTransaction.create({
+1037:           data: {
+1038:             vendorId: vendor.id,
+1039:             providerName: payload.provider,
+1040:             providerTradeNo: payload.providerTradeNo,
+1041:             orderNumber: payload.orderNumber,
+1042:             paymentMode: payload.paymentMode,
+1043:             grossAmountCents,
+1044:             gatewayFeeCents,
+1045:             platformFeeCents,
+1046:             netAmountCents,
+1047:             currency,
+1048:             status: nextStatus,
+1049:             occurredAt,
+1050:             metadata: transactionMetadata,
+1051:           },
+1052:         });
+1053: 
+1054: 
+1055: 
+1056:     // Product identity is trusted only from the server-created checkout
+1057:     // transaction. Provider metadata must never choose another tenant's stock.
+1058:     const lifecycleEventType = payload.eventType;
+1059:     if (isPaymentLifecycleEvent(lifecycleEventType) && !ignoredIncomingState && !invariant.duplicateRefundEvent) {
+1060: 
+1061:       await withPaymentWebhookStage("INVENTORY", () => applyPaymentInventoryTransition(tx, {
+1062:         transaction: savedTransaction,
+1063:         eventType: lifecycleEventType,
+1064:         trustedCheckoutMetadata: existingMetadata,
+1065:         now: occurredAt,
+1066:       }));
+1067: 
+1068:       await withPaymentWebhookStage("ORDER_TRANSITION", () => reconcileCommercePaymentLifecycle(tx, {
+1069:         vendorId: vendor.id, transactionId: savedTransaction.id,
+1070:         eventType: payload.eventType, eventIdentity: payload.eventId, occurredAt,
+1071:       }));
+1072:       if (payload.eventType === "paid") {
+1073: 
+1074:         await withPaymentWebhookStage("PAID_DELIVERY_DECRYPT", () => ensureCommerceOrderPaidDelivery(tx, {
+1075:           vendorId: vendor.id,
+1076:           paymentTransactionId: savedTransaction.id,
+1077:           occurredAt,
+1078:         }));
+1079:       }
+1080:     }
+1081: 
+1082:     const { refundCommission, platformReferralRefund, courseRefundAllocations, commerceOrderRefund } = await withPaymentWebhookStage("REFUND", () => applyPaymentRefundsInWebhook(tx, {
+1083:       payload,
+1084:       vendorId: vendor.id,
+1085:       transaction: savedTransaction,
+1086:       duplicateRefundEvent: invariant.duplicateRefundEvent,
+1087:       occurredAt,
+1088:     }));
+1089: 
+1090:     const platformSubscription = await withPaymentWebhookStage("SUBSCRIPTION", () => reconcilePlatformSubscription(tx, {
+1091:       vendorId: vendor.id,
+1092:       eventType: payload.eventType,
+1093:       transaction: savedTransaction,
+1094:       trustedMetadata: existingMetadata,
+1095:       currentTransactionExists: Boolean(currentTransaction),
+1096:       occurredAt,
+1097:     }));
+1098: 
+1099:     const invoicePayment = await withPaymentWebhookStage("INVOICE", () => reconcileInvoicePayment(tx, {
+1100:       vendorId: vendor.id,
+1101:       eventType: payload.eventType,
+1102:       transaction: savedTransaction,
+1103:       trustedMetadata: existingMetadata,
+1104:       currentTransactionExists: Boolean(currentTransaction),
+1105:       occurredAt,
+1106:     }));
+1107: 
+1108:     const disputeEntry = await withPaymentWebhookStage("DISPUTE", () => applyDisputeToCommission(tx, payload, vendor.id, savedTransaction.id));
+1109:     const courseDisputeEntries = await withPaymentWebhookStage("DISPUTE", () => applyDisputeToCourseAllocations(tx, payload, vendor.id, savedTransaction.id));
+1110:     const platformReferralDispute = await withPaymentWebhookStage("DISPUTE", () => reconcilePlatformReferralDispute(tx, {
+1111:       eventType: payload.eventType,
+1112:       paymentTransactionId: savedTransaction.id,
+1113:       providerName: payload.provider,
+1114:       eventIdentity: payload.eventId,
+1115:       disputeCaseId: payload.disputeCaseId,
+1116:       occurredAt,
+1117:     }));
+1118:     if (isDisputeEvent(payload.eventType) && !disputeEntry && courseDisputeEntries.length === 0 && !platformReferralDispute) {
+1119:       throw new Error("dispute webhook 找不到對應的佣金或課程分潤 snapshot。");
+1120:     }
+1121: 
+1122:     if (payload.eventType === "paid") {
+1123: 
+1124:       await withPaymentWebhookStage("TEAM_ATTRIBUTION", () => reconcileTeamConversionAttribution(tx, {
+1125:         vendorId: vendor.id,
+1126:         paymentTransactionId: savedTransaction.id,
+1127:         formSubmissionId,
+1128:         affiliateClickId: checkoutAffiliateClickId,
+1129:       }));
+1130:     }
+1131: 
+1132:     const courseAllocations = payload.eventType === "paid"
+1133:       ? await withPaymentWebhookStage("COURSE", () => upsertCourseCommissionAllocations(
+1134:           tx,
+1135:           vendor.id,
+1136:           savedTransaction.id,
+1137:           savedTransaction.grossAmountCents,
+1138:           savedTransaction.currency,
+1139:           payload.provider,
+1140:           occurredAt,
+1141:           existingMetadata,
+1142:           Boolean(currentTransaction),
+1143:         ))
+1144:       : [];
+1145: 
+1146:     // Keep commission creation in the same serializable transaction as the
+1147:     // logical payment row so concurrent callbacks cannot both commit it.
+1148: 
+1149:     const merchantPlan = payload.eventType === "paid"
+1150:       ? await withPaymentWebhookStage("MERCHANT_AFFILIATE", () => accrueMerchantAffiliatePlan(tx, { vendorId: vendor.id, transactionId: savedTransaction.id, providerName: payload.provider, occurredAt }))
+1151:       : null;
+1152: 
+1153:     const commission = merchantPlan ? (merchantPlan.commissions[0] ?? null) : await withPaymentWebhookStage("LEGACY_COMMISSION", () => upsertAffiliateCommission(
+1154:       tx,
+1155:       payload,
+1156:       vendor.id,
+1157:       savedTransaction.id,
+1158:       savedTransaction.grossAmountCents,
+1159:       savedTransaction.netAmountCents,
+1160:       occurredAt,
+1161:       hasRefundedOrder,
+1162:       currentTransaction ? checkoutReferralCode : payload.referralCode,
+1163:     ));
+1164: 
+1165:     const platformReferralCommission = payload.eventType === "paid"
+1166:       ? await withPaymentWebhookStage("PLATFORM_REFERRAL", () => accruePlatformReferralFromTrustedTransaction(tx, {
+1167:           vendorId: vendor.id,
+1168:           subscriptionId: platformSubscriptionId,
+1169:           paymentTransactionId: savedTransaction.id,
+1170:           providerName: payload.provider,
+1171:           eventIdentity: payload.eventId,
+1172:           grossAmountCents: savedTransaction.grossAmountCents,
+1173:           currency: savedTransaction.currency,
+1174:           occurredAt,
+1175:           hasRefundedOrder,
+1176:           currentTransactionExists: Boolean(currentTransaction),
+1177:           subscriptionStatus: platformSubscription?.status ?? null,
+1178:         }))
+1179:       : null;
+1180: 
+1181:     // Conversion attribution can only be established by checkout metadata. The
+1182:     // provider payload is intentionally not a source of click IDs or referral codes.
+1183:     if (
+1184:       payload.eventType === "paid"
+1185:       && currentTransaction
+1186:       && !hasRefundedOrder
+1187:       && checkoutAffiliateClickId
+1188:       && checkoutReferralCode
+1189:     ) {
+1190: 
+1191:       await withPaymentWebhookStage("CLICK_CONVERSION", () => tx.affiliateClick.updateMany({
+1192:         where: {
+1193:           id: checkoutAffiliateClickId,
+1194:           vendorId: vendor.id,
+1195:           referralCode: checkoutReferralCode,
+1196:           convertedAt: null,
+1197:         },
+1198:         data: { convertedAt: occurredAt },
+1199:       }));
+1200:     }
+1201: 
+1202:     if (event) {
+1203: 
+1204:       const processedEvent = await withPaymentWebhookStage("EVENT_FINALIZE", () => tx.webhookEvent.updateMany({
+1205:         where: {
+1206:           id: event.id,
+1207:           status: event.status,
+1208:           retryCount: event.retryCount,
+1209:         },
+1210:         data: {
+1211:           vendorId: vendor.id,
+1212:           status: "processed",
+1213:           processedAt: new Date(),
+1214:           errorMessage: null,
+1215:         },
+1216:       }));
+1217:       if (processedEvent.count !== 1) {
+1218:         throw new Error("付款 webhook 事件處理權已變更。");
+1219:       }
+1220:     }
+1221: 
+1222:     return {
+1223:       transaction: savedTransaction,
+1224:       commission,
+1225:       refundCommission,
+1226:       platformReferralCommission,
+1227:       platformReferralRefund,
+1228:       platformReferralDispute,
+1229:       platformSubscription,
+1230:       disputeEntry,
+1231:       courseAllocations,
+1232:       courseRefundAllocations,
+1233:       courseDisputeEntries,
+1234:       invoicePayment,
+1235:       commerceOrderRefund,
+1236:     };
+1237:   }), {
+1238:     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+1239:     // The remote path keeps payment, inventory, delivery, invoice, and
+1240:     // commission invariants in one serializable boundary. Prisma's 5s default
+1241:     // is too short for that deliberate scope over a regional connection.
+1242:     timeout: 15_000,
+1243:   });
+1244: 
+1245:   // Fiscal issuance is deliberately outside the payment transaction. An
+1246:   // adapter or queue outage must never roll back an already-successful payment.
+1247:   await reconcileElectronicInvoiceAfterPayment(db, {
+1248:     vendorId: vendor.id,
+1249:     paymentTransactionId: transaction.id,
+1250:     eventType: payload.eventType,
+1251:     occurredAt,
+1252:     refund: commerceOrderRefund ? {
+1253:       id: commerceOrderRefund.refundId,
+1254:       orderId: commerceOrderRefund.orderId,
+1255:       amountCents: payload.refundAmountCents,
+1256:       cumulativeAmountCents: commerceOrderRefund.refundedAmountCents ?? transaction.refundedAmountCents + payload.refundAmountCents,
+1257:     } : null,
+1258:   });
+1259: 
+1260:   await writeAuditLog({
+1261:     vendorId: vendor.id,
+1262:     actorLabel: `webhook:${payload.provider}`,
+1263:     action: `payment_webhook_${payload.eventType}`,
+1264:     targetType: "WebhookEvent",
+1265:     targetId: event?.id ?? payload.eventId,
+1266:     before: auditSnapshot(existingTransaction),
+1267:       after: auditSnapshot({ transaction, commission, refundCommission, platformReferralCommission, platformReferralRefund, platformReferralDispute, platformSubscription, invoicePayment, disputeEntry, courseAllocations, courseRefundAllocations, courseDisputeEntries, commerceOrderRefund, eventId: payload.eventId }),
+1268:   });
+1269: 
+1270:   return { vendor, transaction, commission, refundCommission, platformReferralCommission, platformReferralRefund, platformReferralDispute, platformSubscription, invoicePayment, disputeEntry, courseAllocations, courseRefundAllocations, courseDisputeEntries, commerceOrderRefund };
+1271: }
+1272: 
+1273: function isRetryableCommissionWriteConflict(error: unknown) {
+1274:   return isDatabaseWriteConflict(error)
+1275:     || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002");
+1276: }
+1277: 
+1278: /**
+1279:  * A serializable abort is expected when two callbacks race for the same
+1280:  * business identity. Retry a bounded number of times; the second read/upsert
+1281:  * then returns the existing commission instead of creating another row.
+1282:  */
+1283: export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
+1284:   let lastError: unknown;
+1285:   for (let attempt = 0; attempt < 2; attempt += 1) {
+1286:     try {
+1287:       return await processPaymentWebhookOnce(payload, event, expectedScope);
+1288:     } catch (error) {
+1289:       lastError = error;
+1290:       if (!isRetryableCommissionWriteConflict(error) || attempt === 1) break;
+1291:     }
+1292:   }
+1293:   throw lastError;
+1294: }
+
+
+STAGE DEPENDENCY src/lib/payment-webhook-errors.ts
+export type PaymentWebhookFailureCode =
+  | "scope_missing"
+  | "scope_invalid"
+  | "scope_mismatch"
+  | "order_ambiguous"
+  | "amount_mismatch"
+  | "inventory_conflict"
+  | "processing_timeout"
+  | "processing_claim_lost"
+  | "processing_failed";
+
+const KNOWN_FAILURES = new Map<string, PaymentWebhookFailureCode>([
+  ["付款 webhook 缺少商家識別（vendorId 或 vendorSlug）。", "scope_missing"],
+  ["付款 webhook 缺少商家識別，且找不到對應的既存結帳交易。", "scope_missing"],
+  ["付款 webhook 商家識別無效：vendorId 或 vendorSlug 找不到對應商家。", "scope_invalid"],
+  ["找不到 webhook 對應商家。", "scope_invalid"],
+  ["付款 webhook 商家識別不一致：vendorId 與 vendorSlug 必須對應同一商家。", "scope_mismatch"],
+  ["Recovery payment identity changed before processing.", "scope_mismatch"],
+  ["Recovery webhook tenant does not match the reserved payment.", "scope_mismatch"],
+  ["付款 webhook 訂單識別不唯一，拒絕自動歸屬商家。", "order_ambiguous"],
+  ["付款 webhook 訂單金額或幣別與既存交易不一致。", "amount_mismatch"],
+  ["付款 webhook 訂單金額與既存交易不一致。", "amount_mismatch"],
+  ["付款 webhook 訂單幣別與既存交易不一致。", "amount_mismatch"],
+  ["Serializable inventory transaction attempts exhausted.", "inventory_conflict"],
+  ["Inventory reservation tenant mismatch.", "inventory_conflict"],
+  ["Inventory reservation product mismatch.", "inventory_conflict"],
+  ["Inventory reservation changed concurrently.", "inventory_conflict"],
+  ["Inventory reservation item snapshot is invalid.", "inventory_conflict"],
+  ["付款 webhook 事件處理權已變更。", "processing_claim_lost"],
+]);
+
+const ERROR_CLASSES = new Set([
+  "PrismaClientKnownRequestError", "PrismaClientUnknownRequestError",
+  "PrismaClientInitializationError", "PrismaClientValidationError",
+  "CommerceOrderValidationError", "CommerceOrderConflictError",
+  "CommerceOrderPiiValidationError", "MerchantAffiliatePolicyConflict", "ZodError",
+] as const);
+
+type ReviewedErrorClass = typeof ERROR_CLASSES extends Set<infer T> ? T : never;
+export type PaymentWebhookErrorClass = ReviewedErrorClass | `P20${number}`
+  | "SENSITIVE_KEY_MISSING" | "SENSITIVE_KEY_TOO_SHORT" | "SENSITIVE_ENVELOPE_INVALID"
+  | "SENSITIVE_ENVELOPE_AUTH_FAILED" | "OTHER";
+
+const CRYPTO_ERROR_CLASSES = new Map<string, PaymentWebhookErrorClass>([
+  ["Sensitive data encryption key is not configured.", "SENSITIVE_KEY_MISSING"],
+  ["Sensitive data encryption key is too short.", "SENSITIVE_KEY_TOO_SHORT"],
+  ["Invalid sensitive data envelope.", "SENSITIVE_ENVELOPE_INVALID"],
+  ["Unsupported state or unable to authenticate data", "SENSITIVE_ENVELOPE_AUTH_FAILED"],
+]);
+
+export const PAYMENT_WEBHOOK_STAGES = ["PAYMENT_UPDATE", "INVENTORY", "ORDER_TRANSITION",
+  "PAID_DELIVERY_DECRYPT", "PAID_DELIVERY_PROTECT", "PAID_DELIVERY_PERSIST", "REFUND",
+  "INVOICE", "SUBSCRIPTION", "COURSE", "MERCHANT_AFFILIATE", "LEGACY_COMMISSION",
+  "DISPUTE", "TEAM_ATTRIBUTION", "PLATFORM_REFERRAL", "CLICK_CONVERSION", "EVENT_FINALIZE", "UNKNOWN"] as const;
+export type PaymentWebhookStage = typeof PAYMENT_WEBHOOK_STAGES[number];
+const stages = new WeakMap<Error, PaymentWebhookStage>();
+const causes = new WeakMap<Error, PaymentWebhookErrorClass>();
+
+/** Preserve the original exception and its inner stage without adding raw context. */
+export function tagPaymentWebhookStage(error: unknown, stage: PaymentWebhookStage) {
+  if (error instanceof Error && !stages.has(error) && PAYMENT_WEBHOOK_STAGES.includes(stage)) stages.set(error, stage);
+}
+export function paymentWebhookErrorStage(error: unknown): PaymentWebhookStage {
+  return error instanceof Error ? stages.get(error) ?? "UNKNOWN" : "UNKNOWN";
+}
+/** Annotate a stage without changing the thrown value or transaction outcome. */
+export async function withPaymentWebhookStage<T>(stage: PaymentWebhookStage, action: () => T | Promise<T>): Promise<T> {
+  try { return await action(); }
+  catch (error) { tagPaymentWebhookStage(error, stage); throw error; }
+}
+/** Keep only the closed cause class; monitoring cannot serialize WeakMap data. */
+export function retainPaymentWebhookCause(wrapper: Error, cause: unknown) {
+  causes.set(wrapper, classifyPaymentWebhookErrorClass(cause));
+  return wrapper;
+}
+
+/** Only closed classes and bounded Prisma codes cross the audit boundary.
+ * Never persist exception messages, arbitrary names or Prisma metadata. */
+export function classifyPaymentWebhookErrorClass(error: unknown): PaymentWebhookErrorClass {
+  if (!(error instanceof Error)) return "OTHER";
+  const retained = causes.get(error);
+  if (retained) return retained;
+  const cryptoClass = CRYPTO_ERROR_CLASSES.get(error.message);
+  if (cryptoClass) return cryptoClass;
+  if (error.name === "PrismaClientKnownRequestError" && "code" in error
+    && typeof error.code === "string" && /^P20\d{2}$/u.test(error.code)) {
+    return error.code as `P20${number}`;
+  }
+  return ERROR_CLASSES.has(error.name as ReviewedErrorClass) ? error.name as ReviewedErrorClass : "OTHER";
+}
+
+/**
+ * Webhook failures cross an unauthenticated provider boundary and are also shown
+ * in the finance console. Only explicitly reviewed messages may become a stable
+ * operator-facing code; every other exception is reduced to a generic category.
+ */
+export function classifyPaymentWebhookFailure(error: unknown): PaymentWebhookFailureCode {
+  if (!(error instanceof Error)) return "processing_failed";
+  if (
+    ("code" in error && error.code === "P2028")
+    || error.message.includes("Transaction already closed")
+  ) return "processing_timeout";
+  return KNOWN_FAILURES.get(error.message) ?? "processing_failed";
+}
+
+export function paymentWebhookFailureMessage(code: PaymentWebhookFailureCode) {
+  return `Payment webhook processing failed (${code}).`;
+}
+
+
+REAL DB RECEIPT
+{
+  "status": "PASS",
+  "stage": "complete",
+  "networkAttempts": 0,
+  "processed": 0,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "scope": "Actual signed callback with forced database deadlock, one synthetic affiliate order; original synchronized20 gate is separate",
+  "deadlock": {
+    "status": "PASS",
+    "attempts": [
+      {
+        "status": "ABORTED",
+        "retryable": true,
+        "stage": "ORDER_TRANSITION",
+        "deadlock": true,
+        "code": "UNKNOWN"
+      },
+      {
+        "status": "COMMITTED"
+      }
+    ],
+    "callbackBlocked": true,
+    "sideCommitted": true,
+    "httpStatus": 200,
+    "cardinality": {
+      "paymentAudits": 1,
+      "commissions": 1,
+      "ledgerEntries": 1,
+      "processedEvents": 1,
+      "paidOrderEvents": 1
+    }
+  },
+  "counts": {
+    "payments": 1,
+    "orders": 1,
+    "entitlements": 1,
+    "commissions": 1,
+    "ledgerEntries": 1,
+    "events": 1,
+    "paymentAudits": 1
+  }
+}

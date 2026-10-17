@@ -1,0 +1,55 @@
+{
+  "checks": [
+    {
+      "engine": "chromium",
+      "entry": "form",
+      "javascript": false,
+      "initialServerFields": true,
+      "twoActualPostPayloadsMatch": true,
+      "metadataExcludedFromAnswers": true,
+      "retainedAfterFailure": true,
+      "reloadPreserved": true,
+      "hydrationErrors": 0,
+      "noAcceptedInvalidRegistration": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "form",
+      "javascript": true,
+      "initialServerFields": true,
+      "twoActualPostPayloadsMatch": true,
+      "metadataExcludedFromAnswers": true,
+      "retainedAfterFailure": true,
+      "reloadPreserved": false,
+      "hydrationErrors": 0,
+      "noAcceptedInvalidRegistration": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "p",
+      "javascript": false,
+      "initialServerFields": true,
+      "twoActualPostPayloadsMatch": true,
+      "metadataExcludedFromAnswers": true,
+      "retainedAfterFailure": true,
+      "reloadPreserved": true,
+      "hydrationErrors": 0,
+      "noAcceptedInvalidRegistration": true
+    },
+    {
+      "engine": "chromium",
+      "entry": "p",
+      "javascript": true,
+      "initialServerFields": true,
+      "twoActualPostPayloadsMatch": true,
+      "metadataExcludedFromAnswers": true,
+      "retainedAfterFailure": true,
+      "reloadPreserved": false,
+      "hydrationErrors": 0,
+      "noAcceptedInvalidRegistration": true
+    }
+  ],
+  "status": "PASS",
+  "cleanup": true,
+  "currentStep": "invalid-post-1"
+}

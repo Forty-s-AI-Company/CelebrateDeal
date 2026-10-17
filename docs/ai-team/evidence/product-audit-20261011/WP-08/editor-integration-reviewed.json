@@ -1,0 +1,175 @@
+{
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 5,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "payment",
+        "webhook"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "sre"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "reviewed": true,
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "execution_provider": "claude_cli",
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "review": {
+    "summary": "I reviewed only the WP08 changes made after batch 1 and found no BLOCKER or MAJOR issues. Neither component file changes stored IDs. Popup and step IDs still go to the inspector unchanged, and the new popupNames and stepNames maps are keyed by those same IDs. The maps are rebuilt from history.present (popups) and state.flow (steps) on every render, so a renamed popup or step shows its new name next time. The new stepNames prop is optional and falls back to the document's own steps. Whenever names are missing, the reviewed helper uses \"unnamed\" labels, so a mismatched or partial map can't break selection. The translated text only changes what users see: the default name for new popups (`彈出視窗 N`) and the referral-partner label (`推薦夥伴`). Existing saved names and IDs are unchanged. I'm reporting two low-severity hardening points. I couldn't check whether these changes compile (whether PageDocument has `flow`, whether FunnelElementInspector accepts `popupNames`/`stepNames`, and the step/popup `name` types) because those declarations aren't in the excerpts. Run a typecheck before delivery. No findings here doesn't mean the tests pass.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-page-editor.tsx",
+        "area": "FunnelElementInspector integration line (stepIds/stepNames fallback)",
+        "issue": "The fallback for step IDs and the fallback for step names are chosen separately. If a caller passes `stepIds` but not `stepNames`, labels come from `history.present.flow` (the page document's embedded flow) while the IDs come from the caller. The two can disagree, for example after a step is renamed outside this document.",
+        "evidence": "`stepIds={stepIds ?? history.present.flow?.steps.map(...)}` and `stepNames={stepNames ?? Object.fromEntries((history.present.flow?.steps ?? []).map(...))}` are independent `??` checks. The only current caller (funnel-step-pages-editor) passes both from `state.flow`, so this can't happen today.",
+        "impact": "A future or standalone caller that passes only `stepIds` could show outdated step names in the dropdown. The selected value is still the correct ID, so stored data is not affected. The impact is limited to the label.",
+        "recommended_fix": "Use the names fallback only when the IDs also come from the fallback. For example, take both from the document flow when `stepIds` is undefined. Otherwise use `stepNames` as given and let `referenceOptions` fill in the unnamed labels instead of reading the document flow.",
+        "required_test": "Render FunnelPageEditor with `stepIds` set and no `stepNames`, using a document whose embedded flow has different step names. Check that the dropdown does not show the document's outdated names. Also check that when both are omitted, the labels come from the document flow.",
+        "confidence": 0.45
+      },
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-page-editor.tsx",
+        "area": "popupNames / stepNames Object.fromEntries construction",
+        "issue": "The name maps pass `popup.name` / `step.name` straight through. `referenceOptions` calls `.replace` on any name it finds. If old or unchecked saved data has a missing or non-string name, building the inspector's dropdown options would throw. Whether this can happen depends on type and validation declarations that aren't in scope.",
+        "evidence": "In the helper, `names[id].replace(...)` runs whenever `Object.hasOwn(names, id)` is true. The new maps always create that key, even when the value is undefined.",
+        "impact": "This only matters if saved documents can have popups or steps without a string name. In that case the inspector crashes when the element is selected. With strictly typed and validated data there is no impact.",
+        "recommended_fix": "Leave out entries whose name isn't a string, e.g. `.filter(([, n]) => typeof n === \"string\")`. Alternatively, make sure the document parser always sets a string name.",
+        "required_test": "Load a page document that has a popup and a flow step with no `name`, then select a link or button element. The inspector should render the unnamed labels without throwing.",
+        "confidence": 0.25
+      }
+    ]
+  },
+  "accepted": false,
+  "attempts": [
+    {
+      "status": "SUCCESS",
+      "model": "claude-opus-5-5",
+      "exitCode": 0,
+      "provider": "claude_cli"
+    }
+  ],
+  "completed": false,
+  "finalModel": "claude-opus-5-5",
+  "observed": {
+    "effort": "unknown",
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage"
+  },
+  "normalized_status": "REVIEW_COMPLETED",
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "claude_cli_discovery_status": "SUCCESS",
+  "status": "REVIEW_COMPLETED",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  }
+}

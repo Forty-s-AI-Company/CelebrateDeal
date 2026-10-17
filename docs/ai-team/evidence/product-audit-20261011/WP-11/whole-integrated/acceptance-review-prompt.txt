@@ -1,0 +1,1142 @@
+WP11 final independent acceptance evidence review for current parent sha256:4a1b964080a65416f6a6423c7b7a67df8a52ef12c8305ea5aacd3aa96ac4e778. Canonical JSON only. Prior critical source reviews are supplied, not replaced. Whole100-file manifest currently hash-matches. Review ONLY delta: new native full-source Preview network evidence, probe and fixture code, plus test-only followup after prior source review. All reviewed product files unchanged since last qualified remediation review. Determine concrete remaining BLOCKER/MAJOR for nonproduction WP11 acceptance. Production release NOT authorized/certified; do not expand to Production implementation. Remote malformed boundaries are not business success; actual business paths covered in local96migration DB and browser evidence. No live tools. Global lint FAIL299errors in45docs evidence files; src errors0; do not claim global lint PASS. Existing scoped API/actions gates plus earlier integration/remediation reviews compose source coverage. This is not a new broad code review.
+
+EVIDENCE shared-ip-api/acceptance-current.json
+
+{
+  "status": "READY",
+  "blockers": [],
+  "revision": "sha256:ec4c1f1a8c592310aab96751718c05378def2ff985ef021b743a086a37b1f976"
+}
+
+
+EVIDENCE shared-ip-actions/acceptance-current.json
+
+{
+  "status": "READY",
+  "blockers": [],
+  "revision": "sha256:6b21f589eca5d532bfb6273d82ea574e1af792e4e8ebd08ed9d2f95bf566869c"
+}
+
+
+EVIDENCE whole-integrated/integration-review-disposition.json
+
+{
+  "status": "REMEDIATION_REQUIRED",
+  "observed_model": "claude-opus-5-5",
+  "revision": "sha256:7ae09a30a310a2f2ebd7487da5f18503900f96b4f55d66d41bc9d72c6b1ed2bb",
+  "counts": {
+    "BLOCKER": 0,
+    "MAJOR": 3,
+    "MINOR": 4,
+    "NIT": 0
+  },
+  "next_scope": [
+    "Shared identity resolver for native Preview and existing livechat routes; no circular imports",
+    "Fail closed rather than global unknown-IP buckets for public chat reads/broadcast",
+    "Readiness gate for explicit declared nonproduction topology/provider, without reading or exposing secrets",
+    "Observable referral503 vs429; preserve attribution and unsafe-source refusal",
+    "Production topology remains unproven/notauthorized release restriction; no Production deployment or claims"
+  ],
+  "review_payload": {
+    "summary": "I found no BLOCKER in the supplied source. The code logic holds up, but deployment compatibility is not yet proven, and that is where the gaps are.\n\n**What holds up**\n- **Voucher redemption:** GET only reads through `previewAutomationVoucher` and never writes. POST checks the origin, then the HttpOnly cookie challenge (HMAC-bound to nonce, issued time, capability and action URL), and only then calls `exchangeAutomationVoucher`.\n- **Voucher concurrency:** that function swaps `claimTokenHash` with a conditional `updateMany`. Two different challenges for the same link produce exactly one winner; the loser gets 410. A replay of the same challenge rebuilds the same bearer through `retry()`.\n- **Magic link:** GET runs only `eligible()` (verify plus a tenant lookup). POST checks the tenant before calling `consumeStudentPortalAccessToken`.\n- **Body safety:** the limiter adapter copies only the URL, method and headers, so it never reads or splits the request body.\n- **Native preview mode:** it re-reads the environment at call time, so a caller-supplied config cannot enable it. It requires Upstash and fails closed with 503.\n\n**Remaining gaps (all deployment and integration)**\n1. **Missing or wrong setting causes an outage.** If `ENTRY_CLIENT_IP_TRUST_MODE` is unset or wrong, every entry family returns 503 and nothing checks this before deployment. The referral route hides the failure: it still redirects to the plans page but silently drops attribution.\n2. **No proven Production mode.** Native mode is Preview-only. Trusted-proxy mode needs an injected proof header plus an `x-real-ip` that is really the client's address. That combination is contradictory on direct Vercel and keys on the fronting proxy's addresses when another proxy sits in front.\n3. **Live chat breaks in a full native-preview deployment.** Live chat still picks its trust mode from `RATE_LIMIT_PROVIDER`. With Upstash it requires the proof header, so chat writes would return 403. Chat reads and purchase broadcasts would share one global \"unknown\" bucket.\n4. **One proof header, two secrets.** Entry and live chat check the same header against two separate environment secrets.\n5. **Effective limits depend on the provider.** With `cloudflare_waf` the app enforces nothing, so the new paths depend on WAF rules for which there is no evidence. With `memory`, limits are per instance.\n6. **Magic-link double submit.** Unlike the voucher flow, a double-submit on the magic-link confirmation shows an \"invalid or expired\" error after the first request has already used the link.\n7. **Shared-IP admission limit (low confidence).** Live admission keeps a per-IP limit of 120/min. Viewers behind one shared address, or one IPv6 /64 in native mode, could hit it.\n\nThe test and browser receipts you supplied show none of the following: the native-preview full deployment, a staging environment matrix, WAF rule coverage, or live chat under the new modes.",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "entryIpTrustConfig() fallback `return { trustMode: \"none\", deploymentSource: \"none\" }` and checkRateLimit `if (!ip) return 503`; consumers src/app/r/[code]/route.ts limited branch, live-admission, portal access, voucher redeem",
+        "issue": "Any environment that has not explicitly set a matching ENTRY_CLIENT_IP_TRUST_MODE/DEPLOYMENT_SOURCE pair (and the ingress secret for cloudflare/trusted-proxy) resolves to `none`. Every opted-in entry route then returns 503. No readiness or boot-time validation is shown. In /r/[code], a 503 'source unavailable' is handled the same as a 429: the user is redirected to /billing/plans with no attribution and no error signal.",
+        "evidence": "entryIpTrustConfig ignores RATE_LIMIT_PROVIDER and defaults to `none`. checkRateLimit returns a 503 with Retry-After 30 when ip is null. The referral route converts any non-null `limited` into a plain redirect. The task states that the existing staging was not modified and the full patch was not deployed.",
+        "impact": "Deploying this patch to an existing staging or production environment without the new env vars would block magic-link login (GET and POST), voucher redemption, live playback admission and release (live-admission errors also return 503, so they are indistinguishable), and would silently drop all referral attribution.",
+        "recommended_fix": "Add a deploy or readiness gate that fails, or a health check that reports, when the resolved entry config is `none` in a deployed environment. Document the required ENTRY_* variables for each environment. In the referral route, separate the 503 source-unavailable case from a 429 by logging or counting it so a misconfiguration is visible.",
+        "required_test": "Add a unit test over the env matrix for each declared deployment profile (preview-native, production, staging, local e2e) asserting a non-`none` resolution. Add a referral route test showing that the 503 source-unavailable case is observable (log or metric) and distinct from a 429. Run a staging smoke test of magic-link, voucher, admission and referral with the real env set.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "entryIpTrustConfig trusted-proxy/cloudflare branches; request-client-ip.ts trusted-proxy branch (x-real-ip + LIVE_CHAT_INGRESS_PROOF_HEADER)",
+        "issue": "No ENTRY mode has been shown to work for Production. `vercel-native` is deliberately limited to VERCEL_ENV=preview. `trusted-proxy` requires a secret proof header that direct Vercel ingress cannot inject. If a fronting proxy injects it instead, Vercel's x-real-ip and x-forwarded-for hold that proxy's egress address, so all clients collapse into a few buckets (the shared-IP failure this WP is meant to fix). `cloudflare` mode is valid only for a Cloudflare-fronted topology, and no evidence for that topology was supplied.",
+        "evidence": "vercel-native requires `env.VERCEL_ENV === \"preview\"`. trusted-proxy requires hasValidIngressProof and then uses `x-real-ip` as the client address. Evidence covers only Chromium and Firefox locally plus an earlier proof of the native-preview helper.",
+        "impact": "On a Production rollout you would have to choose between a total entry-route outage (see the previous finding) and a misattributed client identity that recreates the shared-IP throttling across all users.",
+        "recommended_fix": "Declare the Production topology explicitly and provide a mode that matches it, either native Production with the same server-side metadata checks or a documented fronting proxy that overwrites both the proof header and the client-IP header. Until then, add a release blocker saying Production entry routes are not supported.",
+        "required_test": "Run a deployed probe on the target Production-like topology from two different egresses. Assert distinct bucket identities, and assert that a spoofed proof header or spoofed x-real-ip/x-vercel-forwarded-for is rejected or ignored.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MAJOR",
+        "file": "src/lib/live-chat-request-security.ts",
+        "area": "liveChatIpTrustConfig upstash branch; consumers api/live-chat/messages, api/live-chat/private, api/live-purchase-broadcasts",
+        "issue": "Live chat still picks its trust mode from RATE_LIMIT_PROVIDER. In the native-preview topology the ENTRY routes require (RATE_LIMIT_PROVIDER=upstash_redis, direct Vercel), live chat resolves to `trusted-proxy`, which needs a LIVE_CHAT_INGRESS_SECRET proof header that direct Vercel never sends. Chat and private-chat writes then return 403. Reads and purchase broadcasts get `clientIp = null`, which rateLimitRequestWithIdentity turns into `cf-connecting-ip: unknown`, so all viewers share one 60/min (chat read) or 120/min (broadcasts) bucket.",
+        "evidence": "In securityGate (messages) and security (private), `requireTrustedClientIp` is false for GET. rateLimitRequestWithIdentity sets `clientIp ?? \"unknown\"`. live-purchase-broadcasts calls checkRateLimit with trustedIp, which may be null. The task notes that the live chat deployment config differs from ENTRY and that the browser suite does not prove the full native-preview deployment.",
+        "impact": "In a full native-preview deployment, viewers could be admitted to playback but could not post chat. Chat reads and purchase broadcasts would be throttled globally, and one client could exhaust that shared bucket for everyone. ENTRY fails closed with 503 while chat silently degrades into a shared bucket, which is inconsistent.",
+        "recommended_fix": "Have live chat use the same resolved identity as the entry wrapper, or a shared resolver that understands vercel-native. At minimum, return 503 or 403 when the read identity is null instead of using a shared 'unknown' bucket, and state explicitly that live chat is unsupported in vercel-native until migrated.",
+        "required_test": "Add an env-matrix unit test: the vercel-native preview env must give live chat a non-null identity, or the routes must fail with an explicit status. Add a route test showing that null-identity GETs never share a global bucket. Run a deployed native-preview check of chat post/read and purchase broadcasts.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/request-client-ip.ts",
+        "area": "LIVE_CHAT_INGRESS_PROOF_HEADER used by hasValidIngressProof for both ENTRY_CLIENT_IP_INGRESS_SECRET and LIVE_CHAT_INGRESS_SECRET",
+        "issue": "The entry and live chat families check the same header (`x-celebratedeal-live-chat-ingress`) against two independently configured secrets. The edge can inject only one value, so the two secrets must always be identical. Nothing enforces or checks that.",
+        "evidence": "entryIpTrustConfig passes `env.ENTRY_CLIENT_IP_INGRESS_SECRET`. liveChatIpTrustConfig passes `env.LIVE_CHAT_INGRESS_SECRET`. Both go to hasValidIngressProof, which reads the same header constant.",
+        "impact": "Rotating or setting one secret without the other silently breaks one family: entry routes return 503, or chat writes return 403 and reads fall into the shared bucket.",
+        "recommended_fix": "Use a single secret variable for both families, or give entry its own header name. Add a startup check that both secrets match while they share a header.",
+        "required_test": "Add a unit test where the two secrets differ that expects a readiness failure, or that shows the families no longer share a header.",
+        "confidence": 0.55
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/lib/trusted-entry-rate-limit.ts",
+        "area": "checkRateLimit delegation to checkLegacyRateLimit for cloudflare/trusted-proxy modes",
+        "issue": "Only vercel-native requires upstash_redis. In cloudflare mode with RATE_LIMIT_PROVIDER=cloudflare_waf, the legacy limiter returns null, so the 30/60/120 per-minute limits on the new keys are not enforced in the app. They depend on WAF rules for /portal/*/access, /api/automation/vouchers/redeem, /r/* and /api/live-admission, and no evidence for those rules was supplied. With provider=memory, the limits are per instance.",
+        "evidence": "rate-limit.ts has `if (provider === \"cloudflare_waf\") return null`. entryIpTrustConfig does not check the provider in the cloudflare or trusted-proxy branches.",
+        "impact": "The confirm/redeem/admission throttling promised by the code may not exist in a WAF or serverless-memory deployment.",
+        "recommended_fix": "Constrain allowed provider combinations per mode, as native mode already does, or list the required WAF rules for each new route and key as release evidence.",
+        "required_test": "Add an env-matrix test that rejects, or at least flags, cloudflare+memory and trusted-proxy+memory. Add release evidence that the WAF rules exist for the new paths and methods.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/portal/[vendorSlug]/access/route.ts",
+        "area": "POST: consumeStudentPortalAccessToken → `if (!claim) return failure()`",
+        "issue": "The voucher flow explicitly supports resending the same challenge (deterministic bearer plus a retained cookie). The magic-link POST does not. A double-click or a resubmit after a lost response consumes the token on the first request, and the second request redirects to login?error=invalid_or_expired. If the browser cancels the first navigation, the user can end up on the error page and may not be logged in.",
+        "evidence": "On consume failure the route calls failure(), which clears the challenge and redirects to the error page. It does not check whether this same challenge already succeeded.",
+        "impact": "Users can get a confusing login failure and lose a single-use link, which forces them to request a new email.",
+        "recommended_fix": "Treat a repeat of the same verified challenge the way the voucher flow does. For example, record the consumed challenge digest so a repeat redirects to the portal, or redirect to the portal when a valid session for that vendor already exists, before reporting invalid_or_expired.",
+        "required_test": "Add a Playwright test that double-submits the confirmation form (and one that replays the same form and cookie after success) and asserts that the user ends up logged into the portal.",
+        "confidence": 0.4
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/app/api/live-admission/route.ts",
+        "area": "POST checkRateLimit(request, \"live-admission\", 120, 60_000)",
+        "issue": "Admission is a per-viewer lease renewal (TTL 90s), but the limit is per client identity. In native mode that identity is a whole IPv6 /64 or one IPv4 NAT address. A classroom, office or carrier NAT with more viewers than about 120/min divided by the renewal rate will hit a 429 and lose playback. Unlike live interactions (1,200/min open bucket), this limit was not adjusted for shared IPs.",
+        "evidence": "LIVE_VIEWER_SESSION_TTL_MS = 90_000. Native bucket identity collapses IPv6 to a /64. Admission is limited to 120/min per identity.",
+        "impact": "Playback could be interrupted for large audiences behind one shared address, which is the scenario this WP targets.",
+        "recommended_fix": "Document the client renewal interval and set the admission limit to cover the expected shared-IP audience. Alternatively, key renewals on a valid existing viewer token in addition to the IP.",
+        "required_test": "Add a load test or unit test that simulates N viewers behind one identity renewing at the client's real interval and asserts no 429s at the target audience size.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "process_terminal": true,
+  "prior_goal_turn": "progress",
+  "authorization_blocker": false
+}
+
+
+EVIDENCE shared-chat-identity/review-disposition.json
+
+{
+  "status": "REVIEW_COMPLETED_NONBLOCKING_FINDINGS",
+  "observed_model": "claude-opus-5-5",
+  "reviewed_revision": "sha256:dcec683c8dd441e2a1ad9318e72671dcd45d390c584e0a6d4001f7f0a2306a65",
+  "current_revision": "sha256:a390708cac12df9df524332b026ff56621e0b4fa75fa00b02ebe2a2796b52f7f",
+  "reviewed_product_sources_unchanged": {
+    "src/app/api/health/entry/route.ts": true,
+    "src/app/api/live-chat/messages/route.ts": true,
+    "src/app/api/live-chat/private/route.ts": true,
+    "src/app/api/live-purchase-broadcasts/route.ts": true,
+    "src/app/r/[code]/route.ts": true,
+    "src/lib/entry-client-ip.ts": true,
+    "src/lib/entry-readiness.ts": true,
+    "src/lib/live-chat-request-security.ts": true,
+    "src/lib/rate-limit.ts": true,
+    "src/lib/request-client-ip.ts": true,
+    "src/lib/trusted-entry-rate-limit.ts": true
+  },
+  "counts": {
+    "BLOCKER": 0,
+    "MAJOR": 0,
+    "MINOR": 4,
+    "NIT": 2
+  },
+  "test_only_followup": "Native actual chatPOST/privateGET/privatePOST/referral and unknown-source cases added;11nativecases PASS;854combined PASS",
+  "remaining_dispositions": [
+    "503event includes source OR provider outage; generic unavailable diagnostic not proof of source failure",
+    "Production proof modes gated by readiness/release policy only; native mode runtime rejectsProduction; no broader runtimeblock claim",
+    "Platform-injected VERCEL_PROJECT_ID provenance must be confirmed in freshPreview",
+    "Health dynamic defaults supported by installedNext docs; future cache-components configuration not certified",
+    "Legacy tests ambientENTRY isolation remains documented test portabilityNIT"
+  ],
+  "whole_acceptance": "NOT_RUN",
+  "remote_current": "NOT_RUN"
+}
+
+
+EVIDENCE shared-chat-identity/unit-final-check.json
+
+{
+  "status": "PASS",
+  "revision": "sha256:a390708cac12df9df524332b026ff56621e0b4fa75fa00b02ebe2a2796b52f7f",
+  "parent_revision": "sha256:4a1b964080a65416f6a6423c7b7a67df8a52ef12c8305ea5aacd3aa96ac4e778",
+  "total": 854,
+  "passed": 854,
+  "failed": 0,
+  "skipped": 0,
+  "files": [
+    "src/app/actions.test.ts",
+    "src/app/actions/buyer-support-actions.test.ts",
+    "src/app/actions/consultation-actions.test.ts",
+    "src/app/actions/registration-actions.test.ts",
+    "src/app/actions/source-rate-limit.integration.test.ts",
+    "src/app/actions/student-portal-actions-boundary.test.ts",
+    "src/app/actions/student-portal-actions.test.ts",
+    "src/app/api/affiliate-attribution/direct-entry/route.test.ts",
+    "src/app/api/affiliate-clicks/route.test.ts",
+    "src/app/api/analytics/route.test.ts",
+    "src/app/api/auth/line/callback/route.test.ts",
+    "src/app/api/auth/line/start/route.test.ts",
+    "src/app/api/auth/password-reset/confirm/route.test.ts",
+    "src/app/api/auth/password-reset/request/route.test.ts",
+    "src/app/api/automation/vouchers/redeem/route.test.ts",
+    "src/app/api/form-submissions/route.test.ts",
+    "src/app/api/form-submissions/verify/route.test.ts",
+    "src/app/api/live-admission/route.test.ts",
+    "src/app/api/live-chat/instructor/route.test.ts",
+    "src/app/api/live-chat/messages/route.test.ts",
+    "src/app/api/live-chat/private/route.test.ts",
+    "src/app/api/live-danmaku/route.test.ts",
+    "src/app/api/live-danmaku/scripted/route.test.ts",
+    "src/app/api/live-interactions/cards/route.test.ts",
+    "src/app/api/live-interactions/route.test.ts",
+    "src/app/api/live-media/route.test.ts",
+    "src/app/api/live-playback-source/route.test.ts",
+    "src/app/api/live-presenter/route.test.ts",
+    "src/app/api/live-purchase-broadcasts/route.test.ts",
+    "src/app/api/security/csp-report/route.test.ts",
+    "src/app/api/stream-usage/route.test.ts",
+    "src/app/portal/[vendorSlug]/access/route.test.ts",
+    "src/app/r/[code]/route.test.ts",
+    "src/components/live-advanced-interactions.polling.test.tsx",
+    "src/components/live-advanced-interactions.test.tsx",
+    "src/lib/capability-confirmation.test.ts",
+    "src/lib/entry-client-ip.test.ts",
+    "src/lib/entry-rate-limit-headers.test.ts",
+    "src/lib/entry-readiness.test.ts",
+    "src/lib/live-chat-native.integration.test.ts",
+    "src/lib/live-quota-admission.test.ts",
+    "src/lib/nonpayment-entry-rate-limit.test.ts",
+    "src/lib/rate-limit-boundary.test.ts",
+    "src/lib/registration-form-retry-response.test.ts",
+    "src/lib/request-client-ip.test.ts",
+    "src/lib/trusted-entry-rate-limit.native-provider.test.ts",
+    "src/lib/trusted-entry-rate-limit.native.test.ts",
+    "src/lib/trusted-entry-rate-limit.test.ts"
+  ]
+}
+
+
+EVIDENCE whole-integrated/disposable-db-result.json
+
+{
+  "status": "PASS",
+  "tests": {
+    "status": "PASS",
+    "total": 31,
+    "passed": 31,
+    "failed": 0,
+    "skipped": 0,
+    "failures": []
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "failure": {
+    "category": "none",
+    "errorCode": null,
+    "rootCauseConfirmed": false
+  }
+}
+
+EVIDENCE whole-integrated/browser-result.json
+
+{
+  "status": "PASS",
+  "engines": [
+    {
+      "engine": "chromium",
+      "exitCode": 0,
+      "status": "PASS",
+      "checks": [
+        {
+          "previewGet": 200,
+          "previewHead": 200,
+          "previewNoCheckoutCookie": true,
+          "previewNoRotation": true,
+          "axeViolations": 0
+        },
+        {
+          "confirmedPost": 303,
+          "checkoutReached": true,
+          "originMatches": true,
+          "referrerHasQuery": false,
+          "existingResolverDiscountCents": 100,
+          "noOrderCreated": true
+        },
+        {
+          "capturedBodyForgedCookieRejected": true,
+          "status": 403,
+          "noCheckoutCredentialIssued": true
+        },
+        {
+          "sameConfirmationRetry": 303,
+          "checkoutCredentialRecovered": true
+        },
+        {
+          "oldLinkReplayRejected": true
+        },
+        {
+          "voucherARecoveredAfterB": true,
+          "viaAuthenticatedPortal": true
+        },
+        {
+          "concurrentRequests": 3,
+          "successfulExchanges": 1,
+          "rejectedExchanges": 2
+        },
+        {
+          "realRegistrationAction": true,
+          "trustedIngress": true,
+          "spoofedForwardingIgnored": true,
+          "durableUserAndSession": true
+        },
+        {
+          "realLoginAction": true,
+          "trustedIngress": true,
+          "newSessionAndAudit": true
+        }
+      ],
+      "restored": true,
+      "stage": "trusted-login",
+      "axe": []
+    },
+    {
+      "engine": "firefox",
+      "exitCode": 0,
+      "status": "PASS",
+      "checks": [
+        {
+          "previewGet": 200,
+          "previewHead": 200,
+          "previewNoCheckoutCookie": true,
+          "previewNoRotation": true,
+          "axeViolations": 0
+        },
+        {
+          "confirmedPost": 303,
+          "checkoutReached": true,
+          "originMatches": true,
+          "referrerHasQuery": false,
+          "existingResolverDiscountCents": 100,
+          "noOrderCreated": true
+        },
+        {
+          "capturedBodyForgedCookieRejected": true,
+          "status": 403,
+          "noCheckoutCredentialIssued": true
+        },
+        {
+          "sameConfirmationRetry": 303,
+          "checkoutCredentialRecovered": true
+        },
+        {
+          "oldLinkReplayRejected": true
+        },
+        {
+          "voucherARecoveredAfterB": true,
+          "viaAuthenticatedPortal": true
+        },
+        {
+          "concurrentRequests": 3,
+          "successfulExchanges": 1,
+          "rejectedExchanges": 2
+        },
+        {
+          "realRegistrationAction": true,
+          "trustedIngress": true,
+          "spoofedForwardingIgnored": true,
+          "durableUserAndSession": true
+        },
+        {
+          "realLoginAction": true,
+          "trustedIngress": true,
+          "newSessionAndAudit": true
+        }
+      ],
+      "restored": true,
+      "stage": "trusted-login",
+      "axe": []
+    }
+  ],
+  "serverStopped": true,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "failure": {
+    "category": "none",
+    "errorCode": null,
+    "rootCauseConfirmed": false
+  }
+}
+
+EVIDENCE current-preview/summary.json
+
+{
+  "status": "PASS",
+  "source_revision": "sha256:4a1b964080a65416f6a6423c7b7a67df8a52ef12c8305ea5aacd3aa96ac4e778",
+  "readiness": "PASS; platform project metadata not manually overridden",
+  "route_matrix": {
+    "local": 10,
+    "sandbox": 10
+  },
+  "forged_header_cases": {
+    "local": 8,
+    "sandbox": 8
+  },
+  "burst": {
+    "requests": 123,
+    "validation400": 120,
+    "rate_limited429": 3,
+    "duration_seconds": 13.406
+  },
+  "distinct_egress": "second400 while first429",
+  "provider_outage": {
+    "passed": 8,
+    "total": 8
+  },
+  "limitations": [
+    "real Redis6 with narrow synthetic HTTP bridge, not commercial Upstash",
+    "business DB unavailable remotely; business success covered only by local disposable DB/browser evidence",
+    "Production topology not validated",
+    "global lint FAIL299 docs evidence errors; src errors0"
+  ],
+  "cleanup": "PASS; retained staging and prior Preview READY",
+  "whole_acceptance": "NOT_RUN"
+}
+
+EVIDENCE current-preview/readiness.json
+
+{
+  "http_status": 200,
+  "native_configured": true,
+  "configuration_ready": true,
+  "topology_probe_required": true,
+  "shape_valid": true
+}
+
+
+EVIDENCE current-preview/matrix-local.json
+
+{
+  "mode": "matrix",
+  "rows": [
+    {
+      "case": "chat-get",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "chat-post",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "private-get",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "private-post",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "admission-release",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "voucher-preview",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "voucher-confirm",
+      "http_status": 403,
+      "expected_status": 403,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "portal-preview",
+      "http_status": 303,
+      "expected_status": 303,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "portal-confirm",
+      "http_status": 303,
+      "expected_status": 303,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "referral-invalid",
+      "http_status": 307,
+      "expected_status": 307,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    }
+  ],
+  "passed": true,
+  "business_database_success_claimed": false
+}
+
+
+EVIDENCE current-preview/matrix-sandbox.json
+
+{
+  "mode": "matrix",
+  "rows": [
+    {
+      "case": "chat-get",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "chat-post",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "private-get",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "private-post",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "admission-release",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "voucher-preview",
+      "http_status": 400,
+      "expected_status": 400,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "voucher-confirm",
+      "http_status": 403,
+      "expected_status": 403,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "portal-preview",
+      "http_status": 303,
+      "expected_status": 303,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "portal-confirm",
+      "http_status": 303,
+      "expected_status": 303,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    },
+    {
+      "case": "referral-invalid",
+      "http_status": 307,
+      "expected_status": 307,
+      "passed": true,
+      "source_unavailable": false,
+      "provider_unavailable": false
+    }
+  ],
+  "passed": true,
+  "business_database_success_claimed": false
+}
+
+
+EVIDENCE current-preview/headers-local.json
+
+{
+  "mode": "headers",
+  "rows": [
+    {
+      "case": "baseline",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "ipv4",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "ipv6",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "duplicate",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "case",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "list",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "empty",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "combined",
+      "http_status": 400,
+      "passed": true
+    }
+  ],
+  "passed": true
+}
+
+
+EVIDENCE current-preview/headers-sandbox.json
+
+{
+  "mode": "headers",
+  "rows": [
+    {
+      "case": "baseline",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "ipv4",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "ipv6",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "duplicate",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "case",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "list",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "empty",
+      "http_status": 400,
+      "passed": true
+    },
+    {
+      "case": "combined",
+      "http_status": 400,
+      "passed": true
+    }
+  ],
+  "passed": true
+}
+
+
+EVIDENCE current-preview/burst-local.json
+
+{
+  "mode": "burst",
+  "requests": 123,
+  "duration_seconds": 13.406,
+  "http_counts": {
+    "400": 120,
+    "429": 3
+  },
+  "validation_400_count": 120,
+  "confirmed_429_count": 3,
+  "within_window": true
+}
+
+
+EVIDENCE current-preview/second-egress.json
+
+{
+  "mode": "one",
+  "http_status": 400,
+  "validation_reached": true,
+  "rate_limited": false
+}
+
+
+EVIDENCE current-preview/first-egress-after.json
+
+{
+  "mode": "one",
+  "http_status": 429,
+  "validation_reached": false,
+  "rate_limited": true
+}
+
+
+EVIDENCE current-preview/provider-outage.json
+
+{
+  "rows": [
+    {
+      "case": "admission",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "chat-read",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "chat-write",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "private-read",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "private-write",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "portal-preview",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "voucher-preview",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    },
+    {
+      "case": "broadcast-read",
+      "http_status": 503,
+      "provider_unavailable": true,
+      "source_unavailable": false,
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "real_redis_stopped": true,
+  "business_database_accessed": false
+}
+
+
+EVIDENCE current-preview/cleanup-verification.json
+
+{
+  "staging": {
+    "id": "dpl_6Nq2X1U9GDs5QVek7dTcdpmPM1hJ",
+    "state": "READY"
+  },
+  "retainedPreview": {
+    "id": "dpl_E9wbsvtxx8ChBjZnUifufjgs93dC",
+    "state": "READY"
+  },
+  "temporaryPreview": {
+    "unavailable": true,
+    "error": true
+  }
+}
+
+
+QUALIFIED SOURCE REMEDIATION REVIEW claude-opus-5-5
+
+{"summary":"I found no BLOCKER or MAJOR defects in the supplied scope.\n\nThe three earlier MAJORs are addressed in code:\n- **Readiness absence:** a config-only `/api/health/entry` now returns fixed categories plus `topologyProbeRequired`.\n- **Native chat misconfiguration:** an explicit ENTRY setting takes precedence, an invalid value fails closed with no legacy or runtime fallback, and the native gate is re-checked from server env on each request.\n- **Production unproven:** readiness always reports Production as unverified, and native mode is disabled at runtime outside Preview.\n\nThe extraction into `entry-client-ip` leaves no circular import: `trusted-entry-rate-limit` imports `live-chat-request-security`, which imports `entry-client-ip`, which imports `request-client-ip`. The exact IP is passed to business logic. The IPv6 /64 rewrite is applied only to the limiter's `cf-connecting-ip` header, and calling `nativeBucketIdentity` twice gives the same result. Unknown identities on chat GET, private chat GET and purchase-broadcast GET return 503 before the limiter or the database.\n\nThe remaining issues are MINOR or NIT:\n- The referral 503 event also fires during a Redis outage, so it can be misattributed to the IP source.\n- The Production block is enforced only through readiness for the cloudflare and trusted-proxy ENTRY modes; at runtime, Production still serves these routes.\n- The project-ID binding depends on whether Vercel actually injects `VERCEL_PROJECT_ID` at runtime.\n- The health GET relies on framework defaults to stay dynamic.\n- No real-resolver native test covers chat POST, private chat, or referral, and some tests assume ENTRY env vars are not already set.\n\nRemote Preview proof still has to be refreshed after the extraction. This review does not certify that tests passed, that the global lint fails only on historical files, or that any remote acceptance happened.","findings":[{"severity":"MINOR","file":"src/app/r/[code]/route.ts","area":"limited.status === 503 branch (event logging)","issue":"The fixed event `platform_referral_source_unavailable` fires for every 503 from the trusted-entry limiter. That includes the legacy limiter's own 503, which `rate-limit.ts` `serviceUnavailable()` returns when Upstash is unconfigured, times out, or returns an error. A Redis outage is therefore reported as a client-IP source failure.","evidence":"In `trusted-entry-rate-limit.ts`, a null IP returns a 503 with the body 'Request source unavailable'. `checkLegacyRateLimit` also returns a 503 (body 'Rate limit provider unavailable', Retry-After 30) when the provider throws. The referral route checks only `limited.status === 503` before calling `console.warn(\"platform_referral_source_unavailable\")`.","impact":"Operators would look at topology or source-IP configuration during a shared-limiter outage, and the event cannot be used as smoke evidence that the IP source is healthy. No data or security is exposed.","recommended_fix":"Have `trusted-entry-rate-limit` return a typed outcome, for example `{ kind: 'source_unavailable' | 'limiter_unavailable' | 'limited' }`, or a fixed internal marker. Emit a separate fixed event for each kind, still with no request data.","required_test":"Use the real `trusted-entry-rate-limit` with `RATE_LIMIT_PROVIDER=upstash_redis` and a mocked fetch that rejects. Assert the referral route emits the limiter-unavailable event and not `platform_referral_source_unavailable`, and keeps the 307 redirect with no cookie. Keep the existing null-IP case asserting the source event.","confidence":0.7},{"severity":"MINOR","file":"src/lib/entry-client-ip.ts","area":"entryIpTrustConfig cloudflare/trusted-proxy/runtime branches","issue":"The Production block is enforced only by readiness and the documentation. `entryIpTrustConfig` checks `VERCEL_ENV` only for `vercel-native`. With `ENTRY_CLIENT_IP_TRUST_MODE` set to cloudflare or trusted-proxy (or runtime) in Production, entry routes and chat resolve IPs and serve traffic while `/api/health/entry` reports 503 `production_topology_unverified`.","evidence":"`entryReadiness` returns `production_topology_unverified` before evaluating the config. `entryIpTrustConfig` returns `{ trustMode, deploymentSource, ingressSecret }` for the cloudflare/cloudflare and trusted-proxy/vercel pairs without checking `VERCEL_ENV` or `NODE_ENV`. `getLiveChatClientIp` and `trusted-entry-rate-limit` both use that config.","impact":"The remediation claims Production is 'explicitly blocked', but nothing at runtime enforces it for proof modes. A Production deploy that skips or ignores the health gate would run an unverified topology. Nothing is unsafe by default; the gap is that the claim is enforced only by process.","recommended_fix":"Do one of the following. Option 1: in `getEntryClientIp`, return null for ENTRY-configured modes when `VERCEL_ENV === 'production'` until Production evidence exists. Option 2: change the remediation statement to say the Production block is a readiness and release gate, not a runtime restriction.","required_test":"Set `VERCEL_ENV=production`, `ENTRY_CLIENT_IP_TRUST_MODE=cloudflare`, a strong proof and upstash. Either assert `getEntryClientIp`, `getLiveChatClientIp` and referral return null/503 (runtime block), or record in the review evidence that the block is gate-only.","confidence":0.5},{"severity":"MINOR","file":"src/lib/entry-client-ip.ts","area":"vercel-native verification (ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID === VERCEL_PROJECT_ID)","issue":"The project binding assumes Vercel injects `VERCEL_PROJECT_ID` as a runtime system variable. If the platform does not provide it, an operator must set both values by hand. The check then only compares two operator-entered strings and does not bind to the actual platform project, contrary to the deployment doc's statement that it must match the platform's `VERCEL_PROJECT_ID`.","evidence":"`verified` requires `expectedProject === env.VERCEL_PROJECT_ID`. The supplied text gives no evidence that `VERCEL_PROJECT_ID` is a platform-injected runtime variable, and the unit and integration tests stub it.","impact":"If the variable is absent at runtime, native mode never turns on, which fails closed. If operators add it manually to make it work, the binding protects against nothing. Either way the Preview proof could be misread.","recommended_fix":"Have the refreshed Preview probe confirm that `VERCEL_PROJECT_ID` comes from the platform (report only a boolean category, never the value). If it does not, bind to a platform-provided value such as `VERCEL_DEPLOYMENT_ID` or `VERCEL_URL` via its project prefix, or record the limitation in the doc.","required_test":"In the refreshed Preview smoke, confirm `preview_native_configured` appears when the project ID is not set as a user env var, or record why manual setting is accepted.","confidence":0.35},{"severity":"MINOR","file":"src/lib/live-chat-native.integration.test.ts","area":"native integration coverage","issue":"The real-resolver native integration covers only chat GET and broadcast GET. Chat POST, both private-chat methods, and the `trusted-entry-rate-limit` referral path in native mode do not go through the real `getEntryClientIp`, the /64 bucketing, or the `entry-vercel-native:` key prefix with a real resolver. Those tests mock `getRequestClientIp`, mock the limiter, or pass the runtime config explicitly.","evidence":"The messages and private route tests mock `@/lib/request-client-ip`. The referral memory test calls `real.checkRateLimit(..., { trustMode: 'runtime', deploymentSource: 'node' })`. The native integration file imports only `GET` from the messages and broadcasts routes.","impact":"A regression in write paths or in the referral key prefix under native mode would go undetected before the Preview smoke, and those routes are the ones that create rows.","recommended_fix":"Extend the native integration to chat POST and private GET/POST with mocked business functions and limiter. Assert the exact IP reaches the business call and the /64 identity reaches the limiter. Add a referral case asserting the limiter key is `entry-vercel-native:platform-referral-entry` and the request uses the /64 `cf-connecting-ip`.","required_test":"With the native Preview env stubbed, call chat POST, private GET/POST and referral GET using the IPv6 `x-vercel-forwarded-for` plus forged cf/xff headers. Assert the business IP equals the exact address, the limiter header equals the /64, and a malformed native header returns 503/403 with no limiter or DB call.","confidence":0.5},{"severity":"NIT","file":"src/app/api/health/entry/route.ts","area":"GET export (no request/dynamic marker)","issue":"The handler takes no request and calls no dynamic API, so it stays per-request only under the framework's default caching. If Cache Components or `force-static` prerendering applies, the build-time env snapshot would be served.","evidence":"`export function GET()` reads `process.env` through `entryReadiness()` and uses no `connection()`, `dynamic` export or request argument.","impact":"Health could report the build environment's configuration instead of the runtime's, though the no-store header limits CDN reuse.","recommended_fix":"Add `export const dynamic = \"force-dynamic\"` or `await connection()` so request-time evaluation does not depend on defaults.","required_test":"Run a build check, or a route segment config assertion, showing `/api/health/entry` is dynamic (λ) and not prerendered.","confidence":0.3},{"severity":"NIT","file":"src/app/api/live-purchase-broadcasts/route.test.ts","area":"forged-forwarding it.each; ambient ENTRY env","issue":"In the 'untrusted' branch the loop hits `continue`, so the ternary `mode === \"runtime\" ? ... : \"unknown\"` can never reach 'unknown'. Separately, the messages and broadcasts route tests assume `ENTRY_CLIENT_IP_TRUST_MODE` is unset. If it is set in the test process environment, the tests take the ENTRY resolver path.","evidence":"`continue` comes before the limiter assertion. No test stubs or deletes `ENTRY_CLIENT_IP_TRUST_MODE` in `beforeEach`, and `getLiveChatClientIp` branches on `process.env.ENTRY_CLIENT_IP_TRUST_MODE !== undefined`.","impact":"The test is misleading and can behave differently in a CI environment that sets ENTRY variables.","recommended_fix":"Remove the dead ternary arm. In `beforeEach`, explicitly delete or stub ENTRY_* variables for the legacy-path suites.","required_test":"Run the suites with `ENTRY_CLIENT_IP_TRUST_MODE=cloudflare` exported in the shell and confirm the legacy-path assertions still hold.","confidence":0.6}]}
+
+SOURCE src/lib/entry-client-ip.ts
+
+import { getRequestClientIp, normalizeClientIp, type ClientIpTrustConfig } from "./request-client-ip";
+
+export type EntryIpTrustConfig = ClientIpTrustConfig | {
+  trustMode: "vercel-native";
+  deploymentSource: "vercel";
+};
+
+/** Entry trust is explicit; a storage/WAF provider never selects a proxy. */
+export function entryIpTrustConfig(env: NodeJS.ProcessEnv = process.env): EntryIpTrustConfig {
+  const trustMode = env.ENTRY_CLIENT_IP_TRUST_MODE;
+  const deploymentSource = env.ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE;
+  if (trustMode === "vercel-native") {
+    // Explicit Preview-only rollout. Runtime metadata is server-side, never headers.
+    const expectedProject = env.ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID;
+    const verified = deploymentSource === "vercel"
+      && env.ENTRY_CLIENT_IP_TOPOLOGY === "direct-vercel"
+      && env.VERCEL === "1" && env.VERCEL_ENV === "preview"
+      && Boolean(expectedProject) && expectedProject === env.VERCEL_PROJECT_ID
+      && env.RATE_LIMIT_PROVIDER === "upstash_redis";
+    return verified ? { trustMode, deploymentSource: "vercel" }
+      : { trustMode: "none", deploymentSource: "none" };
+  }
+  if (trustMode === "runtime" && deploymentSource === "node") {
+    return { trustMode, deploymentSource };
+  }
+  if ((trustMode === "cloudflare" && deploymentSource === "cloudflare")
+    || (trustMode === "trusted-proxy" && deploymentSource === "vercel")) {
+    return { trustMode, deploymentSource, ingressSecret: env.ENTRY_CLIENT_IP_INGRESS_SECRET };
+  }
+  return { trustMode: "none", deploymentSource: "none" };
+}
+
+/** Native IPv6 sources share a /64 bucket; mapped IPv4 shares its IPv4 bucket. */
+export function nativeBucketIdentity(value: string | null) {
+  const ip = normalizeClientIp(value);
+  if (!ip || !ip.includes(":")) return ip;
+  const [head, tail] = ip.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left
+    : [...left, ...Array<string>(8 - left.length - right.length).fill("0"), ...right];
+  const words = groups.map(group => Number.parseInt(group, 16));
+  if (words.slice(0, 5).every(word => word === 0) && words[5] === 0xffff) {
+    return [words[6]! >> 8, words[6]! & 255, words[7]! >> 8, words[7]! & 255].join(".");
+  }
+  return `${words.slice(0, 4).map(word => word.toString(16)).join(":")}::`;
+}
+
+/** 回傳真實正規化 IP；業務授權與封鎖名單不得拿 IPv6 /64 bucket 代替地址。 */
+export function getEntryClientIp(request: Request, config: EntryIpTrustConfig = entryIpTrustConfig()) {
+  if (config.trustMode === "vercel-native") {
+    // 每次重新核對部署 metadata；傳入 config 不能繞過 Preview 限制。
+    return entryIpTrustConfig().trustMode === "vercel-native"
+      ? normalizeClientIp(request.headers.get("x-vercel-forwarded-for")) : null;
+  }
+  return getRequestClientIp(request, config);
+}
+
+
+SOURCE src/lib/entry-readiness.ts
+
+import { entryIpTrustConfig } from "./entry-client-ip";
+import { hasStrongIngressSecret } from "./request-client-ip";
+
+/** 僅回報固定設定狀態；不輸出 secret、URL、專案 ID，也不宣稱網路拓撲已通過探測。 */
+export function entryReadiness(env: NodeJS.ProcessEnv = process.env) {
+  const config = entryIpTrustConfig(env);
+  if (env.VERCEL_ENV === "production") return { ready: false, reason: "production_topology_unverified" } as const;
+  if (config.trustMode === "none") return { ready: false, reason: "entry_configuration_missing_or_invalid" } as const;
+  if (env.RATE_LIMIT_PROVIDER === "upstash_redis" && !(env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN)) {
+    return { ready: false, reason: "shared_rate_limit_not_configured" } as const;
+  }
+  if (config.trustMode === "vercel-native") return { ready: true, reason: "preview_native_configured" } as const;
+  const local = env.NODE_ENV !== "production" && !env.VERCEL;
+  if (!local && env.VERCEL_ENV !== "preview") return { ready: false, reason: "deployment_topology_unverified" } as const;
+  if (config.trustMode === "runtime") return local
+    ? { ready: true, reason: "local_runtime_configured" } as const
+    : { ready: false, reason: "runtime_address_unavailable_on_deployment" } as const;
+  if (!hasStrongIngressSecret(config.ingressSecret)) return { ready: false, reason: "ingress_proof_not_configured" } as const;
+  // 遠端 app 限流必須使用共享儲存；沒有 WAF 規則證據時不得宣稱 WAF 已覆蓋路由。
+  if (env.RATE_LIMIT_PROVIDER !== "upstash_redis" && !(local && env.RATE_LIMIT_PROVIDER === "memory")) {
+    return { ready: false, reason: "shared_rate_limit_provider_required" } as const;
+  }
+  return { ready: true, reason: "proof_ingress_configured" } as const;
+}
+
+
+SOURCE src/lib/trusted-entry-rate-limit.ts
+
+import { NextResponse } from "next/server";
+import { checkRateLimit as checkLegacyRateLimit } from "./rate-limit";
+import { entryIpTrustConfig, getEntryClientIp, nativeBucketIdentity, type EntryIpTrustConfig } from "./entry-client-ip";
+export { entryIpTrustConfig } from "./entry-client-ip";
+import { rateLimitRequestWithIdentity } from "./live-chat-request-security";
+
+/** Only WP11 callers opt in. Keep the original body untouched for redemption. */
+export async function checkRateLimit(
+  request: Request, key: string, limit: number, windowMs: number,
+  config: EntryIpTrustConfig = entryIpTrustConfig(),
+) {
+  const native = config.trustMode === "vercel-native";
+  // No fallback: direct Vercel traffic cannot rely on Cloudflare WAF or per-instance memory.
+  const resolvedIp = getEntryClientIp(request, config);
+  const ip = native ? nativeBucketIdentity(resolvedIp) : resolvedIp;
+  if (!ip) {
+    return NextResponse.json({ error: "Request source unavailable" }, {
+      status: 503,
+      headers: { "Retry-After": "30", "Cache-Control": "no-store" },
+    });
+  }
+  return checkLegacyRateLimit(rateLimitRequestWithIdentity(request, ip), native ? `entry-vercel-native:${key}` : key, limit, windowMs);
+}
+
+
+SOURCE src/lib/live-chat-native.integration.test.ts
+
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ limit: vi.fn(), list: vi.fn(), create: vi.fn(), privateList: vi.fn(), privateCreate: vi.fn(), referral: vi.fn(), broadcasts: vi.fn(), db: vi.fn() }));
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limit }));
+vi.mock("@/lib/db", () => ({ getDb: mocks.db }));
+vi.mock("@/lib/live-chat", async original => ({ ...await original<typeof import("@/lib/live-chat")>(), listViewerChatMessages: mocks.list, createViewerChatMessage: mocks.create }));
+vi.mock("@/lib/live-purchase-broadcasts", async original => ({ ...await original<typeof import("@/lib/live-purchase-broadcasts")>(), listLivePurchaseBroadcasts: mocks.broadcasts }));
+vi.mock("@/lib/live-private-chat", () => ({ listPrivateViewerChat: mocks.privateList, createPrivateViewerChat: mocks.privateCreate }));
+vi.mock("@/lib/csrf", () => ({ getCsrfToken: async () => "synthetic-csrf", verifyCsrfToken: async () => true }));
+vi.mock("@/lib/platform-referral", async original => ({ ...await original<typeof import("@/lib/platform-referral")>(), recordPlatformReferralClick: mocks.referral }));
+import { GET as privateGet, POST as privatePost } from "@/app/api/live-chat/private/route";
+import { GET as referral } from "@/app/r/[code]/route";
+import { GET as chat, POST as chatPost } from "@/app/api/live-chat/messages/route";
+import { GET as broadcasts } from "@/app/api/live-purchase-broadcasts/route";
+import { LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
+beforeEach(() => {
+  vi.clearAllMocks();mocks.limit.mockResolvedValue(null);mocks.db.mockReturnValue({});mocks.list.mockResolvedValue({ messages: [] });mocks.broadcasts.mockResolvedValue([]);
+  mocks.create.mockResolvedValue({ created: true, message: { id: "synthetic" } });
+  mocks.privateList.mockResolvedValue({ messages: [], conversationBinding: "b".repeat(43) });
+  mocks.privateCreate.mockResolvedValue({ created: true, message: { id: "synthetic" } });
+  mocks.referral.mockResolvedValue({ id: "synthetic-click" });
+  for (const [key, value] of Object.entries({ NODE_ENV: "production", ENTRY_CLIENT_IP_TRUST_MODE: "vercel-native", ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE: "vercel", ENTRY_CLIENT_IP_TOPOLOGY: "direct-vercel", ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID: "synthetic-project", VERCEL_PROJECT_ID: "synthetic-project", VERCEL: "1", VERCEL_ENV: "preview", RATE_LIMIT_PROVIDER: "upstash_redis", NEXT_PUBLIC_APP_URL: "https://preview.example.test" })) vi.stubEnv(key, value);
+});
+afterEach(() => vi.unstubAllEnvs());
+function request(path: string, ip: string) {
+  return new Request(`https://preview.example.test${path}?vendorId=v1&liveId=l1`, { headers: { origin: "https://preview.example.test", "x-celebratedeal-client": "web", "x-vercel-forwarded-for": ip, "cf-connecting-ip": "198.51.100.99", "x-real-ip": "203.0.113.99", cookie: `${LIVE_VIEWER_SESSION_COOKIE}=${"A".repeat(43)}` } });
+}
+it("actual native chat GET uses exact business IP and separate /64 limiter key", async () => {
+  const response = await chat(request("/api/live-chat/messages", "2001:db8:1:2::123"));
+  expect(response.status).toBe(200);
+  expect(mocks.list).toHaveBeenCalledWith({}, expect.objectContaining({ ipAddress: "2001:db8:1:2::123" }));
+  expect((mocks.limit.mock.calls[0][0] as Request).headers.get("cf-connecting-ip")).toBe("2001:db8:1:2::");
+});
+it("actual native broadcast GET reaches authorized business lookup", async () => {
+  expect((await broadcasts(request("/api/live-purchase-broadcasts", "192.0.2.5"))).status).toBe(200);
+  expect(mocks.broadcasts).toHaveBeenCalledOnce();
+  expect((mocks.limit.mock.calls[0][0] as Request).headers.get("cf-connecting-ip")).toBe("192.0.2.5");
+});
+it.each([chat, broadcasts])("actual routes reject untrusted native source before shared limiter and database", async route => {
+  expect((await route(request("/api/live-chat/messages", "192.0.2.5, 192.0.2.6"))).status).toBe(503);
+  expect(mocks.limit).not.toHaveBeenCalled();expect(mocks.db).not.toHaveBeenCalled();
+});
+
+
+it.each(["chat-post", "private-get", "private-post"])("real native resolver reaches %s with exact business IP and /64 limit", async kind => {
+  const source = request("/api/live-chat/messages", "2001:db8:1:2::123");
+  const body = { vendorId: "v1", liveId: "l1", clientMessageId: "123e4567-e89b-12d3-a456-426614174000", body: "Synthetic message", ...(kind === "private-post" ? { csrfToken: "synthetic-csrf", conversationBinding: "b".repeat(43) } : {}) };
+  source.headers.set("content-type", "application/json");
+  const req = kind === "private-get" ? source : new Request(source.url, { method: "POST", headers: source.headers, body: JSON.stringify(body) });
+  const route = kind === "chat-post" ? chatPost : kind === "private-get" ? privateGet : privatePost;
+  expect((await route(req)).status).toBe(kind === "private-get" ? 200 : 201);
+  const business = kind === "chat-post" ? mocks.create : kind === "private-get" ? mocks.privateList : mocks.privateCreate;
+  expect(business).toHaveBeenCalledWith({}, expect.objectContaining({ ipAddress: "2001:db8:1:2::123" }));
+  expect((mocks.limit.mock.calls[0][0] as Request).headers.get("cf-connecting-ip")).toBe("2001:db8:1:2::");
+});
+it("real native referral uses the namespaced key and /64 bucket", async () => {
+  const response = await referral(request("/r/synthetic", "2001:db8:1:2::123"), { params: Promise.resolve({ code: "synthetic" }) });
+  expect(response.status).toBe(307);expect(mocks.referral).toHaveBeenCalledOnce();
+  expect(mocks.limit.mock.calls[0][1]).toBe("entry-vercel-native:platform-referral-entry");
+  expect((mocks.limit.mock.calls[0][0] as Request).headers.get("cf-connecting-ip")).toBe("2001:db8:1:2::");
+});
+it.each([chatPost, privateGet, privatePost])("invalid native identity never reaches write/private business or limiter", async route => {
+  const source = request("/api/live-chat/messages", "invalid");
+  const response = await route(source);
+  expect([403, 503]).toContain(response.status);
+  expect(mocks.limit).not.toHaveBeenCalled();expect(mocks.db).not.toHaveBeenCalled();
+  expect(mocks.create).not.toHaveBeenCalled();expect(mocks.privateCreate).not.toHaveBeenCalled();expect(mocks.privateList).not.toHaveBeenCalled();
+});
+
+
+SOURCE docs/launch/wp11-entry-deployment.md
+
+# WP-11 非 Production 入口部署檢查
+
+本文件僅涵蓋本機與獨立 Preview。Production 拓撲尚未驗證，屬 release blocker，不可將 Preview 證據視為 Production 部署核可。
+
+| 環境 | 來源設定 | 限流儲存 | 驗證要求 |
+| --- | --- | --- | --- |
+| Vercel 獨立 Preview／staging Preview | ENTRY_CLIENT_IP_TRUST_MODE=vercel-native、ENTRY_CLIENT_IP_DEPLOYMENT_SOURCE=vercel、ENTRY_CLIENT_IP_TOPOLOGY=direct-vercel；EXPECTED_PROJECT_ID 必須匹配平台 VERCEL_PROJECT_ID，VERCEL_ENV 必須 preview | upstash_redis；連線資訊由核准 process／平台 secret provider 注入 | `/api/health/entry` 200 且兩個實際出口來源 probe 通過；不能用自行偽造的 header 取代部署 probe |
+| 本機 owned ingress | cloudflare/cloudflare proof 模式；代理覆寫來源 IP 及 proof header | memory 僅本機單程序 | localhost ingress 使用合成 proof，確認直接 origin／偽造 proof 被拒，瀏覽器流程成功 |
+| 本機提供 request.ip 的 runtime adapter | runtime/node | 本機 memory | 必須證明 adapter 實際提供 ip；Next Request 不會因 header 存在而自動獲得 runtime IP |
+| Preview 上受控 proof ingress | cloudflare/cloudflare 或 trusted-proxy/vercel；ENTRY_CLIENT_IP_INGRESS_SECRET 經平台注入 | upstash_redis | 實測代理覆寫 proof 與來源 IP；不能假設 fronting proxy 的 egress 就是使用者 IP |
+
+完整變數名稱為 `ENTRY_CLIENT_IP_EXPECTED_PROJECT_ID`。不得讀取 `.env*`、列舉 secret store 或輸出憑證。Redis 設定只由應用程式在執行時使用；readiness 僅回報固定類別，不回傳值。
+
+`/api/health/entry` 的 `topologyProbeRequired: true` 表示此檢查只證明設定格式與必要欄位存在，未證明外部網路、Redis 可連線或來源覆寫行為。實際 smoke 另須包含 portal、voucher、admission、referral、chat GET/POST、private chat 與 purchase broadcasts；只登入頁 200 不足以驗收。
+
+已明確設定 ENTRY 模式的部署，入口及直播聊天使用同一個 ENTRY proof 與解析器。無效的 ENTRY 設定不退回舊聊天設定。未設定 ENTRY 時僅保留舊聊天來源契約相容性，入口 readiness 仍失敗，因此不可視為完整 WP-11 部署。
+
+原始 IP 用於業務存取判斷；native IPv6 /64 只用於限流 bucket。未知 IP 的聊天讀取／購買廣播在觸及限流器及業務資料庫前回應 503，不共用 unknown bucket。推薦入口 503 會產生固定 `platform_referral_source_unavailable` 事件，不附帶 request 資料；429 不產生該事件。
+
+`cloudflare_waf` 沒有本次新增路由的遠端規則證據，遠端 memory 沒有跨实例共享額度，readiness 不將兩者視為本次可接受部署。Production 仍為未驗證／未授權狀態。
+
+回滾僅回復該獨立 Preview 的精確 patch 或刪除本次建立的 Preview；不得修改既有 staging alias、使用者 dirty 工作樹或停用安全檢查來通過驗證。
+
+
+SOURCE docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/probe.py
+
+"""Fixed owned Preview only; output fixed categories/counts, never raw headers or credentials."""
+import http.client,json,sys,time,concurrent.futures,collections
+HOST="celebrate-deal-staging-pee8uidcp-a25814740s-projects.vercel.app"
+def hit(method,path,extra=()):
+ c=http.client.HTTPSConnection(HOST,timeout=25)
+ try:
+  c.putrequest(method,path)
+  c.putheader("Origin","https://celebrate-deal-staging.carry-digital-nomad.in.net");c.putheader("x-celebratedeal-client","web")
+  if method in ["POST","DELETE"]:c.putheader("Content-Type","application/json");c.putheader("Content-Length","2")
+  for key,value in extra:c.putheader(key,value)
+  c.endheaders(b"{}" if method in ["POST","DELETE"] else None)
+  r=c.getresponse();content=r.read(65536)
+  try:body=json.loads(content)
+  except Exception:body={}
+  return r.status,body
+ finally:c.close()
+def forged(i):
+ value=f"192.0.2.{i%240+1}"
+ return [(key,value) for key in ["x-vercel-forwarded-for","cf-connecting-ip","x-real-ip","x-forwarded-for"]]
+mode=sys.argv[1]
+if mode=="readiness":
+ status,body=hit("GET","/api/health/entry")
+ allowed={"ok","entry","topologyProbeRequired"}
+ print(json.dumps({"http_status":status,"native_configured":body.get("entry")=="preview_native_configured","configuration_ready":body.get("ok") is True,"topology_probe_required":body.get("topologyProbeRequired") is True,"shape_valid":set(body)==allowed}))
+elif mode=="matrix":
+ cases=[("chat-get","GET","/api/live-chat/messages",400),("chat-post","POST","/api/live-chat/messages",400),("private-get","GET","/api/live-chat/private",400),("private-post","POST","/api/live-chat/private",400),("admission-release","DELETE","/api/live-admission",400),("voucher-preview","GET","/api/automation/vouchers/redeem?token=invalid",400),("voucher-confirm","POST","/api/automation/vouchers/redeem",403),("portal-preview","GET","/portal/wp11-synthetic/access?token=invalid",303),("portal-confirm","POST","/portal/wp11-synthetic/access",303),("referral-invalid","GET","/r/%20",307)]
+ rows=[]
+ for name,method,path,expected in cases:
+  status,body=hit(method,path,forged(200));rows.append({"case":name,"http_status":status,"expected_status":expected,"passed":status==expected,"source_unavailable":body.get("error")=="Request source unavailable","provider_unavailable":body.get("error")=="Rate limit provider unavailable"})
+ print(json.dumps({"mode":mode,"rows":rows,"passed":all(r["passed"] for r in rows),"business_database_success_claimed":False}))
+elif mode=="headers":
+ cases={"baseline":[],"ipv4":[("x-vercel-forwarded-for","192.0.2.123")],"ipv6":[("x-vercel-forwarded-for","2001:db8::123")],"duplicate":[("x-vercel-forwarded-for","192.0.2.123"),("x-vercel-forwarded-for","192.0.2.124")],"case":[("X-Vercel-Forwarded-For","192.0.2.123")],"list":[("x-vercel-forwarded-for","192.0.2.123,192.0.2.124")],"empty":[("x-vercel-forwarded-for","")],"combined":forged(222)}
+ rows=[]
+ for name,headers in cases.items():
+  status,body=hit("GET","/api/live-chat/messages",headers);rows.append({"case":name,"http_status":status,"passed":status==400})
+ print(json.dumps({"mode":mode,"rows":rows,"passed":all(r["passed"] for r in rows)}))
+elif mode=="one":
+ status,body=hit("POST","/api/live-admission",forged(239));print(json.dumps({"mode":mode,"http_status":status,"validation_reached":status==400 and body.get("error")=="Invalid admission request","rate_limited":status==429 and body.get("error")=="Too many requests"}))
+elif mode=="burst":
+ start=time.monotonic()
+ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:results=list(pool.map(lambda i:hit("POST","/api/live-admission",forged(i)),range(123)))
+ elapsed=time.monotonic()-start;counts=collections.Counter(str(s) for s,b in results)
+ print(json.dumps({"mode":mode,"requests":123,"duration_seconds":round(elapsed,3),"http_counts":dict(counts),"validation_400_count":sum(s==400 and b.get("error")=="Invalid admission request" for s,b in results),"confirmed_429_count":sum(s==429 and b.get("error")=="Too many requests" for s,b in results),"within_window":elapsed<60}))
+else:raise ValueError("unsupported fixed probe")
+
+
+SOURCE docs/ai-team/evidence/product-audit-20261011/WP-11/current-preview/redis-http-fixture.py
+
+"""Disposable Redis HTTP protocol bridge. Synthetic fixture only, no business DB."""
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import hmac, json, re, subprocess
+SCRIPT = """
+local current = redis.call("INCR", KEYS[1])
+if current == 1 then
+  redis.call("PEXPIRE", KEYS[1], ARGV[2])
+end
+local ttl = redis.call("PTTL", KEYS[1])
+return { current, ttl }
+"""
+TEST_AUTH = "Bearer wp11-synthetic-fixture-only-no-real-data"
+def redis(*args):
+    result = subprocess.run(["redis6-cli", "--raw", *args], capture_output=True, text=True, timeout=3)
+    if result.returncode: raise ValueError("fixture_store_error")
+    return result.stdout.strip().splitlines()
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def send(self, code, payload):
+        body=json.dumps(payload).encode(); self.send_response(code)
+        self.send_header("Content-Type","application/json")
+        self.send_header("Cache-Control","no-store")
+        self.send_header("Content-Length",str(len(body)));self.end_headers();self.wfile.write(body)
+    def do_GET(self):
+        if self.path != "/health": return self.send(404,{"error":"not_found"})
+        try: self.send(200,{"ready":redis("PING")==["PONG"],"fixture":True})
+        except Exception: self.send(503,{"ready":False})
+    def do_POST(self):
+        if not hmac.compare_digest(self.headers.get("Authorization", ""),TEST_AUTH):return self.send(401,{"error":"fixture_access_denied"})
+        try:
+            length=int(self.headers.get("Content-Length","0"))
+            if not 0 < length <= 2048:return self.send(400,{"error":"invalid_fixture_payload"})
+            data=json.loads(self.rfile.read(length))
+            if not isinstance(data,list) or len(data)!=6:return self.send(400,{"error":"invalid_fixture_payload"})
+            op,script,numkeys,key,limit,window=data
+            if op!="EVAL" or script!=SCRIPT or numkeys!=1 or limit not in {"30", "60", "120"} or window!="60000" or not isinstance(key,str) or not re.fullmatch(r"celebratedeal:rl:(?:entry-vercel-native:(?:live-admission|live-admission-release|platform-referral-entry|automation-voucher-redeem|automation-voucher-confirm|student-portal-access-preview|student-portal-access-confirm)|live-chat-read|live-chat-write|private-live-chat-read|private-live-chat-write|live-purchase-broadcasts):[0-9a-f:.]+",key):
+                return self.send(400,{"error":"out_of_fixture_scope"})
+            result=redis("EVAL",script,"1",key,limit,window)
+            if len(result)!=2:raise ValueError("invalid_store_response")
+            self.send(200,{"result":[int(result[0]),int(result[1])]})
+        except Exception:self.send(503,{"error":"fixture_store_unavailable"})
+ThreadingHTTPServer(("0.0.0.0",3000),Handler).serve_forever()

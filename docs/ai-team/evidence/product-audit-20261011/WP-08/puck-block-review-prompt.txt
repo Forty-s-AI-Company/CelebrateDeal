@@ -1,0 +1,32 @@
+Independent targeted followup for whole WP08 MAJOR: missing Puck/block key preservation evidence. Review the exact transformation proof and source excerpts. No tools, no whole-WP certification. Report whether this closes that specific MAJOR, and any concrete defects. Only BLOCKER/MAJOR/MINOR/NIT. Actual script read saved pre-WP08 copy for Puck and git HEAD for block library, applied precisely these replacements, asserted equality with entire current file. Both assertions passed. All other source characters including identifiers are identical, not a hand-summarized diff.
+[
+  {
+    "file": "src/components/landing-pages/landing-page-puck-config.tsx",
+    "only_changes": {
+      "Elements · 基本內容": "元件 · 基本內容",
+      "Elements · 版面配置": "元件 · 版面配置",
+      "Blocks · Webinar 轉換": "區塊 · 線上講座轉換",
+      "倒數計時＋報名 CTA": "倒數計時＋報名按鈕"
+    },
+    "all_other_source_identical": true
+  },
+  {
+    "file": "src/lib/funnel-block-library.ts",
+    "only_changes": {
+      "Hero 歡迎訊息與行動按鈕": "主視覺歡迎訊息與行動按鈕",
+      "歡迎 Hero": "歡迎主視覺"
+    },
+    "all_other_source_identical": true
+  }
+]
+EXACT CURRENT LINES src/components/landing-pages/landing-page-puck-config.tsx
+71:       basic: { title: "元件 · 基本內容", components: ["Heading", "Text", "Image", "Video", "Button"] },
+72:       layout: { title: "元件 · 版面配置", components: ["Section", "Columns"] },
+73:       conversion: { title: "區塊 · 線上講座轉換", components: ["Hero", "Speaker", "Benefits", "Agenda", "Carousel", "Pricing", "Countdown", "Testimonials", "FAQ", "CTA"] },
+90:       Countdown: { label: "倒數計時＋報名按鈕", fields: { title: textField("標題"), mode: { type: "select", label: "倒數模式", options: [{ label: "固定截止時間", value: "fixed_date" }, { label: "依直播開播時間", value: "live_linked" }] }, targetAt: textField("固定截止時間（ISO 8601，包含時區）"), ctaLabel: textField("倒數下方按鈕文字"), ctaAction: action, expiredMessage: textField("結束訊息"), expiredAction: { type: "select", label: "倒數結束後", options: [{ label: "顯示結束訊息", value: "show_message" }, { label: "隱藏報名按鈕", value: "hide_cta" }, { label: "轉址到指定頁面", value: "redirect" }] }, expiredRedirect: actionField(context.forms, "到期後前往") }, defaultProps: { title: "報名即將截止", mode: "fixed_date", targetAt: "2030-01-01T00:00:00+08:00", ctaLabel: "立即保留席次", ctaAction: { type: "anchor", targetId: "register" }, expiredMessage: "本次報名已截止", expiredAction: "show_message" }, render: ({ title, mode, targetAt, ctaLabel }) => <section className="rounded-2xl border border-amber-200 bg-gradient-to-b from-amber-50 to-orange-50 p-6 text-center"><h2 className="text-2xl font-black">{title}</h2><time className="mt-3 block font-bold tabular-nums text-amber-900">{mode === "live_linked" ? "依直播開播時間倒數" : `截止：${targetAt}`}</time>{ctaLabel ? <button type="button" className="mt-5 rounded-xl bg-amber-500 px-5 py-3 font-bold text-slate-950 shadow-sm">{ctaLabel}</button> : null}</section> },
+
+EXACT CURRENT LINES src/lib/funnel-block-library.ts
+88:   welcome: { id: "welcome", label: "歡迎區塊", description: "主視覺歡迎訊息與行動按鈕", variantCount: 3 },
+255: registerVariants("welcome", "welcome", "歡迎主視覺", "品牌歡迎訊息與主要行動按鈕。", welcome);
+
+Existing block library tests passed in79tests. No compatibility loader fixture newly added because whole-source equality outside6display strings is stronger direct evidence of key preservation for this patch. Canonical acceptance NOT_RUN.

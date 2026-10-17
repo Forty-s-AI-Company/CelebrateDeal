@@ -115,7 +115,7 @@ export default async function SecuritySettingsPage({
 
   return (
     <>
-      <PageHeader title="安全設定" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">管理團隊與上下線</ButtonLink> : undefined} />
+      <PageHeader title="安全性" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">前往團隊管理</ButtonLink> : undefined} />
       {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
       <div className="grid gap-5 lg:grid-cols-2">

@@ -1,0 +1,168 @@
+{
+  "requested": {
+    "model_key": "opus",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "reviewed": true,
+  "status": "REVIEW_COMPLETED",
+  "normalized_status": "REVIEW_COMPLETED",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "business_review",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 10000,
+      "expected_duration": 30,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "medium"
+    },
+    "task_type": "business_review",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "opus",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "opus",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "critical_review",
+    "model_key": "opus",
+    "model": "claude-opus-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "critical_review",
+      "model_key": "opus",
+      "model": "claude-opus-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "critical_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "execution_provider": "claude_cli",
+  "observed": {
+    "model": "claude-opus-5-5",
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown"
+  },
+  "review": {
+    "summary": "I found no BLOCKER or MAJOR problems in the capacity-loss fix. A session that hit capacity sends the segments it kept with their original sequence numbers and payloads. Once the queue is empty it never calls close, so the session is not marked as fully delivered. The capacityReached flag is set only when a segment is actually dropped and is never cleared, so retries after a network failure keep the loss state. A queue that fills exactly without losing a segment can still close. The supplied tests cover these cases. The only finding is a narrow, minor timing gap that predates this fix. It can let finish() return without sending close; calling flush() again recovers. As stated in the task, the conservative scope means this proves nothing about older sessions, and the full work package is still incomplete. An empty findings list would not have meant the tests or release are certified.",
+    "findings": [
+      {
+        "severity": "MINOR",
+        "file": "src/lib/live-metric-delivery.ts",
+        "area": "flush()/deliver() pending handoff (pre-existing, not introduced by this fix)",
+        "issue": "After deliver() checks `sealed` and returns, `pending` stays set for a few more microtask ticks until the `.finally` handler clears it. If finish() is called in that gap, flush() hands back the old promise, so finish() finishes without sending close.",
+        "evidence": "deliver() reads `sealed` only once, after its final append await. `if (pending) return pending;` returns the old promise unchanged. `pending` is cleared only in `.finally(() => { pending = null; })`, which runs after the then() and async-return steps finish. The existing 'finish races an empty flush' test covers only the start of a flush, not its end.",
+        "impact": "In a session with no lost segments, a caller that awaits finish() may see sealed=true and terminal=false and get no close request until it calls flush() again. The module does not schedule that retry itself. This does not cause false completion or lost data, so the fix's safety property holds, but a clean session may close late or never close.",
+        "recommended_fix": "Keep a rerun flag that is set when finish() or flush() is called while `pending` is active. When the current deliver ends, start one more pass if the flag is set. For example, in finish(), return `pending ? pending.then(() => flush()) : flush()`.",
+        "required_test": "Use a capacity of 20 or more and add one sample. Make append resolve, then call q.finish() from a microtask queued just after that resolution and before flush's finally runs. Await finish() and check that close was called once with the final sequence and that terminal is true.",
+        "confidence": 0.55
+      }
+    ]
+  },
+  "resolved": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "accepted": false,
+  "completed": false,
+  "agy_discovery_status": "DISCOVERY_VERIFIED",
+  "attempts": [
+    {
+      "provider": "agy_wrapper",
+      "model": "claude-opus-5-5-high",
+      "status": "INVALID_REVIEW",
+      "exitCode": 0
+    },
+    {
+      "provider": "claude_cli",
+      "model": "claude-opus-5-5",
+      "status": "SUCCESS",
+      "exitCode": 0
+    }
+  ],
+  "finalModel": "claude-opus-5-5",
+  "agy_discovery_process_status": "SUCCESS",
+  "claude_cli_discovery_status": "SUCCESS",
+  "verification": {
+    "status": "REVIEW_COMPLETED",
+    "source": "process_and_schema",
+    "kind": "local_wrapper"
+  }
+}

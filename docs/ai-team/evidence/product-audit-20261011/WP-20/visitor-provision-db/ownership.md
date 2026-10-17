@@ -1,0 +1,1 @@
+root sole writer; depth0 dispatch0 automatic_spawn=false; owned disposable DB runner and evidence only; Auth review pending. Initial route rejected invalid task_type test; corrected to implement before edits.

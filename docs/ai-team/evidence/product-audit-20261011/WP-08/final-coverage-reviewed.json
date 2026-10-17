@@ -1,0 +1,196 @@
+{
+  "finalModel": "claude-sonnet-5-5",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": null,
+    "signals": {
+      "task_type": "review",
+      "complexity": "medium",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "medium",
+      "large_workload": false,
+      "risk_categories": [
+        "copy_only"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "review",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sonnet",
+    "fallback_events": [],
+    "fallback_chain": [
+      "gemini_high"
+    ],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "unknown",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sonnet",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "provider_availability": "AVAILABLE",
+    "provider_failure_category": "AGY_RUNTIME_ERROR",
+    "review_scope_files": [],
+    "role": "senior_review",
+    "model_key": "sonnet",
+    "model": "claude-sonnet-5-5",
+    "provider": "claude_cli",
+    "reasoning_effort": "high",
+    "effort_floor": null,
+    "effort_reason": null,
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "senior_review",
+      "model_key": "sonnet",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude_cli",
+      "reasoning_effort": "high",
+      "effort_floor": null,
+      "effort_reason": null,
+      "sandbox_mode": "read-only",
+      "execution": "claude_cli_readonly",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "senior_review",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "agy_discovery_status": "AGY_RUNTIME_ERROR",
+  "status": "REVIEW_COMPLETED",
+  "attempts": [
+    {
+      "provider": "claude_cli",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "model": "claude-sonnet-5-5"
+    }
+  ],
+  "verification": {
+    "source": "process_and_schema",
+    "kind": "local_wrapper",
+    "status": "REVIEW_COMPLETED"
+  },
+  "execution_provider": "claude_cli",
+  "review": {
+    "summary": "No BLOCKER or MAJOR found in the supplied funnel-list and gallery-picker source or in the final copy-only replacements. The replacements are internally coherent. The prior coverage findings are plausibly closed per the supplied dispositions, though I cannot independently verify them from this text alone. The only remaining items are a copy-consistency NIT, a possible hydration-timezone MINOR, a modal-focus MINOR, and a low-confidence status-badge MINOR. None requires re-review of the whole scope. The only gate coverage still needed is the declared in-progress browser reruns (AppShell/DashboardLoading 4 states, editor 52 states) completing PASS on the final sha. This is not a whole-20WP certification, and the webinar-settings replacement copy could not be checked against its component source because that source was not supplied.",
+    "findings": [
+      {
+        "severity": "NIT",
+        "file": "src/components/landing-pages/funnel-list.tsx; src/components/landing-pages/funnel-template-gallery-picker.tsx",
+        "area": "funnel-list: section aria-label, link text, empty-state heading; gallery: empty-state copy",
+        "issue": "The final copy pass removed the stray space between 一頁式網站 and adjacent CJK text in goal-picker (e.g. '自訂 一頁式網站' → '自訂一頁式網站'). The same pattern remains in the two files in this scope, so the copy rule is applied inconsistently.",
+        "evidence": "funnel-list.tsx: aria-label=\"一頁式網站 清單\", \"開啟 一頁式網站 →\", \"找不到符合條件的 一頁式網站\". gallery picker: \"這個 一頁式網站 類型還沒有可用模板\", \"之後再加入 版型區塊\". The replacement table for goal-picker explicitly removes this spacing.",
+        "impact": "Cosmetic only. Leftover spacing artifacts from a term substitution make copy look uneven, and the aria-label reads slightly oddly. No functional effect.",
+        "recommended_fix": "Normalize to '一頁式網站清單', '開啟一頁式網站 →', '找不到符合條件的一頁式網站', '這個一頁式網站類型還沒有可用模板', '加入版型區塊'. Alternatively, record the spacing as an intentional exception to the copy-proof rule if the 'Unicode shaping kept' disposition covers it.",
+        "required_test": "Re-run the copy-proof script against the changed files, then re-run the existing component tests or snapshots that assert these strings.",
+        "confidence": 0.7
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-list.tsx",
+        "area": "updatedAt <time> cell, Intl.DateTimeFormat call",
+        "issue": "The date is formatted with Intl.DateTimeFormat('zh-TW') and no explicit timeZone inside a client component that is also server-rendered. The server and the browser can therefore produce different text for the same instant.",
+        "evidence": "new Intl.DateTimeFormat(\"zh-TW\", { dateStyle: \"medium\", timeStyle: \"short\" }).format(page.updatedAt), with no timeZone option and no suppressHydrationWarning.",
+        "impact": "If the server TZ differs from the user's TZ (typical for a Cloudflare/Node host), React logs a hydration text mismatch on the list. Depending on React version it can discard server HTML and re-render the subtree. Users may also see a time that is inconsistent with other surfaces.",
+        "recommended_fix": "Pass an explicit product timeZone (e.g. 'Asia/Taipei') to the formatter, or render the timestamp only after mount. Keep the dateTime attribute as ISO.",
+        "required_test": "Render FunnelList under TZ=UTC server and a non-UTC browser (or hydrate in a test with a different process.env.TZ) and assert there is no hydration mismatch and the text is stable.",
+        "confidence": 0.5
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-template-gallery-picker.tsx",
+        "area": "preview dialog (role=dialog aria-modal) and keydown effect",
+        "issue": "The modal has no focus trap, the background is not inert, and focus is not restored to the invoking '完整預覽' button on close. The Escape handler is attached to window.",
+        "evidence": "The effect only calls closeRef.current?.focus() on open and listens for Escape. Nothing makes the rest of the page inert while aria-modal=\"true\" is set, and no return-focus logic exists in the cleanup or in the setPreviewId(undefined) paths.",
+        "impact": "Keyboard and screen-reader users can Tab out of the modal into obscured page content, and lose their place after closing. This is an accessibility regression relative to the aria-modal contract. It does not break the core flow.",
+        "recommended_fix": "Store the trigger element on open and refocus it on close. Add a Tab focus-cycle within the dialog, or set inert on the sibling container while the preview is open.",
+        "required_test": "Keyboard test: open the preview, Tab repeatedly and confirm focus stays inside the dialog, press Escape and confirm focus returns to the originating template's '完整預覽' button.",
+        "confidence": 0.6
+      },
+      {
+        "severity": "MINOR",
+        "file": "src/components/landing-pages/funnel-list.tsx",
+        "area": "status badge vs. statusFilter logic",
+        "issue": "The badge and filters only model 'published' and 'draft'. Any other LandingPageSummary status is shown as '草稿' under the '全部' filter, but it is excluded from the '草稿' filter, so the same row is classified inconsistently.",
+        "evidence": "Badge: page.status === \"published\" ? \"✓ 已發布\" : \"草稿\". Filter: status === \"all\" || (active ? published : page.status === \"draft\"). The status union is not visible in the supplied scope.",
+        "impact": "Conditional: if LandingPageSummary.status has more than two values (e.g. archived/scheduled), a row can be labelled 草稿 yet never appear under the 草稿 filter. If the union is exactly published|draft, there is no impact.",
+        "recommended_fix": "Confirm the status union. If it has additional members, either map them to explicit labels and filters or make the badge and the draft filter use the same predicate.",
+        "required_test": "A unit test with a fixture of every LandingPageSummary status asserting that the badge label and the filter membership agree for each status.",
+        "confidence": 0.3
+      }
+    ]
+  },
+  "requested": {
+    "model_key": "sonnet",
+    "effort": "auto",
+    "speed": "standard"
+  },
+  "accepted": false,
+  "claude_cli_discovery_status": "SUCCESS",
+  "resolved": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "source": "cli_terminal_model_usage",
+    "effort": "unknown",
+    "model": "claude-sonnet-5-5"
+  },
+  "completed": false,
+  "reviewed": true,
+  "normalized_status": "REVIEW_COMPLETED"
+}

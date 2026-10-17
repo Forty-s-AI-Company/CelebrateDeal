@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-14T19:59:14.383629+00:00",
+  "status": "FAIL",
+  "exitCode": 2,
+  "hashes": {
+    "src/lib/live-metric-completion-store.ts": "0537fe0317c8bea3c440856a5f34b6c3338427117c5fec5cfbfe165e946e00c0",
+    "src/lib/live-metric-completion-store.test.ts": "0fd61884ccddba425907b9562fad6d0b07c72a16c544fbf7f703f8304573380f",
+    "src/lib/live-metric-report-snapshot.ts": "47834ffc7b34143e42c6450bd0cea6083f2cbc41cd3e2231ddc6633826121ffc"
+  },
+  "diagnostics": [
+    "src/lib/live-metric-completion-store.test.ts(27,42): error TS2345: Argument of type '{ $transaction: Mock<(run: (tx: { $queryRaw: Mock<Procedure>; }) => Promise<boolean>) => Promise<boolean>>; }' is not assignable to parameter of type 'Pick<PrismaClient<PrismaClientOptions, never, DefaultArgs>, \"$transaction\">'.",
+    "src/lib/live-metric-completion-store.test.ts(29,42): error TS2345: Argument of type '{ $transaction: Mock<(run: (tx: { $queryRaw: Mock<Procedure>; }) => Promise<boolean>) => Promise<boolean>>; }' is not assignable to parameter of type 'Pick<PrismaClient<PrismaClientOptions, never, DefaultArgs>, \"$transaction\">'."
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "status": "FAIL",
+  "scope": "Static SSR semantic accessibility only; production CSS and running Next server NOT_RUN",
+  "pages": [],
+  "lastCheck": {
+    "engine": "chromium",
+    "slug": "terms",
+    "violations": [
+      {
+        "id": "aria-allowed-role",
+        "impact": "minor",
+        "targets": [
+          [
+            "aside"
+          ]
+        ]
+      }
+    ]
+  }
+}

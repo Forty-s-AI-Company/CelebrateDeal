@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "scope": "Real client components and app CSS, synthetic server-action/report adapters; not authenticated full-app E2E",
+  "checks": [
+    {
+      "engine": "chromium",
+      "mode": "step",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "mode": "popup",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "chromium",
+      "mode": "operations",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "mode": "step",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "mode": "popup",
+      "behavior": "PASS",
+      "a11ySerious": []
+    },
+    {
+      "engine": "firefox",
+      "mode": "operations",
+      "behavior": "PASS",
+      "a11ySerious": []
+    }
+  ],
+  "cleanup": true,
+  "stage": "firefox:operations"
+}

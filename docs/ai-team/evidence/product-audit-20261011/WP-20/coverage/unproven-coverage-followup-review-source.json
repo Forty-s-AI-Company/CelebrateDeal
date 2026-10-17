@@ -1,0 +1,9 @@
+{
+  "scope": "unproven-coverage-followup",
+  "files": {
+    "src/lib/live-metric-coverage-reader.ts": "cabfd232d0ae217a85dec0df75a121a74c87f68a6daf47f6a5d274fafb0be12c",
+    "src/lib/live-metric-coverage-reader.test.ts": "2b419bcbcd19d7c79a261804e5662786dcb78e2bf4e53511d9892dbcb4c96675",
+    "prisma/migrations/20261016130000_live_metric_unproven_coverage/migration.sql": "4d2523a2a88a351e3161fa72707b3b61b54839fe1529febc17b3bed3b9d406a0"
+  },
+  "promptCharacters": 13881
+}

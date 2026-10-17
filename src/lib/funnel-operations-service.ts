@@ -118,23 +118,29 @@ async function reportsFromScoped({ page, state, operations }: ScopedFunnelPage, 
   const source = { vendorId: page.vendorId, pageId: page.id };
   const [visits, submissions, leadRows, orders] = await Promise.all([
     database.funnelVisit.findMany({ where: { ...source, createdAt: period(stats.days, now) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: REPORT_LIMIT + 1, select: { id: true, stepId: true, logicalStepId: true, visitorId: true, createdAt: true, experimentId: true, arm: true } }),
-    database.funnelSubmission.findMany({ where: { ...source, createdAt: period(stats.days, now), submission: { form: { vendorId: page.vendorId, projectId: page.projectId } } }, take: REPORT_LIMIT + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, stepId: true, visit: { select: { logicalStepId: true, experimentId: true, arm: true } } } }),
+    database.funnelSubmission.findMany({ where: { ...source, createdAt: period(stats.days, now), submission: { form: { vendorId: page.vendorId, projectId: page.projectId } } }, take: REPORT_LIMIT + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, stepId: true, submission: { select: { verificationStatus: true } }, visit: { select: { logicalStepId: true, experimentId: true, arm: true } } } }),
     database.funnelSubmission.findMany({ where: { ...source, ...(leads.stepId ? { stepId: leads.stepId } : {}), createdAt: period(leads.days, now), submission: { form: { vendorId: page.vendorId, projectId: page.projectId } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 101, select: { id: true, stepId: true, submissionId: true, createdAt: true, submission: { select: { verificationStatus: true } } } }),
     database.commerceOrder.findMany({ where: { vendorId: page.vendorId, projectId: page.projectId, isTestOrder: false, paidAt: period(sales.days, now), paidAmountCents: { gt: 0 }, primaryPaymentTransaction: { is: { vendorId: page.vendorId, metadata: { path: ["funnel", "pageId"], equals: page.id }, ...(sales.stepId ? { AND: [{ metadata: { path: ["funnel", "stepId"], equals: sales.stepId } }] } : {}) } } }, orderBy: [{ paidAt: "desc" }, { id: "desc" }], take: 101, select: { id: true, orderNumber: true, status: true, currency: true, paidAmountCents: true, refundedAmountCents: true, paidAt: true, primaryPaymentTransaction: { select: { id: true, status: true, metadata: true } } } }),
   ]);
   const variant = operations.experiment?.variantStepId;
   const steps = state.flow.steps.filter((step) => !step.isSystem && step.id !== variant);
   const aggregate = aggregateFunnelVisits(steps, visits.slice(0, REPORT_LIMIT).map((visit) => ({ ...visit, stepId: visit.logicalStepId })), submissions.slice(0, REPORT_LIMIT).map((submission) => ({ stepId: submission.visit?.logicalStepId ?? submission.stepId })));
-  const experimentRows = new Map<string, { id: string; arm: string; pageViews: number; submissions: number }>();
+  const experimentRows = new Map<string, { id: string; arm: string; pageViews: number; submissions: number; verifiedSubmissions: number }>();
   for (const visit of visits.slice(0, REPORT_LIMIT)) {
     if (!visit.experimentId || !visit.arm) continue;
     const key = `${visit.experimentId}:${visit.arm}`;
-    const row = experimentRows.get(key) ?? { id: visit.experimentId, arm: visit.arm, pageViews: 0, submissions: 0 };
+    const row = experimentRows.get(key) ?? { id: visit.experimentId, arm: visit.arm, pageViews: 0, submissions: 0, verifiedSubmissions: 0 };
     row.pageViews += 1; experimentRows.set(key, row);
   }
   for (const submission of submissions.slice(0, REPORT_LIMIT)) {
-    const row = experimentRows.get(`${submission.visit?.experimentId}:${submission.visit?.arm}`);
-    if (row) row.submissions += 1;
+    const { experimentId, arm } = submission.visit ?? {};
+    if (!experimentId || !arm) continue;
+    const key = `${experimentId}:${arm}`;
+    // 報名時間在範圍內即可列入；其歸因瀏覽可能早於本次時間窗。
+    const row = experimentRows.get(key) ?? { id: experimentId, arm, pageViews: 0, submissions: 0, verifiedSubmissions: 0 };
+    row.submissions += 1;
+    if (submission.submission.verificationStatus === "VERIFIED") row.verifiedSubmissions += 1;
+    experimentRows.set(key, row);
   }
   const experiments = [...experimentRows.values()];
   return {

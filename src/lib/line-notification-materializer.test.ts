@@ -30,6 +30,7 @@ describe("LINE automatic notification materializer", () => {
     ]);
     runtime.db.formSubmission.findFirst.mockResolvedValue({
       id: "submission-1",
+      name: "合成報名者",
       live: {
         id: "live-1",
         slug: "ai-live",
@@ -38,6 +39,7 @@ describe("LINE automatic notification materializer", () => {
         scheduledAt: new Date("2026-09-05T12:00:00Z"),
         startedAt: new Date("2026-09-05T12:00:00Z"),
         endedAt: null,
+        vendor: { name: "合成商家", timezone: "Asia/Taipei" },
       },
     });
     runtime.db.commerceOrder.findFirst.mockResolvedValue({
@@ -82,6 +84,20 @@ describe("LINE automatic notification materializer", () => {
       .resolves.toEqual([]);
     expect(cronDb.lineUserIdentity.findMany).toHaveBeenCalledOnce();
     expect(runtime.db.lineUserIdentity.findMany).not.toHaveBeenCalled();
+  });
+
+  it("queues configured confirmation only for a verified tenant-owned upcoming live and keeps stable event identity", async () => {
+    runtime.db.lineUserIdentity.findMany.mockResolvedValue([{ id: "identity-registration", vendorId: "vendor-1", subjectType: "buyer_registration", subjectId: "submission-1" }]);
+    const upcoming = new Date("2026-09-06T12:00:00Z");
+    runtime.db.formSubmission.findFirst.mockResolvedValue({ id: "submission-1", name: "合成學員", live: { id: "live-1", slug: "synthetic", title: "合成課程", status: "scheduled", scheduledAt: upcoming, startedAt: null, endedAt: null, vendor: { name: "合成商家", timezone: "Asia/Taipei" } } });
+    const now = new Date("2026-09-05T12:00:00Z");
+    await materializeLineNotifications(now);await materializeLineNotifications(now);
+    expect(runtime.db.formSubmission.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "submission-1", verificationStatus: "VERIFIED", form: { vendorId: "vendor-1" }, live: { vendorId: "vendor-1" } } }));
+    expect(runtime.enqueue).toHaveBeenCalledTimes(2);
+    expect(runtime.enqueue.mock.calls[0][1]).toMatchObject({ trigger: "registration_confirmed", requireTemplate: true, templateVariables: { name: "合成學員", vendor_name: "合成商家", live_title: "合成課程" } });
+    expect(runtime.enqueue.mock.calls[0][1].idempotencyKey).toBe(runtime.enqueue.mock.calls[1][1].idempotencyKey);
+    runtime.db.formSubmission.findFirst.mockResolvedValue(null);runtime.enqueue.mockClear();
+    await materializeLineNotifications(now);expect(runtime.enqueue).not.toHaveBeenCalled();
   });
 
   it("persists a commission cursor so item 21 is reached on the next batch", async () => {

@@ -1,0 +1,12 @@
+{
+  "exit_code": 0,
+  "truncated": false,
+  "models": {
+    "sonnet": "claude-sonnet-5-5-high",
+    "gemini_medium": "gemini-3.8-flash-medium",
+    "gemini_high": "gemini-3.8-flash-high",
+    "opus": "claude-opus-5-5-high"
+  },
+  "scope": "Existing bounded model discovery only; no raw output or credentials saved.",
+  "status": "SUCCESS"
+}

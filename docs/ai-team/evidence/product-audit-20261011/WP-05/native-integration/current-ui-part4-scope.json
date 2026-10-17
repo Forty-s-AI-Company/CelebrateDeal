@@ -1,0 +1,9 @@
+{
+  "files_sha256": {
+    "src/components/landing-pages/funnel-page-document-renderer.tsx": "6dcea03ea6a5f0374268dc9f8568129c1c99d3a8a000212a5eba5188eb21ee05",
+    "src/components/landing-pages/funnel-webinar-experience.tsx": "9337c6ca6fb7db5ac6397256aad14494a2480d424856af5a65100591dd4c615f",
+    "src/lib/registration-submission-client.ts": "8cb09b43a335d6110ea744cd07a4776e49c778270d85a47d8f05455935e21dc3"
+  },
+  "prompt_chars": 14488,
+  "scope": "Generic renderer baseline diff; other files complete"
+}

@@ -1,0 +1,38 @@
+{
+  "sources": [
+    {
+      "path": "src/app/api/analytics/route.ts",
+      "sha256": "da26e77d9ec890d7ab6b2a84b0a6a3437d7c09192a11b228ebd81485b336d7cf"
+    },
+    {
+      "path": "src/components/live-playback.tsx",
+      "sha256": "04a655c5161cce5d7092eeefcd348cc8ec37852eab725743410027666dc24dde"
+    },
+    {
+      "path": "src/lib/stream-usage.ts",
+      "sha256": "192a79010eba132d4bdfe2d71d986f4540f9cc5be76fb8d293bd063e884d38c7"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "sha256": "5c8b2a0ae3cf5efdd6d64baf3ee49d6aebc5d3fe64f58934e0104a85e2e4349b"
+    },
+    {
+      "path": "src/app/(app)/lives/[id]/analytics/page.tsx",
+      "sha256": "9c11565634cf9e9d37920913611bad29c496dd9b8b61b9bbd336e889dc8f6938"
+    }
+  ],
+  "verified_from_code": {
+    "progress_checkpoints_seconds": [
+      30,
+      60,
+      120,
+      300,
+      600
+    ],
+    "viewer_session_has_form_submission_id": false,
+    "exact_first_completion_available": false
+  },
+  "conclusion": "Existing telemetry cannot supply approved completion/order rules. Read-only product integration remains unavailable; rule display does not complete WP20.",
+  "decision_request": "M1 complete candidate definitions and M2 bounded nonproduction event/identity/migration scope asked; pending human answer",
+  "safety": "No database or real customer records read"
+}

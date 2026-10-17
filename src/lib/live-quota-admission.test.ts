@@ -106,9 +106,22 @@ describe("live quota admission", () => {
     expect(JSON.stringify(tx.liveViewerSession.create.mock.calls)).not.toContain(result.token);
   });
 
+  it("advances the release lease even when renewal shares the same millisecond", async () => {
+    const expiresAt = new Date(+now + LIVE_VIEWER_SESSION_TTL_MS);
+    tx.liveViewerSession.findUnique.mockResolvedValue({ id: "session-1", vendorId: "vendor-1", liveId: "live-1", expiresAt });
+    const result = await admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", token: "A".repeat(43), now });
+    expect(+result.expiresAt).toBe(+expiresAt + 1);
+    expect(result.lease).toEqual({ id: "session-1", expiresAtMs: +expiresAt + 1 });
+  });
+
+  it("does not release without a captured lease", async () => {
+    expect(await releaseLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", token: "A".repeat(43) })).toBe(0);
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
   it("refreshes an existing same-live session without consuming another slot", async () => {
     const token = "A".repeat(43);
-    tx.liveViewerSession.findUnique.mockResolvedValue({ id: "session-1", vendorId: "vendor-1", liveId: "live-1" });
+    tx.liveViewerSession.findUnique.mockResolvedValue({ id: "session-1", vendorId: "vendor-1", liveId: "live-1", expiresAt: new Date(+now + 1) });
 
     const result = await admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", token, now });
 
@@ -363,9 +376,9 @@ describe("live quota admission", () => {
   it("releases only the matching opaque session hash", async () => {
     const token = "B".repeat(43);
 
-    await expect(releaseLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", token })).resolves.toBe(1);
+    await expect(releaseLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", token, lease: { id: "session-1", expiresAtMs: 1000 } })).resolves.toBe(1);
     expect(deleteMany).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", liveId: "live-1", tokenHash: hashLiveViewerToken(token) },
+      where: { vendorId: "vendor-1", liveId: "live-1", tokenHash: hashLiveViewerToken(token), id: "session-1", expiresAt: new Date(1000) },
     });
   });
 
