@@ -1,0 +1,27 @@
+{
+  "kind": "review",
+  "source": "desktop_native",
+  "head": "bffe3f4980e03d2b363f8594f0b65f5f63ce0104",
+  "original_task_dispatch": 5,
+  "authorized_limit": 5,
+  "independent": true,
+  "agent": "/root/community_critical_review",
+  "resolved_model": "gpt-6-astra",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "software_findings": [],
+  "status": "BLOCKED_EXTERNAL_PROOF",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "category": "external_proof",
+      "location": "docs/remaining-capabilities-f1-current-local-acceptance-20261007.json:77; scripts/learner-notification-browser-qa.mjs:13",
+      "evidence": "actual_provider_evidence=MISSING; all four channel configuration-presence flags false; browser actualProviderDelivery=false",
+      "impact": "No real controlled verification and delivery proof for Email/SMS/WhatsApp/Push",
+      "required_test": "Controlled non-production real verification/opt-in/event delivery, once-only recipient/tenant/purchase checks, no delivery after refund/opt-out; real push service, no CDP substitution"
+    }
+  ],
+  "previous_software_corrections_reviewed": true,
+  "delivery": "NOT_DELIVERED"
+}

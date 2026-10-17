@@ -1,0 +1,25 @@
+{
+  "task_id": "q1-refund-exact-transaction",
+  "checked_at": "2026-10-07T01:49:48.735089+00:00",
+  "pr": 371,
+  "head": "561ffdfe57d6192ed472055846575aa8846a33d9",
+  "run": 37365296110,
+  "run_status": "completed",
+  "run_conclusion": "failure",
+  "unit_coverage_step": "cancelled",
+  "downstream_steps": "skipped",
+  "check_run_id": 111948855697,
+  "failure_annotation_category": "The operation was canceled",
+  "failure_annotation_path": ".github",
+  "failure_annotation_line": 498,
+  "raw_failed_logs_available": false,
+  "test_failure_proven": false,
+  "status": "CI_FAILURE_CLASSIFIED_NOT_RESOLVED",
+  "external_blockers": [
+    "approved sandbox secret injection",
+    "exact current-source synthetic payment handoff",
+    "real browser proof"
+  ],
+  "delivered": false,
+  "raw_logs_saved": false
+}

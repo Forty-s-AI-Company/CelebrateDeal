@@ -1,0 +1,127 @@
+{
+  "task_id": "f1-learner-notifications",
+  "checkpoint_head": "bffe3f4980e03d2b363f8594f0b65f5f63ce0104",
+  "latest_main": "a10728f4147ce84ad6d33524ed0e412660602283",
+  "current_local": {
+    "migrations": 92,
+    "models": 133,
+    "postgresql_passed": 80,
+    "targeted_unit": {
+      "passed": 97,
+      "files": 9
+    },
+    "node_tap": {
+      "passed": 1067,
+      "failed": 0,
+      "skipped": 0
+    },
+    "typecheck": "PASS",
+    "full_lint": {
+      "errors": 0,
+      "existing_image_warnings": 3
+    },
+    "browser": {
+      "passed": 7,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "source": "sha256:f2ba87f94ab421825d71ea1f7573001892dd243028f9e50041e0f07201dbdff7",
+      "cleanup": "PASS"
+    }
+  },
+  "canonical_acceptance": [
+    {
+      "files": 62,
+      "revision": "sha256:3e806acd243d0c1c1cef8330289c3c1aadc4b2c1a58323bc176a1616c0511128",
+      "status": "BLOCKED",
+      "blockers": [
+        "finding_unresolved",
+        "independent_review_unverified",
+        "required_check_unverified:current_full_quality_ci",
+        "required_check_unverified:real_provider_delivery"
+      ]
+    },
+    {
+      "files": 64,
+      "revision": "sha256:4ba30cf5e7b8dcb1ac9a6d980921676540da68edbfaaf1a9b1fc10cf608e167f",
+      "status": "BLOCKED",
+      "blockers": [
+        "finding_unresolved",
+        "independent_review_unverified",
+        "required_check_unverified:current_full_quality_ci",
+        "required_check_unverified:real_provider_delivery"
+      ]
+    },
+    {
+      "files": 48,
+      "revision": "sha256:9d8ddf384378427facb1fb7def3fa7a8185a876daff880d32d846b3cbda70b07",
+      "status": "BLOCKED",
+      "blockers": [
+        "finding_unresolved",
+        "independent_review_unverified",
+        "required_check_unverified:current_full_quality_ci",
+        "required_check_unverified:real_provider_delivery"
+      ]
+    }
+  ],
+  "status": "NOT_READY",
+  "ci_run": 37600620998,
+  "ci_status": "IN_PROGRESS",
+  "dispatch": 4,
+  "limit": 4,
+  "extra_final_review_authorization": "PENDING_EXPLICIT_USER_REPLY",
+  "independent_review_findings": {
+    "code_fixes_implemented": [
+      "Bounded abortable push transport",
+      "Completed-course certificate destination"
+    ],
+    "actual_provider_evidence": "MISSING"
+  },
+  "provider_setting_groups_present": {
+    "email": false,
+    "sms": false,
+    "whatsapp": false,
+    "push": false
+  },
+  "credential_values_read_or_emitted": false,
+  "external_operations": false,
+  "production_operation": false,
+  "original_dirty_workspace": "UNTOUCHED",
+  "unknown_q1_diagnosis_file": "PRESERVED_UNREAD",
+  "overall_goal": "ACTIVE",
+  "current_ci": {
+    "head": "bffe3f4980e03d2b363f8594f0b65f5f63ce0104",
+    "run_id": "37600620998",
+    "status": "PASS",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/37600620998"
+  },
+  "canonical_gate_after_ci": {
+    "status": "BLOCKED",
+    "parts": [
+      {
+        "revision": "sha256:3e806acd243d0c1c1cef8330289c3c1aadc4b2c1a58323bc176a1616c0511128",
+        "blockers": [
+          "finding_unresolved",
+          "independent_review_unverified",
+          "required_check_unverified:real_provider_delivery"
+        ]
+      },
+      {
+        "revision": "sha256:4ba30cf5e7b8dcb1ac9a6d980921676540da68edbfaaf1a9b1fc10cf608e167f",
+        "blockers": [
+          "finding_unresolved",
+          "independent_review_unverified",
+          "required_check_unverified:real_provider_delivery"
+        ]
+      },
+      {
+        "revision": "sha256:9d8ddf384378427facb1fb7def3fa7a8185a876daff880d32d846b3cbda70b07",
+        "blockers": [
+          "finding_unresolved",
+          "independent_review_unverified",
+          "required_check_unverified:real_provider_delivery"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "task_id": "f1-learner-notifications",
+  "head": "a3058ffe939d586556786edae1c22f0def38290e",
+  "base": "aba65b4e7913f79f7de72a7b3abedb5d1f10ec3f",
+  "source_profiles": [
+    {
+      "profile": 1,
+      "files": 64,
+      "revision": "sha256:401c03dd81c9d7afe6d870d9a719e6229c49cf1d75a0b015c2ce4991a9d1bba7"
+    },
+    {
+      "profile": 2,
+      "files": 64,
+      "revision": "sha256:1f57433ab96687dacbaa02cb238571e81fb5ea79adc29232c7d8d369dd695f2c"
+    },
+    {
+      "profile": 3,
+      "files": 29,
+      "revision": "sha256:48df1498c9e6dd72cb3d143713af8f998776649cf090c4da6f2ae3d603a76acc"
+    }
+  ],
+  "source_union": 157,
+  "non_document_diff": 89,
+  "uncovered": [],
+  "targeted_unit": {
+    "passed": 554,
+    "failed": 0,
+    "pending": 0
+  },
+  "db": {
+    "migrations": 99,
+    "tests": 82,
+    "status": "PASS",
+    "cleanup": "PASS",
+    "tested_product_head": "9d0f6bb777868305baa657c6c12246e0a7a9cf8c",
+    "all_runtime_source_hashes_match_current": true
+  },
+  "browser": {
+    "passed": 7,
+    "unexpected": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "cleanup": "PASS",
+    "tested_product_head": "9d0f6bb777868305baa657c6c12246e0a7a9cf8c",
+    "all_runtime_source_hashes_match_current": true
+  },
+  "full_node_tap": {
+    "passed": 1067,
+    "failed": 0,
+    "skipped": 0,
+    "head": "a3058ffe939d586556786edae1c22f0def38290e"
+  },
+  "static": {
+    "unit": "PASS",
+    "typecheck": "PASS",
+    "strict-index": "PASS",
+    "lint": "PASS"
+  },
+  "production_source_delta_from_runtime_tested_head": [],
+  "test_only_delta": [
+    "scripts/live-product-tenant-contract.test.ts"
+  ],
+  "review_dispatch_used": 6,
+  "review_dispatch_limit": 6,
+  "current_review": "WAITING_HUMAN_EXTENSION_TO_7",
+  "canonical": "BLOCKED_CURRENT_REVIEW_AND_PROVIDER_DELIVERY",
+  "provider_delivery": "NOT_VERIFIED",
+  "ci": {
+    "run": 37715211506,
+    "head": "a3058ffe939d586556786edae1c22f0def38290e",
+    "status": "in_progress",
+    "conclusion": "",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/37715211506",
+    "observed_at": "2026-10-08T02:00:57.573636+00:00",
+    "active_steps": [
+      "Unit tests and coverage thresholds"
+    ],
+    "failed_steps": [],
+    "raw_logs_read": false
+  },
+  "ci_observer_session": 80643,
+  "whole_goal_complete": false
+}
