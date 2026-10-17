@@ -1,0 +1,12 @@
+{
+  "status": "IMPLEMENTED_PENDING_INTEGRATION",
+  "targeted_unit": 68,
+  "typecheck": "PASS",
+  "new_helpers_lint": "PASS",
+  "migration": "NOT_YET_EXECUTED",
+  "independent_review": "NOT_YET_DISPATCHED",
+  "ops_route_regression": "NOT_YET_EXECUTED",
+  "browser": "NOT_YET_EXECUTED",
+  "production_operations": false,
+  "source_security_dependency_delivered": "a11fa20f61e67ed04ba1bc5a09e26a4f25c5d3a2"
+}
