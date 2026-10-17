@@ -173,9 +173,16 @@ export async function postPurchaseRecoveryAvailable(
     || !((payment.status === "failed" && order.status === "payment_failed")
       || (payment.status === "expired" && order.status === "expired"))) return false;
   if (postPurchaseSourceLapsed(credit.sourceOrder, new Date())) {
-    await db.$transaction(tx => releasePostPurchaseCreditForTerminalPayment(tx, { vendorId: input.vendorId,
-      paymentTransactionId: payment.id, now: new Date(), recoveryLapsed: true }),
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    // Best effort during a page render: a serialization conflict with a
+    // concurrent webhook or resume must not fail the page. The release is
+    // idempotent and is retried on the next render or resume.
+    try {
+      await db.$transaction(tx => releasePostPurchaseCreditForTerminalPayment(tx, { vendorId: input.vendorId,
+        paymentTransactionId: payment.id, now: new Date(), recoveryLapsed: true }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch {
+      // Recovery stays unavailable either way.
+    }
     return false;
   }
   try {

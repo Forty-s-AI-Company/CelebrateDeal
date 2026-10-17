@@ -782,6 +782,21 @@ describe("lapsed source on the resume path", () => {
     expect((await sourceShipping(context.input)).status).toBe("shipped");
   });
 
+  it("keeps the result page available when the lapsed-credit release conflicts", async () => {
+    const context = await failedPreparation();
+    const shipping = await sourceShipping(context.input);
+    await context.db.shippingFulfillment.update({ where: { id: shipping.id }, data: { status: "shipped", shippedAt: new Date() } });
+    const conflicting = {
+      commerceOrder: context.db.commerceOrder,
+      $transaction: () => Promise.reject(new Prisma.PrismaClientKnownRequestError("synthetic serialization conflict", { code: "P2034", clientVersion: "test" })),
+    } as unknown as Parameters<typeof postPurchaseRecoveryAvailable>[0];
+    expect(await postPurchaseRecoveryAvailable(conflicting, { vendorId: context.input.vendor.id, orderId: context.result.targetOrderId })).toBe(false);
+    // The credit stays bound until the next render or resume releases it.
+    expect((await targetCredit(context)).releasedAt).toBeNull();
+    expect(await postPurchaseRecoveryAvailable(context.db, { vendorId: context.input.vendor.id, orderId: context.result.targetOrderId })).toBe(false);
+    expect((await targetCredit(context)).releasedAt).not.toBeNull();
+  });
+
   it("releases a lapsed credit through resume alone, before any result-page check", async () => {
     const context = await failedPreparation();
     const shipping = await sourceShipping(context.input);
