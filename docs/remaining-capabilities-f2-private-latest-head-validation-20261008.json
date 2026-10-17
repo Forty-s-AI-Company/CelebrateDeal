@@ -1,0 +1,109 @@
+{
+  "updated_at": "2026-10-07T20:16:39.717567+00:00",
+  "head": "e426a0ea15347529e5ab089d69d60e2b0e3ce866",
+  "delivery_status": "NOT_DELIVERED",
+  "review_status": "CURRENT_REVISION_INDEPENDENT_REVIEW_PENDING_AUTHORIZED_DISPATCH",
+  "profiles": {
+    "primary": {
+      "source_revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513",
+      "checks": [
+        {
+          "name": "unit",
+          "revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 9.734,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\unit.json"
+        },
+        {
+          "name": "typecheck",
+          "revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 12.734,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\typecheck.json"
+        },
+        {
+          "name": "strict_index",
+          "revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 32.532,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\strict_index.json"
+        },
+        {
+          "name": "lint",
+          "revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 9.828,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\lint.json"
+        },
+        {
+          "name": "migration_database_browser",
+          "revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 281.531,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\migration_database_browser.json"
+        },
+        {
+          "name": "contracts",
+          "revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 115.469,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\contracts.json"
+        }
+      ],
+      "acceptance": {
+        "status": "BLOCKED",
+        "blockers": [
+          "independent_review_unverified",
+          "required_check_unverified:supplemental_acceptance"
+        ],
+        "revision": "sha256:f5fa9a5e29af3493314d0ded8936ee64830b8a1bade9ec476419b48b4a83c513"
+      }
+    },
+    "supplemental": {
+      "source_revision": "sha256:b9471e39be8f1e31b25bf33b4c8bce3c2e2174e92756216718f71dd3a4930ecd",
+      "checks": [
+        {
+          "name": "request_security",
+          "revision": "sha256:b9471e39be8f1e31b25bf33b4c8bce3c2e2174e92756216718f71dd3a4930ecd",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 1.531,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\supplemental-request_security.json"
+        },
+        {
+          "name": "diagnostic_contracts",
+          "revision": "sha256:b9471e39be8f1e31b25bf33b4c8bce3c2e2174e92756216718f71dd3a4930ecd",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 1.422,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\supplemental-diagnostic_contracts.json"
+        },
+        {
+          "name": "lint",
+          "revision": "sha256:b9471e39be8f1e31b25bf33b4c8bce3c2e2174e92756216718f71dd3a4930ecd",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 3.625,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\final-guard-20261008\\supplemental-lint.json"
+        }
+      ],
+      "acceptance": {
+        "status": "BLOCKED",
+        "blockers": [
+          "independent_review_unverified"
+        ],
+        "revision": "sha256:b9471e39be8f1e31b25bf33b4c8bce3c2e2174e92756216718f71dd3a4930ecd"
+      }
+    }
+  },
+  "scope_policy": "All original and changed sources retained; every coupled profile must pass before primary acceptance.",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "historical_failure_evidence_preserved": true
+}

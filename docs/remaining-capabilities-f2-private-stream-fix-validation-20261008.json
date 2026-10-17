@@ -1,0 +1,75 @@
+{
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "status": "DELIVERED",
+  "head": "f92e2d1159da724393e9a35dace3a910ca962c4c",
+  "primary_revision": "sha256:195f70c632cb6c0f5c283dc2d0ae8a00b47ef91a0e095c05962f003be89f6d5c",
+  "supplemental_revision": "sha256:6de1ee95504a7e2f1d3e257e8cdbc1dd4eaae3b44061002ee86f525f39c36ba0",
+  "tests": {
+    "migrations": 95,
+    "database": 25,
+    "browser": 3,
+    "unit": 167,
+    "request_security": 19,
+    "diagnostic_contracts": 17,
+    "tap": 1067,
+    "skip": 0,
+    "flaky": 0,
+    "typecheck": "PASS",
+    "strict_index": "PASS",
+    "lint": "PASS"
+  },
+  "independent_review": {
+    "dispatch6": "MAJOR body tee cancellation",
+    "dispatch7": "PASS fix verified; no findings",
+    "resolved_model": "gpt-6-astra",
+    "resolved_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown"
+  },
+  "gate_records": {
+    "primary-acceptance.json": {
+      "status": "READY",
+      "blockers": [],
+      "revision": "sha256:195f70c632cb6c0f5c283dc2d0ae8a00b47ef91a0e095c05962f003be89f6d5c"
+    },
+    "supplemental-acceptance.json": {
+      "status": "READY",
+      "blockers": [],
+      "revision": "sha256:6de1ee95504a7e2f1d3e257e8cdbc1dd4eaae3b44061002ee86f525f39c36ba0"
+    },
+    "contracts-summary.json": {
+      "head": "f92e2d1159da724393e9a35dace3a910ca962c4c",
+      "mirror": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\private-ci-lf-20261008-a26e9fe4",
+      "read_only_original_git_objects": true,
+      "core_longpaths": true,
+      "secret_paths_materialized": false,
+      "exit_code": 0,
+      "tests": 1067,
+      "pass": 1067,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "runtime-source-binding.json": {
+      "status": "PASS",
+      "head": "f92e2d1159da724393e9a35dace3a910ca962c4c",
+      "sourceRevision": "sha256:b4bce8b65e696fe358e898ac49bc6e521e092afd81dbdbf6419d73217e9463ba",
+      "files": 47,
+      "all_runtime_hashes_match_actual_current_files": true
+    }
+  },
+  "evidence_directory": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\stream-cancellation-fix-20261008",
+  "ci": "BOTH_SUCCESS",
+  "production_operations": false,
+  "pr": 381,
+  "accepted_head": "f92e2d1159da724393e9a35dace3a910ca962c4c",
+  "merge_commit": "a0fe022c75b4f8301018615ac803dcfa2f52ab76",
+  "accepted_tree": "6043be47c232e3d97cb0e658aa5bcc703ca25fa4",
+  "merged_tree": "6043be47c232e3d97cb0e658aa5bcc703ca25fa4",
+  "tree_equal": true,
+  "exact_ci_runs": [
+    37707084464,
+    37707090294
+  ],
+  "canonical": "BOTH_READY"
+}

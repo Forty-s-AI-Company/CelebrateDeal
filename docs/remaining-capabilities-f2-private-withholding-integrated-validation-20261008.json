@@ -1,0 +1,170 @@
+{
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "head": "ebcdbf48c29c92c3c77c9f536c4e72fae19ebc14",
+  "dependency_candidate": "35cc5086ed294f2a27d7aaa5f8228fb66c5cedc3",
+  "dependency_delivered": false,
+  "delivery_status": "NOT_DELIVERED",
+  "full_union_files": 74,
+  "profiles": {
+    "primary": {
+      "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f",
+      "checks": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "unit",
+          "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 8.797,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\unit.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "typecheck",
+          "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 56.875,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\typecheck.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "strict_index",
+          "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 32.891,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\strict_index.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "lint",
+          "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 10.328,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\lint.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "migration_database_browser",
+          "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 277.188,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\migration_database_browser.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "contracts",
+          "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 74.359,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\contracts.json"
+        }
+      ],
+      "acceptance": {
+        "status": "BLOCKED",
+        "blockers": [
+          "independent_review_unverified",
+          "required_check_unverified:supplemental_acceptance"
+        ],
+        "revision": "sha256:1539edd4c9247536b34b6512ef4ca9cac86998a99a32ea3f5d8f2873d653828f"
+      }
+    },
+    "supplemental": {
+      "revision": "sha256:6de1ee95504a7e2f1d3e257e8cdbc1dd4eaae3b44061002ee86f525f39c36ba0",
+      "checks": [
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "request_security",
+          "revision": "sha256:6de1ee95504a7e2f1d3e257e8cdbc1dd4eaae3b44061002ee86f525f39c36ba0",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 1.484,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\supplemental-request_security.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "diagnostic_contracts",
+          "revision": "sha256:6de1ee95504a7e2f1d3e257e8cdbc1dd4eaae3b44061002ee86f525f39c36ba0",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 1.422,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\supplemental-diagnostic_contracts.json"
+        },
+        {
+          "kind": "validation",
+          "source": "validation_runner",
+          "name": "lint",
+          "revision": "sha256:6de1ee95504a7e2f1d3e257e8cdbc1dd4eaae3b44061002ee86f525f39c36ba0",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 3.625,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\tmp\\f2-live-private-chat-purchase-broadcast\\withholding-candidate-integrated-20261008\\supplemental-lint.json"
+        }
+      ],
+      "acceptance": {
+        "status": "BLOCKED",
+        "blockers": [
+          "independent_review_unverified"
+        ],
+        "revision": "sha256:6de1ee95504a7e2f1d3e257e8cdbc1dd4eaae3b44061002ee86f525f39c36ba0"
+      }
+    }
+  },
+  "runtime_binding": {
+    "status": "PASS",
+    "source_revision": "sha256:fa66748c0155c64edb62e6dba6c5f8b5c747a4edaca95abbe8119da644bd5dfb",
+    "declared_source_files": 47,
+    "all_current_hashes_match": true,
+    "head": "ebcdbf48c29c92c3c77c9f536c4e72fae19ebc14"
+  },
+  "database_browser": {
+    "status": "PASS",
+    "migrations": 95,
+    "tests": {
+      "total": 25,
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "expected": 3,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "ingress": "synthetic-loopback-not-cloudflare-validation",
+      "rateLimitProvider": "cloudflare_waf",
+      "failureLocations": [],
+      "inboxDiagnostics": []
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "sourceRevision": "sha256:fa66748c0155c64edb62e6dba6c5f8b5c747a4edaca95abbe8119da644bd5dfb"
+  },
+  "static_counts": {
+    "unit": 163,
+    "request_security": 19,
+    "diagnostic_contracts": 17,
+    "contracts": 1067,
+    "skipped": 0
+  },
+  "typecheck_before_refresh_failure_preserved": true,
+  "typecheck_after_owned_disposable_client_generation": "PASS same primary source revision",
+  "review_status": "PENDING_ACTUAL_DELIVERED_MAIN_AND_AUTHORIZED_REVIEW_6",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "updated_at": "2026-10-08T00:00:38.500302+00:00"
+}

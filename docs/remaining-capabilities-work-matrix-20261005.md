@@ -465,3 +465,5 @@ Root resolved the current a5964d83 main integration without losing locale or com
 ### F2 withholding current delivered-main integration 20261008
 
 Preserved both documents and forward schema capabilities while integrating delivered community/PWA `e573a101`. Current 140 models / 94 migrations / 94 protected pages, vendorManager 55. Exact inventory assertions updated; historical migration windows/checksums and safety assertions retained. Previous fifth review applies to head `23b25045`; latest integrated candidate requires new current evidence, acceptance and review. Not delivered.
+
+| F2 私訊／購買後廣播修正 | f92e2d1159da724393e9a35dace3a910ca962c4c / #381 | 第六次 MAJOR 已修正，第七次獨立複審通過；bodyless 限流 metadata | 已交付佣金 #386、扣繳 #380 | root 唯一 writer | 同 revision gate + exact-head CI + protected merge/tree equality | stream-cancellation-fix-20261008：95 migrations、25 DB、3 browser、167 unit、19 security、17 diagnostics、1067 TAP、TS/strict/lint PASS；兩個 canonical profiles READY | 待精確 head CI／交付，未合併 |
