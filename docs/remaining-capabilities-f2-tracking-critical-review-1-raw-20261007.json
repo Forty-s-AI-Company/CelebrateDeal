@@ -1,0 +1,60 @@
+{
+  "summary": "限定 51 檔的審查前後 SHA-256 均符合 manifest，source_revision 為 sha256:bfadbef5f913d9fa1bf9a0abedf0e42fa82a8884a083991a66134d21ded7930f。未修改檔案、存取資料庫或發出網路請求。以記憶體合成依賴獨立重現兩項事件永久遺失問題，另發現 migration contract 必定失敗及 CI 未涵蓋專用 browser suite。已知 provider binding／真實非 Production delivery 缺口仍存在，不能判定 READY。requested/resolved model 為 Astra high；observed model/effort 均為 unknown。",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "file": "src/app/api/jobs/tracking-deliveries/route.ts",
+      "area": "POST，11–24；src/lib/tracking-purchase-worker.ts:49–53",
+      "issue": "目前只有 Preview Test Events 執行路徑，完整 server tracking 產品功能仍未具備可正式使用的 provider binding。",
+      "evidence": "route 明確拒絕所有非 preview 環境；worker 取消沒有 testEventCode 的事件；transport 強制帶 test_event_code。manifest 也明列 production-capable binding 與真實核准非 Production delivery 尚未完成。主代理回報核准注入項目皆未提供，沒有實際 provider delivery 證據。",
+      "impact": "即使 UI 已儲存憑證並產生四種事件，正式環境仍無法傳送；本機 DB/browser PASS 不能代表 Meta 接受事件。",
+      "recommended_fix": "完成具明確環境隔離與啟用控制的 provider binding，並在取得核准注入後驗證非 Production 真實 delivery；在此之前維持 NOT_READY，不能以移除保護或 mock 回應代替驗收。",
+      "required_test": "核准非 Production 的四事件真實送達與去重證據，以及正式傳送預設關閉、環境綁定、tenant isolation 和憑證撤除測試。",
+      "confidence": 1
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/tracking-meta-transport.ts",
+      "area": "response body 讀取與 catch，54–73",
+      "issue": "收到成功 HTTP headers 後若 response body 連線中斷或逾時，事件會永久 rejected，而非排入重試。",
+      "evidence": "reader.read() 失敗只被 catch 吞掉，最後仍以原本 response.status=200、acceptedEvents=null 呼叫 decision；該組合直接 rejected。唯讀記憶體 probe 使用 HTTP 200 加上會拋出 connection-reset 的合成 ReadableStream，在 attempt=1 得到 outcome=rejected。",
+      "impact": "短暫網路故障會耗掉一次嘗試後永久停止傳送，無法利用既有 event_id 去重安全重試。",
+      "recommended_fix": "區分串流網路中斷與已完整讀取但無效的回應；對中斷／timeout 使用有界 transient retry，保留相同 event_id 與最大嘗試次數。",
+      "required_test": "200 headers 後 body reset、body timeout 在第 1 次排重試、第 8 次終止；重試 event_id 不變，且不能將未完整回應標成 accepted。",
+      "confidence": 1
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/tracking-purchase-worker.ts",
+      "area": "payload 解析錯誤處理，55–59",
+      "issue": "來源重讀的暫時資料庫錯誤，被當成不可恢復的憑證或 payload 錯誤而永久 rejected。",
+      "evidence": "unprotectFacebookAccessToken 與包含 Prisma 查詢的 resolveAuthoritativeTrackingPayload 共用 catch，任何例外都執行 terminal('rejected')。以記憶體 mock 讓來源重讀拋 P1001，獨立重現 claimed=1、rejected=1、retried=0，最後寫入 terminal rejected。",
+      "impact": "一次短暫 DB 連線故障即可永久遺失合法的 Purchase、Lead、ViewContent 或 Schedule，恢復連線後也不會再被 worker 選取。",
+      "recommended_fix": "將憑證／context 驗證錯誤與資料庫暫時錯誤分開處理；暫時錯誤應使用 lease 條件安全排回有界重試，或保留可恢復 lease，不能直接終止事件。",
+      "required_test": "模擬來源查詢暫時連線錯誤與查詢 timeout，確認恢复後可送達一次；損毀 envelope 仍終止且零 provider request。",
+      "confidence": 1
+    },
+    {
+      "severity": "MAJOR",
+      "file": "scripts/g7-email-operations-browser-qa.test.mjs",
+      "area": "historical migration contract，18–19",
+      "issue": "歷史 runner 的 migration inventory assertion 漏了第 90 個 migration，完整 contract suite 會失敗。",
+      "evidence": "目前 manifest 綁定 90 個 migration，最後包含 20261007150000_tracking_authoritative_event_sources；此測試仍使用 +10 及 slice(-10)，expected 陣列最後卻停在 20261007133000_tracking_payment_outbox。即使忽略總數，尾端名稱陣列也必定不相等。",
+      "impact": "35 DB／5 browser 的 targeted PASS 無法涵蓋此失敗，完整 CI contract gate 仍會被阻擋。",
+      "recommended_fix": "保留歷史 runner 的拒絕邊界，將新增 migration 的精確數量與完整尾端名稱更新到此次 90 個來源；不要降低 assertion。",
+      "required_test": "重跑此 Node contract test 與 CI 的完整 contract suite，確認精確 migration set assertion 通過。",
+      "confidence": 1
+    },
+    {
+      "severity": "MINOR",
+      "file": ".github/workflows/ci.yml",
+      "area": "tracking runner step，95–96；Playwright steps，196–207",
+      "issue": "新增的五項 tracking browser 測試沒有加入 push／PR 的 CI 執行路徑。",
+      "evidence": "workflow 執行 tracking-settings-disposable-qa.mjs 時未帶 --browser；專用設定使用 tests/tracking，主代理確認一般 npm run e2e 的 testDir 為 tests/e2e，因此不會發現這五項測試。",
+      "impact": "憑證表單、CSRF、角色權限與公開事件入口後續出現回歸時，CI 仍可能通過；目前只有本機一次性 browser 證據。",
+      "recommended_fix": "在 Chromium 安裝完成後接入既有 disposable runner 的 --browser gate，沿用零 skip／flaky 與來源穩定性驗證。",
+      "required_test": "CI 收據應明確列出五項 tracking browser cases 全數執行且通過，無 skipped／flaky，並完成 disposable 資源清理。",
+      "confidence": 1
+    }
+  ]
+}

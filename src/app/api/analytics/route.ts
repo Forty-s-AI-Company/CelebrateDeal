@@ -10,6 +10,8 @@ import {
 } from "@/lib/live-quota-admission";
 import { captureProductEvent } from "@/lib/product-analytics";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
+import { enqueueAuthoritativeTrackingEvent } from "@/lib/tracking-event-outbox";
 
 const AnalyticsId = z.string().min(1).max(128);
 const AnalyticsSlug = z.string().min(1).max(160);
@@ -93,7 +95,7 @@ export async function POST(request: Request) {
         { status: "ended", replayEnabled: true },
       ],
     },
-    select: { id: true },
+    select: { id: true, slug: true },
   });
   if (!live) {
     return NextResponse.json({ error: "Live not found" }, { status: 404 });
@@ -116,7 +118,7 @@ export async function POST(request: Request) {
     }
   }
 
-  await db.analyticsEvent.create({
+  const eventData: Prisma.AnalyticsEventCreateArgs = {
     data: {
       vendorId: parsed.data.vendorId,
       liveId: parsed.data.liveId,
@@ -125,7 +127,15 @@ export async function POST(request: Request) {
       trustLevel: "ADMITTED_LIVE_SESSION",
       payload: parsed.data.payload as Prisma.InputJsonValue,
     },
-  });
+  };
+  const trackingContext = captureTrackingBrowserContext(request.headers, `/live/${encodeURIComponent(live.slug)}`);
+  if (trackingContext && ["page_view", "product_click"].includes(parsed.data.eventType)) {
+    // analytics 與 outbox 原子落地；不接受 browser 自訂 Purchase/Lead。
+    await db.$transaction(async tx => {
+      const event = await tx.analyticsEvent.create(eventData);
+      await enqueueAuthoritativeTrackingEvent(tx, { vendorId: parsed.data.vendorId, eventName: "ViewContent", sourceId: event.id, context: trackingContext });
+    });
+  } else await db.analyticsEvent.create(eventData);
 
   await captureProductEvent({
     distinctId: verifiedSessionId,
