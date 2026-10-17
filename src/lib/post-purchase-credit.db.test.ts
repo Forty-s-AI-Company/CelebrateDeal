@@ -9,8 +9,9 @@ import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventor
 import { protectProductDeliveryConfig } from "@/lib/product-delivery";
 import { issuePostPurchaseCheckoutToken, verifyPostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
-import { resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
-import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "./post-purchase-credit";
+import { POST_PURCHASE_CREDIT_WINDOW_MS, resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
+import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote,
+  type PostPurchaseCreditQuote } from "./post-purchase-credit";
 import { releasePostPurchaseCreditForTerminalPayment } from "./post-purchase-credit-release";
 import { postPurchaseRecoveryAvailable, resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
 import { resolvePostPurchaseRecoveryEntry } from "./post-purchase-recovery-entry";
@@ -70,10 +71,12 @@ async function fixture(stock = 5) {
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-async function upgrade(input: Fixture, options: { providerName?: string; targetId?: string; token?: string; now?: Date } = {}) {
+async function upgrade(input: Fixture, options: { providerName?: string; targetId?: string; token?: string; now?: Date;
+  /** Bypass application checks with a precomputed quote so only the database trigger decides. */
+  directInsertQuote?: PostPurchaseCreditQuote; } = {}) {
   const db = getDb();
   const token = options.token ?? input.token;
-  const quote = await resolvePostPurchaseCreditQuote(db, input.cookies, { token, vendorId: input.vendor.id,
+  const quote = options.directInsertQuote ?? await resolvePostPurchaseCreditQuote(db, input.cookies, { token, vendorId: input.vendor.id,
     productId: options.targetId ?? input.target.id, now: options.now });
   const target = await db.product.findUniqueOrThrow({ where: { id: options.targetId ?? input.target.id } });
   let targetOrderId = "";
@@ -88,7 +91,8 @@ async function upgrade(input: Fixture, options: { providerName?: string; targetI
         orderNumber: created.orderNumber!, checkoutIdempotencyKey: idempotencyKey, paymentTransactionId: created.id,
         totalAmountCents: quote.checkoutAmountCents, discountAmountCents: quote.creditAmountCents + quote.offerDiscountCents,
         currency: quote.currency, buyer, shipping: null });
-      await consumePostPurchaseCredit(tx, input.cookies, { token, quote, targetOrderId: order.id, now: options.now,
+      if (options.directInsertQuote) await tx.postPurchaseCredit.create({ data: { ...quote, targetOrderId: order.id } });
+      else await consumePostPurchaseCredit(tx, input.cookies, { token, quote, targetOrderId: order.id, now: options.now,
         reserved: reservations.find(item => item.productId === target.id) });
       targetOrderId = order.id;
     } });
@@ -575,5 +579,138 @@ describe("post-purchase credit rejections and replay", () => {
     // An expired token still cannot open a new quote.
     await expect(resolvePostPurchaseCreditQuote(getDb(), input.cookies, { token: expired, vendorId: input.vendor.id,
       productId: input.target.id })).rejects.toThrow(PostPurchaseUnavailableError);
+  });
+});
+
+const MINUTE = 60_000;
+
+async function paidTarget(input: Fixture, result: { payment: { id: string } }, eventIdentity: string = randomUUID()) {
+  return getDb().$transaction(tx => reconcileCommerceOrderPaymentTransition(tx, { vendorId: input.vendor.id,
+    paymentTransactionId: result.payment.id, transition: "paid", eventIdentity }),
+  { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+async function sourceShipping(input: Fixture) {
+  return getDb().shippingFulfillment.findFirstOrThrow({ where: { vendorId: input.vendor.id, orderItem: { orderId: input.orderId } } });
+}
+
+async function manualReviewFlags(vendorId: string, orderId: string) {
+  return getDb().commerceOrderEvent.findMany({ where: { vendorId, orderId, eventType: "post_purchase.manual_review_required" } });
+}
+
+describe("24-hour post-purchase credit window", () => {
+  it("offers at 23h59 and refuses at 24h01 after the source paid time", async () => {
+    const input = await fixture(); const db = getDb();
+    const { paidAt } = await db.commerceOrder.findUniqueOrThrow({ where: { id: input.orderId } });
+    const at = (offset: number) => resolvePaidOrderPostPurchaseOffer(db, { vendorId: input.vendor.id, orderId: input.orderId,
+      kind: "upsell", now: new Date(paidAt!.getTime() + offset) });
+    expect(POST_PURCHASE_CREDIT_WINDOW_MS).toBe(24 * 60 * MINUTE);
+    expect(await at(POST_PURCHASE_CREDIT_WINDOW_MS - MINUTE)).toMatchObject({ offer: { productId: input.target.id } });
+    expect(await at(POST_PURCHASE_CREDIT_WINDOW_MS + MINUTE)).toBeNull();
+  });
+
+  it("the database trigger accepts a 23h59 source and refuses a 24h01 source the application let through", async () => {
+    const fresh = await fixture(); const db = getDb();
+    await db.commerceOrder.update({ where: { id: fresh.orderId }, data: { paidAt: new Date(Date.now() - POST_PURCHASE_CREDIT_WINDOW_MS + MINUTE) } });
+    await upgrade(fresh);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: fresh.vendor.id } })).toBe(1);
+
+    const stale = await fixture();
+    await db.commerceOrder.update({ where: { id: stale.orderId }, data: { paidAt: new Date(Date.now() - POST_PURCHASE_CREDIT_WINDOW_MS - MINUTE) } });
+    // The application clock is two minutes behind, so only the trigger sees the stale source.
+    await expect(upgrade(stale, { now: new Date(Date.now() - 2 * MINUTE) })).rejects.toBeInstanceOf(PostPurchaseUnavailableError);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: stale.vendor.id } })).toBe(0);
+    expect(await db.commerceOrder.count({ where: { vendorId: stale.vendor.id } })).toBe(1);
+  });
+});
+
+describe("shipped physical source", () => {
+  it("is never offered and the trigger refuses a credit for it", async () => {
+    const input = await fixture(); const db = getDb();
+    const quote = await resolvePostPurchaseCreditQuote(db, input.cookies, { token: input.token, vendorId: input.vendor.id, productId: input.target.id });
+    const shipping = await sourceShipping(input);
+    await db.shippingFulfillment.update({ where: { id: shipping.id }, data: { status: "shipped", shippedAt: new Date() } });
+    expect(await resolvePaidOrderPostPurchaseOffer(db, { vendorId: input.vendor.id, orderId: input.orderId, kind: "upsell" })).toBeNull();
+    await expect(upgrade(input)).rejects.toBeInstanceOf(PostPurchaseUnavailableError);
+    await expect(upgrade(input, { directInsertQuote: quote })).rejects.toThrow(/23514/u);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id } })).toBe(0);
+  });
+});
+
+describe("replace semantics on target payment", () => {
+  it("supersedes the credit exactly once and revokes the source delivery", async () => {
+    const input = await fixture(); const result = await upgrade(input); const db = getDb();
+    expect((await sourceShipping(input)).status).toBe("pending");
+    await paidTarget(input, result, "target-paid");
+    const credit = await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } });
+    expect(credit.supersededAt).not.toBeNull();
+    expect(await targetEntitlementStatus(input.vendor.id, result.targetOrderId)).toBe("granted");
+    expect((await sourceShipping(input)).status).toBe("cancelled");
+    // Replayed and later paid events never move the supersede timestamp.
+    await paidTarget(input, result, "target-paid");
+    await paidTarget(input, result, "target-paid-again");
+    expect((await db.postPurchaseCredit.findUniqueOrThrow({ where: { id: credit.id } })).supersededAt).toEqual(credit.supersededAt);
+    await expect(db.postPurchaseCredit.update({ where: { id: credit.id }, data: { supersededAt: new Date() } })).rejects.toThrow();
+    await expect(db.postPurchaseCredit.update({ where: { id: credit.id }, data: { supersededAt: null } })).rejects.toThrow();
+    await expect(db.postPurchaseCredit.update({ where: { id: credit.id }, data: { releasedAt: new Date() } })).rejects.toThrow();
+    // A superseded source can never be quoted again.
+    await expect(upgrade(input, { token: freshToken(input) })).rejects.toBeInstanceOf(PostPurchaseUnavailableError);
+    expect(await manualReviewFlags(input.vendor.id, result.targetOrderId)).toHaveLength(0);
+  });
+
+  it("refuses to supersede while the target is unpaid", async () => {
+    const input = await fixture(); const result = await upgrade(input); const db = getDb();
+    const credit = await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id, targetOrderId: result.targetOrderId } });
+    await expect(db.postPurchaseCredit.update({ where: { id: credit.id }, data: { supersededAt: new Date() } })).rejects.toThrow();
+    expect((await sourceShipping(input)).status).toBe("pending");
+  });
+
+  it("flags a paid target revoked by a later source refund, once, without auto-refunding", async () => {
+    const input = await fixture(); const result = await upgrade(input); const db = getDb();
+    await paidTarget(input, result);
+    await refund(input); await refund(input);
+    const credit = await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } });
+    expect(credit.supersededAt).not.toBeNull();
+    expect(credit.invalidatedAt).not.toBeNull();
+    expect(await targetEntitlementStatus(input.vendor.id, result.targetOrderId)).toBe("revoked");
+    const flags = await manualReviewFlags(input.vendor.id, result.targetOrderId);
+    expect(flags).toHaveLength(1);
+    expect(flags[0]).toMatchObject({ actorType: "system", sanitizedData: { reason: "paid_target_revoked_by_source_refund",
+      creditId: credit.id, paidAmountCents: 9_500, autoRefund: false } });
+    expect(await db.commerceOrderRefund.count({ where: { vendorId: input.vendor.id, orderId: result.targetOrderId } })).toBe(0);
+  });
+
+  it("converges concurrent target payment and source refund to no delivery and one merchant flag", async () => {
+    const input = await fixture(); const result = await upgrade(input); const db = getDb();
+    const operations = [() => paidTarget(input, result, "concurrent-paid"), () => refund(input)];
+    const outcomes = await Promise.allSettled(operations.map(operation => operation()));
+    // A serialization loser is retried once, as the webhook and refund jobs do.
+    for (const [index, outcome] of outcomes.entries()) if (outcome.status === "rejected") await operations[index]!();
+    const credit = await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } });
+    expect(credit.invalidatedAt).not.toBeNull();
+    expect((await db.commerceOrder.findUniqueOrThrow({ where: { id: result.targetOrderId } })).paidAmountCents).toBe(9_500);
+    expect(await targetEntitlementStatus(input.vendor.id, result.targetOrderId)).toBe("revoked");
+    expect(await manualReviewFlags(input.vendor.id, result.targetOrderId)).toHaveLength(1);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id } })).toBe(1);
+  });
+
+  it("flags a PayUni payment that lands after its credit was released", async () => {
+    const input = await fixture(); const first = await upgrade(input, { providerName: "payuni" }); const db = getDb();
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "payuni", eventId: `ppu-failed-${randomUUID()}`,
+      eventType: "failed", vendorId: input.vendor.id, orderNumber: first.payment.orderNumber, providerTradeNo: "synthetic-late-trade" }));
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "payuni", eventId: `ppu-paid-${randomUUID()}`,
+      eventType: "paid", vendorId: input.vendor.id, orderNumber: first.payment.orderNumber, providerTradeNo: "synthetic-late-trade",
+      grossAmountCents: 9_500, currency: "TWD" }));
+    const credit = await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } });
+    expect(credit).toMatchObject({ supersededAt: null, invalidatedAt: null });
+    expect(credit.releasedAt).not.toBeNull();
+    expect((await db.commerceOrder.findUniqueOrThrow({ where: { id: first.targetOrderId } })).status).toBe("paid");
+    expect(await targetEntitlementStatus(input.vendor.id, first.targetOrderId)).toBe("revoked");
+    // The source keeps its own delivery because nothing replaced it.
+    expect((await sourceShipping(input)).status).toBe("pending");
+    const flags = await manualReviewFlags(input.vendor.id, first.targetOrderId);
+    expect(flags).toHaveLength(1);
+    expect(flags[0]?.sanitizedData).toMatchObject({ reason: "paid_after_credit_released", creditId: credit.id, paidAmountCents: 9_500, autoRefund: false });
+    expect(await db.commerceOrderRefund.count({ where: { vendorId: input.vendor.id } })).toBe(0);
   });
 });

@@ -35,6 +35,7 @@ async function createPaidOrder(input: {
       subtotalAmountCents: input.totalAmountCents,
       totalAmountCents: input.totalAmountCents,
       paidAmountCents: input.totalAmountCents,
+      paidAt: new Date(),
       buyerEncryptedEnvelope: "synthetic-envelope",
       buyerMaskedName: "測••",
       buyerMaskedEmail: "t***@example.test",

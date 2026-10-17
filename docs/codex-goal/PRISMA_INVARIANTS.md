@@ -290,3 +290,4 @@ Current inventory: 130 models and 89 forward migrations, including `202610060700
 
 新增 `PostPurchaseCredit` 與前向 migration `20261007120000_post_purchase_credit`，由 `codex/post-purchase-commerce-20261007` 的功能 commit 移植到現行 master。目前 142 models、96 forward migrations；既有 SQL／checksum 不變。
 - `20261017120000_post_purchase_credit_release`：forward-only；新增 `releasedAt`，將 `(vendorId, sourceOrderId)` 改為 `releasedAt IS NULL` 的 partial unique；目標付款失敗／逾期且未收款時釋放抵扣額，釋放列不可再交付、退款失效或復原。
+- `20261017130000_post_purchase_credit_window_supersede`：forward-only；來源付款 24 小時內才可建立抵扣額（`POST_PURCHASE_CREDIT_WINDOW_MS`）、已出貨實體來源不可升級；目標付款成功即設 `supersededAt` 並撤銷來源交付；決策：supersede 後來源退款仍撤銷目標（資金已退回），目標已收款時寫入 `post_purchase.manual_review_required` 事件交商家人工處理，不自動退款。

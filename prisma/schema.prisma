@@ -2064,6 +2064,8 @@ model BuyerSupportOrderGrant {
 /// target order retains the real provider amount; original paid money is never
 /// copied. A credit whose target payment ended unpaid is released (kept as
 /// history, never delivered or refunded) so the source can be quoted again.
+/// Usable only within 24h of the source's paidAt; when the target is paid the
+/// credit is superseded and the source's delivery is revoked (replace).
 model PostPurchaseCredit {
   id                  String   @id @default(cuid())
   vendorId            String
@@ -2081,6 +2083,7 @@ model PostPurchaseCredit {
   createdAt           DateTime @default(now())
   invalidatedAt       DateTime?
   releasedAt          DateTime?
+  supersededAt        DateTime?
 
   sourceOrder CommerceOrder @relation("PostPurchaseCreditSource", fields: [vendorId, sourceOrderId], references: [vendorId, id], onDelete: Restrict)
   targetOrder CommerceOrder @relation("PostPurchaseCreditTarget", fields: [vendorId, targetOrderId], references: [vendorId, id], onDelete: Restrict)

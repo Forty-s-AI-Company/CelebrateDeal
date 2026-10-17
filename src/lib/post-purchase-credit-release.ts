@@ -35,7 +35,7 @@ export async function releasePostPurchaseCreditForTerminalPayment(
   if (!terminalUnpaid || payment.refundedAmountCents !== 0 || order.paidAmountCents !== 0
     || order.refundedAmountCents !== 0 || postPurchaseCreditStaysBound(payment)) return false;
   const released = await tx.postPurchaseCredit.updateMany({
-    where: { vendorId: input.vendorId, targetOrderId: order.id, releasedAt: null, invalidatedAt: null },
+    where: { vendorId: input.vendorId, targetOrderId: order.id, releasedAt: null, invalidatedAt: null, supersededAt: null },
     data: { releasedAt: input.now },
   });
   return released.count === 1;

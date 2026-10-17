@@ -9,6 +9,17 @@ import {
 
 type UpsellDb = Pick<PrismaClient, "commerceOrder" | "product">;
 
+/**
+ * Owner rule: a source order funds an upgrade only within 24 hours of its
+ * paid time. Migration 20261017130000_post_purchase_credit_window_supersede
+ * enforces the same `INTERVAL '24 hours'` in the PostPurchaseCredit trigger;
+ * change both together.
+ */
+export const POST_PURCHASE_CREDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Fulfilment states in which a physical source has left the merchant (`shippedAt` is required for each). */
+export const POST_PURCHASE_SHIPPED_SOURCE_STATUSES = ["shipped", "refund_review", "delivered", "returned"] as const;
+
 // Match the strict offer contract without leaking unrelated product fields.
 const offerProductSelect = {
   id: true, vendorId: true, name: true, priceCents: true, currency: true,
@@ -23,9 +34,10 @@ const offerProductSelect = {
  */
 export async function resolvePaidOrderPostPurchaseOffer(
   db: UpsellDb,
-  input: { vendorId: string; orderId: string; kind: "upsell" | "downsell" },
+  input: { vendorId: string; orderId: string; kind: "upsell" | "downsell"; now?: Date },
   reserved?: ReservedInventoryRevision,
 ): Promise<{ source: PostPurchaseUpsellProduct; offer: PostPurchaseOffer } | null> {
+  const now = input.now ?? new Date();
   // Browser grants deliberately use a bounded order selector, but that does
   // not prove the order has exactly one item. Re-read the canonical paid
   // order here so the credit always comes from immutable commercial terms.
@@ -41,7 +53,8 @@ export async function resolvePaidOrderPostPurchaseOffer(
       paidAmountCents: true,
       refundedAmountCents: true,
       isTestOrder: true,
-      items: { take: 2, select: { productId: true, quantity: true } },
+      paidAt: true,
+      items: { take: 2, select: { productId: true, quantity: true, shippingFulfillment: { select: { status: true } } } },
     },
   });
   if (
@@ -56,6 +69,10 @@ export async function resolvePaidOrderPostPurchaseOffer(
     || order.paidAmountCents !== order.totalAmountCents
     || order.refundedAmountCents !== 0
     || order.isTestOrder
+    // Only a recently paid source may be replaced, and never one already shipped.
+    || !order.paidAt || order.paidAt.getTime() < now.getTime() - POST_PURCHASE_CREDIT_WINDOW_MS
+    || order.items.some(item => item.shippingFulfillment
+      && (POST_PURCHASE_SHIPPED_SOURCE_STATUSES as readonly string[]).includes(item.shippingFulfillment.status))
   ) return null;
 
   const sourceRecord = await db.product.findFirst({

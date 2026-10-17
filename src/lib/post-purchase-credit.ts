@@ -46,7 +46,7 @@ export async function resolvePostPurchaseCreditQuote(
   if (!binding || binding.vendorId !== input.vendorId || binding.productId !== input.productId) throw new PostPurchaseUnavailableError();
   const grant = await resolveBuyerSupportGrant(db, cookies, binding.grantId, now);
   if (!grant || grant.vendorId !== binding.vendorId || grant.orderId !== binding.orderId) throw new PostPurchaseUnavailableError();
-  const resolved = await resolvePaidOrderPostPurchaseOffer(db, { vendorId: binding.vendorId, orderId: binding.orderId, kind: binding.kind }, input.reserved);
+  const resolved = await resolvePaidOrderPostPurchaseOffer(db, { vendorId: binding.vendorId, orderId: binding.orderId, kind: binding.kind, now }, input.reserved);
   if (!resolved || resolved.source.id !== binding.sourceProductId || resolved.offer.productId !== binding.productId
     || resolved.offer.amountCents !== binding.amountCents) throw new PostPurchaseUnavailableError();
   return {
@@ -101,7 +101,7 @@ export async function assertPostPurchaseCreditReplay(db: Database, cookies: Cook
     where: { vendorId_targetOrderId: { vendorId: input.vendorId, targetOrderId: input.targetOrderId } },
     include: { sourceOrder: { select: { status: true, isTestOrder: true, paidAmountCents: true, refundedAmountCents: true } } },
   });
-  if (!credit || credit.invalidatedAt || credit.releasedAt || credit.targetProductId !== input.productId || credit.sourceOrder.status !== "paid"
+  if (!credit || credit.invalidatedAt || credit.releasedAt || credit.supersededAt || credit.targetProductId !== input.productId || credit.sourceOrder.status !== "paid"
     || credit.sourceOrder.isTestOrder || credit.sourceOrder.refundedAmountCents !== 0
     || credit.sourceOrder.paidAmountCents !== credit.creditAmountCents) throw new PostPurchaseUnavailableError();
   const grant = await resolveBuyerSupportGrant(db, cookies, credit.buyerGrantId);
