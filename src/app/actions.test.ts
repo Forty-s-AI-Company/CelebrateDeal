@@ -135,7 +135,6 @@ const mocks = vi.hoisted(() => ({
   decryptMfaSecret: vi.fn(),
   vendorFindUnique: vi.fn(),
   vendorUpdate: vi.fn(),
-  trackingSettingUpsert: vi.fn(),
   vendorMemberFindFirst: vi.fn(),
   vendorMemberFindMany: vi.fn(),
   vendorMemberFindUnique: vi.fn(),
@@ -354,7 +353,6 @@ vi.mock("@/lib/db", () => ({
       update: mocks.registrationFormUpdate,
     },
     userSession: { findMany: mocks.userSessionFindMany, updateMany: mocks.userSessionUpdateMany },
-    trackingSetting: { upsert: mocks.trackingSettingUpsert },
   }),
 }));
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
@@ -396,7 +394,6 @@ import {
   verifyMfaAction,
   saveBrandSettingsAction,
   saveBrandSettingsActionState,
-  saveTrackingSettingsAction,
   type BrandSettingsActionState,
 } from "./actions";
 import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
@@ -1155,40 +1152,6 @@ describe("upsertFormAction", () => {
     expect(mocks.requireVendor).toHaveBeenCalledOnce();
     expect(mocks.registrationFormCreate).not.toHaveBeenCalled();
     expect(mocks.registrationFormUpdate).not.toHaveBeenCalled();
-  });
-});
-
-describe("saveTrackingSettingsAction", () => {
-  function trackingFormData(facebookPixelId: string) {
-    const formData = new FormData();
-    formData.set("facebookPixelId", facebookPixelId);
-    formData.set("enablePageView", "on");
-    return formData;
-  }
-
-  it("rejects a Pixel ID the server transport would refuse, without writing settings", async () => {
-    for (const pixelId of ["1234", "12345abc", "pixel-123456", "1".repeat(33), "123 456", "１２３４５６"]) {
-      await expect(saveTrackingSettingsAction(trackingFormData(pixelId))).rejects.toThrow("redirect:/settings/tracking?tracking=invalid");
-    }
-    expect(mocks.trackingSettingUpsert).not.toHaveBeenCalled();
-    expect(mocks.revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it("persists a numeric Pixel ID or a cleared value for the current vendor only", async () => {
-    mocks.trackingSettingUpsert.mockResolvedValue({ id: "tracking-1" });
-    await saveTrackingSettingsAction(trackingFormData(" 1234567890 "));
-    expect(mocks.trackingSettingUpsert).toHaveBeenLastCalledWith(expect.objectContaining({
-      where: { vendorId: "vendor-1" },
-      create: expect.objectContaining({ vendorId: "vendor-1", facebookPixelId: "1234567890", enablePageView: true }),
-      update: expect.objectContaining({ facebookPixelId: "1234567890", enablePageView: true }),
-    }));
-    await saveTrackingSettingsAction(trackingFormData(""));
-    expect(mocks.trackingSettingUpsert).toHaveBeenLastCalledWith(expect.objectContaining({
-      create: expect.objectContaining({ facebookPixelId: null }),
-      update: expect.objectContaining({ facebookPixelId: null }),
-    }));
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/tracking");
-    expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });
 

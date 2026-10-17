@@ -1,5 +1,5 @@
 import { saveTrackingCredentialAction } from "@/app/actions/tracking-credential-actions";
-import { saveTrackingSettingsAction } from "@/app/actions";
+import { saveTrackingSettingsAction } from "@/app/actions/tracking-settings-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SubmitButton } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
