@@ -11,10 +11,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 142 |
-| Migration directories | 96 |
-| Prisma models | 129 |
-| Migration directories | 88 |
+| Prisma models | 143 |
+| Migration directories | 101 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -263,6 +261,11 @@ Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；�
 
 Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund_state`：以既有完整 processed refund ledger 修復 native subscription 權益；保留較新 active subscription 與 usage counters，既有 migration checksum 不變。87 migrations disposable PostgreSQL 完整套用通過；latest-head DB/browser 收據仍待完成。
 
+Server tracking adds nullable tenant-bound encrypted credential, test event code and nonnegative CAS revision via forward migration `20261007123000_server_tracking_credentials`; 126 models unchanged; 88 migrations and 5 real DB regressions PASS. No provider delivery verified.
+
+本輪前向新增 `TrackingDelivery` 與 `20261007133000_tracking_payment_outbox`，保留付款交易內的單筆事件、租戶 FK 與持久化重試狀態。89 migrations 與新 DB 回歸尚待本輪 runner 驗證；不代表已套用 Production。
+
+本輪前向新增 `20261007150000_tracking_authoritative_event_sources`：保留既有 Purchase order FK，擴充 Lead/FormSubmission、ViewContent/AnalyticsEvent、Schedule/ConsultationBooking 的租戶複合 FK 與 exclusive-source CHECK；context 以 tenant/source 綁定加密。兩個新增 unique index 都包含原 primary key，不會讓既有資料產生重複衝突。歷史 migration／58/79 preflight 完全不改；90 migrations 與四事件回歸仍待本輪 disposable PG 證據。
 Current full integrated inventory:
 
 Current integrated inventory:
@@ -288,6 +291,6 @@ Current inventory: 130 models and 89 forward migrations, including `202610060700
 
 ## 2026-10-17 post-purchase credit
 
-新增 `PostPurchaseCredit` 與前向 migration `20261007120000_post_purchase_credit`，由 `codex/post-purchase-commerce-20261007` 的功能 commit 移植到現行 master。目前 142 models、96 forward migrations；既有 SQL／checksum 不變。
+新增 `PostPurchaseCredit` 與前向 migration `20261007120000_post_purchase_credit`，由 `codex/post-purchase-commerce-20261007` 的功能 commit 移植到現行 master。目前 143 models、101 forward migrations；既有 SQL／checksum 不變。
 - `20261017120000_post_purchase_credit_release`：forward-only；新增 `releasedAt`，將 `(vendorId, sourceOrderId)` 改為 `releasedAt IS NULL` 的 partial unique；目標付款失敗／逾期且未收款時釋放抵扣額，釋放列不可再交付、退款失效或復原。
 - `20261017130000_post_purchase_credit_window_supersede`：forward-only；來源付款 24 小時內才可建立抵扣額（`POST_PURCHASE_CREDIT_WINDOW_MS`）、已出貨實體來源不可升級；目標付款成功即設 `supersededAt` 並撤銷來源交付；決策：supersede 後來源退款仍撤銷目標（資金已退回），目標已收款時寫入 `post_purchase.manual_review_required` 事件交商家人工處理，不自動退款。

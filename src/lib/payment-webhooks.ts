@@ -32,6 +32,7 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { withPaymentWebhookStage } from "./payment-webhook-errors";
 import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
+import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
@@ -1077,7 +1078,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
         eventType: payload.eventType, eventIdentity: payload.eventId, occurredAt,
       }));
       if (payload.eventType === "paid") {
-
+        await enqueuePaidPurchaseTracking(tx, { vendorId: vendor.id, paymentTransactionId: savedTransaction.id });
         await withPaymentWebhookStage("PAID_DELIVERY_DECRYPT", () => ensureCommerceOrderPaidDelivery(tx, {
           vendorId: vendor.id,
           paymentTransactionId: savedTransaction.id,

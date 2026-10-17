@@ -42,7 +42,8 @@ describe("exact staging migration adapter", () => {
 
   it("rejects the expanded candidate instead of applying unrelated LINE or course migrations", () => {
     const current = inventory();
-    expect(current).toHaveLength(96);
+    expect(current.length).toBeGreaterThan(historicalInventory().length);
+    expect(current.some((item) => item.name === "20261007150000_tracking_authoritative_event_sources")).toBe(true);
     expect(current.some((item) => item.name === "20261006070000_course_community")).toBe(true);
     expect(current.some((item) => item.name === "20261006140000_subscription_refund_entitlement_state")).toBe(true);
     expect(current.some((item) => item.name === "20261007002000_reconcile_legacy_subscription_refund_state")).toBe(true);

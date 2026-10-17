@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   analyticsCreate: vi.fn(),
@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   liveFindFirst: vi.fn(),
   liveProductFindFirst: vi.fn(),
   liveViewerTokenFromRequest: vi.fn(),
+  enqueueTracking: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -16,10 +18,12 @@ vi.mock("@/lib/db", () => ({
     analyticsEvent: { create: mocks.analyticsCreate },
     live: { findFirst: mocks.liveFindFirst },
     liveProduct: { findFirst: mocks.liveProductFindFirst },
+    $transaction: mocks.transaction,
   }),
 }));
 vi.mock("@/lib/product-analytics", () => ({ captureProductEvent: mocks.captureProductEvent }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/tracking-event-outbox", () => ({ enqueueAuthoritativeTrackingEvent: mocks.enqueueTracking }));
 vi.mock("@/lib/live-quota-admission", () => ({
   hasActiveLiveViewerSession: mocks.hasActiveLiveViewerSession,
   hashLiveViewerToken: mocks.hashLiveViewerToken,
@@ -29,13 +33,14 @@ vi.mock("@/lib/live-quota-admission", () => ({
 import { POST } from "@/app/api/analytics/route";
 import { MAX_JSON_BODY_BYTES } from "@/lib/api-security";
 
-function analyticsRequest(payload?: unknown, body?: string) {
+function analyticsRequest(payload?: unknown, body?: string, extraHeaders: Record<string, string> = {}) {
   return new Request("https://app.example.test/api/analytics", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       origin: "https://app.example.test",
       "x-celebratedeal-client": "web",
+      ...extraHeaders,
     },
     body: body ?? (payload === undefined ? undefined : JSON.stringify(payload)),
   });
@@ -54,13 +59,36 @@ beforeEach(() => {
   mocks.liveViewerTokenFromRequest.mockReturnValue("viewer-token");
   mocks.hasActiveLiveViewerSession.mockResolvedValue(true);
   mocks.hashLiveViewerToken.mockReturnValue("verified-session-1");
-  mocks.liveFindFirst.mockResolvedValue({ id: "live-1" });
+  mocks.liveFindFirst.mockResolvedValue({ id: "live-1", slug: "trusted-live" });
   mocks.liveProductFindFirst.mockResolvedValue({ id: "live-product-1" });
   mocks.analyticsCreate.mockResolvedValue({ id: "event-1" });
   mocks.captureProductEvent.mockResolvedValue({ skipped: false });
+  mocks.enqueueTracking.mockResolvedValue(null);
+  mocks.transaction.mockImplementation(async callback => callback({ analyticsEvent: { create: mocks.analyticsCreate } }));
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("analytics route", () => {
+  it("queues ViewContent in the same transaction only after tenant and viewer admission, using the actual browser context", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    const response = await POST(analyticsRequest(validEvent, undefined, { "user-agent": "SyntheticTrackingBrowser/1.0" }));
+    expect(response.status).toBe(200);
+    expect(mocks.hasActiveLiveViewerSession).toHaveBeenCalledWith(expect.anything(), { vendorId: "vendor-1", liveId: "live-1", token: "viewer-token" });
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.enqueueTracking).toHaveBeenCalledWith(expect.objectContaining({ analyticsEvent: { create: mocks.analyticsCreate } }), {
+      vendorId: "vendor-1", eventName: "ViewContent", sourceId: "event-1", context: { sourceUrl: "https://app.example.test/live/trusted-live", userAgent: "SyntheticTrackingBrowser/1.0" },
+    });
+  });
+  it("does not create provider events for playback progress or a rejected viewer", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    const headers = { "user-agent": "SyntheticTrackingBrowser/1.0" };
+    expect((await POST(analyticsRequest({ vendorId: "vendor-1", liveId: "live-1", eventType: "play_progress", payload: { seconds: 30 } }, undefined, headers))).status).toBe(200);
+    expect(mocks.enqueueTracking).not.toHaveBeenCalled();
+    mocks.hasActiveLiveViewerSession.mockResolvedValueOnce(false);
+    expect((await POST(analyticsRequest(validEvent, undefined, headers))).status).toBe(403);
+    expect(mocks.transaction).not.toHaveBeenCalled(); expect(mocks.enqueueTracking).not.toHaveBeenCalled();
+  });
+
   it("returns 400 instead of throwing for an empty JSON body", async () => {
     const response = await POST(analyticsRequest());
 
@@ -129,7 +157,7 @@ describe("analytics route", () => {
           { status: "ended", replayEnabled: true },
         ],
       },
-      select: { id: true },
+      select: { id: true, slug: true },
     });
     expect(mocks.analyticsCreate).not.toHaveBeenCalled();
     expect(mocks.captureProductEvent).not.toHaveBeenCalled();

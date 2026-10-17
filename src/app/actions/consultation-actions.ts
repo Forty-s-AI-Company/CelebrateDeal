@@ -14,6 +14,8 @@ import { requireEditableSalesProjectScope, type SalesProjectScope } from "@/lib/
 import { ensureSalesProjectCustomerMembership } from "@/lib/sales-project-customer-membership";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { captureTrackingBrowserContext, type TrackingBrowserContext } from "@/lib/tracking-browser-context";
+import { enqueueAuthoritativeTrackingEvent } from "@/lib/tracking-event-outbox";
 
 const MANAGEMENT_PATH = "/consultations";
 const EVENT_ID = z.string().trim().min(1).max(191);
@@ -40,7 +42,7 @@ type ConsultationEvent = {
   intakeFormFields: unknown;
   isActive: boolean;
   projectId?: string | null;
-  project?: { status: string; publishedAt: Date | null } | null;
+  salesProject?: { status: string; publishedAt: Date | null } | null;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -61,6 +63,8 @@ type ConsultationBooking = {
 };
 
 type ConsultationTransaction = {
+  trackingSetting: Pick<Prisma.TransactionClient["trackingSetting"], "findUnique">;
+  trackingDelivery: Pick<Prisma.TransactionClient["trackingDelivery"], "createMany" | "findUnique">;
   $executeRaw: (query: Prisma.Sql) => Promise<unknown>;
   consultationEvent: {
     findFirst: (args: unknown) => Promise<ConsultationEvent | null>;
@@ -380,9 +384,9 @@ export async function getConsultationSlots(eventId: string, date: string) {
   const database = db();
   const event = await database.consultationEvent.findFirst({
     where: { id: id.data, isActive: true },
-    select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
+    select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, projectId: true, salesProject: { select: { status: true, publishedAt: true } } },
   });
-  if (!event || (event.projectId && (event.project?.status !== "published" || !event.project.publishedAt))) return [];
+  if (!event || (event.projectId && (event.salesProject?.status !== "published" || !event.salesProject.publishedAt))) return [];
   const ranges = eventDayRanges(date, event.timezone);
   if (!ranges) return [];
   const bookings = await bookingRecordsForDay(database, event, ranges.actual);
@@ -439,6 +443,7 @@ export async function reserveConsultationBooking(
   database: ConsultationDatabase,
   input: z.infer<typeof BookingInput>,
   customerHash: (vendorId: string, email: string) => string = automationCustomerKeyHash,
+  trackingContext?: TrackingBrowserContext | null,
 ): Promise<ConsultationReservationResult> {
   const requestedStart = new Date(input.startTime);
   if (Number.isNaN(requestedStart.getTime())) return { status: "unavailable" };
@@ -447,10 +452,10 @@ export async function reserveConsultationBooking(
     return await database.$transaction(async (transaction) => {
       const event = await transaction.consultationEvent.findFirst({
         where: { id: input.eventId, isActive: true },
-        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, intakeFormFields: true, isActive: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
+        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, intakeFormFields: true, isActive: true, projectId: true, salesProject: { select: { status: true, publishedAt: true } } },
       });
       if (!event) return { status: "unavailable" };
-      if (event.projectId && (event.project?.status !== "published" || !event.project.publishedAt)) return { status: "unavailable" };
+      if (event.projectId && (event.salesProject?.status !== "published" || !event.salesProject.publishedAt)) return { status: "unavailable" };
 
       // This lock is event-wide rather than start-time-only. It therefore also
       // protects buffer-overlap and daily-limit checks from a concurrent POST.
@@ -518,6 +523,9 @@ export async function reserveConsultationBooking(
         projectId: event.projectId ?? null,
         customerKeyHash,
       });
+      if (trackingContext) await enqueueAuthoritativeTrackingEvent(transaction, {
+        vendorId: event.vendorId, eventName: "Schedule", sourceId: booking.id, context: trackingContext,
+      });
       return { status: "booked", booking: { id: booking.id, startTime: booking.startTime.toISOString(), endTime: booking.endTime.toISOString() } };
     }, { isolationLevel: "Serializable" });
   } catch (error) {
@@ -544,7 +552,7 @@ export async function createConsultationBookingAction(formData: FormData): Promi
   const limited = await checkRateLimit(await publicBookingRequest(), `consultation-booking:${parsed.data.eventId}`, 8, 15 * 60 * 1000);
   if (limited) return { status: "unavailable" };
   const database = db();
-  const result = await reserveConsultationBooking(database, parsed.data);
+  const result = await reserveConsultationBooking(database, parsed.data, automationCustomerKeyHash, captureTrackingBrowserContext(await headers()));
   if (result.status === "booked") {
     const booking = await database.consultationBooking.findFirst?.({
       where: { id: result.booking.id, eventId: parsed.data.eventId },
