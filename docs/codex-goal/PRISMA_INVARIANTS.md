@@ -11,8 +11,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 141 |
-| Migration directories | 95 |
+| Prisma models | 142 |
+| Migration directories | 96 |
 | Prisma models | 129 |
 | Migration directories | 88 |
 | Isolated PostgreSQL version | 18.3 |
@@ -29,7 +29,7 @@
 | Affiliate／billing／payment／ops | 35 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentMethodSetupIntent`、`PaymentTransaction`、`PayUniLiveProbe`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
-| Commerce order／fulfillment | 10 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot` |
+| Commerce order／fulfillment | 11 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot`、`PostPurchaseCredit` |
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
 | LINE identity／delivery／draft | 5 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery`、`LineRichMenuDraft` |
 | Consultation scheduling | 2 | `ConsultationEvent`、`ConsultationBooking` |
@@ -285,3 +285,7 @@ Commission integration with delivered community a5964d83: 136 models and 89 cano
 Current integrated inventory:
 ## Private messaging + delivered community/PWA candidate 20261008
 Current inventory: 130 models and 89 forward migrations, including `20261006070000_course_community` and `20261007110000_live_private_chat_messages`. Preserve every historical SQL/checksum and fixed staging replay window.
+
+## 2026-10-17 post-purchase credit
+
+新增 `PostPurchaseCredit` 與前向 migration `20261007120000_post_purchase_credit`，由 `codex/post-purchase-commerce-20261007` 的功能 commit 移植到現行 master。目前 142 models、96 forward migrations；既有 SQL／checksum 不變。
