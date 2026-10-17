@@ -1,0 +1,36 @@
+{
+  "head": "5f6f647e860fb2f9e7ada9830d3333fb8d90a1e2",
+  "command": "node --import tsx scripts/run-combined-coverage.mjs",
+  "exitCode": 1,
+  "counts": [
+    "Test Files  1 failed | 644 passed (645)",
+    "Tests  1 failed | 4739 passed (4740)"
+  ],
+  "failedFiles": [
+    "scripts/api-contract-registry.test.ts"
+  ],
+  "thresholdFailures": [],
+  "cleanup": [
+    {
+      "disposableCleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    }
+  ],
+  "rawLogsPersisted": false,
+  "testsReduced": false,
+  "gitBlobLfMirror": true,
+  "independentPrismaClient": true,
+  "timestamp": "2026-10-07T14:06:37.633296+00:00",
+  "confirmedRootCause": {
+    "test": "scripts/api-contract-registry.test.ts",
+    "missingContract": "POST /api/jobs/tracking-deliveries",
+    "targetedCorrectionTest": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "fullCorrectedGate": "PENDING"
+  }
+}

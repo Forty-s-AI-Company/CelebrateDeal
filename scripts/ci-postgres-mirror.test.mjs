@@ -14,12 +14,13 @@ test('official pinned mirror preserves the entire existing CI contract and dispo
   // Keep all prior gates byte-for-byte, while checking each new owned gate
   // independently for its exact command, uniqueness and execution order.
   const additions = [
+    ['Tracking authoritative events database and browser gate', 'scripts/tracking-settings-disposable-qa.mjs', '--browser'],
     ['Q1 original refund proof database isolation', 'scripts/q1-original-refund-proof-disposable-qa.mjs'],
     ['Q1 original refund reservation database isolation', 'scripts/q1-original-refund-target-disposable-qa.mjs'],
   ];
   let preceding = current.indexOf('      - name: Install Playwright browser');
-  for (const [name, script] of additions) {
-    const block = '      - name: ' + name + '\n        run: node ' + script + '\n\n';
+  for (const [name, script, args] of additions) {
+    const block = '      - name: ' + name + '\n        run: node ' + script + (args ? ' ' + args : '') + '\n\n';
     const occurrences = current.split(block).length - 1;
     assert.equal(occurrences, existsSync(script) ? 1 : 0, name + ': exactly one gate for its owned runner');
     if (occurrences) {
@@ -39,12 +40,13 @@ test('forward gates reject missing, duplicate, altered and reordered gates witho
   const base = source.slice(0, source.indexOf("\ntest('forward gates reject"));
   const current = readFileSync('.github/workflows/ci.yml', 'utf8').replaceAll('\r\n', '\n');
   const gates = [
+    ['Tracking authoritative events database and browser gate', 'scripts/tracking-settings-disposable-qa.mjs', '--browser'],
     ['Q1 original refund proof database isolation', 'scripts/q1-original-refund-proof-disposable-qa.mjs'],
     ['Q1 original refund reservation database isolation', 'scripts/q1-original-refund-target-disposable-qa.mjs'],
   ];
   const mutations = [current.replace('--health-retries=5', '--health-retries=1')];
-  for (const [name, script] of gates) {
-    const block = '      - name: ' + name + '\n        run: node ' + script + '\n\n';
+  for (const [name, script, args] of gates) {
+    const block = '      - name: ' + name + '\n        run: node ' + script + (args ? ' ' + args : '') + '\n\n';
     if (!current.includes(block)) continue;
     mutations.push(current.replace(block, ''), current + block,
       current.replace(block, block.replace('run: node ', 'run: echo ')),

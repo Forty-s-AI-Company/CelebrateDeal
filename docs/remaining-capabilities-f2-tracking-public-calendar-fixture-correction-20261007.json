@@ -1,0 +1,16 @@
+{
+  "taskId": "f2-server-tracking-webhooks",
+  "failedSourceRevision": "sha256:effdc158f637127c4fd6e59f4e308649d5603ffc9ff22735cb501dd1525906ef",
+  "failureEvidence": "remaining-capabilities-f2-tracking-public-calendar-fixture-failure-20261007.json",
+  "confirmedCause": "Test fixture put calendar directly under root; parsePageDocument returned null because only section is allowed under root",
+  "correction": "Use section -> row -> calendar and assert parsePageDocument non-null before persistence",
+  "assertionsPreserved": true,
+  "newJourney": "Actual public live player admission and ViewContent; absent viewer, foreign scope, deduplication and merchant display",
+  "typeScript": "PASS",
+  "lint": "PASS",
+  "browserStatus": "RUNNING",
+  "browserSession": 73469,
+  "requiredBrowserJourneys": 5,
+  "providerNetworkAttempted": false,
+  "acceptance": "NOT_READY"
+}
