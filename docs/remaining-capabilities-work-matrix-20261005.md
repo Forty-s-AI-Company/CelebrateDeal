@@ -199,3 +199,8 @@ F1.2 current-head CI37616047757 failed at WP-88 exact inventory after main integ
 ### PWA integration with delivered community 2026-10-08
 
 Root resolved the current a5964d83 main integration without losing locale or community behavior: structural AST comparison after removing locale-only additions was identical for community component, community page and course page. Main guard-capable browser runner retained. Earlier PWA 88-migration/9-DB/3-browser PASS predates this integration and does not prove the new candidate. Sixth readonly final review explicitly approved by owner; fresh complete validation and exact-head CI still required. Community PR373 is delivered with accepted/merged tree equality. Goal IN_PROGRESS.
+
+### F1.3 PWA / locale delivered 20261008
+
+- PR #375 protected expected-head squash merged as `e573a101b1423ad016a8635d6de85370e4e1053c`, accepted head `489d4ae1cd10d28fde52eb02b86247f6065c4589`, full accepted and merged tree both `fe7f037534c2fea58f282794999a5faf02eedef9`.
+- Current source `sha256:0bf6b01001b139b58ded7ede90a9ac83e26972038f89027f012adb5508ac7889`, independent Critical review 6 raw findings `[]`, canonical READY, 88 migrations / 9 DB / 3 actual browser journeys / complete TAP 1067/1067 / TypeScript / strict-index / lint PASS, skip/flaky zero, cleanup PASS. Exact-head push and PR quality runs 37667038885 and 37667047087 complete SUCCESS. DELIVERED. Notifications real provider proof remains blocked; overall Goal IN_PROGRESS.
