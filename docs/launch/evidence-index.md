@@ -1,5 +1,12 @@
 # Recovery Evidence Index
 
+## REL-20260903-CURRENT-SOURCE-EVIDENCE-REFRESH — Current-source fail-closed refresh（2026-09-03）
+
+- Source RC：`1806f4b8d0500311409afff66aba384cab010f0d`；release evidence bundle 已以此 SHA 重建。使用者提供的 master CI run `33677993649` `success` 是唯一 remote CI `PASS`。
+- Current-source boundary：此 SHA 沒有 Vercel Preview deployment；staging lineage、WP2 migration、WP3 recovery/rollback 全部為 `NOT_PROVEN`，不沿用任何舊 SHA 的 `PASS`、health check 或 receipt。
+- Readiness：WP4 PayUni Sandbox reconciliation 維持 `PENDING_EXTERNAL`，`PAYMENT_RECONCILIATION_READY=false`；沒有新的 policy 或人工 owner receipt，兩個 gate 維持 `PENDING_HUMAN`。`SANDBOX_READY=false`、`PRODUCTION_READY=false`、`releaseDecision=NO_GO`。
+- Boundary：這是文件與 sanitized aggregation refresh；沒有讀取 `.env*`、沒有呼叫遠端服務、沒有 Preview/staging/Production 操作、付款、退款、寄信、部署或 workflow dispatch，也沒有偽造 receipt。
+
 ## 本次原始快照
 
 - `.ai-team/reports/hybrid-recovery-20260727/initial-git-status.txt`

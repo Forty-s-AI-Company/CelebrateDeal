@@ -1,9 +1,9 @@
 # CelebrateDeal current release gate handoff
 
-日期：2026-08-21（Asia/Taipei）  
+日期：2026-09-03（Asia/Taipei）
 狀態：`READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION`  
-Source RC：`dbbffcf`
-Local implementation checkpoint：`dbbffcf`
+Source RC：`1806f4b8d0500311409afff66aba384cab010f0d`
+Local implementation checkpoint：`1806f4b8d0500311409afff66aba384cab010f0d`
 權威 gap map：[`current-release-completion-audit-20260821.md`](./current-release-completion-audit-20260821.md)
 
 這份 handoff 把目前尚未完成的 staging、external provider、PayUni Sandbox 與人工 acceptance 工作整理成一次可控的 non-Production 執行包。它只授權準備與去識別 evidence 收集，不授權 Production、正式付款、退款、寄信、資料庫寫入或部署。
@@ -24,7 +24,7 @@ canonicalTotal=75.5/100
 
 ## Remote CI state
 
-最近已知 remote CI 成功綁定 `6da465f`；目前 local source `dbbffcf` 尚未 push，因此 exact current RC remote CI 維持 `NOT_PROVEN`。本輪未 push、未 dispatch workflow，也未進行 deployment 或其他外部 mutation。
+master CI run `33677993649` 已成功，故 remote CI gate 記為 `PASS`。這不證明 `1806f4b8d0500311409afff66aba384cab010f0d` 已有 Vercel Preview deployment；本輪沒有 Preview identity，沒有 push、workflow dispatch、deployment 或其他外部 mutation。
 
 ## Owner authorization boundary
 
@@ -48,9 +48,10 @@ canonicalTotal=75.5/100
 
 | Gate | 一次安全執行要取得的最小 evidence | 成功條件 | 目前結果 |
 |---|---|---|---|
-| Exact staging lineage | deployment／environment 的 names-only identity、短 source digest、`nonProduction=true` | 能證明 actual staging 使用 current RC lineage | `NOT_PROVEN` |
-| Release evidence bundle | 13 個 gate 的 source lineage、opaque evidence／owner／scope refs、closed result 與 release decision | current RC baseline 已以 source `dbbffcf` 驗證為 `INCOMPLETE`；所有 gate receipts 均已取得後才可形成完成聚合 | `INCOMPLETE_BASELINE` |
-| Staging migration | expected／applied migration count、status enum、DB identity class | local staging migration receipt schema v2 已要求有效 `sourceCommit`；actual staging migration status 與 RC 仍未取得 | `NOT_PROVEN` |
+| Exact staging lineage | deployment／environment 的 names-only identity、短 source digest、`nonProduction=true` | 能證明 actual staging 使用 current RC lineage | `NOT_PROVEN`；`1806f4b` 沒有 Vercel Preview deployment |
+| Release evidence bundle | 13 個 gate 的 source lineage、opaque evidence／owner／scope refs、closed result 與 release decision | current RC baseline 已以 source `1806f4b8d0500311409afff66aba384cab010f0d` 驗證為 `INCOMPLETE`；所有 gate receipts 均已取得後才可形成完成聚合 | `INCOMPLETE_BASELINE` |
+| Staging migration（WP2） | expected／applied migration count、status enum、DB identity class | local receipt schema 只是一個 contract；沒有 current-source staging identity 或 migration receipt | `NOT_PROVEN` |
+| Staging recovery（WP3） | recovery／rollback 的 names-only deployment identity、result enum 與 current source digest | 舊 SHA 的 local 或 staging receipt 不可作為 `1806f4b` 的 PASS evidence | `NOT_PROVEN` |
 | Staging backup／restore | platform／target 類型、checksum、migration status、aggregate compare、cleanup result | actual staging platform backup／restore 或明確核准的隔離 target drill 完成 | `PASS_LOCAL_ONLY` |
 | Staging rollback／forward | current／previous deployment opaque identity、rollback／forward result | staging rollback 後可回到 current RC，兩個 identity 可追溯 | `PASS_LOCAL_ONLY` |
 | Cloudflare Stream | account mapping class、scope class、direct upload／Live Input／ready webhook 結果 | direct upload、Live Input 與 real VOD ready callback 全部通過 | `PENDING_EXTERNAL` |

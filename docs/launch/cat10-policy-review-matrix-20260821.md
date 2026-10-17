@@ -1,7 +1,7 @@
 # CAT10 政策、退款與客服 review matrix
 
-日期：2026-08-21（Asia/Taipei）  
-Source RC：`dbbffcf`
+日期：2026-09-03（Asia/Taipei）
+Source RC：`1806f4b8d0500311409afff66aba384cab010f0d`
 狀態：`PENDING_HUMAN`  
 適用範圍：non-Production release readiness evidence preparation
 
