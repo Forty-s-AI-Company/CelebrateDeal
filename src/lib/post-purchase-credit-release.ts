@@ -16,10 +16,12 @@ export function postPurchaseCreditStaysBound(payment: { providerName: string; pr
  * provider-failed or expired. Returns the source credit only when neither the
  * payment nor its order recorded any money; the database trigger re-checks
  * this and revokes target delivery so a late payment can never use the credit.
+ * `recoveryLapsed` is set when resume is refused because the source lapsed
+ * (24-hour window or shipped): even a locally resumable credit is returned.
  */
 export async function releasePostPurchaseCreditForTerminalPayment(
   tx: ReleaseDb,
-  input: { vendorId: string; paymentTransactionId: string; now: Date },
+  input: { vendorId: string; paymentTransactionId: string; now: Date; recoveryLapsed?: boolean },
 ) {
   const payment = await tx.paymentTransaction.findFirst({
     where: { id: input.paymentTransactionId, vendorId: input.vendorId },
@@ -33,7 +35,7 @@ export async function releasePostPurchaseCreditForTerminalPayment(
   const terminalUnpaid = (payment.status === "failed" && order.status === "payment_failed")
     || (payment.status === "expired" && order.status === "expired");
   if (!terminalUnpaid || payment.refundedAmountCents !== 0 || order.paidAmountCents !== 0
-    || order.refundedAmountCents !== 0 || postPurchaseCreditStaysBound(payment)) return false;
+    || order.refundedAmountCents !== 0 || (!input.recoveryLapsed && postPurchaseCreditStaysBound(payment))) return false;
   const released = await tx.postPurchaseCredit.updateMany({
     where: { vendorId: input.vendorId, targetOrderId: order.id, releasedAt: null, invalidatedAt: null, supersededAt: null },
     data: { releasedAt: input.now },

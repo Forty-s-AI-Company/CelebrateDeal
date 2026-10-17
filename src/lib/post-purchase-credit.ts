@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { BUYER_SUPPORT_COOKIE_PREFIX, resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
-import { resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
+import { postPurchaseSourceLapsed, postPurchaseSourceLapseSelect, resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
 import { verifyPostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 import type { ReservedInventoryRevision } from "@/lib/inventory-reservations";
 
@@ -18,6 +18,10 @@ export function postPurchaseRequestCookies(request: Request): Cookies {
 }
 export class PostPurchaseUnavailableError extends Error {
   constructor() { super("Post purchase offer unavailable"); this.name = "PostPurchaseUnavailableError"; }
+}
+/** The bound credit's source lapsed; resume paths release it and answer as unavailable. */
+export class PostPurchaseCreditLapsedError extends PostPurchaseUnavailableError {
+  constructor(readonly creditId: string) { super(); this.name = "PostPurchaseCreditLapsedError"; }
 }
 
 export type PostPurchaseCreditQuote = {
@@ -99,7 +103,8 @@ export async function assertPostPurchaseCreditReplay(db: Database, cookies: Cook
 }) {
   const credit = await db.postPurchaseCredit.findUnique({
     where: { vendorId_targetOrderId: { vendorId: input.vendorId, targetOrderId: input.targetOrderId } },
-    include: { sourceOrder: { select: { status: true, isTestOrder: true, paidAmountCents: true, refundedAmountCents: true } } },
+    include: { sourceOrder: { select: { status: true, isTestOrder: true, paidAmountCents: true, refundedAmountCents: true,
+      ...postPurchaseSourceLapseSelect } } },
   });
   if (!credit || credit.invalidatedAt || credit.releasedAt || credit.supersededAt || credit.targetProductId !== input.productId || credit.sourceOrder.status !== "paid"
     || credit.sourceOrder.isTestOrder || credit.sourceOrder.refundedAmountCents !== 0
@@ -115,5 +120,8 @@ export async function assertPostPurchaseCreditReplay(db: Database, cookies: Cook
       || binding.sourceProductId !== credit.sourceProductId || binding.kind !== credit.kind
       || binding.amountCents !== credit.checkoutAmountCents) throw new PostPurchaseUnavailableError();
   }
+  // Checked last, for an authenticated buyer only: a lapsed source (24-hour
+  // window or shipped) can no longer be replaced through any resume path.
+  if (postPurchaseSourceLapsed(credit.sourceOrder, new Date())) throw new PostPurchaseCreditLapsedError(credit.id);
   return credit;
 }

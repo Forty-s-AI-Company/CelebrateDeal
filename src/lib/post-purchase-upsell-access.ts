@@ -20,6 +20,25 @@ export const POST_PURCHASE_CREDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Fulfilment states in which a physical source has left the merchant (`shippedAt` is required for each). */
 export const POST_PURCHASE_SHIPPED_SOURCE_STATUSES = ["shipped", "refund_review", "delivered", "returned"] as const;
 
+/** Prisma select for `postPurchaseSourceLapsed`. */
+export const postPurchaseSourceLapseSelect = {
+  paidAt: true,
+  items: { select: { shippingFulfillment: { select: { status: true } } } },
+} as const;
+
+/**
+ * True once a source can no longer fund (or keep funding a resumable)
+ * upgrade: outside the 24-hour window or already shipped. Both are monotonic.
+ */
+export function postPurchaseSourceLapsed(
+  source: { paidAt: Date | null; items: Array<{ shippingFulfillment: { status: string } | null }> },
+  now: Date,
+) {
+  return !source.paidAt || source.paidAt.getTime() < now.getTime() - POST_PURCHASE_CREDIT_WINDOW_MS
+    || source.items.some(item => item.shippingFulfillment
+      && (POST_PURCHASE_SHIPPED_SOURCE_STATUSES as readonly string[]).includes(item.shippingFulfillment.status));
+}
+
 // Match the strict offer contract without leaking unrelated product fields.
 const offerProductSelect = {
   id: true, vendorId: true, name: true, priceCents: true, currency: true,
@@ -70,9 +89,7 @@ export async function resolvePaidOrderPostPurchaseOffer(
     || order.refundedAmountCents !== 0
     || order.isTestOrder
     // Only a recently paid source may be replaced, and never one already shipped.
-    || !order.paidAt || order.paidAt.getTime() < now.getTime() - POST_PURCHASE_CREDIT_WINDOW_MS
-    || order.items.some(item => item.shippingFulfillment
-      && (POST_PURCHASE_SHIPPED_SOURCE_STATUSES as readonly string[]).includes(item.shippingFulfillment.status))
+    || postPurchaseSourceLapsed(order, now)
   ) return null;
 
   const sourceRecord = await db.product.findFirst({
