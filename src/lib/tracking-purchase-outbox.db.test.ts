@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
+import { protectTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { protectCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { saveTrackingCredentialConfiguration } from "@/lib/tracking-settings";
 import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
@@ -22,6 +23,7 @@ async function fixture() {
     id: orderId, vendorId: vendor.id, orderNumber: orderId, checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: pii.checkoutIdentityHash,
     primaryPaymentTransactionId: payment.id, status: "paid", isTestOrder: true, paidAt: new Date(),
     subtotalAmountCents: 12345, totalAmountCents: 12345, paidAmountCents: 12345,
+    trackingContextEncrypted: protectTrackingBrowserContext(vendor.id, orderId, { sourceUrl: "https://tracking.example.test/checkout/synthetic/product", userAgent: "SyntheticTrackingBrowser/1.0" }),
     buyerEncryptedEnvelope: pii.buyerEncrypted, buyerMaskedName: pii.buyerNameMasked, buyerMaskedEmail: pii.buyerEmailMasked,
   } });
   const input = { vendorId: vendor.id, paymentTransactionId: payment.id };

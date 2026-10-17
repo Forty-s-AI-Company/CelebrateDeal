@@ -1,0 +1,16 @@
+{
+  "checkedAtUtc": "2026-10-07T15:00:35.1265248Z",
+  "taskId": "f2-server-tracking-webhooks",
+  "baselineCI": {
+    "conclusion": "success",
+    "headSha": "efdabd55c135ea63b3a7459a9cedea62ca3001f6",
+    "status": "completed",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/37634956094"
+  },
+  "scope": "Committed baseline only; current four-event working tree requires fresh CI and acceptance",
+  "currentFourEventDatabaseEvidence": "remaining-capabilities-f2-tracking-four-event-db-pass-20261007.json",
+  "currentTypeScript": "PASS",
+  "currentAffectedUnitTests": 47,
+  "currentAffectedUnitSkipped": 0,
+  "acceptance": "NOT_READY"
+}

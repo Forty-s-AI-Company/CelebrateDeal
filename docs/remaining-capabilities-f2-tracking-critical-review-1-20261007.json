@@ -1,0 +1,48 @@
+{
+  "summary": "Independent readonly Critical review; 51 scope hashes unchanged; requested/resolved Astra high; observed unknown; full scope NOT_READY.",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "file": "src/app/api/jobs/tracking-deliveries/route.ts",
+      "area": "provider binding",
+      "issue": "Only Preview test-events executor; production-capable binding and actual approved non-Production delivery incomplete",
+      "required_test": "Four real provider events, deduplication, default-off live binding and isolation"
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/tracking-meta-transport.ts",
+      "area": "response body",
+      "issue": "200 headers followed by interrupted body permanently rejects attempt1",
+      "required_test": "reset/timeout retry, attempt8 terminal, same event ID"
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/tracking-purchase-worker.ts",
+      "area": "source query catch",
+      "issue": "Transient source DB query failure is treated as permanent encrypted-payload failure",
+      "required_test": "bounded retry after connection/query timeout, damaged envelope stays terminal"
+    },
+    {
+      "severity": "MAJOR",
+      "file": "scripts/g7-email-operations-browser-qa.test.mjs",
+      "area": "migration inventory18-19",
+      "issue": "current90 migration count/list still expect89",
+      "required_test": "Exact90 tail names, full Node TAP"
+    },
+    {
+      "severity": "MINOR",
+      "file": ".github/workflows/ci.yml",
+      "area": "tracking browser gate",
+      "issue": "Five tracking browser journeys not included in push/PR CI",
+      "required_test": "Existing runner --browser after Chromium install; zero skipped/flaky and cleanup"
+    }
+  ],
+  "task_id": "f2-server-tracking-webhooks",
+  "dispatch": 1,
+  "dispatch_limit": 4,
+  "reviewed_source_revision": "sha256:bfadbef5f913d9fa1bf9a0abedf0e42fa82a8884a083991a66134d21ded7930f",
+  "head": "e8c49e9a5003bc284bf226e2153423ad4d07c32b",
+  "report_kind": "root_record_of_agent_findings",
+  "raw_report_saved_separately": false,
+  "acceptance": "NOT_READY"
+}

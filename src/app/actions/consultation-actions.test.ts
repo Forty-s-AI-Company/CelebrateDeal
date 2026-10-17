@@ -164,6 +164,8 @@ function concurrentReservationDatabase(): ConsultationDatabase {
   let tail = Promise.resolve();
   let id = 0;
   const transaction = {
+    trackingSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    trackingDelivery: { createMany: vi.fn(), findUnique: vi.fn() },
     $executeRaw: vi.fn().mockResolvedValue(undefined),
     consultationEvent: { findFirst: vi.fn().mockResolvedValue(event) },
     consultationBooking: {
@@ -217,8 +219,10 @@ describe("consultation reservation concurrency", () => {
     const customerCrmUpsert = vi.fn().mockResolvedValue({ id: "customer-1" });
     const membershipUpsert = vi.fn().mockResolvedValue({ id: "membership-1" });
     const transaction = {
+      trackingSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+      trackingDelivery: { createMany: vi.fn(), findUnique: vi.fn() },
       $executeRaw: vi.fn().mockResolvedValue(undefined),
-      consultationEvent: { findFirst: vi.fn().mockResolvedValue({ ...event, projectId: "project-trusted", project: { status: "published", publishedAt: new Date("2026-09-01T00:00:00Z") } }) },
+      consultationEvent: { findFirst: vi.fn().mockResolvedValue({ ...event, projectId: "project-trusted", salesProject: { status: "published", publishedAt: new Date("2026-09-01T00:00:00Z") } }) },
       consultationBooking: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),

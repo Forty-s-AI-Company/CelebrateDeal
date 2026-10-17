@@ -24,6 +24,7 @@ import {
   type CommerceOrderPii,
 } from "@/lib/commerce-order-pii";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
+import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import {
   CommerceCustomCheckoutValidationError,
   createCustomCheckoutIdentityHash,
@@ -881,6 +882,7 @@ export async function POST(request: Request) {
           currency: product.currency,
           buyer: checkoutPii.buyer,
           shipping: checkoutPii.shipping,
+          trackingContext: captureTrackingBrowserContext(request.headers, `/checkout/${encodeURIComponent(parsed.data.vendorId)}/${encodeURIComponent(product.id)}`),
           customCheckoutAnswers: customCheckout.answers,
           ...(hasExplicitInvoiceSelection ? { invoiceSelection } : {}),
         });

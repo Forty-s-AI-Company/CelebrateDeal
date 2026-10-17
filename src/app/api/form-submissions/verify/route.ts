@@ -12,6 +12,7 @@ import {
   formSubmissionChatSessionCookieOptions,
 } from "@/lib/form-submission-chat-session";
 import { verifyFormSubmission } from "@/lib/form-submission-verification-domain";
+import { captureTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import { captureOperationalError } from "@/lib/monitoring";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
 
   let result;
   try {
-    result = await verifyFormSubmission(getDb(), parsed.data.token);
+    result = await verifyFormSubmission(getDb(), parsed.data.token, new Date(), captureTrackingBrowserContext(request.headers, "/verify-registration"));
   } catch (error) {
     try {
       captureOperationalError(error, {
