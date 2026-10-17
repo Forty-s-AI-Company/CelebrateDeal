@@ -115,50 +115,76 @@ function candidateTransaction(value: unknown): CandidateTransaction | null {
 }
 
 /**
- * Reconciles only one already-reserved, fixture-owned PayUni refund. The
- * caller cannot choose a transaction, amount, or provider. A missing pending
- * reservation is not treated as success, which keeps a second provider refund
- * impossible from this route.
+ * Reconciles the three already-reserved, fixture-owned PayUni refunds as one
+ * fixed current-source receipt. The caller cannot choose a transaction,
+ * amount, provider, or purpose. Every purpose must have exactly one eligible
+ * candidate before the first provider query, so a partial fixture set or a
+ * duplicate candidate fails closed without reconciling a different purpose.
  */
 export async function reconcileWp4PayUniSandboxRefund(
   db: Wp4ReconciliationDb,
   sourceCommit: string,
 ): Promise<Wp4PayUniSandboxReconciliationResult> {
-  const selected = await db.paymentTransaction.findFirst({
+  const selected = await db.paymentTransaction.findMany({
     where: {
       vendorId: WP4_SANDBOX_FIXTURE.vendorId,
       providerName: "payuni",
       status: { in: ["paid", "partially_refunded"] },
       refunds: { some: { status: "pending" } },
     },
-    orderBy: { occurredAt: "desc" },
+  }) as CandidateTransaction[];
+
+  const candidates = WP4_PAYUNI_PURPOSES.map((purpose) => {
+    const matches = selected.filter((value) => {
+      const row = candidateTransaction(value);
+      return row !== null
+        && isWp4PayUniSandboxTransactionForSource(row, sourceCommit)
+        && wp4PayUniPurposeFromMetadata(row.metadata) === purpose
+        && row.providerTradeNo !== null
+        && row.orderNumber !== null;
+    });
+    return matches.length === 1 ? matches[0] ?? null : null;
   });
-  const row = candidateTransaction(selected);
-  if (!selected || !row || !isWp4PayUniSandboxTransactionForSource(row, sourceCommit) || !row.providerTradeNo || !row.orderNumber) {
+  if (candidates.some((candidate) => candidate === null)) {
     return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
   }
 
   const provider = getPaymentProvider("payuni");
   if (!provider.queryPayment) return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
 
-  let snapshot;
+  const snapshots = [];
   try {
-    snapshot = await provider.queryPayment({ transaction: selected as PaymentTransaction });
+    for (const candidate of candidates) {
+      if (!candidate) return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };
+      const snapshot = await provider.queryPayment({ transaction: candidate as PaymentTransaction });
+      if (snapshot.status === "paid") return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
+      if (snapshot.providerTradeNo !== candidate.providerTradeNo
+        || snapshot.orderNumber !== candidate.orderNumber
+        || snapshot.grossAmountCents !== candidate.grossAmountCents
+        || !["partially_refunded", "refunded"].includes(snapshot.status)) {
+        return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
+      }
+      snapshots.push(snapshot);
+    }
   } catch {
     return { reconciled: false, status: "PROJECTION_UNAVAILABLE" };
   }
-  if (snapshot.status === "paid") return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
 
   try {
-    const outcome = await reconcilePayUniRefund({
-      db,
-      transactionId: row.id,
-      providerSnapshot: snapshot,
-      actor: { id: WP4_SANDBOX_FIXTURE.userId, label: "wp4_sandbox_runner" },
-    });
-    return outcome.disposition === "reconciled" || outcome.disposition === "already_reconciled"
-      ? { reconciled: true, status: "RECONCILED" }
-      : { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
+    for (const [index, candidate] of candidates.entries()) {
+      const snapshot = snapshots[index];
+      if (!candidate || !snapshot) return { reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" };
+      const outcome = await reconcilePayUniRefund({
+        db,
+        transactionId: candidate.id,
+        providerSnapshot: snapshot,
+        actor: { id: WP4_SANDBOX_FIXTURE.userId, label: "wp4_sandbox_runner" },
+      });
+      if (outcome.disposition !== "reconciled" && outcome.disposition !== "already_reconciled") {
+        return { reconciled: false, status: "REFUND_NOT_CONFIRMED" };
+      }
+    }
+    return { reconciled: true, status: "RECONCILED" };
   } catch {
     return { reconciled: false, status: "PENDING_RESERVATION_UNAVAILABLE" };
   }

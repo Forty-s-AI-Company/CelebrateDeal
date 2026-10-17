@@ -16,8 +16,8 @@ const PURPOSES = Object.freeze(["buyer_order", "platform_subscription", "invoice
 const SESSION_COOKIE_NAME = "celebrate_session";
 const WP4_SESSION_TTL_SECONDS = 15 * 60;
 export const WP4_NETWORK_REQUEST_TIMEOUT_MS = 10_000;
-export const WP4_CHILD_TIMEOUT_MS = 60_000;
-export const WP4_CHILD_MAX_REQUESTS = 5;
+export const WP4_CHILD_TIMEOUT_MS = 65_000;
+export const WP4_CHILD_MAX_REQUESTS = 6;
 
 // These names are intentionally public contract metadata. Values stay only in
 // the protected runner environment and are never printed or persisted.
@@ -79,12 +79,14 @@ export const DIAGNOSTIC_CATEGORIES = Object.freeze([
   "CHILD_OUTPUT_INVALID",
   "CHILD_OUTPUT_UNREADABLE",
   "CHILD_RECEIPT_INVALID",
+  "CURRENT_SOURCE_RECEIPT_UNAVAILABLE",
+  "RECONCILIATION_COMPLETE",
   "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE",
   "RECEIPT_VALIDATION_FAILED",
   "UNCLASSIFIED_INTERNAL_FAILURE",
 ]);
 
-const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixtureSetup", "fixturePreflight", "ownerSession", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory", "diagnosticCategory"];
+const TOP_KEYS = ["schemaVersion", "task", "sourceCommit", "result", "executedAtUtc", "lineage", "fixtureSetup", "fixturePreflight", "ownerSession", "reconciliationExecution", "environment", "prerequisites", "purposes", "reconciliation", "network", "safety", "sideEffects", "failureCategory", "diagnosticCategory"];
 const PURPOSE_KEYS = ["purpose", "candidateCount", "localStatus", "providerStatus", "referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved", "status"];
 const FIXTURE_SETUP_KEYS = ["requests", "outcome", "responseAccepted", "createdRows", "reusedRows"];
 const FIXTURE_PREFLIGHT_KEYS = ["requests", "outcome", "responseAccepted", "buyerOrderReady", "platformSubscriptionReady", "invoicePaymentReady"];
@@ -99,18 +101,20 @@ const FIXTURE_PREFLIGHT_FAILURE_OUTCOMES = new Set([
   "NETWORK_FAILED",
 ]);
 const OWNER_SESSION_KEYS = ["bootstrapRequests", "bootstrapAuthenticated", "sessionCookieCount", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "plansProbeRequests", "plansProbeAuthenticated", "invoicesProbeRequests", "invoicesProbeAuthenticated"];
-const CHILD_RESULT_KEYS = ["fixtureSetup", "fixturePreflight", "ownerSession"];
+const RECONCILIATION_EXECUTION_KEYS = ["requests", "outcome", "responseAccepted"];
+const CHILD_RESULT_KEYS = ["fixtureSetup", "fixturePreflight", "ownerSession", "reconciliationExecution"];
 const NESTED_KEYS = Object.freeze({
   lineage: ["deploymentReads", "deploymentMatched", "sourceMatched", "preview", "ready", "healthStatus", "noRedirect"],
   fixtureSetup: FIXTURE_SETUP_KEYS,
   fixturePreflight: FIXTURE_PREFLIGHT_KEYS,
   ownerSession: OWNER_SESSION_KEYS,
+  reconciliationExecution: RECONCILIATION_EXECUTION_KEYS,
   environment: ["requiredBindingsPresent", "payuniSandbox", "stagingDatabaseMatched", "productionDetected"],
   prerequisites: ["requiredSecretBindings", "requiredConfigBindings", "fixedTask", "exactPreviewLineage", "fixedHostEgress", "sterileChildEnvironment", "gaps"],
   reconciliation: ["callbackConsistency", "duplicateRejected", "outOfOrderFailClosed", "overRefundRejected", "allPurposesMatched"],
   network: ["policy", "githubDeployments", "stagingPreview", "supabaseStaging", "payuniSandbox", "arbitraryOutbound"],
   safety: ["sanitized", "envFilesRead", "envEnumerated", "secretValuesPrinted", "secretValuesPersisted", "rawOutputPersisted", "rawDatabaseRowsPersisted", "rawProviderResponsePersisted", "customerOrPaymentDataPersisted"],
-  sideEffects: ["fixtureSetupAttempts", "fixtureRowsCreated", "fixtureRowsReused", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "providerQueries", "providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"],
+  sideEffects: ["fixtureSetupAttempts", "fixtureRowsCreated", "fixtureRowsReused", "sessionCreationAttempts", "sessionCreationOutcome", "sessionRowsCreated", "sessionTtlSeconds", "userRowsUpdated", "providerQueries", "providerWrites", "reconciliationWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"],
 });
 
 function hasValue(source, key) {
@@ -187,6 +191,18 @@ function uncertainOwnerSession() {
     sessionRowsCreated: null,
     sessionTtlSeconds: WP4_SESSION_TTL_SECONDS,
   };
+}
+
+function initialReconciliationExecution() {
+  return { requests: 0, outcome: "NOT_RUN", responseAccepted: false };
+}
+
+function failedReconciliationExecution(outcome = "HTTP_REJECTED") {
+  return { requests: 1, outcome, responseAccepted: false };
+}
+
+function uncertainReconciliationExecution() {
+  return { requests: null, outcome: "UNKNOWN", responseAccepted: null };
 }
 
 function fixedPreviewUrl(host, pathname) {
@@ -354,6 +370,15 @@ function fixtureSetupState(setup) {
   return "INVALID";
 }
 
+function reconciliationExecutionState(execution) {
+  if (!exactKeys(execution, RECONCILIATION_EXECUTION_KEYS)) return "INVALID";
+  if (execution.requests === 0 && execution.outcome === "NOT_RUN" && execution.responseAccepted === false) return "NOT_RUN";
+  if (execution.requests === 1 && execution.outcome === "RECONCILED" && execution.responseAccepted === true) return "COMPLETE";
+  if (execution.requests === 1 && ["AUTHORIZATION_REJECTED", "RECEIPT_UNAVAILABLE", "PENDING_RESERVATION_UNAVAILABLE", "PROJECTION_UNAVAILABLE", "REFUND_NOT_CONFIRMED", "HTTP_REJECTED", "RESPONSE_INVALID", "NETWORK_FAILED"].includes(execution.outcome) && execution.responseAccepted === false) return "FAILED";
+  if (execution.requests === null && execution.outcome === "UNKNOWN" && execution.responseAccepted === null) return "UNKNOWN";
+  return "INVALID";
+}
+
 export function validateInvocation(task, source = process.env) {
   if (task !== TASK) return { ok: false, reason: "TASK_NOT_ALLOWLISTED" };
   if (![...ACTIVE_SECRET_KEYS, ...ACTIVE_CONFIG_KEYS].every((key) => hasValue(source, key))) {
@@ -387,7 +412,7 @@ function initialPurpose(purpose) {
 
 export function createInitialReceipt(sourceCommit = "unknown") {
   return {
-    schemaVersion: "celebratedeal-secure-staging-wp4/v8",
+    schemaVersion: "celebratedeal-secure-staging-wp4/v9",
     task: TASK,
     sourceCommit: SAFE_SHA.test(sourceCommit) ? sourceCommit : "unknown",
     result: "BLOCKED",
@@ -396,6 +421,7 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     fixtureSetup: initialFixtureSetup(),
     fixturePreflight: initialFixturePreflight(),
     ownerSession: initialOwnerSession(),
+    reconciliationExecution: initialReconciliationExecution(),
     environment: { requiredBindingsPresent: false, payuniSandbox: false, stagingDatabaseMatched: false, productionDetected: false },
     prerequisites: {
       requiredSecretBindings: [...REQUIRED_SECRET_KEYS],
@@ -410,7 +436,7 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     reconciliation: { callbackConsistency: false, duplicateRejected: false, outOfOrderFailClosed: false, overRefundRejected: false, allPurposesMatched: false },
     network: { policy: "fixed-host-egress", githubDeployments: true, stagingPreview: true, supabaseStaging: false, payuniSandbox: false, arbitraryOutbound: false },
     safety: { sanitized: true, envFilesRead: false, envEnumerated: false, secretValuesPrinted: false, secretValuesPersisted: false, rawOutputPersisted: false, rawDatabaseRowsPersisted: false, rawProviderResponsePersisted: false, customerOrPaymentDataPersisted: false },
-    sideEffects: { fixtureSetupAttempts: 0, fixtureRowsCreated: 0, fixtureRowsReused: 0, sessionCreationAttempts: 0, sessionCreationOutcome: "NOT_ATTEMPTED", sessionRowsCreated: 0, sessionTtlSeconds: 0, userRowsUpdated: 0, providerQueries: 0, providerWrites: 0, transactionsCreated: 0, payments: 0, refunds: 0, callbackReplays: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
+    sideEffects: { fixtureSetupAttempts: 0, fixtureRowsCreated: 0, fixtureRowsReused: 0, sessionCreationAttempts: 0, sessionCreationOutcome: "NOT_ATTEMPTED", sessionRowsCreated: 0, sessionTtlSeconds: 0, userRowsUpdated: 0, providerQueries: 0, providerWrites: 0, reconciliationWrites: 0, transactionsCreated: 0, payments: 0, refunds: 0, callbackReplays: 0, deployments: 0, aliasMutations: 0, productionOperations: 0 },
     failureCategory: "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE",
     diagnosticCategory: "NOT_RUN",
   };
@@ -431,34 +457,50 @@ export function validateReceipt(receipt) {
   for (const [key, keys] of Object.entries(NESTED_KEYS)) {
     if (!exactKeys(receipt?.[key], keys)) errors.push(`SCHEMA_${key.toUpperCase()}`);
   }
-  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v8" || receipt?.task !== TASK) errors.push("SCHEMA");
+  if (receipt?.schemaVersion !== "celebratedeal-secure-staging-wp4/v9" || receipt?.task !== TASK) errors.push("SCHEMA");
   if (!SAFE_SHA.test(receipt?.sourceCommit ?? "")) errors.push("SOURCE");
-  if (receipt?.result !== "BLOCKED") errors.push("RESULT_MUST_BE_BLOCKED");
+  if (!["BLOCKED", "PASS"].includes(receipt?.result)) errors.push("RESULT");
   if (Number.isNaN(Date.parse(receipt?.executedAtUtc ?? ""))) errors.push("EXECUTED_AT");
-  if (receipt?.failureCategory !== "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE") errors.push("FAILURE_CATEGORY");
+  if ((receipt?.result === "PASS" && receipt?.failureCategory !== "NONE")
+    || (receipt?.result === "BLOCKED" && receipt?.failureCategory !== "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE")) errors.push("FAILURE_CATEGORY");
   if (!DIAGNOSTIC_CATEGORIES.includes(receipt?.diagnosticCategory)) errors.push("DIAGNOSTIC_CATEGORY");
   if (!exactArray(receipt?.prerequisites?.requiredSecretBindings, REQUIRED_SECRET_KEYS) || !exactArray(receipt?.prerequisites?.requiredConfigBindings, REQUIRED_CONFIG_KEYS)) errors.push("PREREQUISITE_BINDINGS");
   const setupState = fixtureSetupState(receipt?.fixtureSetup);
   const fixtureState = fixturePreflightState(receipt?.fixturePreflight);
   const ownerState = ownerSessionState(receipt?.ownerSession);
+  const reconciliationState = reconciliationExecutionState(receipt?.reconciliationExecution);
   if (setupState === "INVALID") errors.push("FIXTURE_SETUP_CONTRACT");
-  const expectedGaps = fixtureState === "COMPLETE" && ownerState === "COMPLETE"
-    ? OWNER_SESSION_COMPLETE_GAPS
-    : FIXED_PREREQUISITE_GAPS;
+  const expectedGaps = receipt?.result === "PASS"
+    ? []
+    : fixtureState === "COMPLETE" && ownerState === "COMPLETE"
+      ? OWNER_SESSION_COMPLETE_GAPS
+      : FIXED_PREREQUISITE_GAPS;
   if (receipt?.prerequisites?.fixedTask !== true || receipt?.prerequisites?.fixedHostEgress !== true || receipt?.prerequisites?.sterileChildEnvironment !== true || typeof receipt?.prerequisites?.exactPreviewLineage !== "boolean" || !exactArray(receipt?.prerequisites?.gaps, expectedGaps)) errors.push("PREREQUISITE_CONTRACT");
   if (ownerState === "INVALID") errors.push("OWNER_SESSION_CONTRACT");
   if (fixtureState === "INVALID") errors.push("FIXTURE_PREFLIGHT_CONTRACT");
+  if (reconciliationState === "INVALID") errors.push("RECONCILIATION_EXECUTION_CONTRACT");
   const ownerSequenceValid = (setupState === "COMPLETE" && fixtureState === "COMPLETE" && ownerState !== "NOT_RUN" && ownerState !== "INVALID")
     || (setupState === "COMPLETE" && fixtureState === "FAILED" && ownerState === "NOT_RUN")
     || (setupState === "FAILED" && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN")
     || (setupState === "UNKNOWN" && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN")
     || (setupState === "NOT_RUN" && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN");
-  if (!ownerSequenceValid) errors.push("OWNER_WITHOUT_FIXTURES");
+  const reconciliationSequenceValid = ownerState === "COMPLETE"
+    ? ["COMPLETE", "FAILED"].includes(reconciliationState)
+    : setupState === "UNKNOWN" && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN"
+      ? reconciliationState === "UNKNOWN"
+      : reconciliationState === "NOT_RUN";
+  if (!ownerSequenceValid || !reconciliationSequenceValid) errors.push("OWNER_WITHOUT_FIXTURES");
   if (!Array.isArray(receipt?.purposes) || receipt.purposes.length !== PURPOSES.length || receipt.purposes.map((item) => item?.purpose).join("|") !== PURPOSES.join("|")) errors.push("PURPOSES");
   for (const item of receipt?.purposes ?? []) {
     if (!exactKeys(item, PURPOSE_KEYS)) errors.push("PURPOSE_SCHEMA");
-    if (item?.candidateCount !== 0 || item?.localStatus !== "NOT_RUN" || item?.providerStatus !== "NOT_RUN" || item?.status !== "NOT_RUN") errors.push("PURPOSE_MUST_NOT_RUN");
-    if (["referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved"].some((key) => item?.[key] !== false)) errors.push("PURPOSE_EVIDENCE_MUST_BE_FALSE");
+    if (receipt?.result === "PASS") {
+      if (item?.candidateCount !== 1 || item?.localStatus !== "RECONCILED" || item?.providerStatus !== "RECONCILED" || item?.status !== "PASS") errors.push("PURPOSE_RECONCILIATION");
+      if (["referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched"].some((key) => item?.[key] !== true)
+        || ["duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved"].some((key) => item?.[key] !== false)) errors.push("PURPOSE_EVIDENCE");
+    } else {
+      if (item?.candidateCount !== 0 || item?.localStatus !== "NOT_RUN" || item?.providerStatus !== "NOT_RUN" || item?.status !== "NOT_RUN") errors.push("PURPOSE_MUST_NOT_RUN");
+      if (["referenceMatched", "orderMatched", "amountMatched", "refundMatched", "projectionMatched", "duplicateSideEffectsAbsent", "outOfOrderFailClosed", "overRefundRejected", "failureOrCancellationObserved"].some((key) => item?.[key] !== false)) errors.push("PURPOSE_EVIDENCE_MUST_BE_FALSE");
+    }
   }
   const lineageProven = receipt?.lineage?.deploymentReads > 0
     && receipt?.lineage?.deploymentMatched === true
@@ -475,10 +517,16 @@ export function validateReceipt(receipt) {
     && receipt?.lineage?.healthStatus === null
     && receipt?.lineage?.noRedirect === false;
   if ((!lineageProven && !lineageNotRun) || receipt?.prerequisites?.exactPreviewLineage !== lineageProven) errors.push("LINEAGE_CONTRACT");
-  if (!lineageProven && (setupState !== "NOT_RUN" || fixtureState !== "NOT_RUN" || ownerState !== "NOT_RUN")) errors.push("CHILD_WITHOUT_LINEAGE");
-  if (receipt?.environment?.requiredBindingsPresent !== false || receipt?.environment?.payuniSandbox !== false || receipt?.environment?.stagingDatabaseMatched !== false || receipt?.environment?.productionDetected !== false) errors.push("ENVIRONMENT_MUST_NOT_RUN");
-  if (Object.values(receipt?.reconciliation ?? {}).some((value) => value !== false)) errors.push("RECONCILIATION_MUST_NOT_RUN");
-  if (receipt?.network?.policy !== "fixed-host-egress" || receipt?.network?.arbitraryOutbound !== false || receipt?.network?.payuniSandbox !== false || receipt?.network?.supabaseStaging !== false) errors.push("NETWORK_POLICY");
+  if (!lineageProven && (setupState !== "NOT_RUN" || fixtureState !== "NOT_RUN" || ownerState !== "NOT_RUN" || reconciliationState !== "NOT_RUN")) errors.push("CHILD_WITHOUT_LINEAGE");
+  if (receipt?.result === "PASS") {
+    if (!lineageProven || setupState !== "COMPLETE" || fixtureState !== "COMPLETE" || ownerState !== "COMPLETE" || reconciliationState !== "COMPLETE") errors.push("PASS_PREREQUISITES");
+    if (receipt?.environment?.requiredBindingsPresent !== true || receipt?.environment?.payuniSandbox !== true || receipt?.environment?.stagingDatabaseMatched !== true || receipt?.environment?.productionDetected !== false) errors.push("ENVIRONMENT_RECONCILIATION");
+    if (receipt?.reconciliation?.callbackConsistency !== false || receipt?.reconciliation?.duplicateRejected !== false || receipt?.reconciliation?.outOfOrderFailClosed !== false || receipt?.reconciliation?.overRefundRejected !== false || receipt?.reconciliation?.allPurposesMatched !== true) errors.push("RECONCILIATION_CONTRACT");
+  } else {
+    if (receipt?.environment?.requiredBindingsPresent !== false || receipt?.environment?.payuniSandbox !== false || receipt?.environment?.stagingDatabaseMatched !== false || receipt?.environment?.productionDetected !== false) errors.push("ENVIRONMENT_MUST_NOT_RUN");
+    if (Object.values(receipt?.reconciliation ?? {}).some((value) => value !== false)) errors.push("RECONCILIATION_MUST_NOT_RUN");
+  }
+  if (receipt?.network?.policy !== "fixed-host-egress" || receipt?.network?.arbitraryOutbound !== false || receipt?.network?.supabaseStaging !== false || receipt?.network?.payuniSandbox !== (receipt?.result === "PASS")) errors.push("NETWORK_POLICY");
   if (receipt?.safety?.sanitized !== true || Object.entries(receipt?.safety ?? {}).some(([key, value]) => key !== "sanitized" && value !== false)) errors.push("SENSITIVE_PERSISTENCE");
   const expectedFixtureEffects = setupState === "NOT_RUN" || setupState === "FAILED"
     ? { attempts: setupState === "FAILED" ? 1 : 0, created: 0, reused: 0 }
@@ -498,7 +546,14 @@ export function validateReceipt(receipt) {
     || receipt?.sideEffects?.sessionRowsCreated !== expectedSessionEffects.rows
     || receipt?.sideEffects?.sessionTtlSeconds !== expectedSessionEffects.ttl
     || receipt?.sideEffects?.userRowsUpdated !== 0) errors.push("SESSION_SIDE_EFFECTS");
-  if (["providerQueries", "providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"].some((key) => receipt?.sideEffects?.[key] !== 0)) errors.push("FORBIDDEN_SIDE_EFFECTS");
+  const expectedReconciliationEffects = reconciliationState === "COMPLETE"
+    ? { providerQueries: 3, reconciliationWrites: 3 }
+    : reconciliationState === "FAILED" || reconciliationState === "UNKNOWN"
+      ? { providerQueries: null, reconciliationWrites: null }
+      : { providerQueries: 0, reconciliationWrites: 0 };
+  if (receipt?.sideEffects?.providerQueries !== expectedReconciliationEffects.providerQueries
+    || receipt?.sideEffects?.reconciliationWrites !== expectedReconciliationEffects.reconciliationWrites) errors.push("RECONCILIATION_SIDE_EFFECTS");
+  if (["providerWrites", "transactionsCreated", "payments", "refunds", "callbackReplays", "deployments", "aliasMutations", "productionOperations"].some((key) => receipt?.sideEffects?.[key] !== 0)) errors.push("FORBIDDEN_SIDE_EFFECTS");
   const serialized = JSON.stringify(receipt);
   if (/(?:postgres(?:ql)?:\/\/|https?:\/\/|Bearer\s+|BEGIN\s+(?:RSA|OPENSSH|EC)\s+PRIVATE\s+KEY|set-cookie|celebrate_session|EncryptInfo|HashInfo|MerchantId|providerTradeNo|orderNumber|transactionReference)/iu.test(serialized)) errors.push("FORBIDDEN_TEXT");
   return { ok: errors.length === 0, errors };
@@ -689,6 +744,51 @@ export async function runOwnerSession(source, fetchImpl = fetch) {
   }
 }
 
+export async function runReconciliation(source, fetchImpl = fetch) {
+  const initial = initialReconciliationExecution();
+  if (!hasValue(source, "JOB_SECRET")
+    || !SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA ?? "")
+    || !SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
+    || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return initial;
+  try {
+    const pathname = "/api/admin/ops/payuni/wp4-reconcile";
+    const response = await fetchImpl(fixedPreviewUrl(source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${source.JOB_SECRET}`,
+        "x-celebratedeal-source-sha": source.CELEBRATEDEAL_SOURCE_SHA,
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(WP4_NETWORK_REQUEST_TIMEOUT_MS),
+    });
+    const contentType = response.headers?.get?.("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (!responseMatches(response, source.CELEBRATEDEAL_DEPLOYMENT_HOST, pathname, 200)) {
+      await discardResponseBody(response);
+      return failedReconciliationExecution(response.status === 401
+        ? "AUTHORIZATION_REJECTED"
+        : response.status === 409
+          ? "PENDING_RESERVATION_UNAVAILABLE"
+          : response.status === 503
+            ? "PROJECTION_UNAVAILABLE"
+            : response.status === 404
+              ? "RECEIPT_UNAVAILABLE"
+              : "HTTP_REJECTED");
+    }
+    if (contentType !== "application/json") {
+      await discardResponseBody(response);
+      return failedReconciliationExecution("RESPONSE_INVALID");
+    }
+    const body = await readBoundedJsonObject(response);
+    return exactKeys(body, ["reconciled", "status"])
+      && body.reconciled === true
+      && body.status === "RECONCILED"
+      ? { requests: 1, outcome: "RECONCILED", responseAccepted: true }
+      : failedReconciliationExecution("RESPONSE_INVALID");
+  } catch {
+    return failedReconciliationExecution("NETWORK_FAILED");
+  }
+}
+
 export async function runWp4Child(source, fetchImpl = fetch) {
   const fixtureSetup = await runFixtureSetup(source, fetchImpl);
   const fixturePreflight = fixtureSetupState(fixtureSetup) === "COMPLETE"
@@ -697,7 +797,10 @@ export async function runWp4Child(source, fetchImpl = fetch) {
   const ownerSession = fixturePreflightState(fixturePreflight) === "COMPLETE"
     ? await runOwnerSession(source, fetchImpl)
     : initialOwnerSession();
-  return { fixtureSetup, fixturePreflight, ownerSession };
+  const reconciliationExecution = ownerSessionState(ownerSession) === "COMPLETE"
+    ? await runReconciliation(source, fetchImpl)
+    : initialReconciliationExecution();
+  return { fixtureSetup, fixturePreflight, ownerSession, reconciliationExecution };
 }
 
 export function parseChildOutput(stdout, exitCode) {
@@ -709,12 +812,15 @@ export function parseChildOutput(stdout, exitCode) {
     const setupState = fixtureSetupState(result?.fixtureSetup);
     const fixtureState = fixturePreflightState(result?.fixturePreflight);
     const ownerState = ownerSessionState(result?.ownerSession);
+    const reconciliationState = reconciliationExecutionState(result?.reconciliationExecution);
     const validSequence = setupState === "COMPLETE" && fixtureState === "COMPLETE"
-      ? ownerState !== "INVALID" && ownerState !== "NOT_RUN"
+      ? ownerState === "COMPLETE"
+        ? ["COMPLETE", "FAILED"].includes(reconciliationState)
+        : ownerState !== "INVALID" && ownerState !== "NOT_RUN" && reconciliationState === "NOT_RUN"
       : setupState === "COMPLETE" && fixtureState === "FAILED"
-        ? ownerState === "NOT_RUN"
+        ? ownerState === "NOT_RUN" && reconciliationState === "NOT_RUN"
         : (setupState === "FAILED" || setupState === "UNKNOWN")
-          && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN";
+          && fixtureState === "NOT_RUN" && ownerState === "NOT_RUN" && reconciliationState === "NOT_RUN";
     return exactKeys(result, CHILD_RESULT_KEYS) && validSequence
       ? { ok: true, ...result }
       : { ok: false, reason: "CHILD_RECEIPT_INVALID" };
@@ -727,9 +833,12 @@ export function markChildAttemptUnknown(receipt) {
   receipt.fixtureSetup = uncertainFixtureSetup();
   receipt.fixturePreflight = initialFixturePreflight();
   receipt.ownerSession = initialOwnerSession();
+  receipt.reconciliationExecution = uncertainReconciliationExecution();
   receipt.sideEffects.fixtureSetupAttempts = 1;
   receipt.sideEffects.fixtureRowsCreated = null;
   receipt.sideEffects.fixtureRowsReused = null;
+  receipt.sideEffects.providerQueries = null;
+  receipt.sideEffects.reconciliationWrites = null;
   return receipt;
 }
 
@@ -795,6 +904,7 @@ export async function runParent(source, dependencies = {}) {
         receipt.fixtureSetup = parsed.fixtureSetup;
         receipt.fixturePreflight = parsed.fixturePreflight;
         receipt.ownerSession = parsed.ownerSession;
+        receipt.reconciliationExecution = parsed.reconciliationExecution;
         receipt.sideEffects.fixtureSetupAttempts = parsed.fixtureSetup.requests;
         receipt.sideEffects.fixtureRowsCreated = parsed.fixtureSetup.createdRows;
         receipt.sideEffects.fixtureRowsReused = parsed.fixtureSetup.reusedRows;
@@ -803,11 +913,38 @@ export async function runParent(source, dependencies = {}) {
         receipt.sideEffects.sessionRowsCreated = parsed.ownerSession.sessionRowsCreated;
         receipt.sideEffects.sessionTtlSeconds = parsed.ownerSession.sessionTtlSeconds;
         receipt.sideEffects.userRowsUpdated = parsed.ownerSession.userRowsUpdated;
-        if (fixturePreflightState(parsed.fixturePreflight) === "COMPLETE"
+        const reconciliationState = reconciliationExecutionState(parsed.reconciliationExecution);
+        if (reconciliationState === "COMPLETE") {
+          receipt.result = "PASS";
+          receipt.environment = { requiredBindingsPresent: true, payuniSandbox: true, stagingDatabaseMatched: true, productionDetected: false };
+          receipt.prerequisites.gaps = [];
+          receipt.purposes = PURPOSES.map((purpose) => ({
+            ...initialPurpose(purpose),
+            candidateCount: 1,
+            localStatus: "RECONCILED",
+            providerStatus: "RECONCILED",
+            referenceMatched: true,
+            orderMatched: true,
+            amountMatched: true,
+            refundMatched: true,
+            projectionMatched: true,
+            status: "PASS",
+          }));
+          receipt.reconciliation = { callbackConsistency: false, duplicateRejected: false, outOfOrderFailClosed: false, overRefundRejected: false, allPurposesMatched: true };
+          receipt.network.payuniSandbox = true;
+          receipt.sideEffects.providerQueries = 3;
+          receipt.sideEffects.reconciliationWrites = 3;
+          receipt.failureCategory = "NONE";
+          receipt.diagnosticCategory = "RECONCILIATION_COMPLETE";
+        } else if (reconciliationState === "FAILED") {
+          receipt.sideEffects.providerQueries = null;
+          receipt.sideEffects.reconciliationWrites = null;
+          receipt.diagnosticCategory = "CURRENT_SOURCE_RECEIPT_UNAVAILABLE";
+        } else if (fixturePreflightState(parsed.fixturePreflight) === "COMPLETE"
           && ownerSessionState(parsed.ownerSession) === "COMPLETE") {
           receipt.prerequisites.gaps = [...OWNER_SESSION_COMPLETE_GAPS];
+          receipt.diagnosticCategory = "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE";
         }
-        receipt.diagnosticCategory = "FIXED_EXECUTION_PREREQUISITES_UNAVAILABLE";
       } else {
         receipt.diagnosticCategory = safeDiagnosticCategory(parsed.reason);
       }

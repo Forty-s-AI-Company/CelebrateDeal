@@ -19,6 +19,7 @@ import {
   runFixtureSetup,
   runFixturePreflight,
   runOwnerSession,
+  runReconciliation,
   runParent,
   runWp4Child,
   safeDiagnosticCategory,
@@ -154,7 +155,7 @@ test("parent preserves unknown fixture side effects when child output is invalid
 
 test("receipt rejects fabricated payment, refund, callback, lineage and provider evidence", () => {
   const receipt = createInitialReceipt(sha);
-  assert.equal(validateReceipt({ ...receipt, result: "PASS" }).errors.includes("RESULT_MUST_BE_BLOCKED"), true);
+  assert.equal(validateReceipt({ ...receipt, result: "PASS" }).errors.includes("PASS_PREREQUISITES"), true);
   assert.equal(validateReceipt({ ...receipt, sideEffects: { ...receipt.sideEffects, payments: 3 } }).errors.includes("FORBIDDEN_SIDE_EFFECTS"), true);
   assert.equal(validateReceipt({ ...receipt, sideEffects: { ...receipt.sideEffects, refunds: 6 } }).errors.includes("FORBIDDEN_SIDE_EFFECTS"), true);
   assert.equal(validateReceipt({ ...receipt, sideEffects: { ...receipt.sideEffects, callbackReplays: 6 } }).errors.includes("FORBIDDEN_SIDE_EFFECTS"), true);
@@ -239,6 +240,10 @@ function successfulWp4Fetch(requests) {
     if (url.endsWith("/wp4-preflight")) {
       requests.push({ url, options });
       return mockResponse(url, 200, { json: readyFixtures });
+    }
+    if (url.endsWith("/wp4-reconcile")) {
+      requests.push({ url, options });
+      return mockResponse(url, 200, { json: { reconciled: true, status: "RECONCILED" } });
     }
     return ownerFetch(url, options);
   };
@@ -373,12 +378,14 @@ test("WP4 child verifies fixtures before creating one bounded owner session", as
   assert.equal(result.fixturePreflight.responseAccepted, true);
   assert.equal(result.fixtureSetup.responseAccepted, true);
   assert.equal(result.ownerSession.invoicesProbeAuthenticated, true);
+  assert.deepEqual(result.reconciliationExecution, { requests: 1, outcome: "RECONCILED", responseAccepted: true });
   assert.deepEqual(requests.map(({ url, options }) => [options.method, new URL(url).pathname]), [
     ["POST", "/api/admin/ops/payuni/wp4-fixture"],
     ["POST", "/api/admin/ops/payuni/wp4-preflight"],
     ["POST", "/api/admin/ops/payuni/wp4-session"],
     ["GET", "/billing/plans"],
     ["GET", "/billing/invoices"],
+    ["POST", "/api/admin/ops/payuni/wp4-reconcile"],
   ]);
 });
 
@@ -423,7 +430,25 @@ test("owner-session child performs one bootstrap and two authenticated read-only
   assert.equal(JSON.stringify(ownerSession).includes("celebrate_session"), false);
 });
 
-test("receipt accepts owner-session evidence only after exact lineage is proven", async () => {
+test("fixed reconciliation accepts only the sanitized three-purpose receipt projection", async () => {
+  const requests = [];
+  const accepted = await runReconciliation(safeEnvironment, successfulWp4Fetch(requests));
+  const rejected = await runReconciliation(safeEnvironment, async (url, options) => {
+    requests.push({ url, options });
+    return mockResponse(url, 200, { json: { reconciled: false, status: "RECONCILED" } });
+  });
+
+  assert.deepEqual(accepted, { requests: 1, outcome: "RECONCILED", responseAccepted: true });
+  assert.deepEqual(rejected, { requests: 1, outcome: "RESPONSE_INVALID", responseAccepted: false });
+  assert.deepEqual(requests.map(({ url, options }) => [options.method, new URL(url).pathname]), [
+    ["POST", "/api/admin/ops/payuni/wp4-reconcile"],
+    ["POST", "/api/admin/ops/payuni/wp4-reconcile"],
+  ]);
+  assert.equal(Object.hasOwn(requests[0].options, "body"), false);
+  assert.equal(requests.every(({ options }) => options.redirect === "manual"), true);
+});
+
+test("receipt accepts a failed current-source reconciliation attempt only after exact lineage is proven", async () => {
   const receipt = createInitialReceipt(sha);
   receipt.lineage = {
     deploymentReads: 2,
@@ -438,6 +463,7 @@ test("receipt accepts owner-session evidence only after exact lineage is proven"
   receipt.fixtureSetup = await runFixtureSetup(safeEnvironment, successfulWp4Fetch([]));
   receipt.fixturePreflight = await runFixturePreflight(safeEnvironment, successfulWp4Fetch([]));
   receipt.ownerSession = await runOwnerSession(safeEnvironment, successfulOwnerFetch([]));
+  receipt.reconciliationExecution = { requests: 1, outcome: "RECEIPT_UNAVAILABLE", responseAccepted: false };
   receipt.sideEffects.fixtureSetupAttempts = 1;
   receipt.sideEffects.fixtureRowsCreated = 6;
   receipt.sideEffects.fixtureRowsReused = 0;
@@ -445,12 +471,15 @@ test("receipt accepts owner-session evidence only after exact lineage is proven"
   receipt.sideEffects.sessionCreationOutcome = "CONFIRMED";
   receipt.sideEffects.sessionRowsCreated = 1;
   receipt.sideEffects.sessionTtlSeconds = 900;
+  receipt.sideEffects.providerQueries = null;
+  receipt.sideEffects.reconciliationWrites = null;
   receipt.prerequisites.gaps = [...OWNER_SESSION_COMPLETE_GAPS];
   assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
 
   const unbound = createInitialReceipt(sha);
   unbound.fixturePreflight = receipt.fixturePreflight;
   unbound.ownerSession = receipt.ownerSession;
+  unbound.reconciliationExecution = receipt.reconciliationExecution;
   unbound.sideEffects = { ...receipt.sideEffects };
   unbound.prerequisites.gaps = [...OWNER_SESSION_COMPLETE_GAPS];
   assert.equal(validateReceipt(unbound).errors.includes("CHILD_WITHOUT_LINEAGE"), true);
@@ -466,6 +495,27 @@ test("receipt accepts owner-session evidence only after exact lineage is proven"
     },
   };
   assert.equal(validateReceipt(zeroWriteOverclaim).errors.includes("SESSION_SIDE_EFFECTS"), true);
+});
+
+test("receipt accepts only an exact three-purpose current-source reconciliation projection", async () => {
+  const receipt = createInitialReceipt(sha);
+  receipt.result = "PASS";
+  receipt.failureCategory = "NONE";
+  receipt.diagnosticCategory = "RECONCILIATION_COMPLETE";
+  receipt.lineage = { deploymentReads: 2, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, healthStatus: 200, noRedirect: true };
+  receipt.fixtureSetup = await runFixtureSetup(safeEnvironment, successfulWp4Fetch([]));
+  receipt.fixturePreflight = await runFixturePreflight(safeEnvironment, successfulWp4Fetch([]));
+  receipt.ownerSession = await runOwnerSession(safeEnvironment, successfulOwnerFetch([]));
+  receipt.reconciliationExecution = await runReconciliation(safeEnvironment, successfulWp4Fetch([]));
+  receipt.prerequisites.exactPreviewLineage = true;
+  receipt.prerequisites.gaps = [];
+  receipt.environment = { requiredBindingsPresent: true, payuniSandbox: true, stagingDatabaseMatched: true, productionDetected: false };
+  receipt.purposes = receipt.purposes.map((purpose) => ({ ...purpose, candidateCount: 1, localStatus: "RECONCILED", providerStatus: "RECONCILED", referenceMatched: true, orderMatched: true, amountMatched: true, refundMatched: true, projectionMatched: true, status: "PASS" }));
+  receipt.reconciliation = { callbackConsistency: false, duplicateRejected: false, outOfOrderFailClosed: false, overRefundRejected: false, allPurposesMatched: true };
+  receipt.network.payuniSandbox = true;
+  receipt.sideEffects = { ...receipt.sideEffects, fixtureSetupAttempts: 1, fixtureRowsCreated: 6, fixtureRowsReused: 0, sessionCreationAttempts: 1, sessionCreationOutcome: "CONFIRMED", sessionRowsCreated: 1, sessionTtlSeconds: 900, providerQueries: 3, reconciliationWrites: 3 };
+  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+  assert.equal(validateReceipt({ ...receipt, sideEffects: { ...receipt.sideEffects, providerQueries: 2 } }).errors.includes("RECONCILIATION_SIDE_EFFECTS"), true);
 });
 
 test("an indeterminate child outcome records one bounded attempt with unknown persistence", () => {
