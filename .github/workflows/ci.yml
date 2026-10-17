@@ -7,21 +7,6 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        # Docker Official Images mirror; pinned Linux amd64 PostgreSQL 16 Alpine.
-        image: public.ecr.aws/docker/library/postgres@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: celebratedeal_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres -d celebratedeal_ci"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
@@ -42,9 +27,35 @@ jobs:
       NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
       RT01_D2_DISPOSABLE_DB: "true"
     steps:
-      - name: Bind official mirror to existing disposable PostgreSQL runner tag
-        # Keep existing runner/ancestor contracts using exactly the same image.
-        run: docker tag public.ecr.aws/docker/library/postgres@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551 postgres:16-alpine
+      - name: Start disposable PostgreSQL
+        # Pinned PostgreSQL 16 Alpine. Pull the same digest from the ECR mirror
+        # or Docker Hub so one registry's rate limit cannot fail the job, then
+        # tag it as postgres:16-alpine for the disposable QA runners.
+        shell: bash
+        env:
+          PG_DIGEST: sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551
+        run: |
+          set -euo pipefail
+          pulled=""
+          for attempt in 1 2 3; do
+            for source in "public.ecr.aws/docker/library/postgres@${PG_DIGEST}" "docker.io/library/postgres@${PG_DIGEST}"; do
+              if docker pull --quiet "$source"; then pulled="$source"; break 2; fi
+            done
+            sleep $((attempt * 15))
+          done
+          test -n "$pulled"
+          docker tag "$pulled" postgres:16-alpine
+          docker run --detach --name ci-postgres --publish 5432:5432 \
+            --env POSTGRES_USER=postgres --env POSTGRES_PASSWORD=postgres --env POSTGRES_DB=celebratedeal_ci \
+            postgres:16-alpine
+          # The image's init server listens only on the Unix socket, so a TCP
+          # check waits for the real server.
+          for _ in $(seq 1 60); do
+            if docker exec ci-postgres pg_isready --host 127.0.0.1 --username postgres --dbname celebratedeal_ci >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          docker logs ci-postgres | tail -n 30
+          exit 1
 
       - name: Checkout
         uses: actions/checkout@v4
