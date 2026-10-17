@@ -240,15 +240,6 @@ function queryAmountCents(value: unknown) {
   return wholeUnits * 100;
 }
 
-function firstQueryAmountCents(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    if (!(key in row)) continue;
-    const value = queryAmountCents(row[key]);
-    if (value !== undefined) return value;
-  }
-  return undefined;
-}
-
 function payUniQueryRow(payload: Record<string, unknown>, orderNumber: string) {
   const row = payUniResultRow(payload) ?? payload;
   if (!row || typeof row !== "object") throw new PaymentQueryProviderError("provider_response");
@@ -260,57 +251,31 @@ function payUniQueryRow(payload: Record<string, unknown>, orderNumber: string) {
   const grossAmountCents = queryAmountCents(normalized.TradeAmt);
   const refundStatus = optionalPayloadText(normalized.RefundStatus);
   const tradeStatus = optionalPayloadText(normalized.TradeStatus);
-  if (!providerTradeNo || grossAmountCents === undefined || !refundStatus || !tradeStatus) {
+  if (!providerTradeNo || grossAmountCents === undefined || tradeStatus !== "1"
+    || optionalPayloadText(normalized.DataSource) !== "A"
+    || optionalPayloadText(normalized.PaymentType) !== "1") {
     throw new PaymentQueryProviderError("provider_response");
   }
 
+  // PAYUNi query v2.0: RefundStatus 1/8 are pending, 2 is successful.
+  // CREDIT RefundAmt describes only the last refund; RemainAmt is needed
+  // to determine the cumulative amount without losing earlier refunds.
+  const remainingRefundableAmountCents = queryAmountCents(normalized.RemainAmt);
+  const latestRefundAmountCents = queryAmountCents(normalized.RefundAmt);
+  if (remainingRefundableAmountCents === undefined || remainingRefundableAmountCents > grossAmountCents) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  const refundedAmountCents = grossAmountCents - remainingRefundableAmountCents;
   let status: "paid" | "partially_refunded" | "refunded";
-  let refundedAmountCents: number;
-  if (refundStatus === "0") {
+  if (!refundStatus && refundedAmountCents === 0
+    && (normalized.RefundAmt === undefined || normalized.RefundAmt === "" || latestRefundAmountCents === 0)) {
     status = "paid";
-    refundedAmountCents = 0;
-  } else if (refundStatus === "1") {
-    status = "refunded";
-    refundedAmountCents = grossAmountCents;
   } else if (refundStatus === "2") {
-    status = "partially_refunded";
-    const partialAmount = firstQueryAmountCents(normalized, [
-      "RefundAmt",
-      "RefundAmount",
-      "RefundedAmt",
-      "RefundedAmount",
-      "CloseAmt",
-      "CloseAmount",
-    ]);
-    if (partialAmount === undefined) throw new PaymentQueryProviderError("provider_response");
-    refundedAmountCents = partialAmount;
+    if (latestRefundAmountCents === undefined || latestRefundAmountCents <= 0
+      || latestRefundAmountCents > refundedAmountCents) throw new PaymentQueryProviderError("provider_response");
+    status = remainingRefundableAmountCents === 0 ? "refunded" : "partially_refunded";
   } else {
-    // RefundStatus 8 and future provider values are intentionally not
-    // interpreted. A reconciliation must never promote an ambiguous state.
-    throw new PaymentQueryProviderError("provider_response");
-  }
-
-  if (refundedAmountCents < 0 || refundedAmountCents > grossAmountCents) {
-    throw new PaymentQueryProviderError("provider_response");
-  }
-  if (status === "paid" && tradeStatus !== "1") {
-    throw new PaymentQueryProviderError("provider_response");
-  }
-  if (status === "partially_refunded" && (refundedAmountCents <= 0 || refundedAmountCents >= grossAmountCents)) {
-    throw new PaymentQueryProviderError("provider_response");
-  }
-  if (status === "refunded" && tradeStatus !== "1" && tradeStatus !== "6") {
-    throw new PaymentQueryProviderError("provider_response");
-  }
-
-  const providerRemaining = firstQueryAmountCents(normalized, [
-    "RemainAmt",
-    "RemainingAmt",
-    "RemainAmount",
-    "RemainingAmount",
-  ]);
-  const remainingRefundableAmountCents = grossAmountCents - refundedAmountCents;
-  if (providerRemaining !== undefined && providerRemaining !== remainingRefundableAmountCents) {
+    // Application/processing/cancelled/unknown states never prove a refund.
     throw new PaymentQueryProviderError("provider_response");
   }
 

@@ -1,7 +1,7 @@
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
-import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
+import { classifyPaymentWebhookErrorClass, classifyPaymentWebhookFailure, paymentWebhookErrorStage, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
 import { PaymentWebhookPayload, processPaymentWebhook, type PaymentWebhookExpectedScope } from "@/lib/payment-webhooks";
 
 const WEBHOOK_RETRY_LEASE_MS = 1000 * 60 * 10;
@@ -141,6 +141,8 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
   } catch (error) {
     const status = claimedRetryCount >= event.maxRetries ? "exhausted" : "failed";
     const errorCode = classifyPaymentWebhookFailure(error);
+    const errorClass = classifyPaymentWebhookErrorClass(error);
+    const errorStage = paymentWebhookErrorStage(error);
     const message = paymentWebhookFailureMessage(errorCode);
     const finalized = await db.webhookEvent.updateMany({
       where: { id: event.id, status: "retrying", retryCount: claimedRetryCount },
@@ -164,7 +166,7 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       targetType: "WebhookEvent",
       targetId: event.id,
       before: auditSnapshot(claimedEvent),
-      after: auditSnapshot({ errorCode, status }),
+      after: auditSnapshot({ errorCode, errorClass, errorStage, status }),
     });
     return { status, event: claimedEvent, error: message, errorCode };
   }

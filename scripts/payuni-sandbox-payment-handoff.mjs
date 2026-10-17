@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const SCHEMA_VERSION = "celebratedeal-payuni-payment-handoff/v1";
 const HANDOFF_DIRECTORY_SEGMENTS = [".ai-team", "reports", "payuni-payment-handoff"];
 const SANDBOX_PROVIDER_HOST = "sandbox-api.payuni.com.tw";
+const REFUND_STAGING_HOST = "celebrate-deal-staging.carry-digital-nomad.in.net";
 const REFERENCE = /^[a-f0-9]{12}$/;
 
 function assert(condition, message) {
@@ -79,9 +80,44 @@ async function writePaymentHandoff(receipt, rootDirectory = process.cwd()) {
   return receipt;
 }
 
+/** Bind the pending receipt to one caller-specified transaction before any write.
+ * The runtime proof must come from the authenticated deployment, not its URL.
+ * Raw identifiers remain in memory and are never returned as evidence.
+ */
+function assertPendingRefundTarget({ receipt, target, runtime, now = new Date() }) {
+  assert(receipt?.schemaVersion === SCHEMA_VERSION && receipt.status === "PENDING_REFUND", "退款交接狀態無效。");
+  assert(receipt.environment === "sandbox" && receipt.providerHost === SANDBOX_PROVIDER_HOST, "退款交接 provider 綁定無效。");
+  assert(runtime?.environment === "preview" && runtime.payuniEnvironment === "sandbox"
+    && runtime.providerHost === SANDBOX_PROVIDER_HOST && runtime.appHost === REFUND_STAGING_HOST
+    && runtime.appHost === receipt.appHost
+    && /^[a-f0-9]{40}$/.test(runtime.sourceCommit ?? ""), "退款交接必須綁定已驗證的非 Production 部署。");
+  const completedAt = new Date(receipt.completedAt).getTime();
+  const startedAt = new Date(receipt.startedAt).getTime();
+  const current = now.getTime();
+  assert(Number.isFinite(current) && Number.isFinite(completedAt) && Number.isFinite(startedAt)
+    && startedAt <= completedAt && completedAt <= current && current - completedAt <= 24 * 60 * 60 * 1000,
+  "退款交接已過期或時間無效。");
+  assert(target?.vendorId && target.vendorId === runtime.vendorId
+    && target.providerName === "payuni" && target.status === "paid"
+    && target.refundedAmountCents === 0, "指定交易不符合租戶或退款條件。");
+  assert(Number.isSafeInteger(receipt.amount) && receipt.amount > 0
+    && Number.isSafeInteger(receipt.amount * 100) && target.grossAmountCents === receipt.amount * 100,
+  "指定交易金額與交接不一致。");
+  for (const [expected, value] of [
+    [receipt.transactionRef, target.id], [receipt.orderRef, target.orderNumber], [receipt.tradeRef, target.providerTradeNo],
+  ]) {
+    assert(REFERENCE.test(String(expected)) && reference(value) === expected, "指定交易與交接參照不一致。");
+  }
+  for (const check of ["browserCheckout", "paymentCallbackMatched", "providerReconciliation"]) {
+    assert(receipt.checks?.[check] === "passed", "退款交接缺少付款驗證。");
+  }
+  return Object.freeze({ transactionRef: receipt.transactionRef, sourceCommit: runtime.sourceCommit, amountCents: target.grossAmountCents });
+}
+
 export {
   SCHEMA_VERSION,
   createPendingRefundHandoff,
   reference,
   writePaymentHandoff,
+  assertPendingRefundTarget,
 };

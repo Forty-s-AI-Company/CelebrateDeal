@@ -1,0 +1,95 @@
+{
+  "goal_id": "remaining-capabilities-20261005",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "task_id": "q1-exact-pending-refund",
+  "purpose": "Protected-master runner infrastructure bootstrap; Q1 feature delivery remains separate and BLOCKED pending actual exact original-transaction Sandbox proof",
+  "full_scope": [
+    "F1",
+    "F2",
+    "F3",
+    "Q1",
+    "Q2",
+    "A1",
+    "E1"
+  ],
+  "application_source_changed": false,
+  "schema_or_migrations_changed": false,
+  "origin_reviewed_source": "aebbd000b310e41bcf528265b7b2aa893d664903",
+  "origin_review": "Q1 review8 complete; transplant integration review not executed and no new quota assumed",
+  "copied_exact_git_blobs": [
+    {
+      "path": ".github/workflows/secure-staging-validation.yml",
+      "git_blob": "2d30a59e2c3149a0cf3c243e334a17067ec100fa",
+      "sha256": "ee85ae8cdb8dcc61b11d4b6911a9366c38fcb2f0c4273899af7ec61353113f03"
+    },
+    {
+      "path": "scripts/mvp-payuni-sandbox-e2e.mjs",
+      "git_blob": "0b01163cb1d0dad36acda3026071c3fa2800c5ff",
+      "sha256": "b34540ed2b42b6848e27c2e55e6723166f82b83ea74584ba9609b1bdf177c5cf"
+    },
+    {
+      "path": "scripts/payuni-sandbox-payment-handoff.mjs",
+      "git_blob": "98e6d67db157629f29049766f1083828bc9a8293",
+      "sha256": "3b25ea6d6ebfbb1ca88a1de979b4144db06d05c2ffec66a15ff2dc88d98d313e"
+    },
+    {
+      "path": "scripts/payuni-sandbox-payment-handoff.test.mjs",
+      "git_blob": "77a4f66f90383235e4a2b1416871d1c614e0b263",
+      "sha256": "f58f208a66cb17bfec47871f8e6ee6ce4ddf7d1981cda990cdf6971cf0f24989"
+    },
+    {
+      "path": "scripts/payuni-sandbox-pending-refund-consumer.mjs",
+      "git_blob": "bf103961bf297bc04572aea43e2565bb7372a91d",
+      "sha256": "d2f46da403f7c2065be4448899c6a19bb4b7db63531561e6cf9a0ae621adf779"
+    },
+    {
+      "path": "scripts/payuni-sandbox-pending-refund-consumer.test.mjs",
+      "git_blob": "8435916a1d29ed9b5ac15c2ce89d3a59d0a456f0",
+      "sha256": "d13dfb5cc1ea4e627f9f195d3df4280aa5c9f5e502fe4091b7a9c511d8f80fc2"
+    },
+    {
+      "path": "scripts/payuni-credit-refund-query-contract.mjs",
+      "git_blob": "8f9f5e3f19403a6699a4b728ad240e4c402b3310",
+      "sha256": "f9d6d9e70a3fcfd67a34f9480bd7da948f7d9990f08fc42766ea8ea979ed6e92"
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.mjs",
+      "git_blob": "3f5d402c1460a818dd89be812fdbe5ec898d77e5",
+      "sha256": "21234aba9bde027239f3a3a9cf801c4fe46c4684c0b382e45e444164cca3129b"
+    },
+    {
+      "path": "scripts/payuni-current-source-refund-qa.mjs",
+      "git_blob": "95ecf26c014fb5addb9dc04eb6226b7dc40b3b74",
+      "sha256": "fc3c0f9c6aa1e9369fbb0fffcbf659ffb8e35ff3adbaf911c570ec76d199e95a"
+    },
+    {
+      "path": "scripts/payuni-current-source-refund-qa.test.mjs",
+      "git_blob": "051c4342402087e717a5bee1d4453e3a30a5672b",
+      "sha256": "6a5fd228e2a04a50e9ec719d4604b19759dbcdefc27374e85ad62411d0b7a536"
+    },
+    {
+      "path": "scripts/secure-staging-workflow-contract.test.mjs",
+      "git_blob": "2b172f4593dfa5a90c6ff553d6e17916b652bf43",
+      "sha256": "66146fa6f2558bf4b99cfd7f28fab36c9c9857b215869386eaa468d5ab9f3aa6"
+    },
+    {
+      "path": "scripts/staging-backup-recovery-source.mjs",
+      "git_blob": "f5b55768435df1f215fcb049fe5202893ea39d2a",
+      "sha256": "5198790fdf6ab6227b692e36bf464a97294a4f1afe7da566f8956def146cad5c"
+    }
+  ],
+  "checks": "PENDING_CURRENT_BOOTSTRAP_SOURCE",
+  "external_payment_refund": "NOT_EXECUTED",
+  "whole_goal_complete": false,
+  "production": "NOT_AUTHORIZED",
+  "copied_exact_git_blobs_apply_to_initial_checkpoint": "c13aec38c08c233d8a217b19c3cb4780d815f9a1",
+  "review9_corrections": {
+    "standalone_consumer_browser_environment": "Fixed using shared minimal OS environment; current CI launcher was already isolated",
+    "affected_files": [
+      "scripts/payuni-sandbox-pending-refund-consumer.mjs",
+      "scripts/payuni-sandbox-pending-refund-consumer.test.mjs"
+    ],
+    "independent_review": "IN_PROGRESS_SAME_AUTHORIZED_REVIEW9",
+    "checks": "PENDING_CURRENT_DELTA"
+  }
+}

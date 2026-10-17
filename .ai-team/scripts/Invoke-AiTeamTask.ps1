@@ -17,26 +17,33 @@ param(
     [string[]]$DeprecatedParameters = @(),
     [string]$IgnoreReason = '',
     [switch]$PlanOnly,
+    [switch]$DisableClaudeCli,
     [switch]$ExecuteNative,
     [string[]]$VerifiedNativeModels = @()
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Invoke-AiTeamProcess.ps1')
+. (Join-Path $PSScriptRoot 'Invoke-ClaudeCliReview.ps1')
 $script:agyDiscoveryProcessStatus = 'NOT_STARTED'
+$runtimeState = @{}
 
 function Write-TaskReceipt([hashtable]$Receipt) {
     $Receipt['normalized_status'] = $Receipt.status
     $Receipt['reviewed'] = $Receipt.status -eq 'REVIEW_COMPLETED'
+    if (-not $Receipt.ContainsKey('completed')) { $Receipt['completed'] = $false }
     if ($script:agyDiscoveryProcessStatus -ne 'NOT_STARTED') {
         # Preserve the bounded process outcome without disclosing AGY output.
         $Receipt['agy_discovery_process_status'] = $script:agyDiscoveryProcessStatus
     }
+    if ($runtimeState -and $runtimeState.ContainsKey('claude_cli_discovery_status')) {
+        $Receipt['claude_cli_discovery_status'] = $runtimeState.claude_cli_discovery_status
+    }
     # A route or CLI exit code never proves which model the host actually used.
-    $Receipt['observed'] = @{model='unknown'; effort='unknown'; source='not_reported'}
+    if (-not $Receipt.ContainsKey('observed')) { $Receipt['observed'] = @{model='unknown'; effort='unknown'; source='not_reported'} }
     if ($Receipt.ContainsKey('route') -and $Receipt.route) {
         $Receipt['requested'] = $Receipt.route.requested
-        $Receipt['resolved'] = $Receipt.route.resolved
+        $Receipt['resolved'] = if ($Receipt.route.ContainsKey('resolved')) { $Receipt.route.resolved } else { @{model='unknown'; effort='unknown'; source='not_resolved'} }
     }
     $Receipt['verification'] = @{kind='local_wrapper'; status=$Receipt.status; source='process_and_schema'}
     if ($DeprecatedParameters.Count -gt 0) {
@@ -102,6 +109,23 @@ function Invoke-RoutingAdapter([hashtable]$Request) {
     return ($result.stdout | ConvertFrom-Json -AsHashtable)
 }
 
+function Find-ClaudeCliTransport([string]$ModelKey) {
+    if ($DisableClaudeCli) { return }
+    if ($runtimeState.ContainsKey('claude_cli') -and $null -ne $runtimeState.claude_cli -and $runtimeState.claude_cli.ContainsKey('available') -and $runtimeState.claude_cli.available -is [bool]) {
+        if (-not $runtimeState.claude_cli.available) { return }
+        if ($runtimeState.claude_cli.ContainsKey('models') -and $runtimeState.claude_cli.models.ContainsKey($ModelKey)) { return }
+    }
+    $cliPolicy = Invoke-RoutingAdapter @{action='claude_cli_config'; config_path=$ConfigPath}
+    if (-not $cliPolicy.enabled -or -not $cliPolicy.models.ContainsKey($ModelKey)) { return }
+    $entry = $cliPolicy.models[$ModelKey]
+    $probe = Invoke-ClaudeCliReview -Prompt 'Return ONLY JSON: {"summary":"Availability probe; no source reviewed","findings":[]}' `
+        -Alias $entry.alias -ObservedPattern $entry.observed_pattern
+    $runtimeState['claude_cli'] = @{available=($probe.status -eq 'SUCCESS'); models=@{}; status=$probe.status}
+    if ($probe.status -eq 'SUCCESS') { $runtimeState.claude_cli.models[$ModelKey] = $probe.observed_model }
+    # Keep probe and transport failure outcomes, without raw provider diagnostics.
+    $runtimeState['claude_cli_discovery_status'] = $probe.status
+}
+
 try {
     # First classify locally. Native-only tasks do not spend quota or start AGY discovery.
     $preview = Invoke-RoutingAdapter @{task=$task; runtime=$runtimeState; team=$Team; config_path=$ConfigPath}
@@ -112,8 +136,8 @@ try {
     $agy = Get-Command agy -ErrorAction SilentlyContinue
     $wantsExternal = $preview.selected_model -in @('gemini_medium','gemini_high','sonnet','opus')
     if (-not $PlanOnly -and $wantsExternal) {
-        # Discovery failures are classified separately from authentication. Any failure
-        # still follows the deterministic Codex fallback; it never fails the task by itself.
+        # Discovery failures remain distinct. Final-review roles cannot silently
+        # substitute a native GPT reviewer when the external provider fails.
         $runtimeState['agy_available'] = $false
         $runtimeState['agy_models'] = @{}
         $runtimeState['discovered_slugs'] = @()
@@ -148,6 +172,12 @@ try {
                 $knownAgyStatuses = @('AUTH_REQUIRED', 'HOST_PERMISSION_BLOCKED', 'MODEL_UNAVAILABLE', 'AGY_RUNTIME_ERROR')
                 $agyDiscoveryStatus = if ($knownAgyStatuses -contains [string]$discovery.status) { [string]$discovery.status } else { 'AGY_RUNTIME_ERROR' }
             }
+        }
+        if ($agyDiscoveryStatus -ne 'DISCOVERY_VERIFIED') {
+            $runtimeState['agy_failure_category'] = $agyDiscoveryStatus
+            Find-ClaudeCliTransport $preview.selected_model
+        } elseif ($preview.selected_model -in @('sonnet','opus') -and -not $runtimeState.agy_models.ContainsKey($preview.selected_model)) {
+            Find-ClaudeCliTransport $preview.selected_model
         }
     }
     # Only external attempts are executed here. Native fallback always returns to the host.
@@ -208,28 +238,50 @@ try {
                        '--model', $decision.model, '--mode', 'plan', '--sandbox', '--disable-slash-commands',
                        '--log-file', $(if ($IsWindows) { 'NUL' } else { '/dev/null' }), '--print-timeout', "${TimeoutSeconds}s")
         if ($decision.reasoning_effort -ne 'model-default') { $arguments += @('--effort', $decision.reasoning_effort) }
-        $result = Invoke-AiTeamProcess -FilePath $agy.Source -ArgumentList $arguments `
-            -StandardInputText ($inputMessage + "`n") `
-            -Profile $decision.role -Model $decision.model -ReasoningEffort $decision.reasoning_effort -MarkAsChild `
-            -FirstOutputTimeoutSeconds $FirstOutputTimeoutSeconds -IdleTimeoutSeconds $IdleTimeoutSeconds `
-            -HardTimeoutSeconds $HardTimeoutSeconds -GracefulShutdownSeconds $GracefulShutdownSeconds -MaxOutputChars 120000 -MaxOutputLines 1000
-        $status = $result.status
-        $review = $null
-        if ($status -eq 'SUCCESS' -and -not $result.stdoutTruncated) {
-            try {
-                $reviewOutput = Get-AiTeamAgyReviewOutput -StreamText $result.stdout -MaxResponseChars $MaxOutputChars
-                $review = Invoke-RoutingAdapter @{action='validate_review'; output=$reviewOutput}
-            }
-            catch { $status = 'INVALID_REVIEW' }
-        } elseif ($status -eq 'SUCCESS') { $status = 'TRUNCATED_REVIEW' }
-        $attempts.Add(@{model=$decision.model; status=$status; exitCode=$result.exitCode})
+        if ($decision.provider -eq 'claude_cli') {
+            $cliPolicy = Invoke-RoutingAdapter @{action='claude_cli_config'; config_path=$ConfigPath}
+            $entry = $cliPolicy.models[$decision.model_key]
+            $runtimeState.claude_cli['attempted_models'] = @($decision.model_key)
+            $result = Invoke-ClaudeCliReview -Prompt $reviewPrompt -Alias $entry.alias `
+                -ObservedPattern $entry.observed_pattern -HardTimeoutSeconds $HardTimeoutSeconds
+            $status = $result.status
+            $review = $null
+            if ($status -eq 'SUCCESS' -and $result.observed_model -eq $decision.model) {
+                try { $review = Invoke-RoutingAdapter @{action='validate_review'; output=$result.review_output} }
+                catch { $status='INVALID_REVIEW' }
+            } elseif ($status -eq 'SUCCESS') { $status='MODEL_UNAVAILABLE' }
+            $result['exitCode'] = $result.exit_code
+        } else {
+            $result = Invoke-AiTeamProcess -FilePath $agy.Source -ArgumentList $arguments `
+                -StandardInputText ($inputMessage + "`n") `
+                -Profile $decision.role -Model $decision.model -ReasoningEffort $decision.reasoning_effort -MarkAsChild `
+                -FirstOutputTimeoutSeconds $FirstOutputTimeoutSeconds -IdleTimeoutSeconds $IdleTimeoutSeconds `
+                -HardTimeoutSeconds $HardTimeoutSeconds -GracefulShutdownSeconds $GracefulShutdownSeconds -MaxOutputChars 120000 -MaxOutputLines 1000
+            $status = $result.status
+            $review = $null
+            if ($status -eq 'SUCCESS' -and -not $result.stdoutTruncated) {
+                try {
+                    $reviewOutput = Get-AiTeamAgyReviewOutput -StreamText $result.stdout -MaxResponseChars $MaxOutputChars
+                    $review = Invoke-RoutingAdapter @{action='validate_review'; output=$reviewOutput}
+                }
+                catch { $status = 'INVALID_REVIEW' }
+            } elseif ($status -eq 'SUCCESS') { $status = 'TRUNCATED_REVIEW' }
+        }
+        $attempts.Add(@{model=$decision.model; provider=$decision.provider; status=$status; exitCode=$result.exitCode})
         if ($null -ne $review) {
-            Write-TaskReceipt @{status='REVIEW_COMPLETED'; finalModel=$decision.model; route=$decision; review=$review; agy_discovery_status=$agyDiscoveryStatus; attempts=@($attempts.ToArray()); accepted=$false}
+            $observed = if ($decision.provider -eq 'claude_cli') { @{model=$result.observed_model; effort='unknown'; source='cli_terminal_model_usage'} } else { @{model='unknown'; effort='unknown'; source='not_reported'} }
+            Write-TaskReceipt @{status='REVIEW_COMPLETED'; finalModel=$decision.model; route=$decision; review=$review; observed=$observed; execution_provider=$decision.provider; agy_discovery_status=$agyDiscoveryStatus; attempts=@($attempts.ToArray()); accepted=$false}
             exit 0
         }
+        if ($decision.provider -eq 'claude_cli') { $runtimeState.claude_cli.available=$false; $runtimeState.claude_cli.status=$status }
+
         # A model gets one attempt. No Gemini -> Gemini or Sonnet -> Opus quota ladder.
         if (-not $runtimeState.ContainsKey('models')) { $runtimeState['models'] = @{} }
         $runtimeState.models[$decision.model_key] = @{failure='cli_failure'}
+        if ($decision.provider -ne 'claude_cli') {
+            $runtimeState['agy_failure_category'] = if ($status -in @('AUTH_REQUIRED','HOST_PERMISSION_BLOCKED','AGY_NOT_INSTALLED','MODEL_UNAVAILABLE','AGY_RUNTIME_ERROR')) { $status } else { 'AGY_RUNTIME_ERROR' }
+        }
+        if ($decision.provider -ne 'claude_cli') { Find-ClaudeCliTransport $decision.model_key }
         $prior = if ($runtimeState.ContainsKey('attempted_models')) { @($runtimeState.attempted_models) } else { @() }
         $runtimeState['attempted_models'] = @($prior) + @($decision.model_key)
     }

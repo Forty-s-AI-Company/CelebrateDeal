@@ -1,0 +1,60 @@
+{
+  "goal_id": "remaining-capabilities-20261005",
+  "task_id": "q1-exact-pending-refund",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "status": "IMPLEMENTED_NOT_DELIVERED",
+  "source_revision": "sha256:1951e1ac2eefecc89eacde5ff17c082b7891867a45db06674bd83bb94bf9abd2",
+  "files": {
+    "scripts/payuni-current-source-refund-qa.mjs": "fc3c0f9c6aa1e9369fbb0fffcbf659ffb8e35ff3adbaf911c570ec76d199e95a",
+    "scripts/payuni-current-source-refund-qa.test.mjs": "6a5fd228e2a04a50e9ec719d4604b19759dbcdefc27374e85ad62411d0b7a536",
+    "scripts/mvp-payuni-sandbox-e2e.mjs": "b34540ed2b42b6848e27c2e55e6723166f82b83ea74584ba9609b1bdf177c5cf",
+    "scripts/mvp-payuni-sandbox-e2e.test.mjs": "fb2d61b640b309b5dbce7f1adff0ec47e1a68d886377eb73a28a9168571c1832",
+    "scripts/payuni-sandbox-pending-refund-consumer.mjs": "d2f46da403f7c2065be4448899c6a19bb4b7db63531561e6cf9a0ae621adf779",
+    "scripts/payuni-sandbox-pending-refund-consumer.test.mjs": "d13dfb5cc1ea4e627f9f195d3df4280aa5c9f5e502fe4091b7a9c511d8f80fc2",
+    "scripts/payuni-sandbox-payment-handoff.mjs": "34a471c3251aabcceb08e4629e9bd4b1a2b7152896580914eb6e3b825191b3d5",
+    "scripts/payuni-sandbox-payment-handoff.test.mjs": "0a7d5326d4dbdee4a6f75ed3eea6a757b648ac143ea8094da71aa1a3c03e0a8f",
+    "scripts/payuni-sandbox-external-qa.mjs": "21234aba9bde027239f3a3a9cf801c4fe46c4684c0b382e45e444164cca3129b",
+    "scripts/payuni-credit-refund-query-contract.mjs": "f9d6d9e70a3fcfd67a34f9480bd7da948f7d9990f08fc42766ea8ea979ed6e92",
+    ".github/workflows/secure-staging-validation.yml": "4351b3ff811e836122f783eb3adb384b50145e6144a7e3394085189efb16e7fe",
+    "scripts/secure-staging-workflow-contract.test.mjs": "ef1486480c05831fff826edc59aaca49b44bd4e1a155626515abbb81823296bb"
+  },
+  "checks": {
+    "unit": 48,
+    "node_tap": 82,
+    "lint": "PASS",
+    "skip": 0
+  },
+  "review6": {
+    "dispatch_used": 6,
+    "authorized": 6,
+    "effective_preset": "gpt-6.1-sol/high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "finding": "MAJOR Chromium environment inheritance",
+    "fix": "explicit static minimal browser environment",
+    "regression": "PASS",
+    "current_revision_independent_review": "NOT_VERIFIED"
+  },
+  "canonical": {
+    "status": "BLOCKED",
+    "blockers": [
+      "finding_unresolved",
+      "independent_review_unverified",
+      "required_check_unverified:actual_sandbox_browser",
+      "required_check_unverified:current_independent_review",
+      "required_check_unverified:exact_head_ci"
+    ],
+    "revision": "sha256:1951e1ac2eefecc89eacde5ff17c082b7891867a45db06674bd83bb94bf9abd2"
+  },
+  "actual_sandbox": "NOT_EXECUTED",
+  "production_operations": false,
+  "secret_values_read_by_agent": false,
+  "remaining": [
+    "independent review of revised runner and CI entry",
+    "exact head CI",
+    "protected runner bootstrap without premature Q1 merge",
+    "canonical alias exact deployment binding and finance/provider injection",
+    "actual same transaction browser/provider proof"
+  ],
+  "scope_removed": []
+}

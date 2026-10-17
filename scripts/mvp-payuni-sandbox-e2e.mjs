@@ -871,7 +871,7 @@ async function parseFetchResponse(response, cookiePrefix, outcomeHeader) {
   };
 }
 
-async function defaultRequest(request) {
+export async function defaultRequest(request) {
   const response = await fetch(request.url, {
     method: "POST",
     headers: request.headers,
@@ -1099,7 +1099,7 @@ export async function checkExistingWp4BuyerPayment(input, dependencies = {}) {
 }
 
 const buyerRetryStatuses = new Set(["PROCESSED", "ALREADY_PROCESSED", "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "EVENT_UNAVAILABLE", "RETRY_REJECTED", "RETRY_FAILED"]);
-const buyerRetryFailures = new Set(["NONE", "UNKNOWN", "scope_missing", "scope_invalid", "scope_mismatch", "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_claim_lost", "processing_failed", "database_transaction_failed", "database_conflict"]);
+const buyerRetryFailures = new Set(["NONE", "UNKNOWN", "scope_missing", "scope_invalid", "scope_mismatch", "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_timeout", "processing_claim_lost", "processing_failed", "database_transaction_failed", "database_conflict"]);
 
 function validBuyerRetryBody(body) {
   if (!exactKeys(body, ["status", "retryAttempts", "failureCode"]) || !buyerRetryStatuses.has(body.status)
@@ -1166,6 +1166,48 @@ export function classifyPayUniConfirmation(text) {
   if (/(?:卡號|card\s*number)/iu.test(text)) return "PAYMENT_VALIDATION_CARD";
   if (/(?:電子郵件|電子信箱|email|e-mail)/iu.test(text)) return "PAYMENT_VALIDATION_EMAIL";
   return "PAYMENT_VALIDATION_FIELD";
+}
+
+/** Prepare the fixed synthetic checkout for the separate failure/retry probe.
+ * This grants one initial browser submission only. It never submits a card,
+ * selects a historical payment, or rebuilds an issued provider transaction.
+ * Credentials and support cookies remain in memory, outside any receipt.
+ */
+export async function prepareIssuedRecoveryCheckout(input, dependencies = {}) {
+  const invocation = validateInvocation(input);
+  if (!invocation.ok || invocation.sourceSha === BUYER_PAYMENT_CHECK_SOURCE_SHA) {
+    throw new Error("ISSUED_RECOVERY_PREPARATION_REJECTED");
+  }
+  const request = dependencies.request ?? defaultRequest;
+  const base = fixedOrigin(invocation.previewHost);
+  const guarded = guardedHeaders(invocation);
+  const sideEffects = { fixturePosts: 0, admissionPosts: 0, checkoutPosts: 0, paymentAttemptPosts: 0 };
+  try {
+    sideEffects.fixturePosts = 1;
+    const fixture = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-fixture"),
+      headers: guarded, body: undefined, outcomeHeader: "x-celebratedeal-wp4-fixture" }));
+    if (!assertFixtureResponse(fixture)) throw new Error();
+    sideEffects.admissionPosts = 1;
+    const admission = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/payments/checkout/admission"),
+      headers: { origin: base, "x-celebratedeal-client": "web", "content-type": "application/json" },
+      body: JSON.stringify({ ...FIXED_FIXTURE, idempotencyKey: fixedCheckoutIdempotencyKey(invocation.sourceSha) }),
+      cookiePrefix: "celebratedeal_checkout_session=" }));
+    if (!assertAdmissionResponse(admission)) throw new Error();
+    sideEffects.checkoutPosts = 1;
+    const checkout = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/payments/checkout"),
+      headers: { origin: base, "x-celebratedeal-client": "web", "content-type": "application/json", cookie: admission.sessionCookie },
+      body: JSON.stringify({ ...FIXED_FIXTURE, idempotencyKey: admission.body.idempotencyKey,
+        admissionToken: admission.body.admissionToken, buyer: SYNTHETIC_BUYER, shipping: SYNTHETIC_SHIPPING }),
+      cookiePrefix: "celebrate_support_" }));
+    if (!assertCheckoutResponse(checkout)) throw new Error();
+    sideEffects.paymentAttemptPosts = 1;
+    const reservation = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-payment-attempt"),
+      headers: guarded, body: undefined }));
+    if (!assertPaymentAttemptResponse(reservation) || reservation.body.status !== "SUBMIT_ALLOWED") throw new Error();
+    return { invocation: { ...invocation, payuniEnv: FIXED_PAYUNI_ENV }, checkout: checkout.body, supportCookie: checkout.supportCookie, sideEffects };
+  } catch {
+    throw new Error("ISSUED_RECOVERY_PREPARATION_REJECTED");
+  }
 }
 
 export async function defaultBrowserSubmit(input, dependencies = {}) {
@@ -1646,7 +1688,7 @@ function assertSubscriptionRefundRequiresReconciliation(response) {
     && response.body.providerWriteAttempted === true;
 }
 
-function fixedBrowserEnvironment() {
+export function fixedBrowserEnvironment() {
   return process.platform === "win32"
     ? { PATH: "C:\\Windows\\System32;C:\\Windows", SystemRoot: "C:\\Windows", TEMP: "C:\\Windows\\Temp", TMP: "C:\\Windows\\Temp" }
     : { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", HOME: "/tmp", TMPDIR: "/tmp" };

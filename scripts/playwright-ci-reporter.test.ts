@@ -26,6 +26,18 @@ function testCase(input: {
 }
 
 describe("SanitizedPlaywrightCiReporter", () => {
+  it("reports only the closed live transport category and retains the failed gate", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "live-transport", outcome: "unexpected", statuses: ["failed"] });
+    Object.assign(current.results[0]!, { errors: [{ message: "Error: PUBLIC_LIVE:ADMISSION:NETWORK:CONNECTION_RESET\nprivate-value" }] });
+    reporter.onTestEnd(current as never);
+    reporter.onEnd({ status: "failed" } as never);
+    expect(output).toContain("class=public_live stage=admission cause=network_connection_reset");
+    expect(output).toContain("playwright status=failed");
+    expect(output).not.toContain("private-value");
+  });
+
   it("reports a closed inbox diagnostic and discards appended worker diagnostics", () => {
     let output = "";
     const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });

@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  prepareIssuedRecoveryCheckout,
   runMvpPayUniPaymentOnly,
   validatePaymentOnlyReceipt,
   writePaymentOnlyReceipt,
@@ -294,6 +295,49 @@ function successfulDependencies(calls = []) {
     },
   };
 }
+
+test("issued recovery preparation reserves one checkout without submitting payment", async () => {
+  const calls = [];
+  const prepared = await prepareIssuedRecoveryCheckout(validInput, successfulDependencies(calls));
+  assert.equal(prepared.checkout.formAction, "https://sandbox-api.payuni.com.tw/api/upp");
+  assert.deepEqual(prepared.sideEffects, { fixturePosts: 1, admissionPosts: 1, checkoutPosts: 1, paymentAttemptPosts: 1 });
+  assert.equal(calls.length, 4);
+  assert.equal(calls.some((call) => call.browserInput), false);
+});
+
+test("issued recovery preparation rejects Production before any request", async () => {
+  const calls = [];
+  await assert.rejects(prepareIssuedRecoveryCheckout({ ...validInput, payuniEnv: "production" }, successfulDependencies(calls)), /ISSUED_RECOVERY_PREPARATION_REJECTED/u);
+  assert.equal(calls.length, 0);
+});
+
+for (const [stage, expectedCalls] of [["/wp4-fixture", 1], ["/checkout/admission", 2], ["/api/payments/checkout", 3], ["/wp4-payment-attempt", 4]]) {
+  test(`issued recovery preparation stops after invalid ${stage}`, async () => {
+    const calls = [];
+    const base = successfulDependencies(calls);
+    await assert.rejects(prepareIssuedRecoveryCheckout(validInput, {
+      request: async (request) => {
+        const result = await base.request(request);
+        return request.url.endsWith(stage) ? response(200, {}) : result;
+      },
+    }), /ISSUED_RECOVERY_PREPARATION_REJECTED/u);
+    assert.equal(calls.length, expectedCalls);
+  });
+}
+
+test("issued recovery preparation cannot resubmit an already paid checkout", async () => {
+  const calls = [];
+  const base = successfulDependencies(calls);
+  await assert.rejects(prepareIssuedRecoveryCheckout(validInput, {
+    request: async (request) => {
+      const result = await base.request(request);
+      return request.url.endsWith("/wp4-payment-attempt")
+        ? response(200, { status: "ALREADY_PAID", reservationCreated: false }) : result;
+    },
+  }), /ISSUED_RECOVERY_PREPARATION_REJECTED/u);
+  assert.equal(calls.length, 4);
+  assert.equal(calls.some((call) => call.browserInput), false);
+});
 
 test("payment-only proves one paid order and duplicate callback without any refund or reconcile", async () => {
   const calls = [];
