@@ -96,7 +96,7 @@ describe("POST /api/form-submissions/verify", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=invalid");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(mocks.verifyFormSubmission).toHaveBeenCalledWith(mocks.db, "not-a-verification-token");
+    expect(mocks.verifyFormSubmission).toHaveBeenCalledWith(mocks.db, "not-a-verification-token", expect.any(Date), null);
     expect(mocks.ensureRegistrationConfirmationDelivery).not.toHaveBeenCalled();
     expect(mocks.ensureLiveReminderDelivery).not.toHaveBeenCalled();
   });
@@ -106,7 +106,7 @@ describe("POST /api/form-submissions/verify", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://app.example.test/verify-registration?status=invalid");
-    expect(mocks.verifyFormSubmission).toHaveBeenCalledWith(mocks.db, token);
+    expect(mocks.verifyFormSubmission).toHaveBeenCalledWith(mocks.db, token, expect.any(Date), null);
     expect(mocks.ensureRegistrationConfirmationDelivery).not.toHaveBeenCalled();
     expect(mocks.ensureLiveReminderDelivery).not.toHaveBeenCalled();
   });

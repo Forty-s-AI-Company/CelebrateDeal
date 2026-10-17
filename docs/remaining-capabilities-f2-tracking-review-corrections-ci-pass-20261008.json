@@ -1,0 +1,221 @@
+{
+  "head": "d5dcae59b1e784a79bceb7144a5d9c3054bd4de2",
+  "run_id": 37646572557,
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "quality",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout",
+          "conclusion": "success"
+        },
+        {
+          "name": "Import fixed Preview source for staging contract tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Setup Node",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Production dependency audit",
+          "conclusion": "success"
+        },
+        {
+          "name": "Repository secret and archive scan",
+          "conclusion": "success"
+        },
+        {
+          "name": "Generate Prisma client",
+          "conclusion": "success"
+        },
+        {
+          "name": "Apply database migrations",
+          "conclusion": "success"
+        },
+        {
+          "name": "Lint",
+          "conclusion": "success"
+        },
+        {
+          "name": "Typecheck",
+          "conclusion": "success"
+        },
+        {
+          "name": "Affiliate portal database boundaries",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native course database boundaries",
+          "conclusion": "success"
+        },
+        {
+          "name": "PayUni deployment environment binding contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Strict production index access",
+          "conclusion": "success"
+        },
+        {
+          "name": "Release readiness contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Readiness truth reconciliation",
+          "conclusion": "success"
+        },
+        {
+          "name": "Staging migration evidence contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Staging migration receipt validation contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Staging release evidence aggregation contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Staging release evidence receipt validation contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Human owner acceptance evidence contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Release evidence bundle contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Current release handoff evidence consistency",
+          "conclusion": "success"
+        },
+        {
+          "name": "External smoke output safety contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "External provider evidence contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Bounded staging Stream resource contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Backup tooling static checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "AI Team Python dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "AI Team Python routing tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "AI Team router and resilience tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "AI Team handoff tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "AI Team bootstrap tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "AI Team tracked snapshot tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Unit tests and coverage thresholds",
+          "conclusion": "success"
+        },
+        {
+          "name": "LINE integration contract",
+          "conclusion": "success"
+        },
+        {
+          "name": "Node TAP contract tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "PostgreSQL concurrency tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Playwright browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "Tracking authoritative events database and browser gate",
+          "conclusion": "success"
+        },
+        {
+          "name": "Funnel development harness browser gate",
+          "conclusion": "success"
+        },
+        {
+          "name": "Subscription recovery database and browser gate",
+          "conclusion": "success"
+        },
+        {
+          "name": "Release browser gates",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build",
+          "conclusion": "success"
+        },
+        {
+          "name": "Controlled production preflight and build",
+          "conclusion": "success"
+        },
+        {
+          "name": "Preflight",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Setup Node",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Checkout",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "latest_mode_candidate_covered": false,
+  "acceptance": "NOT_READY",
+  "real_provider_delivery": "NOT_VERIFIED"
+}
