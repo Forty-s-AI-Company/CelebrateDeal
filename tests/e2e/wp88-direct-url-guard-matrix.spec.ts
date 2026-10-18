@@ -91,6 +91,9 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     authenticated: 1,
     platformFinance: 12,
   });
+  const courseCommunityPage=path.join(workspaceRoot,"src","app","(app)","products","[id]","community","page.tsx");
+  expect(sourceFiles).toContain(courseCommunityPage);
+  expect(guardFor(readFileSync(courseCommunityPage,"utf8"))).toBe("vendorManager");
 
   const suffix = randomUUID().replace(/-/g, "");
   const vendor = await db.vendor.create({
