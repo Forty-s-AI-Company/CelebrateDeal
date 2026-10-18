@@ -335,7 +335,10 @@ export async function applyVerifiedPaymentMethodSetup(
 }
 
 function isActiveReference(value: { status: string; verifiedAt: Date | null; expiresAt: Date | null }, now: Date) {
-  return value.status === "verified" && value.verifiedAt !== null && (value.expiresAt === null || value.expiresAt > now);
+  return value.status === "verified"
+    && value.verifiedAt !== null
+    && value.verifiedAt <= now
+    && (value.expiresAt === null || value.expiresAt > now);
 }
 
 export async function assertPaymentMethodReferenceForQuota(
@@ -364,8 +367,10 @@ export async function assertPaymentMethodReferenceForQuota(
     return;
   }
 
+  // Same predicate as the readiness surfaces: any one currently valid vendor
+  // reference admits quota, so an older expired row can never shadow it.
   const reference = await db.paymentMethodReference.findFirst({
-    where: { vendorId: input.vendorId, scopeType: "VENDOR", status: "verified" },
+    where: verifiedVendorPaymentMethodWhere(input.vendorId, now),
     select: { status: true, verifiedAt: true, expiresAt: true },
   });
   if (!reference || !isActiveReference(reference, now)) throw new PaymentMethodReferenceRequiredError();
