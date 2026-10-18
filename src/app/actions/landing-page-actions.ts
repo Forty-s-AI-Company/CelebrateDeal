@@ -6,6 +6,7 @@ import {
   createLandingPage,
   deleteLandingPage,
   duplicateLandingPage,
+  getLandingPagePublicationStatus,
   LandingPageConflictError,
   LandingPageInputError,
   LandingPageNotFoundError,
@@ -105,6 +106,14 @@ function success(message: string, result: { id: string; revision?: number }) {
   return { status: "success" as const, message, id: result.id, ...(result.revision ? { revision: result.revision } : {}) };
 }
 
+const PUBLICATION_UNKNOWN = { available: false, message: "尚無法確認公開網址狀態，請重新整理後再查看。", projectHref: "/projects", missing: [] };
+
+/** A diagnosis failure must not report a committed write as failed, but it also must not keep a stale status. */
+async function successWithPublication(message: string, result: { id: string; revision?: number }): Promise<LandingPageActionState> {
+  const publication = await getLandingPagePublicationStatus(result.id).catch(() => PUBLICATION_UNKNOWN);
+  return { ...success(`${message}${publication.message}`, result), publication };
+}
+
 /**
  * The page editor uses a single CSRF-protected action. Tenant identity and the
  * selected project are derived again inside each service mutation.
@@ -138,13 +147,13 @@ export async function landingPageAction(
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再發布。" };
       const published = await publishLandingPage(id, expectedRevision);
-      return success(`版本 v${published.version} 已發布。`, published);
+      return successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published);
     }
 
     if (command === "unpublish") {
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再取消發布。" };
-      return success("已取消發布；歷史版本與草稿都仍保留。", await unpublishLandingPage(id, expectedRevision));
+      return successWithPublication("已取消發布；歷史版本與草稿都仍保留。", await unpublishLandingPage(id, expectedRevision));
     }
 
     if (command === "duplicate") {

@@ -1,34 +1,44 @@
-import { funnelOperationsReferencesValid } from "@/lib/funnel-operations";
+import { funnelOperationsReferencesValid, parseFunnelOperations } from "@/lib/funnel-operations";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   parseLandingPageContent,
-  type LandingPageContent,
   type LandingPageFormReference,
   type LandingPageLiveReference,
   type LandingPageRenderContext,
 } from "@/lib/landing-page-content";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
-import { applyFunnelStepPersistenceMutation, parseFunnelStepPages, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
+import { applyFunnelStepPersistenceMutation, parseFunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
 import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
 import { isLiveVideoReady, type LiveVideoReadiness } from "@/lib/live-video-readiness";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import { listFunnelCommerceProducts, publicFunnelCommerceViews, validateFunnelCommerceBindings } from "@/lib/funnel-commerce-service";
+import {
+  invalidWebinarContainer,
+  isWebinarContent as webinarContent,
+  MAX_LANDING_PAGE_SLUG_LENGTH as MAX_SLUG_LENGTH,
+  normalizeLandingPageSlug as pageSlug,
+  PUBLIC_LIVE_STATUSES,
+  publicLandingPageCandidateWhere,
+  publicLiveBindingValid,
+  publishedLandingPageContent,
+  registrationFormIdsInContent,
+  type LandingPageStoredContent,
+  type PublicLandingPageUnavailableReason,
+} from "@/lib/public-landing-page-eligibility";
+import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
+import { canPublishSalesProject } from "@/lib/sales-workspace";
+import { isFunnelDeadlineExpired } from "@/lib/funnel-runtime";
+import { publicFunnelRouteOutcome, representativeFunnelVisitorIds } from "@/lib/public-landing-page-status";
 import type { FunnelCommerceProduct, FunnelCommerceView } from "@/lib/funnel-commerce";
 export type PublicFunnelWebinarResource = {
   form: { id: string; fields: RegistrationFormFieldSpec[]; submitLabel: string; successMessage: string };
   live: { id: string; slug: string; videoId: string; videoTitle: string };
 };
 const videoSelect = { id: true, vendorId: true, title: true, sourceType: true, status: true, cloudflareReadyToStream: true, cloudflareLiveInputUid: true, liveInputStatus: true } as const;
-function webinarContent(content: LandingPageStoredContent) {
-  return "flow" in content && content.flow?.goal === "webinar";
-}
-function invalidWebinarContainer(content: LandingPageStoredContent) {
-  return webinarContent(content) && !("pages" in content);
-}
 function completeWebinarSteps(content: LandingPageStoredContent) {
   const steps = "flow" in content ? content.flow?.steps : undefined;
   return Boolean(steps && ["webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page"].every((type) => steps.filter((step) => step.type === type).length === 1));
@@ -40,15 +50,24 @@ function webinarResource(form: FormRecord | undefined, live: LiveRecord | null, 
   return { form: { id: form.id, fields: fields.data, submitLabel: form.submitLabel || "送出報名", successMessage: form.successMessage || "已收到報名，請留意確認信。" }, live: { id: live.id, slug: live.slug, videoId: live.videoId, videoTitle: live.video.title } };
 }
 const MAX_NAME_LENGTH = 160;
-const MAX_SLUG_LENGTH = 100;
 const MAX_IDENTIFIER_LENGTH = 100;
-const PUBLIC_LIVE_STATUSES = new Set(["scheduled", "live", "ended"]);
 
 export type LandingPageActionState = {
   status: "success" | "error";
   message: string;
   id?: string;
   revision?: number;
+  publication?: LandingPagePublicationStatus;
+};
+
+/** Merchant-only diagnosis of the public URL; it never changes a public or project publication decision. */
+export type LandingPagePublicationStatus = {
+  available: boolean;
+  message: string;
+  projectHref: string;
+  missing: Array<{ label: string; href: string }>;
+  /** Problems that do not make the public URL 404 (for example a single broken step). */
+  warnings?: Array<{ label: string; href: string }>;
 };
 
 export type LandingPageDraftInput = {
@@ -110,8 +129,8 @@ export type PublicLandingPage = {
   consultationEvents?: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }>;
 };
 
-/** Existing Puck documents remain readable while new Funnel documents roll out additively. */
-export type LandingPageStoredContent = LandingPageContent | PageDocument | FunnelStepPages;
+export type { LandingPageStoredContent };
+export { registrationFormIdsInContent };
 
 export class LandingPageInputError extends Error {
   constructor(message = "landing_page_invalid_input") {
@@ -155,13 +174,6 @@ function identifier(value: string | null | undefined) {
   return trimmed && trimmed.length <= MAX_IDENTIFIER_LENGTH && /^[A-Za-z0-9_-]+$/u.test(trimmed) ? trimmed : null;
 }
 
-function pageSlug(value: string) {
-  const trimmed = value.trim().toLowerCase();
-  return trimmed.length > 0 && trimmed.length <= MAX_SLUG_LENGTH && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(trimmed)
-    ? trimmed
-    : null;
-}
-
 function pageName(value: string) {
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= MAX_NAME_LENGTH ? trimmed : null;
@@ -180,23 +192,6 @@ function inputContent(value: unknown) {
     if (!content) throw new LandingPageInputError();
     if (invalidWebinarContainer(content)) throw new LandingPageInputError("landing_page_webinar_steps_required");
   return content;
-}
-
-/** Finds every validated registration action without relying on editor component details. */
-export function registrationFormIdsInContent(content: LandingPageStoredContent) {
-  const ids = new Set<string>();
-  const visit = (value: unknown) => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-    const object = value as Record<string, unknown>;
-    if (object.type === "registration" && typeof object.formId === "string") ids.add(object.formId);
-    Object.values(object).forEach(visit);
-  };
-  visit(content);
-  return ids;
 }
 
 function publicSubmissionForm(forms: FormRecord[], formId: string | null) {
@@ -615,17 +610,12 @@ export async function duplicateLandingPage(pageId: string) {
  * Resolves a globally unique public slug. The ambiguity check additionally
  * fails closed for legacy databases that have not enforced the unique index.
  */
-// eslint-disable-next-line complexity
-export async function loadPublicLandingPage(slug: string): Promise<PublicLandingPage | null> {
+export async function loadPublicLandingPage(slug: string, onUnavailable?: (reason: PublicLandingPageUnavailableReason) => void): Promise<PublicLandingPage | null> {
+  const unavailable = (reason: PublicLandingPageUnavailableReason) => { onUnavailable?.(reason); return null; };
   const safeSlug = pageSlug(slug);
-  if (!safeSlug) return null;
+  if (!safeSlug) return unavailable("invalid_slug");
   const candidates = await db().landingPage.findMany({
-    where: {
-      slug: safeSlug,
-      status: "published",
-      publishedVersionId: { not: null },
-      project: { is: { status: "published", publishedAt: { not: null } } },
-    },
+    where: publicLandingPageCandidateWhere(safeSlug),
     take: 2,
     select: {
       id: true,
@@ -661,24 +651,18 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
       },
     },
   });
-  if (candidates.length !== 1) return null;
-  const page = candidates[0];
-  if (!page) return null;
-  const version = page.publishedVersion;
-  if (!version || !page.publishedAt || version.vendorId !== page.vendorId || version.pageId !== page.id) return null;
-  const content = parseFunnelStepPages(version.content) ?? parsePageDocument(version.content) ?? parseLandingPageContent(version.content);
-  if (!content || invalidWebinarContainer(content)) return null;
-
-  const formIds = registrationFormIdsInContent(content);
-  if (version.formId) formIds.add(version.formId);
-  const ids = [...formIds];
+  const page = candidates.length === 1 ? candidates[0] : undefined;
+  if (!page) return unavailable("not_unique");
+  const published = publishedLandingPageContent(page);
+  if ("reason" in published) return unavailable(published.reason);
+  const { version, publishedAt, content, formIds: ids } = published;
   const forms = ids.length === 0 ? [] : await db().registrationForm.findMany({
     where: { id: { in: ids }, vendorId: page.vendorId, projectId: page.projectId, isActive: true },
     select: { id: true, slug: true, name: true, fields: true, submitLabel: true, successMessage: true },
   });
-  if (forms.length !== ids.length) return null;
+  if (forms.length !== ids.length) return unavailable("form_unavailable");
   const live = version.live;
-  if (version.liveId && (!live || live.vendorId !== page.vendorId || live.projectId !== page.projectId || !PUBLIC_LIVE_STATUSES.has(live.status) || !live.formId || ids.length === 0 || ids.some((formId) => formId !== live.formId))) return null;
+  if (!publicLiveBindingValid(page, version.liveId, live, ids)) return unavailable("live_unavailable");
 
   const webinar = webinarContent(content) && completeWebinarSteps(content) && !("pages" in content && hasDirectWebinarVideo(content))
     ? webinarResource(forms.find((form) => form.id === version.formId), live, page.vendorId)
@@ -694,8 +678,119 @@ export async function loadPublicLandingPage(slug: string): Promise<PublicLanding
     slug: page.slug,
     content,
     context: { pageId: page.id, forms: forms.map(toFormReference), ...(live ? { live: toLiveReference(live) } : {}) },
-    publishedAt: page.publishedAt,
+    publishedAt,
     ...(Object.keys(commerceByPageId).length > 0 ? { commerceByPageId } : {}),
     ...(consultationEvents.length > 0 ? { consultationEvents } : {}),
   };
+}
+
+const UNAVAILABLE_REASON_MESSAGES: Record<PublicLandingPageUnavailableReason, string> = {
+  invalid_slug: "公開網址格式不正確。",
+  not_unique: "找不到唯一可公開的 Funnel 版本；請確認 Funnel 與專案發布狀態。",
+  version_mismatch: "Funnel 發布版本不存在或不一致，請重新發布。",
+  invalid_content: "已發布版本的頁面內容格式無效，請修復後重新發布。",
+  form_unavailable: "已發布版本的報名表不存在、已停用或不屬於此專案。",
+  live_unavailable: "已發布版本的直播不可公開，或直播與報名表的專案綁定不一致。",
+};
+
+function hasBookableAvailability(consultations: Array<{ weeklySchedule: unknown }>) {
+  return consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const ranges = (entry as { ranges?: unknown }).ranges;
+    return Array.isArray(ranges) && ranges.some((range) => typeof range === "string" && range.length > 0);
+  }));
+}
+
+/**
+ * Explains to the signed-in merchant why their public URL does or does not
+ * open. Scope comes from the authenticated vendor and selected project; the
+ * anonymous `/lp` responses never carry any of these reasons. The project
+ * checks are a read-only mirror of `publishSalesProjectAction` and never
+ * relax its verified payment method requirement.
+ */
+export async function getLandingPagePublicationStatus(pageId: string): Promise<LandingPagePublicationStatus> {
+  const scope = await editorProject();
+  const id = identifier(pageId);
+  if (!id) throw new LandingPageNotFoundError();
+  const page = await db().landingPage.findFirst({
+    where: { id, vendorId: scope.vendorId, projectId: scope.projectId },
+    select: { id: true, slug: true, status: true, operations: true },
+  });
+  if (!page) throw new LandingPageNotFoundError();
+  const projectHref = `/projects/${encodeURIComponent(scope.projectId)}`;
+  const project = await db().salesProject.findFirst({
+    where: { id: scope.projectId, vendorId: scope.vendorId },
+    select: { status: true, publishedAt: true, primaryFlow: true },
+  });
+  if (!project) return { available: false, message: "所屬專案不存在，公開網址目前無法開啟。", projectHref, missing: [] };
+  if (project.status !== "published" || !project.publishedAt) {
+    const now = new Date();
+    const [pricedProducts, forms, lives, consultations, paymentMethods] = await Promise.all([
+      db().salesProjectProduct.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId, product: { isActive: true, priceCents: { gt: 0 } } } }),
+      db().registrationForm.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true } }),
+      db().live.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId } }),
+      db().consultationEvent.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { weeklySchedule: true } }),
+      db().paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(scope.vendorId, now) }),
+    ]);
+    const hasAvailability = hasBookableAvailability(consultations);
+    const missing: LandingPagePublicationStatus["missing"] = [];
+    if (!pricedProducts) missing.push({ label: "尚未連結啟用且價格大於 0 的商品", href: "/products" });
+    if (!forms) missing.push({ label: "尚未建立啟用的報名表", href: "/forms" });
+    if (!paymentMethods) missing.push({ label: "尚無有效且已驗證的商家付款方式", href: "/billing/payment-methods" });
+    if (project.primaryFlow === "live" && !lives) missing.push({ label: "尚未建立直播場次", href: "/lives" });
+    if (project.primaryFlow === "consultation") {
+      if (!consultations.length) missing.push({ label: "尚未建立啟用的諮詢服務", href: "/consultations" });
+      if (!hasAvailability) missing.push({ label: "尚未設定可預約時間", href: "/consultations" });
+    }
+    const ready = canPublishSalesProject(project.primaryFlow, {
+      exists: true,
+      hasLinkedProduct: pricedProducts > 0,
+      hasPricedProduct: pricedProducts > 0,
+      hasFunnelTemplate: forms > 0,
+      hasLiveSession: lives > 0,
+      hasConsultationService: consultations.length > 0,
+      hasAvailability,
+      hasPaymentMethod: paymentMethods > 0,
+      hasPreviewableFlow: true,
+      isPublished: false,
+    });
+    const message = ready
+      ? "專案尚未發布，公開網址目前無法開啟。發布條件已齊備，請到專案頁發布。"
+      : "專案尚未發布，公開網址目前無法開啟。請先補齊下列項目，再到專案頁發布。";
+    return { available: false, message, projectHref, missing };
+  }
+  if (page.status !== "published") return { available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
+  let reason: PublicLandingPageUnavailableReason | null = null;
+  const publicPage = await loadPublicLandingPage(page.slug, (value) => { reason = value; });
+  if (!publicPage) {
+    return { available: false, message: reason ? UNAVAILABLE_REASON_MESSAGES[reason] : "公開頁目前無法開啟，請檢查發布資源。", projectHref, missing: [] };
+  }
+  if (publicPage.id !== page.id) return { available: false, message: "公開網址與目前頁面的發布版本不一致，請確認網址與發布版本。", projectHref, missing: [] };
+  if (!("pages" in publicPage.content)) return { available: true, message: "專案與 Funnel 均已發布，公開頁目前可開啟。", projectHref, missing: [] };
+  const steps = publicPage.content;
+  const operationsHref = `/landing-pages/${encodeURIComponent(page.id)}/operations`;
+  const operations = parseFunnelOperations(page.operations);
+  // Unparseable operations make every public step 404 at runtime.
+  if (!operations) {
+    return { available: false, message: "Funnel 的 A/B 或截止設定無效，公開網址會回傳 404；請到 Funnel 管理修正。", projectHref, missing: [{ label: "檢查 Funnel 管理設定", href: operationsHref }] };
+  }
+  // `available` reflects only what the public root URL actually answers, for
+  // a deterministic visitor in every A/B arm, following a deadline redirect.
+  const rootWorks = representativeFunnelVisitorIds(page.id, page.operations).every((visitorId) => {
+    const root = publicFunnelRouteOutcome({ pageId: page.id, content: steps, operations: page.operations, visitorId });
+    if (root.status === 404) return false;
+    return !root.redirectPath || publicFunnelRouteOutcome({ pageId: page.id, content: steps, operations: page.operations, stepPath: root.redirectPath, visitorId }).status === 200;
+  });
+  if (!rootWorks) {
+    return { available: false, message: "公開網址的第一個步驟目前無法開啟（含 A/B 各組與截止轉向），請檢查 Funnel 步驟與 A/B 設定。", projectHref, missing: [{ label: "檢查 Funnel 管理設定", href: operationsHref }] };
+  }
+  // Non-blocking: the root renders, but settings need attention. (A step
+  // without a page document cannot reach here: parseFunnelStepPages rejects
+  // the whole version, which the loader reports as invalid content.)
+  const warnings: NonNullable<LandingPagePublicationStatus["warnings"]> = [];
+  if (!funnelOperationsReferencesValid(page.operations, steps.flow.steps)) warnings.push({ label: "部分 A/B、截止或報表設定參照已不存在的步驟，請到 Funnel 管理檢查。", href: operationsHref });
+  const message = isFunnelDeadlineExpired(operations)
+    ? "專案與 Funnel 均已發布，但活動已截止；公開頁依設定顯示截止訊息或轉向其他步驟。"
+    : "專案與 Funnel 均已發布，公開頁目前可開啟。";
+  return { available: true, message, projectHref, missing: [], ...(warnings.length ? { warnings } : {}) };
 }
