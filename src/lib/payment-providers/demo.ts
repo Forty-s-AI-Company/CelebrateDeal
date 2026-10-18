@@ -3,6 +3,7 @@ import type { PaymentProviderAdapter } from "@/lib/payment-providers/types";
 
 export const demoPaymentProvider: PaymentProviderAdapter = {
   id: "demo",
+  checkoutSessionPreparation: "local",
   checkoutReadiness() {
     return "local_only";
   },

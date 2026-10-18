@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const credit = vi.hoisted(() => ({ replay: vi.fn() }));
+const recovery = vi.hoisted(() => ({ resume: vi.fn() }));
+vi.mock("@/lib/post-purchase-checkout-recovery", () => ({ resumePostPurchaseCheckout: recovery.resume }));
+vi.mock("@/lib/post-purchase-credit", async importOriginal => {
+  const original = await importOriginal<typeof import("@/lib/post-purchase-credit")>();
+  return { ...original, assertPostPurchaseCreditReplay: credit.replay };
+});
 vi.mock("@/lib/db", () => ({ getDb: () => ({ paymentTransaction: { findUnique } }) }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 
 import { POST } from "@/app/api/payments/checkout/recovery/route";
+import { PostPurchaseUnavailableError } from "@/lib/post-purchase-credit";
 
 const key = "123e4567-e89b-42d3-a456-426614174000";
 
@@ -52,10 +60,63 @@ function pendingTransaction() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  credit.replay.mockResolvedValue({ checkoutAmountCents: 400 });
   findUnique.mockResolvedValue(pendingTransaction());
 });
 
 describe("checkout recovery snapshot", () => {
+  function failedPreparation() {
+    return { ...pendingTransaction(), status: "failed", metadata: {
+      productId: "product-1", postPurchaseCredit: { sourceOrderId: "original" }, postPurchaseSessionState: "unissued",
+    } };
+  }
+  it("re-reads original pending terms after authorized unissued preparation recovery", async () => {
+    findUnique.mockResolvedValueOnce(failedPreparation()).mockResolvedValueOnce(pendingTransaction());
+    recovery.resume.mockResolvedValueOnce(true);
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(recovery.resume).toHaveBeenCalledWith(expect.any(Request), { vendorId: "vendor-1", productId: "product-1", idempotencyKey: key });
+    const body = await response.json();
+    expect(body.priceCents).toBe(1200);
+    expect(JSON.stringify(body)).not.toContain("must-not-leak");
+    expect(credit.replay).toHaveBeenCalled();
+  });
+  it("does not expose failed preparation terms when recovery rejects current buyer rights", async () => {
+    findUnique.mockResolvedValueOnce(failedPreparation());
+    recovery.resume.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Checkout recovery unavailable" });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+  it("does not restore an issued failed transaction without a successful provider recovery decision", async () => {
+    const failed = failedPreparation(); failed.metadata.postPurchaseSessionState = "issued";
+    findUnique.mockResolvedValueOnce(failed);
+    recovery.resume.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(recovery.resume).toHaveBeenCalled();
+  });
+  it("rechecks current buyer upgrade rights before returning immutable pending terms", async () => {
+    const transaction = pendingTransaction();
+    findUnique.mockResolvedValue({ ...transaction, metadata: { ...transaction.metadata, postPurchaseCredit: { sourceOrderId: "original" } },
+      primaryCommerceOrder: { ...transaction.primaryCommerceOrder, totalAmountCents: 400 } });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ priceCents: 400 });
+    expect(credit.replay).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      vendorId: "vendor-1", productId: "product-1", targetOrderId: "order-1",
+    });
+  });
+  it("does not return upgrade terms after grant revocation or source refund", async () => {
+    const transaction = pendingTransaction();
+    findUnique.mockResolvedValue({ ...transaction, metadata: { ...transaction.metadata, postPurchaseCredit: { sourceOrderId: "original" } } });
+    credit.replay.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Checkout recovery unavailable" });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
   it("returns original non-sensitive order terms after catalog edits", async () => {
     const response = await POST(request());
     expect(response.status).toBe(200);

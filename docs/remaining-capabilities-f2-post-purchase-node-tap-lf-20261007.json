@@ -1,0 +1,14 @@
+{
+  "skipped": 0,
+  "tests": 1067,
+  "task_id": "f2-post-purchase-commerce",
+  "historical_git_objects": "read-only alternates",
+  "status": "PASS_BEFORE_BROWSER_REVIEW_CORRECTIONS",
+  "historical_checksums_modified": false,
+  "passed": 1067,
+  "gate": "full_node_tap_lf_mirror",
+  "core_longpaths": true,
+  "source_env_files_read": false,
+  "failed": 0,
+  "goal_id": "remaining-capabilities-20261005"
+}

@@ -1802,6 +1802,8 @@ model CommerceOrder {
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
   electronicInvoice         ElectronicInvoice?
+  postPurchaseCreditsIssued PostPurchaseCredit[] @relation("PostPurchaseCreditSource")
+  postPurchaseCreditReceived PostPurchaseCredit? @relation("PostPurchaseCreditTarget")
   trackingDeliveries        TrackingDelivery[]
 
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
@@ -2105,12 +2107,51 @@ model BuyerSupportOrderGrant {
   order        CommerceOrder      @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
   casesCreated SupportCase[]      @relation("SupportCaseCreatedByBuyer")
   events       SupportCaseEvent[] @relation("SupportCaseEventBuyerActor")
+  postPurchaseCredits PostPurchaseCredit[]
 
   @@unique([vendorId, orderId])
   @@unique([vendorId, id])
   @@unique([vendorId, orderId, id])
   @@index([vendorId, orderId])
   @@index([expiresAt, revokedAt])
+}
+
+/// A single active immutable upgrade credit per original paid order. Its own
+/// target order retains the real provider amount; original paid money is never
+/// copied. A credit whose target payment ended unpaid is released (kept as
+/// history, never delivered or refunded) so the source can be quoted again.
+/// Usable only within 24h of the source's paidAt; when the target is paid the
+/// credit is superseded and the source's delivery is revoked (replace).
+model PostPurchaseCredit {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  sourceOrderId       String
+  targetOrderId       String
+  buyerGrantId        String
+  sourceProductId     String
+  targetProductId     String
+  kind                String
+  currency            String
+  creditAmountCents   Int
+  offerDiscountCents  Int
+  targetPriceCents    Int
+  checkoutAmountCents Int
+  createdAt           DateTime @default(now())
+  invalidatedAt       DateTime?
+  releasedAt          DateTime?
+  supersededAt        DateTime?
+
+  sourceOrder CommerceOrder @relation("PostPurchaseCreditSource", fields: [vendorId, sourceOrderId], references: [vendorId, id], onDelete: Restrict)
+  targetOrder CommerceOrder @relation("PostPurchaseCreditTarget", fields: [vendorId, targetOrderId], references: [vendorId, id], onDelete: Restrict)
+  buyerGrant BuyerSupportOrderGrant @relation(fields: [vendorId, sourceOrderId, buyerGrantId], references: [vendorId, orderId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  // Migration 20261017120000_post_purchase_credit_release also adds the
+  // partial unique index "PostPurchaseCredit_vendorId_sourceOrderId_active_key"
+  // on (vendorId, sourceOrderId) WHERE "releasedAt" IS NULL, which Prisma
+  // cannot model: at most one unreleased credit per source order.
+  @@index([vendorId, sourceOrderId])
+  @@unique([vendorId, targetOrderId])
 }
 
 /// Merchant-to-finance refund request. It never represents a provider refund;

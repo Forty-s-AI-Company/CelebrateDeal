@@ -10,6 +10,9 @@ import {
   clearCheckoutRecoveryRecord,
   readCheckoutIdempotencyKey,
   readCheckoutRecoveryRecord,
+  saveCheckoutRecoveryRecord,
+  checkoutIdempotencyStorageKey,
+  type CheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
 
 type Recovery = typeof CommerceCheckoutRecoveryResponseSchema._output;
@@ -51,10 +54,12 @@ export function CommerceCheckoutEntry({
   current,
   externalCheckoutUrl,
   summary,
+  recoveryRecord,
 }: {
   current?: CommerceCheckoutFormProps;
   externalCheckoutUrl?: string;
   summary?: Summary;
+  recoveryRecord?: CheckoutRecoveryRecord;
 }) {
   // Defer mutable catalog display until the pending-order lookup finishes.
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -81,7 +86,15 @@ export function CommerceCheckoutEntry({
     async function load() {
       let record;
       try {
-        record = readCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
+        if (recoveryRecord) {
+          // The server has authorized this exact order using both browser
+          // grants. Storage only carries its identity to the existing form.
+          window.sessionStorage.setItem(checkoutIdempotencyStorageKey(recoveryRecord.vendorId, recoveryRecord.productId), recoveryRecord.idempotencyKey);
+          saveCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname, recoveryRecord);
+          saveCheckoutRecoveryRecord(window.sessionStorage,
+            `/checkout/${encodeURIComponent(recoveryRecord.vendorId)}/${encodeURIComponent(recoveryRecord.productId)}`, recoveryRecord);
+        }
+        record = recoveryRecord ?? readCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
         if (record && readCheckoutIdempotencyKey(window.sessionStorage, record.vendorId, record.productId) !== record.idempotencyKey) {
           record = null;
         }
@@ -119,7 +132,7 @@ export function CommerceCheckoutEntry({
     }
     void load();
     return () => { cancelled = true; };
-  }, [attempt, current]);
+  }, [attempt, current, recoveryRecord]);
 
   const terms = state.kind === "recovered" ? state.terms : state.kind === "current" ? current : undefined;
   const form = <CheckoutContent state={state} current={current} externalCheckoutUrl={externalCheckoutUrl} retry={() => setAttempt((value) => value + 1)} startNewCheckout={startNewCheckout} />;

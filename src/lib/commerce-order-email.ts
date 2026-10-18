@@ -27,9 +27,15 @@ export async function ensureCommerceOrderPaidDelivery(
       shippingEncryptedEnvelope: true,
       items: { orderBy: { lineIndex: "asc" }, select: { productName: true } },
       vendor: { select: { name: true, senderName: true, supportEmail: true, contactUrl: true } },
+      postPurchaseCreditReceived: { select: { releasedAt: true, invalidatedAt: true } },
     },
   });
   if (!order) return { status: "not_applicable" as const };
+  // A post-purchase target paid after its credit was released or invalidated
+  // delivers nothing; the merchant review flag replaces the receipt that would
+  // tell the buyer to open their delivery.
+  const credit = order.postPurchaseCreditReceived;
+  if (credit && (credit.releasedAt || credit.invalidatedAt)) return { status: "post_purchase_manual_review" as const };
 
   let stage: PaymentWebhookStage = "PAID_DELIVERY_DECRYPT";
   try {
