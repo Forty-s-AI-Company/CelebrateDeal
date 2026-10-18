@@ -1,18 +1,38 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import PoliciesPage from "./page";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import PoliciesPage, { revalidate } from "./page";
+import { policyCenterPublication } from "@/lib/public-policy-content";
 
 describe("/policies route", () => {
-  it("renders the public policy center and its human acceptance boundary", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("offers the active policy version and help links without internal review data", () => {
+    vi.useFakeTimers({ now: new Date("2026-10-18T00:00:00+08:00") });
     const html = renderToStaticMarkup(<PoliciesPage />);
 
+    expect(revalidate).toBe(3600);
     expect(html).toContain("政策與協助中心");
-    expect(html).toContain("DRAFT — HUMAN OWNER ACCEPTANCE REQUIRED");
-    expect(html).toContain('href="/policies/terms"');
-    expect(html).toContain('href="/policies/privacy"');
-    expect(html).toContain('href="/policies/refunds"');
-    expect(html).toContain('href="/support"');
-    expect(html).toContain('href="/merchant-onboarding"');
-    expect(html).toContain("AI 不代替法律、財務、客服或 release 簽核");
+    expect(html).not.toContain("查看目前生效的政策");
+    expect(html).toContain(`預定政策版本 ${policyCenterPublication.version}`);
+    expect(html).toContain(`預定生效日為 ${policyCenterPublication.effectiveDateLabel}`);
+    expect(html).toContain("避免倒填生效");
+    for (const href of ["/policies/terms", "/policies/privacy", "/policies/refunds", "/support", "/merchant-onboarding"]) {
+      expect(html).toContain(`href="${href}"`);
+    }
+    expect(html).toContain("退款進度");
+    for (const internal of ["DRAFT", "HUMAN OWNER", "P0", "P1", "P2", "acceptance receipt", "rollback"]) {
+      expect(html).not.toContain(internal);
+    }
+  });
+
+  it("switches to the effective wording from the Taipei effective date onward", () => {
+    vi.useFakeTimers({ now: new Date("2026-10-31T23:59:59+08:00") });
+    expect(renderToStaticMarkup(<PoliciesPage />)).toContain("預定生效日為");
+
+    vi.setSystemTime(new Date("2026-11-01T00:00:00+08:00"));
+    const html = renderToStaticMarkup(<PoliciesPage />);
+    expect(html).toContain(`本版本已於 ${policyCenterPublication.effectiveDateLabel}生效`);
+    expect(html).not.toContain("預定生效日為");
+    expect(html).not.toContain("預定政策版本");
   });
 });
