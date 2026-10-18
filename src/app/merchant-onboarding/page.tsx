@@ -1,49 +1,92 @@
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import Link from "next/link";
 import { PolicyScopeNotice, PublicPolicyShell } from "@/components/public-policy";
 
 export const metadata: Metadata = {
-  title: "商家 onboarding | CelebrateDeal",
-  description: "CelebrateDeal 商家 onboarding 八階段與 owner handoff 草稿。",
+  title: "商家使用指南 | CelebrateDeal",
+  description: "從建立帳號、設定品牌與付款，到上架商品、舉辦直播與處理退款，了解商家使用 CelebrateDeal 的完整流程。",
 };
 
-const stages = [
-  ["1", "商家／owner 身分與唯一責任", "OWNER ACCEPTANCE REQUIRED"],
-  ["2", "密碼、session、MFA、recovery 與最小權限", "LOCAL EVIDENCE + MANUAL REQUIRED"],
-  ["3", "成員邀請、角色與 active owner", "LOCAL EVIDENCE + MANUAL REQUIRED"],
-  ["4", "品牌與 tracking", "LOCAL EVIDENCE + MANUAL REQUIRED"],
-  ["5", "商品、直播、表單、互動角色與腳本", "LOCAL EVIDENCE + MANUAL REQUIRED"],
-  ["6", "方案與 PayUni 邊界", "LOCAL EVIDENCE + EXTERNAL REQUIRED"],
-  ["7", "支援與退款 SOP handoff", "LOCAL EVIDENCE + OWNER ACCEPTANCE REQUIRED"],
-  ["8", "DNS、條款、隱私、退款政策與正式 owner acceptance", "EXTERNAL + MANUAL REQUIRED"],
-] as const;
+const steps = [
+  {
+    title: "建立帳號並啟用多因子驗證",
+    description: "註冊商家帳號後，請到「安全性」啟用多因子驗證（MFA），並妥善保存復原方式。商家擁有者可在同一頁管理登入密碼與已登入的裝置。",
+    links: [{ href: "/settings/security", label: "前往安全性設定" }],
+  },
+  {
+    title: "邀請成員並設定角色",
+    description: "在「團隊管理」邀請夥伴加入，依工作內容指派角色，只給予需要的權限。",
+    links: [{ href: "/settings/team", label: "前往團隊管理" }],
+  },
+  {
+    title: "設定品牌與追蹤",
+    description: "在「品牌設定」填寫商店名稱、寄件人、聯絡網址、Logo 與主色；在「追蹤設定」可設定 Pixel、GTM 與事件開關。",
+    links: [
+      { href: "/settings/brand", label: "品牌設定" },
+      { href: "/settings/tracking", label: "追蹤設定" },
+    ],
+  },
+  {
+    title: "建立商品與直播活動",
+    description: "先建立商品並確認價格、庫存與交付方式，再建立直播間，把影片、商品與報名表單串在一起。",
+    links: [
+      { href: "/products", label: "商品" },
+      { href: "/lives", label: "直播間" },
+    ],
+  },
+  {
+    title: "選擇方案並設定 PayUni",
+    description: "在「方案」選擇適合的平台方案；平台方案目前不會自動扣款，每月帳單依方案產生。另到「平台服務付款方式」完成 PayUni 付款方式設定。",
+    links: [
+      { href: "/billing/plans", label: "方案" },
+      { href: "/billing/payment-methods", label: "平台服務付款方式" },
+    ],
+  },
+  {
+    title: "了解客服與退款流程",
+    description: "買家的訂單問題會集中在「客服案件」處理，退款需求會依退款政策審核並交給金流處理。需要平台協助時，請使用客服與付款協助頁面的信箱。",
+    links: [
+      { href: "/support-cases", label: "客服案件" },
+      { href: "/policies/refunds", label: "退款政策" },
+      { href: "/support", label: "客服與付款協助" },
+    ],
+  },
+] satisfies readonly { title: string; description: string; links: readonly { href: Route; label: string }[] }[];
 
 export default function MerchantOnboardingPage() {
   return (
     <PublicPolicyShell>
       <section aria-labelledby="onboarding-title" className="mx-auto max-w-4xl">
         <div className="mb-8">
-          <p className="text-sm font-semibold text-primary">商家交接入口</p>
-          <h1 id="onboarding-title" className="mt-2 text-3xl font-bold tracking-tight text-slate-950">商家 onboarding</h1>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">以八階段 checklist 讓商家、平台、客服、財務與 release owner 看見同一份 readiness 邊界。</p>
+          <p className="text-sm font-semibold text-primary">商家入門</p>
+          <h1 id="onboarding-title" className="mt-2 text-3xl font-bold tracking-tight text-slate-950">商家使用指南</h1>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">依照下列六個步驟，從建立帳號到處理客服與退款，完成開始銷售前的準備。</p>
         </div>
         <PolicyScopeNotice />
-        <section className="mt-8 rounded-lg border border-border bg-white p-6 shadow-sm" aria-labelledby="stages-title">
-          <h2 id="stages-title" className="text-lg font-semibold text-slate-950">八階段 readiness</h2>
+        <section className="mt-8 rounded-lg border border-border bg-white p-6 shadow-sm" aria-labelledby="steps-title">
+          <h2 id="steps-title" className="text-lg font-semibold text-slate-950">開始銷售的六個步驟</h2>
           <ol className="mt-4 grid gap-3">
-            {stages.map(([number, title, status]) => (
-              <li key={number} className="flex gap-4 rounded-md border border-border p-4">
-                <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-bold text-primary">{number}</span>
-                <div><h3 className="font-semibold text-slate-950">{title}</h3><p className="mt-1 text-xs font-semibold tracking-wide text-amber-700">{status}</p></div>
+            {steps.map((step, index) => (
+              <li key={step.title} className="flex gap-4 rounded-md border border-border p-4">
+                <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-bold text-primary">{index + 1}</span>
+                <div>
+                  <h3 className="font-semibold text-slate-950">{step.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{step.description}</p>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                    {step.links.map((link) => (
+                      <Link key={link.href} href={link.href} className="font-semibold text-primary hover:underline">{link.label} →</Link>
+                    ))}
+                  </div>
+                </div>
               </li>
             ))}
           </ol>
         </section>
-        <section className="mt-6 rounded-lg border border-border bg-white p-6 shadow-sm" aria-labelledby="handoff-title">
-          <h2 id="handoff-title" className="text-lg font-semibold text-slate-950">交接時應留下的 evidence</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">環境分類、短雜湊參照、已驗證項目、未知／BLOCKED 項目、下一位 owner、唯一安全下一步、授權需求與停止／回滾條件。不得填入姓名、完整 email、密碼、Cookie、Token 或付款資料。</p>
+        <section className="mt-6 rounded-lg border border-border bg-white p-6 shadow-sm" aria-labelledby="help-title">
+          <h2 id="help-title" className="text-lg font-semibold text-slate-950">需要協助？</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">以上頁面需要登入商家帳號才能開啟。設定過程遇到問題，可以查看客服與付款協助，或先閱讀各項政策。</p>
           <div className="mt-4 flex flex-wrap gap-4 text-sm">
-            <Link href="/support" className="font-semibold text-primary hover:underline">客服與事件升級 →</Link>
+            <Link href="/support" className="font-semibold text-primary hover:underline">客服與付款協助 →</Link>
             <Link href="/policies" className="font-semibold text-primary hover:underline">政策與協助中心 →</Link>
           </div>
         </section>

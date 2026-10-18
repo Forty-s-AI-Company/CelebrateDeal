@@ -1,14 +1,18 @@
 import type { Metadata, Route } from "next";
 import Link from "next/link";
 import { PublicPolicyShell, PublicResourceLinks } from "@/components/public-policy";
-import { policyCenterPublication } from "@/lib/public-policy-content";
+import { policyCenterPublication, resolvePolicyStatus } from "@/lib/public-policy-content";
 
 export const metadata: Metadata = {
   title: "政策與協助中心 | CelebrateDeal",
   description: "查看 CelebrateDeal 政策發布狀態、訂單協助與商家使用指南。",
 };
 
+// 生效狀態依台灣時間的日期判斷，每小時重新產生一次。
+export const revalidate = 3600;
+
 export default function PoliciesPage() {
+  const published = resolvePolicyStatus(policyCenterPublication.effectiveDate) === "published";
   const policyLinks = [
     { href: "/policies/terms", title: "使用條款", description: "查看服務、帳號、付款與通知規則。" },
     { href: "/policies/privacy", title: "隱私通知", description: "查看資料用途、共享範圍、保存原則與權利。" },
@@ -24,12 +28,21 @@ export default function PoliciesPage() {
           <p className="text-sm font-semibold text-primary">公開資訊入口</p>
           <h1 id="policies-title" className="mt-2 text-3xl font-bold tracking-tight text-slate-950">政策與協助中心</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-            查看目前生效的政策，或前往訂單、客服與商家使用指南。
+            查看 CelebrateDeal 的政策，或前往訂單、客服與商家使用指南。
           </p>
         </div>
         <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
-          <p className="font-bold">預定政策版本 {policyCenterPublication.version}</p>
-          <p className="mt-1 leading-6">預定生效日為 {policyCenterPublication.effectiveDateLabel}。各政策頁會顯示完整內容與聯絡方式；若公開日期異動，生效日會同步更新，避免倒填生效。</p>
+          {published ? (
+            <>
+              <p className="font-bold">政策版本 {policyCenterPublication.version}</p>
+              <p className="mt-1 leading-6">本版本已於 {policyCenterPublication.effectiveDateLabel}生效。各政策頁會顯示完整內容與聯絡方式。</p>
+            </>
+          ) : (
+            <>
+              <p className="font-bold">預定政策版本 {policyCenterPublication.version}</p>
+              <p className="mt-1 leading-6">預定生效日為 {policyCenterPublication.effectiveDateLabel}。各政策頁會顯示完整內容與聯絡方式；若公開日期異動，生效日會同步更新，避免倒填生效。</p>
+            </>
+          )}
         </div>
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           {policyLinks.map(({ href, title, description }) => (

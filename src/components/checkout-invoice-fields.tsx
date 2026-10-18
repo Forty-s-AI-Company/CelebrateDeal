@@ -51,7 +51,7 @@ export function CheckoutInvoiceFields({ disabled = false }: { disabled?: boolean
     <fieldset className="grid gap-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4" disabled={disabled} onInput={validateCurrentForm}>
       <legend className="px-1 text-lg font-bold text-slate-950">發票需求</legend>
       <p className="text-sm leading-6 text-amber-950">
-        自動電子發票尚未開放。本頁僅收集發票需求，填寫資料或付款成功均不代表已開立；開立方式請洽商家。
+        自動電子發票尚未開放。本頁僅收集發票需求，填寫資料或付款成功均不代表已開立；該筆交易的開立主體會依法開立並提供發票，若未收到或未顯示開立主體，請洽客服協助。
       </p>
       <label className="text-sm font-semibold text-slate-800">發票類型
         <select name="invoiceType" value={type} onChange={(event) => setType(event.target.value as CheckoutInvoiceFieldsValue["type"])} className={inputClass}>

@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PolicyDocument } from "@/components/public-policy";
-import { publicPolicies } from "@/lib/public-policy-content";
+import { publicPolicies, resolvePublicPolicy } from "@/lib/public-policy-content";
 
 // Only the registered policy pages exist; reject unknown routes before streaming.
 export const dynamicParams = false;
+
+// 生效狀態依台灣時間的日期在轉譯時判斷，每小時重新產生一次，生效日過後頁面會自動更新。
+export const revalidate = 3600;
 
 function resolvePolicy(slug: string) {
   return Object.hasOwn(publicPolicies, slug) ? publicPolicies[slug] : undefined;
@@ -24,5 +27,5 @@ export default async function PolicyPage({ params }: { params: Promise<{ slug: s
   const { slug } = await params;
   const policy = resolvePolicy(slug);
   if (!policy) notFound();
-  return <PolicyDocument policy={policy} />;
+  return <PolicyDocument policy={resolvePublicPolicy(policy)} />;
 }

@@ -1,18 +1,23 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import MerchantOnboardingPage from "./page";
+import MerchantOnboardingPage, { metadata } from "./page";
 
 describe("/merchant-onboarding route", () => {
-  it("renders all eight stages and the sanitized handoff contract", () => {
+  it("renders a merchant guide with real steps and no internal release data", () => {
     const html = renderToStaticMarkup(<MerchantOnboardingPage />);
 
-    expect(html).toContain("商家 onboarding");
+    expect(String(metadata.title)).toContain("商家使用指南");
+    expect(html).toContain("商家使用指南");
     expect(html).toContain("目前功能範圍");
-    expect(html).not.toContain("DRAFT — MERCHANT／SUPPORT／FINANCE／LEGAL／RELEASE ACCEPTANCE REQUIRED");
-    for (const stage of ["商家／owner 身分與唯一責任", "方案與 PayUni 邊界", "DNS、條款、隱私、退款政策與正式 owner acceptance"]) {
-      expect(html).toContain(stage);
+    for (const step of ["建立帳號並啟用多因子驗證", "邀請成員並設定角色", "設定品牌與追蹤", "建立商品與直播活動", "選擇方案並設定 PayUni", "了解客服與退款流程"]) {
+      expect(html).toContain(step);
     }
-    expect(html).toContain("不得填入姓名、完整 email、密碼、Cookie、Token 或付款資料");
-    expect(html).toContain('href="/support"');
+    expect(html).toContain("平台方案目前不會自動扣款");
+    for (const href of ["/settings/security", "/settings/team", "/settings/brand", "/settings/tracking", "/products", "/lives", "/billing/plans", "/billing/payment-methods", "/support-cases", "/policies/refunds", "/support", "/policies"]) {
+      expect(html).toContain(`href="${href}"`);
+    }
+    for (const internal of ["owner", "handoff", "草稿", "REQUIRED", "evidence", "release", "DNS"]) {
+      expect(html).not.toContain(internal);
+    }
   });
 });
