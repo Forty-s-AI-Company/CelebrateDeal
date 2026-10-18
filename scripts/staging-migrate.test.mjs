@@ -23,11 +23,23 @@ test("accepts only the fixed staging project over a session connection", () => {
   assert.equal(stagingDatabaseFailureCode(direct.replace(FIXED_STAGING_REF, "aaaaaaaaaaaaaaaaaaaa")), "STAGING_PROJECT_MISMATCH");
   assert.equal(stagingDatabaseFailureCode(pooler.replace(poolerUser, "postgres.aaaaaaaaaaaaaaaaaaaa")), "STAGING_PROJECT_MISMATCH");
   assert.equal(stagingDatabaseFailureCode(url("postgres:synthetic-password@db.production.supabase.co:5432")), "STAGING_DATABASE_PRODUCTION_HOST");
-  assert.equal(stagingDatabaseFailureCode(pooler.replace(":5432/", ":6543/")), "STAGING_DATABASE_PORT_INVALID");
+  // The shared runtime secret uses the pooler transaction port; migrations move to its session port.
+  assert.equal(stagingDatabaseFailureCode(pooler.replace(":5432/", ":6543/")), null);
+  assert.equal(new URL(parseStagingDatabaseUrl(pooler.replace(":5432/", ":6543/")).url).port, "5432");
+  assert.equal(stagingDatabaseFailureCode(direct.replace(":5432/", ":6543/")), "STAGING_DATABASE_PORT_INVALID");
+  assert.equal(stagingDatabaseFailureCode(pooler.replace(":5432/", ":5433/")), "STAGING_DATABASE_PORT_INVALID");
   assert.equal(stagingDatabaseFailureCode(direct.replace("synthetic-password", "")), "STAGING_DATABASE_URL_INVALID");
   assert.equal(stagingDatabaseFailureCode(direct.replace(":5432/postgres", ":5432/other")), "STAGING_DATABASE_URL_INVALID");
   assert.equal(stagingDatabaseFailureCode(undefined), "STAGING_DATABASE_URL_INVALID");
   assert.equal(stagingDatabaseFailureCode("https://example.test"), "STAGING_DATABASE_URL_INVALID");
+});
+
+test("accepts bounded runtime pool hints and drops them from the migration URL", () => {
+  const target = parseStagingDatabaseUrl(withQuery("pgbouncer=true&connection_limit=1&connect_timeout=10&pool_timeout=20&socket_timeout=30&statement_cache_size=0"));
+  assert.equal(target.failure, undefined);
+  const built = new URL(target.url);
+  for (const key of ["pgbouncer", "connection_limit", "connect_timeout", "pool_timeout", "socket_timeout", "statement_cache_size"]) assert.equal(built.searchParams.has(key), false);
+  assert.equal(built.searchParams.get("sslmode"), "require");
 });
 
 test("rejects query parameters that could redirect or reconfigure the connection", () => {
@@ -38,7 +50,11 @@ test("rejects query parameters that could redirect or reconfigure the connection
     "options=-c%20search_path%3Devil": "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED",
     "ho%73t=evil.example": "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED",
     "HOST=evil.example": "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED",
-    "connection_limit=1": "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED",
+    "connection_limit=0": "STAGING_DATABASE_RUNTIME_HINT_INVALID",
+    "connection_limit=101": "STAGING_DATABASE_RUNTIME_HINT_INVALID",
+    "pool_timeout=abc": "STAGING_DATABASE_RUNTIME_HINT_INVALID",
+    "statement_cache_size=-1": "STAGING_DATABASE_RUNTIME_HINT_INVALID",
+    "connection_limit=1&connection_limit=2": "STAGING_DATABASE_QUERY_DUPLICATE",
     "=x": "STAGING_DATABASE_QUERY_KEY_UNSUPPORTED",
     "schema=other": "STAGING_DATABASE_SCHEMA_QUERY_INVALID",
     "schema=": "STAGING_DATABASE_SCHEMA_QUERY_INVALID",
