@@ -41,8 +41,9 @@ export type LearnerNotificationLinkTarget =
 export function parseLearnerNotificationLink(segments: readonly string[] | undefined): LearnerNotificationLinkTarget | null {
   if (!segments || segments.length < 2 || segments.length > 5 || !segments.every(value => Identifier.test(value))) return null;
   const [vendorId, kind, first, second, third] = segments;
+  if (!vendorId) return null;
   if (kind === "notifications" && segments.length === 2) return { vendorId, kind: "notifications" };
-  if (kind === "live" && segments.length === 3) return { vendorId, kind: "live", liveId: first! };
+  if (kind === "live" && segments.length === 3 && first) return { vendorId, kind: "live", liveId: first };
   if (kind !== "learn" || !first) return null;
   if (segments.length === 3) return { vendorId, kind: "course", courseId: first, suffix: "" };
   if (segments.length === 4 && second === "certificate") return { vendorId, kind: "course", courseId: first, suffix: "/certificate" };
