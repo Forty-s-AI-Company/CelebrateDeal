@@ -12,10 +12,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const FIXED_STAGING_REF = "ocbugvgojrunvenozsbx";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MODES = new Set(["status", "deploy"]);
-// Mirrors scripts/staging-migration-apply.mjs, minus the runtime pool hints a
-// migration connection never needs. Every other key (host, hostaddr, port,
-// options, ...) is rejected because Prisma honours it over the URL authority.
-const SAFE_QUERY_KEYS = new Set(["schema", "sslmode", "pgbouncer"]);
+// Mirrors scripts/staging-migration-apply.mjs. Runtime pool hints are accepted
+// within the same bounds (the shared runtime secret carries them) and then
+// dropped, since a migration connection never needs them. Every other key
+// (host, hostaddr, port, options, ...) is rejected because Prisma honours it
+// over the URL authority.
+const RUNTIME_HINTS = Object.freeze({ connection_limit: [1, 100], connect_timeout: [0, 120],
+  pool_timeout: [0, 120], socket_timeout: [0, 120], statement_cache_size: [0, 1000] });
+const SAFE_QUERY_KEYS = new Set(["schema", "sslmode", "pgbouncer", ...Object.keys(RUNTIME_HINTS)]);
+const SUPABASE_TRANSACTION_POOLER_PORT = "6543";
 const SAFE_SSLMODES = new Set(["require", "verify-full"]);
 const SAFE_HOSTNAME = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/u;
 const POOLER_HOST = /^[a-z0-9-]+\.pooler\.supabase\.com$/u;
@@ -48,6 +53,11 @@ export function parseStagingDatabaseUrl(value) {
   if (sslmode !== null && !SAFE_SSLMODES.has(sslmode)) return { failure: "STAGING_DATABASE_SSLMODE_QUERY_INVALID" };
   const pgbouncer = db.searchParams.get("pgbouncer");
   if (pgbouncer !== null && pgbouncer !== "true") return { failure: "STAGING_DATABASE_PGBOUNCER_QUERY_INVALID" };
+  const hintsValid = Object.entries(RUNTIME_HINTS).every(([key, [min, max]]) => {
+    const raw = db.searchParams.get(key);
+    return raw === null || (/^\d{1,4}$/u.test(raw) && Number(raw) >= min && Number(raw) <= max);
+  });
+  if (!hintsValid) return { failure: "STAGING_DATABASE_RUNTIME_HINT_INVALID" };
 
   const user = decode(db.username);
   const password = decode(db.password);
@@ -58,14 +68,20 @@ export function parseStagingDatabaseUrl(value) {
   const direct = host === `db.${FIXED_STAGING_REF}.supabase.co` && user === "postgres";
   const pooler = POOLER_HOST.test(host) && user === `postgres.${FIXED_STAGING_REF}`;
   if (!SAFE_HOSTNAME.test(host) || (!direct && !pooler)) return { failure: "STAGING_PROJECT_MISMATCH" };
-  // Session mode only: Prisma migrations cannot run through the 6543 transaction pooler.
-  if ((db.port || "5432") !== "5432") return { failure: "STAGING_DATABASE_PORT_INVALID" };
+  // Session mode only: Prisma migrations cannot run through the 6543 transaction
+  // pooler. The runtime secret uses it, so a pooler URL on 6543 is moved to the
+  // same host's session port; a direct host on any other port is refused.
+  const port = db.port || "5432";
+  const poolerTransactionPort = pooler && port === SUPABASE_TRANSACTION_POOLER_PORT;
+  if (port !== "5432" && !poolerTransactionPort) return { failure: "STAGING_DATABASE_PORT_INVALID" };
   if (db.pathname !== "/postgres" || !password) return { failure: "STAGING_DATABASE_URL_INVALID" };
 
   const migrationUrl = new URL(value);
   migrationUrl.hostname = host;
-  // Runtime's PgBouncer hint is unnecessary for direct/session migration connections.
+  migrationUrl.port = "5432";
+  // Runtime pool hints and PgBouncer mode are unnecessary for a session migration connection.
   migrationUrl.searchParams.delete("pgbouncer");
+  for (const key of Object.keys(RUNTIME_HINTS)) migrationUrl.searchParams.delete(key);
   // Prisma 6 does not understand verify-full (it falls back to prefer, which
   // can downgrade to plaintext) and an omitted sslmode is prefer: always require TLS.
   migrationUrl.searchParams.set("sslmode", "require");
