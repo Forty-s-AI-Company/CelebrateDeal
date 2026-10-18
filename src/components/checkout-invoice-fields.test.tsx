@@ -14,6 +14,8 @@ describe("CheckoutInvoiceFields", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("自動電子發票尚未開放");
     expect(html).toContain("本頁僅收集發票需求");
+    expect(html).toContain("該筆交易的開立主體會依法開立並提供發票");
+    expect(html).not.toContain("開立方式請洽商家");
     expect(html).toContain("填寫資料或付款成功均不代表已開立");
   });
 
