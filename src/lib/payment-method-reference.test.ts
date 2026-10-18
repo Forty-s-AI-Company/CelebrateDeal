@@ -6,11 +6,24 @@ import {
   PaymentMethodReferenceRequiredError,
   PaymentMethodReferenceValidationError,
   revokePaymentMethodReference,
+  verifiedVendorPaymentMethodWhere,
 } from "./payment-method-reference";
 
 const verifiedAt = new Date("2026-08-07T00:00:00.000Z");
 
 describe("payment method reference contract", () => {
+  it("builds the vendor readiness predicate shared by publish, task panel, dashboard and onboarding", () => {
+    const now = new Date("2026-10-16T12:00:00.000Z");
+    expect(verifiedVendorPaymentMethodWhere("vendor-1", now)).toStrictEqual({
+      vendorId: "vendor-1",
+      scopeType: "VENDOR",
+      membershipId: null,
+      status: "verified",
+      verifiedAt: { not: null, lte: now },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    });
+  });
+
   it("normalizes only opaque provider references and keeps verified time", () => {
     expect(normalizePaymentMethodReference({
       vendorId: "vendor-1",
