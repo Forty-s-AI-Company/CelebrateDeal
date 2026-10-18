@@ -35,6 +35,7 @@ import {
 import { publishSalesProjectAction } from "@/app/actions/sales-workspace-actions";
 import { createFunnelFlow } from "./funnel-flow";
 import { createFunnelStepPages } from "./funnel-step-pages";
+import { defaultFunnelOperations } from "./funnel-operations";
 
 const now = new Date("2026-09-13T00:00:00.000Z");
 const document = { schemaVersion: 1, data: { root: {}, content: [] } };
@@ -266,6 +267,49 @@ describe("merchant publication diagnosis", () => {
     const content = createFunnelStepPages(createFunnelFlow({ id: "flow_available", name: "合成名單", goal: "audience", domain: "audience" })!)!;
     mocks.findMany.mockResolvedValueOnce([page({ publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null } })]);
     await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: true, message: "專案與 Funnel 均已發布，公開頁目前可開啟。" });
+  });
+
+  describe("published Funnel availability", () => {
+    const funnelContent = () => createFunnelStepPages(createFunnelFlow({ id: "flow_warn", name: "合成名單", goal: "audience", domain: "audience" })!)!;
+    function publishedWith(content: ReturnType<typeof funnelContent>, operations: unknown) {
+      database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
+      mocks.findFirst.mockResolvedValue(page({ status: "published", operations }));
+      mocks.findMany.mockResolvedValue([page({ publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null } })]);
+    }
+
+    it("stays available with a warning when a report references a stale step the runtime ignores", async () => {
+      publishedWith(funnelContent(), { ...defaultFunnelOperations(), reports: { stats: { stepId: "ghost_step", days: 30 }, leads: { stepId: "", days: 30 }, sales: { stepId: "", days: 30 } } });
+      const result = await getLandingPagePublicationStatus("page-1");
+      expect(result.available).toBe(true);
+      expect(result.warnings?.map((item) => item.href)).toEqual(["/landing-pages/page-1/operations"]);
+    });
+
+    it("reports a version with a step missing its page as invalid content, as the public loader 404s it", async () => {
+      const content = funnelContent();
+      const later = content.flow.steps.filter((step) => !step.isSystem)[1]!;
+      const pages = { ...content.pages };
+      delete pages[later.id];
+      publishedWith({ ...content, pages }, null);
+      await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "已發布版本的頁面內容格式無效，請修復後重新發布。" });
+    });
+
+    it("is available without warnings for a healthy Funnel", async () => {
+      publishedWith(funnelContent(), null);
+      const result = await getLandingPagePublicationStatus("page-1");
+      expect(result).toMatchObject({ available: true, missing: [] });
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it("is deterministically unavailable when one A/B arm of the entry step would 404", async () => {
+      const content = funnelContent();
+      const control = content.flow.steps.find((step) => !step.isSystem)!;
+      // A variant that points at the system step makes only that arm unavailable at runtime.
+      const system = content.flow.steps.find((step) => step.isSystem)!;
+      publishedWith(content, { ...defaultFunnelOperations(), experiment: { id: "exp-1", status: "running", controlStepId: control.id, variantStepId: system.id, controlWeight: 50, variantWeight: 50, winner: null } });
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: expect.stringContaining("A/B 各組") });
+      }
+    });
   });
 
   it.each(["live", "consultation"])("keeps diagnosis query predicates identical to the real %s publication action", async (primaryFlow) => {

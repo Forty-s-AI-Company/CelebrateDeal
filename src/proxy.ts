@@ -40,7 +40,8 @@ export async function proxy(request: NextRequest): Promise<Response> {
     try {
       const { publicLandingPageStatus } = await import("@/lib/public-landing-page-status");
       if (await publicLandingPageStatus(request.nextUrl.pathname, visitorId) === 404) return publicUnavailable(request.method, 404);
-    } catch {
+    } catch (error) {
+      await reportStatusReadFailure(error);
       return publicUnavailable(request.method, 503);
     }
   }
@@ -63,16 +64,30 @@ export async function proxy(request: NextRequest): Promise<Response> {
 }
 
 /**
- * Only full document GET/HEAD requests for `/lp/{slug}` and
- * `/lp/{slug}/{stepPath}`. Checkout/play subroutes keep their own checks,
- * Server Action POSTs are untouched, and client-router RSC fetches keep the
- * in-page notFound() so prefetching does not add database reads.
+ * GET/HEAD requests for `/lp/{slug}` and `/lp/{slug}/{stepPath}`.
+ * Checkout/play subroutes keep their own checks and Server Action POSTs are
+ * untouched. Next strips Flight headers (`rsc`, `next-router-prefetch`)
+ * before Proxy runs, so client-router RSC navigations and prefetches are
+ * checked exactly like HTML document requests.
  */
 function isPublicDocumentRequest(request: NextRequest) {
   if (request.method !== "GET" && request.method !== "HEAD") return false;
-  if (request.headers.has("rsc") || request.headers.has("next-router-prefetch")) return false;
   const segments = request.nextUrl.pathname.split("/").filter(Boolean);
   return segments.length >= 2 && segments.length <= 3;
+}
+
+/**
+ * Makes a 503 storm diagnosable without PII: only a fixed category/code
+ * reaches Sentry or the log, never the slug, visitor or connection details.
+ * Reporting must never turn the 503 into an unhandled proxy error.
+ */
+async function reportStatusReadFailure(error: unknown) {
+  try {
+    const { captureOperationalError } = await import("@/lib/monitoring");
+    captureOperationalError(error, { source: "public_landing_page", operation: "pre_stream_status", status: "failed" });
+  } catch {
+    // Monitoring is best effort here.
+  }
 }
 
 /** Static anonymous error page: never include the path, a merchant reason or a database error. */

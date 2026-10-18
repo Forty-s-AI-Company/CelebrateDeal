@@ -211,6 +211,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     {publication ? <section aria-label="公開網址狀態" className={`mb-4 rounded-lg border p-3 text-sm text-slate-900 ${publication.available ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
       <p role="status">{publication.message}</p>
       {publication.missing.length ? <ul className="mt-2 list-disc pl-5">{publication.missing.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
+      {publication.warnings?.length ? <ul aria-label="需要注意" className="mt-2 list-disc pl-5 text-amber-900">{publication.warnings.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
       {!publication.available ? <a className="mt-2 inline-block underline" href={publication.projectHref}>前往專案檢查與發布</a> : null}
     </section> : null}
     <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); setDirty(true); }} />

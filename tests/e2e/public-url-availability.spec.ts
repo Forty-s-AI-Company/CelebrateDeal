@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 import { createFunnelFlow } from "../../src/lib/funnel-flow";
 import { createFunnelStepPages } from "../../src/lib/funnel-step-pages";
 import { createLandingPageFixture, type LandingPageFixture } from "../fixtures/landing-page";
@@ -33,6 +34,7 @@ async function publishedPage(slug: string, content: Prisma.InputJsonValue, formI
 }
 
 test.beforeAll(async () => {
+  assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
   fixture = await createLandingPageFixture(db, runKey);
   legacyPageId = await publishedPage(legacySlug, legacyContent, fixture.form.id);
   const funnel = createFunnelStepPages(createFunnelFlow({ id: `flow_${suffix}`, name: "TEST ONLY 名單", goal: "audience", domain: funnelSlug })!)!;

@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LINEAGE_PAYLOAD } from "@/lib/preview-lineage";
 
 const statusCheck = vi.hoisted(() => vi.fn());
+const captureOperationalError = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/public-landing-page-status", () => ({ publicLandingPageStatus: statusCheck }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError }));
 
 import { config, proxy } from "./proxy";
 
@@ -86,16 +88,36 @@ describe("public Funnel HTTP pre-stream status", () => {
     expect(body).not.toContain("synthetic_database_failure");
     expect(body).not.toContain("db.internal");
     expect(body).not.toContain("/lp/example");
+    // Only fixed, PII-free context is reported; the slug and visitor never are.
+    expect(captureOperationalError).toHaveBeenCalledTimes(1);
+    const [, context] = captureOperationalError.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(context).toEqual({ source: "public_landing_page", operation: "pre_stream_status", status: "failed" });
   });
 
-  it("does not read the database for non-public routes, Server Action POSTs or RSC fetches", async () => {
+  it("still answers 503 when monitoring itself fails", async () => {
+    statusCheck.mockRejectedValue(new Error("synthetic_database_failure"));
+    captureOperationalError.mockImplementationOnce(() => { throw new Error("monitoring_down"); });
+    expect((await proxy(request("/lp/example"))).status).toBe(503);
+  });
+
+  it("does not read the database for non-public routes or Server Action POSTs", async () => {
     await proxy(request("/login"));
     await proxy(request(MARKER_PATH));
     await proxy(request("/lp/example", "POST"));
-    await proxy(request("/lp/example", "GET", { rsc: "1" }));
-    await proxy(request("/lp/example", "GET", { "next-router-prefetch": "1" }));
     await proxy(request("/lp/", "GET"));
     expect(statusCheck).not.toHaveBeenCalled();
+  });
+
+  it("checks client-router RSC navigations and prefetches the same as HTML documents", async () => {
+    // Next strips Flight headers before Proxy in production; even if they
+    // were visible they must not change the availability decision.
+    statusCheck.mockResolvedValue(404);
+    const variants: Array<Record<string, string>> = [{ rsc: "1" }, { "next-router-prefetch": "1" }, {}];
+    for (const headers of variants) {
+      expect((await proxy(request("/lp/example?_rsc=abc", "GET", headers))).status).toBe(404);
+    }
+    expect(statusCheck).toHaveBeenCalledTimes(3);
+    expect(statusCheck).toHaveBeenCalledWith("/lp/example", expect.any(String));
   });
 
   it.each(["/lp/example/offer/checkout", "/lp/example/watch/play"])("keeps the nested route contract for %s", async (path) => {
