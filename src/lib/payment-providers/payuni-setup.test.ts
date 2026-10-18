@@ -315,6 +315,16 @@ describe("PAYUNi official UPP setup contract", () => {
     const otherStatus = await normalizeError(signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02087" }, "2.0", hashKey, hashIv, "UPP02087")) as PaymentMethodSetupProviderResultError;
     expect(new Set([first.resultKey, otherOrder.resultKey, otherStatus.resultKey]).size).toBe(3);
 
+    // Without a setup order number, distinct signed results must not share one key.
+    const noOrderA = await normalizeError(signedCallback({ MerID: "TESTMER", Status: "UPP02086", ResCode: "A1" }, "2.0", hashKey, hashIv, "UPP02086")) as PaymentMethodSetupProviderResultError;
+    const noOrderB = await normalizeError(signedCallback({ MerID: "TESTMER", Status: "UPP02086", ResCode: "B2" }, "2.0", hashKey, hashIv, "UPP02086")) as PaymentMethodSetupProviderResultError;
+    const noOrderReplay = await normalizeError(signedCallback({ MerID: "TESTMER", Status: "UPP02086", ResCode: "A1" }, "2.0", hashKey, hashIv, "EDITED")) as PaymentMethodSetupProviderResultError;
+    expect(noOrderA.resultKey).not.toBe(noOrderB.resultKey);
+    expect(noOrderReplay.resultKey).toBe(noOrderA.resultKey);
+    // A second, differently coded decline for the same order is kept apart too.
+    const sameOrderOtherCode = await normalizeError(signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02086", ResCode: "Z9" }, "2.0", hashKey, hashIv, "UPP02086")) as PaymentMethodSetupProviderResultError;
+    expect(sameOrderOtherCode.resultKey).not.toBe(first.resultKey);
+
     const malformedPayload = { MerID: "TESTMER", MerTradeNo: orderNumber, Status: "SUCCESS", TradeStatus: "1" };
     const malformedA = await normalizeError(signedCallback(malformedPayload, "2.0", hashKey, hashIv, "SUCCESS")) as PaymentMethodSetupMalformedPayloadError;
     const malformedB = await normalizeError(signedCallback(malformedPayload, "2.0", hashKey, hashIv, "EDITED")) as PaymentMethodSetupMalformedPayloadError;

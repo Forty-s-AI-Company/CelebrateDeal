@@ -624,11 +624,18 @@ function payUniSetupProviderResult(
     if (diagnostics[key] === undefined) delete diagnostics[key];
   }
   const pending = PAYUNI_PENDING_STATUSES.has(status.toUpperCase()) || tradeStatus === "8";
+  // A request-level rejection may omit MerTradeNo. Correlate such results by
+  // the signed EncryptInfo instead, so one tenant's result never de-duplicates
+  // another tenant's identical status code.
+  const merTradeNo = optionalPayloadText(decrypted.MerTradeNo);
+  const correlation = merTradeNo && isPayUniSetupOrderNumber(merTradeNo)
+    ? merTradeNo
+    : `encrypted:${createHash("sha256").update(String(envelope.EncryptInfo ?? "")).digest("hex")}`;
   return {
     outcome: pending ? "pending" : "declined",
     diagnostics,
     resultKey: payUniSetupResultKey([
-      "result", optionalPayloadText(decrypted.MerTradeNo) ?? "", status, tradeStatus ?? "",
+      "result", correlation, status, tradeStatus ?? "", diagnostics.resCode ?? "", diagnostics.messageCode ?? "",
     ]),
   };
 }
