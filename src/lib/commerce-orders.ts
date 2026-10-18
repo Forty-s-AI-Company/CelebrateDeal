@@ -647,6 +647,9 @@ export async function reconcileCommerceOrderPaymentTransition(
     if (!["pending_payment", "payment_failed", "expired"].includes(order.status)) {
       throw new CommerceOrderValidationError("Order cannot accept this payment transition.");
     }
+    // A post-purchase target is settled by the "CommerceOrder_post_purchase_paid_settle"
+    // trigger on this UPDATE: its credit is superseded and the source's delivery
+    // revoked, or a released/invalidated credit is flagged for manual review.
     const updated = await tx.commerceOrder.updateMany({
       where: { id: order.id, vendorId: input.vendorId, status: order.status },
       data: { status: "paid", paidAmountCents: order.totalAmountCents, paidAt: now, failedAt: null },

@@ -1,0 +1,20 @@
+{
+  "task_id": "f2-post-purchase-commerce",
+  "status": "FAIL",
+  "checks": {
+    "vitest": {
+      "passed": 4,
+      "failed": 1,
+      "total": 5
+    },
+    "node_tap": {
+      "passed": 11,
+      "failed": 1,
+      "total": 12,
+      "skipped": 0
+    }
+  },
+  "root_cause_confirmed": true,
+  "cause": "New PostPurchaseCredit/migration missing from current inventory prose and historical runner additive-tail count still +6, while actual chain is 86. Historical fixed 79 prefix/21 checksums and thresholds remain unchanged.",
+  "correction": "Document every new model/migration and expect current additive tail +7; preserve all assertions and historical source checks."
+}

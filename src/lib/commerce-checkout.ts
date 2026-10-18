@@ -31,6 +31,8 @@ export const CommerceCheckoutRequestSchema = z.object({
   /** A locator only; POST re-resolves the published Funnel before any write. */
   funnel: FunnelCheckoutReferenceSchema.optional(),
   agreementAccepted: z.boolean().optional(),
+  /** Signed locator only; POST verifies the current buyer grant and paid source. */
+  postPurchaseToken: z.string().regex(/^ppu1\.[A-Za-z0-9_-]{1,2048}\.[A-Za-z0-9_-]{43}$/u).max(2100).optional(),
 }).strict();
 
 export const CommerceCheckoutAdmissionResponseSchema = z.object({
@@ -109,12 +111,13 @@ export function isAllowedCheckoutDestination(value: string, currentOrigin: strin
 export async function readCheckoutErrorCode(response: Pick<Response, "json">) {
   try {
     const body: unknown = await response.json();
-    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE")
+    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE" || body.code === "POST_PURCHASE_UNAVAILABLE")
       ? body.code : undefined;
   } catch { return undefined; }
 }
 
 export function checkoutErrorMessage(status: number, code?: string) {
+  if (status === 409 && code === "POST_PURCHASE_UNAVAILABLE") return "加購優惠已變更或原訂單權益已失效。請先查看原訂單與待付款加購訂單，避免重複付款。";
   if (status === 409 && code === "FLASH_SALE_UNAVAILABLE") return "快閃優惠已變更、結束或綁定先前訂單。請先確認原訂單狀態；若尚未建立訂單，請返回直播重新確認優惠。";
   if (status === 409 && code === "LIVE_VOUCHER_ALREADY_USED") return "優惠券已綁定先前訂單。請先確認原訂單付款狀態，或聯絡商家協助；重新整理不會解除綁定。";
   if (status === 400) return "請確認聯絡與收件資料是否完整。";
@@ -132,5 +135,5 @@ export function checkoutErrorMessage(status: number, code?: string) {
  * the next submit resolves that same checkout instead of reserving stock twice.
  */
 export function shouldDiscardCheckoutAdmission(status: number, code?: string) {
-  return status === 409 && code !== "LIVE_VOUCHER_ALREADY_USED";
+  return status === 409 && code !== "LIVE_VOUCHER_ALREADY_USED" && code !== "POST_PURCHASE_UNAVAILABLE";
 }
