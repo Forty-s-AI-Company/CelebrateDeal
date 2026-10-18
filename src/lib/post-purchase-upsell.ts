@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import type { PostPurchaseOffer } from "@/lib/post-purchase-offer";
+import { isPayUniChargeableAmountCents } from "@/lib/payment-providers/payuni-amount";
 
 // 保留服務端既有 import 契約；瀏覽器只能引用純展示模組。
 export { formatPostPurchaseAmount, type PostPurchaseOffer } from "@/lib/post-purchase-offer";
@@ -43,9 +44,12 @@ export function resolvePostPurchaseOffer(input: {
   source: PostPurchaseUpsellProduct;
   candidates: readonly PostPurchaseUpsellProduct[];
   kind: "upsell" | "downsell";
+  /** Set only after the server has verified this exact settled source order. */
+  sourceOwned?: boolean;
 }): PostPurchaseOffer | null {
   const source = PostPurchaseUpsellProductSchema.safeParse(input.source);
-  if (!source.success || !isAvailable(source.data)) return null;
+  if (!source.success || !source.data.isActive || !source.data.fulfillmentTypeConfirmed
+    || (!input.sourceOwned && source.data.inventory <= 0)) return null;
   const targetId = input.kind === "upsell" ? source.data.upsellProductId : source.data.downsellProductId;
   if (!targetId) return null;
   const target = input.candidates
@@ -60,6 +64,10 @@ export function resolvePostPurchaseOffer(input: {
   // audited grant flow and must never be silently created from this endpoint.
   const amountCents = target.priceCents - source.data.priceCents - discountCents;
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return null;
+  // The credit is consumed before the provider session exists, so a difference
+  // the provider cannot charge (fractional TWD, outside PayUni's trade range)
+  // must never be offered: it would strand the source's only credit.
+  if (!isPayUniChargeableAmountCents(amountCents)) return null;
 
   return {
     kind: input.kind,
@@ -117,7 +125,13 @@ export function issuePostPurchaseCheckoutToken(input: Omit<PostPurchaseCheckoutT
   return `${TOKEN_VERSION}.${payload}.${tokenSignatureFor(payload)}`;
 }
 
-export function verifyPostPurchaseCheckoutToken(token: string, now = new Date()): PostPurchaseCheckoutToken | null {
+/**
+ * `allowExpired` is only for replaying a credit already bound to its order:
+ * the signature and binding are still verified, but the 10-minute window that
+ * limits creating a new quote no longer applies to that existing order.
+ */
+export function verifyPostPurchaseCheckoutToken(token: string, now = new Date(),
+  options: { allowExpired?: boolean } = {}): PostPurchaseCheckoutToken | null {
   const [version, payload, suppliedSignature, extra] = token.split(".");
   if (version !== TOKEN_VERSION || !payload || !tokenPart.test(payload) || !suppliedSignature || !tokenSignature.test(suppliedSignature) || extra) return null;
   const expected = Buffer.from(tokenSignatureFor(payload), "utf8");
@@ -128,7 +142,7 @@ export function verifyPostPurchaseCheckoutToken(token: string, now = new Date())
     const { nonce, ...binding } = decoded;
     void nonce; // Nonce 已包含在驗證過的簽章內，業務綁定僅使用其餘欄位。
     const parsed = PostPurchaseCheckoutTokenSchema.safeParse(binding);
-    return parsed.success && parsed.data.expiresAt > Math.floor(now.getTime() / 1_000) ? parsed.data : null;
+    return parsed.success && (options.allowExpired || parsed.data.expiresAt > Math.floor(now.getTime() / 1_000)) ? parsed.data : null;
   } catch {
     return null;
   }

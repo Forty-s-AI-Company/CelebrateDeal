@@ -30,6 +30,7 @@ type CheckoutPhase = "idle" | "submitting" | "redirecting" | "success" | "error"
 
 export type CommerceCheckoutFormProps = {
   flashSaleRunId?: string;
+  postPurchaseToken?: string;
   funnel?: FunnelCheckoutReference;
   agreementLabel?: string;
   formMode?: "single" | "two_step";
@@ -219,7 +220,7 @@ export function CommerceCheckoutForm({
   recoveryOnly = false,
   initialOrderBumpSelected = false,
   priceCents, currency = "TWD",
-  orderBump, funnel, agreementLabel, flashSaleRunId,
+  orderBump, funnel, agreementLabel, flashSaleRunId, postPurchaseToken,
   formMode = "single",
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
@@ -341,7 +342,7 @@ export function CommerceCheckoutForm({
             "content-type": "application/json",
             "x-celebratedeal-client": "web",
           },
-          body: JSON.stringify({ vendorId, productId, idempotencyKey, flashSaleRunId }),
+          body: JSON.stringify({ vendorId, productId, idempotencyKey, flashSaleRunId, postPurchaseToken }),
           signal: controller.signal,
         });
         if (!admissionResponse.ok) {
@@ -380,6 +381,7 @@ export function CommerceCheckoutForm({
           productId,
           idempotencyKey: admission.current.idempotencyKey,
           admissionToken: admission.current.admissionToken,
+          postPurchaseToken,
           buyer,
           shipping,
           invoice,

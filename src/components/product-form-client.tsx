@@ -36,7 +36,12 @@ export type ProductFormProduct = {
   deliveryUrl: string;
   deliveryInstructions: string;
   deliveryHostConfirmed: boolean;
+  upsellProductId?: string | null;
+  downsellProductId?: string | null;
+  upsellDiscountCents?: number;
 };
+
+export type PostPurchaseProductOption = { id: string; name: string; priceCents: number; currency: string };
 
 export type CourseMembershipOption = {
   id: string;
@@ -57,6 +62,7 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
       deliveryTitle: "", deliveryUrl: "", deliveryInstructions: "", deliveryHostConfirmed: false,
       imageUrl: "", imageAssetId: "", checkoutUrl: "", isActive: false,
       customCheckoutFields: [],
+      upsellProductId: "", downsellProductId: "", upsellDiscount: "0",
     };
   }
   return {
@@ -81,6 +87,9 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
     checkoutUrl: product.checkoutUrl ?? "",
     isActive: product.isActive,
     customCheckoutFields: product.customCheckoutFields ?? [],
+    upsellProductId: product.upsellProductId ?? "",
+    downsellProductId: product.downsellProductId ?? "",
+    upsellDiscount: centsToMajor(product.upsellDiscountCents ?? 0),
   };
 }
 
@@ -214,6 +223,7 @@ export function ProductFormClient({
   projectId,
   product,
   memberships = [],
+  offerProducts = [],
   initialError,
   nativeAction = "/api/products/upsert",
 }: {
@@ -221,6 +231,7 @@ export function ProductFormClient({
   projectId?: string | null;
   product?: ProductFormProduct;
   memberships?: CourseMembershipOption[];
+  offerProducts?: PostPurchaseProductOption[];
   initialError?: ProductActionError;
   nativeAction?: string;
 }) {
@@ -365,6 +376,20 @@ export function ProductFormClient({
         </fieldset>
       ) : null}
       <CustomCheckoutFieldEditor fields={customCheckoutFields} onChange={setCustomCheckoutFields} />
+      <fieldset className="grid gap-4 rounded-md border border-slate-200 p-4 md:grid-cols-2">
+        <legend className="px-1 text-sm font-semibold">購買後加購</legend>
+        <p className="text-sm leading-6 text-slate-600 md:col-span-2">買家付款後可用原訂單實付金額折抵一次升級。拒絕加購時可改選備選商品；原訂單退款會撤銷升級權益。</p>
+        <SelectField label="加購商品" name="upsellProductId" defaultValue={draft.upsellProductId ?? ""}>
+          <option value="">不提供加購</option>
+          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {option.currency} {(option.priceCents / 100).toFixed(2)}</option>)}
+        </SelectField>
+        <Field label="加購額外折扣（元）" name="upsellDiscount" type="number" min={0} step={0.01} defaultValue={draft.upsellDiscount ?? "0"} />
+        <SelectField label="拒絕加購後的備選商品" name="downsellProductId" defaultValue={draft.downsellProductId ?? ""}>
+          <option value="">不提供備選商品</option>
+          {offerProducts.filter(option => option.id !== product?.id).map(option => <option key={option.id} value={option.id}>{option.name} · {option.currency} {(option.priceCents / 100).toFixed(2)}</option>)}
+        </SelectField>
+        <p className="self-end text-xs leading-5 text-slate-600">限同商家、同幣別且使用本站結帳的已上架商品；折抵後應付金額必須大於零。</p>
+      </fieldset>
       <TextArea label="商品描述" name="description" maxLength={10_000} defaultValue={draft.description} />
       <MediaUploadField
         kind="image"

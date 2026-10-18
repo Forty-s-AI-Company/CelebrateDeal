@@ -30,6 +30,14 @@ describe("post-purchase upsell", () => {
     expect(resolvePostPurchaseOffer({ source, candidates: [{ ...coaching, priceCents: 10_500 }], kind: "upsell" })).toBeNull();
   });
 
+  it("never offers a difference the payment provider cannot charge", () => {
+    // 0.50 TWD fractional discount, and one TWD above the PayUni maximum.
+    expect(resolvePostPurchaseOffer({ source: { ...source, upsellDiscountCents: 550 }, candidates: [coaching], kind: "upsell" })).toBeNull();
+    expect(resolvePostPurchaseOffer({ source, candidates: [{ ...coaching, priceCents: 10_500 + 20_000_000 }], kind: "upsell" })).toBeNull();
+    expect(resolvePostPurchaseOffer({ source, candidates: [{ ...coaching, priceCents: 10_500 + 19_999_900 }], kind: "upsell" }))
+      .toMatchObject({ amountCents: 19_999_900 });
+  });
+
   it("uses a separately configured downsell and never accepts a browser-provided tenant path", () => {
     const offer = resolvePostPurchaseOffer({
       source,
@@ -55,5 +63,9 @@ describe("post-purchase upsell", () => {
     const modifiedPayload = Buffer.from(JSON.stringify(modifiedBinding), "utf8").toString("base64url");
     expect(verifyPostPurchaseCheckoutToken(`${version}.${modifiedPayload}.${signature}`, now)).toBeNull();
     expect(verifyPostPurchaseCheckoutToken(token, new Date("2026-09-09T00:11:00.000Z"))).toBeNull();
+    // Replay of an already-bound credit ignores only expiry, never the HMAC.
+    expect(verifyPostPurchaseCheckoutToken(token, new Date("2026-09-09T00:11:00.000Z"), { allowExpired: true }))
+      .toMatchObject({ grantId: "grant-a", amountCents: 19_500 });
+    expect(verifyPostPurchaseCheckoutToken(`${version}.${modifiedPayload}.${signature}`, now, { allowExpired: true })).toBeNull();
   });
 });

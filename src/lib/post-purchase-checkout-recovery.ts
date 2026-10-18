@@ -1,0 +1,194 @@
+import { Prisma, type PostPurchaseCredit, type PrismaClient } from "@prisma/client";
+import { getDb } from "@/lib/db";
+import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
+import { getPaymentProvider } from "@/lib/payment-providers";
+import { checkoutReadinessAllowsNewTransaction, checkoutSessionHasUsableDestination, type CheckoutSessionResult } from "@/lib/payment-providers/types";
+import { assertPostPurchaseCreditReplay, PostPurchaseCreditLapsedError, PostPurchaseUnavailableError,
+  postPurchaseRequestCookies } from "@/lib/post-purchase-credit";
+import { reacquireReleasedCheckoutInventory } from "@/lib/inventory-reservations";
+import { postPurchaseCreditStaysBound, releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
+import { postPurchaseSourceLapsed, postPurchaseSourceLapseSelect } from "@/lib/post-purchase-upsell-access";
+
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+const recoveryInclude = { vendor: true, inventoryReservation: true, primaryCommerceOrder: { include: { items: true } } } as const;
+type RecoveryPayment = Prisma.PaymentTransactionGetPayload<{ include: typeof recoveryInclude }>;
+
+function assertRecoveryMoney(payment: RecoveryPayment, credit: PostPurchaseCredit, productId: string) {
+  const order = payment.primaryCommerceOrder;
+  const primaryItem = order?.items[0];
+  const recoverableState = (payment.status === "failed" && order?.status === "payment_failed")
+    || (payment.status === "expired" && order?.status === "expired")
+    || (payment.status === "pending" && order?.status === "pending_payment");
+  if (!order || !primaryItem || !recoverableState || payment.refundedAmountCents !== 0
+    || order.paidAmountCents !== 0 || order.refundedAmountCents !== 0 || order.isTestOrder
+    || order.totalAmountCents !== credit.checkoutAmountCents || payment.grossAmountCents !== credit.checkoutAmountCents
+    || payment.currency !== credit.currency || order.currency !== credit.currency
+    || order.subtotalAmountCents - order.totalAmountCents !== credit.creditAmountCents + credit.offerDiscountCents
+    || order.items.length !== 1 || primaryItem.productId !== productId || primaryItem.quantity !== 1) {
+    throw new PostPurchaseUnavailableError();
+  }
+  return primaryItem;
+}
+
+/** Demo's original manual session cannot have created a remote trade. */
+function originalLocalManualSession(payment: RecoveryPayment, metadata: Record<string, unknown>): CheckoutSessionResult {
+  const session = object(metadata.checkoutSession);
+  const payload = object(session.formPayload);
+  if (payment.providerName !== "demo" || payment.providerTradeNo || metadata.postPurchaseSessionState !== "issued"
+    || session.provider !== "demo" || session.mode !== "manual" || session.externalRequired === true
+    || session.checkoutUrl || session.formAction || session.nextAction !== "demo_checkout_transaction_created"
+    || payload.transactionId !== payment.id || payload.orderNumber !== (payment.orderNumber ?? payment.id)) {
+    throw new PostPurchaseUnavailableError();
+  }
+  return session as CheckoutSessionResult;
+}
+
+type RecoveryGatePayment = Pick<RecoveryPayment, "status" | "providerName" | "providerTradeNo" | "metadata">
+  & { releaseReason: string | null };
+
+/**
+ * Read-only gate shared by resume and the result page's recovery link: the
+ * only recoverable shapes are unissued local preparation and demo's original
+ * local manual session. Unknown providers throw, like checkout itself.
+ */
+function postPurchaseRecoveryMode(payment: RecoveryGatePayment) {
+  const provider = getPaymentProvider(payment.providerName);
+  const readiness = provider.checkoutReadiness();
+  if (provider.checkoutSessionPreparation !== "local" || !provider.createCheckoutSession
+    || !checkoutReadinessAllowsNewTransaction(readiness, process.env.NODE_ENV, isExplicitLocalE2eRuntime())) return null;
+  const metadata = object(payment.metadata);
+  if (metadata.postPurchaseSessionState === "issued") return readiness === "local_only" ? { provider, readiness, mode: "original_manual" as const } : null;
+  if (payment.status !== "failed" || metadata.postPurchaseSessionState !== "unissued" || metadata.checkoutSession
+    || payment.providerTradeNo || !["provider_checkout_failed", "checkout_metadata_failed"].includes(payment.releaseReason ?? "")) return null;
+  return { provider, readiness, mode: "unissued" as const };
+}
+
+async function recoverySession(payment: RecoveryPayment, metadata: Record<string, unknown>, productName: string) {
+  const gate = postPurchaseRecoveryMode({ ...payment, releaseReason: payment.inventoryReservation?.releaseReason ?? null });
+  if (!gate) throw new PostPurchaseUnavailableError();
+  const { provider, readiness } = gate;
+  if (gate.mode === "original_manual") return originalLocalManualSession(payment, metadata);
+  if (!provider.createCheckoutSession) throw new PostPurchaseUnavailableError();
+  // Local preparation is the sole operation allowed here. Issued external
+  // sessions require an independent provider observation contract.
+  const session = await provider.createCheckoutSession({ transaction: payment, vendor: payment.vendor,
+    description: productName, appUrl: getCanonicalAppUrl() });
+  if (session.provider !== payment.providerName || !checkoutSessionHasUsableDestination(session, readiness)) throw new PostPurchaseUnavailableError();
+  return session;
+}
+
+/**
+ * Recover unissued local preparation or reuse an original local manual
+ * session. Issued external forms and ambiguous payments require provider
+ * observation; none authorizes a replacement transaction here.
+ */
+export async function resumePostPurchaseCheckout(request: Request, input: {
+  vendorId: string; productId: string; idempotencyKey: string;
+}) {
+  const db = getDb();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const outcome = await db.$transaction(async tx => {
+        const payment = await tx.paymentTransaction.findUnique({
+          where: { vendorId_checkoutIdempotencyKey: { vendorId: input.vendorId, checkoutIdempotencyKey: input.idempotencyKey } },
+          include: recoveryInclude,
+        });
+        const metadata = object(payment?.metadata);
+        const order = payment?.primaryCommerceOrder;
+        if (!payment || !order || metadata.productId !== input.productId || !metadata.postPurchaseCredit) throw new PostPurchaseUnavailableError();
+        let credit: Awaited<ReturnType<typeof assertPostPurchaseCreditReplay>>;
+        try {
+          // Also re-checks the source's 24-hour window and shipped state.
+          credit = await assertPostPurchaseCreditReplay(tx, postPurchaseRequestCookies(request), {
+            vendorId: input.vendorId, targetOrderId: order.id, productId: input.productId,
+          });
+        } catch (error) {
+          if (!(error instanceof PostPurchaseCreditLapsedError)) throw error;
+          // Refuse and return the credit in this transaction when the target is
+          // unpaid and terminal; the release trigger re-checks the target money.
+          await releasePostPurchaseCreditForTerminalPayment(tx, { vendorId: input.vendorId,
+            paymentTransactionId: payment.id, now: new Date(), recoveryLapsed: true });
+          return "lapsed" as const;
+        }
+        const primaryItem = assertRecoveryMoney(payment, credit, input.productId);
+        if (payment.status === "pending" && metadata.postPurchaseSessionState === "issued") return false;
+        if (!["provider_checkout_failed", "checkout_metadata_failed", "payment_failed", "expired"].includes(payment.inventoryReservation?.releaseReason ?? "")) {
+          throw new PostPurchaseUnavailableError();
+        }
+        const session = await recoverySession(payment, metadata, primaryItem.productName);
+        await reacquireReleasedCheckoutInventory(tx, { vendorId: input.vendorId, transactionId: payment.id, productId: input.productId });
+        const { checkoutUrl, ...sessionFields } = session;
+        const changed = await tx.paymentTransaction.updateMany({
+          where: { id: payment.id, vendorId: input.vendorId, status: payment.status, providerTradeNo: null, refundedAmountCents: 0 },
+          data: { status: "pending", metadata: { ...metadata, postPurchaseSessionState: "issued",
+            checkoutSession: { ...sessionFields, ...(checkoutUrl ? { checkoutUrl } : {}) } } as Prisma.InputJsonObject },
+        });
+        const resumed = await tx.commerceOrder.updateMany({
+          where: { id: order.id, vendorId: input.vendorId, status: order.status, paidAmountCents: 0, refundedAmountCents: 0 },
+          data: { status: "pending_payment", failedAt: null },
+        });
+        if (changed.count !== 1 || resumed.count !== 1) throw new PostPurchaseUnavailableError();
+        await tx.commerceOrderEvent.create({ data: { vendorId: input.vendorId, orderId: order.id,
+          dedupKey: `checkout.recovered:${payment.id}:${payment.inventoryReservation?.expiresAt.toISOString()}`,
+          eventType: "payment.checkout_recovered", actorType: "system",
+          sanitizedData: { previousStatus: order.status, status: "pending_payment", provider: payment.providerName,
+            amountCents: credit.checkoutAmountCents, mode: metadata.postPurchaseSessionState === "issued" ? "original_manual" : "unissued_preparation" } } });
+        return true;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 10_000 });
+      if (outcome === "lapsed") throw new PostPurchaseUnavailableError();
+      return outcome;
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034" || attempt === 2) throw error;
+    }
+  }
+  throw new PostPurchaseUnavailableError();
+}
+
+/**
+ * Whether a credited, unpaid terminal order can currently be resumed. Resume
+ * re-checks buyer grants, money and session. Its only write: a credit whose
+ * source lapsed (24-hour window or shipped, both monotonic) is released.
+ */
+export async function postPurchaseRecoveryAvailable(
+  db: Pick<PrismaClient, "commerceOrder" | "$transaction">,
+  input: { vendorId: string; orderId: string },
+) {
+  const order = await db.commerceOrder.findUnique({
+    where: { vendorId_id: { vendorId: input.vendorId, id: input.orderId } },
+    select: {
+      status: true, paidAmountCents: true, refundedAmountCents: true,
+      postPurchaseCreditReceived: { select: { releasedAt: true, invalidatedAt: true, supersededAt: true,
+        sourceOrder: { select: postPurchaseSourceLapseSelect } } },
+      primaryPaymentTransaction: { select: { id: true, status: true, providerName: true, providerTradeNo: true, metadata: true,
+        refundedAmountCents: true, inventoryReservation: { select: { releaseReason: true } } } },
+    },
+  });
+  const credit = order?.postPurchaseCreditReceived;
+  const payment = order?.primaryPaymentTransaction;
+  if (!order || !credit || credit.releasedAt || credit.invalidatedAt || credit.supersededAt || !payment || payment.refundedAmountCents !== 0
+    || order.paidAmountCents !== 0 || order.refundedAmountCents !== 0
+    || !((payment.status === "failed" && order.status === "payment_failed")
+      || (payment.status === "expired" && order.status === "expired"))) return false;
+  if (postPurchaseSourceLapsed(credit.sourceOrder, new Date())) {
+    // Best effort during a page render: a serialization conflict with a
+    // concurrent webhook or resume must not fail the page. The release is
+    // idempotent and is retried on the next render or resume.
+    try {
+      await db.$transaction(tx => releasePostPurchaseCreditForTerminalPayment(tx, { vendorId: input.vendorId,
+        paymentTransactionId: payment.id, now: new Date(), recoveryLapsed: true }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch {
+      // Recovery stays unavailable either way.
+    }
+    return false;
+  }
+  try {
+    const gate = postPurchaseRecoveryMode({ ...payment, releaseReason: payment.inventoryReservation?.releaseReason ?? null });
+    return gate?.mode === "unissued" || (gate?.mode === "original_manual" && postPurchaseCreditStaysBound(payment));
+  } catch {
+    return false;
+  }
+}

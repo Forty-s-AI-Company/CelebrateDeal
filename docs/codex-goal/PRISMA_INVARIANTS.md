@@ -11,8 +11,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 142 |
-| Migration directories | 98 |
+| Prisma models | 143 |
+| Migration directories | 102 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -27,7 +27,7 @@
 | Affiliate／billing／payment／ops | 35 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentMethodSetupIntent`、`PaymentTransaction`、`PayUniLiveProbe`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
-| Commerce order／fulfillment | 10 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot` |
+| Commerce order／fulfillment | 11 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot`、`PostPurchaseCredit` |
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
 | LINE identity／delivery／draft | 5 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery`、`LineRichMenuDraft` |
 | Consultation scheduling | 2 | `ConsultationEvent`、`ConsultationBooking` |
@@ -288,3 +288,10 @@ Commission integration with delivered community a5964d83: 136 models and 89 cano
 Current integrated inventory:
 ## Private messaging + delivered community/PWA candidate 20261008
 Current inventory: 130 models and 89 forward migrations, including `20261006070000_course_community` and `20261007110000_live_private_chat_messages`. Preserve every historical SQL/checksum and fixed staging replay window.
+
+## 2026-10-17 post-purchase credit
+
+新增 `PostPurchaseCredit` 與前向 migration `20261007120000_post_purchase_credit`，由 `codex/post-purchase-commerce-20261007` 的功能 commit 移植到現行 master。目前 143 models、102 forward migrations；既有 SQL／checksum 不變。
+- `20261017120000_post_purchase_credit_release`：forward-only；新增 `releasedAt`，將 `(vendorId, sourceOrderId)` 改為 `releasedAt IS NULL` 的 partial unique；目標付款失敗／逾期且未收款時釋放抵扣額，釋放列不可再交付、退款失效或復原。
+- `20261017130000_post_purchase_credit_window_supersede`：forward-only；來源付款 24 小時內才可建立抵扣額（`POST_PURCHASE_CREDIT_WINDOW_MS`）、已出貨實體來源不可升級；目標付款成功即設 `supersededAt` 並撤銷來源交付；決策：supersede 後來源退款仍撤銷目標（資金已退回），目標已收款時寫入 `post_purchase.manual_review_required` 事件交商家人工處理，不自動退款。
+- `20261018090000_post_purchase_recovery_guard`：forward-only；resume 亦檢查 24 小時窗口與已出貨來源，失效即拒絕並釋放抵扣額；supersede 不移動已出貨來源（旗標 `superseded_source_already_shipped`）並在來源寫入 `post_purchase.superseded`；superseded 目標退款時兩張訂單皆旗標 `superseded_target_refunded`；新函式時間一律 UTC。
