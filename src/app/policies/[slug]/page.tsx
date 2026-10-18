@@ -3,9 +3,6 @@ import { notFound } from "next/navigation";
 import { PolicyDocument } from "@/components/public-policy";
 import { publicPolicies, resolvePublicPolicy } from "@/lib/public-policy-content";
 
-// Only the registered policy pages exist; reject unknown routes before streaming.
-export const dynamicParams = false;
-
 // 生效狀態依台灣時間的日期在轉譯時判斷，每小時重新產生一次，生效日過後頁面會自動更新。
 export const revalidate = 3600;
 
