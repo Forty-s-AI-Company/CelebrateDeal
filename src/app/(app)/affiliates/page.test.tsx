@@ -42,7 +42,7 @@ describe("/affiliates route", () => {
       where: { vendorId: "vendor-1", affiliateId: { in: ["affiliate-1", "affiliate-2"] }, convertedAt: { not: null } },
       _count: { _all: true },
     });
-    expect(html).toContain("聯盟夥伴");
+    expect(html).toContain("推廣夥伴");
     expect(html).toContain("合作夥伴");
     expect(html).toContain("PARTNER1");
     expect(html).toContain("2");

@@ -27,24 +27,24 @@ test("owner saves template, flow and popup through actual workspace and reloads 
     await page.getByRole("button", { name: "登入", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await page.goto(`/landing-pages/${row.id}`);
-    await expect(page.getByLabel("Funnel steps", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("網站步驟", { exact: true })).toBeVisible();
     const initial = content.flow.steps.length;
     await page.getByRole("button", { name: "＋ 新增步驟", exact: true }).click();
-    await expect(page.getByRole("button", { name: "流程 Undo", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "流程 復原", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(async () => (await read()).flow.steps.length).toBe(initial + 1);
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await page.reload();
-    await expect(page.getByLabel("Funnel steps", { exact: true })).toBeVisible();
-    await page.getByLabel("Funnel steps", { exact: true }).getByRole("button", { name: "套用模板", exact: true }).first().click();
+    await expect(page.getByLabel("網站步驟", { exact: true })).toBeVisible();
+    await page.getByLabel("網站步驟", { exact: true }).getByRole("button", { name: "套用模板", exact: true }).first().click();
     await page.getByRole("button", { name: "按鈕", exact: true }).click();
     await page.getByRole("button", { name: "設定", exact: true }).click();
     await page.getByRole("tab", { name: "動作", exact: true }).click();
     await page.getByLabel("點擊後動作").selectOption("next_step");
     const targetStepId = content.flow.steps[1].id;
-    await page.getByLabel("下一個步驟 ID").selectOption(targetStepId);
+    await page.locator("label").filter({ hasText: /^下一個步驟/u }).locator("select").selectOption(targetStepId);
     await page.getByRole("button", { name: "套用動作", exact: true }).click();
-    await page.getByRole("button", { name: "Popups", exact: true }).last().click();
+    await page.getByRole("button", { name: "彈出視窗", exact: true }).last().click();
     await page.getByRole("button", { name: "＋ 新增", exact: true }).click();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(async () => { const draft = await read(); return draft.pages[draft.activeStepId].popups.length; }).toBe(1);
@@ -53,8 +53,8 @@ test("owner saves template, flow and popup through actual workspace and reloads 
     expect(JSON.stringify(saved.pages[saved.activeStepId].root)).toContain(`"stepId":"${targetStepId}"`);
     expect(saved.flow.steps.length).toBe(initial + 1);
     await page.reload();
-    await expect(page.getByLabel("Funnel steps", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Popups", exact: true }).last().click();
+    await expect(page.getByLabel("網站步驟", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "彈出視窗", exact: true }).last().click();
     await expect(page.getByRole("button", { name: "刪除", exact: true })).toBeVisible();
     // A separately authenticated tenant must never open this persisted draft.
     const other = await otherContext.newPage();
@@ -64,7 +64,7 @@ test("owner saves template, flow and popup through actual workspace and reloads 
     await other.getByRole("button", { name: "登入", exact: true }).click();
     await expect(other).toHaveURL(/\/dashboard$/);
     await other.goto(`${baseURL}/landing-pages/${row.id}`);
-    await expect(other.getByLabel("Funnel steps", { exact: true })).toHaveCount(0);
+    await expect(other.getByLabel("網站步驟", { exact: true })).toHaveCount(0);
     expect(await read()).toEqual(saved);
   } finally {
     await otherContext.close();

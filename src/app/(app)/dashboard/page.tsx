@@ -38,18 +38,18 @@ export default async function DashboardPage({ searchParams }: {
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        description="Cloudflare-first 直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。"
+        title="營運總覽"
+        description="直播導購營運總覽：觀看、名單、商品點擊、聯盟來源與用量配額。"
         action={isManager ? <ButtonLink href="/lives/new" tone="cta"><Plus size={16} />建立直播</ButtonLink> : undefined}
       />
 
-      <section data-dashboard-region="kpis" aria-label="Dashboard KPI 區域">
+      <section data-dashboard-region="kpis" aria-label="營運總覽關鍵指標區域">
         <Suspense fallback={<DashboardKpisLoading />}>
           <DashboardKpis vendorId={vendor.id} diagnosticFailureScope={diagnosticFailureScope} />
         </Suspense>
       </section>
 
-      <section data-dashboard-region="details" aria-label="Dashboard 明細區域">
+      <section data-dashboard-region="details" aria-label="營運總覽明細區域">
         <DashboardDetailsClient diagnosticDelayMs={diagnosticDelayMs} />
       </section>
     </>

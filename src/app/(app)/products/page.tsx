@@ -43,7 +43,7 @@ export default async function ProductsPage({ searchParams }: {
 
   return (
     <>
-      <PageHeader title="商品管理" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href="/products/new"><Plus size={16} />新增商品</ButtonLink>} />
+      <PageHeader title="商品" description="管理草稿、價格、庫存、媒體、預覽與實際交付方式。" action={<ButtonLink href="/products/new"><Plus size={16} />新增商品</ButtonLink>} />
       {updated === "created" || updated === "saved" ? <p role="status" className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">商品已{updated === "created" ? "建立為草稿" : "儲存"}。</p> : null}
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">

@@ -125,8 +125,8 @@ test("active accountant is denied the blacklist index before identifiers or acti
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "黑名單管理", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "封鎖名單", exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "新增封鎖項目", exact: true })).toHaveCount(0);
     await expect(page.getByLabel("識別值", { exact: true })).toHaveCount(0);
     await expect(page.getByText("類型", { exact: true })).toHaveCount(0);

@@ -279,7 +279,7 @@ test("active accountant is denied affiliates/new before the affiliate form is re
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "聯盟來源摘要", exact: true })).toBeVisible();
     for (const affiliate of affiliates) {
       await expect(page.getByText(affiliate.name, { exact: true })).toBeVisible();
@@ -287,7 +287,7 @@ test("active accountant is denied affiliates/new before the affiliate form is re
     }
     await expect(page.getByRole("heading", { name: "新增聯盟夥伴", exact: true })).toHaveCount(0);
     await expect(page.getByText("建立推廣碼與來源設定，前台會記錄 ref 來源。", { exact: true })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "聯盟夥伴", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "推廣夥伴", exact: true })).toHaveCount(0);
     await expect(page.locator('a[href="/affiliates"]')).toHaveCount(0);
     await expect(page.locator('a[href="/affiliates/new"]')).toHaveCount(0);
 

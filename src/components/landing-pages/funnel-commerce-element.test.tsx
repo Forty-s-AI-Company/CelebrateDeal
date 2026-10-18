@@ -24,7 +24,7 @@ describe("Funnel commerce renderer", () => {
     for (const label of ["付款按鈕", "方案價格", "加購方案", "兩步驟結帳", "同意條款", "運費狀態"]) {
       expect(html).toMatch(new RegExp(`<button(?![^>]*\\sdisabled=)[^>]*>${label}</button>`, "u"));
     }
-    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>Raw HTML/u);
+    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>自訂 HTML/u);
   });
   it("uses trusted prices equally in editor and mobile preview, never node overrides", () => {
     for (const mode of ["editor", "preview"] as const) {

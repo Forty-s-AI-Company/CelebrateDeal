@@ -30,7 +30,7 @@ describe("/forms route", () => {
     expect(mocks.requireVendorManager).toHaveBeenCalledExactlyOnceWith();
     expect(mocks.findMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1" }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, name: true, slug: true, isActive: true, _count: { select: { submissions: true } } } });
     expect(mocks.groupBy).toHaveBeenCalledWith({ by: ["formId"], where: { formId: { in: ["form-1", "form-2"] }, form: { vendorId: "vendor-1" }, verificationStatus: "VERIFIED" }, _count: { _all: true } });
-    expect(html).toContain("報名表管理"); expect(html).toContain("活動報名"); expect(html).toContain("/form/summer"); expect(html).toContain("啟用"); expect(html).toContain("1 已驗證 / 1 待驗證"); expect(html).toContain("/forms/form-1/submissions"); expect(html).toContain("停用"); expect(html).toContain("搜尋表單"); expect(html).toContain("預覽報名頁"); expect(html).toContain("target=\"_blank\""); expect(html).toContain("rel=\"noopener noreferrer\""); expect(html).toContain("公開預覽不可用");
+    expect(html).toContain("報名管理"); expect(html).toContain("活動報名"); expect(html).toContain("/form/summer"); expect(html).toContain("啟用"); expect(html).toContain("1 已驗證 / 1 待驗證"); expect(html).toContain("/forms/form-1/submissions"); expect(html).toContain("停用"); expect(html).toContain("搜尋表單"); expect(html).toContain("預覽報名頁"); expect(html).toContain("target=\"_blank\""); expect(html).toContain("rel=\"noopener noreferrer\""); expect(html).toContain("公開預覽不可用");
   });
 
   it("renders an empty state when no forms exist", async () => {

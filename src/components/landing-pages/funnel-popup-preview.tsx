@@ -135,7 +135,7 @@ function popupDocument(document: PageDocument, popup: FunnelPopup): PageDocument
 
 function statusLabel(status: PopupTriggerEligibility): string {
   if (status.status === "unverified") return `Exit intent：unverified（${status.reason}）`;
-  return status.status === "disabled" ? `Popup：${status.reason}` : status.reason;
+  return status.status === "disabled" ? `彈出視窗：${status.reason}` : status.reason;
 }
 
 /**
@@ -157,7 +157,7 @@ export function FunnelPopupPreview({
   const parsed = useMemo(() => parsePageDocument(document), [document]);
   const popup = parsed?.popups.find((candidate) => candidate.id === popupId) ?? null;
   if (!parsed || !popup) {
-    return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">找不到可預覽的 Popup。</div>;
+    return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">找不到可預覽的彈出視窗。</div>;
   }
   return (
     <FunnelPopupPreviewOverlay
@@ -304,7 +304,7 @@ function FunnelPopupPreviewOverlay({
         {popup.settings.showCloseButton ? (
           <button
             type="button"
-            aria-label="關閉 Popup"
+            aria-label="關閉彈出視窗"
             data-funnel-popup-close
             className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-lg leading-none text-slate-700 shadow-sm"
             onClick={closePopup}

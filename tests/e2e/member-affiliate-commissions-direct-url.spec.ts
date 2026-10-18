@@ -336,7 +336,7 @@ test("active member is denied affiliate commissions before finance queries or MF
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     const affiliateSummaryHeading = page.getByRole("heading", {
       name: "聯盟來源摘要",
       exact: true,
@@ -350,7 +350,7 @@ test("active member is denied affiliate commissions before finance queries or MF
     await expect(page.locator('a[href="/affiliates"]')).toHaveCount(0);
     await expect(page.locator('a[href="/affiliates/commissions"]')).toHaveCount(0);
     await expect(page.locator(`a[href="/affiliates/${affiliate.id}"]`)).toHaveCount(0);
-    for (const heading of ["聯盟分潤", "佣金明細", "分潤月結"]) {
+    for (const heading of ["佣金結算", "佣金明細", "分潤月結"]) {
       await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCount(0);
     }
     for (const label of ["已核准佣金", "待審佣金", "月結筆數"]) {

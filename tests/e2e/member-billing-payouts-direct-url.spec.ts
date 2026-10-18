@@ -436,7 +436,7 @@ test("active member is denied billing payouts before tenant query or MFA", async
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
     await expect(
-      page.getByRole("heading", { name: "Dashboard" }),
+      page.getByRole("heading", { name: "營運總覽" }),
     ).toBeVisible();
     const usageSummaryHeading = page.getByRole("heading", {
       name: "用量 / 配額",

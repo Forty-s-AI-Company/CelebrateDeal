@@ -37,7 +37,7 @@ test("active accountant is denied the forms-new route through direct URL navigat
     expect(finalResponse).not.toBeNull();
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "新增報名表" })).toHaveCount(0);
     await expect(page.getByLabel("表單名稱")).toHaveCount(0);
     await expect(page.getByLabel("公開網址")).toHaveCount(0);

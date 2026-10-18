@@ -192,7 +192,7 @@ test("active accountant is denied live creation before related assets are expose
     });
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "建立直播間" })).toHaveCount(0);
     await expect(page.locator('form:has(input[name="title"]):has(input[name="_csrf"])')).toHaveCount(0);
     for (const step of ["基本資料", "影片 / Live Input", "商品", "報名頁", "通知", "互動腳本", "規則", "發布"]) {

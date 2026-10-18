@@ -62,15 +62,15 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await page.goto("/landing-pages/new");
   const slug = `test-only-operations-${runKey.replaceAll("-", "").slice(-12)}`;
   await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("TEST ONLY Operations Funnel");
-  await page.getByRole("textbox", { name: /^Funnel 網址 \*/u }).fill(slug);
+  await page.getByRole("textbox", { name: /^一頁式網站網址 \*/u }).fill(slug);
   await page.getByRole("button", { name: /建立名單/u }).click();
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await page.getByRole("button", { name: "建立", exact: true }).click();
   await expect(page).toHaveURL(/\/landing-pages\/[^/?]+\/operations$/u);
   const operationsPath = new URL(page.url()).pathname;
   const pageId = operationsPath.split("/").at(-2)!;
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "模板已套用" })).toBeVisible();
-  await page.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await page.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
   const editorPath = new URL(page.url()).pathname;
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
@@ -85,10 +85,10 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
     return { revision: saved.revision, formId: saved.draftFormId, liveId: saved.draftLiveId };
   }).toEqual({ revision: draftBefore.revision + 1, formId: fixture.form.id, liveId: fixture.live.id });
   await expect(page.getByRole("button", { name: "儲存草稿", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: /返回 Configuration$/u }).click();
+  await page.getByRole("button", { name: /返回頁面設定$/u }).click();
   await expect(page).toHaveURL(new RegExp(`${operationsPath.replaceAll("/", "\\/")}\\?step=`, "u"));
-  await page.getByRole("button", { name: "Funnel settings", exact: true }).click();
-  const panel = page.getByRole("region", { name: "Funnel 管理", exact: true });
+  await page.getByRole("button", { name: "網站設定", exact: true }).click();
+  const panel = page.getByRole("region", { name: "一頁式網站管理", exact: true });
   await expect(panel).toBeVisible();
   async function saveSettings() {
     const before = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } });
@@ -100,19 +100,19 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   }
   await panel.getByLabel("名稱", { exact: true }).fill("TEST ONLY Renamed Funnel");
   const changedSlug = `${slug}-edited`;
-  await panel.getByLabel(/^Domain \/ slug/u).fill(changedSlug);
+  await panel.getByLabel(/^網址名稱/u).fill(changedSlug);
   await saveSettings();
   await expect.poll(async () => (await db.landingPage.findUniqueOrThrow({ where: { id: pageId } })).slug).toBe(changedSlug);
   await page.reload();
-  await page.getByRole("button", { name: "Funnel settings", exact: true }).click();
+  await page.getByRole("button", { name: "網站設定", exact: true }).click();
   await expect(panel.getByLabel("名稱", { exact: true })).toHaveValue("TEST ONLY Renamed Funnel");
-  await expect(panel.getByLabel(/^Domain \/ slug/u)).toHaveValue(changedSlug);
-  await expect(panel.getByLabel(/^Currency/u)).toHaveValue("TWD");
+  await expect(panel.getByLabel(/^網址名稱/u)).toHaveValue(changedSlug);
+  await expect(panel.getByLabel(/^幣別/u)).toHaveValue("TWD");
   // Two actual browser editors load the same revision; the later stale write must fail.
   const stale = await page.context().newPage();
   await stale.goto(operationsPath);
-  await stale.getByRole("button", { name: "Funnel settings", exact: true }).click();
-  const stalePanel = stale.getByRole("region", { name: "Funnel 管理", exact: true });
+  await stale.getByRole("button", { name: "網站設定", exact: true }).click();
+  const stalePanel = stale.getByRole("region", { name: "一頁式網站管理", exact: true });
   await expect(stalePanel.getByLabel("名稱", { exact: true })).toHaveValue("TEST ONLY Renamed Funnel");
   await panel.getByLabel("名稱", { exact: true }).fill("TEST ONLY Winning Revision");
   await saveSettings();
@@ -127,7 +127,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await stale.close();
 
   // Each report keeps its own filter; save/reload verifies the persisted model.
-  for (const [tab, days] of [["Stats", 7], ["Leads", 14], ["Sales", 21]] as const) {
+  for (const [tab, days] of [["成效統計", 7], ["報名名單", 14], ["銷售紀錄", 21]] as const) {
     await panel.getByRole("button", { name: tab, exact: true }).click();
     await panel.getByLabel("最近天數", { exact: true }).fill(String(days));
     await panel.getByRole("combobox", { name: /^報表步驟/u }).selectOption({ index: 1 });
@@ -139,28 +139,28 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
     await expect(panel.getByLabel("最近天數", { exact: true })).toHaveValue(String(days));
     await expect(panel.getByRole("combobox", { name: /^報表步驟/u })).toHaveValue(selectedStep);
   }
-  await panel.getByRole("button", { name: "A/B test", exact: true }).click();
+  await panel.getByRole("button", { name: "A/B 測試", exact: true }).click();
   await panel.getByRole("button", { name: "建立 A/B 實驗", exact: true }).click();
-  await panel.getByLabel("Control 權重", { exact: true }).fill("60");
-  await panel.getByLabel("Variant 權重", { exact: true }).fill("40");
+  await panel.getByLabel("對照組權重", { exact: true }).fill("60");
+  await panel.getByLabel("測試組權重", { exact: true }).fill("40");
   await saveSettings();
   await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
   await page.reload();
-  await panel.getByRole("button", { name: "A/B test", exact: true }).click();
-  await expect(panel.getByLabel("Control 權重", { exact: true })).toHaveValue("60");
-  await expect(panel.getByLabel("Variant 權重", { exact: true })).toHaveValue("40");
+  await panel.getByRole("button", { name: "A/B 測試", exact: true }).click();
+  await expect(panel.getByLabel("對照組權重", { exact: true })).toHaveValue("60");
+  await expect(panel.getByLabel("測試組權重", { exact: true })).toHaveValue("40");
 
   await page.goto(editorPath);
   await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click();
   await expect(page.getByRole("link", { name: /查看公開頁/u })).toBeVisible();
   await page.goto(operationsPath);
-  await panel.getByRole("button", { name: "A/B test", exact: true }).click();
+  await panel.getByRole("button", { name: "A/B 測試", exact: true }).click();
   await panel.getByRole("button", { name: "開始實驗", exact: true }).click();
   await saveSettings();
   await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
   await page.reload();
-  await panel.getByRole("button", { name: "A/B test", exact: true }).click();
-  await expect(panel.getByLabel("Control 權重", { exact: true })).toBeDisabled();
+  await panel.getByRole("button", { name: "A/B 測試", exact: true }).click();
+  await expect(panel.getByLabel("對照組權重", { exact: true })).toBeDisabled();
   await expect(panel.getByRole("button", { name: "停止實驗", exact: true })).toBeVisible();
 
   const stored = await db.landingPage.findUniqueOrThrow({ where: { id: pageId } });
@@ -176,15 +176,15 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   expect(observed[0].arm).toBe(observed[1].arm);
   expect(["control", "variant"]).toContain(observed[0].arm);
   await page.goto(operationsPath);
-  await panel.getByRole("button", { name: "Stats", exact: true }).click();
-  await panel.getByText("檢視來源事件 ID（前 20 筆）", { exact: true }).click();
+  await panel.getByRole("button", { name: "成效統計", exact: true }).click();
+  await panel.getByText("檢視來源事件編號（前 20 筆）", { exact: true }).click();
   await expect(panel.getByText(observed[0].id, { exact: false })).toBeVisible();
-  await panel.getByRole("button", { name: "A/B test", exact: true }).click();
+  await panel.getByRole("button", { name: "A/B 測試", exact: true }).click();
   await panel.getByRole("button", { name: "停止實驗", exact: true }).click();
   await saveSettings();
 
   stage = "automation-list";
-  await panel.getByRole("button", { name: "Automation Rules", exact: true }).click();
+  await panel.getByRole("button", { name: "自動化規則", exact: true }).click();
   const automation = page.getByRole("region", { name: "報名後自動化", exact: true });
   const createRule = automation.locator("form").filter({ has: page.getByRole("button", { name: "建立標籤規則", exact: true }) });
   await createRule.getByLabel("規則名稱", { exact: true }).fill("TEST ONLY Tag Rule");
@@ -194,7 +194,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   const rule = automation.getByRole("article");
   await expect(rule).toHaveCount(1);
   await page.reload();
-  await panel.getByRole("button", { name: "Automation Rules", exact: true }).click();
+  await panel.getByRole("button", { name: "自動化規則", exact: true }).click();
   await expect(rule.getByLabel("規則名稱", { exact: true })).toHaveValue("TEST ONLY Tag Rule");
   await rule.getByLabel("客戶標籤", { exact: true }).fill("test-only-unsaved");
   await automation.getByRole("button", { name: "重新載入", exact: true }).click();
@@ -206,7 +206,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await rule.getByRole("button", { name: "停用規則", exact: true }).click();
   await expect(rule.getByText("已停用", { exact: true })).toBeVisible();
   await page.reload();
-  await panel.getByRole("button", { name: "Automation Rules", exact: true }).click();
+  await panel.getByRole("button", { name: "自動化規則", exact: true }).click();
   await expect(rule.getByLabel("客戶標籤", { exact: true })).toHaveValue("test-only-updated");
   await expect(rule.getByRole("button", { name: "啟用規則", exact: true })).toBeVisible();
 
@@ -227,12 +227,12 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   const attribution = await db.funnelSubmission.findFirstOrThrow({ where: { pageId, vendorId: fixture.vendor.id } });
   await expect.poll(() => db.customerTagAssignment.count({ where: { vendorId: fixture.vendor.id, tag: "test-only-updated" } })).toBe(1);
   await page.goto(operationsPath);
-  await panel.getByRole("button", { name: "Leads", exact: true }).click();
+  await panel.getByRole("button", { name: "報名名單", exact: true }).click();
   await expect(panel.getByRole("cell", { name: attribution.submissionId, exact: true })).toBeVisible();
   stage = "sales";
   const sale = await createFunnelSalesProjectionFixture(db, { vendorId: fixture.vendor.id, projectId: fixture.project.id, pageId, stepId: publicSteps[0].id, runKey });
   await page.reload();
-  await panel.getByRole("button", { name: "Sales", exact: true }).click();
+  await panel.getByRole("button", { name: "銷售紀錄", exact: true }).click();
   await expect(panel.getByText(sale.orderNumber, { exact: true })).toBeVisible();
   await expect(panel.getByRole("cell", { name: "123400 / 23400", exact: true })).toBeVisible();
   await expect(panel.getByRole("cell", { name: sale.paymentId, exact: true })).toBeVisible();
@@ -240,7 +240,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await expect(panel.locator("tbody tr")).toHaveCount(1);
 
   stage = "deadline";
-  await panel.getByRole("button", { name: "Deadline settings", exact: true }).click();
+  await panel.getByRole("button", { name: "截止設定", exact: true }).click();
   await panel.getByLabel("啟用截止時間", { exact: true }).check();
   await panel.getByLabel("時區", { exact: true }).fill("America/New_York");
   stage = "deadline-future";
@@ -249,13 +249,13 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await page.goto(`/lp/${changedSlug}`);
   await expect(page.getByRole("textbox", { name: "姓名 *", exact: true })).toBeVisible();
   await page.goto(operationsPath);
-  await panel.getByRole("button", { name: "Deadline settings", exact: true }).click();
+  await panel.getByRole("button", { name: "截止設定", exact: true }).click();
   stage = "deadline-past";
   await panel.getByLabel(/^截止時間（含時區偏移）/u).fill("2000-01-01T00:00:00-05:00");
   await saveSettings();
   await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
   await page.reload();
-  await panel.getByRole("button", { name: "Deadline settings", exact: true }).click();
+  await panel.getByRole("button", { name: "截止設定", exact: true }).click();
   await expect(panel.getByLabel("啟用截止時間", { exact: true })).toBeChecked();
   await expect(panel.getByLabel("時區", { exact: true })).toHaveValue("America/New_York");
   await expect(panel.getByLabel(/^截止時間（含時區偏移）/u)).toHaveValue("2000-01-01T00:00:00-05:00");
@@ -266,10 +266,10 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   expect(denied.status()).toBe(404);
   expect(await db.funnelSubmission.count({ where: { pageId } })).toBe(1);
   await page.goto(operationsPath);
-  await panel.getByRole("button", { name: "Deadline settings", exact: true }).click();
+  await panel.getByRole("button", { name: "截止設定", exact: true }).click();
   stage = "deadline-redirect";
   await panel.getByRole("combobox", { name: /^截止行為/u }).selectOption("redirect");
-  await panel.getByRole("combobox", { name: /^過期導向/u }).selectOption(deadlineRedirectStep.path);
+  await panel.getByRole("combobox", { name: /^到期導向/u }).selectOption(deadlineRedirectStep.path);
   await saveSettings();
   await page.goto(`/lp/${changedSlug}`);
   await expect(page).toHaveURL(origin + `/lp/${changedSlug}/${deadlineRedirectStep.path}`);
@@ -278,7 +278,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await page.goto(operationsPath);
 
   await expect(panel).toBeVisible();
-  await page.getByRole("button", { name: "Funnel settings", exact: true }).click();
+  await page.getByRole("button", { name: "網站設定", exact: true }).click();
   await expect(panel.getByLabel("名稱", { exact: true })).toHaveValue("TEST ONLY Winning Revision");
   // This screenshot contains only synthetic test values; no trace/session export.
   await page.screenshot({ path: process.env.FUNNEL_OPERATIONS_QA_SCREENSHOT_DIR
@@ -296,7 +296,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   stage = "expected-foreign-unavailable";
   await page.goto(`/landing-pages/${foreignPage.id}/operations`);
   await expect(page.getByRole("heading", { name: "無法開啟 Funnel", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Funnel 管理", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "一頁式網站管理", exact: true })).toHaveCount(0);
   await expect(page.getByText("TEST ONLY Foreign Funnel", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "返回 Funnel 列表", exact: true })).toBeVisible();
   expect(errors).toEqual([]);

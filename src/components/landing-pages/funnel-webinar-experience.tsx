@@ -24,7 +24,7 @@ export function FunnelWebinarExperience({ state, stepId, slug, resource, preview
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const step = state.flow.steps.find((item) => item.id === stepId);
   const page = state.pages[stepId];
-  if (!step || !page) return <p role="alert">找不到 Webinar 頁面。</p>;
+  if (!step || !page) return <p role="alert">找不到線上講座頁面。</p>;
   // Legacy or tampered published snapshots must not bypass the Live admission
   // boundary through the general-purpose video's raw URL renderer.
   if (step.type === "webinar_broadcast_page" && hasDirectWebinarVideo(state)) return <p role="alert" className="rounded-xl border border-amber-200 p-4">播放頁含有直接影片節點。請在編輯器移除該節點，並於頁面設定綁定活動與授權來源影片。</p>;

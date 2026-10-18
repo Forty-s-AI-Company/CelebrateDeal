@@ -1,0 +1,80 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`merchant display terminology > keeps the approved display dictionary reviewable 1`] = `
+{
+  "experimentArmLabels": {
+    "control": "對照組",
+    "variant": "測試組",
+  },
+  "experimentStatusLabels": {
+    "draft": "草稿",
+    "running": "進行中",
+    "stopped": "已停止",
+    "winner": "已選定勝出組別",
+  },
+  "funnelGoalLabels": {
+    "audience": "建立名單",
+    "custom": "自訂流程",
+    "sell": "銷售商品",
+    "webinar": "線上講座",
+  },
+  "funnelStepLabels": {
+    "contact_us_page": "聯絡我們",
+    "downsell": "降價加購頁",
+    "inactive_page": "停用頁",
+    "info_page": "資訊頁",
+    "inline_form": "內嵌表單",
+    "link_in_bio": "個人簡介連結頁",
+    "opt_in_page": "名單頁",
+    "opt_in_thank_you_page": "名單感謝頁",
+    "order_form": "訂單表單",
+    "popup_form": "彈出表單",
+    "sales_page": "銷售頁",
+    "thank_you_page": "感謝頁",
+    "upsell": "加購頁",
+    "webinar_broadcast_page": "線上講座播放頁",
+    "webinar_registration_page": "線上講座報名頁",
+    "webinar_thank_you_page": "線上講座感謝頁",
+  },
+  "funnelTabLabels": {
+    "A/B test": "A/B 測試",
+    "Automation Rules": "自動化規則",
+    "Configuration": "頁面設定",
+    "Deadline settings": "截止設定",
+    "Leads": "報名名單",
+    "Sales": "銷售紀錄",
+    "Stats": "成效統計",
+  },
+}
+`;
+
+exports[`snapshots every report status display label 1`] = `
+{
+  "order": {
+    "cancelled": "已取消",
+    "draft": "草稿",
+    "expired": "付款逾期",
+    "paid": "已付款",
+    "partially_refunded": "部分退款",
+    "payment_failed": "付款失敗",
+    "pending_payment": "待付款",
+    "refunded": "已退款",
+  },
+  "payment": {
+    "cancelled": "已取消",
+    "dispute_lost": "付款爭議敗訴",
+    "dispute_opened": "付款爭議處理中",
+    "dispute_released": "付款爭議已解除",
+    "expired": "付款逾期",
+    "failed": "付款失敗",
+    "paid": "已付款",
+    "partially_refunded": "部分退款",
+    "pending": "待付款",
+    "refunded": "已退款",
+  },
+  "verification": {
+    "UNVERIFIED": "尚未驗證",
+    "VERIFIED": "已驗證",
+  },
+}
+`;
