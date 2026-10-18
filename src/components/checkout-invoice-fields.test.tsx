@@ -12,6 +12,16 @@ describe("CheckoutInvoiceFields", () => {
     expect(html).toContain('value="mobile"');
     expect(html).toContain('value="citizen_certificate"');
     expect(html).toContain('role="alert"');
+    expect(html).toContain("自動電子發票尚未開放");
+    expect(html).toContain("本頁僅收集發票需求");
+    expect(html).toContain("填寫資料或付款成功均不代表已開立");
+  });
+
+  it("keeps the unavailable notice visible when payment fields are disabled", () => {
+    const html = renderToStaticMarkup(<CheckoutInvoiceFields disabled />);
+    expect(html).toContain('disabled=""');
+    expect(html).toContain("自動電子發票尚未開放");
+    expect(html).toContain('name="invoiceType"');
   });
 
   it("returns immediate errors for invalid switched-field values", () => {
