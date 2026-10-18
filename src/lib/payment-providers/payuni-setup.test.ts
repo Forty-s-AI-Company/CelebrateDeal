@@ -9,6 +9,7 @@ vi.mock("@/lib/db", () => ({
 
 import { chargePayUniLiveProbe, normalizePayUniLiveProbeCallback, payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import { payUniSetupNonce } from "@/lib/payuni-setup-correlation";
+import { PaymentMethodSetupProviderResultError } from "@/lib/payment-providers/types";
 
 const hashKey = "12345678901234567890123456789012";
 const hashIv = "1234567890123456";
@@ -30,14 +31,14 @@ function decrypt(encryptInfo: string) {
   ]).toString("utf8")));
 }
 
-function signedCallback(payload: Record<string, string>, version = "2.0", signingKey = hashKey, signingIv = hashIv) {
+function signedCallback(payload: Record<string, string>, version = "2.0", signingKey = hashKey, signingIv = hashIv, outerStatus = "SUCCESS") {
   const cipher = createCipheriv("aes-256-gcm", Buffer.from(signingKey), Buffer.from(signingIv));
   const encrypted = Buffer.concat([
     cipher.update(new URLSearchParams(payload).toString(), "utf8"), cipher.final(),
   ]).toString("base64");
   const encryptInfo = Buffer.from(`${encrypted}:::${cipher.getAuthTag().toString("base64")}`).toString("hex");
   return new URLSearchParams({
-    MerID: "TESTMER", Version: version, Status: "SUCCESS", EncryptInfo: encryptInfo,
+    MerID: "TESTMER", Version: version, Status: outerStatus, EncryptInfo: encryptInfo,
     HashInfo: createHash("sha256").update(`${signingKey}${encryptInfo}${signingIv}`).digest("hex").toUpperCase(),
   }).toString();
 }
@@ -188,5 +189,117 @@ describe("PAYUNi official UPP setup contract", () => {
       CreditHash: "opaque-credit-hash",
     });
     await expect(payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(wrongAmount)).rejects.toThrow();
+  });
+  it("classifies an authenticated UPP rejection as a provider decline with codes only", async () => {
+    environment();
+    dbMocks.findUnique.mockResolvedValue({ id: orderNumber, vendorId: "vendor-1", providerName: "payuni" });
+    const body = signedCallback({
+      MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02086", Message: "商店未提供約定信用卡幕後交易",
+      CreditHash: "opaque-credit-hash", Card6No: "414763", Card4No: "0001", UsrMail: "buyer@example.test",
+    }, "2.0", hashKey, hashIv, "UPP02086");
+    expect(await payUniPaymentProvider.verifyPaymentMethodSetupSignature?.(new Request("https://app.test"), body)).toBe(true);
+
+    const error = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(body).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PaymentMethodSetupProviderResultError);
+    const result = error as PaymentMethodSetupProviderResultError;
+    expect(result.outcome).toBe("declined");
+    expect(result.diagnostics).toEqual({ outerStatus: "UPP02086", status: "UPP02086" });
+    expect(result.scope).toEqual({ setupIntentId: orderNumber, vendorId: "vendor-1" });
+    expect(JSON.stringify(result)).not.toMatch(/opaque-credit-hash|414763|0001|buyer@example|商店未提供/u);
+    expect(dbMocks.findUnique).toHaveBeenCalledExactlyOnceWith({
+      where: { id: orderNumber }, select: { id: true, vendorId: true, providerName: true },
+    });
+  });
+
+  it("keeps bounded card result codes and a code-shaped message from a declined authorization", async () => {
+    environment();
+    dbMocks.findUnique.mockResolvedValue(null);
+    const body = signedCallback({
+      MerID: "TESTMER", MerTradeNo: orderNumber, TradeNo: "TRADE-1", Status: "CREDIT05001", Message: "CREDIT05001",
+      TradeStatus: "2", PaymentType: "1", TradeAmt: "1", ResCode: "05", ResCodeMsg: "拒絕交易",
+    }, "2.0", hashKey, hashIv, "CREDIT05001");
+
+    const error = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(body).catch((caught: unknown) => caught) as PaymentMethodSetupProviderResultError;
+
+    expect(error).toBeInstanceOf(PaymentMethodSetupProviderResultError);
+    expect(error.diagnostics).toEqual({
+      outerStatus: "CREDIT05001", status: "CREDIT05001", messageCode: "CREDIT05001", tradeStatus: "2", resCode: "05",
+    });
+    expect(error.scope).toBeNull();
+  });
+
+  it("classifies UNKNOWN and awaiting-confirmation results as pending", async () => {
+    environment();
+    dbMocks.findUnique.mockResolvedValue(null);
+    const unknown = signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UNKNOWN" }, "2.0", hashKey, hashIv, "UNKNOWN");
+    await expect(payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(unknown)).rejects.toMatchObject({ outcome: "pending" });
+    const awaiting = signedCallback({
+      MerID: "TESTMER", MerTradeNo: orderNumber, Status: "SUCCESS", TradeStatus: "8", PaymentType: "1", TradeAmt: "1",
+    });
+    await expect(payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(awaiting)).rejects.toMatchObject({
+      outcome: "pending", diagnostics: { outerStatus: "SUCCESS", status: "SUCCESS", tradeStatus: "8" },
+    });
+  });
+
+  it("does not attribute a decline to a non-setup order number or leak unbounded status text", async () => {
+    environment();
+    const body = signedCallback({
+      MerID: "TESTMER", MerTradeNo: "../../other-tenant", Status: "card 4147631000000001 declined",
+    }, "2.0", hashKey, hashIv, "FAILED");
+    const error = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(body).catch((caught: unknown) => caught) as PaymentMethodSetupProviderResultError;
+    expect(error).toBeInstanceOf(PaymentMethodSetupProviderResultError);
+    expect(error.diagnostics).toEqual({ outerStatus: "FAILED", status: "unrecognized" });
+    expect(error.scope).toBeNull();
+    expect(dbMocks.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("treats a result that breaks the setup contract as malformed, not a provider decline", async () => {
+    environment();
+    const wrongMerchant = signedCallback({
+      MerID: "OTHERMER", MerTradeNo: orderNumber, Status: "UPP02086",
+    }, "2.0", hashKey, hashIv, "UPP02086");
+    const merchantError = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(wrongMerchant).catch((caught: unknown) => caught);
+    expect(merchantError).toBeInstanceOf(Error);
+    expect(merchantError).not.toBeInstanceOf(PaymentMethodSetupProviderResultError);
+
+    const noStatus = signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber }, "2.0", hashKey, hashIv, "");
+    const noStatusError = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(noStatus).catch((caught: unknown) => caught);
+    expect(noStatusError).toBeInstanceOf(Error);
+    expect(noStatusError).not.toBeInstanceOf(PaymentMethodSetupProviderResultError);
+
+    const wrongAmount = signedCallback({
+      MerID: "TESTMER", MerTradeNo: orderNumber, TradeNo: "TRADE-1",
+      Status: "SUCCESS", TradeStatus: "1", PaymentType: "1", TradeAmt: "2", CreditHash: "opaque-credit-hash",
+    });
+    const amountError = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(wrongAmount).catch((caught: unknown) => caught);
+    expect(amountError).toBeInstanceOf(Error);
+    expect(amountError).not.toBeInstanceOf(PaymentMethodSetupProviderResultError);
+  });
+
+  it("keeps the documented UPP 2.0 card-binding parameters unchanged", async () => {
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", hashKey);
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", hashIv);
+    vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "TESTMER");
+    vi.stubEnv("PAYUNI_ENV", "sandbox");
+    const session = await payUniPaymentProvider.createPaymentMethodSetupSession?.({
+      intentId: orderNumber,
+      setupNonce: payUniSetupNonce(orderNumber),
+      vendor: { id: "vendor-1" } as Vendor,
+      scopeType: "VENDOR",
+      appUrl: "https://staging.example.test",
+      returnPath: "/billing/payment-methods",
+    });
+    expect(session?.formAction).toBe("https://sandbox-api.payuni.com.tw/api/upp");
+    expect(session?.formPayload).toMatchObject({ MerID: "TESTMER", Version: "2.0" });
+    const payload = decrypt(session!.formPayload!.EncryptInfo);
+    // docs.payuni.com.tw/web/#/7/34: MerTradeNo <= 25 [A-Za-z0-9_-]; CreditToken <= 200
+    // [A-Za-z0-9@.#$%_-+]; TradeLExpireSec 60-600; credit card TradeAmt 1-199,999 (#/7/170).
+    expect(payload.MerTradeNo).toMatch(/^[A-Za-z0-9_-]{1,25}$/);
+    expect(payload.CreditToken).toMatch(/^[A-Za-z0-9@.#$%_+-]{1,200}$/);
+    expect(Number(payload.TradeLExpireSec)).toBeGreaterThanOrEqual(60);
+    expect(Number(payload.TradeLExpireSec)).toBeLessThanOrEqual(600);
+    expect(payload).toMatchObject({ TradeAmt: "1", Credit: "1", UseTokenType: "1", CreditTokenType: "2" });
+    expect(payload.ProdDesc.length).toBeGreaterThan(0);
   });
 });

@@ -3,6 +3,11 @@ import { activePayUniCredentials } from "@/lib/payuni-credentials";
 
 const PAYUNI_SETUP_ORDER = /^pm[A-Za-z0-9_-]{22}$/;
 
+/** True only for the bounded, server-generated setup order number format. */
+export function isPayUniSetupOrderNumber(value: string) {
+  return PAYUNI_SETUP_ORDER.test(value);
+}
+
 /** PAYUNi echoes MerTradeNo but not CreditToken in the signed UPP callback. */
 export function newPayUniSetupOrderNumber() {
   return `pm${randomBytes(16).toString("base64url")}`;

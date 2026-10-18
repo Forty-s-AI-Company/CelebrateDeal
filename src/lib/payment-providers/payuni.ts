@@ -3,11 +3,14 @@ import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import { getDb } from "@/lib/db";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
 import { payUniStagingPlanSessionAllowed } from "@/lib/payuni-staging-plan-test";
-import { payUniSetupNonce } from "@/lib/payuni-setup-correlation";
+import { isPayUniSetupOrderNumber, payUniSetupNonce } from "@/lib/payuni-setup-correlation";
 import { PAYUNI_MAX_CREDIT_TRADE_AMOUNT, PAYUNI_MIN_TRADE_AMOUNT } from "@/lib/payment-providers/payuni-amount";
 import {
   PaymentQueryProviderError,
+  PaymentMethodSetupProviderResultError,
   type PaymentMethodReferenceRevocationInput,
+  type PaymentMethodSetupProviderDiagnostics,
+  type PaymentMethodSetupProviderOutcome,
   RefundProviderError,
   type PaymentProviderAdapter,
   type RefundPaymentInput,
@@ -566,6 +569,65 @@ function payUniCallbackUrl(appUrl: string, source: "notify" | "return") {
   return url.toString();
 }
 
+const PAYUNI_STATUS_CODE = /^[A-Za-z0-9_-]{1,32}$/;
+const PAYUNI_MESSAGE_CODE = /^[A-Z]{2,10}[0-9]{2,10}$/;
+const PAYUNI_PENDING_STATUSES = new Set(["UNKNOWN", "UNAPPROVED"]);
+
+function payUniDiagnosticCode(value: unknown, pattern: RegExp) {
+  const text = optionalPayloadText(value);
+  if (text === undefined) return undefined;
+  return pattern.test(text) ? text : "unrecognized";
+}
+
+/**
+ * Reduces an authenticated setup result to provider status codes. Message is
+ * free text in PAYUNi's contract, so it is kept only when it is itself a code.
+ */
+function payUniSetupProviderResult(
+  envelope: Record<string, unknown>,
+  decrypted: Record<string, unknown>,
+): { outcome: PaymentMethodSetupProviderOutcome; diagnostics: PaymentMethodSetupProviderDiagnostics } | null {
+  const outerStatus = optionalPayloadText(envelope.Status);
+  const status = optionalPayloadText(decrypted.Status);
+  const tradeStatus = optionalPayloadText(decrypted.TradeStatus);
+  const statuses = [outerStatus, status].filter((value): value is string => value !== undefined);
+  // Without any provider status this is not a provider decision; the caller
+  // treats it as a malformed payload.
+  if (statuses.length === 0) return null;
+  const reportedFailure = statuses.some((value) => value !== "SUCCESS");
+  // TradeStatus 2/3 are failed/cancelled and 8 is awaiting confirmation.
+  if (!reportedFailure && tradeStatus !== "2" && tradeStatus !== "3" && tradeStatus !== "8") return null;
+
+  const message = optionalPayloadText(decrypted.Message);
+  const diagnostics: PaymentMethodSetupProviderDiagnostics = {
+    outerStatus: payUniDiagnosticCode(outerStatus, PAYUNI_STATUS_CODE),
+    status: payUniDiagnosticCode(status, PAYUNI_STATUS_CODE),
+    messageCode: message && PAYUNI_MESSAGE_CODE.test(message) ? message : undefined,
+    tradeStatus: payUniDiagnosticCode(tradeStatus, /^[0-9]{1,2}$/),
+    resCode: payUniDiagnosticCode(decrypted.ResCode, /^[A-Za-z0-9]{1,8}$/),
+  };
+  for (const key of Object.keys(diagnostics) as (keyof PaymentMethodSetupProviderDiagnostics)[]) {
+    if (diagnostics[key] === undefined) delete diagnostics[key];
+  }
+  const pending = statuses.some((value) => PAYUNI_PENDING_STATUSES.has(value.toUpperCase())) || tradeStatus === "8";
+  return { outcome: pending ? "pending" : "declined", diagnostics };
+}
+
+/** Best-effort audit attribution; only a stored PAYUNi intent can name a vendor. */
+async function payUniSetupDiagnosticScope(merTradeNo: unknown) {
+  const orderNumber = optionalPayloadText(merTradeNo);
+  if (!orderNumber || !isPayUniSetupOrderNumber(orderNumber)) return null;
+  try {
+    const intent = await getDb().paymentMethodSetupIntent.findUnique({
+      where: { id: orderNumber },
+      select: { id: true, vendorId: true, providerName: true },
+    });
+    return intent && intent.providerName === "payuni" ? { setupIntentId: intent.id, vendorId: intent.vendorId } : null;
+  } catch {
+    return null;
+  }
+}
+
 function payUniSetupCallbackUrl(appUrl: string, source: "notify" | "return") {
   const url = new URL("/api/webhooks/payment-methods", appUrl);
   url.searchParams.set("provider", "payuni");
@@ -800,11 +862,23 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   async normalizePaymentMethodSetupPayload(rawBody) {
     const envelope = parseRawPayload(rawBody);
     const decrypted = decryptInfo(requiredPayloadText(envelope.EncryptInfo, "setup payload"));
-    const intentId = requiredPayloadText(decrypted.MerTradeNo, "setup order number");
     const merchantId = activePayUniCredentials().merchantId;
+    if (!merchantId || optionalPayloadText(decrypted.MerID) !== merchantId) {
+      throw new Error("PayUni setup merchant does not match.");
+    }
+    // An authenticated non-SUCCESS result is a provider decision (for example
+    // a UPP0xxxx request rejection or a card decline), not a forged payload.
+    const providerResult = payUniSetupProviderResult(envelope, decrypted);
+    if (providerResult) {
+      throw new PaymentMethodSetupProviderResultError(
+        providerResult.outcome,
+        providerResult.diagnostics,
+        await payUniSetupDiagnosticScope(decrypted.MerTradeNo),
+      );
+    }
+    const intentId = requiredPayloadText(decrypted.MerTradeNo, "setup order number");
     if (optionalPayloadText(envelope.Status) !== "SUCCESS"
       || optionalPayloadText(decrypted.Status) !== "SUCCESS"
-      || optionalPayloadText(decrypted.MerID) !== merchantId
       || optionalPayloadText(decrypted.PaymentType) !== "1"
       || optionalPayloadText(decrypted.TradeStatus) !== "1"
       || optionalPayloadText(decrypted.TradeAmt) !== "1") {

@@ -152,6 +152,38 @@ export class PaymentQueryProviderError extends Error {
   }
 }
 
+/**
+ * Provider status codes from an authenticated setup result. Every value is a
+ * bounded provider code or fixed enum; never card data, tokens or free text.
+ */
+export type PaymentMethodSetupProviderDiagnostics = {
+  outerStatus?: string;
+  status?: string;
+  messageCode?: string;
+  tradeStatus?: string;
+  resCode?: string;
+};
+
+/** "declined": the provider did not bind a card. "pending": the provider has not decided yet. */
+export type PaymentMethodSetupProviderOutcome = "declined" | "pending";
+
+/**
+ * Thrown by `normalizePaymentMethodSetupPayload` only after the callback is
+ * authenticated and the provider explicitly reports a non-successful result.
+ * Malformed or unauthenticated payloads must keep throwing a plain Error.
+ */
+export class PaymentMethodSetupProviderResultError extends Error {
+  constructor(
+    public readonly outcome: PaymentMethodSetupProviderOutcome,
+    public readonly diagnostics: PaymentMethodSetupProviderDiagnostics,
+    /** Server-owned intent scope, present only when the signed order matches a stored intent. */
+    public readonly scope: { setupIntentId: string; vendorId: string } | null = null,
+  ) {
+    super("Payment provider did not complete payment method setup.");
+    this.name = "PaymentMethodSetupProviderResultError";
+  }
+}
+
 export type PaymentProviderAdapter = {
   id: string;
   /** Session preparation is pure local work; no remote trade is created. */

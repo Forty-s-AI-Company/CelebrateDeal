@@ -10,7 +10,12 @@ import { hasPaymentMethodSetupCapability } from "@/lib/payment-method-setup";
 import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
 import { revokePaymentMethodReferenceAction } from "@/app/actions/payment-method-actions";
 
-type PaymentMethodsSearchParams = { error?: string | string[]; status?: string | string[] };
+type PaymentMethodsSearchParams = {
+  error?: string | string[];
+  status?: string | string[];
+  setup?: string | string[];
+  reason?: string | string[];
+};
 
 type PaymentMethodsPageProps = {
   searchParams?: Promise<PaymentMethodsSearchParams>;
@@ -58,6 +63,35 @@ function errorMessage(error: string | undefined) {
     default:
       return null;
   }
+}
+
+/**
+ * Copy for the PAYUNi ReturnURL redirect. The query is not trusted: success only
+ * says a result came back, and the saved references below remain the source of truth.
+ */
+function setupReturnFailureMessage(setup: string | undefined, reason: string | undefined) {
+  if (setup !== "failed") return null;
+  switch (reason) {
+    case "provider_declined":
+      return "金流未完成綁定驗證，請稍後再試或改用其他卡片。這次沒有建立任何付款方式。";
+    case "provider_pending":
+      return "金流尚未確認這次綁定驗證的結果；確認後會自動更新，請稍後重新整理本頁。";
+    case "rejected":
+      return "這次驗證已失效或已處理過，沒有建立新的付款方式；如需綁定請重新開始驗證。";
+    case "processing_failed":
+      return "金流已回傳結果，但系統暫時無法完成處理，會再自動確認；請稍後重新整理本頁。";
+    case "invalid_payload":
+    case "unverified":
+      return "無法確認金流回傳的綁定結果，這次沒有建立任何付款方式；請重新開始驗證。";
+    case "unavailable":
+      return "付款方式設定暫時無法使用，這次沒有建立任何付款方式；請稍後再試。";
+    default:
+      return "付款方式綁定未完成，這次沒有建立任何付款方式；請重新開始驗證。";
+  }
+}
+
+function setupReturnSuccessMessage(setup: string | undefined) {
+  return setup === "success" ? "金流已回傳綁定驗證結果；請以下方「已保存的驗證狀態」為準。" : null;
 }
 
 function statusMessage(status: string | undefined) {
@@ -127,8 +161,9 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
     }),
   ]);
   const params = searchParams ? await searchParams : {};
-  const message = errorMessage(queryValue(params.error));
-  const status = statusMessage(queryValue(params.status));
+  const setupResult = queryValue(params.setup);
+  const message = errorMessage(queryValue(params.error)) ?? setupReturnFailureMessage(setupResult, queryValue(params.reason));
+  const status = statusMessage(queryValue(params.status)) ?? setupReturnSuccessMessage(setupResult);
   const provider = providerSetupState(vendor.id);
   const renderedAt = new Date();
   const membershipNames = new Map(

@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   probeUpdate: vi.fn(),
   referenceFindUnique: vi.fn(),
   transaction: vi.fn(),
+  eventFindUnique: vi.fn(),
+  captureOperationalError: vi.fn(),
 }));
 
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
@@ -27,6 +29,7 @@ vi.mock("@/lib/payment-method-reference", () => ({
   PaymentMethodReferenceValidationError: class PaymentMethodReferenceValidationError extends Error {},
   PaymentMethodSetupConflictError: class PaymentMethodSetupConflictError extends Error {},
 }));
+vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.writeAuditLog, auditSnapshot: mocks.auditSnapshot }));
 vi.mock("@/lib/payment-method-setup-intent", () => ({
   consumePaymentMethodSetupIntent: mocks.consumeIntent,
@@ -34,6 +37,7 @@ vi.mock("@/lib/payment-method-setup-intent", () => ({
 }));
 
 import { POST } from "@/app/api/webhooks/payment-methods/route";
+import { PaymentMethodSetupProviderResultError } from "@/lib/payment-providers/types";
 
 function request(provider = "payuni", body = "signed-body") {
   return new Request(`https://app.example.test/api/webhooks/payment-methods?provider=${provider}`, {
@@ -80,6 +84,7 @@ beforeEach(() => {
     webhookEvent: {
       upsert: mocks.eventUpsert,
       updateMany: mocks.eventUpdateMany,
+      findUnique: mocks.eventFindUnique,
     },
     $transaction: mocks.transaction,
   });
@@ -174,5 +179,231 @@ describe("POST /api/webhooks/payment-methods", () => {
     const response = await POST(request());
     expect(response.status).toBe(409);
     expect(mocks.applyVerifiedPaymentMethodSetup).not.toHaveBeenCalled();
+  });
+});
+
+function sourceRequest(source: string, extraQuery = "") {
+  return new Request(`https://app.example.test/api/webhooks/payment-methods?provider=payuni&source=${source}${extraQuery}`, {
+    method: "POST",
+    headers: { "x-payment-provider": "payuni", "content-type": "application/x-www-form-urlencoded" },
+    body: "signed-body",
+  });
+}
+
+const ALLOWED_PROVIDER_CODE_KEYS = [
+  "errorCode",
+  "providerOuterStatus",
+  "providerStatus",
+  "providerMessageCode",
+  "providerTradeStatus",
+  "providerResCode",
+];
+
+function expectBrowserRedirect(response: Response, location: string) {
+  expect(response.status).toBe(303);
+  expect(response.headers.get("location")).toBe(location);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  expect(response.headers.get("content-type") ?? "").not.toContain("json");
+}
+
+describe("POST /api/webhooks/payment-methods payer ReturnURL", () => {
+  it("redirects a verified setup return to the fixed billing page", async () => {
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=success");
+    await expect(response.text()).resolves.toBe("");
+    expect(mocks.applyVerifiedPaymentMethodSetup).toHaveBeenCalledOnce();
+    expect(mocks.eventUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "processed" }) }));
+  });
+
+  it("converges on success when notify already processed the same signed event", async () => {
+    mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "processed", eventType: "payment_method_setup_verified", vendorId: "vendor-1", payload: { setupIntentId: "intent-1" } });
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=success");
+    expect(mocks.consumeIntent).not.toHaveBeenCalled();
+    expect(mocks.applyVerifiedPaymentMethodSetup).not.toHaveBeenCalled();
+  });
+
+  it("reports success when a concurrent notify consumed the intent and committed the event", async () => {
+    const { PaymentMethodSetupIntentRejectedError } = await import("@/lib/payment-method-setup-intent");
+    mocks.consumeIntent.mockRejectedValue(new PaymentMethodSetupIntentRejectedError());
+    mocks.eventFindUnique.mockResolvedValue({ status: "processed", eventType: "payment_method_setup_verified" });
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=success");
+    expect(mocks.eventFindUnique).toHaveBeenCalledWith({ where: { id: "webhook-event-1" }, select: { status: true, eventType: true } });
+  });
+
+  it("reports a rejected intent when no processed event exists", async () => {
+    const { PaymentMethodSetupIntentRejectedError } = await import("@/lib/payment-method-setup-intent");
+    mocks.consumeIntent.mockRejectedValue(new PaymentMethodSetupIntentRejectedError());
+    mocks.eventFindUnique.mockResolvedValue({ status: "failed", eventType: "payment_method_setup_verified" });
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=failed&reason=rejected");
+    expect(mocks.applyVerifiedPaymentMethodSetup).not.toHaveBeenCalled();
+  });
+
+  it("reports a retryable processing failure without claiming success", async () => {
+    mocks.applyVerifiedPaymentMethodSetup.mockRejectedValue(new Error("database unavailable"));
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=failed&reason=processing_failed");
+    expect(mocks.eventFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("redirects an authenticated PAYUNi decline and records only provider codes", async () => {
+    mocks.setupNormalize.mockRejectedValue(new PaymentMethodSetupProviderResultError("declined", {
+      outerStatus: "UPP02086", status: "UPP02086", messageCode: "UPP02086", tradeStatus: "2", resCode: "05",
+    }, { setupIntentId: "pmABCDEFGHIJKLMNOPQRSTUV", vendorId: "vendor-1" }));
+
+    const response = await POST(sourceRequest("return"));
+
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=failed&reason=provider_declined");
+    expect(mocks.eventUpsert).not.toHaveBeenCalled();
+    expect(mocks.consumeIntent).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).toHaveBeenCalledExactlyOnceWith({
+      vendorId: "vendor-1",
+      actorLabel: "payment-method-webhook:payuni",
+      action: "payment_method_setup_provider_declined",
+      targetType: "PaymentMethodSetupIntent",
+      targetId: "pmABCDEFGHIJKLMNOPQRSTUV",
+      before: { providerId: "payuni", bodyBytes: "signed-body".length, callbackSource: "return" },
+      after: {
+        errorCode: "provider_declined",
+        providerOuterStatus: "UPP02086",
+        providerStatus: "UPP02086",
+        providerMessageCode: "UPP02086",
+        providerTradeStatus: "2",
+        providerResCode: "05",
+      },
+    });
+    const auditAfter = mocks.writeAuditLog.mock.calls[0][0].after as Record<string, unknown>;
+    expect(Object.keys(auditAfter).every((key) => ALLOWED_PROVIDER_CODE_KEYS.includes(key))).toBe(true);
+    expect(mocks.captureOperationalError).toHaveBeenCalledExactlyOnceWith(
+      expect.any(Error),
+      {
+        source: "payment_method_setup_webhook",
+        operation: "provider_declined",
+        provider: "payuni",
+        callbackSource: "return",
+        providerOuterStatus: "UPP02086",
+        providerStatus: "UPP02086",
+        providerMessageCode: "UPP02086",
+        providerTradeStatus: "2",
+        providerResCode: "05",
+      },
+      { fingerprint: ["payment-method-setup", "provider_declined", "UPP02086"] },
+    );
+  });
+
+  it("distinguishes a provider pending result and audits it without vendor attribution when unscoped", async () => {
+    mocks.setupNormalize.mockRejectedValue(new PaymentMethodSetupProviderResultError("pending", { outerStatus: "UNKNOWN" }));
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=failed&reason=provider_pending");
+    expect(mocks.writeAuditLog).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      vendorId: null,
+      action: "payment_method_setup_provider_pending",
+      targetType: "WebhookEvent",
+      targetId: null,
+      after: { errorCode: "provider_pending", providerOuterStatus: "UNKNOWN" },
+    }));
+  });
+
+  it("redirects a malformed authenticated payload as invalid without provider codes", async () => {
+    mocks.setupNormalize.mockRejectedValue(new Error("Missing PayUni setup trade number."));
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=failed&reason=invalid_payload");
+    expect(mocks.writeAuditLog).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      action: "payment_method_setup_invalid",
+      after: { errorCode: "invalid_payload" },
+    }));
+    expect(mocks.captureOperationalError).toHaveBeenCalledExactlyOnceWith(
+      expect.any(Error),
+      { source: "payment_method_setup_webhook", operation: "invalid_payload", provider: "payuni", callbackSource: "return" },
+      { fingerprint: ["payment-method-setup", "invalid_payload"] },
+    );
+    expect(mocks.eventUpsert).not.toHaveBeenCalled();
+  });
+
+  it("keeps forged-signature handling and only changes the browser presentation", async () => {
+    mocks.setupVerify.mockResolvedValue(false);
+    const response = await POST(sourceRequest("return"));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=failed&reason=unverified");
+    expect(mocks.setupNormalize).not.toHaveBeenCalled();
+    expect(mocks.eventUpsert).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      action: "payment_method_setup_signature_failed",
+      before: { providerId: "payuni", bodyBytes: "signed-body".length },
+    }));
+    expect(mocks.captureOperationalError).not.toHaveBeenCalled();
+  });
+
+  it("never redirects outside the fixed same-origin billing path", async () => {
+    const response = await POST(new Request(
+      "https://attacker.example/api/webhooks/payment-methods?provider=payuni&source=return&next=https%3A%2F%2Fattacker.example%2F&reason=evil",
+      { method: "POST", headers: { "x-payment-provider": "payuni", host: "attacker.example" }, body: "signed-body" },
+    ));
+    expectBrowserRedirect(response, "/billing/payment-methods?setup=success");
+  });
+
+  it("redirects configuration failures on the return path instead of rendering JSON", async () => {
+    mocks.getPaymentProvider.mockReturnValue({ id: "payuni" });
+    expectBrowserRedirect(await POST(sourceRequest("return")), "/billing/payment-methods?setup=failed&reason=unavailable");
+    mocks.readTextBody.mockResolvedValue(null);
+    mocks.getPaymentProvider.mockReturnValue({
+      id: "payuni",
+      verifyPaymentMethodSetupSignature: mocks.setupVerify,
+      normalizePaymentMethodSetupPayload: mocks.setupNormalize,
+    });
+    expectBrowserRedirect(await POST(sourceRequest("return")), "/billing/payment-methods?setup=failed&reason=invalid_payload");
+  });
+});
+
+describe("POST /api/webhooks/payment-methods notify contract", () => {
+  it("keeps the JSON success contract for notify", async () => {
+    const response = await POST(sourceRequest("notify"));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, eventId: "webhook-event-1" });
+  });
+
+  it("keeps the 400 invalid_payload contract for an authenticated provider decline", async () => {
+    mocks.setupNormalize.mockRejectedValue(new PaymentMethodSetupProviderResultError("declined", { outerStatus: "UPP02086" }));
+    const response = await POST(sourceRequest("notify"));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid payment method setup payload", code: "invalid_payload" });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "payment_method_setup_provider_declined" }));
+  });
+
+  it("keeps 400 for malformed notify payloads and 401 for forged notify signatures", async () => {
+    mocks.setupNormalize.mockRejectedValue(new Error("malformed"));
+    const malformed = await POST(sourceRequest("notify"));
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toEqual({ error: "Invalid payment method setup payload", code: "invalid_payload" });
+
+    mocks.setupVerify.mockResolvedValue(false);
+    const forged = await POST(sourceRequest("notify"));
+    expect(forged.status).toBe(401);
+    await expect(forged.json()).resolves.toEqual({ error: "Invalid signature" });
+  });
+
+  it("treats an ambiguous repeated source as a server-to-server caller", async () => {
+    mocks.setupVerify.mockResolvedValue(false);
+    const response = await POST(sourceRequest("return", "&source=return"));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid signature" });
+  });
+
+  it("keeps the notify 409 and 500 processing contract", async () => {
+    const { PaymentMethodSetupIntentRejectedError } = await import("@/lib/payment-method-setup-intent");
+    mocks.consumeIntent.mockRejectedValue(new PaymentMethodSetupIntentRejectedError());
+    mocks.eventFindUnique.mockResolvedValue({ status: "processed", eventType: "payment_method_setup_verified" });
+    const rejected = await POST(sourceRequest("notify"));
+    expect(rejected.status).toBe(409);
+    await expect(rejected.json()).resolves.toEqual({ error: "Payment method setup processing failed", code: "payment_method_setup_rejected" });
+    expect(mocks.eventFindUnique).not.toHaveBeenCalled();
+
+    mocks.consumeIntent.mockReset();
+    mocks.applyVerifiedPaymentMethodSetup.mockRejectedValue(new Error("database unavailable"));
+    const failedResponse = await POST(sourceRequest("notify"));
+    expect(failedResponse.status).toBe(500);
+    await expect(failedResponse.json()).resolves.toEqual({ error: "Payment method setup processing failed", code: "processing_failed" });
   });
 });
