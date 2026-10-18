@@ -1,0 +1,69 @@
+name: Staging migrate
+
+# Applies the protected master migration chain to the fixed non-Production
+# staging Supabase project. Run "status" first; "deploy" only applies pending
+# forward migrations (prisma migrate deploy never resets or drops data), and
+# refuses when the staging history diverged or a migration failed.
+#
+# STAGING_DATABASE_URL must use the Supabase pooler (user postgres.<project-ref>,
+# host aws-N-<region>.pooler.supabase.com): GitHub-hosted runners have no IPv6,
+# and the direct db.<project-ref>.supabase.co host is IPv6-only. Migrations
+# always connect on the session port 5432; a pooler URL on the transaction port
+# 6543 (as the runtime secret uses) is moved to 5432 on the same host.
+# Accepted query parameters: sslmode=require|verify-full, schema=public,
+# pgbouncer=true and bounded runtime pool hints (connection_limit,
+# connect_timeout, pool_timeout, socket_timeout, statement_cache_size), which
+# are dropped before Prisma runs. The repository is public, so the script
+# prints only fixed codes and allowlisted Prisma summary lines.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: status (read-only) or deploy
+        required: true
+        type: choice
+        options:
+          - status
+          - deploy
+
+permissions:
+  contents: read
+
+# Shares the staging-migration-apply.yml group so the two staging migration
+# workflows can never run against the database at the same time.
+concurrency:
+  group: fixed-staging-migration-apply
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: Preview – celebrate-deal-staging
+    steps:
+      - name: Checkout protected master
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked tooling without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Preload Prisma schema engine before staging credentials
+        run: node node_modules/@prisma/engines/scripts/postinstall.js
+
+      - name: Verify migrate guard contract
+        run: node --test scripts/staging-migrate.test.mjs
+
+      - name: Run prisma migrate on the fixed staging project
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          MIGRATE_MODE: ${{ inputs.mode }}
+        run: node scripts/staging-migrate.mjs "$MIGRATE_MODE"
