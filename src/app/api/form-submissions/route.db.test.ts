@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as emailDelivery from "@/lib/email-delivery";
 import { getDb } from "@/lib/db";
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -18,6 +19,7 @@ afterEach(async () => {
   await getDb().vendor.deleteMany({
     where: { id: { in: createdVendorIds.splice(0) } },
   });
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
 function submissionRequest(formId: string, email: string) {
@@ -84,4 +86,50 @@ describe("form submission database invariants", () => {
       },
     })).toBe(1);
   });
+});
+
+it("retains native fields after a queue 503 and resubmits without a duplicate registration", async () => {
+  const suffix = `wp05-retry-${Date.now()}`;
+  const vendor = await getDb().vendor.create({ data: { name: "Synthetic Retry", slug: suffix, email: `${suffix}@example.test`, passwordHash: "synthetic-unused" } });
+  createdVendorIds.push(vendor.id);
+  const form = await getDb().registrationForm.create({ data: { vendorId: vendor.id, name: "Synthetic Retry", slug: suffix, headline: "Synthetic Retry", fields: [{ key: "name", label: "Name", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }] } });
+  const sourcePath = `/form/${form.slug}`;
+  const native = (cookie?: string) => new Request("https://app.example.test/api/form-submissions", {
+    method: "POST",
+    headers: { origin: "https://app.example.test", "content-type": "application/x-www-form-urlencoded", ...(cookie ? { cookie } : {}) },
+    body: new URLSearchParams({ formId: form.id, name: "Synthetic", email: `${suffix}@example.test`, __registrationReturnPath: sourcePath, redirectTo: sourcePath }),
+  });
+  vi.spyOn(emailDelivery, "ensureFormSubmissionVerificationDelivery").mockRejectedValueOnce(new Error("synthetic queue unavailable"));
+  const failed = await POST(native());
+  expect(failed.status).toBe(303);
+  expect(failed.headers.get("location")).toBe(`https://app.example.test${sourcePath}?registrationRetry=503`);
+  expect(await getDb().formSubmission.count({ where: { formId: form.id } })).toBe(1);
+  const drafts = await getDb().registrationFormRetryDraft.findMany({ where: { formId: form.id } });
+  expect(drafts).toHaveLength(1);
+  // The draft is bound to the form's tenant and stores no plaintext answer.
+  expect(drafts[0].vendorId).toBe(vendor.id);
+  expect(drafts[0].encryptedPayload).not.toContain(suffix);
+  const draft = failed.cookies.get("__Host-celebratedeal_registration_retry");
+  expect(draft).toBeDefined();
+  const success = await POST(native(`${draft!.name}=${draft!.value}`));
+  expect(success.status).toBe(303);
+  expect(success.headers.get("location")).toBe(`https://app.example.test${sourcePath}?submitted=verification_required`);
+  expect(await getDb().formSubmission.count({ where: { formId: form.id } })).toBe(1);
+  expect(await getDb().registrationFormRetryDraft.count({ where: { formId: form.id } })).toBe(0);
+  expect(await getDb().emailDelivery.count({ where: { vendorId: vendor.id, status: "sent" } })).toBe(0);
+});
+
+it("deletes retry drafts with their form's tenant", async () => {
+  const suffix = `wp05-cascade-${Date.now()}`;
+  const vendor = await getDb().vendor.create({ data: { name: "Synthetic Cascade", slug: suffix, email: `${suffix}@example.test`, passwordHash: "synthetic-unused" } });
+  const form = await getDb().registrationForm.create({ data: { vendorId: vendor.id, name: "Synthetic Cascade", slug: suffix, headline: "Synthetic Cascade", fields: [{ key: "name", label: "Name", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }] } });
+  const response = await POST(new Request("https://app.example.test/api/form-submissions", {
+    method: "POST",
+    headers: { origin: "https://app.example.test", "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ formId: form.id, name: "Synthetic", email: "not-an-email", __registrationReturnPath: `/form/${form.slug}` }),
+  }));
+  expect(response.headers.get("location")).toBe(`https://app.example.test/form/${form.slug}?registrationRetry=400`);
+  expect(await getDb().registrationFormRetryDraft.count({ where: { formId: form.id } })).toBe(1);
+  await getDb().vendor.delete({ where: { id: vendor.id } });
+  expect(await getDb().registrationFormRetryDraft.count({ where: { formId: form.id } })).toBe(0);
 });

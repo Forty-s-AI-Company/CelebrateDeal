@@ -11,8 +11,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 147 |
-| Migration directories | 107 |
+| Prisma models | 148 |
+| Migration directories | 108 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -23,7 +23,7 @@
 | 類別 | 數量 | Models |
 |---|---:|---|
 | Identity／tenant root | 8 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`VendorMember`、`TrackingSetting` |
-| Content／live／lead | 23 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveMediaSession`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`LiveQuestion`、`LiveInteractionRun`、`LiveInteractionResponse`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
+| Content／live／lead | 24 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`RegistrationFormRetryDraft`、`FormSubmission`、`Live`、`LiveMediaSession`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`LiveQuestion`、`LiveInteractionRun`、`LiveInteractionResponse`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
 | Affiliate／billing／payment／ops | 35 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentMethodSetupIntent`、`PaymentTransaction`、`PayUniLiveProbe`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
@@ -319,3 +319,8 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 
 - `20261018100000_learner_notification_throughput_guards`：forward-only，無資料刪改。`LearnerNotificationSourceEvent` 新增 `failureCount`（預設 0）、`nextAttemptAt`、`lastErrorCode`、`deadLetteredAt`，CHECK `LearnerSourceEvent_failure_check`（0–5 次、錯誤碼格式、dead-letter 必為第 5 次且無下次時間）；失敗 source 以 failureCount CAS 指數退避，第 5 次 dead-letter，不再阻擋其他 source／tenant。`LearnerNotificationVerification` 新增可為 NULL 的 `destinationRateKeyHash`（tenant-scoped HMAC，CHECK 為 64 hex，既有 challenge 保持 NULL）與 `(vendorId, preferenceId, createdAt)`、`(vendorId, destinationRateKeyHash, createdAt)` 索引，支援每位學員 24 小時 5 次、每個 destination 3 次的驗證上限。`LearnerNotificationDelivery` 新增 `(vendorId, status, nextAttemptAt)` 索引供 vendor-fair 選取。RLS、grants 與 composite tenant FK 沿用原 migration。
 - 目前 147 models、107 forward migrations；既有 SQL／checksum 不變。已套用至 loopback `celebratedeal_wp17_ci`，並由 disposable PostgreSQL QA 完整 forward-apply 107 條。
+
+## 2026-10-19 WP-05 native registration retry
+
+- `20261018110000_registration_form_retry_draft`：forward-only、純新增，不改既有 table、欄位或資料。新增 `RegistrationFormRetryDraft`：原生（無 JavaScript）報名 POST 被拒（400/403/404/429/503）時的 10 分鐘加密重試草稿，永遠不成為 `FormSubmission`。只存 capability 的 SHA-256 `idHash`（CHECK 64 hex；capability 僅在 HttpOnly、SameSite=Strict、`__Host-` cookie）、`sourcePath`（CHECK 只允許 `/form|p|lp/` 公開報名路徑，無 query／host）、`encryptedPayload`（CHECK `v1.` AES-GCM envelope 且長度上限與應用 reader 一致）、`expiresAt`（CHECK 晚於 `createdAt`）。`(vendorId, formId)` composite FK 指向 `RegistrationForm(vendorId, id)` ON DELETE CASCADE：草稿只能屬於表單所屬租戶，表單或 vendor 刪除時一併刪除。`vendorId` 一律取自伺服器讀到的表單紀錄；密文內含 idHash／vendorId／formId／sourcePath／expiresAt，搬移到其他列即解密驗證失敗。索引 `(expiresAt)`、`(vendorId, expiresAt)`、`(vendorId, formId)`；啟用 RLS（與近期 migration 相同，不新增 policy）。每租戶上限 128 列（租戶 advisory lock 內強制，ReadCommitted），全域 2048 列為軟上限；過期列在每次讀寫時最多回收 100 筆，無排程，不保證準時實體刪除。
+- 目前 148 models、108 forward migrations；既有 SQL／checksum 不變。

@@ -160,14 +160,16 @@ describe("public Funnel runtime", () => {
     expect(submissionUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.not.objectContaining({ visitId: expect.anything() }) }));
   });
 
-  it("rejects submissions after the persisted deadline", async () => {
+  it.each(["closed", "redirect"] as const)("rejects submissions after the persisted deadline even with %s behavior", async (behavior) => {
     const operations = defaultFunnelOperations();
-    operations.deadline = { enabled: true, timezone: "Asia/Taipei", expiresAt: "2026-09-17T10:00:00+08:00", behavior: "closed", redirectPath: "" };
+    operations.deadline = { enabled: true, timezone: "Asia/Taipei", expiresAt: "2026-09-17T10:00:00+08:00", behavior, redirectPath: behavior === "redirect" ? "thank-you" : "" };
     const database = {
       landingPage: { findFirst: vi.fn().mockResolvedValue({ id: "page_1", vendorId: "vendor_1", operations, publishedVersion: { content: createFunnelStepPages(flow), formId: "form_1", liveId: null } }) },
       funnelVisit: { findFirst: vi.fn() },
     };
     await expect(resolveTrustedFunnelSubmission({ pageId: "page_1", stepId: "opt_in", formId: "form_1", liveId: null, visitorId, now: new Date("2026-09-17T02:00:00.000Z"), database: database as never })).resolves.toBeNull();
+    // 截止後仍可查看感謝頁，不代表該頁可以重新開放報名。
+    await expect(resolveTrustedFunnelSubmission({ pageId: "page_1", stepId: "opt_in_thank_you", formId: "form_1", liveId: null, visitorId, now: new Date("2026-09-17T02:00:00.000Z"), database: database as never })).resolves.toBeNull();
     expect(database.funnelVisit.findFirst).not.toHaveBeenCalled();
   });
 });

@@ -20,7 +20,15 @@ const db = {
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+const retryStorage = vi.hoisted(() => ({ save: vi.fn(), remove: vi.fn() }));
+vi.mock("@/lib/registration-form-retry", async (original) => ({
+  ...await original<typeof import("@/lib/registration-form-retry")>(),
+  saveRegistrationRetryDraft: retryStorage.save,
+  deleteRegistrationRetryDraft: retryStorage.remove,
+}));
 
+import { NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { POST } from "@/app/api/form-submissions/route";
 import { revealEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
@@ -768,7 +776,10 @@ describe("native form submission redirects", () => {
       body,
     }));
 
-    expect(response.status).toBe(403);
+    // Native posts never end on raw JSON; without a verified Origin no field is kept.
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
+    expect(response.headers.get("set-cookie")).toBeNull();
     expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
     expect(db.formSubmission.create).not.toHaveBeenCalled();
   });
@@ -808,8 +819,90 @@ describe("native form submission redirects", () => {
       body,
     }));
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
     expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
     expect(db.formSubmission.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("native registration retry (WP-05)", () => {
+  const retryCapability = "R".repeat(43);
+  function nativeRetryRequest(fields: Record<string, string>, headers: Record<string, string> = {}) {
+    return new Request("https://app.example.test/api/form-submissions", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://app.example.test", ...headers },
+      body: new URLSearchParams({ formId: "form-1", __registrationReturnPath: "/form/summer", redirectTo: "/form/summer", ...fields }),
+    });
+  }
+  beforeEach(() => {
+    retryStorage.save.mockResolvedValue(retryCapability);
+    retryStorage.remove.mockResolvedValue(true);
+  });
+
+  it.each(["oversized", "malformed"])("bounds native body failure: %s", async (kind) => {
+    const response = await POST(new Request("https://app.example.test/api/form-submissions", {
+      method: "POST",
+      headers: { origin: "https://app.example.test", "content-type": kind === "oversized" ? "application/x-www-form-urlencoded" : "multipart/form-data; boundary=synthetic" },
+      body: kind === "oversized" ? "name=" + "x".repeat(1_000_001) : "malformed multipart",
+    }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
+    expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it("preserves the server rate-limit delay on the native error redirect", async () => {
+    vi.mocked(checkRateLimit).mockResolvedValueOnce(NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "30" } }));
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/form/summer?registrationRetry=429");
+    expect(response.headers.get("Retry-After")).toBe("30");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it("returns a native validation error to the source page with an opaque draft cookie and no PII in the URL", async () => {
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "not-an-email" }));
+    expect(response.status).toBe(303);
+    const location = response.headers.get("location")!;
+    expect(location).toBe("https://app.example.test/form/summer?registrationRetry=400");
+    expect(location).not.toContain("not-an-email");
+    expect(response.cookies.get("__Host-celebratedeal_registration_retry")).toMatchObject({ value: retryCapability, httpOnly: true, secure: true, sameSite: "strict", path: "/" });
+    expect(retryStorage.save).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      vendorId: "vendor-1", formId: "form-1", sourcePath: "/form/summer", status: 400,
+      answers: { name: "Lead", email: "not-an-email" },
+    }));
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it("turns an unexpected native failure into a safe 503 retry instead of throwing", async () => {
+    db.blacklist.findFirst.mockRejectedValueOnce(new Error("synthetic storage outage"));
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/form/summer?registrationRetry=503");
+  });
+
+  it("keeps the JSON client error contract unchanged", async () => {
+    const response = await POST(new Request("https://app.example.test/api/form-submissions", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://app.example.test", "x-celebratedeal-client": "web" },
+      body: JSON.stringify({ formId: "form-1", payload: { name: "Lead", email: "not-an-email" } }),
+    }));
+    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBeNull();
+    expect(retryStorage.save).not.toHaveBeenCalled();
+  });
+
+  it("clears the draft and issues an uncacheable success result after a native success", async () => {
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }, { cookie: `__Host-celebratedeal_registration_retry=${retryCapability}` }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/form/summer?submitted=verification_required");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(retryStorage.remove).toHaveBeenCalledWith(expect.anything(), retryCapability);
+    expect(response.cookies.get("__Host-celebratedeal_registration_retry")?.value).toBe("");
+    expect(response.cookies.get("__Host-celebratedeal_registration_result")?.value).toMatch(/^v1\./);
+    expect(retryStorage.save).not.toHaveBeenCalled();
   });
 });

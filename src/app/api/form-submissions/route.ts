@@ -37,6 +37,8 @@ import {
   hasPublicRegistrationSession,
   publicRegistrationSessionWhere,
 } from "@/lib/public-registration-form";
+import { clearRegistrationRetry, registrationRetryResponse } from "@/lib/registration-form-retry-response";
+import { attachRegistrationResult } from "@/lib/registration-submission-receipt";
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 const FORM_SUBMISSION_COOKIE_TTL_SECONDS = 60 * 30;
@@ -382,7 +384,7 @@ function availablePublicForm<T extends { isActive: boolean }>(form: T | null): T
   return form;
 }
 
-export async function POST(request: Request) {
+async function processSubmission(request: Request, retryFormData?: FormData | null) {
   const contentType = request.headers.get("content-type") ?? "";
   const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
   if (isNativeFormPost && !request.headers.get("origin")) {
@@ -394,7 +396,9 @@ export async function POST(request: Request) {
   const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
   if (limited) return limited;
 
-  const nativeFormData = isNativeFormPost ? await readFormDataBody(request) : null;
+  const nativeFormData = isNativeFormPost
+    ? retryFormData !== undefined ? retryFormData : await readFormDataBody(request)
+    : null;
   const parsed = SubmissionPayload.safeParse(
     isNativeFormPost ? nativeFormPayload(nativeFormData) : await readJsonBody(request),
   );
@@ -667,4 +671,41 @@ function nativeFormPayload(formData: FormData | null) {
     shareCode: typeof shareCode === "string" && shareCode ? shareCode : null,
     redirectTo: typeof redirectTo === "string" && redirectTo.startsWith("/") ? redirectTo : undefined,
   };
+}
+
+// URL-encoded 32 x 2000 CJK characters (9 bytes each) plus hidden fields.
+const MAX_NATIVE_FORM_BODY_BYTES = 1_000_000;
+
+/**
+ * JSON clients keep their exact status/body contract. A native (no-JavaScript)
+ * POST never ends on a raw JSON error: every 4xx/5xx becomes a 303 back to a
+ * verified same-origin source page, retaining fields only in an encrypted,
+ * short-lived, form/path-bound draft.
+ */
+export async function POST(request: Request) {
+  const native = /application\/x-www-form-urlencoded|multipart\/form-data/i.test(request.headers.get("content-type") ?? "");
+  if (!native) {
+    const response = await processSubmission(request);
+    if (response.ok) await clearRegistrationRetry(request, response);
+    return response;
+  }
+  const formData = await readFormDataBody(request, MAX_NATIVE_FORM_BODY_BYTES);
+  let response: NextResponse;
+  try {
+    response = await processSubmission(request, formData);
+  } catch (error) {
+    // Never include the request, answers or identifiers in the report.
+    captureOperationalError(error, { area: "form_submission_native" });
+    response = NextResponse.json({ error: "Submission unavailable" }, { status: 503 });
+  }
+  if (response.status >= 400) {
+    const retryResponse = await registrationRetryResponse(request, formData, response.status);
+    // Keep the server rate-limit wait; no other error header is forwarded.
+    const retryAfter = response.headers.get("Retry-After");
+    if (response.status === 429 && retryAfter && /^\d{1,8}$/.test(retryAfter)) retryResponse.headers.set("Retry-After", retryAfter);
+    return retryResponse;
+  }
+  await clearRegistrationRetry(request, response);
+  attachRegistrationResult(request, response, formData);
+  return response;
 }

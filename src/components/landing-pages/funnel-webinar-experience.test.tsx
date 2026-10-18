@@ -32,6 +32,7 @@ describe("Webinar shared preview/public experience", () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
     const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} />);
     expect(html).toContain('action="/api/form-submissions"');
+    expect(html).toContain('id="webinar-registration"');
     expect(html).toContain('value="owned_form"');
     expect(html).toContain('value="owned_live"');
     expect(html).toContain('value="/lp/current-slug/thank-you"');
