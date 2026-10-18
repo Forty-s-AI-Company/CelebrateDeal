@@ -685,7 +685,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
     });
     await check("entitlement expiry after claim refuses provider dispatch", async () => {
       const pending=await enqueueLearnerNotification(db,identity,{...event,eventIdentity:"synthetic_worker_expired"});const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);
-      await db.commerceEntitlement.update({where:{id:entitlement.id},data:{grantedAt:new Date(Date.now()-60000),expiresAt:new Date(Date.now()-1000)}});
+      await db.commerceEntitlement.update({where:{id:entitlement.id},data:{grantedAt:new Date(Date.now()-7_200_000),expiresAt:new Date(Date.now()-3_600_000)}});
       let calls=0;
       try{
         const result=await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}});
