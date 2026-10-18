@@ -38,7 +38,7 @@ describe("onboarding task evaluator", () => {
     ]);
     expect(progress.completedCount).toBe(2);
     expect(progress.tasks.find((task) => task.key === "workspace_payment")).toMatchObject({
-      status: "skipped", impact: "已略過付款設定，目前無法接受線上付款。",
+      status: "skipped", impact: "已略過平台服務付款驗證，專案發布仍需有效的商家付款紀錄；顧客收款設定需另行確認。",
     });
     expect(progress.tasks.find((task) => task.key === "workspace_test_order")?.status).toBe("not_started");
     expect(progress.isComplete).toBe(false);
@@ -99,5 +99,15 @@ describe("sales project publish gate", () => {
     expect(canPublishSalesProject("live", { ...ready, hasPaymentMethod: false })).toBe(false);
     expect(canPublishSalesProject("consultation", { ...ready, hasLiveSession: false, hasConsultationService: true, hasAvailability: true })).toBe(true);
     expect(canPublishSalesProject("consultation", { ...ready, hasLiveSession: false, hasConsultationService: true })).toBe(false);
+  });
+
+  it.each(["live", "consultation"] as const)("keeps skipped platform verification blocking %s publication", (flow) => {
+    const signals = { ...ready, hasConsultationService: true, hasAvailability: true, hasPaymentMethod: false };
+    const progress = evaluateProjectOnboarding(flow, signals, [{ taskKey: "project_payment", status: "skipped" }]);
+    expect(canPublishSalesProject(flow, signals)).toBe(false);
+    expect(progress.tasks.find(task => task.key === "project_payment")).toMatchObject({
+      title: "檢查發布所需付款驗證", status: "skipped", impact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。",
+    });
+    expect(canPublishSalesProject(flow, { ...signals, hasPaymentMethod: true })).toBe(true);
   });
 });

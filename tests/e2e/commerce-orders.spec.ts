@@ -2271,11 +2271,11 @@ test("desktop merchant can recover upload and validation errors, then publish an
     const response = await page.goto("/onboarding");
     expect(response?.status()).toBe(200);
 
-    await expect(page.getByRole("heading", { name: "商家上線導引", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "上線導引", exact: true })).toBeVisible();
     await expect(page.getByText("2 / 5", { exact: true })).toBeVisible();
     await expect(page.getByText("外部驗證，可稍後", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "繼續：啟用報名表單", exact: true })).toHaveAttribute("href", "/forms/new");
-    await expect(page.getByRole("link", { name: "驗證付款方式", exact: true })).toHaveAttribute("href", "/billing/payment-methods");
+    await expect(page.getByRole("link", { name: "設定平台付款方式", exact: true })).toHaveAttribute("href", "/billing/payment-methods");
 
     const launchHeading = page.getByRole("heading", { name: "Step 5. 準備第一場可販售直播", exact: true });
     const launchStep = page.locator("li").filter({ has: launchHeading });
@@ -2337,7 +2337,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/onboarding");
     await expect(page.getByText("4 / 5", { exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "繼續：驗證付款方式", exact: true })).toHaveAttribute("href", "/billing/payment-methods");
+    await expect(page.getByRole("link", { name: "繼續：設定平台付款方式", exact: true })).toHaveAttribute("href", "/billing/payment-methods");
     await expect(page.getByText("核心流程完成", { exact: true })).toHaveCount(0);
     await expect(page.getByText("外部驗證，可稍後", { exact: true })).toBeVisible();
 

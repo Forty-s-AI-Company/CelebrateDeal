@@ -89,12 +89,12 @@ export function merchantOnboardingProgress(signals: MerchantOnboardingSignals) {
     }),
     step({
       key: "payment",
-      title: "付款方式驗證",
-      description: "完成商店層級 provider reference 驗證；平台不保存卡號。",
+      title: "平台服務付款驗證",
+      description: "確認平台方案與 Stream 用量的付款紀錄；現行專案發布仍需有效驗證，顧客收款設定需另外確認。",
       href: "/billing/payment-methods",
-      actionLabel: "驗證付款方式",
+      actionLabel: "設定平台付款方式",
       deferred: true,
-      requirements: [{ label: "有效的商店付款方式", done: signals.verifiedVendorPaymentMethodCount > 0 }],
+      requirements: [{ label: "有效的商家平台服務付款紀錄", done: signals.verifiedVendorPaymentMethodCount > 0 }],
     }),
     step({
       key: "catalog",

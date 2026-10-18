@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { requireVendorContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { normalizeVendorFeatureModules } from "@/lib/vendor-feature-toggles";
 import { persistTaskPanelCollapsedAction, selectSalesProjectAction } from "@/app/actions/sales-workspace-actions";
 import { evaluateProjectOnboarding, evaluateWorkspaceOnboarding } from "@/lib/sales-workspace";
@@ -34,7 +35,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
       db.registrationForm.count({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true } }),
       db.live.count({ where: { vendorId: vendor.id, projectId: selectedProject.id } }),
       db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId: selectedProject.id, isActive: true }, select: { weeklySchedule: true } }),
-      db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: new Date() }, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
+      db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendor.id, new Date()) }),
     ]);
     const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
       if (!entry || typeof entry !== "object") return false;
@@ -44,7 +45,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     taskProgress = evaluateProjectOnboarding(selectedProject.primaryFlow, { exists: true, hasLinkedProduct: productLinks > 0, hasPricedProduct: pricedProducts > 0, hasFunnelTemplate: forms > 0, hasLiveSession: lives > 0, hasConsultationService: consultations.length > 0, hasAvailability, hasPaymentMethod: paymentMethods > 0, hasPreviewableFlow: productLinks > 0 && (forms > 0 || lives > 0 || consultations.length > 0), isPublished: Boolean(selectedProject.publishedAt) }, states);
   } else {
     const [payments, members, testOrders] = await Promise.all([
-      db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: new Date() }, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
+      db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendor.id, new Date()) }),
       db.vendorMember.count({ where: { vendorId: vendor.id, status: "active" } }),
       db.commerceOrder.count({ where: { vendorId: vendor.id, isTestOrder: true, status: "paid" } }),
     ]);
