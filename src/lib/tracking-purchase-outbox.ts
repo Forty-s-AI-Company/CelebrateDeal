@@ -20,13 +20,16 @@ export async function enqueuePaidPurchaseTracking(
   if (!order || !order.paidAt || order.totalAmountCents <= 0 || order.paidAmountCents !== order.totalAmountCents) return null;
   // Stable across different webhook event IDs: provider retries cannot invent
   // additional purchases. A transaction rollback also removes this queue row.
-  return tx.trackingDelivery.upsert({
-    where: { vendorId_eventId: { vendorId: input.vendorId, eventId: `purchase:${input.paymentTransactionId}` } },
-    create: {
-      vendorId: input.vendorId, orderId: order.id, eventId: `purchase:${input.paymentTransactionId}`,
+  const eventId = `purchase:${input.paymentTransactionId}`;
+  // INSERT ... ON CONFLICT DO NOTHING is atomic even for concurrent callers;
+  // Prisma's upsert here would be read-then-insert and could raise P2002.
+  await tx.trackingDelivery.createMany({
+    data: [{
+      vendorId: input.vendorId, orderId: order.id, eventId,
       credentialRevision: setting.credentialRevision, pixelId: setting.facebookPixelId,
       testEventCode: setting.facebookTestEventCode,
-    },
-    update: {},
+    }],
+    skipDuplicates: true,
   });
+  return tx.trackingDelivery.findUniqueOrThrow({ where: { vendorId_eventId: { vendorId: input.vendorId, eventId } } });
 }

@@ -1,6 +1,9 @@
 import { assertTrackingDeliveryBinding, type TrackingDeliveryMode } from "@/lib/tracking-executor-binding";
 import { decideTrackingDelivery, type TrackingDeliveryDecision } from "@/lib/tracking-delivery-policy";
 
+/** Single source for a Meta Pixel ID: settings save and transport share this bound. */
+export const META_PIXEL_ID_PATTERN = /^\d{5,32}$/u;
+
 export type MetaEvent = {
   event_name: "Purchase" | "Lead" | "ViewContent" | "Schedule";
   event_time: number;
@@ -62,7 +65,7 @@ export async function sendMetaTrackingEvent(input: {
   // No user-supplied endpoint or redirect is followed.
   const deliveryMode = input.deliveryMode ?? "test";
   assertTrackingDeliveryBinding(deliveryMode, input.testEventCode);
-  if (!/^\d{5,32}$/u.test(input.pixelId) || !/^v\d{1,3}\.0$/u.test(input.apiVersion) ||
+  if (!META_PIXEL_ID_PATTERN.test(input.pixelId) || !/^v\d{1,3}\.0$/u.test(input.apiVersion) ||
       !/^[A-Za-z0-9._~+/-]{16,4096}=*$/u.test(input.token)) throw new TypeError("Invalid tracking transport binding.");
   // Validate the persisted attempt before any provider network operation.
   decideTrackingDelivery({ attempt: input.attempt, now: input.now, status: null, acceptedEvents: null });
