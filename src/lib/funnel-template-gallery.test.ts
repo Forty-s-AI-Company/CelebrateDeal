@@ -129,7 +129,7 @@ describe("funnel template gallery", () => {
     const webinar = createGoalFunnelStepPages({ id: "wp09_flow", name: "Webinar", goal: "webinar", domain: "wp09-webinar" })!;
     webinar.flow.webinar = { timezone: "Asia/Taipei", startsAt: "2030-01-01T01:00:00.000Z", endsAt: "2030-01-01T02:00:00.000Z", replayEndsAt: "2030-01-02T02:00:00.000Z" };
     const resource: WebinarExperienceResource = {
-      live: { id: "wp09_live", slug: "wp09-live", title: "公開活動", videoId: "wp09_video", videoTitle: "合成影片" },
+      live: { id: "wp09_live", slug: "wp09-live", videoId: "wp09_video", videoTitle: "合成影片" },
       form: { id: "wp09_form", fields: [{ key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出報名", successMessage: "待確認" },
     };
     for (const stepId of ["webinar_registration", "webinar_thank_you", "webinar_broadcast"] as const) {
