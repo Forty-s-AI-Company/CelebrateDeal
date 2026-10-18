@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   materializeLineNotifications: vi.fn(),
   processDueLineDeliveries: vi.fn(),
   captureOperationalError: vi.fn(),
+  sweepExpiredRegistrationRetryDrafts: vi.fn(),
 }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
+vi.mock("@/lib/registration-form-retry", () => ({ sweepExpiredRegistrationRetryDrafts: mocks.sweepExpiredRegistrationRetryDrafts }));
 
 vi.mock("@/lib/learner-notification-job", () => ({ processDueLearnerNotifications: mocks.processDueLearnerNotifications }));
 vi.mock("@/lib/email-delivery", () => ({
@@ -42,6 +45,7 @@ beforeEach(() => {
   mocks.processLegacyReminderCutovers.mockResolvedValue([]);
   mocks.materializeLineNotifications.mockResolvedValue([]);
   mocks.processDueLineDeliveries.mockResolvedValue([]);
+  mocks.sweepExpiredRegistrationRetryDrafts.mockResolvedValue(3);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -112,6 +116,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       lineMaterialized: 0,
       lineProcessed: 0,
       lineResults: [],
+      registrationRetryDraftsPurged: 3,
     });
     expect(JSON.stringify(body)).not.toContain("private-delivery");
     expect(JSON.stringify(body)).not.toContain("private-job");
@@ -194,4 +199,13 @@ it("notification result projection strips identifiers and bounds the output", as
  expect(body.learnerNotificationResults.every((result:unknown)=>JSON.stringify(result)==='{"status":"indeterminate"}')).toBe(true);
  expect(JSON.stringify(body)).not.toContain("synthetic-private");
  expect(body.learnerNotificationBacklog).toEqual({sources:3,proofs:null,deliveries:null});
+});
+
+it("keeps the job successful and reports no count when the retry-draft purge fails", async () => {
+  mocks.sweepExpiredRegistrationRetryDrafts.mockRejectedValueOnce(new Error("synthetic purge outage"));
+  const response = await POST(request("g7-07-job-secret"));
+  const body = await response.json();
+  expect(response.status).toBe(200);
+  expect(body.registrationRetryDraftsPurged).toBeNull();
+  expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "email_delivery_job", operation: "registration_retry_purge", status: "failed" });
 });

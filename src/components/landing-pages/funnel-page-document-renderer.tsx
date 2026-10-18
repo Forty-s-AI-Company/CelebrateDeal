@@ -1,8 +1,11 @@
 "use client";
+import { useRegistrationRetry } from "@/components/registration-retry-context";
 
 /* eslint-disable @next/next/no-img-element */
 
-import { createContext, useContext, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
 import { FunnelCommerceElement } from "./funnel-commerce-element";
@@ -293,36 +296,56 @@ function HeadlineMarkup({ level, text }: { level: string; text: string }) {
   }
 }
 
+/** Validated server attribution (draft or page query), sent only when present. */
+function referralFields(attribution: { referralCode?: string; shareCode?: string } | undefined) {
+  return {
+    ...(attribution?.referralCode ? { referralCode: attribution.referralCode } : {}),
+    ...(attribution?.shareCode ? { shareCode: attribution.shareCode } : {}),
+  };
+}
+
 function PublicSubmissionForm({ submission, label, requireConsent }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean }) {
-  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
-  const [message, setMessage] = useState("");
+  const retry = useRegistrationRetry(submission.form.id);
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
+  const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
+  const submissionInFlight = useRef(false);
+  const referral = referralFields(retry?.attribution);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (status === "submitting" || status === "success") return;
+    // Lock synchronously: disabled is only applied after the next React render.
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
     setStatus("submitting"); setMessage("");
-    const values = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
     try {
-      const response = await fetch("/api/form-submissions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CelebrateDeal-Client": "web" },
-        body: JSON.stringify({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload }),
-      });
+      const values = new FormData(event.currentTarget);
+      const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
+      const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload, ...referral });
       if (!response.ok) {
-        setStatus("error"); setMessage(response.status === 429 ? "送出次數過多，請稍後再試。" : "資料未能送出，請檢查欄位後再試。");
+        submissionInFlight.current = false;
+        setStatus("error"); setMessage(formSubmissionErrorMessage(response.status));
         return;
       }
-      setStatus("success"); setMessage(submission.form.successMessage);
+      setStatus("success"); setMessage(`${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}`);
       if (submission.redirectTo) window.location.assign(submission.redirectTo);
     } catch {
-      setStatus("error"); setMessage("連線中斷，資料尚未送出，請稍後再試。");
+      submissionInFlight.current = false;
+      setStatus("error"); setMessage(formSubmissionErrorMessage());
     }
   }
-  return <form aria-label={label} onSubmit={submit} className="space-y-4">
-    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
+  return <form method="post" action="/api/form-submissions" aria-label={label} aria-busy={status === "submitting"} onSubmit={submit} className="space-y-4">
+    <input type="hidden" name="formId" value={submission.form.id} />
+    <input type="hidden" name="landingPageId" value={submission.landingPageId ?? ""} />
+    <input type="hidden" name="funnelStepId" value={submission.funnelStepId ?? ""} />
+    <input type="hidden" name="liveId" value={submission.liveId ?? ""} />
+    {/* Validated server attribution (draft or page query), as LeadForm sends it. */}
+    <input type="hidden" name="referralCode" value={referral.referralCode ?? ""} />
+    <input type="hidden" name="shareCode" value={referral.shareCode ?? ""} />
+    <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
+    {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
+    {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}
     {requireConsent ? <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" required disabled={status === "submitting" || status === "success"} className="mt-1" /><span>我同意依本頁說明提交並使用上述資料。</span></label> : null}
     <button type="submit" disabled={status === "submitting" || status === "success"} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-500 px-5 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "submitting" ? "送出中…" : status === "success" ? "已送出" : submission.form.submitLabel}</button>
-    {message ? <p role={status === "error" ? "alert" : "status"} className={status === "error" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>{message}</p> : null}
+    <RegistrationSubmissionFeedback pending={status === "submitting"} errorMessage={status === "error" ? message : ""} successMessage={status === "success" ? message : ""} />
   </form>;
 }
 

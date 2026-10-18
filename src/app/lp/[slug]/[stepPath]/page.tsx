@@ -1,6 +1,10 @@
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+import { registrationDeadlineOutcome } from "@/components/registration-deadline-outcome";
+import { hasRegistrationFeedbackQuery, registrationRetryBoundary } from "@/components/registration-retry-boundary";
+import { pageDocumentRendersRegistrationForm } from "@/lib/funnel-registration-surface";
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { PublicFunnelDocument } from "@/components/landing-pages/public-funnel-document";
@@ -29,28 +33,29 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return { title, description: seo.description, keywords: seo.keywords, authors: seo.author ? [{ name: seo.author }] : undefined, robots: seo.hideFromSearch ? { index: false, follow: false } : undefined, openGraph: { title, description: seo.description, ...(seo.socialImage ? { images: [seo.socialImage] } : {}) } };
 }
 
-export default async function PublicFunnelStepPage({ params }: { params: Promise<{ slug: string; stepPath: string }> }) {
+export default async function PublicFunnelStepPage({ params, searchParams }: { searchParams?: Promise<RegistrationAttributionQuery & { registrationRetry?: string; submitted?: string }>; params: Promise<{ slug: string; stepPath: string }> }) {
   const { slug, stepPath } = await params;
   const { page, document, steps } = await resolve(slug, stepPath);
   if (!document) notFound();
   const step = steps?.flow.steps.find((candidate) => candidate.path === stepPath);
   if (!page || !steps || !step || step.isSystem) notFound();
+  const query = await searchParams ?? {};
   const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
   const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: step.id, visitorId });
   if (!runtime || runtime.decision.status === "unavailable") notFound();
-  if (runtime.decision.status === "closed") return <PublicFunnelClosed />;
-  if (runtime.decision.status === "redirect") redirect(`/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(runtime.decision.path)}`);
+  // Built only after availability, deadline and rendered-step decisions, so the
+  // single-use draft is read only when a registration form will show it.
+  const buildRetryBoundary = (readDraft: boolean) => registrationRetryBoundary({ formId: steps.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}/${step.path}`, attributionQuery: query, retry: query.registrationRetry, submitted: query.submitted, readDraft });
+  if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: steps.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry: await buildRetryBoundary(hasRegistrationFeedbackQuery(query)) });
   const decision = runtime.decision;
   await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
-  if (steps.flow.goal === "webinar") return <FunnelWebinarExperience state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />;
-  const rendered = getPublicFunnelPage(steps, steps.flow.steps.find((candidate) => candidate.id === decision.renderedStepId)?.path);
+  const renderedStep = steps.flow.steps.find((candidate) => candidate.id === decision.renderedStepId);
+  if (steps.flow.goal === "webinar") return (await buildRetryBoundary(renderedStep?.type === "webinar_registration_page"))(<FunnelWebinarExperience state={steps} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+  const rendered = getPublicFunnelPage(steps, renderedStep?.path);
   if (!rendered) notFound();
+  const withRetry = await buildRetryBoundary(Boolean(page.submissionForm) && pageDocumentRendersRegistrationForm(rendered));
   const logicalDocument = getPublicFunnelPage(steps, step.path);
   const nextPath = logicalDocument ? getNextPublicFunnelStepPath(steps, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
   const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
-  return <PublicFunnelDocument document={rendered} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />;
-}
-
-function PublicFunnelClosed() {
-  return <main className="mx-auto max-w-2xl px-6 py-24 text-center"><h1 className="text-2xl font-black text-slate-950">此活動已截止</h1><p className="mt-3 text-slate-600">目前不再接受新的瀏覽或送出資料。</p></main>;
+  return withRetry(<PublicFunnelDocument document={rendered} consultation={consultation} commerce={page.commerceByPageId?.[rendered.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
 }

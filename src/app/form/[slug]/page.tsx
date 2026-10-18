@@ -1,3 +1,5 @@
+import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
+import { registrationRetryBoundary, verifiedRegistrationSubmission } from "@/components/registration-retry-boundary";
 import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -5,11 +7,12 @@ import { notFound } from "next/navigation";
 import { FORM_SUBMISSION_VERIFICATION_MESSAGE, LeadForm } from "@/components/lead-form";
 import { PromoVideoPlayer } from "@/components/promo-video-player";
 import { RichTextContent } from "@/components/rich-text-content";
+import { decodeRouteSlug } from "@/lib/format";
 import { getPublicRegistrationForm } from "@/lib/public-registration-form";
 
 type PublicFormPageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ submitted?: string; liveId?: string }>;
+  searchParams: Promise<RegistrationAttributionQuery & { submitted?: string; liveId?: string; registrationRetry?: string }>;
 };
 
 function submittedVerificationMessage(successMessage: string) {
@@ -22,7 +25,7 @@ function submittedVerificationMessage(successMessage: string) {
 }
 
 export async function generateMetadata({ params }: Pick<PublicFormPageProps, "params">): Promise<Metadata> {
-  const { slug } = await params;
+  const slug = decodeRouteSlug((await params).slug);
   const form = await getPublicRegistrationForm(slug);
   if (!form) {
     return {
@@ -47,13 +50,13 @@ export async function generateMetadata({ params }: Pick<PublicFormPageProps, "pa
 }
 
 export async function generateViewport({ params }: Pick<PublicFormPageProps, "params">): Promise<Viewport> {
-  const { slug } = await params;
+  const slug = decodeRouteSlug((await params).slug);
   const form = await getPublicRegistrationForm(slug);
   return form?.themeColor ? { themeColor: form.themeColor } : {};
 }
 
 export default async function PublicFormPage({ params, searchParams }: PublicFormPageProps) {
-  const { slug } = await params;
+  const slug = decodeRouteSlug((await params).slug);
   const query = await searchParams;
   let form = await getPublicRegistrationForm(slug);
   if (!form) notFound();
@@ -65,10 +68,12 @@ export default async function PublicFormPage({ params, searchParams }: PublicFor
     form = { ...form, sessions: [selected] };
   }
 
+  const withRetry = await registrationRetryBoundary({ formId: form.id, sourcePath: `/form/${form.slug}`, attributionQuery: query, retry: query.registrationRetry });
+  const verifiedSubmission = await verifiedRegistrationSubmission(form.id, `/form/${form.slug}`, query.submitted);
   const themeColor = form.themeColor ?? "#2563eb";
   const style = { "--registration-theme": themeColor } as React.CSSProperties;
 
-  return (
+  return withRetry(
     <main className="relative min-h-screen overflow-hidden bg-slate-100 px-4 py-8 sm:px-6" style={style}>
       {form.backgroundImageUrl ? (
         <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden="true">
@@ -101,7 +106,7 @@ export default async function PublicFormPage({ params, searchParams }: PublicFor
             <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
               這張表單的欄位設定需要商家重新確認，目前暫停接收資料。
             </div>
-          ) : query.submitted === "verification_required" ? (
+          ) : verifiedSubmission ? (
             submittedVerificationMessage(form.successMessage)
           ) : (
             <LeadForm
@@ -116,6 +121,6 @@ export default async function PublicFormPage({ params, searchParams }: PublicFor
           )}
         </div>
       </section>
-    </main>
+    </main>,
   );
 }

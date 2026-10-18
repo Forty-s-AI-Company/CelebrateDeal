@@ -78,6 +78,17 @@ function allowedRequestOrigins(request: Request) {
   return origins;
 }
 
+/**
+ * The browser's exact `Origin` header when it is one of the same origins
+ * accepted by requireSameOriginRequest; otherwise null. Referer is never a
+ * substitute here, so callers can safely redirect back to the returned origin.
+ */
+export function trustedRequestOrigin(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin || originFrom(origin) !== origin) return null;
+  return allowedRequestOrigins(request).has(origin) ? origin : null;
+}
+
 export function requireSameOriginRequest(request: Request, options: { requireClientHeader?: boolean } = {}) {
   const incomingOrigin = requestOrigin(request);
   if (options.requireClientHeader && request.headers.get(CLIENT_REQUEST_HEADER) !== CLIENT_REQUEST_HEADER_VALUE) {

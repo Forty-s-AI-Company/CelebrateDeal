@@ -583,9 +583,32 @@ model RegistrationForm {
   landingPageVersions  LandingPageVersion[] @relation("LandingPageVersionForm")
 
   trackingDeliveries TrackingDelivery[]
+  retryDrafts        RegistrationFormRetryDraft[]
 
   @@unique([vendorId, id])
   @@index([vendorId, projectId])
+}
+
+/// Short-lived encrypted copy of a rejected native registration POST so the
+/// source page can refill the visitor's fields after a 303. Never a submission:
+/// only the opaque capability hash is stored, the payload is AES-GCM ciphertext
+/// bound to the hash, form, source path and expiry, and the browser holds the
+/// capability in an HttpOnly cookie. The (vendorId, formId) composite FK binds
+/// each row to the form's tenant and deletes it with the form or vendor.
+model RegistrationFormRetryDraft {
+  idHash           String   @id
+  vendorId         String
+  formId           String
+  sourcePath       String
+  encryptedPayload String
+  createdAt        DateTime @default(now())
+  expiresAt        DateTime
+
+  form RegistrationForm @relation(fields: [vendorId, formId], references: [vendorId, id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([vendorId, expiresAt])
+  @@index([vendorId, formId])
 }
 
 model FormSubmission {

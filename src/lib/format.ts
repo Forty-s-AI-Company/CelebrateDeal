@@ -21,3 +21,14 @@ export function toSlug(input: string) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
 }
+
+/**
+ * Route params arrive percent-encoded for non-ASCII path segments (a CJK slug
+ * from toSlug() is `/form/%E5%A4%8F...`); slugs are stored decoded. toSlug()
+ * never produces "%", so decoding is unambiguous; malformed input is kept as is
+ * and simply matches nothing.
+ */
+export function decodeRouteSlug(value: string) {
+  if (!value.includes("%")) return value;
+  try { return decodeURIComponent(value); } catch { return value; }
+}

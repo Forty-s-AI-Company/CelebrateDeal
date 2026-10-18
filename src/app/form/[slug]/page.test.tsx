@@ -4,12 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getPublicRegistrationForm: vi.fn(),
   findForm: vi.fn(),
+  verifyResult: vi.fn(),
   findSessions: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => ({ registrationForm: { findFirst: mocks.findForm }, live: { findMany: mocks.findSessions } }) }));
 
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }), headers: async () => new Headers({host:"example.test"}) }));
+vi.mock("@/lib/registration-submission-receipt", () => ({ registrationResultCookieName: () => "synthetic-result", verifyRegistrationResult: mocks.verifyResult }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/lib/public-registration-form", () => ({ getPublicRegistrationForm: mocks.getPublicRegistrationForm }));
 vi.mock("next/image", () => ({ default: ({ alt, ...props }: { alt: string } & Record<string, unknown>) => <span role="img" aria-label={alt} {...props} /> }));
@@ -52,6 +55,7 @@ const publicForm = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getPublicRegistrationForm.mockResolvedValue(publicForm);
+  mocks.verifyResult.mockReturnValue(false);
 });
 
 describe("public registration form", () => {
@@ -95,7 +99,8 @@ describe("public registration form", () => {
     expect(html).not.toContain("<script>不執行</script>");
   });
 
-  it("renders both the custom success copy and fixed verification gate", async () => {
+  it("renders both the custom success copy and fixed verification gate with a verified result", async () => {
+    mocks.verifyResult.mockReturnValue(true);
     const html = renderToStaticMarkup(await PublicFormPage({
       params: Promise.resolve({ slug: "summer" }),
       searchParams: Promise.resolve({ submitted: "verification_required" }),
@@ -157,4 +162,16 @@ it.each([
   expect(JSON.stringify(metadata)).not.toContain(publicForm.heroImageUrl);
   expect(await generateViewport({ params })).toEqual({});
   expect(mocks.findSessions).not.toHaveBeenCalled();
+});
+
+
+it("does not hide the form for an unverified shared success URL", async () => {
+  const html = renderToStaticMarkup(await PublicFormPage({params:Promise.resolve({slug:"summer"}),searchParams:Promise.resolve({submitted:"verification_required"})}));
+  expect(html).toContain('data-testid="lead-form"');
+  expect(html).not.toContain("請到 Email 開啟確認連結");
+});
+
+it("decodes a percent-encoded CJK slug before the public form lookup", async () => {
+  await PublicFormPage({ params: Promise.resolve({ slug: "%E5%A4%8F%E5%AD%A3-%E6%96%B0%E5%93%81" }), searchParams: Promise.resolve({}) });
+  expect(mocks.getPublicRegistrationForm).toHaveBeenCalledWith("夏季-新品");
 });

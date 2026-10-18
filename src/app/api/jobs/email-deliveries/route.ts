@@ -10,6 +10,8 @@ import {
 import { captureOperationalError } from "@/lib/monitoring";
 import { materializeLineNotifications } from "@/lib/line-notification-materializer";
 import { processDueLineDeliveries } from "@/lib/line-notification";
+import { getDb } from "@/lib/db";
+import { sweepExpiredRegistrationRetryDrafts } from "@/lib/registration-form-retry";
 
 const SAFE_STATUSES = new Set([
   "sent",
@@ -70,6 +72,18 @@ async function processEmailDeliveries() {
       }
     }
     const liveNotifications = [...dueLiveNotifications, ...futureRepairs];
+    // Expired registration retry ciphertext is deleted on this schedule, not
+    // only when later registration traffic happens to purge it.
+    let registrationRetryDraftsPurged: number | null = null;
+    try {
+      registrationRetryDraftsPurged = await sweepExpiredRegistrationRetryDrafts(getDb());
+    } catch (error) {
+      try {
+        captureOperationalError(error, { source: "email_delivery_job", operation: "registration_retry_purge", status: "failed" });
+      } catch {
+        // Purge is best effort after due dispatch has completed.
+      }
+    }
     return NextResponse.json({
       ok: true,
       cutovers: cutovers.length,
@@ -108,6 +122,7 @@ async function processEmailDeliveries() {
       lineResults: lineResults.slice(0, 20).map((result) => ({
         status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
       })),
+      registrationRetryDraftsPurged: safeCount(registrationRetryDraftsPurged),
     });
   } catch (error) {
     try {
