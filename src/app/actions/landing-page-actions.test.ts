@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   save: vi.fn(),
   saveSteps: vi.fn(),
   publish: vi.fn(),
+  publication: vi.fn(),
   unpublish: vi.fn(),
   duplicate: vi.fn(),
   rollback: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("@/lib/landing-page-service", () => ({
   saveLandingPageDraft: mocks.save,
   saveLandingPageStepMetadata: mocks.saveSteps,
   publishLandingPage: mocks.publish,
+  getLandingPagePublicationStatus: mocks.publication,
   unpublishLandingPage: mocks.unpublish,
   duplicateLandingPage: mocks.duplicate,
   rollbackLandingPage: mocks.rollback,
@@ -52,6 +54,7 @@ const idle = { status: "error" as const, message: "" };
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.csrf.mockResolvedValue(undefined);
+  mocks.publication.mockResolvedValue({ available: false, message: "專案尚未發布，公開網址目前無法開啟。", projectHref: "/projects/project-1", missing: [{ label: "尚無有效且已驗證的商家付款方式", href: "/billing/payment-methods" }] });
   mocks.create.mockResolvedValue({ id: "page-1", revision: 1 });
   mocks.delete.mockResolvedValue({ id: "page-1" });
   mocks.save.mockResolvedValue({ id: "page-1", revision: 2 });
@@ -122,5 +125,40 @@ describe("landingPageAction", () => {
     const result = await landingPageAction(idle, form({ operation: "delete", id: "page-1", revision: "2" }));
     expect(mocks.delete).toHaveBeenCalledWith("page-1", 2);
     expect(result).toMatchObject({ status: "success", id: "page-1", message: expect.stringContaining("已刪除") });
+  });
+});
+
+describe("dual publication feedback", () => {
+  it("returns the project blocker and links after publishing a Funnel version", async () => {
+    const result = await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));
+    expect(result.status).toBe("success");
+    expect(result.revision).toBe(3);
+    expect(result.message).toContain("Funnel 版本 v1 已儲存為發布版本");
+    expect(result.message).toContain("專案尚未發布，公開網址目前無法開啟");
+    expect(result.publication?.missing[0]?.href).toBe("/billing/payment-methods");
+    expect(mocks.publication).toHaveBeenCalledWith("page-1");
+  });
+
+  it("does not turn a committed publication into failure when diagnosis is unavailable", async () => {
+    mocks.publication.mockRejectedValueOnce(new Error("synthetic-read-failure"));
+    const result = await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));
+    expect(result.status).toBe("success");
+    expect(result.revision).toBe(3);
+    expect(result.message).toContain("尚無法確認公開網址狀態");
+    expect(result.message).not.toContain("synthetic-read-failure");
+    expect(result.publication).toMatchObject({ available: false, missing: [], projectHref: "/projects" });
+  });
+
+  it("returns a fresh diagnosis immediately after unpublish", async () => {
+    mocks.publication.mockResolvedValueOnce({ available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref: "/projects/project-1", missing: [] });
+    const result = await landingPageAction(idle, form({ operation: "unpublish", id: "page-1", revision: "3" }));
+    expect(result.publication?.available).toBe(false);
+    expect(result.publication?.message).toContain("Funnel 尚未發布");
+  });
+
+  it("does not diagnose when the publication write itself failed", async () => {
+    mocks.publish.mockRejectedValueOnce(new errorTypes.Conflict());
+    await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));
+    expect(mocks.publication).not.toHaveBeenCalled();
   });
 });

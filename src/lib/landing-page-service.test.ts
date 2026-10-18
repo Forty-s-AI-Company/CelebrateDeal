@@ -10,11 +10,18 @@ const mocks = vi.hoisted(() => ({
 const database = {
   landingPage: { create: mocks.create, findFirst: mocks.findFirst, findMany: mocks.findMany, updateMany: mocks.updateMany, deleteMany: mocks.deleteMany },
   landingPageVersion: { create: mocks.versionCreate, count: mocks.versionCount, findFirst: mocks.versionFindFirst },
-  registrationForm: { findMany: mocks.formFindMany },
-  live: { findFirst: mocks.liveFindFirst, findMany: vi.fn() },
+  registrationForm: { findMany: mocks.formFindMany, count: vi.fn() },
+  live: { findFirst: mocks.liveFindFirst, findMany: vi.fn(), count: vi.fn() },
   consultationEvent: { findMany: vi.fn() },
   product: { findMany: vi.fn() },
+  salesProject: { findFirst: vi.fn(), updateMany: vi.fn() },
+  salesProjectProduct: { count: vi.fn() },
+  paymentMethodReference: { count: vi.fn() },
 };
+
+vi.mock("next/navigation", () => ({ redirect: (path: string): never => { throw new Error(`redirect:${path}`); } }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(), assertServerActionOrigin: vi.fn() }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.manager }));
 vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.editableScope, getSalesProjectScope: mocks.salesScope }));
@@ -23,10 +30,12 @@ vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mo
 
 import {
   createLandingPage, deleteLandingPage, duplicateLandingPage, LandingPageConflictError, LandingPageInputError,
-  LandingPageNotFoundError, getLandingPageForEditor, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
+  LandingPageNotFoundError, getLandingPageForEditor, getLandingPagePublicationStatus, loadPublicLandingPage, publishLandingPage, rollbackLandingPage, saveLandingPageDraft, saveLandingPageStepMetadata,
 } from "./landing-page-service";
+import { publishSalesProjectAction } from "@/app/actions/sales-workspace-actions";
 import { createFunnelFlow } from "./funnel-flow";
 import { createFunnelStepPages } from "./funnel-step-pages";
+import { defaultFunnelOperations } from "./funnel-operations";
 
 const now = new Date("2026-09-13T00:00:00.000Z");
 const document = { schemaVersion: 1, data: { root: {}, content: [] } };
@@ -169,5 +178,153 @@ describe("landing page scoped mutations", () => {
     mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "signup", name: "報名表", fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出", successMessage: "收到" }]);
 
     await expect(loadPublicLandingPage("fall-launch")).resolves.toBeNull();
+  });
+});
+
+describe("merchant publication diagnosis", () => {
+  beforeEach(() => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "draft", publishedAt: null, primaryFlow: "live" });
+    database.salesProjectProduct.count.mockResolvedValue(0);
+    database.registrationForm.count.mockResolvedValue(0);
+    database.live.count.mockResolvedValue(0);
+    database.consultationEvent.findMany.mockResolvedValue([]);
+    database.paymentMethodReference.count.mockResolvedValue(0);
+  });
+
+  it("lists missing requirements without relaxing the verified payment predicate", async () => {
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result.available).toBe(false);
+    expect(result.message).toContain("專案尚未發布，公開網址目前無法開啟");
+    expect(result.projectHref).toBe("/projects/project-1");
+    expect(result.missing.map((item) => item.href)).toEqual(["/products", "/forms", "/billing/payment-methods", "/lives"]);
+    expect(database.paymentMethodReference.count).toHaveBeenCalledWith({ where: {
+      vendorId: "vendor-1", scopeType: "VENDOR", membershipId: null, status: "verified",
+      verifiedAt: { not: null, lte: expect.any(Date) }, OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+    } });
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1" } }));
+    expect(database.salesProject.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "project-1", vendorId: "vendor-1" } }));
+  });
+
+  it("still requires explicit project publication when no prerequisite is missing", async () => {
+    database.salesProjectProduct.count.mockResolvedValue(1); database.registrationForm.count.mockResolvedValue(1);
+    database.live.count.mockResolvedValue(1); database.paymentMethodReference.count.mockResolvedValue(1);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result).toMatchObject({ available: false, missing: [] });
+    expect(result.message).toContain("發布條件已齊備");
+    expect(database.salesProject.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reports consultation availability separately", async () => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "draft", publishedAt: null, primaryFlow: "consultation" });
+    database.consultationEvent.findMany.mockResolvedValue([{ weeklySchedule: [] }]);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result.missing.map((item) => item.label)).toContain("尚未設定可預約時間");
+    expect(result.missing.map((item) => item.href)).not.toContain("/lives");
+  });
+
+  it("does not diagnose a page outside the selected merchant project", async () => {
+    mocks.findFirst.mockResolvedValueOnce(null);
+    await expect(getLandingPagePublicationStatus("foreign-page")).rejects.toBeInstanceOf(LandingPageNotFoundError);
+    expect(database.salesProject.findFirst).not.toHaveBeenCalled();
+    await expect(getLandingPagePublicationStatus("../bad id")).rejects.toBeInstanceOf(LandingPageNotFoundError);
+  });
+
+  it("reports an unpublished Funnel separately from its published project", async () => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。" });
+    expect(mocks.findMany).not.toHaveBeenCalled();
+  });
+
+  it("uses the public resolver's reason when a published version is broken", async () => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published" }));
+    mocks.findMany.mockResolvedValueOnce([page({ publishedAt: now, publishedVersion: null })]);
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "Funnel 發布版本不存在或不一致，請重新發布。" });
+  });
+
+  it("names a disabled registration form as the public 404 reason", async () => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published" }));
+    mocks.findMany.mockResolvedValueOnce([page({ publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content: document, formId: "form-disabled", liveId: null, live: null } })]);
+    mocks.formFindMany.mockResolvedValueOnce([]);
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "已發布版本的報名表不存在、已停用或不屬於此專案。" });
+  });
+
+  it("reports broken multi-step operations instead of claiming the public page is available", async () => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published", operations: { invalid: true } }));
+    const content = createFunnelStepPages(createFunnelFlow({ id: "flow_diagnosis", name: "合成名單", goal: "audience", domain: "audience" })!)!;
+    mocks.findMany.mockResolvedValueOnce([page({ publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null } })]);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result.available).toBe(false);
+    expect(result.message).toContain("A/B 或截止設定無效");
+    expect(result.missing[0]?.href).toBe("/landing-pages/page-1/operations");
+  });
+
+  it("reports an available page when project, Funnel and resources are all public", async () => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published" }));
+    const content = createFunnelStepPages(createFunnelFlow({ id: "flow_available", name: "合成名單", goal: "audience", domain: "audience" })!)!;
+    mocks.findMany.mockResolvedValueOnce([page({ publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null } })]);
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: true, message: "專案與 Funnel 均已發布，公開頁目前可開啟。" });
+  });
+
+  describe("published Funnel availability", () => {
+    const funnelContent = () => createFunnelStepPages(createFunnelFlow({ id: "flow_warn", name: "合成名單", goal: "audience", domain: "audience" })!)!;
+    function publishedWith(content: ReturnType<typeof funnelContent>, operations: unknown) {
+      database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
+      mocks.findFirst.mockResolvedValue(page({ status: "published", operations }));
+      mocks.findMany.mockResolvedValue([page({ publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null } })]);
+    }
+
+    it("stays available with a warning when a report references a stale step the runtime ignores", async () => {
+      publishedWith(funnelContent(), { ...defaultFunnelOperations(), reports: { stats: { stepId: "ghost_step", days: 30 }, leads: { stepId: "", days: 30 }, sales: { stepId: "", days: 30 } } });
+      const result = await getLandingPagePublicationStatus("page-1");
+      expect(result.available).toBe(true);
+      expect(result.warnings?.map((item) => item.href)).toEqual(["/landing-pages/page-1/operations"]);
+    });
+
+    it("reports a version with a step missing its page as invalid content, as the public loader 404s it", async () => {
+      const content = funnelContent();
+      const later = content.flow.steps.filter((step) => !step.isSystem)[1]!;
+      const pages = { ...content.pages };
+      delete pages[later.id];
+      publishedWith({ ...content, pages }, null);
+      await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "已發布版本的頁面內容格式無效，請修復後重新發布。" });
+    });
+
+    it("is available without warnings for a healthy Funnel", async () => {
+      publishedWith(funnelContent(), null);
+      const result = await getLandingPagePublicationStatus("page-1");
+      expect(result).toMatchObject({ available: true, missing: [] });
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it("is deterministically unavailable when one A/B arm of the entry step would 404", async () => {
+      const content = funnelContent();
+      const control = content.flow.steps.find((step) => !step.isSystem)!;
+      // A variant that points at the system step makes only that arm unavailable at runtime.
+      const system = content.flow.steps.find((step) => step.isSystem)!;
+      publishedWith(content, { ...defaultFunnelOperations(), experiment: { id: "exp-1", status: "running", controlStepId: control.id, variantStepId: system.id, controlWeight: 50, variantWeight: 50, winner: null } });
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: expect.stringContaining("A/B 各組") });
+      }
+    });
+  });
+
+  it.each(["live", "consultation"])("keeps diagnosis query predicates identical to the real %s publication action", async (primaryFlow) => {
+    database.salesProject.findFirst.mockResolvedValue({ id: "project-1", status: "draft", publishedAt: null, primaryFlow });
+    const data = new FormData(); data.set("projectId", "project-1");
+    await expect(publishSalesProjectAction(data)).rejects.toThrow("redirect:/projects/project-1?error=not_ready");
+    await getLandingPagePublicationStatus("page-1");
+    // Compares the queries both real entry points issue, so a future gate change raises a drift alarm here.
+    const normalized = (value: unknown): unknown => value instanceof Date ? "current-time"
+      : Array.isArray(value) ? value.map(normalized)
+        : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, normalized(child)])) : value;
+    for (const fn of [database.salesProjectProduct.count, database.registrationForm.count, database.live.count, database.consultationEvent.findMany, database.paymentMethodReference.count]) {
+      expect(fn).toHaveBeenCalledTimes(2);
+      expect(normalized(fn.mock.calls[1]?.[0])).toEqual(normalized(fn.mock.calls[0]?.[0]));
+    }
+    expect(database.salesProject.updateMany).not.toHaveBeenCalled();
   });
 });
