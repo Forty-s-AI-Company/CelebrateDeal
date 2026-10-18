@@ -327,6 +327,13 @@ export async function requireFinanceAdmin() {
     redirect("/dashboard");
   }
 
+  // Platform access requires a confirmed factor, even if an old session still
+  // carries a verification timestamp. Enrollment itself uses requireAuth so
+  // an administrator can finish setup without looping through this guard.
+  if (!auth.user.mfaFactor) {
+    redirect("/mfa/setup?next=%2Fadmin%2Fbilling%2Fdashboard");
+  }
+
   return {
     user: auth.user,
     vendor: auth.vendor,

@@ -415,12 +415,15 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
   await page.getByLabel("Email").fill(fixture.adminEmail);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
-  await expect(page).toHaveURL(/\/admin\/billing\/dashboard$/);
-  await waitForStableRoute(page, "/admin/billing/dashboard");
+  // A platform administrator without an enrolled factor is sent to setup
+  // instead of the finance back office.
+  await expect(page).toHaveURL("/mfa/setup?next=%2Fadmin%2Fbilling%2Fdashboard");
+  await waitForStableRoute(page, "/mfa/setup?next=%2Fadmin%2Fbilling%2Fdashboard");
+  await expect(page.getByRole("heading", { name: "財務總覽" })).toHaveCount(0);
   await expectNoBlockingAxeViolations(page);
 
-  // Platform administrators may choose to enroll, then future sessions must
-  // complete the challenge before any authenticated admin page is available.
+  // After enrollment, future sessions must complete the challenge before any
+  // authenticated admin page is available.
   await gotoStableRoute(page, "/mfa/setup");
   await expectNoBlockingAxeViolations(page);
 
