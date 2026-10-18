@@ -9,7 +9,7 @@ import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-prev
 import { landingPageAction } from "@/app/actions/landing-page-actions";
 import type { LandingPageRenderContext } from "@/lib/landing-page-content";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
-import type { FunnelWebinarResources, LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
+import type { FunnelWebinarResources, LandingPageEditorPage, LandingPagePublicationStatus, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
 import { getActiveFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
@@ -76,7 +76,7 @@ function normalizeCommerceProducts(products?: FunnelCommerceProduct[]) { return 
 // This legacy-compatible workspace still handles publish history, previews,
 // webinar bindings, and three persisted content schemas at one boundary.
 // eslint-disable-next-line complexity
-export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref }: { commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string }) {
+export function LandingPageWorkspace({ initialPublication, page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref }: { initialPublication?: LandingPagePublicationStatus; commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string }) {
   const commerceProducts = normalizeCommerceProducts(products);
   const router = useRouter();
   const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
@@ -90,6 +90,9 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const [dirty, setDirty] = useState(!page);
   const [valid, setValid] = useState(initial.valid);
   const [message, setMessage] = useState("");
+  // An action result overrides the server diagnosis until the server sends a newer one.
+  const [publicationResult, setPublicationResult] = useState<{ source?: LandingPagePublicationStatus; value: LandingPagePublicationStatus }>();
+  const publication = publicationResult && publicationResult.source === initialPublication ? publicationResult.value : initialPublication;
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
   const [exitQueued, setExitQueued] = useState(false);
@@ -135,6 +138,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         setMessage(result.message);
         if (result.status !== "success") { setExitQueued(false); return; }
         if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }
+        if (result.publication) setPublicationResult({ source: initialPublication, value: result.publication });
         if (operation === "publish") setPublished(true);
         if (operation === "unpublish") setPublished(false);
         if (operation === "save" || operation === "create") setDirty(false);
@@ -195,7 +199,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     <section aria-labelledby="landing-page-settings" className={`${settingsOpen ? "block" : "hidden"} mb-5 rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6`}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Page setup</p><h2 id="landing-page-settings" className="mt-1 text-lg font-bold tracking-tight text-slate-950">頁面設定</h2><p className="mt-1 text-sm text-slate-500">先確認頁面資訊，再開始編排招生內容。</p></div>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "已發布頁面" : "草稿頁面") : "新頁面"}</span>
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "Funnel 已發布（公開狀態見下方）" : "草稿頁面") : "新頁面"}</span>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">頁面名稱<input disabled={pending} aria-label="頁面名稱" className={inputClass} value={name} maxLength={160} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></label>
@@ -204,6 +208,11 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">活動場次<select disabled={pending} aria-label="活動場次" className={inputClass} value={liveId} onChange={(e) => { setLiveId(e.target.value); setDirty(true); }}><option value="">由報名表提供場次選擇</option>{lives.map((live) => <option key={live.id} value={live.id}>{live.title}</option>)}</select></label>
       </div>
     </section>
+    {publication ? <section aria-label="公開網址狀態" className={`mb-4 rounded-lg border p-3 text-sm text-slate-900 ${publication.available ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+      <p role="status">{publication.message}</p>
+      {publication.missing.length ? <ul className="mt-2 list-disc pl-5">{publication.missing.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
+      {!publication.available ? <a className="mt-2 inline-block underline" href={publication.projectHref}>前往專案檢查與發布</a> : null}
+    </section> : null}
     <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); setDirty(true); }} />
     {!forms.length ? <p className="rounded-lg bg-amber-50 p-3 text-sm">目前沒有啟用中的報名表。可先建立頁面內容，再到報名管理建立表單。</p> : null}
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
