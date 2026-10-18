@@ -88,7 +88,7 @@ exports[`keeps every merchant navigation label aligned with its destination titl
   },
   {
     "href": "/billing/payment-methods",
-    "label": "付款方式設定",
+    "label": "平台服務付款方式",
   },
   {
     "href": "/billing/plans",
@@ -120,7 +120,7 @@ exports[`keeps every merchant navigation label aligned with its destination titl
   },
   {
     "href": "/onboarding",
-    "label": "商家上線導引",
+    "label": "上線導引",
   },
   {
     "href": "/settings/brand",

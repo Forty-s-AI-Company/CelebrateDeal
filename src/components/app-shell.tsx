@@ -62,7 +62,7 @@ const navGroups = [
     label: "設定",
     items: [
       { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true },
-      { href: "/billing/payment-methods", label: "付款方式設定", icon: CreditCard, financeOnly: true },
+      { href: "/billing/payment-methods", label: "平台服務付款方式", icon: CreditCard, financeOnly: true },
       { href: "/billing/plans", label: "方案", icon: Tags, financeOnly: true },
       { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true },
       { href: "/billing/electronic-invoices", label: "電子發票", icon: ReceiptText, financeOnly: true },
@@ -70,7 +70,7 @@ const navGroups = [
       { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
       { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
-      { href: "/onboarding", label: "商家上線導引", icon: Rocket, managerOnly: true },
+      { href: "/onboarding", label: "上線導引", icon: Rocket, managerOnly: true },
       { href: "/settings/brand", label: "品牌設定", icon: Palette, managerOnly: true },
       { href: "/settings/tracking", label: "追蹤設定", icon: BarChart3, managerOnly: true },
       { href: "/settings/features", label: "功能模組", icon: Settings2, managerOnly: true },
