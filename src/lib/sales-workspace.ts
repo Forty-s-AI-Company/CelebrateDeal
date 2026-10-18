@@ -71,7 +71,7 @@ export type OnboardingTaskDefinition = {
 export const WORKSPACE_ONBOARDING_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "workspace_profile", title: "完成商家基本資料", estimatedMinutes: 2, required: true },
   { key: "workspace_logo", title: "上傳 Logo", estimatedMinutes: 1, required: false },
-  { key: "workspace_payment", title: "串接付款方式", estimatedMinutes: 4, required: true, skipImpact: "已略過付款設定，目前無法接受線上付款。" },
+  { key: "workspace_payment", title: "驗證平台服務付款方式", estimatedMinutes: 4, required: true, skipImpact: "已略過平台服務付款驗證，專案發布仍需有效的商家付款紀錄；顧客收款設定需另行確認。" },
   { key: "workspace_support", title: "設定客服與通知資訊", estimatedMinutes: 2, required: true, skipImpact: "已略過客服與通知設定，客戶可能無法取得必要協助與通知。" },
   { key: "workspace_team", title: "邀請團隊成員", estimatedMinutes: 1, required: false },
   { key: "workspace_test_order", title: "完成測試訂單", estimatedMinutes: 3, required: true, skipImpact: "已略過測試訂單，付款與交付流程尚未驗證。" },
@@ -82,7 +82,7 @@ const LIVE_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "project_product", title: "建立商品", estimatedMinutes: 3, required: true },
   { key: "project_funnel", title: "選擇漏斗頁模板", estimatedMinutes: 3, required: true },
   { key: "project_live", title: "設定直播場次", estimatedMinutes: 3, required: true },
-  { key: "project_payment", title: "檢查付款方式", estimatedMinutes: 1, required: true, skipImpact: "已略過付款檢查，顧客可能無法完成線上付款。" },
+  { key: "project_payment", title: "檢查發布所需付款驗證", estimatedMinutes: 1, required: true, skipImpact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。" },
   { key: "project_preview", title: "預覽流程", estimatedMinutes: 2, required: true },
   { key: "project_publish", title: "發布並取得分享連結", estimatedMinutes: 1, required: true },
 ];
@@ -93,7 +93,7 @@ const CONSULTATION_PROJECT_TASKS: readonly OnboardingTaskDefinition[] = [
   { key: "project_price", title: "設定價格", estimatedMinutes: 2, required: true },
   { key: "project_availability", title: "設定可預約時間", estimatedMinutes: 3, required: true },
   { key: "project_funnel", title: "建立漏斗頁", estimatedMinutes: 3, required: true },
-  { key: "project_payment", title: "檢查付款方式", estimatedMinutes: 1, required: true, skipImpact: "已略過付款檢查，顧客可能無法完成線上付款。" },
+  { key: "project_payment", title: "檢查發布所需付款驗證", estimatedMinutes: 1, required: true, skipImpact: "已略過發布所需付款驗證，未通過前專案無法發布；顧客收款狀態需另行確認。" },
   { key: "project_preview", title: "預覽流程", estimatedMinutes: 2, required: true },
   { key: "project_publish", title: "發布並取得分享連結", estimatedMinutes: 1, required: true },
 ];

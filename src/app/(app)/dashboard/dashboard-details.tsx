@@ -100,6 +100,7 @@ export async function loadDashboardDetails({
           scopeType: "VENDOR",
           membershipId: null,
           status: "verified",
+          verifiedAt: { not: null, lte: now },
           OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         },
       })),
