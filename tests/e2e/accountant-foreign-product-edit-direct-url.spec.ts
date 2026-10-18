@@ -40,7 +40,7 @@ test("active accountant is denied a foreign product editor before tenant lookup"
       finalUrl: "/dashboard?error=insufficient_role",
       finalStatus: 200,
     });
-    expect(finalResponse?.status()).toBe(200); await expect(page).toHaveURL("/dashboard?error=insufficient_role"); await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    expect(finalResponse?.status()).toBe(200); await expect(page).toHaveURL("/dashboard?error=insufficient_role"); await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "編輯商品" })).toHaveCount(0); await expect(page.getByLabel("商品名稱")).toHaveCount(0); await expect(page.getByRole("button", { name: /儲存|更新/ })).toHaveCount(0);
     for (const value of [ownProduct.name, ownProduct.slug, ownProduct.description ?? "", foreignProduct.name, foreignProduct.slug, foreignProduct.description ?? ""]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);
     expect(requests.filter((url) => /https:\/\/(?!127\.0\.0\.1)|cloudflare|openai|resend|payuni|sentry|posthog/i.test(url))).toEqual([]); await expect.poll(snapshot).toEqual(before);

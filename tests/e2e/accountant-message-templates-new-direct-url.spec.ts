@@ -201,8 +201,8 @@ test("active accountant is denied message-template creation before the form is r
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByText("商品點擊", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
+    await expect(page.getByText("商品點擊", { exact: true }).first()).toBeAttached();
     await expect(
       page.getByRole("heading", { name: "新增訊息模板", exact: true }),
     ).toHaveCount(0);

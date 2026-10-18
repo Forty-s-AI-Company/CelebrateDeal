@@ -27,7 +27,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard$/u);
   await page.goto("/landing-pages/new");
-  await expect(page.getByRole("heading", { name: "建立新的 Funnel" })).toBeVisible({ timeout: 20_000 }).catch(async (error: unknown) => {
+  await expect(page.getByRole("heading", { name: "建立新的一頁式網站" })).toBeVisible({ timeout: 20_000 }).catch(async (error: unknown) => {
     await page.screenshot({ path: shot("webinar-create-failure.png"), fullPage: true });
     const ancestors = await page.getByLabel("名稱 *").evaluate((element) => {
       const result: Array<{ tag: string; id: string; hidden: boolean; display: string; visibility: string }> = [];
@@ -38,19 +38,19 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
     throw error;
   });
   await page.getByLabel("名稱 *").fill(`TEST ONLY Webinar ${suffix}`);
-  await page.getByLabel("Funnel 網址 *").fill(slug);
-  await page.getByRole("button", { name: /自動化 Webinar/u }).click();
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await page.getByLabel("一頁式網站網址 *").fill(slug);
+  await page.getByRole("button", { name: /自動化線上講座/u }).click();
+  await page.getByRole("button", { name: "建立", exact: true }).click();
   await expect(page).toHaveURL(/\/landing-pages\/[^/?]+\/operations$/u);
   const operationsPath = new URL(page.url()).pathname;
   const createdId = operationsPath.split("/").at(-2)!;
-  const management = page.getByRole("region", { name: "Funnel 管理", exact: true });
-  await expect(management.getByLabel("Funnel steps")).toContainText("Webinar 播放頁");
+  const management = page.getByRole("region", { name: "一頁式網站管理", exact: true });
+  await expect(management.getByLabel("網站步驟")).toContainText("Webinar 播放頁");
   await management.getByLabel("名稱 *", { exact: true }).fill("TEST ONLY Webinar 報名頁");
   await management.getByLabel("名稱 *", { exact: true }).press("Tab");
   await expect(management.getByRole("status")).toContainText("步驟設定已自動儲存");
-  await management.getByLabel("步驟 URL Path", { exact: true }).fill("registration");
-  await management.getByLabel("步驟 URL Path", { exact: true }).press("Tab");
+  await management.getByLabel("步驟 網址路徑", { exact: true }).fill("registration");
+  await management.getByLabel("步驟 網址路徑", { exact: true }).press("Tab");
   await expect(management.getByRole("status")).toContainText("步驟設定已自動儲存");
   await management.getByRole("button", { name: "更換模板", exact: true }).click();
   const previewButton = management.getByRole("button", { name: "完整預覽", exact: true }).first();
@@ -65,7 +65,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await page.keyboard.press("Escape");
   await expect(templateDialog).toBeHidden();
   await management.getByRole("button", { name: "取消更換模板", exact: true }).click();
-  await management.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${createdId}\\?step=`, "u"));
   // Edit the actual canvas document and exercise the global toolbar's page history.
   // Template previews can remain mounted; edits must target the actual canvas.
@@ -83,19 +83,19 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await expect(headline).toHaveText(editedHeadline);
   await toolbar.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: /草稿已儲存|已儲存/u }).first()).toBeVisible();
-  await toolbar.getByRole("button", { name: /返回 Configuration$/u }).click();
+  await toolbar.getByRole("button", { name: /返回頁面設定$/u }).click();
   await expect(page).toHaveURL(new RegExp(`${operationsPath.replaceAll("/", "\\/")}\\?step=`, "u"));
-  await management.getByLabel("Funnel steps").getByRole("button", { name: /Webinar 感謝頁 webinar_thank_you_page$/u }).click();
-  await management.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await management.getByLabel("網站步驟").getByRole("button", { name: /Webinar 感謝頁 線上講座感謝頁$/u }).click();
+  await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(headline).not.toHaveText(editedHeadline);
-  await page.getByRole("button", { name: /返回 Configuration$/u }).click();
-  await management.getByLabel("Funnel steps").getByRole("button", { name: /TEST ONLY Webinar 報名頁 webinar_registration_page$/u }).click();
-  await management.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await page.getByRole("button", { name: /返回頁面設定$/u }).click();
+  await management.getByLabel("網站步驟").getByRole("button", { name: /TEST ONLY Webinar 報名頁 線上講座報名頁$/u }).click();
+  await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(headline).toHaveText(editedHeadline);
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
-  await page.getByLabel("Webinar 時區", { exact: true }).fill("Asia/Taipei");
-  await page.getByLabel("Webinar 開始時間（UTC）", { exact: true }).fill("2030-08-01T02:00:00.000Z");
-  await page.getByLabel("Webinar 結束時間（UTC）", { exact: true }).fill("2030-08-01T03:00:00.000Z");
+  await page.getByLabel("線上講座時區", { exact: true }).fill("Asia/Taipei");
+  await page.getByLabel("線上講座開始時間（UTC）", { exact: true }).fill("2030-08-01T02:00:00.000Z");
+  await page.getByLabel("線上講座結束時間（UTC）", { exact: true }).fill("2030-08-01T03:00:00.000Z");
   await page.getByLabel("重播截止時間（UTC）", { exact: true }).fill("2030-08-08T03:00:00.000Z");
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: /草稿已儲存/u }).first()).toBeVisible();
@@ -105,7 +105,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await page.reload();
   await expect(headline).toHaveText(editedHeadline);
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
-  await expect(page.getByLabel("Webinar 開始時間（UTC）", { exact: true })).toHaveValue("2030-08-01T02:00:00.000Z");
+  await expect(page.getByLabel("線上講座開始時間（UTC）", { exact: true })).toHaveValue("2030-08-01T02:00:00.000Z");
   await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: /Webinar.*(?:綁定|場次|影片|資源)/u })).toBeVisible();
   expect(await db.landingPage.findUniqueOrThrow({ where: { id }, select: { publishedVersionId: true } })).toEqual({ publishedVersionId: null });
@@ -114,8 +114,8 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await page.getByLabel("來源影片", { exact: true }).selectOption(fixture.live.id);
   // First verify fixed-date persistence above, then exercise an actively running event.
   const now = Date.now();
-  await page.getByLabel("Webinar 開始時間（UTC）", { exact: true }).fill(new Date(now - 60_000).toISOString());
-  await page.getByLabel("Webinar 結束時間（UTC）", { exact: true }).fill(new Date(now + 3_600_000).toISOString());
+  await page.getByLabel("線上講座開始時間（UTC）", { exact: true }).fill(new Date(now - 60_000).toISOString());
+  await page.getByLabel("線上講座結束時間（UTC）", { exact: true }).fill(new Date(now + 3_600_000).toISOString());
   await page.getByLabel("重播截止時間（UTC）", { exact: true }).fill(new Date(now + 7_200_000).toISOString());
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
   await expect(page.getByRole("button", { name: "發布已儲存草稿", exact: true })).toBeEnabled({ timeout: 10_000 }).catch(async (error: unknown) => {

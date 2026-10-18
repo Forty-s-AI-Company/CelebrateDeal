@@ -41,11 +41,11 @@ test("diagnostic: isolated operations save without prior editor transitions", as
     expect(operationsResponse?.status()).toBe(200);
     await expect(page).toHaveURL(new RegExp(`${operationsPath}$`, "u"));
     await expect(page.getByRole("heading", { name: "無法開啟 Funnel", exact: true })).toHaveCount(0);
-    const panel = page.getByRole("region", { name: "Funnel 管理", exact: true });
+    const panel = page.getByRole("region", { name: "一頁式網站管理", exact: true });
     await expect(panel).toBeVisible();
     for (let index = 1; index <= 3; index++) {
-      await panel.getByRole("button", { name: "Funnel settings", exact: true }).click();
-      const settings = page.getByRole("dialog", { name: "Funnel settings", exact: true });
+      await panel.getByRole("button", { name: "網站設定", exact: true }).click();
+      const settings = page.getByRole("dialog", { name: "網站設定", exact: true });
       await settings.getByLabel("名稱", { exact: true }).fill(`TEST ONLY Transport ${index}`);
       await settings.getByRole("button", { name: "儲存設定", exact: true }).click();
       await expect.poll(async () => (await db.landingPage.findUniqueOrThrow({ where: { id: row.id } })).revision).toBe(index + 1);

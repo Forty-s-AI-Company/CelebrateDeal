@@ -187,7 +187,7 @@ test("protected app loading segment is visible during a controlled RSC navigatio
     },
     final: async () => {
       await expect(page).toHaveURL(/\/settings\/security$/u);
-      await expect(page.getByRole("heading", { name: "安全設定", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "安全性", exact: true })).toBeVisible();
     },
   });
 });
@@ -197,11 +197,11 @@ test("dashboard loading segment is visible during a controlled RSC navigation", 
     page,
     testInfo,
     targetPath: "/dashboard",
-    linkName: "Dashboard",
+    linkName: "營運總覽",
     setup: async () => {
       await loginOwner(page);
       await page.goto("/videos", { waitUntil: "load" });
-      await expect(page.getByRole("heading", { name: "影片庫", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "影片素材", exact: true })).toBeVisible();
     },
     loading: async () => {
       const loading = page.locator("main[data-dashboard-scope=\"route-shell\"][aria-busy=\"true\"]");
@@ -212,11 +212,11 @@ test("dashboard loading segment is visible during a controlled RSC navigation", 
       await expect(status).toHaveCount(1);
       await expect(status).toBeAttached();
       await expect(status).toHaveAttribute("role", "status");
-      await expect(status).toHaveText("正在載入 Dashboard，請稍候。");
+      await expect(status).toHaveText("正在載入營運總覽，請稍候。");
     },
     final: async () => {
       await expect(page).toHaveURL(/\/dashboard$/u);
-      await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "營運總覽", exact: true })).toBeVisible();
       await expect(page.locator('[data-dashboard-scope="kpis"]')).toBeVisible();
       await expect(page.locator('[data-dashboard-scope="details"]')).toBeVisible();
     },
@@ -228,7 +228,7 @@ test("videos loading segment is visible during a controlled RSC navigation", asy
     page,
     testInfo,
     targetPath: "/videos",
-    linkName: "媒體素材",
+    linkName: "影片素材",
     setup: () => loginOwner(page),
     loading: async () => {
       const loading = page.locator("section[aria-busy=\"true\"][aria-labelledby=\"videos-loading-title\"]");
@@ -243,7 +243,7 @@ test("videos loading segment is visible during a controlled RSC navigation", asy
     },
     final: async () => {
       await expect(page).toHaveURL(/\/videos$/u);
-      await expect(page.getByRole("heading", { name: "影片庫", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "影片素材", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "套用篩選", exact: true })).toBeVisible();
     },
   });

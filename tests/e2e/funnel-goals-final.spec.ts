@@ -6,7 +6,7 @@ import { createLandingPageFixture, type LandingPageFixture } from "../fixtures/l
 
 /**
  * Browser contract for the systeme-style Funnel journey:
- * create -> goal-filtered template -> Configuration -> Edit Page -> return.
+ * create -> goal-filtered template -> 頁面設定 -> 編輯頁面 -> return.
  */
 const db = new PrismaClient();
 const runKey = randomUUID();
@@ -24,10 +24,10 @@ type Goal = "audience" | "sell" | "custom" | "webinar";
 const goals: Array<{ goal: Goal; label: string }> = [
   { goal: "audience", label: "建立名單" },
   { goal: "sell", label: "銷售商品或服務" },
-  { goal: "custom", label: "自訂 Funnel" },
-  { goal: "webinar", label: "自動化 Webinar" },
+  { goal: "custom", label: "自訂一頁式網站" },
+  { goal: "webinar", label: "自動化線上講座" },
 ];
-const operationsTabs = ["Configuration", "Automation Rules", "A/B test", "Stats", "Leads", "Sales", "Deadline settings"];
+const operationsTabs = ["頁面設定", "自動化規則", "A/B 測試", "成效統計", "報名名單", "銷售紀錄", "截止設定"];
 
 async function login(page: Page) {
   await page.goto("/login");
@@ -41,38 +41,38 @@ async function createGoal(page: Page, goal: Goal) {
   const suffix = `${runKey.replaceAll("-", "").slice(-10)}-${goal}`;
   const slug = `test-only-final-${suffix}`;
   await page.goto("/landing-pages");
-  await expect(page.getByRole("heading", { name: "Funnels", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "建立 Funnel", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "一頁式網站", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "建立一頁式網站", exact: true }).first().click();
   await expect(page).toHaveURL(/\/landing-pages\/new$/u);
   await page.getByLabel("名稱 *").fill(`TEST ONLY Final ${goal} ${suffix}`);
-  await page.getByLabel("Funnel 網址 *").fill(slug);
+  await page.getByLabel("一頁式網站網址 *").fill(slug);
   await page.getByRole("button", { name: new RegExp(`^${goals.find((item) => item.goal === goal)!.label}`, "u") }).click();
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await page.getByRole("button", { name: "建立", exact: true }).click();
   await expect(page).toHaveURL(/\/landing-pages\/[^/?]+\/operations$/u);
   const pageId = new URL(page.url()).pathname.split("/").at(-2)!;
 
-  const management = page.getByRole("region", { name: "Funnel 管理", exact: true });
+  const management = page.getByRole("region", { name: "一頁式網站管理", exact: true });
   await expect(management).toBeVisible();
   for (const tab of operationsTabs) await expect(management.getByRole("button", { name: tab, exact: true })).toBeVisible();
 
   if (goal === "custom") {
-    await expect(management.getByRole("heading", { name: "尚未建立 Funnel step", exact: true })).toBeVisible();
-    await management.getByRole("button", { name: "Add step", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Add step", exact: true });
+    await expect(management.getByRole("heading", { name: "尚未建立網站步驟", exact: true })).toBeVisible();
+    await management.getByRole("button", { name: "新增步驟", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "新增步驟", exact: true });
     await dialog.getByLabel("名稱 *", { exact: true }).fill("TEST ONLY Custom Page");
-    await dialog.getByLabel("URL Path *", { exact: true }).fill("custom-page");
+    await dialog.getByLabel("網址路徑 *", { exact: true }).fill("custom-page");
     await dialog.getByLabel("從空白開始", { exact: true }).check();
     await dialog.getByRole("button", { name: "儲存", exact: true }).click();
     await expect(management.getByRole("status")).toContainText("新步驟已建立");
-    await expect(management.getByRole("button", { name: "Edit Page", exact: true })).toBeEnabled();
+    await expect(management.getByRole("button", { name: "編輯頁面", exact: true })).toBeEnabled();
   } else if (goal === "audience" || goal === "sell") {
     await expect(management.getByRole("heading", { name: /選擇模板/u })).toBeVisible();
     await management.getByRole("button", { name: "套用模板", exact: true }).first().click();
     await expect(management.getByRole("status")).toContainText("模板已套用");
-    await expect(management.getByRole("button", { name: "Edit Page", exact: true })).toBeEnabled();
+    await expect(management.getByRole("button", { name: "編輯頁面", exact: true })).toBeEnabled();
   }
 
-  await management.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
   await expect(page.getByLabel("Funnel 編輯器工具列", { exact: true })).toBeVisible();
   return { slug, pageId };
@@ -89,15 +89,15 @@ for (const { goal } of goals) {
     await expect(page.getByRole("status").filter({ hasText: /草稿已儲存|已儲存/u }).first()).toBeVisible();
     await expect.poll(async () => (await db.landingPage.findUnique({ where: { id: pageId }, select: { slug: true } }))?.slug).toBe(slug);
 
-    await toolbar.getByRole("button", { name: /返回 Configuration$/u }).click();
+    await toolbar.getByRole("button", { name: /返回頁面設定$/u }).click();
     await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/operations\\?step=`, "u"));
-    const management = page.getByRole("region", { name: "Funnel 管理", exact: true });
-    await expect(management.getByRole("button", { name: "Configuration", exact: true })).toBeVisible();
-    await management.getByRole("button", { name: "Automation Rules", exact: true }).click();
+    const management = page.getByRole("region", { name: "一頁式網站管理", exact: true });
+    await expect(management.getByRole("button", { name: "頁面設定", exact: true })).toBeVisible();
+    await management.getByRole("button", { name: "自動化規則", exact: true }).click();
     await expect(page.getByRole("region", { name: "報名後自動化", exact: true })).toBeVisible();
 
-    await management.getByRole("button", { name: "Configuration", exact: true }).click();
-    await management.getByRole("button", { name: "Edit Page", exact: true }).click();
+    await management.getByRole("button", { name: "頁面設定", exact: true }).click();
+    await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
     const publish = page.getByRole("button", { name: "發布已儲存草稿", exact: true });
     if (goal !== "webinar") {

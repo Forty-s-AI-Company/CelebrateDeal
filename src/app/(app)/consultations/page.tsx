@@ -45,7 +45,7 @@ export default async function ConsultationsPage({ searchParams }: { searchParams
 
   return (
     <>
-      <PageHeader title="諮詢預約工作台" description="設定可預約時段、掌握即將到來的諮詢；停用不會刪除既有預約紀錄。" />
+      <PageHeader title="諮詢預約" description="設定可預約時段、掌握即將到來的諮詢；停用不會刪除既有預約紀錄。" />
       <SalesScopeNotice workspaceName={vendor.name} scope={scope} />
       {!scope.isAggregate ? (
         <Link href="/consultations/mobile" className="mb-4 inline-flex min-h-11 items-center rounded-lg bg-slate-950 px-4 text-sm font-bold text-white">

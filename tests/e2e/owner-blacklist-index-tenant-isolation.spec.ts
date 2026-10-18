@@ -40,7 +40,7 @@ test("owner receives only its vendor blacklist entries from the blacklist index"
     expect(response?.status()).toBe(200);
     await expect(page).toHaveURL(/\/blacklists$/);
     await expect(page.locator("main").first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "黑名單管理" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "封鎖名單" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "新增封鎖項目" })).toBeVisible();
     await expect(page.getByText(ownBlacklist.identifier, { exact: true })).toBeVisible();
     await expect(page.getByText(ownBlacklist.reason, { exact: true })).toBeVisible();

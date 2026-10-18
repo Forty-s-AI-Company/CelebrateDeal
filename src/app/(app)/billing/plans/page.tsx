@@ -14,6 +14,11 @@ import { ExternalPaymentForm } from "@/components/external-payment-form";
 import { BillingPlanCheckoutForm } from "@/components/billing-plan-checkout-form";
 import { payUniStagingPlanRetryPermit, payUniStagingPlanTestAllowed, payUniStagingPlanTestAvailability, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
 
+// Keep existing rounding and prices; disambiguate the dollar symbol for merchants.
+function formatPlanCurrency(cents: number) {
+  return `TWD ${formatCurrency(cents)}`;
+}
+
 type BillingPlansSearchParams = { status?: string | string[]; error?: string | string[]; transactionId?: string | string[]; referral?: string | string[] };
 
 type BillingPlansPageProps = {
@@ -285,18 +290,18 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
               </div>
               <Badge tone={plan.isActive ? "blue" : "gray"}>{plan.isActive ? plan.code : plan.code.replace("staging-payuni-", "")}</Badge>
             </div>
-            <p className="text-3xl font-bold text-slate-950">{formatCurrency(plan.monthlyPriceCents)}</p>
+            <p className="text-3xl font-bold text-slate-950">{formatPlanCurrency(plan.monthlyPriceCents)}</p>
             <div className="grid gap-2 text-sm text-slate-600">
               <PlanRow label="內含播放" value={`${Math.round(plan.includedStreamMinutes / 60).toLocaleString()} 小時 / 月`} />
               <PlanRow label="內含活動" value={`${plan.includedEvents.toLocaleString()} 場 / 月`} />
               <PlanRow label="內含推廣者" value={`${plan.includedAffiliates.toLocaleString()} 人`} />
               <PlanRow label="儲存額度" value={`${plan.includedStorageMinutes.toLocaleString()} 分鐘`} />
-              <PlanRow label="平台金流月費" value={formatCurrency(plan.paymentServiceFeeCents)} />
+              <PlanRow label="平台金流月費" value={formatPlanCurrency(plan.paymentServiceFeeCents)} />
               <PlanRow label="交易服務費" value={`${plan.transactionFeeRateBps / 100}%`} />
             </div>
             <div className="rounded-lg bg-white p-3 text-xs text-slate-500 shadow-sm">
               <p>超額：Stream 包含額度用完後暫停新播放；月結帳單會依實際用量產生，目前未啟用自動超額扣款。</p>
-              <p className="mt-1">月結參考單價：播放每 100 小時 {formatCurrency(plan.overflowWatchHourPriceCents)}、活動每 10 場 {formatCurrency(plan.overflowEventUnitPriceCents)}、推廣者每 10 人 {formatCurrency(plan.overflowAffiliateUnitPriceCents)}、儲存每 100 分鐘 {formatCurrency(plan.overflowStorageMinutePriceCents * 100)}。帳單可從帳單頁手動完成付款。</p>
+              <p className="mt-1">月結參考單價：播放每 100 小時 {formatPlanCurrency(plan.overflowWatchHourPriceCents)}、活動每 10 場 {formatPlanCurrency(plan.overflowEventUnitPriceCents)}、推廣者每 10 人 {formatPlanCurrency(plan.overflowAffiliateUnitPriceCents)}、儲存每 100 分鐘 {formatPlanCurrency(plan.overflowStorageMinutePriceCents * 100)}。帳單可從帳單頁手動完成付款。</p>
             </div>
             {currentSubscription?.planId === plan.id ? (
               <button type="button" disabled className="inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-200 px-4 text-sm font-semibold text-slate-600">

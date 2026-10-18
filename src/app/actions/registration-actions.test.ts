@@ -20,7 +20,7 @@ describe("workspace registration boundaries", () => {
   expect(mocks.hash).toHaveBeenCalledWith("synthetic password");
   expect(mocks.user).toHaveBeenCalledWith({data:{name:"Owner",email:"owner@example.test",passwordHash:"synthetic-hash"}});
   expect(mocks.member).toHaveBeenCalledWith({data:{vendorId:"vendor-1",userId:"user-1",role:"owner",status:"active"}});
-  expect(mocks.preference).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce();
+  expect(mocks.preference).toHaveBeenCalledWith({data:expect.objectContaining({taskPanelCollapsed:true})}); expect(mocks.preference).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce();
   expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]);
   expect(mocks.set).toHaveBeenCalledWith("auth","synthetic-session",{httpOnly:true});
  });

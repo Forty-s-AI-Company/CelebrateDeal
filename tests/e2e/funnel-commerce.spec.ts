@@ -53,7 +53,7 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await page.getByRole("button", { name: "登入", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/u);
   await page.goto("/landing-pages/new");
-  await expect(page.getByRole("heading", { name: "建立新的 Funnel" })).toBeVisible().catch(async (error: unknown) => {
+  await expect(page.getByRole("heading", { name: "建立新的一頁式網站" })).toBeVisible().catch(async (error: unknown) => {
     // Only structural diagnostics; never serialize session storage or request headers.
     const ancestors = await page.getByLabel("名稱 *").evaluate((element) => {
       const result: Array<{ tag: string; hidden: boolean; display: string; visibility: string }> = [];
@@ -66,14 +66,14 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   // App Router may retain a hidden streaming fragment; interact with the
   // accessible controls, while preserving strict uniqueness for visible UI.
   await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("TEST ONLY Commerce Funnel");
-  await page.getByRole("textbox", { name: /^Funnel 網址 \*/u }).fill(slug);
+  await page.getByRole("textbox", { name: /^一頁式網站網址 \*/u }).fill(slug);
   await page.getByRole("button", { name: /銷售商品或服務/u }).click();
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await page.getByRole("button", { name: "建立", exact: true }).click();
   await expect(page).toHaveURL(/\/landing-pages\/[^/?]+\/operations$/u);
   const funnelId = new URL(page.url()).pathname.split("/").at(-2)!;
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "模板已套用" })).toBeVisible();
-  await page.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await page.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
   await page.getByRole("button", { name: "頁面", exact: true }).click();
   const productSelect = page.getByRole("combobox", { name: /^本步驟商品/u });

@@ -47,7 +47,7 @@ describe("/interaction-scripts route", () => {
       where: { vendorId: "vendor-1" }, orderBy: { createdAt: "desc" }, skip: 10, take: 10,
       include: { events: { orderBy: { triggerSec: "asc" } }, lives: { include: { video: true } } },
     });
-    expect(html).toContain("留言組");
+    expect(html).toContain("互動腳本");
     expect(html).toContain("開場節奏");
     expect(html).toContain("12s · 歡迎");
     expect(html).toContain("/interaction-scripts/script-1/edit");
@@ -65,8 +65,8 @@ describe("/interaction-scripts route", () => {
     const html = renderToStaticMarkup(await InteractionScriptsPage({ searchParams: Promise.resolve({ page: "-4", pageSize: "bad" }) }));
 
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 10 }));
-    expect(html).toContain("還沒有留言組");
-    expect(html).toContain("建立留言組後");
+    expect(html).toContain("還沒有互動腳本");
+    expect(html).toContain("建立互動腳本後");
   });
 
   it("caps unsupported page sizes and explains why an unsafe legacy script cannot be copied", async () => {

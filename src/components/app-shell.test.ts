@@ -1,4 +1,6 @@
 import { createElement, type ReactNode } from "react";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -47,6 +49,34 @@ beforeEach(() => {
 });
 
 describe("AppShell role navigation", () => {
+  it("exposes LINE only to the owner allowed by the existing settings page", () => {
+    expect(linksFor("owner")).toContain("/settings/line");
+    for (const role of ["admin", "accountant", "support", "member", null]) {
+      expect(linksFor(role)).not.toContain("/settings/line");
+    }
+    expect(linksFor(null, true)).not.toContain("/settings/line");
+    expect(renderShell({ memberRole: "owner" })).toContain('href="/settings/line"');
+  });
+
+  it("makes partner pages discoverable with the funnel feature", () => {
+    for (const role of ["owner", "admin", "accountant"]) {
+      expect(linksFor(role, false, ["funnel_builder"])).toContain("/partner-pages");
+      expect(linksFor(role, false, [])).not.toContain("/partner-pages");
+    }
+    expect(linksFor("support")).not.toContain("/partner-pages");
+    expect(renderShell({ memberRole: "owner" })).toContain('href="/partner-pages"');
+  });
+
+  it("links every supported role to an existing page rather than a missing settings route", () => {
+    const links = new Set(["owner", "admin", "accountant", "support"].flatMap((role) => linksFor(role))
+      .concat(linksFor(null, true)));
+    expect(links.has("/settings/commissions")).toBe(false);
+    for (const href of links) {
+      const route = href.replace(/^\//, "");
+      expect(["src/app", "src/app/(app)"].some((root) =>
+        existsSync(path.join(process.cwd(), root, route, "page.tsx"))), href).toBe(true);
+    }
+  });
   it("keeps accountant navigation tenant-scoped and read-oriented", () => {
     const links = linksFor("accountant");
 
@@ -197,4 +227,18 @@ describe("AppShell role navigation", () => {
     expect(html).not.toContain('href="/orders"');
     expect(html).not.toContain('href="/billing/invoices"');
   });
+});
+
+it("keeps every merchant navigation label aligned with its destination title", () => {
+  const labels = navigationForRole("owner").flatMap((group) => group.items.map((item) => ({ href: item.href, label: item.label })));
+  const componentTitles: Record<string, string> = { "/team-performance": "src/components/team-performance-dashboard.tsx" };
+  for (const { href, label } of labels) {
+    const filename = componentTitles[href] ?? `src/app/(app)${href}/page.tsx`;
+    const source = readFileSync(path.join(process.cwd(), filename), "utf8");
+    const titles = [...source.matchAll(/<PageHeader\b[^>]*?title="([^"]+)"/g)];
+    expect(titles, `${href}: expected one literal PageHeader title`).toHaveLength(1);
+    const title = titles[0][1];
+    expect(title, href).toBe(label);
+  }
+  expect(labels).toMatchSnapshot();
 });

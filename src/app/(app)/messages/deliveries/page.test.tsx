@@ -46,7 +46,7 @@ beforeEach(() => {
 describe("MessageDeliveriesPage", () => {
   it("renders tenant-scoped merchant search, delivery guidance and safe retry feedback", async () => {
     const html = renderToStaticMarkup(await MessageDeliveriesPage());
-    expect(html).toContain("Email 寄送營運");
+    expect(html).toContain("寄送管理");
     expect(html).toContain("完整收件 Email 或寄送編號");
     expect(html).toContain("l***@example.test");
     expect(html).toContain("寄送服務連線暫時失敗");

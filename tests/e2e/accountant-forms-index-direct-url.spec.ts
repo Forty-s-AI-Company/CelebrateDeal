@@ -171,8 +171,8 @@ test("active accountant is denied the forms index before lead relationships are 
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "報名表管理", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "報名管理", exact: true })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "新增表單", exact: true })).toHaveCount(0);
     await expect(page.getByText(form.name, { exact: true })).toHaveCount(0);
     await expect(page.getByText(`/form/${form.slug}`, { exact: true })).toHaveCount(0);

@@ -69,7 +69,7 @@ test("active accountant is denied a foreign video editor before tenant lookup", 
     });
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "編輯影片" })).toHaveCount(0);
     for (const label of ["影片名稱", "影片描述", "影片 URL", "縮圖 URL", "長度秒數", "估算用量分鐘", "狀態"]) await expect(page.getByLabel(label)).toHaveCount(0);
     for (const value of [ownVideo.title, ownVideo.description ?? "", foreignVideo.title, foreignVideo.description ?? "", ownVideoUrl, foreignVideoUrl, ownThumbnailUrl, foreignThumbnailUrl]) await expect(page.getByText(value, { exact: true })).toHaveCount(0);

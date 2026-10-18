@@ -107,6 +107,12 @@ function enableLiveStagingPlans() {
 }
 
 describe("/billing/plans route", () => {
+  it("identifies plan amounts as TWD without changing their values", async () => {
+    const html = renderToStaticMarkup(await BillingPlansPage({}));
+    expect(html).toContain("TWD $99");
+    expect(html).toContain("TWD $3");
+  });
+
   it("explains the acknowledged one-order retry while preserving the duplicate payment warning", async () => {
     enableLiveStagingPlans();
     vi.stubEnv("PAYUNI_MERCHANT_ID", PAYUNI_STAGING_RETRY_MERCHANT_ID);
@@ -249,7 +255,7 @@ describe("/billing/plans route", () => {
     expect(html).toContain("pending 交易");
     expect(html).toContain("Stream 包含額度用完後會暫停新播放");
     expect(html).toContain("未啟用自動超額扣款");
-    expect(html).toContain("儲存每 100 分鐘 $3");
+    expect(html).toContain("儲存每 100 分鐘 TWD $3");
   });
 
   it("marks the active subscription and does not render another purchase action", async () => {

@@ -1,0 +1,154 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps every merchant navigation label aligned with its destination title 1`] = `
+[
+  {
+    "href": "/dashboard",
+    "label": "營運總覽",
+  },
+  {
+    "href": "/projects",
+    "label": "銷售專案",
+  },
+  {
+    "href": "/lives",
+    "label": "直播間",
+  },
+  {
+    "href": "/videos",
+    "label": "影片素材",
+  },
+  {
+    "href": "/landing-pages",
+    "label": "一頁式網站",
+  },
+  {
+    "href": "/forms",
+    "label": "報名管理",
+  },
+  {
+    "href": "/products",
+    "label": "商品",
+  },
+  {
+    "href": "/orders",
+    "label": "訂單與履約",
+  },
+  {
+    "href": "/consultations",
+    "label": "諮詢預約",
+  },
+  {
+    "href": "/customers",
+    "label": "學員 CRM",
+  },
+  {
+    "href": "/support-cases",
+    "label": "客服案件",
+  },
+  {
+    "href": "/messages/templates",
+    "label": "訊息模板",
+  },
+  {
+    "href": "/messages/deliveries",
+    "label": "寄送管理",
+  },
+  {
+    "href": "/interaction-scripts",
+    "label": "互動腳本",
+  },
+  {
+    "href": "/interaction-roles",
+    "label": "互動角色",
+  },
+  {
+    "href": "/blacklists",
+    "label": "封鎖名單",
+  },
+  {
+    "href": "/affiliates",
+    "label": "推廣夥伴",
+  },
+  {
+    "href": "/team-templates",
+    "label": "團隊模板",
+  },
+  {
+    "href": "/partner-pages",
+    "label": "我的夥伴頁",
+  },
+  {
+    "href": "/team-performance",
+    "label": "成效分析",
+  },
+  {
+    "href": "/billing/usage",
+    "label": "用量與扣點",
+  },
+  {
+    "href": "/billing/payment-methods",
+    "label": "付款方式設定",
+  },
+  {
+    "href": "/billing/plans",
+    "label": "方案",
+  },
+  {
+    "href": "/billing/invoices",
+    "label": "帳單",
+  },
+  {
+    "href": "/billing/electronic-invoices",
+    "label": "電子發票",
+  },
+  {
+    "href": "/billing/settlements",
+    "label": "月結",
+  },
+  {
+    "href": "/billing/payouts",
+    "label": "批次出款",
+  },
+  {
+    "href": "/affiliates/commissions",
+    "label": "佣金結算",
+  },
+  {
+    "href": "/billing/course-payouts",
+    "label": "課程分潤",
+  },
+  {
+    "href": "/onboarding",
+    "label": "商家上線導引",
+  },
+  {
+    "href": "/settings/brand",
+    "label": "品牌設定",
+  },
+  {
+    "href": "/settings/tracking",
+    "label": "追蹤設定",
+  },
+  {
+    "href": "/settings/features",
+    "label": "功能模組",
+  },
+  {
+    "href": "/settings/line",
+    "label": "LINE 整合",
+  },
+  {
+    "href": "/settings/automations",
+    "label": "自動化",
+  },
+  {
+    "href": "/settings/team",
+    "label": "團隊管理",
+  },
+  {
+    "href": "/settings/security",
+    "label": "安全性",
+  },
+]
+`;
