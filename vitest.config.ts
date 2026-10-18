@@ -1,16 +1,13 @@
 import path from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
 
-import { assertLocalTestDatabase } from "./scripts/local-database-safety";
+import { assertLocalTestDatabase, resolveLocalDatabaseUrl } from "./scripts/local-database-safety";
 import { findNodeTapContractTests } from "./scripts/node-tap-contract-tests";
 
 // Keep automated tests away from the developer's interactive local database.
 // `celebratedeal_test` is a disposable loopback-only database that must be
 // provisioned from the repository migrations before database-backed test runs.
-const localPostgresUrl = "postgresql://postgres:postgres@localhost:54329/celebratedeal_test?schema=public";
-if (!process.env.DATABASE_URL || process.env.DATABASE_URL.startsWith("file:")) {
-  process.env.DATABASE_URL = localPostgresUrl;
-}
+process.env.DATABASE_URL = resolveLocalDatabaseUrl(process.env.DATABASE_URL, "test");
 if (!process.env.DIRECT_URL || process.env.DIRECT_URL.startsWith("file:")) {
   process.env.DIRECT_URL = process.env.DATABASE_URL;
 }

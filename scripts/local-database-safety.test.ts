@@ -3,9 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   assertLocalTestDatabase,
   classifyLocalTestDatabase,
+  DEFAULT_LOCAL_TEST_DATABASE_URL,
+  resolveLocalDatabaseUrl,
 } from "./local-database-safety";
 
 describe("local test database safety", () => {
+  it("shares test target resolution and explains the explicit development contract", () => {
+    expect(resolveLocalDatabaseUrl(undefined, "test")).toBe(DEFAULT_LOCAL_TEST_DATABASE_URL);
+    expect(resolveLocalDatabaseUrl("file:./old.db", "test")).toBe(DEFAULT_LOCAL_TEST_DATABASE_URL);
+    const injected = "postgresql://localhost/celebratedeal_dev";
+    expect(resolveLocalDatabaseUrl(injected, "dev")).toBe(injected);
+    expect(resolveLocalDatabaseUrl(injected, "test")).toBe(injected);
+    // An env-file-only setup is intentionally not read by this preflight.
+    expect(() => resolveLocalDatabaseUrl(undefined, "dev")).toThrow("must be injected into the shell");
+  });
   it.each([
     "postgresql://user:password@localhost:5432/celebratedeal_dev",
     "postgres://user:password@127.0.0.1:54329/celebratedeal_test?schema=public",
