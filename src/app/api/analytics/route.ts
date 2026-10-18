@@ -129,7 +129,13 @@ export async function POST(request: Request) {
     },
   };
   const trackingContext = captureTrackingBrowserContext(request.headers, `/live/${encodeURIComponent(live.slug)}`);
-  if (trackingContext && ["page_view", "product_click"].includes(parsed.data.eventType)) {
+  // 熱路徑先在交易外確認租戶已啟用 ViewContent 且已設定 Pixel 與憑證；
+  // 不讀出加密憑證本身，交易內 enqueue 仍會再次以 vendorId 驗證設定。
+  const trackingConfigured = trackingContext && ["page_view", "product_click"].includes(parsed.data.eventType) ? await db.trackingSetting.findFirst({
+    where: { vendorId: parsed.data.vendorId, enablePageView: true, facebookPixelId: { not: null }, facebookAccessTokenEncrypted: { not: null } },
+    select: { id: true },
+  }) : null;
+  if (trackingContext && trackingConfigured) {
     // analytics 與 outbox 原子落地；不接受 browser 自訂 Purchase/Lead。
     await db.$transaction(async tx => {
       const event = await tx.analyticsEvent.create(eventData);

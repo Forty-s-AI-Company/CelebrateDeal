@@ -8,6 +8,9 @@ import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
 import { runPurchaseTrackingBatch } from "@/lib/tracking-purchase-worker";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 
+const monitoring = vi.hoisted(() => ({ captureOperationalError: vi.fn() }));
+vi.mock("@/lib/monitoring", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/monitoring")>(), captureOperationalError: monitoring.captureOperationalError }));
+
 const db = getDb();
 // 每個 suite 自行宣告合成 Preview binding，完整 coverage 不依賴專用 runner。
 beforeEach(() => {
@@ -16,7 +19,7 @@ beforeEach(() => {
   vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true");
   vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false");
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); monitoring.captureOperationalError.mockReset(); });
 async function fixture() {
   const id = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Synthetic tracking shop", slug: `outbox-${id}`, email: `${id}@example.test`, passwordHash: "synthetic-only" } });
@@ -196,5 +199,79 @@ it("excludes test orders from live enqueue and cancels a queued purchase changed
   vi.stubEnv("VERCEL_ENV", "production"); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "false"); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "true");
   const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
   expect(await runPurchaseTrackingBatch({ vendorId: f.vendor.id, apiVersion: "v22.0", deliveryMode: "live" })).toMatchObject({ claimed: 1, cancelled: 1 });
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+const runLive = (vendorId: string, now?: Date) => runPurchaseTrackingBatch({ vendorId, apiVersion: "v22.0", deliveryMode: "live", now });
+function enableLiveExecutor() {
+  vi.stubEnv("VERCEL_ENV", "production"); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "false"); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "true");
+}
+
+it("cancels test-coded rows in live mode once the merchant clears the Test Event Code, scoped to the tenant", async () => {
+  const a = await fixture(), b = await fixture();
+  const rowA = await enqueue(a.input), rowB = await enqueue(b.input);
+  await saveTrackingCredentialConfiguration(b.vendor.id, { expectedRevision: 1, testEventCode: null, clearToken: false });
+  enableLiveExecutor();
+  const fetchMock = vi.fn().mockResolvedValue(accepted()); vi.stubGlobal("fetch", fetchMock);
+  // A still matches its test settings; only B's stale row may change.
+  expect(await runLive(a.vendor.id)).toMatchObject({ claimed: 0, cancelled: 0, staleTestCancelled: 0 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: rowB!.id } })).toMatchObject({ status: "queued", attemptCount: 0 });
+  expect(await runLive(b.vendor.id)).toMatchObject({ claimed: 0, accepted: 0, cancelled: 1, staleTestCancelled: 1 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: rowB!.id } })).toMatchObject({ status: "cancelled", attemptCount: 0, leaseToken: null, testEventCode: "TEST_SYNTHETIC" });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: rowA!.id } })).toMatchObject({ status: "queued", attemptCount: 0 });
+  // Live mode never delivers a test-coded row, even while cleaning it up.
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(await runLive(b.vendor.id)).toMatchObject({ claimed: 0, cancelled: 0 });
+});
+it("cancels a test-coded row in live mode after a changed code or the age window, but not under a held lease", async () => {
+  const changed = await fixture(), aged = await fixture();
+  const changedRow = await enqueue(changed.input), agedRow = await enqueue(aged.input);
+  await saveTrackingCredentialConfiguration(changed.vendor.id, { expectedRevision: 1, testEventCode: "OTHER_TEST", clearToken: false });
+  // An unexpired lease belongs to its holder and is never cancelled underneath it.
+  await db.trackingDelivery.update({ where: { id: changedRow!.id }, data: { status: "processing", attemptCount: 1, leaseToken: randomUUID(), leaseExpiresAt: new Date(Date.now() + 60_000) } });
+  enableLiveExecutor();
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  expect(await runLive(changed.vendor.id)).toMatchObject({ cancelled: 0 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: changedRow!.id } })).toMatchObject({ status: "processing" });
+  expect(await runLive(changed.vendor.id, new Date(Date.now() + 120_000))).toMatchObject({ claimed: 0, cancelled: 1, staleTestCancelled: 1 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: changedRow!.id } })).toMatchObject({ status: "cancelled", leaseToken: null, leaseExpiresAt: null });
+  // Settings still match, but the row is older than the provider event window.
+  expect(await runLive(aged.vendor.id)).toMatchObject({ cancelled: 0 });
+  await db.trackingDelivery.update({ where: { id: agedRow!.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
+  expect(await runLive(aged.vendor.id)).toMatchObject({ claimed: 0, cancelled: 1, staleTestCancelled: 1 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: agedRow!.id } })).toMatchObject({ status: "cancelled", attemptCount: 0 });
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it("defers rows without consuming an attempt when the credential key is rotated, then recovers", async () => {
+  const f = await fixture(); const row = await enqueue(f.input);
+  vi.stubEnv("CSRF_SECRET", "synthetic-rotated-encryption-key-at-least-32-bytes");
+  const fetchMock = vi.fn().mockResolvedValue(accepted()); vi.stubGlobal("fetch", fetchMock);
+  const now = new Date();
+  expect(await run(f.vendor.id, now)).toMatchObject({ claimed: 1, configDeferred: 1, rejected: 0, retried: 0, cancelled: 0 });
+  const deferred = await db.trackingDelivery.findUniqueOrThrow({ where: { id: row!.id } });
+  expect(deferred).toMatchObject({ status: "queued", attemptCount: 0, leaseToken: null, leaseExpiresAt: null });
+  expect(deferred.nextAttemptAt.getTime()).toBeGreaterThan(now.getTime());
+  expect(fetchMock).not.toHaveBeenCalled();
+  // One sanitized, fixed-message diagnostic; no token, key or envelope.
+  expect(monitoring.captureOperationalError).toHaveBeenCalledOnce();
+  const [error, context] = monitoring.captureOperationalError.mock.calls[0];
+  expect((error as Error).message).toBe("Tracking credential configuration unavailable.");
+  expect(context).toEqual({ source: "tracking-worker", operation: "credential-decrypt" });
+  const setting = await db.trackingSetting.findUniqueOrThrow({ where: { vendorId: f.vendor.id } });
+  const diagnostics = JSON.stringify(monitoring.captureOperationalError.mock.calls.map(([e, c]) => [(e as Error).message, (e as Error).cause, c]));
+  for (const secret of ["synthetic-meta-outbox-token", "synthetic-rotated-encryption-key-at-least-32-bytes", "synthetic-tracking-encryption-key-at-least-32-bytes", setting.facebookAccessTokenEncrypted!]) {
+    expect(diagnostics).not.toContain(secret);
+  }
+  vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes");
+  expect(await run(f.vendor.id, new Date(deferred.nextAttemptAt.getTime() + 1))).toMatchObject({ claimed: 1, accepted: 1 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({ status: "accepted", attemptCount: 1 });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it("defers rather than rejects when the encryption key is missing", async () => {
+  const f = await fixture(); const row = await enqueue(f.input);
+  vi.stubEnv("CSRF_SECRET", ""); vi.stubEnv("JOB_SECRET", "");
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  expect(await run(f.vendor.id)).toMatchObject({ claimed: 1, configDeferred: 1, rejected: 0 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({ status: "queued", attemptCount: 0, leaseToken: null });
   expect(fetchMock).not.toHaveBeenCalled();
 });
