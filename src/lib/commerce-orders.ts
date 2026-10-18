@@ -26,6 +26,7 @@ import {
 } from "@/lib/commerce-custom-checkout";
 import { createInvoiceCheckoutIdentityHash, invoiceBuyerDisplay, protectInvoiceRequest } from "@/lib/taiwan-invoice-request";
 import type { CheckoutInvoiceSelection } from "@/lib/taiwan-invoice-validator";
+import { protectTrackingBrowserContext, type TrackingBrowserContext } from "@/lib/tracking-browser-context";
 
 /** The deliberately small transaction surface used by the commerce order domain. */
 export type CommerceOrdersTransaction = Pick<
@@ -41,6 +42,7 @@ export type CommerceOrdersTransaction = Pick<
   | "commerceOrderItemDeliverySnapshot"
   | "vendor"
   | "learnerNotificationSourceEvent"
+  | "trackingSetting"
 >;
 
 type OrderRecord = {
@@ -229,8 +231,18 @@ export type CreateCommerceOrderForCheckoutInput = {
   customCheckoutAnswers?: unknown;
   /** Server-validated invoice choice; encrypted before persistence. */
   invoiceSelection?: CheckoutInvoiceSelection;
+  /** 已驗證的 request context，不屬於 public checkout JSON 契約。 */
+  trackingContext?: TrackingBrowserContext | null;
   now?: Date;
 };
+
+/** 僅已啟用的租戶保存付款來源；重試保留原訂單資料。 */
+async function checkoutTrackingContext(tx: CommerceOrdersTransaction, input: CreateCommerceOrderForCheckoutInput, orderId: string): Promise<string | null> {
+  if (!input.trackingContext) return null;
+  const tracking = await tx.trackingSetting.findUnique({ where: { vendorId: input.vendorId } });
+  if (!tracking?.enablePurchaseEvent || !tracking.facebookPixelId || !tracking.facebookAccessTokenEncrypted) return null;
+  return protectTrackingBrowserContext(input.vendorId, orderId, input.trackingContext);
+}
 
 async function checkoutOrderBumpProduct(
   tx: CommerceOrdersTransaction,
@@ -413,6 +425,7 @@ export async function createCommerceOrderForCheckout(
   const checkoutIdentityHash = orderBumpProduct
     ? createHash("sha256").update(`${invoiceBoundCheckoutIdentityHash}\u0000order-bump\u0000${orderBumpProduct.id}`).digest("base64url")
     : invoiceBoundCheckoutIdentityHash;
+  const trackingContextEncrypted = await checkoutTrackingContext(tx, input, orderId);
   const orderData = {
     id: orderId,
     vendorId: input.vendorId,
@@ -428,6 +441,7 @@ export async function createCommerceOrderForCheckout(
     paidAmountCents: 0,
     refundedAmountCents: 0,
     buyerEncryptedEnvelope: pii.buyerEncrypted,
+    trackingContextEncrypted,
     buyerMaskedName: pii.buyerNameMasked,
     buyerMaskedEmail: pii.buyerEmailMasked,
     buyerMaskedPhone: pii.buyerPhoneMasked,
@@ -637,6 +651,9 @@ export async function reconcileCommerceOrderPaymentTransition(
     if (!["pending_payment", "payment_failed", "expired"].includes(order.status)) {
       throw new CommerceOrderValidationError("Order cannot accept this payment transition.");
     }
+    // A post-purchase target is settled by the "CommerceOrder_post_purchase_paid_settle"
+    // trigger on this UPDATE: its credit is superseded and the source's delivery
+    // revoked, or a released/invalidated credit is flagged for manual review.
     const updated = await tx.commerceOrder.updateMany({
       where: { id: order.id, vendorId: input.vendorId, status: order.status },
       data: { status: "paid", paidAmountCents: order.totalAmountCents, paidAt: now, failedAt: null },

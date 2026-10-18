@@ -73,8 +73,8 @@ export async function runIssuedRecoveryProbe(input, dependencies) {
   requireSafe(invocation.ok && dependencies && typeof dependencies.queryProvider === "function");
   const request = dependencies.request ?? defaultRequest;
   const preflight = await request({ url: `${APP}/api/admin/ops/payuni/wp4-preflight`, body: undefined,
-    headers: { authorization: `Bearer ${invocation.jobSecret}`, "x-celebratedeal-source-sha": invocation.sourceSha } });
-  requireSafe(preflight?.status === 200 && preflight.body?.ready === true && preflight.body?.buyerOrder === true);
+    headers: { authorization: `Bearer ${invocation.jobSecret}`, "x-celebratedeal-source-sha": invocation.sourceSha, "x-celebratedeal-wp4-preflight-scope": "buyer_order" } });
+  requireSafe(preflight?.status === 200 && preflight.body?.ready === true && preflight.body?.buyerOrder === true && preflight.body?.scope === "buyer_order");
   const prepared = await prepareIssuedRecoveryCheckout(input, {
     request: operation => {
       const url = new URL(operation.url);
@@ -165,9 +165,27 @@ export async function runIssuedRecoveryQa(input, dependencies) {
   return { observation, cleanup, refundCleanupVerified: true };
 }
 
+/** Read only the fixed runtime gate; no fixture, checkout or provider writes. */
+export async function inspectIssuedRecoveryPreflight(input, request = defaultRequest) {
+  requireSafe(validateInvocation(input).ok);
+  try {
+    const response = await request({ url: `${APP}/api/admin/ops/payuni/wp4-preflight`, body: undefined,
+      headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": input.sourceSha, "x-celebratedeal-wp4-preflight-scope": "buyer_order" },
+      outcomeHeader: "x-celebratedeal-wp4-preflight" });
+    const ready = response?.status === 200 && response.body?.ready === true && response.body?.buyerOrder === true && response.body?.scope === "buyer_order";
+    const outcome = new Set(["EXECUTOR_DISABLED", "FIXTURE_UNAVAILABLE"]).has(response?.outcome) ? response.outcome : null;
+    const code = ready ? "READY" : outcome ?? ({ 200: "INVALID_RESPONSE", 401: "UNAUTHORIZED", 403: "ACCESS_DENIED", 404: "NOT_FOUND", 503: "SERVICE_UNAVAILABLE" }[response?.status] ?? "HTTP_OTHER");
+    return { ready, code };
+  } catch {
+    // Never serialize response bodies, headers, identifiers or exception text.
+    return { ready: false, code: "NETWORK_OR_RESPONSE_REJECTED" };
+  }
+}
+
 export async function executeIssuedRecoveryProbe() {
   let stage = "configuration";
   let browser;
+  let preflight;
   try {
     requireSafe(process.argv.length === 2 && process.env.GITHUB_ACTIONS === "true"
       && process.env.GITHUB_REF === "refs/heads/master" && process.env.GITHUB_REF_PROTECTED === "true"
@@ -185,9 +203,16 @@ export async function executeIssuedRecoveryProbe() {
     stage = "exact-source-refund-capability";
     requireSafe(await verifyIssuedRecoveryProofSource({ sourceSha: input.sourceSha, token: process.env.GITHUB_TOKEN }));
     stage = "canonical-runtime-preflight";
-    const readiness = await defaultRequest({ url: `${APP}/api/admin/ops/payuni/wp4-preflight`, body: undefined,
-      headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": input.sourceSha } });
-    requireSafe(readiness?.status === 200 && readiness.body?.ready === true && readiness.body?.buyerOrder === true);
+    preflight = await inspectIssuedRecoveryPreflight(input);
+    if (process.env.PAYUNI_ISSUED_PREFLIGHT_ONLY === "true") {
+      console.log(JSON.stringify({ schemaVersion: "celebratedeal-payuni-issued-recovery-observation/v1",
+        status: preflight.ready ? "PREFLIGHT_VERIFIED" : "BLOCKED_OR_FAILED", stage, preflight,
+        readOnly: true, paymentSubmitted: false, refundSubmitted: false,
+        productionOperations: false, applicationRecoveryAccepted: false }));
+      if (!preflight.ready) process.exitCode = 1;
+      return;
+    }
+    requireSafe(preflight.ready);
     const { chromium } = await import("@playwright/test");
     browser = await chromium.launch({ headless: true, env: fixedBrowserEnvironment() });
     const context = await browser.newContext({ locale: "zh-TW" });
@@ -239,7 +264,7 @@ export async function executeIssuedRecoveryProbe() {
     if (receipt.observation.result !== "SAME_TRADE_PAYMENT_OBSERVED" || receipt.refundCleanupVerified !== true) process.exitCode = 2;
   } catch {
     console.log(JSON.stringify({ schemaVersion: "celebratedeal-payuni-issued-recovery-observation/v1",
-      status: "BLOCKED_OR_FAILED", stage, productionOperations: false, applicationRecoveryAccepted: false }));
+      status: "BLOCKED_OR_FAILED", stage, ...(preflight ? { preflight } : {}), productionOperations: false, applicationRecoveryAccepted: false }));
     process.exitCode = 1;
   } finally {
     if (browser) await browser.close();

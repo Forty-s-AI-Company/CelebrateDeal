@@ -6,6 +6,7 @@ import { PublicPolicyShell } from "@/components/public-policy";
 import { Card } from "@/components/ui";
 import { resolveBuyerSupportGrants } from "@/lib/buyer-support-access";
 import { getDb } from "@/lib/db";
+import { postPurchaseRecoveryAvailable } from "@/lib/post-purchase-checkout-recovery";
 import { paymentReturnOutcome, type PaymentReturnOutcome } from "@/lib/payment-return-outcome";
 import { CsrfField } from "@/components/csrf-field";
 import { enterStudentPortalFromCheckoutAction } from "@/app/actions/student-portal-actions";
@@ -65,10 +66,15 @@ function orderStatusTone(status: string) {
   return "bg-slate-100 text-slate-700";
 }
 
-function retryCheckoutHref(order: { vendorId: string; status: string; items: Array<{ productId: string | null }> }) {
+function retryCheckoutHref(grantId: string, order: { vendorId: string; status: string; items: Array<{ productId: string | null }>;
+  postPurchaseCreditReceived?: { id: string } | null }, creditedRecoveryAvailable: boolean) {
   if (!new Set(["payment_failed", "expired"]).has(order.status)) return null;
   const productId = order.items[0]?.productId;
   if (!productId) return null;
+  // A credited order never falls back to a full-price checkout. Its recovery
+  // link is shown only when the provider/readiness can actually resume it; a
+  // released credit is offered again from the original paid order instead.
+  if (order.postPurchaseCreditReceived) return creditedRecoveryAvailable ? `/checkout/recover/${encodeURIComponent(grantId)}` : null;
   return `/checkout/${encodeURIComponent(order.vendorId)}/${encodeURIComponent(productId)}`;
 }
 
@@ -79,6 +85,9 @@ export default async function PaymentResultPage({ searchParams }: {
   const presentation = outcomePresentation[outcome];
   const grants = await resolveBuyerSupportGrants(getDb(), await cookies());
   const sortedGrants = [...grants].sort((left, right) => right.order.createdAt.getTime() - left.order.createdAt.getTime());
+  const recoverableGrantIds = new Set(await Promise.all(sortedGrants
+    .filter(grant => grant.order.postPurchaseCreditReceived && ["payment_failed", "expired"].includes(grant.order.status))
+    .map(async grant => await postPurchaseRecoveryAvailable(getDb(), { vendorId: grant.order.vendorId, orderId: grant.order.id }) ? grant.id : null)));
 
   return (
     <PublicPolicyShell>
@@ -101,7 +110,8 @@ export default async function PaymentResultPage({ searchParams }: {
           <section className="mt-6 grid gap-4" aria-labelledby="payment-orders-title">
             <h2 id="payment-orders-title" className="text-xl font-bold text-slate-950">可安全查看的訂單</h2>
             {sortedGrants.map((grant) => {
-              const retryHref = retryCheckoutHref(grant.order);
+              const retryHref = retryCheckoutHref(grant.id, grant.order, recoverableGrantIds.has(grant.id));
+              const creditedRecovery = Boolean(grant.order.postPurchaseCreditReceived);
               return (
               <Card key={grant.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -118,6 +128,11 @@ export default async function PaymentResultPage({ searchParams }: {
                   <div><dt className="text-slate-500">退款金額</dt><dd className="mt-1 font-semibold text-slate-950">{formatAmount(grant.order.refundedAmountCents, grant.order.currency)}</dd></div>
                 </dl>
                 <div className="mt-5 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm">
+                  {grant.order.status === "paid" && grant.order.refundedAmountCents === 0 ? <Link
+                    href={`/checkout/upsell?grant=${encodeURIComponent(grant.id)}`}
+                    className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2">
+                    查看購買後加購 →
+                  </Link> : null}
                   {["paid", "partially_refunded", "refunded"].includes(grant.order.status) ? (
                     <form action={enterStudentPortalFromCheckoutAction}>
                       <CsrfField /><input type="hidden" name="grantId" value={grant.id} />
@@ -130,12 +145,14 @@ export default async function PaymentResultPage({ searchParams }: {
                   </Link>
                   {retryHref ? (
                     <a href={retryHref} className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">
-                      回到商品重新嘗試付款 →
+                      {creditedRecovery ? "恢復原加購訂單 →" : "回到商品重新嘗試付款 →"}
                     </a>
                   ) : null}
                   <Link href="/support/requests" className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">查看訂單協助與客服案件 →</Link>
                 </div>
-                {retryHref ? <p className="mt-2 text-xs leading-5 text-slate-600">這會建立新的安全付款嘗試；原訂單與失敗紀錄仍會保留，不會直接重送舊交易。</p> : null}
+                {retryHref ? <p className="mt-2 text-xs leading-5 text-slate-600">{creditedRecovery
+                  ? "恢復會沿用原訂單、原金額與抵扣額，並再次核對付款狀態。"
+                  : "這會建立新的安全付款嘗試；原訂單與失敗紀錄仍會保留，不會直接重送舊交易。"}</p> : null}
               </Card>
               );
             })}

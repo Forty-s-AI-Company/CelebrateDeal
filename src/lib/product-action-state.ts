@@ -34,6 +34,9 @@ export type ProductFormDraft = {
   checkoutUrl: string;
   isActive: boolean;
   customCheckoutFields?: CustomCheckoutFields;
+  upsellProductId?: string;
+  downsellProductId?: string;
+  upsellDiscount?: string;
 };
 
 export type ProductActionState = {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource, persistIssuedRecoveryPending, verifyFixedFinanceDashboard } from "./payuni-issued-recovery-runner.mjs";
+import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource, persistIssuedRecoveryPending, verifyFixedFinanceDashboard, inspectIssuedRecoveryPreflight } from "./payuni-issued-recovery-runner.mjs";
 import { mkdtemp, readFile, writeFile, mkdir, rename, unlink, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,7 +64,7 @@ function fixture({ preflight = true } = {}) {
     request: async operation => {
       calls.push(operation);
       const path = new URL(operation.url).pathname;
-      if (path.endsWith("/wp4-preflight")) return { status: preflight ? 200 : 404, body: { ready: preflight, buyerOrder: preflight } };
+      if (path.endsWith("/wp4-preflight")) return { status: preflight ? 200 : 404, body: { ready: preflight, buyerOrder: preflight, scope: "buyer_order" } };
       if (path.endsWith("/wp4-fixture")) return { status: 200, body: { ready: true, createdCount: 6, reusedCount: 0 } };
       if (path.endsWith("/checkout/admission")) return { status: 200, body: {
         admissionToken: `ca1.${"a".repeat(64)}.${"b".repeat(43)}`, idempotencyKey: "11111111-1111-4111-8111-111111111111", expiresAt: "2030-01-01T00:00:00.000Z" },
@@ -90,7 +90,20 @@ test("source-bound Sandbox runtime rejection precedes all fixture and checkout w
   await assert.rejects(runIssuedRecoveryProbe(input, f.dependencies), /RUNNER_REJECTED/);
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].headers["x-celebratedeal-source-sha"], input.sourceSha);
+  assert.equal(f.calls[0].headers["x-celebratedeal-wp4-preflight-scope"], "buyer_order");
 });
+test("unscoped readiness cannot authorize an original issued trade observation", async () => {
+  const calls = [];
+  const f = fixture();
+  f.dependencies.request = async operation => {
+    calls.push(operation);
+    return { status: 200, body: { ready: true, buyerOrder: true, platformSubscription: true, invoicePayment: true } };
+  };
+  await assert.rejects(runIssuedRecoveryProbe(input, f.dependencies), /RUNNER_REJECTED/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers["x-celebratedeal-wp4-preflight-scope"], "buyer_order");
+});
+
 test("prepares one fixed canonical staging checkout without selecting another order", async () => {
   const f = fixture();
   assert.equal((await runIssuedRecoveryProbe(input, f.dependencies)).result, "ORIGINAL_PAGE_RETRY_UNAVAILABLE");
@@ -252,4 +265,39 @@ test("processing cleanup query preserves the original pending target without han
   assert.equal(f.pending.at(-1).transactionRef, reference("synthetic_transaction"));
   assert.equal(f.pending.at(-1).paymentSubmissionMayHaveOccurred, true);
   assert.equal(f.pending.at(-1).refundSubmissionMayHaveOccurred, false);
+});
+
+test("runtime diagnosis reads only the fixed preflight and emits closed metadata", async () => {
+  const cases = [
+    [{ status: 200, body: { ready: true, buyerOrder: true, scope: "buyer_order", unrelated: "synthetic-private" } }, "READY"],
+    [{ status: 200, body: { ready: true, buyerOrder: false, scope: "buyer_order" } }, "INVALID_RESPONSE"],
+    [{ status: 200, body: { ready: true, buyerOrder: true } }, "INVALID_RESPONSE"],
+    [{ status: 401 }, "UNAUTHORIZED"], [{ status: 403 }, "ACCESS_DENIED"],
+    [{ status: 404, outcome: "FIXTURE_UNAVAILABLE" }, "FIXTURE_UNAVAILABLE"],
+    [{ status: 404, outcome: "EXECUTOR_DISABLED" }, "EXECUTOR_DISABLED"],
+    [{ status: 404, outcome: "synthetic-private" }, "NOT_FOUND"],
+    [{ status: 503 }, "SERVICE_UNAVAILABLE"], [{ status: 502 }, "HTTP_OTHER"],
+  ];
+  for (const [response, code] of cases) {
+    let calls = 0;
+    const result = await inspectIssuedRecoveryPreflight(input, async operation => {
+      calls++;
+      assert.equal(operation.url, "https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-preflight");
+      assert.equal(operation.body, undefined);
+      assert.equal(operation.headers["x-celebratedeal-wp4-preflight-scope"], "buyer_order");
+      assert.equal(operation.outcomeHeader, "x-celebratedeal-wp4-preflight");
+      assert.equal(operation.headers["x-celebratedeal-source-sha"], input.sourceSha);
+      return response;
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(result, { ready: code === "READY", code });
+    assert.equal(JSON.stringify(result).includes("synthetic-private"), false);
+  }
+});
+test("runtime diagnosis suppresses raw failures and rejects unsafe input before requests", async () => {
+  assert.deepEqual(await inspectIssuedRecoveryPreflight(input, async () => { throw new Error("synthetic-private"); }),
+    { ready: false, code: "NETWORK_OR_RESPONSE_REJECTED" });
+  let calls = 0;
+  await assert.rejects(inspectIssuedRecoveryPreflight({ ...input, payuniEnv: "production" }, async () => { calls++; }));
+  assert.equal(calls, 0);
 });
