@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 
 import { createBuyerSupportCaseAction } from "@/app/actions/buyer-support-actions";
 import { CsrfField } from "@/components/csrf-field";
-import { PolicyDraftNotice, PublicPolicyShell } from "@/components/public-policy";
+import { PolicyScopeNotice, PublicPolicyShell } from "@/components/public-policy";
 import { Card, SelectField, SubmitButton, TextArea } from "@/components/ui";
 import {
   buyerVisibleSupportCaseScopes,
@@ -55,7 +55,7 @@ export default async function BuyerSupportRequestsPage({ searchParams }: {
           <h1 id="buyer-support-title" className="mt-2 text-3xl font-bold tracking-tight text-slate-950">我的客服案件</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">這裡只辨識目前瀏覽器結帳時取得的安全訂單憑證，不支援以訂單編號或 Email 猜測查詢。</p>
         </div>
-        <PolicyDraftNotice status="LIMITED ACCESS — BROWSER ORDER CAPABILITY REQUIRED" owner="buyer support capability" />
+        <PolicyScopeNotice />
         {error ? <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">操作未完成。憑證可能已過期、請求過於頻繁，或案件資料剛被更新；請從原結帳瀏覽器再試一次。</p> : null}
 
         {grants.length === 0 ? (

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PolicyDraftNotice, PublicPolicyShell } from "@/components/public-policy";
+import { PolicyScopeNotice, PublicPolicyShell } from "@/components/public-policy";
 
 export const metadata: Metadata = {
   title: "商家 onboarding | CelebrateDeal",
@@ -27,7 +27,7 @@ export default function MerchantOnboardingPage() {
           <h1 id="onboarding-title" className="mt-2 text-3xl font-bold tracking-tight text-slate-950">商家 onboarding</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">以八階段 checklist 讓商家、平台、客服、財務與 release owner 看見同一份 readiness 邊界。</p>
         </div>
-        <PolicyDraftNotice status="DRAFT — MERCHANT／SUPPORT／FINANCE／LEGAL／RELEASE ACCEPTANCE REQUIRED" owner="商家 owner、平台 owner、support、finance、privacy／legal、release owner" />
+        <PolicyScopeNotice />
         <section className="mt-8 rounded-lg border border-border bg-white p-6 shadow-sm" aria-labelledby="stages-title">
           <h2 id="stages-title" className="text-lg font-semibold text-slate-950">八階段 readiness</h2>
           <ol className="mt-4 grid gap-3">

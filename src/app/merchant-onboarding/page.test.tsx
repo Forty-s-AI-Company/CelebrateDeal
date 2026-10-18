@@ -7,7 +7,8 @@ describe("/merchant-onboarding route", () => {
     const html = renderToStaticMarkup(<MerchantOnboardingPage />);
 
     expect(html).toContain("商家 onboarding");
-    expect(html).toContain("DRAFT — MERCHANT／SUPPORT／FINANCE／LEGAL／RELEASE ACCEPTANCE REQUIRED");
+    expect(html).toContain("目前功能範圍");
+    expect(html).not.toContain("DRAFT — MERCHANT／SUPPORT／FINANCE／LEGAL／RELEASE ACCEPTANCE REQUIRED");
     for (const stage of ["商家／owner 身分與唯一責任", "方案與 PayUni 邊界", "DNS、條款、隱私、退款政策與正式 owner acceptance"]) {
       expect(html).toContain(stage);
     }
