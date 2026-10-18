@@ -1,0 +1,41 @@
+{
+  "task_id": "f1-learner-notifications",
+  "goal_id": "remaining-capabilities-20261005",
+  "source_commit": "e1f38be324e349969a657be376aa1602e804c2dd",
+  "status": "FOUNDATION_IMPLEMENTED_NOT_ACCEPTED",
+  "source_revision": "sha256:e7d65106bfcb668c0c1d5a2b050ba199469f6f4875d72ec778f01cd04f56b319",
+  "snapshot_files": [
+    "src/lib/learner-notification-contract.ts",
+    "src/lib/learner-notification-contract.test.ts"
+  ],
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "selected_model": "sol",
+  "resolved": {
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "writer": "root",
+  "readonly_helpers_max": 1,
+  "depth_limit": 1,
+  "dispatch_used": 0,
+  "dispatch_limit": 4,
+  "initial_prototype_note": "Local pure-contract prototype existed before recorded route; no agent/provider dispatch. Initial route input privacy category rejected,corrected to canonical security category; no dispatch occurred. Not READY.",
+  "scope": [
+    "Course-related preferences and verified contact/device enrollment",
+    "Server-owned course entitlement and tenant identity for every read/write/dispatch",
+    "Outbox,leased dispatch,CAS withdrawal,refund suppression,immutable event deduplication",
+    "Email,push,SMS,WhatsApp provider contracts and approved nonproduction injection",
+    "Real UI,DB races,provider contracts,browser journeys",
+    "Independent Critical review,canonical acceptance,exact-head CI/protected PR"
+  ],
+  "checks": {
+    "unit": "4/4 PASS",
+    "lint": "PASS"
+  },
+  "remaining": "Schema/repositories,destination verification,API/CSRF/UI,event producers,dispatch/provider drivers,DB/browser,review/acceptance/CI/PR;none complete"
+}
