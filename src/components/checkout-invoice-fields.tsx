@@ -49,7 +49,10 @@ export function CheckoutInvoiceFields({ disabled = false }: { disabled?: boolean
 
   return (
     <fieldset className="grid gap-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4" disabled={disabled} onInput={validateCurrentForm}>
-      <legend className="px-1 text-lg font-bold text-slate-950">電子發票</legend>
+      <legend className="px-1 text-lg font-bold text-slate-950">發票需求</legend>
+      <p role="status" className="text-sm leading-6 text-amber-950">
+        自動電子發票尚未開放。本頁僅收集發票需求，填寫資料或付款成功均不代表已開立；開立方式請洽商家。
+      </p>
       <label className="text-sm font-semibold text-slate-800">發票類型
         <select name="invoiceType" value={type} onChange={(event) => setType(event.target.value as CheckoutInvoiceFieldsValue["type"])} className={inputClass}>
           <option value="personal">個人電子發票</option>
