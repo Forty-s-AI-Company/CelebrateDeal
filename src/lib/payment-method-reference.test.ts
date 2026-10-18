@@ -81,6 +81,53 @@ describe("payment method reference contract", () => {
     expect(db.paymentMethodReference.findFirst).toHaveBeenCalledOnce();
   });
 
+  it("queries vendor quota with the shared readiness predicate", async () => {
+    const now = new Date("2026-08-07T01:00:00.000Z");
+    const db = {
+      paymentMethodReference: {
+        findFirst: vi.fn().mockResolvedValue({ status: "verified", verifiedAt, expiresAt: new Date("2026-09-01T00:00:00.000Z") }),
+        findMany: vi.fn(),
+      },
+    };
+    await expect(assertPaymentMethodReferenceForQuota(db as never, {
+      vendorId: "vendor-1",
+      payerScope: "VENDOR",
+      memberIds: [],
+      now,
+    })).resolves.toBeUndefined();
+    expect(db.paymentMethodReference.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: verifiedVendorPaymentMethodWhere("vendor-1", now),
+    }));
+  });
+
+  it("rejects vendor quota when no currently valid vendor reference exists", async () => {
+    const db = { paymentMethodReference: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn() } };
+    await expect(assertPaymentMethodReferenceForQuota(db as never, {
+      vendorId: "vendor-1",
+      payerScope: "VENDOR",
+      memberIds: [],
+      now: new Date("2026-08-07T01:00:00.000Z"),
+    })).rejects.toBeInstanceOf(PaymentMethodReferenceRequiredError);
+  });
+
+  it("does not admit a member reference whose verification time is still in the future", async () => {
+    const now = new Date("2026-08-07T01:00:00.000Z");
+    const db = {
+      paymentMethodReference: {
+        findFirst: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([
+          { membershipId: "member-1", status: "verified", verifiedAt: new Date("2026-08-07T02:00:00.000Z"), expiresAt: null },
+        ]),
+      },
+    };
+    await expect(assertPaymentMethodReferenceForQuota(db as never, {
+      vendorId: "vendor-1",
+      payerScope: "MEMBER",
+      memberIds: ["member-1"],
+      now,
+    })).rejects.toBeInstanceOf(PaymentMethodReferenceRequiredError);
+  });
+
   it("requires every configured member to have an active reference", async () => {
     const db = {
       paymentMethodReference: {
