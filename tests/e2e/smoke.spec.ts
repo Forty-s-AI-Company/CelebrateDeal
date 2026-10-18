@@ -1866,7 +1866,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
 
     // A can see pages using A's template; B's report is constrained to B's own pages.
     await leaderPage.goto(`/team-performance?teamId=${fixture.team.id}`);
-    await expect(leaderPage.getByRole("heading", { name: "展業成效" })).toBeVisible();
+    await expect(leaderPage.getByRole("heading", { name: "成效分析" })).toBeVisible();
     await expect(leaderPage.getByText(`/${quickSlug}`)).toBeVisible();
     await partnerPage.goto(`/team-performance?teamId=${fixture.team.id}`);
     await expect(partnerPage.getByText(`/${quickSlug}`)).toBeVisible();

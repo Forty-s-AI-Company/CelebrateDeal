@@ -64,6 +64,7 @@ export default async function StudentPortalPage({
             {vendor.logoUrl ? <Image src={vendor.logoUrl} alt="" width={44} height={44} className="size-11 rounded-xl object-cover" /> : <div aria-hidden="true" className="grid size-11 place-items-center rounded-xl bg-slate-900 font-bold text-white">{vendor.name.slice(0, 1)}</div>}
             <div className="min-w-0"><p className="truncate font-bold">{vendor.name}</p><p className="truncate text-sm text-slate-600">{dashboard.maskedEmail ?? t("\u5DF2\u5B89\u5168\u9A57\u8B49\u7684\u5B78\u54E1")}</p></div>
           </div>
+          <a href={`/portal/${encodeURIComponent(vendorSlug)}/notifications`} className="min-h-11 shrink-0 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800">{t("通知設定")}</a>
           <form action={logoutStudentPortalAction}>
             <CsrfField /><input type="hidden" name="vendorSlug" value={vendorSlug} />
             <button className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50">{t("\u5B89\u5168\u767B\u51FA")}</button>

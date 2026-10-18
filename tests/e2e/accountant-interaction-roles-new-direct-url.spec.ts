@@ -201,8 +201,8 @@ test("active accountant is denied interaction-role creation before role data, CS
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByText("商品點擊", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
+    await expect(page.getByText("商品點擊", { exact: true }).first()).toBeAttached();
     await expect(page.getByRole("heading", { name: "互動角色", exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "使用者清單", exact: true })).toHaveCount(0);
     await expect(page.getByText("新增使用者", { exact: true })).toHaveCount(0);

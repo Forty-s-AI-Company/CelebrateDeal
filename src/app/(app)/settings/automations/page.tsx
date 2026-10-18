@@ -26,7 +26,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
     db.automationExecutionLog.findMany({ where: { vendorId: auth.vendor.id }, orderBy: { createdAt: "desc" }, take: 50, include: { rule: { select: { name: true } } } }),
   ]);
   return <>
-    <PageHeader title="自動化工作室" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
+    <PageHeader title="自動化" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">自動化規則已更新。</p> : null}
     {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{params.dryRun === "would_dispatch" ? "條件符合，正式事件會執行動作。" : params.dryRun === "would_skip" ? "條件未符合，正式事件會略過。" : "規則無效。"}</p> : null}
     {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">規則無法更新（{params.error}）。</p> : null}

@@ -162,7 +162,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
     if (inFlight.current) {
       if (pendingOperation.current === "save") {
         setExitQueued(true);
-        setMessage("儲存完成後會返回原本的 Configuration。");
+        setMessage("儲存完成後會返回原本的頁面設定。");
       }
       return;
     }
@@ -177,7 +177,7 @@ export function LandingPageWorkspace({ page, forms, lives, csrfToken, csrfName, 
   const blocked = workspaceBlocked({ pending, stepPending, valid, name, slug });
   return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
     <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
-      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回 Configuration" : "返回"}</button>
+      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回頁面設定" : "返回"}</button>
       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name}</p>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>Undo</button>

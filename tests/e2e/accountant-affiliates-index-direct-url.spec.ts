@@ -139,8 +139,8 @@ test("active accountant is denied the affiliate operations index without data mu
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "聯盟夥伴", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "推廣夥伴", exact: true })).toHaveCount(0);
     await expect(page.getByRole("table")).toHaveCount(0);
     for (const header of ["夥伴名稱", "推廣碼", "來源", "狀態", "點擊", "轉換", "轉換率", "佣金比例"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toHaveCount(0);

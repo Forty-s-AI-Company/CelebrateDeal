@@ -48,7 +48,7 @@ test("active accountant is denied same-vendor form submissions through direct UR
       expect(protectedDocumentHtml).toContain("/dashboard?error=insufficient_role");
       expect(finalResponse?.status()).toBe(200);
       await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
-      await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
       const bodyText = await page.locator("body").innerText();
       const pageHtml = await page.content();
       for (const value of sensitiveCanaries) {

@@ -242,9 +242,9 @@ test("active accountant is denied interaction scripts before nested data or muta
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "留言組", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "新增留言組", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "互動腳本", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "新增互動腳本", exact: true })).toHaveCount(0);
     for (const title of ["編輯", "複製", "刪除"]) {
       await expect(page.getByTitle(title, { exact: true })).toHaveCount(0);
     }

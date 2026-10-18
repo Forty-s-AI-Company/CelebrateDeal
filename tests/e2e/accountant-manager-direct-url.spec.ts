@@ -40,13 +40,13 @@ test("active accountant is denied the vendor manager route through direct URL na
     await page.getByLabel("密碼").fill(password);
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
 
     await page.goto("/products/new");
     await expect(page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
     await expect(page.getByRole("heading", { name: "新增商品" })).toHaveCount(0);
     await expect(page.getByLabel("商品名稱")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect.poll(() => db.product.count({ where: { vendorId: vendor.id } })).toBe(productsBefore);
   } finally {
     await db.vendor.deleteMany({ where: { id: vendor.id } });

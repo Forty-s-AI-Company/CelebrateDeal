@@ -60,7 +60,7 @@ test("active accountant is denied a foreign message-template editor before tenan
     });
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "編輯訊息模板" })).toHaveCount(0);
     for (const label of ["模板名稱", "渠道", "觸發條件", "主旨", "內容"]) {
       await expect(page.getByLabel(label)).toHaveCount(0);

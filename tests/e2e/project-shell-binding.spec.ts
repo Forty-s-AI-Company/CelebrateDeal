@@ -34,6 +34,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       // No reload: server-action invalidation must update the parent shell itself.
       await expect(next).toHaveAttribute('href', `/lives/new?projectId=${project.id}`);
       expect(await db.registrationForm.count({ where: { vendorId: vendor.id, projectId: project.id } })).toBe(1);
+      // Below lg the project switcher sits inside a collapsed disclosure.
+      if (viewport.width < 1024) await page.locator('summary:visible', { hasText: '專案：Browser project' }).click();
       const switcher = page.locator('[data-workspace-switcher]:visible');
       await switcher.getByRole('button', { name: /Browser project/u }).click();
       await switcher.getByRole('menuitemradio', { name: /全部專案總覽/u }).click();

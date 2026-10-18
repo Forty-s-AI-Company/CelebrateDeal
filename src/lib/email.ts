@@ -8,6 +8,9 @@ type SendEmailInput = {
   text?: string;
   idempotencyKey?: string;
   brand?: EmailBrandSnapshot;
+  /** Callers with a tighter budget (e.g. learner notifications) may shorten the
+   * provider deadline; it is clamped to 1-10 seconds. */
+  timeoutMs?: number;
 };
 
 export type TransactionalEmailErrorCode =
@@ -118,7 +121,7 @@ export async function sendTransactionalEmail(input: SendEmailInput) {
         text: content.text,
         ...(brand?.replyTo ? { reply_to: brand.replyTo } : {}),
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(typeof input.timeoutMs === "number" && Number.isFinite(input.timeoutMs) ? Math.min(10_000, Math.max(1_000, Math.floor(input.timeoutMs))) : 10_000),
     });
   } catch {
     throw new TransactionalEmailError("network");

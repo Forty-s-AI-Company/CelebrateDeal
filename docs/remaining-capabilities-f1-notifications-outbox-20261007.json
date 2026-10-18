@@ -1,0 +1,149 @@
+{
+  "status": "IMPLEMENTED_BACKEND_PHASE_NOT_READY",
+  "task_id": "f1-learner-notifications",
+  "canonical_snapshot_revision": "sha256:6abb945f3d24e5047c1349cbd9c7075865d03b14608db2a16e6194f840858c05",
+  "snapshot_files": [
+    "src/lib/learner-notification-contract.ts",
+    "src/lib/learner-notification-contract.test.ts",
+    "src/lib/learner-notification-preferences.ts",
+    "src/lib/learner-notification-outbox.ts",
+    "src/lib/learner-notification-verification.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/route.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/route.test.ts",
+    "prisma/schema.prisma",
+    "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+    "scripts/learner-notification-disposable-qa.mjs",
+    "scripts/prisma-invariant-inventory.test.ts",
+    "scripts/g7-email-operations-browser-qa.test.mjs",
+    "scripts/staging-migration-compat-preflight.test.mjs",
+    "scripts/staging-migration-isolated-replay.test.mjs",
+    "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+    "docs/codex-goal/PRISMA_INVARIANTS.md"
+  ],
+  "source_bound_database_receipt": {
+    "source": {
+      "files": {
+        "package.json": "34b37857c04888e390a3d4013e62521f38fe62cdc224205ce8b8c2b83b391ffb",
+        "package-lock.json": "1a0d43408af2a44ba9f44e678f01a304d09d3f0a72c3bb747bc98be25ad7d5ee",
+        "prisma/schema.prisma": "abf1645262725ee127f43a8efad727db5725d85832fdc3157dea59e0129bb60f",
+        "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+        "src/lib/learner-notification-contract.ts": "c66cb4018d6b7888caa0bf7f332d7f21faff7aba6c36244565abd2175fc36efa",
+        "src/lib/learner-notification-preferences.ts": "e498bc8c3864347acc380ed815d37a7f604c508e887a9c341d3f5ba615d2c7b3",
+        "src/lib/learner-notification-outbox.ts": "b97446a5182f75d14e64b18ee52f9535ce478ff06b6aaa48287c63e78a39d8b3",
+        "src/lib/learner-notification-verification.ts": "877a58e3d24dc6b6bd263b10b5b203434772a5dfa9ef2a0ab4ea0868aaa3fa3e",
+        "src/lib/student-course-learning.ts": "78716725dd49fdf08292c0e180875b1953448fa9fc72ee7f63a4a04fd3382d29",
+        "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+        "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+        "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+        "src/lib/commerce-orders.ts": "9765d7d57c7d91e0ffa2a81ef363abad0fb3b1c1addd4cff325f98e1e6a2240f",
+        "scripts/learner-notification-disposable-qa.mjs": "48af631d5f17b9fb8d323ff7a86bafb26cae1159689e22636003bc1917b6c827"
+      },
+      "revision": "sha256:c8031663dbac90b41d6be65495653f344c5eaf6c09c0447a54bc70d78afe86f2"
+    },
+    "status": "PASS",
+    "migrationCount": 86,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "refunded recipient can unsubscribe using authenticated scope",
+        "status": "PASS"
+      },
+      {
+        "name": "service rejects stale consent revision",
+        "status": "PASS"
+      },
+      {
+        "name": "foreign recipient cannot unsubscribe another tenant",
+        "status": "PASS"
+      },
+      {
+        "name": "recipient without current purchase cannot opt in",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      },
+      {
+        "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+        "status": "PASS"
+      },
+      {
+        "name": "expired contact proof cannot mark destination verified",
+        "status": "PASS"
+      },
+      {
+        "name": "rotated contact proof consumes once without granting notification consent",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox deduplicates concurrent real database event producers",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox foreign scope cannot queue or claim owning recipient",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent worker claim admits exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "forged or replayed worker completion cannot mark delivery",
+        "status": "PASS"
+      },
+      {
+        "name": "consent revision change suppresses a queued event",
+        "status": "PASS"
+      },
+      {
+        "name": "real full refund suppresses queued delivery and further producer events",
+        "status": "PASS"
+      },
+      {
+        "name": "owned synthetic purchase fixture is created",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "externalOperations": false,
+      "rawLogsSaved": false
+    }
+  },
+  "checks": {
+    "existing_contract_and_API_units": 14,
+    "migration_TAP": 12,
+    "typescript": "PASS",
+    "scoped_lint": "PASS"
+  },
+  "provider_contact_verification": "NOT_EXECUTED;synthetic internal proof tokens validate only database verification logic",
+  "independent_review": "NOT_EXECUTED",
+  "canonical_acceptance": "NOT_READY",
+  "remaining": "provider drivers,approved nonproduction provider contracts,event producers,push enrollment,UI/browser,full tests,independent Critical review,canonical acceptance,exact-head CI/protected delivery",
+  "official_provider_contract_reference": "https://www.twilio.com/docs/iam/test-credentials"
+}

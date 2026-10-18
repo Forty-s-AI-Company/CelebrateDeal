@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { learnerNotificationLink, safeLearnerNotificationLink } from "./learner-notification-links";
+import { boundLearnerNotificationText, recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { z } from "zod";
 
 export const curriculumInput = z.object({
@@ -31,12 +34,23 @@ export async function saveCourseLesson(db: PrismaClient, vendorId: string, raw: 
     if (claimed.count !== 1) throw new CurriculumConflict("Course changed or is unavailable. Reload before saving.");
     const data = { chapterTitle: input.chapterTitle, title: input.title, videoUrl: input.videoUrl || null, durationSeconds: input.durationSeconds, publishedAt: input.published ? new Date() : null };
     if (input.lessonId) {
+      const previous=await tx.courseLesson.findFirst({where:{id:input.lessonId,vendorId,productId:input.productId},select:{publishedAt:true}});
+      if(!previous)throw new CurriculumConflict("Lesson is unavailable.");
       const changed = await tx.courseLesson.updateMany({ where: { id: input.lessonId, vendorId, productId: input.productId }, data });
       if (changed.count !== 1) throw new CurriculumConflict("Lesson is unavailable.");
+      if(input.published && !previous.publishedAt)await recordPublished(tx,vendorId,input.productId,input.lessonId,input.title,data.publishedAt!);
       return input.lessonId;
     }
     const last = await tx.courseLesson.aggregate({ where: { vendorId, productId: input.productId }, _max: { position: true } });
     const lesson = await tx.courseLesson.create({ data: { ...data, vendorId, productId: input.productId, position: (last._max.position ?? -1) + 1 } });
+    if(input.published)await recordPublished(tx,vendorId,input.productId,lesson.id,input.title,data.publishedAt!);
     return lesson.id;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+/** Vendor-independent link; a deterministic notification failure is skipped
+ * and reported instead of rolling back the lesson publication. */
+async function recordPublished(tx:Prisma.TransactionClient,vendorId:string,productId:string,lessonId:string,title:string,occurredAt:Date){
+ await recordLearnerNotificationSourceEvent(tx,{vendorId,productId,event:"lesson_published",eventIdentity:createHash("sha256").update(JSON.stringify([lessonId,occurredAt.toISOString()])).digest("hex"),audienceCustomerKeyHash:null,occurredAt,
+  message:{title:"課程新增單元",body:boundLearnerNotificationText(title,2000,"課程新增單元"),path:safeLearnerNotificationLink(()=>learnerNotificationLink.course(vendorId,productId))}});
 }

@@ -61,7 +61,7 @@ describe("FunnelPopupPreview", () => {
 
     expect(html).toContain('data-funnel-popup-state="open"');
     expect(html).toContain('data-funnel-popup-close');
-    expect(html).toContain('aria-label="關閉 Popup"');
+    expect(html).toContain('aria-label="關閉彈出視窗"');
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain("background-color:#fff7ed");
     expect(html).toContain("padding:32px");

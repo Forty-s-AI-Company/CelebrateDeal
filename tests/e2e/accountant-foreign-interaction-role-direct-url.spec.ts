@@ -51,7 +51,7 @@ test("active accountant is denied a foreign interaction-role editor before tenan
     });
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     for (const text of ["互動角色", "使用者清單", "編輯使用者", "暱稱", "角色類型", "顯示標籤", "語氣設定", "啟用使用者", ownRole.name, ownRole.label, ownRole.tone ?? "", foreignRole.name, foreignRole.label, foreignRole.tone ?? ""]) await expect(page.getByText(text, { exact: true })).toHaveCount(0);
     const externalRequests = requests.filter((url) => /https:\/\/(?!127\.0\.0\.1)|cloudflare|openai|resend|payuni|sentry|posthog/i.test(url));
     expect(externalRequests).toEqual([]); await expect.poll(snapshot).toEqual(before);

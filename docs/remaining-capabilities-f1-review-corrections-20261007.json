@@ -1,0 +1,43 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "IMPLEMENTED_TARGETED_PASS_PENDING_CURRENT_FULL_VALIDATION_AND_FINAL_INDEPENDENT_REVIEW",
+  "implemented_fixes": [
+    "AbortSignal 10000ms push fetch with 8192-byte streaming cap",
+    "Exact course_completed certificate worker page and click regression"
+  ],
+  "unit": {
+    "passed": 81,
+    "files": 6
+  },
+  "typecheck_before_main_integration": "PASS",
+  "lint_before_main_integration": "PASS",
+  "provider_configuration_presence_only": {
+    "email": false,
+    "sms": false,
+    "whatsapp": false,
+    "push": false
+  },
+  "secret_values_read_or_printed": false,
+  "external_operations": false,
+  "integrated_main": "a10728f4147ce84ad6d33524ed0e412660602283",
+  "models": 133,
+  "migrations": 92,
+  "conflict_policy": "Preserve both additive migration trees and static inventory assertions; preserve both historical docs; localized CoursePlayer already contains identical main hydration/CSRF/coalescing behavior",
+  "unresolved": [
+    "real provider enrollment and reception",
+    "fresh integrated full browser/DB/static/unit",
+    "final independent review of corrections",
+    "canonical acceptance and exact-head CI delivery"
+  ],
+  "canonical_ready": false,
+  "database_migrations": 92,
+  "database_tests": 80,
+  "database_status": "PASS",
+  "integration_typecheck_first_failure": {
+    "file": "src/components/course-player.test.tsx",
+    "line": 23,
+    "code": "TS1117",
+    "reason": "Both branches supplied useSyncExternalStore mock; retained main hydration-aware mock and all assertions"
+  },
+  "integration_typecheck_current": "PENDING"
+}

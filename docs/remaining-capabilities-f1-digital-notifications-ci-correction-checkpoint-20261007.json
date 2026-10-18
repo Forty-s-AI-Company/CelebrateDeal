@@ -1,0 +1,36 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "LOCAL_CI_CORRECTION_PASS_PENDING_NEW_EXACT_HEAD_CI",
+  "created_at": "2026-10-07T08:29:27.290612+00:00",
+  "failed_head": "16b5d5c568f124a269704c785bf51308cc42ed0f",
+  "failed_ci": 37591948632,
+  "ci_failure_receipt": "docs/remaining-capabilities-f1-digital-notifications-ci-failure-20261007.json",
+  "correction": "Model current product query in management-page unit fixtures; retain original six tests, add purchase discovery and bounded purchase cursor tests; validate both cursors before either database lookup.",
+  "unit": {
+    "passed": 40,
+    "files": 5,
+    "tool_chunk": "2eab64"
+  },
+  "source_files": {
+    "src/app/portal/[vendorSlug]/notifications/page.tsx": "b1d4558f6ae87df5563be6634af1ee4dd4acb3d0e22c2bb88a484b92c53be291",
+    "src/app/portal/[vendorSlug]/notifications/page.test.tsx": "c0a1f0916e966c6380a1e8be1c7d25a4244e65634edf2cdfba3e04b66d0114f8"
+  },
+  "current_validation_process": null,
+  "browser_status": "PASS",
+  "expected_browser_tests": 5,
+  "acceptance": "NOT_READY",
+  "review_dispatches": 3,
+  "dispatch_limit": 4,
+  "delivered": false,
+  "typescript": "PASS",
+  "lint": "PASS",
+  "browser_source_revision": "sha256:0b4585d9dc1ad82b489ef3473a76b44e12c65fcb441cd956135f2907c011a5d6",
+  "browser_receipt": "docs/remaining-capabilities-f1-digital-notifications-ci-correction-browser-20261007.json",
+  "database_source_revision": "sha256:d256897bc91b35359a79cb10f896e3ab2dc0d8f046cb1241e29e9f8c6465ae4b",
+  "database_source_hashes_verified_current": true,
+  "database_passed": 73,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  }
+}

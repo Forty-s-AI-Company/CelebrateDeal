@@ -1,0 +1,88 @@
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import type { CourseLearningStore } from "./student-course-learning";
+import { hasLearnerNotificationPurchase } from "./learner-notification-access";
+import { encryptSensitiveValue } from "./sensitive-data";
+import type { StudentPortalScope } from "./student-portal";
+import { LearnerEmailDestination, LearnerPhoneDestination, LearnerPushDestination, LearnerNotificationScope, isAllowedLearnerPhoneDestination, learnerNotificationDestinationRateKey, protectLearnerNotificationDestination } from "./learner-notification-contract";
+
+export const LearnerContactEnrollmentInput = z.discriminatedUnion("channel", [
+ z.object({ channel: z.literal("push"), destination: LearnerPushDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
+ z.object({ channel: z.literal("email"), destination: LearnerEmailDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
+ z.object({ channel: z.literal("sms"), destination: LearnerPhoneDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
+ z.object({ channel: z.literal("whatsapp"), destination: LearnerPhoneDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
+]);
+type Database = CourseLearningStore & Pick<PrismaClient,"$transaction" | "commerceOrder">;
+const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+export const LearnerContactVerificationInput = z.object({ challengeId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict();
+async function verificationTransaction<T>(db: Database, run: (tx: Prisma.TransactionClient) => Promise<T>) {
+ for (let attempt = 0; attempt < 3; attempt++) {
+  try { return await db.$transaction(run,{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); }
+  catch (error) {
+   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002","P2034"].includes(error.code) || attempt === 2) throw error;
+  }
+ }
+ throw new Error("Verification transaction failed.");
+}
+const publicFields = { id: true, channel: true, enabled: true, revision: true, destinationVerifiedAt: true } as const;
+/** Rolling 24-hour caps on verification sends: per learner (vendor + customer,
+ * across products and channels) and per destination (tenant-scoped HMAC index). */
+export const LEARNER_VERIFICATION_DAILY_LIMITS = { learner: 5, destination: 3, windowMs: 24 * 60 * 60 * 1000 } as const;
+
+/** The token and contact are encrypted for the delivery worker only; neither is
+ * returned to callers. Merely requesting a challenge cannot verify a destination. */
+export async function requestLearnerContactVerification(db: Database, session: StudentPortalScope, productId: string, raw: unknown) {
+ const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
+ const input = LearnerContactEnrollmentInput.parse(raw), token = randomBytes(32).toString("base64url");
+ if ((input.channel === "sms" || input.channel === "whatsapp") && !isAllowedLearnerPhoneDestination(input.destination.phone)) return { status: "destination_unsupported" } as const;
+ const destination = protectLearnerNotificationDestination(scope,input.channel,input.destination);
+ const rateKey = learnerNotificationDestinationRateKey(scope.vendorId,input.channel,input.destination);
+ return verificationTransaction(db,async tx => {
+  if (!await hasLearnerNotificationPurchase(tx,session,productId)) return { status: "not_found" } as const;
+  const identity = { ...scope, channel: input.channel };
+  const existing = await tx.learnerNotificationPreference.findFirst({ where: identity });
+  if ((existing?.revision ?? 0) !== input.expectedRevision) return { status: "conflict" } as const;
+  if (await tx.learnerNotificationVerification.findFirst({ where: { vendorId: scope.vendorId, preference: { is: { vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash, channel: input.channel } }, createdAt: { gt: new Date(Date.now()-60000) } }, select: { id: true } })) return { status: "rate_limited" } as const;
+  const windowStart = new Date(Date.now()-LEARNER_VERIFICATION_DAILY_LIMITS.windowMs);
+  const learnerSends = await tx.learnerNotificationVerification.count({ where: { vendorId: scope.vendorId, createdAt: { gt: windowStart }, preference: { is: { vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash } } } });
+  if (learnerSends >= LEARNER_VERIFICATION_DAILY_LIMITS.learner) return { status: "daily_limit_reached" } as const;
+  const destinationSends = await tx.learnerNotificationVerification.count({ where: { vendorId: scope.vendorId, destinationRateKeyHash: rateKey, createdAt: { gt: windowStart } } });
+  if (destinationSends >= LEARNER_VERIFICATION_DAILY_LIMITS.destination) return { status: "daily_limit_reached" } as const;
+  // The new contact invalidates all pending old challenges and previous dispatch consent.
+  const preference = existing ? await tx.learnerNotificationPreference.update({ where: { id: existing.id },
+   data: { enabled: false, destinationVerifiedAt: null, destinationEncryptedEnvelope: null, destinationKeyHash: null, revision: { increment: 1 } }, select: publicFields })
+   : await tx.learnerNotificationPreference.create({ data: identity, select: publicFields });
+  await tx.learnerNotificationVerification.updateMany({ where: { vendorId: scope.vendorId, productId, preferenceId: preference.id, deliveryStatus: "queued" }, data: { deliveryStatus: "suppressed", deliveryTokenEncryptedEnvelope: null, deliveryNextAttemptAt: null } });
+  const challengeId = randomUUID();
+  const challenge = await tx.learnerNotificationVerification.create({ data: { id: challengeId, deliveryStatus: "queued", deliveryNextAttemptAt: new Date(), deliveryTokenEncryptedEnvelope: encryptSensitiveValue(token,`learner-contact-proof-v1:${JSON.stringify([scope.vendorId,challengeId])}`), vendorId: scope.vendorId, productId, preferenceId: preference.id,
+   consentRevision: preference.revision, tokenHash: hashToken(token), destinationEncryptedEnvelope: destination.encryptedEnvelope,
+   destinationKeyHash: destination.destinationKeyHash, destinationRateKeyHash: rateKey, expiresAt: new Date(Date.now()+15*60*1000) }, select: { id: true, expiresAt: true } });
+  return { status: "challenge_created", challenge, preference } as const;
+ });
+}
+
+/** Exact challenge/session binding, a five-attempt limit and atomic consumption.
+ * Destination proof never substitutes for current purchase rights or channel consent. */
+export async function consumeLearnerContactVerification(db: Database, session: StudentPortalScope, productId: string, raw: unknown) {
+ const input = LearnerContactVerificationInput.parse(raw);
+ const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
+ return verificationTransaction(db,async tx => {
+  if (!await hasLearnerNotificationPurchase(tx,session,productId)) return { status: "not_found" } as const;
+  const challenge = await tx.learnerNotificationVerification.findFirst({ where: { id: input.challengeId, vendorId: scope.vendorId, productId,
+   consumedAt: null, attemptCount: { lt: 5 }, expiresAt: { gt: new Date() }, preference: { is: { ...scope } } } });
+  if (!challenge) return { status: "invalid_challenge" } as const;
+  const preference = await tx.learnerNotificationPreference.findFirst({ where: { ...scope, id: challenge.preferenceId, revision: challenge.consentRevision } });
+  if (!preference) return { status: "invalid_challenge" } as const;
+  const matching = timingSafeEqual(Buffer.from(hashToken(input.token),"hex"),Buffer.from(challenge.tokenHash,"hex"));
+  // Bound the compare-and-swap to the observed attempt count even for an invalid token.
+  const consumed = await tx.learnerNotificationVerification.updateMany({ where: { id: challenge.id, vendorId: scope.vendorId, consumedAt: null,
+   expiresAt: { gt: new Date() }, attemptCount: challenge.attemptCount }, data: { attemptCount: { increment: 1 }, consumedAt: matching || challenge.attemptCount === 4 ? new Date() : null } });
+  if (consumed.count !== 1 || !matching) return { status: "invalid_challenge" } as const;
+  const updated = await tx.learnerNotificationPreference.updateMany({ where: { ...scope, id: preference.id, revision: challenge.consentRevision },
+   data: { enabled: false, destinationVerifiedAt: new Date(), destinationEncryptedEnvelope: challenge.destinationEncryptedEnvelope,
+    destinationKeyHash: challenge.destinationKeyHash, revision: { increment: 1 } } });
+  if (updated.count !== 1) throw new Error("Verification consent conflict.");
+  return { status: "verified", preference: await tx.learnerNotificationPreference.findFirstOrThrow({ where: { ...scope, id: preference.id }, select: publicFields }) } as const;
+ });
+}

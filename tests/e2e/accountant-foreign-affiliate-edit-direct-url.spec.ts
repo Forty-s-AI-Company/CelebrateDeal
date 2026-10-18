@@ -63,7 +63,7 @@ test("active accountant is denied a foreign affiliate editor before tenant looku
     });
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     for (const heading of ["編輯聯盟夥伴", "最近來源事件"]) await expect(page.getByRole("heading", { name: heading })).toHaveCount(0); for (const label of ["夥伴名稱", "來源渠道", "聯絡 Email", "佣金 BPS"]) await expect(page.getByLabel(label)).toHaveCount(0); await expect(page.getByRole("textbox", { name: "推廣碼", exact: true })).toHaveCount(0); for (const value of [foreignAffiliate.name, foreignAffiliate.code, foreignAffiliate.source ?? "", foreignAffiliate.contactEmail ?? "", foreignPathCanary]) await expect(page.getByText(value, { exact: true })).toHaveCount(0); expect(requests.some((url) => /^https:\/\/(?!127\.0\.0\.1|localhost)/i.test(url) || /resend|payuni|cloudflare|sentry|posthog/i.test(url))).toBe(false);
     await expect.poll(snapshot).toEqual(before);
   } finally { await db.vendor.deleteMany({ where: { id: { in: [ownerVendor.id, foreignVendor.id] } } }); await db.user.deleteMany({ where: { id: user.id } }); await db.$disconnect(); }

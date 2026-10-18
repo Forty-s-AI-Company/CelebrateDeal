@@ -345,7 +345,7 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "聯盟來源摘要", exact: true })).toBeVisible();
     await expect(page.getByText(affiliate.name, { exact: true })).toBeVisible();
     await expect(page.getByText(affiliate.code, { exact: true })).toBeVisible();

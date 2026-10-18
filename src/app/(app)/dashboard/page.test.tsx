@@ -38,7 +38,7 @@ describe("/dashboard route shell", () => {
 
     expect(mocks.requireVendorContext).toHaveBeenCalledExactlyOnceWith();
     expect(mocks.dbCalls).toBe(0);
-    expect(html).toContain("Dashboard");
+    expect(html).toContain("營運總覽");
     expect(html).toContain('data-dashboard-region="kpis"');
     expect(html).toContain('data-dashboard-region="details"');
     expect(html).toContain('href="/lives/new"');

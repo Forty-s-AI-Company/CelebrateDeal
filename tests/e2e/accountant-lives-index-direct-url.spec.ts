@@ -290,11 +290,11 @@ test("active accountant is denied the lives index before live relationships are 
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     const dashboardLiveSummaries = page.getByText(live.title, { exact: true });
     await expect(dashboardLiveSummaries).toHaveCount(2);
     await expect(dashboardLiveSummaries.first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "直播間管理", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "直播間", exact: true })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "建立直播", exact: true })).toHaveCount(0);
     await expect(page.locator('a[href="/lives"]')).toHaveCount(0);
     await expect(page.locator('a[href="/lives/new"]')).toHaveCount(0);

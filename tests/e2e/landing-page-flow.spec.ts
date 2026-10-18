@@ -43,17 +43,17 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   await expect(page).toHaveURL(/\/dashboard$/u);
 
   await page.goto("/landing-pages/new");
-  await expect(page.getByRole("heading", { name: "建立新的 Funnel" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "建立新的一頁式網站" })).toBeVisible();
   await page.getByLabel("名稱 *").fill(pageName);
-  await page.getByLabel("Funnel 網址 *").fill(slug);
+  await page.getByLabel("一頁式網站網址 *").fill(slug);
   await page.getByRole("button", { name: /建立名單/u }).click();
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await page.getByRole("button", { name: "建立", exact: true }).click();
   await expect(page).toHaveURL(/\/landing-pages\/[^/?]+\/operations$/u);
   const pageId = new URL(page.url()).pathname.split("/").at(-2);
   if (!pageId) throw new Error("Funnel create navigation did not include an id.");
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "模板已套用" })).toBeVisible();
-  await page.getByRole("button", { name: "Edit Page", exact: true }).click();
+  await page.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await expect(page.getByLabel("頁面名稱")).toBeVisible();

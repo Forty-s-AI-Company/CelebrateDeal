@@ -85,4 +85,11 @@ describe("merchantOnboardingProgress", () => {
     expect(progress.steps.find((item) => item.key === "payment")?.deferred).toBe(true);
     expect(progress.nextStep).toMatchObject({ key: "catalog", href: "/products/new" });
   });
+
+  it.each([0, 1])("explains platform payment purpose without changing the persisted count signal %i", (count) => {
+    const payment = merchantOnboardingProgress({ ...completeSignals, verifiedVendorPaymentMethodCount: count }).steps.find(item => item.key === "payment");
+    expect(payment).toMatchObject({ key: "payment", title: "平台服務付款驗證", href: "/billing/payment-methods", actionLabel: "設定平台付款方式", deferred: true });
+    expect(payment?.description).toContain("顧客收款設定需另外確認");
+    expect(payment?.requirements).toEqual([{ label: "有效的商家平台服務付款紀錄", done: count > 0 }]);
+  });
 });

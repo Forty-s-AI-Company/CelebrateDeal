@@ -27,7 +27,7 @@ test("active accountant is denied the platform finance route through direct URL 
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page).not.toHaveURL(/\/mfa/);
     await expect(page.getByRole("heading", { name: "財務總覽" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect.poll(() => Promise.all([db.paymentTransaction.count(), db.settlement.count(), db.payoutBatch.count()])).toEqual(billingBefore);
   } finally {
     await db.vendor.deleteMany({ where: { id: vendor.id } });

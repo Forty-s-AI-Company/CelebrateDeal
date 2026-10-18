@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { learnerNotificationLink, safeLearnerNotificationLink } from "./learner-notification-links";
+import { boundLearnerNotificationText, recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { randomInt } from "node:crypto";
 import { setTimeout as waitForRetry } from "node:timers/promises";
@@ -99,6 +102,15 @@ export async function saveStudentLessonProgress(db: CourseLearningDatabase, scop
     });
     await tx.courseLessonProgress.updateMany({ where: { ...identity, watchedSeconds: { lt: next.watchedSeconds } }, data: { watchedSeconds: next.watchedSeconds } });
     if (next.completedAt) await tx.courseLessonProgress.updateMany({ where: { ...identity, completedAt: null }, data: { completedAt: next.completedAt } });
+
+    if(next.completedAt){
+      const course=await getStudentCourse(tx,scope,input.courseId);
+      if(course?.completion.complete){
+        const eventIdentity=createHash("sha256").update(JSON.stringify([input.courseId,scope.customerKeyHash,course.lessons.map(value=>value.id).sort()])).digest("hex");
+        await recordLearnerNotificationSourceEvent(tx,{vendorId:scope.vendorId,productId:input.courseId,event:"course_completed",eventIdentity,audienceCustomerKeyHash:scope.customerKeyHash,occurredAt:input.now??new Date(),
+          message:{title:"課程已完成",body:boundLearnerNotificationText(course.course.name,2000,"課程已完成"),path:safeLearnerNotificationLink(()=>learnerNotificationLink.certificate(scope.vendorId,input.courseId))}});
+      }
+    }
     return tx.courseLessonProgress.findFirst({ where: identity, select: { lessonId: true, watchedSeconds: true, completedAt: true } });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   const maxAttempts = 6;

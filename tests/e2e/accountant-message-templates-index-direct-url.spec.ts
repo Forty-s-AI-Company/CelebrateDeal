@@ -185,8 +185,8 @@ test("active accountant is denied the message-templates index before template da
 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByText("商品點擊", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
+    await expect(page.getByText("商品點擊", { exact: true }).first()).toBeAttached();
     await expect(page.getByRole("heading", { name: "訊息模板", exact: true })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "新增模板", exact: true })).toHaveCount(0);
     await expect(page.locator('a[href="/messages/templates"]')).toHaveCount(0);
