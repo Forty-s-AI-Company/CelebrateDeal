@@ -19,7 +19,10 @@ describe("root loading state", () => {
   // land on an invisible form. Registration entries render complete HTML.
   it("wires loading UI into non-registration page segments only", () => {
     const app = join(process.cwd(), "src/app");
-    const excluded = new Set(["form", "lp", "p", "registration-error", "browser-qa", "@checkout"]);
+    // The learner portal keeps no segment-level boundary: its locale switch is a
+    // same-path server-action redirect, and an extra Suspense boundary there made
+    // the portal browser gate flaky in CI.
+    const excluded = new Set(["form", "lp", "p", "registration-error", "browser-qa", "@checkout", "portal"]);
     const hasPage = (path: string): boolean => readdirSync(path, { withFileTypes: true }).some((entry) => entry.isDirectory() ? hasPage(join(path, entry.name)) : entry.name === "page.tsx");
     for (const segment of readdirSync(app, { withFileTypes: true })) {
       if (!segment.isDirectory() || excluded.has(segment.name) || !hasPage(join(app, segment.name))) continue;
