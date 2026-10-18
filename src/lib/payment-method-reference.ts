@@ -335,7 +335,10 @@ export async function applyVerifiedPaymentMethodSetup(
 }
 
 function isActiveReference(value: { status: string; verifiedAt: Date | null; expiresAt: Date | null }, now: Date) {
-  return value.status === "verified" && value.verifiedAt !== null && (value.expiresAt === null || value.expiresAt > now);
+  return value.status === "verified"
+    && value.verifiedAt !== null
+    && value.verifiedAt <= now
+    && (value.expiresAt === null || value.expiresAt > now);
 }
 
 export async function assertPaymentMethodReferenceForQuota(

@@ -81,7 +81,7 @@ describe("payment method reference contract", () => {
     expect(db.paymentMethodReference.findFirst).toHaveBeenCalledOnce();
   });
 
-  it("queries vendor quota with the shared readiness predicate so expired rows cannot shadow a valid one", async () => {
+  it("queries vendor quota with the shared readiness predicate", async () => {
     const now = new Date("2026-08-07T01:00:00.000Z");
     const db = {
       paymentMethodReference: {
@@ -107,6 +107,24 @@ describe("payment method reference contract", () => {
       payerScope: "VENDOR",
       memberIds: [],
       now: new Date("2026-08-07T01:00:00.000Z"),
+    })).rejects.toBeInstanceOf(PaymentMethodReferenceRequiredError);
+  });
+
+  it("does not admit a member reference whose verification time is still in the future", async () => {
+    const now = new Date("2026-08-07T01:00:00.000Z");
+    const db = {
+      paymentMethodReference: {
+        findFirst: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([
+          { membershipId: "member-1", status: "verified", verifiedAt: new Date("2026-08-07T02:00:00.000Z"), expiresAt: null },
+        ]),
+      },
+    };
+    await expect(assertPaymentMethodReferenceForQuota(db as never, {
+      vendorId: "vendor-1",
+      payerScope: "MEMBER",
+      memberIds: ["member-1"],
+      now,
     })).rejects.toBeInstanceOf(PaymentMethodReferenceRequiredError);
   });
 
