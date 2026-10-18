@@ -81,6 +81,10 @@ test("builds the migration URL with fixed session timeouts and without pgbouncer
   assert.equal(built.searchParams.get("sslmode"), "require");
   assert.equal(built.searchParams.has("pgbouncer"), false);
   assert.equal(built.hostname, poolerHost);
+  // Accepted inputs that Prisma would treat as prefer are still sent as require.
+  for (const query of ["sslmode=verify-full", "schema=public"]) {
+    assert.equal(new URL(parseStagingDatabaseUrl(withQuery(query)).url).searchParams.get("sslmode"), "require");
+  }
   const upper = parseStagingDatabaseUrl(url(`postgres:synthetic-password@${directHost.toUpperCase()}:5432`));
   assert.equal(new URL(upper.url).hostname, directHost);
   assert.equal(upper.host, directHost);

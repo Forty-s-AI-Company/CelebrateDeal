@@ -66,6 +66,9 @@ export function parseStagingDatabaseUrl(value) {
   migrationUrl.hostname = host;
   // Runtime's PgBouncer hint is unnecessary for direct/session migration connections.
   migrationUrl.searchParams.delete("pgbouncer");
+  // Prisma 6 does not understand verify-full (it falls back to prefer, which
+  // can downgrade to plaintext) and an omitted sslmode is prefer: always require TLS.
+  migrationUrl.searchParams.set("sslmode", "require");
   migrationUrl.searchParams.set("options", MIGRATION_SESSION_OPTIONS);
   return { url: migrationUrl.toString(), host, password, rawPassword: db.password };
 }
