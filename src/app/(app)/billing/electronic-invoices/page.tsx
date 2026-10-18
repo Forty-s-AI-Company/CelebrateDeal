@@ -18,7 +18,7 @@ export default async function ElectronicInvoicesPage() {
   return <>
     <PageHeader title="電子發票" description="查看既有發票紀錄、發票需求與退款折讓狀態。" />
     {/* Automatic e-invoicing is not available yet; existing records stay readable. */}
-    <div role="status" className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+    <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
       <p className="font-semibold">自動電子發票尚未開放</p>
       <p className="mt-1 leading-6">目前未提供自動開立服務。付款成功、已儲存發票需求或匯出紀錄，均不代表已開立發票；如需發票，請另行確認開立方式。</p>
     </div>
