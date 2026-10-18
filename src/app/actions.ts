@@ -504,32 +504,6 @@ export async function saveBrandSettingsActionState(
   redirect("/settings/brand");
 }
 
-export async function saveTrackingSettingsAction(formData: FormData) {
-  await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
-  await getDb().trackingSetting.upsert({
-    where: { vendorId: vendor.id },
-    create: {
-      vendorId: vendor.id,
-      facebookPixelId: optionalText(formData, "facebookPixelId"),
-      tiktokPixelId: optionalText(formData, "tiktokPixelId"),
-      googleTagManagerId: optionalText(formData, "googleTagManagerId"),
-      enablePageView: formData.get("enablePageView") === "on",
-      enableLeadEvent: formData.get("enableLeadEvent") === "on",
-      enablePurchaseEvent: formData.get("enablePurchaseEvent") === "on",
-    },
-    update: {
-      facebookPixelId: optionalText(formData, "facebookPixelId"),
-      tiktokPixelId: optionalText(formData, "tiktokPixelId"),
-      googleTagManagerId: optionalText(formData, "googleTagManagerId"),
-      enablePageView: formData.get("enablePageView") === "on",
-      enableLeadEvent: formData.get("enableLeadEvent") === "on",
-      enablePurchaseEvent: formData.get("enablePurchaseEvent") === "on",
-    },
-  });
-  revalidatePath("/settings/tracking");
-}
-
 export async function updatePasswordAction(formData: FormData) {
   return updatePasswordActionImpl(formData);
 }
