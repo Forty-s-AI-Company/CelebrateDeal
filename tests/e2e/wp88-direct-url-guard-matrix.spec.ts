@@ -139,7 +139,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await ownerSession.page.goto("/dashboard");
     await expect(ownerSession.page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await ownerSession.page.goto("/team-templates");
-    await expect(ownerSession.page.getByRole("heading", { name: "團隊模板" })).toBeVisible();
+    await expect(ownerSession.page.getByRole("heading", { name: "團隊模板", exact: true })).toBeVisible();
     await ownerSession.page.goto("/billing/usage");
     await expect(ownerSession.page).toHaveURL(/\/billing\/usage$/);
     await expect(ownerSession.page.getByRole("heading", { name: "用量與扣點" })).toBeVisible();
