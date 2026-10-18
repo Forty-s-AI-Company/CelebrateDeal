@@ -364,8 +364,10 @@ export async function assertPaymentMethodReferenceForQuota(
     return;
   }
 
+  // Same predicate as the readiness surfaces: any one currently valid vendor
+  // reference admits quota, so an older expired row can never shadow it.
   const reference = await db.paymentMethodReference.findFirst({
-    where: { vendorId: input.vendorId, scopeType: "VENDOR", status: "verified" },
+    where: verifiedVendorPaymentMethodWhere(input.vendorId, now),
     select: { status: true, verifiedAt: true, expiresAt: true },
   });
   if (!reference || !isActiveReference(reference, now)) throw new PaymentMethodReferenceRequiredError();

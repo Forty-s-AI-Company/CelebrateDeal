@@ -81,6 +81,35 @@ describe("payment method reference contract", () => {
     expect(db.paymentMethodReference.findFirst).toHaveBeenCalledOnce();
   });
 
+  it("queries vendor quota with the shared readiness predicate so expired rows cannot shadow a valid one", async () => {
+    const now = new Date("2026-08-07T01:00:00.000Z");
+    const db = {
+      paymentMethodReference: {
+        findFirst: vi.fn().mockResolvedValue({ status: "verified", verifiedAt, expiresAt: new Date("2026-09-01T00:00:00.000Z") }),
+        findMany: vi.fn(),
+      },
+    };
+    await expect(assertPaymentMethodReferenceForQuota(db as never, {
+      vendorId: "vendor-1",
+      payerScope: "VENDOR",
+      memberIds: [],
+      now,
+    })).resolves.toBeUndefined();
+    expect(db.paymentMethodReference.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: verifiedVendorPaymentMethodWhere("vendor-1", now),
+    }));
+  });
+
+  it("rejects vendor quota when no currently valid vendor reference exists", async () => {
+    const db = { paymentMethodReference: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn() } };
+    await expect(assertPaymentMethodReferenceForQuota(db as never, {
+      vendorId: "vendor-1",
+      payerScope: "VENDOR",
+      memberIds: [],
+      now: new Date("2026-08-07T01:00:00.000Z"),
+    })).rejects.toBeInstanceOf(PaymentMethodReferenceRequiredError);
+  });
+
   it("requires every configured member to have an active reference", async () => {
     const db = {
       paymentMethodReference: {
