@@ -45,20 +45,24 @@ function guardFor(source: string) {
   return matching[0];
 }
 
-async function login(page: Page, email: string) {
+const VENDOR_HOME = /\/dashboard$/;
+const PLATFORM_ADMIN_MFA_SETUP = "/mfa/setup?next=%2Fadmin%2Fbilling%2Fdashboard";
+
+async function login(page: Page, email: string, expectedUrl: RegExp | string) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
-  // Synthetic accounts have no enrolled factor, so login reaches the role's
-  // home page. This matrix still tests role and tenant guards independently.
-  await expect(page).toHaveURL(/\/(?:dashboard|admin\/billing\/dashboard)$/);
+  // Synthetic accounts start without an enrolled factor. Vendor roles reach
+  // their home page; a platform administrator is sent to MFA setup because the
+  // finance back office requires an enrolled factor.
+  await expect(page).toHaveURL(expectedUrl);
 }
 
-async function signedInPage(browser: Browser, email: string) {
+async function signedInPage(browser: Browser, email: string, expectedUrl: RegExp | string = VENDOR_HOME) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
-  await login(page, email);
+  await login(page, email, expectedUrl);
   return { context, page };
 }
 
@@ -159,8 +163,9 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await expect(memberSession.page).toHaveURL(/\/dashboard\?error=insufficient_role$/);
     await expect(memberSession.page.getByRole("heading", { name: "用量與扣點" })).toHaveCount(0);
 
-    const platformSession = await signedInPage(browser, platformAdmin.email);
+    const platformSession = await signedInPage(browser, platformAdmin.email, PLATFORM_ADMIN_MFA_SETUP);
     contexts.push(platformSession.context);
+    await expect(platformSession.page.getByRole("heading", { name: "財務總覽" })).toHaveCount(0);
     await enableSyntheticMfa(platformAdmin.id);
     const platformResponse = await platformSession.page.goto("/admin/billing/dashboard");
     await expect(platformSession.page).toHaveURL(/\/admin\/billing\/dashboard$/);

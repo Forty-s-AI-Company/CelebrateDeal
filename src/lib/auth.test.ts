@@ -232,6 +232,14 @@ describe("requireFinanceAdmin", () => {
     await expect(requireAuth()).resolves.toMatchObject({ isPlatformAdmin: true });
   });
 
+  it("rejects a non-platform user without an MFA factor to the dashboard before the MFA check", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "owner", mfaFactor: null, mfaVerifiedAt: null }));
+
+    await expect(requireFinanceAdmin()).rejects.toThrow("redirect:/dashboard");
+    expect(mocks.redirect).toHaveBeenCalledTimes(1);
+    expect(mocks.redirect).toHaveBeenCalledWith("/dashboard");
+  });
+
   it("still requires MFA verification for a platform administrator", async () => {
     mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "platform_admin", mfaVerifiedAt: null }));
 
