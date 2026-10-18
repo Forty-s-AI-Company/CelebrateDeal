@@ -15,6 +15,8 @@ export type NotificationProviderResult = { outcome: "sent" | "not_delivered" | "
 const unknownResult: NotificationProviderResult = { outcome: "indeterminate", code: "OUTCOME_UNKNOWN" };
 const rejectedResult: NotificationProviderResult = { outcome: "not_delivered", code: "REJECTED" };
 const configurationResult: NotificationProviderResult = { outcome: "not_delivered", code: "CONFIGURATION" };
+/** Every provider call is bounded well below the short pre/post-send DB budget. */
+export const LEARNER_NOTIFICATION_PROVIDER_TIMEOUT_MS = 4000;
 
 /** Read only bounded JSON. Provider bodies may contain contacts or credentials;
  * neither those bodies nor exception messages reach logs or public responses. */
@@ -46,7 +48,7 @@ async function sendEmail(input: PreparedInput, config: NotificationProviderConfi
  const parsed = LearnerEmailDestination.safeParse(input.destination);
  if (!parsed.success) return { outcome: "not_delivered", code: "INVALID_DESTINATION" };
  try {
-  const receipt = await sendTransactionalEmail({ to: parsed.data.email, subject: input.prepared.title, text: input.prepared.text, idempotencyKey: input.idempotencyKey });
+  const receipt = await sendTransactionalEmail({ to: parsed.data.email, subject: input.prepared.title, text: input.prepared.text, idempotencyKey: input.idempotencyKey, timeoutMs: LEARNER_NOTIFICATION_PROVIDER_TIMEOUT_MS });
   return { outcome: "sent", providerReceipt: receipt.id };
  } catch (error) {
   if (error instanceof TransactionalEmailError && error.code === "configuration") return configurationResult;
@@ -78,7 +80,7 @@ async function sendPush(input: PreparedInput, config: NotificationProviderConfig
    { vapidDetails: config.push, TTL: 300, contentEncoding: "aes128gcm" });
   const response = await fetch(request.endpoint, { method: "POST", redirect: "error",
    headers: Object.fromEntries(Object.entries(request.headers).map(([key,value]) => [key,String(value)])),
-   body: request.body ? new Uint8Array(request.body) : null, signal: AbortSignal.timeout(10000) });
+   body: request.body ? new Uint8Array(request.body) : null, signal: AbortSignal.timeout(LEARNER_NOTIFICATION_PROVIDER_TIMEOUT_MS) });
   if (!await boundedPushResponse(response)) return unknownResult;
   if (response.status >= 400 && response.status < 500) return rejectedResult;
   return response.status >= 200 && response.status < 300 ? { outcome: "sent", providerReceipt: `push_http_${response.status}` } : unknownResult;
@@ -125,7 +127,7 @@ async function sendPhone(input: PreparedInput, config: NotificationProviderConfi
  const request = input.channel === "sms" ? smsRequest(phone.data.phone,input.prepared.text,config.sms) : whatsappRequest(phone.data.phone,input.prepared,config.whatsapp);
  if (!request) return configurationResult;
  try {
-  const response = await fetch(request.url,{ method: "POST", headers: request.headers, body: request.body, redirect: "error", signal: AbortSignal.timeout(10000) });
+  const response = await fetch(request.url,{ method: "POST", headers: request.headers, body: request.body, redirect: "error", signal: AbortSignal.timeout(LEARNER_NOTIFICATION_PROVIDER_TIMEOUT_MS) });
   if (response.status >= 400 && response.status < 500) return rejectedResult;
   if (!response.ok) return unknownResult;
   const receipt = parseReceipt(await boundedJson(response),input.channel);

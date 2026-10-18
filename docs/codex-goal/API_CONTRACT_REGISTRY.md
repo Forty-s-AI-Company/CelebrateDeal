@@ -169,6 +169,18 @@
 
 | `POST /portal/[vendorSlug]/learn/[courseId]/notifications/enroll` | 同源 client marker、CSRF、學員 session、server approved executor/provider/tenant | strict 4KiB destination，購買權益與 CAS；60 秒 cooldown | 加密持久化 challenge，202 只回 challenge id/expiry/公開偏好，不回 token/contact；400/404/409/429/503 | 同路徑 unit、disposable PG；browser 待驗證 |
 
+### 學員通知審查修正 2026-10-18
+
+| Endpoint | 授權 | 輸入與範圍 | 行為與失敗 | 驗證 |
+|---|---|---|---|---|
+| `GET /portal/notify.link/[...target]` | 公開入口；目標頁仍強制學員 session、tenant 與購買權益 | 只接受 producer 產生的形狀：`<vendorId>/notifications`、`<vendorId>/learn/<courseId>`（可接 `/certificate` 或 `/community/<postId>`）、`<vendorId>/live/<liveId>`；每段 `[A-Za-z0-9_-]{1,128}`，`community/data` 拒絕 | 以 vendorId 查目前 slug，303 至 canonical origin 的 `/portal/<slug>/...`；live 只在同 vendor 且非 draft 時導向 `/live/<slug>`；未知、格式錯誤或 DB 失敗一律導向 `/portal/start.html`，private no-store、no-referrer，不回細節 | 同路徑 unit |
+
+- 通知 message path 不再嵌入 vendor slug（CJK slug 編碼後可能超過 512），改存上列 vendor-independent link；service worker 同時接受新舊格式。
+- `POST /portal/[vendorSlug]/learn/[courseId]/notifications/enroll` 新增拒絕碼：`daily_limit_reached`（429；每位學員＝vendor+customer 24 小時 5 次、每個 destination HMAC 24 小時 3 次）與 `destination_unsupported`（400；SMS/WhatsApp 預設只允許 `+886`，單一 allowlist 常數）。服務層不再回傳明文驗證碼或聯絡方式。
+- 四個 `/portal/[vendorSlug]/learn/[courseId]/notifications*` route 對格式錯誤的 courseId 在解析前回 404。
+- `GET /api/jobs/email-deliveries`／`POST /api/jobs/email-deliveries`：學員通知 draining 改為 sources 20／proofs 25／deliveries 50，每個 tenant 分開讀取並 round-robin（每 tenant 上限 10／10／25），各 phase 獨立錯誤邊界；失敗 source 指數退避、第 5 次 dead-letter；回應新增 `learnerNotificationBacklog`（只含三個非負計數）。
+- 發送改為三段：短 transaction（`lock_timeout` 2s、只鎖 delivery／challenge 列）重查資格並把 claim 輪換成 send token → transaction 外呼叫 provider（≤4s）→ 以 send token CAS 記錄結果。不確定送達仍為終態，不會重送。
+
 ### 學員課程預約提醒候選 2026-10-07
 
 - `GET /portal/[vendorSlug]/learn/[courseId]/notifications/reminders`：same-origin/client-header、signed student session、目前課程或數位商品 grant 權益；只列目前 recipient 的 future/scheduled/published linked bookings，21/20 bounded cursor。公開欄位 id/startTime/title/confirmed、nextAfter、CSRF；private/no-store，無聯絡方式、hash、ciphertext或其他租戶資料。

@@ -3997,6 +3997,7 @@ model LearnerNotificationDelivery {
   @@unique([vendorId, deduplicationKey])
   @@index([status, nextAttemptAt])
   @@index([vendorId, preferenceId, createdAt])
+  @@index([vendorId, status, nextAttemptAt], map: "LearnerNotificationDelivery_vendor_due_idx")
 }
 
 /// Verification is bounded and attached to the same recipient/course consent revision.
@@ -4009,6 +4010,7 @@ model LearnerNotificationVerification {
   tokenHash String @unique
   destinationEncryptedEnvelope String
   destinationKeyHash String
+  destinationRateKeyHash String?
   deliveryTokenEncryptedEnvelope String?
   deliveryStatus String @default("suppressed")
   deliveryAttemptCount Int @default(0)
@@ -4024,6 +4026,8 @@ model LearnerNotificationVerification {
   preference LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationVerification_preference_fkey")
   @@index([vendorId, preferenceId, expiresAt], map: "LearnerNotificationVerification_scope_expiry_idx")
   @@index([vendorId, deliveryStatus, deliveryNextAttemptAt], map: "LearnerNotificationVerification_delivery_due_idx")
+  @@index([vendorId, preferenceId, createdAt], map: "LearnerNotificationVerification_learner_window_idx")
+  @@index([vendorId, destinationRateKeyHash, createdAt], map: "LearnerNotificationVerification_destination_window_idx")
 }
 
 /// Domain facts commit atomically; bounded materialization resumes by preference ID.
@@ -4040,6 +4044,10 @@ model LearnerNotificationSourceEvent {
  preferenceCursor String?
  completedAt DateTime?
  revision Int @default(1)
+ failureCount Int @default(0)
+ nextAttemptAt DateTime?
+ lastErrorCode String?
+ deadLetteredAt DateTime?
  createdAt DateTime @default(now())
  vendor Vendor @relation(fields:[vendorId],references:[id],onDelete:Cascade)
  product Product @relation(fields:[vendorId,productId],references:[vendorId,id],onDelete:Cascade)

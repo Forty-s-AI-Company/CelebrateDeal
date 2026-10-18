@@ -32,7 +32,7 @@ import { GET, POST } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.processDueLearnerNotifications.mockResolvedValue([]);
+  mocks.processDueLearnerNotifications.mockResolvedValue({ results: [], backlog: null });
   vi.stubEnv("JOB_SECRET", "g7-07-job-secret");
   vi.stubEnv("CRON_SECRET", "g7-21-cron-secret");
   mocks.processLiveReminderReconciliationJobs.mockResolvedValue([]);
@@ -108,6 +108,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       results: [{ status: "sent" }, { status: "unknown" }],
       learnerNotificationsProcessed: 0,
       learnerNotificationResults: [],
+      learnerNotificationBacklog: null,
       lineMaterialized: 0,
       lineProcessed: 0,
       lineResults: [],
@@ -187,9 +188,10 @@ describe("GET /api/jobs/email-deliveries", () => {
 });
 
 it("notification result projection strips identifiers and bounds the output", async () => {
- mocks.processDueLearnerNotifications.mockResolvedValue(Array.from({length:25},()=>({status:"indeterminate",recipient:"synthetic-private-recipient",claimToken:"synthetic-private-token"})));
+ mocks.processDueLearnerNotifications.mockResolvedValue({results:Array.from({length:25},()=>({status:"indeterminate",recipient:"synthetic-private-recipient",claimToken:"synthetic-private-token"})),backlog:{sources:3,proofs:-1,deliveries:"private" as unknown as number}});
  const response=await POST(request("g7-07-job-secret"));const body=await response.json();
  expect(body.learnerNotificationsProcessed).toBe(25);expect(body.learnerNotificationResults).toHaveLength(20);
  expect(body.learnerNotificationResults.every((result:unknown)=>JSON.stringify(result)==='{"status":"indeterminate"}')).toBe(true);
  expect(JSON.stringify(body)).not.toContain("synthetic-private");
+ expect(body.learnerNotificationBacklog).toEqual({sources:3,proofs:null,deliveries:null});
 });

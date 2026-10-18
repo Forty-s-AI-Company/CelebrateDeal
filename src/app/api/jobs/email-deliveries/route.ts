@@ -23,7 +23,8 @@ const SAFE_STATUSES = new Set([
   "claimed_elsewhere",
 ]);
 
-const SAFE_LEARNER_NOTIFICATION_STATUSES = new Set(["sent","failed","suppressed","indeterminate","queued","not_claimed","persistence_failed","configuration_missing","not_delivered","claimed_elsewhere"]);
+const SAFE_LEARNER_NOTIFICATION_STATUSES = new Set(["sent","failed","suppressed","indeterminate","queued","not_claimed","persistence_failed","configuration_missing","not_delivered","claimed_elsewhere","completed","page_materialized","not_pending","not_due","retry_scheduled","dead_lettered"]);
+const safeCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 
 const SAFE_RECONCILIATION_STATUSES = new Set([
   "pending",
@@ -95,8 +96,13 @@ async function processEmailDeliveries() {
       results: results.slice(0, 20).map((result) => ({
         status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
       })),
-      learnerNotificationsProcessed: learnerNotifications.length,
-      learnerNotificationResults: learnerNotifications.slice(0,20).map(result => ({ status: SAFE_LEARNER_NOTIFICATION_STATUSES.has(result.status) ? result.status : "unknown" })),
+      learnerNotificationsProcessed: learnerNotifications.results.length,
+      learnerNotificationResults: learnerNotifications.results.slice(0,20).map(result => ({ status: SAFE_LEARNER_NOTIFICATION_STATUSES.has(result.status) ? result.status : "unknown" })),
+      learnerNotificationBacklog: learnerNotifications.backlog ? {
+        sources: safeCount(learnerNotifications.backlog.sources),
+        proofs: safeCount(learnerNotifications.backlog.proofs),
+        deliveries: safeCount(learnerNotifications.backlog.deliveries),
+      } : null,
       lineMaterialized: lineMaterialized.length,
       lineProcessed: lineResults.length,
       lineResults: lineResults.slice(0, 20).map((result) => ({

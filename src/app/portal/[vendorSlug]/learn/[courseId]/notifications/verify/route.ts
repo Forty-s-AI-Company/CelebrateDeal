@@ -7,6 +7,7 @@ import { consumeLearnerContactVerification, LearnerContactVerificationInput } fr
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
+const courseIdentifier = /^[A-Za-z0-9_-]{1,128}$/u;
 
 /** Recipient proof is submitted in the bounded POST body, never a URL or log.
  * Session and course entitlement select the scope; proof leaves consent disabled. */
@@ -17,6 +18,7 @@ export async function POST(request: Request, { params }: Context) {
  const input = LearnerContactVerificationInput.safeParse(await readJsonBody(request, 4096));
  if (!input.success) return NextResponse.json({ error: "invalid_challenge" }, { status: 400, headers });
  const { vendorSlug, courseId } = await params;
+ if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
  const { session } = await requireStudentPortalSession(vendorSlug);
  try {
   const result = await consumeLearnerContactVerification(getDb(), session, courseId, input.data);

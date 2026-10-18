@@ -98,7 +98,9 @@ describe("discussion reply notification transaction", () => {
   const source=recordSource.mock.calls[0][1];
   expect(source).toMatchObject({vendorId:scope.vendorId,productId:"course_a",event:"discussion_reply",eventIdentity:first!.id,audienceCustomerKeyHash:recipient,occurredAt:createdAt});
   expect(source.message.discussionReply).toEqual({postId:"post",replyId:first!.id,customerKeyHash:recipient});
-  expect(source.message.path).toBe("/portal/synthetic-vendor/learn/course_a/community/post");
+  // Vendor-independent link: a CJK vendor slug can never push the path past its bound.
+  expect(source.message.path).toBe("/portal/notify.link/vendor_a/learn/course_a/community/post");
+  expect(tx.vendor.findUniqueOrThrow).not.toHaveBeenCalled();
   expect(source.message.body).not.toContain(content.body);
   expect(recordSource.mock.calls[1][1]).toEqual(source);
  });
@@ -106,6 +108,13 @@ describe("discussion reply notification transaction", () => {
   const {db,tx}=fixture();tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:scope.customerKeyHash});
   await mutateCourseCommunity(db,scope,"course_a",{...input(),operation:"reply",postId:"post"});
   expect(recordSource).not.toHaveBeenCalled();expect(tx.vendor.findUniqueOrThrow).not.toHaveBeenCalled();
+ });
+ it("a skipped (deterministically invalid) notification never rolls back the accepted reply",async()=>{
+  const {db,tx}=fixture();tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:"r".repeat(43)});
+  tx.vendor.findUniqueOrThrow.mockResolvedValue({slug:"課".repeat(80)});
+  recordSource.mockResolvedValue(null);
+  const accepted=await mutateCourseCommunity(db,scope,"course_a",{...input(),operation:"reply",postId:"post"});
+  expect(accepted).toEqual({id:expect.stringMatching(/^cm_[a-f0-9]{64}$/u)});
  });
  it("propagates source persistence failure to the enclosing transaction",async()=>{
   const {db,tx}=fixture();tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:"r".repeat(43)});

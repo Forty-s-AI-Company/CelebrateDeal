@@ -21,6 +21,12 @@ export const LearnerNotificationConsentInput = z.object({
   expectedRevision: z.number().int().safe().nonnegative(),
 }).strict();
 export const LearnerPhoneDestination = z.object({ phone: Phone }).strict();
+/** SMS/WhatsApp enrollment is restricted to these country calling codes. This is
+ * the single allowlist; widen it deliberately (cost/abuse review) when needed. */
+export const LEARNER_PHONE_ALLOWED_COUNTRY_CODES: readonly string[] = ["+886"];
+export function isAllowedLearnerPhoneDestination(phone: string) {
+  return Phone.safeParse(phone).success && LEARNER_PHONE_ALLOWED_COUNTRY_CODES.some(code => phone.startsWith(code));
+}
 export const LearnerEmailDestination = z.object({ email: z.string().trim().toLowerCase().email().max(254) }).strict();
 
 const pushHosts = new Set(["fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"]);
@@ -49,6 +55,19 @@ export function protectLearnerNotificationDestination(scope: LearnerNotification
     destinationKeyHash: createHmac("sha256", deriveSensitiveDataKey("learner-notification-destination-index-v1"))
       .update(binding).update("\0").update(plaintext).digest("hex"),
   };
+}
+
+/** Tenant-scoped, recipient-independent HMAC of the normalized contact. It caps
+ * verification sends to one phone/email/device across learners and products of a
+ * vendor without storing or comparing plaintext. SMS and WhatsApp share a key. */
+export function learnerNotificationDestinationRateKey(vendorId: string, channel: LearnerNotificationChannel, destination: unknown) {
+  if (!/^[A-Za-z0-9_-]{1,128}$/u.test(vendorId)) throw new Error("Notification destination is invalid.");
+  const parsedChannel = LearnerNotificationChannel.parse(channel);
+  const value = parsedChannel === "email" ? ["email", LearnerEmailDestination.parse(destination).email]
+    : parsedChannel === "push" ? ["push", LearnerPushDestination.parse(destination).endpoint]
+    : ["phone", LearnerPhoneDestination.parse(destination).phone];
+  return createHmac("sha256", deriveSensitiveDataKey("learner-notification-destination-rate-v1"))
+    .update(JSON.stringify([vendorId, ...value])).digest("hex");
 }
 
 export function revealLearnerNotificationDestination(scope: LearnerNotificationScope, channel: LearnerNotificationChannel, envelope: string): unknown {

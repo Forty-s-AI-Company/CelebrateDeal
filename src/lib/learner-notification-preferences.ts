@@ -40,11 +40,14 @@ export async function saveLearnerNotificationConsent(db: NotificationPreferenceD
       data: { enabled: input.enabled, revision: { increment: 1 }, consentedAt: input.enabled ? new Date() : existing.consentedAt } });
     if (updated.count !== 1) return { status: "conflict" } as const;
     return { status: "saved", preference: await tx.learnerNotificationPreference.findFirstOrThrow({ where: identity, select: publicFields }) } as const;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    // Dispatch never holds a preference lock across a provider call; its short
+    // pre-send transaction waits at most 2s on a lock (lock_timeout). This budget
+    // stays comfortably above that, and a P2028 timeout is retried below.
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 10000 });
   for (let attempt = 0; attempt < 3; attempt++) {
     try { return await persist(); }
     catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002", "P2034"].includes(error.code) || attempt === 2) throw error;
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002", "P2028", "P2034"].includes(error.code) || attempt === 2) throw error;
     }
   }
   throw new Error("Notification consent transaction failed.");

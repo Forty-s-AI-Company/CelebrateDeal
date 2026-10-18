@@ -12,7 +12,7 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 147 |
-| Migration directories | 106 |
+| Migration directories | 107 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -314,3 +314,8 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - `20261017120000_post_purchase_credit_release`：forward-only；新增 `releasedAt`，將 `(vendorId, sourceOrderId)` 改為 `releasedAt IS NULL` 的 partial unique；目標付款失敗／逾期且未收款時釋放抵扣額，釋放列不可再交付、退款失效或復原。
 - `20261017130000_post_purchase_credit_window_supersede`：forward-only；來源付款 24 小時內才可建立抵扣額（`POST_PURCHASE_CREDIT_WINDOW_MS`）、已出貨實體來源不可升級；目標付款成功即設 `supersededAt` 並撤銷來源交付；決策：supersede 後來源退款仍撤銷目標（資金已退回），目標已收款時寫入 `post_purchase.manual_review_required` 事件交商家人工處理，不自動退款。
 - `20261018090000_post_purchase_recovery_guard`：forward-only；resume 亦檢查 24 小時窗口與已出貨來源，失效即拒絕並釋放抵扣額；supersede 不移動已出貨來源（旗標 `superseded_source_already_shipped`）並在來源寫入 `post_purchase.superseded`；superseded 目標退款時兩張訂單皆旗標 `superseded_target_refunded`；新函式時間一律 UTC。
+
+## 2026-10-18 learner notification review fixes
+
+- `20261018100000_learner_notification_throughput_guards`：forward-only，無資料刪改。`LearnerNotificationSourceEvent` 新增 `failureCount`（預設 0）、`nextAttemptAt`、`lastErrorCode`、`deadLetteredAt`，CHECK `LearnerSourceEvent_failure_check`（0–5 次、錯誤碼格式、dead-letter 必為第 5 次且無下次時間）；失敗 source 以 failureCount CAS 指數退避，第 5 次 dead-letter，不再阻擋其他 source／tenant。`LearnerNotificationVerification` 新增可為 NULL 的 `destinationRateKeyHash`（tenant-scoped HMAC，CHECK 為 64 hex，既有 challenge 保持 NULL）與 `(vendorId, preferenceId, createdAt)`、`(vendorId, destinationRateKeyHash, createdAt)` 索引，支援每位學員 24 小時 5 次、每個 destination 3 次的驗證上限。`LearnerNotificationDelivery` 新增 `(vendorId, status, nextAttemptAt)` 索引供 vendor-fair 選取。RLS、grants 與 composite tenant FK 沿用原 migration。
+- 目前 147 models、107 forward migrations；既有 SQL／checksum 不變。已套用至 loopback `celebratedeal_wp17_ci`，並由 disposable PostgreSQL QA 完整 forward-apply 107 條。

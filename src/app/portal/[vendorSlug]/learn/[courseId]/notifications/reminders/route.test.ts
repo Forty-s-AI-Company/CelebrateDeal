@@ -47,3 +47,8 @@ it("revoked or foreign rights never issue a confirmation CSRF token", async () =
 it("unknown DB errors expose no private exception details", async () => {
   mocks.confirm.mockRejectedValue(new Error("private-synthetic-payload")); const response = await POST(request(), context); expect(response.status).toBe(503); expect(await response.text()).not.toContain("private-synthetic-payload");
 });
+it("malformed course ID is 404 before session or reminder work", async () => {
+  const malformed = { params: Promise.resolve({ vendorSlug: "academy", courseId: "課程" }) };
+  expect((await GET(request(), malformed)).status).toBe(404); expect((await POST(request(), malformed)).status).toBe(404);
+  expect(mocks.session).not.toHaveBeenCalled(); expect(mocks.list).not.toHaveBeenCalled(); expect(mocks.confirm).not.toHaveBeenCalled();
+});

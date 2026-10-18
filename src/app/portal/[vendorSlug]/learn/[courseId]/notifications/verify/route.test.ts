@@ -40,3 +40,7 @@ it("does not expose database errors", async () => {
  mocks.consume.mockRejectedValue(new Error("private-contact")); const response=await POST(request(),context);
  expect(response.status).toBe(503); expect(await response.json()).toEqual({ error: "verification_unavailable" });
 });
+it("malformed course ID is 404 before session or proof consumption", async () => {
+ const response = await POST(request(), { params: Promise.resolve({ vendorSlug: "teacher", courseId: "../course" }) });
+ expect(response.status).toBe(404); expect(mocks.session).not.toHaveBeenCalled(); expect(mocks.consume).not.toHaveBeenCalled();
+});

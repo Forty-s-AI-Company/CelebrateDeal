@@ -20,7 +20,10 @@ function notificationPath(value){
  if(value==="/portal/start.html")return value;
  const page=/^\/portal\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/(?:notifications|learn\/[A-Za-z0-9_-]{1,128}(?:\/certificate|\/community\/(?!data$)[A-Za-z0-9_-]{1,128})?))?$/u;
  const publicLive=/^\/live\/[A-Za-z0-9_-]{1,128}$/u;
- return page.test(value)||publicLive.test(value)?value:"/portal/start.html";
+ // Current producers store vendor-independent links resolved by the server:
+ // /portal/notify.link/<vendorId>/(notifications|learn/<course>[...]|live/<live>).
+ const resolver=/^\/portal\/notify\.link\/[A-Za-z0-9_-]{1,128}\/(?:notifications|live\/[A-Za-z0-9_-]{1,128}|learn\/[A-Za-z0-9_-]{1,128}(?:\/certificate|\/community\/(?!data$)[A-Za-z0-9_-]{1,128})?)$/u;
+ return page.test(value)||publicLive.test(value)||resolver.test(value)?value:"/portal/start.html";
 }
 self.addEventListener("push",event=>{
  let payload;

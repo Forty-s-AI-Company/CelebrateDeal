@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { learnerNotificationLink, safeLearnerNotificationLink } from "./learner-notification-links";
 import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -104,12 +105,13 @@ export async function mutateCourseCommunity(db: Database, scope: StudentPortalSc
     // Source and reply commit together; self replies are quiet and retries reuse
     // the accepted reply identity without copying private discussion text.
     if (parent && parent.customerKeyHash !== scope.customerKeyHash) {
-      const vendor = await tx.vendor.findUniqueOrThrow({ where: { id: scope.vendorId }, select: { slug: true } });
+      // A deterministic notification failure is skipped and reported; it never
+      // rolls back the accepted reply.
       await recordLearnerNotificationSourceEvent(tx, {
         vendorId: scope.vendorId, productId: courseId, event: "discussion_reply",
         eventIdentity: reply.id, audienceCustomerKeyHash: parent.customerKeyHash, occurredAt: reply.createdAt,
         message: { title: "課程討論有新回覆", body: "你的討論收到新回覆，登入課程查看。",
-          path: `/portal/${encodeURIComponent(vendor.slug)}/learn/${encodeURIComponent(courseId)}/community/${encodeURIComponent(parent.id)}`,
+          path: safeLearnerNotificationLink(() => learnerNotificationLink.community(scope.vendorId, courseId, parent.id)),
           discussionReply: { postId: parent.id, replyId: reply.id, customerKeyHash: parent.customerKeyHash } },
       });
     }

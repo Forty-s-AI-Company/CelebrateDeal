@@ -80,6 +80,10 @@ export function LearnerNotificationSettings({ vendorSlug, courseId, locale }: {
             response = await send();
         }
         if (!response.ok) {
+            // Specific refusal codes from the enrollment endpoint get their own copy.
+            const refusal = z.object({ status: z.enum(["daily_limit_reached", "destination_unsupported"]) }).safeParse(await response.clone().json().catch(() => null));
+            if (refusal.success)
+                throw new Error(`通知：${refusal.data.status === "daily_limit_reached" ? t("今天索取驗證碼的次數已達上限，請 24 小時後再試。") : t("簡訊與 WhatsApp 目前只支援台灣（+886）手機號碼。")}`);
             const notices: Record<number, string> = { 400: t("請確認聯絡方式或驗證碼格式。"), 404: t("目前沒有這門課程的權益。"), 409: t("設定已變更或驗證碼失效，請重新載入後再試。"), 429: t("請等一分鐘再索取驗證碼。"), 503: t("此通知渠道目前無法使用，請稍後再試。") };
             throw new Error(`通知：${notices[response.status] ?? t("目前無法儲存設定，請稍後再試。")}`);
         }

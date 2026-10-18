@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
+import { learnerNotificationLink, safeLearnerNotificationLink } from "./learner-notification-links";
+import { boundLearnerNotificationText, recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { z } from "zod";
 
 export const curriculumInput = z.object({
@@ -47,8 +48,9 @@ export async function saveCourseLesson(db: PrismaClient, vendorId: string, raw: 
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
+/** Vendor-independent link; a deterministic notification failure is skipped
+ * and reported instead of rolling back the lesson publication. */
 async function recordPublished(tx:Prisma.TransactionClient,vendorId:string,productId:string,lessonId:string,title:string,occurredAt:Date){
- const vendor=await tx.vendor.findUniqueOrThrow({where:{id:vendorId},select:{slug:true}});
  await recordLearnerNotificationSourceEvent(tx,{vendorId,productId,event:"lesson_published",eventIdentity:createHash("sha256").update(JSON.stringify([lessonId,occurredAt.toISOString()])).digest("hex"),audienceCustomerKeyHash:null,occurredAt,
-  message:{title:"課程新增單元",body:title,path:`/portal/${encodeURIComponent(vendor.slug)}/learn/${encodeURIComponent(productId)}`}});
+  message:{title:"課程新增單元",body:boundLearnerNotificationText(title,2000,"課程新增單元"),path:safeLearnerNotificationLink(()=>learnerNotificationLink.course(vendorId,productId))}});
 }

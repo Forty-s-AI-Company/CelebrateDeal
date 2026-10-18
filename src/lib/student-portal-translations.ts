@@ -38,6 +38,8 @@ export const PORTAL_ENGLISH_COPY:Readonly<Record<string,string>>=Object.freeze({
   "目前沒有這門課程的權益。": "You do not currently have access to this course.",
   "設定已變更或驗證碼失效，請重新載入後再試。": "Settings changed or the verification code expired. Reload and try again.",
   "請等一分鐘再索取驗證碼。": "Wait one minute before requesting another verification code.",
+  "今天索取驗證碼的次數已達上限，請 24 小時後再試。": "You have reached today's verification code limit. Try again in 24 hours.",
+  "簡訊與 WhatsApp 目前只支援台灣（+886）手機號碼。": "SMS and WhatsApp currently support Taiwan (+886) mobile numbers only.",
   "此通知渠道目前無法使用，請稍後再試。": "This notification channel is unavailable. Try again later.",
   "目前無法儲存設定，請稍後再試。": "Unable to save settings. Try again later.",
   "此瀏覽器不支援裝置推播。": "This browser does not support device push.",

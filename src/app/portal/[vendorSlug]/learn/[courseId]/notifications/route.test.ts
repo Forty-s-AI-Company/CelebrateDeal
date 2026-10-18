@@ -44,3 +44,9 @@ afterEach(()=>vi.unstubAllEnvs());
 it("GET exposes only public consent state, CSRF and channel capability metadata",async()=>{
  const response=await GET(request(),context);expect(response.status).toBe(200);expect(await response.json()).toEqual({preferences:[],csrfToken:"synthetic-csrf",capabilities:{availableChannels:[],pushPublicKey:null}});expect(response.headers.get("cache-control")).toBe("private, no-store");
 });
+it.each(["../foreign", "課程", "a".repeat(129), "course 1"])("malformed course ID %s is 404 before session or parsing", async courseId => {
+ const malformed = { params: Promise.resolve({ vendorSlug: "teacher", courseId }) };
+ const read = await GET(request(), malformed); expect(read.status).toBe(404); expect(await read.json()).toEqual({ error: "not_found" });
+ expect((await POST(request(), malformed)).status).toBe(404);
+ expect(mocks.session).not.toHaveBeenCalled(); expect(mocks.list).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
+});

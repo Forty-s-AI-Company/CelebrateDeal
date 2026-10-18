@@ -31,9 +31,10 @@ export async function hasLearnerNotificationPurchase(db: Pick<Prisma.Transaction
   }, select: { id: true } });
 }
 
-/** Payment notifications retain their original order identity. Lock that order
- * through submission so a refund cannot commit between authorization and HTTP. */
-export async function lockLearnerPaymentNotificationOrder(
+/** Payment notifications retain their original order identity. This is a plain
+ * read inside the short pre-send transaction: no CommerceOrder row lock is held
+ * across the provider call, so payment/refund webhooks never wait on a send. */
+export async function learnerPaymentNotificationOrderIsCurrent(
   db: Pick<Prisma.TransactionClient, "$queryRaw">,
   scope: StudentPortalScope & { productId: string },
   orderId: string | undefined,
@@ -47,14 +48,14 @@ export async function lockLearnerPaymentNotificationOrder(
       AND o."status"='paid' AND o."refundedAmountCents"=0
       AND o."paidAmountCents"=o."totalAmountCents"
       AND EXISTS (SELECT 1 FROM "CommerceOrderItem" i WHERE i."orderId"=o."id"
-        AND i."vendorId"=o."vendorId" AND i."productId"=${identity.productId})
-    FOR UPDATE OF o`);
+        AND i."vendorId"=o."vendorId" AND i."productId"=${identity.productId})`);
   return rows.length === 1;
 }
 
-/** Lock only actual purchase rows; separate INNER JOIN branches avoid nullable
- * entitlement locks and serialize refund/revocation with the bounded send. */
-export async function lockLearnerNotificationPurchase(db: Pick<Prisma.TransactionClient, "$queryRaw">,
+/** Current purchase rights, read without row locks: separate branches keep the
+ * entitlement and the non-entitlement purchase contracts exact. Locks on
+ * CommerceOrder/CommerceEntitlement are never held across external HTTP. */
+export async function learnerNotificationPurchaseIsCurrent(db: Pick<Prisma.TransactionClient, "$queryRaw">,
   scope: StudentPortalScope & { productId: string }) {
   const identity = LearnerNotificationScope.parse({ vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash, productId: scope.productId });
   const grant = await db.$queryRaw<Array<{ id: string }>>`SELECT e."id" FROM "CommerceOrderItem" i
@@ -63,13 +64,13 @@ export async function lockLearnerNotificationPurchase(db: Pick<Prisma.Transactio
     WHERE i."vendorId"=${identity.vendorId} AND i."productId"=${identity.productId}
       AND i."fulfillmentType" IN ('course','digital') AND o."automationCustomerKeyHash"=${identity.customerKeyHash}
       AND o."status" IN ('paid','partially_refunded') AND e."status"='granted' AND e."revokedAt" IS NULL
-      AND (e."expiresAt" IS NULL OR e."expiresAt">clock_timestamp()) ORDER BY e."id" LIMIT 1 FOR UPDATE OF o,e`;
+      AND (e."expiresAt" IS NULL OR e."expiresAt">clock_timestamp()) ORDER BY e."id" LIMIT 1`;
   if (grant.length) return true;
   const purchase = await db.$queryRaw<Array<{ id: string }>>`SELECT o."id" FROM "CommerceOrder" o
     WHERE o."vendorId"=${identity.vendorId} AND o."automationCustomerKeyHash"=${identity.customerKeyHash}
       AND o."status"='paid' AND o."refundedAmountCents"=0 AND o."paidAmountCents"=o."totalAmountCents"
       AND EXISTS (SELECT 1 FROM "CommerceOrderItem" i WHERE i."vendorId"=o."vendorId" AND i."orderId"=o."id"
         AND i."productId"=${identity.productId} AND i."fulfillmentType" IN ('physical','service'))
-    ORDER BY o."id" LIMIT 1 FOR UPDATE OF o`;
+    ORDER BY o."id" LIMIT 1`;
   return purchase.length === 1;
 }

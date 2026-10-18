@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ email: vi.fn(), push: vi.fn(), fetch: vi.fn(), rights: vi.fn() }));
 vi.mock("./email", async original => ({ ...await original<typeof import("./email")>(), sendTransactionalEmail: mocks.email }));
-vi.mock("./learner-notification-access", () => ({ lockLearnerNotificationPurchase: mocks.rights }));
+vi.mock("./learner-notification-access", () => ({ learnerNotificationPurchaseIsCurrent: mocks.rights }));
 vi.mock("web-push", () => ({ default: { generateRequestDetails: mocks.push } }));
 import { LearnerPushDestination, sendLearnerNotificationProvider, type NotificationProviderConfiguration } from "./learner-notification-providers";
 import { TransactionalEmailError } from "./email";
@@ -104,9 +104,10 @@ it.each([false, true])("push hard deadline aborts an unfinished response, active
   return new Response(stream, { status: 201 });
  });
  const pending = sendLearnerNotificationProvider({ ...base, channel: "push", destination: subscription }, config);
- await vi.advanceTimersByTimeAsync(10000);
+ await vi.advanceTimersByTimeAsync(4000);
  expect(await pending).toEqual({ outcome: "indeterminate", code: "OUTCOME_UNKNOWN" });
- expect(deadline).toHaveBeenCalledWith(10000); expect(abortObserved).toBe(true); expect(mocks.fetch).toHaveBeenCalledTimes(1);
+ // Provider deadlines stay at or below 4 seconds (short pre/post-send DB budget).
+ expect(deadline).toHaveBeenCalledWith(4000); expect(abortObserved).toBe(true); expect(mocks.fetch).toHaveBeenCalledTimes(1);
 });
 
 it("WhatsApp variables normalize whitespace, bound long text and preserve the full link", async () => {
@@ -132,6 +133,17 @@ it("WhatsApp contact proof retains its complete verification code and token-free
  expect(text.split("https://")[1]).not.toContain(token);
 });
 
+it.each(["sms","whatsapp"] as const)("%s uses a 4 second provider deadline", async channel => {
+ const deadline = vi.spyOn(AbortSignal, "timeout");
+ mocks.fetch.mockResolvedValue(new Response(JSON.stringify(channel === "sms" ? { sid: `SM${"0".repeat(32)}` } : { messages:[{ id:"wamid.synthetic" }] }),{ status: 200 }));
+ await sendLearnerNotificationProvider({ ...base, channel },config);
+ expect(deadline).toHaveBeenCalledWith(4000);
+});
+it("email passes a 4 second provider deadline", async () => {
+ mocks.email.mockResolvedValue({id:"synthetic-email-receipt"});
+ await sendLearnerNotificationProvider({...base,channel:"email",destination:{email:"synthetic@invalid.example"}},config);
+ expect(mocks.email).toHaveBeenCalledWith(expect.objectContaining({timeoutMs:4000}));
+});
 it("the real verification dispatcher sends one valid WhatsApp variable and clears its durable proof", async () => {
  vi.stubEnv("CSRF_SECRET","synthetic-notification-provider-proof-key-32-bytes");
  const scope={vendorId:"vendor-proof",productId:"course-proof",customerKeyHash:"a".repeat(43)};
@@ -140,21 +152,32 @@ it("the real verification dispatcher sends one valid WhatsApp variable and clear
   deliveryTokenEncryptedEnvelope:encryptSensitiveValue(token,`learner-contact-proof-v1:${JSON.stringify([scope.vendorId,id])}`),
   tokenHash:createHash("sha256").update(token).digest("hex"),
   destinationEncryptedEnvelope:protectLearnerNotificationDestination(scope,"whatsapp",base.destination).encryptedEnvelope};
- const update=vi.fn().mockResolvedValue({}),fallback=vi.fn();
- const tx={$queryRaw:vi.fn().mockResolvedValue([{id}]),
-  learnerNotificationVerification:{findFirstOrThrow:vi.fn().mockResolvedValue(row),update},
+ const rotate=vi.fn().mockResolvedValue({count:1}),record=vi.fn().mockResolvedValue({count:1});
+ let inTransaction=false,sentInsideTransaction=false;
+ const tx={$executeRawUnsafe:vi.fn().mockResolvedValue(0),$queryRaw:vi.fn().mockResolvedValue([{id}]),
+  learnerNotificationVerification:{findFirstOrThrow:vi.fn().mockResolvedValue(row),updateMany:rotate},
   learnerNotificationPreference:{findFirstOrThrow:vi.fn().mockResolvedValue({...scope,revision:0,channel:"whatsapp"})},
   vendor:{findUniqueOrThrow:vi.fn().mockResolvedValue({slug:"synthetic"})}};
  mocks.rights.mockResolvedValue({});
- mocks.fetch.mockResolvedValue(new Response(JSON.stringify({messages:[{id:"wamid.synthetic"}]}),{status:200}));
- const db={$transaction:vi.fn(async (callback:(value:typeof tx)=>Promise<unknown>)=>callback(tx)),learnerNotificationVerification:{updateMany:fallback}};
+ mocks.fetch.mockImplementation(async()=>{sentInsideTransaction=inTransaction;return new Response(JSON.stringify({messages:[{id:"wamid.synthetic"}]}),{status:200});});
+ const db={$transaction:vi.fn(async (callback:(value:typeof tx)=>Promise<unknown>,options:unknown)=>{expect(options).toMatchObject({isolationLevel:"ReadCommitted",timeout:10000});inTransaction=true;try{return await callback(tx);}finally{inTransaction=false;}}),learnerNotificationVerification:{updateMany:record}};
  expect(await dispatchLearnerVerificationDelivery(db as unknown as Parameters<typeof dispatchLearnerVerificationDelivery>[0],
   {vendorId:scope.vendorId,id,claimToken},{appOrigin:base.appOrigin,configuration:config})).toEqual({status:"sent"});
  expect(mocks.fetch).toHaveBeenCalledTimes(1);
  const text=JSON.parse(mocks.fetch.mock.calls[0]![1].body).template.components[0].parameters[0].text as string;
  expect(text).toContain(token);expect(text).not.toMatch(/[\r\n\t]| {5}/u);expect(text.length).toBeLessThanOrEqual(1024);
- expect(text.endsWith(" https://app.example.test/portal/synthetic/notifications")).toBe(true);
+ // Vendor-independent link: never the (possibly CJK) vendor slug.
+ expect(text.endsWith(" https://app.example.test/portal/notify.link/vendor-proof/notifications")).toBe(true);
+ expect(tx.vendor.findUniqueOrThrow).not.toHaveBeenCalled();
  expect(text.split("https://")[1]).not.toContain(token);
- expect(update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({deliveryStatus:"sent",deliveryTokenEncryptedEnvelope:null,deliveryClaimTokenHash:null})}));
- expect(fallback).not.toHaveBeenCalled();
+ // The provider runs after the short transaction committed; no row lock spans HTTP.
+ expect(sentInsideTransaction).toBe(false);expect(db.$transaction).toHaveBeenCalledTimes(1);
+ expect(tx.$executeRawUnsafe).toHaveBeenCalledWith("SET LOCAL lock_timeout = '2s'");
+ expect(String(tx.$queryRaw.mock.calls[0]![0].join(""))).toMatch(/FOR UPDATE OF v$/u);
+ // The claim is rotated to a send token, and only that token records the outcome.
+ const claimHash=createHash("sha256").update(claimToken).digest("hex");
+ expect(rotate).toHaveBeenCalledWith({where:expect.objectContaining({deliveryClaimTokenHash:claimHash}),data:{deliveryClaimTokenHash:expect.stringMatching(/^[a-f0-9]{64}$/u)}});
+ const sendHash=rotate.mock.calls[0]![0].data.deliveryClaimTokenHash;expect(sendHash).not.toBe(claimHash);
+ expect(record).toHaveBeenCalledTimes(1);
+ expect(record).toHaveBeenCalledWith({where:{vendorId:scope.vendorId,id,deliveryStatus:"processing",deliveryClaimTokenHash:sendHash},data:expect.objectContaining({deliveryStatus:"sent",deliveryTokenEncryptedEnvelope:null,deliveryClaimTokenHash:null})});
 });

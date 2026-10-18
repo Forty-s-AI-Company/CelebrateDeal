@@ -3,7 +3,8 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { LearnerNotificationScope } from "./learner-notification-contract";
 import type { NotificationPreferenceDatabase } from "./learner-notification-preferences";
-import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
+import { learnerNotificationLink, safeLearnerNotificationLink } from "./learner-notification-links";
+import { boundLearnerNotificationText, recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import type { StudentPortalScope } from "./student-portal";
 
@@ -45,13 +46,13 @@ export async function confirmLearnerConsultationReminder(db: Database, session: 
     if (!booking) return { status: "not_found" } as const;
     const preference = await tx.learnerNotificationPreference.findFirst({ where: { ...scope, enabled: true, destinationVerifiedAt: { not: null }, destinationEncryptedEnvelope: { not: null }, destinationKeyHash: { not: null }, consentedAt: { lte: now } }, select: { id: true } });
     if (!preference) return { status: "verification_required" } as const;
-    const vendor = await tx.vendor.findUniqueOrThrow({ where: { id: scope.vendorId }, select: { slug: true } });
     const source = await recordLearnerNotificationSourceEvent(tx, {
       vendorId: scope.vendorId, productId, event: "consultation_reminder", eventIdentity: identity(booking.id, productId, booking.startTime), audienceCustomerKeyHash: scope.customerKeyHash,
       occurredAt: now, availableAt: new Date(Math.max(now.getTime(), booking.startTime.getTime() - 60 * 60 * 1000)),
-      message: { title: "預約即將開始", body: booking.event.title, path: `/portal/${encodeURIComponent(vendor.slug)}/notifications`,
+      message: { title: "預約即將開始", body: boundLearnerNotificationText(booking.event.title, 2000, "預約即將開始"), path: safeLearnerNotificationLink(() => learnerNotificationLink.notifications(scope.vendorId)),
         consultationBooking: { id: booking.id, startTime: booking.startTime.toISOString(), customerKeyHash: scope.customerKeyHash, confirmedAt: now.toISOString() } },
     });
+    if (!source) throw new Error("Consultation reminder source unavailable.");
     const persisted = await tx.learnerNotificationSourceEvent.findFirstOrThrow({ where: { vendorId: scope.vendorId, id: source.id }, select: { availableAt: true } });
     return { status: "scheduled", availableAt: persisted.availableAt.toISOString() } as const;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

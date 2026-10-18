@@ -7,6 +7,7 @@ import { LearnerConsultationReminderInput, confirmLearnerConsultationReminder, l
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
+const courseIdentifier = /^[A-Za-z0-9_-]{1,128}$/u;
 
 /** Session owns tenant/recipient; caller can name only its exact booking revision. */
 export async function GET(request: Request, { params }: Context) {
@@ -15,6 +16,7 @@ export async function GET(request: Request, { params }: Context) {
   const after = new URL(request.url).searchParams.get("after") ?? undefined;
   if (after && !/^[A-Za-z0-9_-]{1,128}$/u.test(after)) return NextResponse.json({ error: "invalid_cursor" }, { status: 400, headers });
   const { vendorSlug, courseId } = await params;
+  if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   const { session } = await requireStudentPortalSession(vendorSlug);
   try {
     const result = await listLearnerConsultationReminders(getDb(), session, courseId, after);
@@ -30,6 +32,7 @@ export async function POST(request: Request, { params }: Context) {
   const input = LearnerConsultationReminderInput.safeParse(await readJsonBody(request, 2048));
   if (!input.success) return NextResponse.json({ error: "invalid_booking" }, { status: 400, headers });
   const { vendorSlug, courseId } = await params;
+  if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   const { session } = await requireStudentPortalSession(vendorSlug);
   try {
     const result = await confirmLearnerConsultationReminder(getDb(), session, courseId, input.data);
