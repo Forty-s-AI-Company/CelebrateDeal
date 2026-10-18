@@ -1,0 +1,147 @@
+{
+  "source": {
+    "files": {
+      "src/lib/learner-notification-access.ts": "318bb26bb1ee6eb71aa45c217c7c4b3e27f8eca7628e9f57140d4a8eb3271576",
+      "src/lib/course-community.ts": "4f2b504d876e1a8e3502d3d3d6fffc3c54f6fa79cbcc3c3abe115f66c01339c1",
+      "prisma/migrations/20261006070000_course_community/migration.sql": "0f8fa8023cc7bf082a7d325e1e502b451266175af79d9e47cced16350906d482",
+      "src/lib/learner-consultation-reminders.ts": "3e101cbf22ecc28a1d9d9622b5ef02b1623e56e54903d7ba0a8b3d5918d1c55c",
+      "src/lib/learner-notification-job.ts": "c8a1b4524b17be390b3689e3a8fba2dacf1cc3826d24ea5be8f60a9b9f0f56e8",
+      "prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql": "d65b53304d8a3e04005de9cf1c39ff407ef4a6c07d4c4c97f46995dfb627d567",
+      "src/app/actions/consultation-actions.ts": "9e180cda49709058ae5719f04785170172d7c8282998cbeced2bdd7806b1e1fa",
+      "src/app/actions.ts": "abbee5f953c98e99581bbed05bfab7e0164a7c39a74dbc0dc4d41602062654d9",
+      "src/lib/learner-live-notifications.ts": "c1ec6dbc59b52af179466d19f45d05f2c00f231d0a5ae0e8a0a03fb61690a07c",
+      "src/lib/learner-payment-notifications.ts": "0641311bb4783d6ca73f98afa8e4738fbbbf6f9b29a6dffdac100c016e7090f8",
+      "src/lib/learner-notification-source-events.ts": "d32f1366813026bda373294e7559dd041fe72fa747cd08471828ec619c062a13",
+      "src/lib/course-curriculum.ts": "7f5abff9742ad45982e3770d52921acca623e15c8ee5ebbee45d641de8b1a4ac",
+      "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql": "6aaec73e4b1335966d44cd94c613f78d0da74af4421a3857549cd9ae2a730993",
+      "src/lib/learner-verification-delivery.ts": "3b385d72e540e68c08ef71fae159d0d094e68c4aa5b5154179919e7a4e5c62cc",
+      "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql": "a2b25be832ae9981b832dfa44e59217a2aab8b72c194a53c00a6b451745150e4",
+      "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+      "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+      "prisma/schema.prisma": "3dc482b8d1cbdac131d397779aaf5964e20579360312bc8706e222eb65f6a6e1",
+      "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+      "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+      "src/lib/learner-notification-preferences.ts": "ebdc277d637b21efe3ff153a9d53da59294f27397319fbf55e561e6e5729235a",
+      "src/lib/learner-notification-outbox.ts": "53c179756519cc30561b295146bd5ccda20fed767eebb88d34db135c84bc7b27",
+      "src/lib/learner-notification-dispatch.ts": "34dd9a4323f0e2825a8f8fdc4775f443d9874cb74bd0e50036e74e74da9540a3",
+      "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
+      "src/lib/learner-notification-verification.ts": "954e697f6ba00cb5df3c8626df68b117ce6627c911cdfdcd1929ca2ffa1e82d4",
+      "src/lib/student-course-learning.ts": "3886e2281fe9baf36463a416f9526c59e7b10aea7f47091ebaaae00d29e85415",
+      "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+      "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+      "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+      "src/lib/commerce-orders.ts": "7405a79e074f8553bce9a1bb41acabd487fabb00f8443221691be7fe74481aa2",
+      "scripts/learner-notification-disposable-qa.mjs": "12273aeb492c454ba66da0650967a546617b44fdf21a14d9d5f21fa37fc2aed6"
+    },
+    "revision": "sha256:512bda3cf8dee26b529ebc2ff9dd8a95aaccb71e8f024df9ffc8814156633632"
+  },
+  "status": "FAIL",
+  "migrationCount": 90,
+  "tests": [
+    {
+      "name": "cross-tenant product FK refuses preference",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant delivery/preference FK refuses dispatch",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent consent CAS admits one writer",
+      "status": "PASS"
+    },
+    {
+      "name": "event uniqueness survives a consent revision change",
+      "status": "PASS"
+    },
+    {
+      "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+      "status": "PASS"
+    },
+    {
+      "name": "refunded recipient can unsubscribe using authenticated scope",
+      "status": "PASS"
+    },
+    {
+      "name": "service rejects stale consent revision",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign recipient cannot unsubscribe another tenant",
+      "status": "PASS"
+    },
+    {
+      "name": "recipient without current purchase cannot opt in",
+      "status": "PASS"
+    },
+    {
+      "name": "verification rejects exhausted attempts and expired enrollment",
+      "status": "PASS"
+    },
+    {
+      "name": "non-course proof verifies without granting consent and exact purchase payment source is durable",
+      "status": "PASS"
+    },
+    {
+      "name": "non-course refund revokes opt-in and queued delivery while keeping withdrawal",
+      "status": "PASS"
+    },
+    {
+      "name": "non-course paid grant discovers settings and enforces tenant and buyer scope",
+      "status": "PASS"
+    },
+    {
+      "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+      "status": "PASS"
+    },
+    {
+      "name": "expired contact proof cannot mark destination verified",
+      "status": "PASS"
+    },
+    {
+      "name": "rotated contact proof consumes once without granting notification consent",
+      "status": "PASS"
+    },
+    {
+      "name": "native push subscription proves device separately from channel consent",
+      "status": "PASS"
+    },
+    {
+      "name": "durable proof is encrypted and repeat requests respect cooldown",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant and concurrent proof claims admit exactly one owner",
+      "status": "FAIL",
+      "code": "UNKNOWN",
+      "constraint": null,
+      "errorClass": "AssertionError",
+      "fixtureStage": "enable_preference",
+      "location": "234",
+      "actual": 2,
+      "expected": 1
+    },
+    {
+      "name": "owned synthetic purchase fixture is created",
+      "status": "FAIL",
+      "code": "UNKNOWN",
+      "constraint": null,
+      "errorClass": "UNKNOWN",
+      "fixtureStage": "enable_preference",
+      "location": "42",
+      "actual": null,
+      "expected": null
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "loopbackOnly": true,
+    "syntheticOnly": true,
+    "externalOperations": false,
+    "providerCallbacks": "synthetic-only;not actual provider delivery",
+    "rawLogsSaved": false
+  }
+}

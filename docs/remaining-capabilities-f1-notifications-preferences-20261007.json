@@ -1,0 +1,78 @@
+{
+  "status": "IMPLEMENTED_PREFERENCES_PENDING_COMPLETE_CHANNEL_FLOW",
+  "sourceFiles": {
+    "src/lib/learner-notification-preferences.ts": "e498bc8c3864347acc380ed815d37a7f604c508e887a9c341d3f5ba615d2c7b3",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/route.ts": "c7721d4acaa64148b9299b9efd0cb89c361ad87b27e49944f52260c5ab8aa7ff",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/route.test.ts": "998e89baf1af0c78936468bc353026eac5b2324fca7b3f929a1226c36e2a8037",
+    "scripts/learner-notification-disposable-qa.mjs": "e4dacf94fd614e8889b9b5b484477ce3ceac99ff0a60e5b05acbda9b3804a232"
+  },
+  "database": {
+    "status": "PASS",
+    "migrationCount": 86,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "refunded recipient can unsubscribe using authenticated scope",
+        "status": "PASS"
+      },
+      {
+        "name": "service rejects stale consent revision",
+        "status": "PASS"
+      },
+      {
+        "name": "foreign recipient cannot unsubscribe another tenant",
+        "status": "PASS"
+      },
+      {
+        "name": "recipient without current purchase cannot opt in",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "externalOperations": false,
+      "rawLogsSaved": false
+    }
+  },
+  "unitPassed": 12,
+  "inventoryAndRegistryPassed": 2,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "canonicalReady": false,
+  "remaining": [
+    "contact verification",
+    "provider adapters and durable dispatch",
+    "event producers",
+    "UI and full browser journeys",
+    "independent review",
+    "canonical acceptance and exact-head CI and protected delivery"
+  ]
+}

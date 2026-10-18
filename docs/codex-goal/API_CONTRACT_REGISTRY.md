@@ -160,6 +160,39 @@
 | `GET /api/live-interactions` | 有效 viewer session，綁定 vendor／live | bounded vendorId／liveId query；僅回該場互動與 spotlight | 唯讀、private no-store；不回傳參與者名單 | 400／401 或互動快照；同路徑 unit |
 | `POST /api/live-interactions` | same-origin、client marker、rate limit、有效 viewer session | Zod action union：open／respond／ask_question；已發布且綁定該場的腳本與商品；購買抽獎另驗證簽署的已驗證報名身分及同場已付款訂單 | Serializable transaction 重新檢查互動版本與有效期間；重複回應及領券競爭回 409；成功領券設定 HttpOnly cookie；問題受頻率限制 | 400／401／403／404／409／429；同路徑 unit 與隔離 PostgreSQL 測試；完整瀏覽器付款流程待驗證 |
 
+| `GET /portal/[vendorSlug]/learn/[courseId]/notifications` | 同源 client marker、學員 session | server tenant/customer；既有偏好可在退款後讀取，以便撤回；沒有既有偏好時須目前購買權益 | 只回自己的公開同意狀態、CSRF 與 public channel/VAPID capabilities，private no-store；無自己的偏好/權益 404 | 同路徑 unit；browser 待驗證 |
+| `POST /portal/[vendorSlug]/learn/[courseId]/notifications` | 同源 client marker、CSRF、學員 session | 嚴格 JSON，禁止 caller tenant/contact；同意版本 CAS | Serializable 重驗權益；未驗證不能 opt-in，退款後可 opt-out；409/404/503 | 同路徑 unit、disposable PostgreSQL；browser 待驗證 |
+
+2026-10-07 通知 worker 補記：既有 `GET /api/jobs/email-deliveries`／`POST /api/jobs/email-deliveries` 沿用 Cron／Job Bearer 驗證。新增通知 draining 只在明確 executor flag 與最多25個核准 tenant ID 的 process config 存在時啟用；每次最多5個due ID、有限時間預算。回應只新增有界status/count，不公開recipient、claim token、contact、payload或provider body。未新增第二個cron／workflow。此批全流程provider/browser/獨立review仍待驗收。
+
+| `POST /portal/[vendorSlug]/learn/[courseId]/notifications/verify` | 同源 client marker、CSRF、學員 session | 嚴格 4KiB JSON proof；session／有效課程或數位商品 grant scope，禁止 caller tenant | 目前權益、TTL、五次嘗試與 atomic consume；成功保持 opt-in 關閉；只回公開欄位，private no-store；400/404/409/503 | 同路徑 8 unit、verification DB 回歸；browser 待驗證 |
+
+| `POST /portal/[vendorSlug]/learn/[courseId]/notifications/enroll` | 同源 client marker、CSRF、學員 session、server approved executor/provider/tenant | strict 4KiB destination，購買權益與 CAS；60 秒 cooldown | 加密持久化 challenge，202 只回 challenge id/expiry/公開偏好，不回 token/contact；400/404/409/429/503 | 同路徑 unit、disposable PG；browser 待驗證 |
+
+### 學員通知審查修正 2026-10-18
+
+| Endpoint | 授權 | 輸入與範圍 | 行為與失敗 | 驗證 |
+|---|---|---|---|---|
+| `GET /portal/notify.link/[...target]` | 公開入口；目標頁仍強制學員 session、tenant 與購買權益 | 只接受 producer 產生的形狀：`<vendorId>/notifications`、`<vendorId>/learn/<courseId>`（可接 `/certificate` 或 `/community/<postId>`）、`<vendorId>/live/<liveId>`；每段 `[A-Za-z0-9_-]{1,128}`，`community/data` 拒絕 | 以 vendorId 查目前 slug，303 至 canonical origin 的 `/portal/<slug>/...`；live 只在同 vendor 且非 draft 時導向 `/live/<slug>`；未知、格式錯誤或 DB 失敗一律導向 `/portal/start.html`，private no-store、no-referrer，不回細節 | 同路徑 unit |
+
+- 通知 message path 不再嵌入 vendor slug（CJK slug 編碼後可能超過 512），改存上列 vendor-independent link；service worker 同時接受新舊格式。
+- `POST /portal/[vendorSlug]/learn/[courseId]/notifications/enroll` 新增拒絕碼：`daily_limit_reached`（429；每位學員＝vendor+customer 24 小時 5 次、每個 destination HMAC 24 小時 3 次）與 `destination_unsupported`（400；SMS/WhatsApp 預設只允許 `+886`，單一 allowlist 常數）。服務層不再回傳明文驗證碼或聯絡方式。
+- 四個 `/portal/[vendorSlug]/learn/[courseId]/notifications*` route 對格式錯誤的 courseId 在解析前回 404。
+- `GET /api/jobs/email-deliveries`／`POST /api/jobs/email-deliveries`：學員通知 draining 改為 sources 20／proofs 25／deliveries 50，每個 tenant 分開讀取並 round-robin（每 tenant 上限 10／10／25），各 phase 獨立錯誤邊界；失敗 source 指數退避、第 5 次 dead-letter；回應新增 `learnerNotificationBacklog`（只含三個非負計數）。
+- 發送改為三段：短 transaction（`lock_timeout` 2s、只鎖 delivery／challenge 列）重查資格並把 claim 輪換成 send token → transaction 外呼叫 provider（≤4s）→ 以 send token CAS 記錄結果。不確定送達仍為終態，不會重送。
+
+### 學員課程預約提醒候選 2026-10-07
+
+- `GET /portal/[vendorSlug]/learn/[courseId]/notifications/reminders`：same-origin/client-header、signed student session、目前課程或數位商品 grant 權益；只列目前 recipient 的 future/scheduled/published linked bookings，21/20 bounded cursor。公開欄位 id/startTime/title/confirmed、nextAfter、CSRF；private/no-store，無聯絡方式、hash、ciphertext或其他租戶資料。
+- `POST /portal/[vendorSlug]/learn/[courseId]/notifications/reminders`：same-origin/client-header/CSRF，strict bookingId/expectedStartTime；tenant/customer 來自 session。Serializable transaction 重查權益、booking revision與 verified opt-in，再 upsert 唯一 personal source，回傳 scheduled/availableAt；404 not_found、409 verification_required。匿名 calendar reservation 不建立提醒證據；取消、改期、unpublish、移除binding、退款或撤回同意，發送前重查並抑制舊提醒。
+- 候選實作及回歸仍需最新實際 browser、Critical review、canonical acceptance與 exact CI/protected delivery；NOT_READY。
+
+### 本次社群通知整合候選
+
+- `GET /portal/[vendorSlug]/learn/[courseId]/community/data`：signed student、same-origin/client marker；server scope、目前課程權益，bounded feed/thread pagination、qualified cursor；private/no-store、CSRF 公開狀態；同路徑測試。
+- `POST /portal/[vendorSlug]/learn/[courseId]/community/data`：same-origin/client marker/CSRF；strict post/reply/reaction、tenant/customer 由 session 決定；Serializable entitlement 與 request UUID 冪等。回覆與作者限定 encrypted source 同 transaction；衝突 409、撤權/foreign/hidden parent 404。寄送前再次鎖定可見 reply/parent 與目前權益；仍待整合候選 browser/review/acceptance。
+
+
 
 ### 2026-10-07 精確活動購買廣播
 

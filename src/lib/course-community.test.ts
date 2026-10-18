@@ -4,11 +4,14 @@ import type { PrismaClient } from "@prisma/client";
 import { CommunityConflict, CommunityMutation, getCourseCommunity, getCourseCommunityReplies, mutateCourseCommunity } from "./course-community";
 
 const access = vi.hoisted(() => vi.fn());
+const recordSource = vi.hoisted(() => vi.fn());
+vi.mock("./learner-notification-source-events", () => ({ recordLearnerNotificationSourceEvent: recordSource }));
 vi.mock("@/lib/student-course-learning", () => ({ authorizedCourseAccess: access }));
 const scope = { vendorId: "vendor_a", customerKeyHash: "synthetic-learner-hash" };
 const input = () => ({ operation: "post" as const, requestKey: randomUUID(), authorName: "學員", body: "學習心得" });
 function fixture() {
   const tx = {
+    vendor: { findUniqueOrThrow: vi.fn().mockResolvedValue({ slug: "synthetic-vendor" }) },
     courseCommunityPost: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]), upsert: vi.fn().mockImplementation(async ({ create }) => ({ ...create, hiddenAt: null })) },
     courseCommunityReply: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]), upsert: vi.fn().mockImplementation(async ({ create }) => ({ ...create, hiddenAt: null })) },
     courseCommunityReaction: { upsert: vi.fn(), deleteMany: vi.fn() },
@@ -16,7 +19,7 @@ function fixture() {
   const transaction = vi.fn(async (callback: (value: unknown) => unknown, options: unknown) => { expect(options).toEqual({ isolationLevel: "Serializable" }); return callback(tx); });
   return { tx, transaction, db: { $transaction: transaction } as unknown as Pick<PrismaClient, "$transaction"> };
 }
-beforeEach(() => access.mockReset().mockResolvedValue({ course: { id: "course_a", name: "合成課程" } }));
+beforeEach(() => { access.mockReset().mockResolvedValue({ course: { id: "course_a", name: "合成課程" } }); recordSource.mockReset().mockResolvedValue({id:"source"}); });
 
 describe("course-qualified community", () => {
   it("normalizes bounded plain text and rejects caller identities/invalid operations", () => {
@@ -49,7 +52,7 @@ describe("course-qualified community", () => {
   it("rejects foreign/hidden posts before inserting a reply or reaction", async () => {
     const { db, tx } = fixture(); tx.courseCommunityPost.findFirst.mockResolvedValue(null);
     expect(await mutateCourseCommunity(db, scope, "course_a", { ...input(), operation: "reply", postId: "foreign_post" })).toBeNull();
-    expect(tx.courseCommunityPost.findFirst).toHaveBeenCalledWith({ where: { vendorId: scope.vendorId, productId: "course_a", id: "foreign_post", hiddenAt: null }, select: { id: true } });
+    expect(tx.courseCommunityPost.findFirst).toHaveBeenCalledWith({ where: { vendorId: scope.vendorId, productId: "course_a", id: "foreign_post", hiddenAt: null }, select: { id: true, customerKeyHash: true } });
     expect(tx.courseCommunityReply.upsert).not.toHaveBeenCalled();
     expect(await mutateCourseCommunity(db, scope, "course_a", { operation: "reaction", postId: "foreign_post", liked: true })).toBeNull();
     expect(tx.courseCommunityReaction.upsert).not.toHaveBeenCalled();
@@ -79,4 +82,49 @@ describe("course-qualified community", () => {
     expect(query.select.replies.take).toBe(5);
     expect(query.select.replies.select).not.toHaveProperty("customerKeyHash");
   });
+});
+
+// These checks exercise the actual mutation, rather than a detached producer.
+describe("discussion reply notification transaction", () => {
+ it("records only the post author and the accepted reply identity on retries", async () => {
+  const {db,tx}=fixture();const recipient="r".repeat(43);
+  tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:recipient});
+  const createdAt=new Date("2026-10-07T00:00:00Z");
+  tx.courseCommunityReply.upsert.mockImplementation(async ({create})=>({...create,hiddenAt:null,createdAt}));
+  const content={...input(),operation:"reply",postId:"post"};
+  const first=await mutateCourseCommunity(db,scope,"course_a",content);
+  expect(await mutateCourseCommunity(db,scope,"course_a",content)).toEqual(first);
+  expect(recordSource).toHaveBeenCalledTimes(2);
+  const source=recordSource.mock.calls[0][1];
+  expect(source).toMatchObject({vendorId:scope.vendorId,productId:"course_a",event:"discussion_reply",eventIdentity:first!.id,audienceCustomerKeyHash:recipient,occurredAt:createdAt});
+  expect(source.message.discussionReply).toEqual({postId:"post",replyId:first!.id,customerKeyHash:recipient});
+  // Vendor-independent link: a CJK vendor slug can never push the path past its bound.
+  expect(source.message.path).toBe("/portal/notify.link/vendor_a/learn/course_a/community/post");
+  expect(tx.vendor.findUniqueOrThrow).not.toHaveBeenCalled();
+  expect(source.message.body).not.toContain(content.body);
+  expect(recordSource.mock.calls[1][1]).toEqual(source);
+ });
+ it("never emits for a self reply",async()=>{
+  const {db,tx}=fixture();tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:scope.customerKeyHash});
+  await mutateCourseCommunity(db,scope,"course_a",{...input(),operation:"reply",postId:"post"});
+  expect(recordSource).not.toHaveBeenCalled();expect(tx.vendor.findUniqueOrThrow).not.toHaveBeenCalled();
+ });
+ it("a skipped (deterministically invalid) notification never rolls back the accepted reply",async()=>{
+  const {db,tx}=fixture();tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:"r".repeat(43)});
+  tx.vendor.findUniqueOrThrow.mockResolvedValue({slug:"課".repeat(80)});
+  recordSource.mockResolvedValue(null);
+  const accepted=await mutateCourseCommunity(db,scope,"course_a",{...input(),operation:"reply",postId:"post"});
+  expect(accepted).toEqual({id:expect.stringMatching(/^cm_[a-f0-9]{64}$/u)});
+ });
+ it("propagates source persistence failure to the enclosing transaction",async()=>{
+  const {db,tx}=fixture();tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:"r".repeat(43)});
+  recordSource.mockRejectedValue(new Error("synthetic source failure"));
+  await expect(mutateCourseCommunity(db,scope,"course_a",{...input(),operation:"reply",postId:"post"})).rejects.toThrow("synthetic source failure");
+ });
+ it("does not publish an incompatible retry's notification",async()=>{
+  const {db,tx}=fixture();tx.courseCommunityPost.findFirst.mockResolvedValue({id:"post",customerKeyHash:"r".repeat(43)});
+  tx.courseCommunityReply.upsert.mockResolvedValue({id:"reply",postId:"post",authorName:"other",body:"other",hiddenAt:null});
+  await expect(mutateCourseCommunity(db,scope,"course_a",{...input(),operation:"reply",postId:"post"})).rejects.toBeInstanceOf(CommunityConflict);
+  expect(recordSource).not.toHaveBeenCalled();
+ });
 });
