@@ -33,11 +33,10 @@ const SAFE_CONTEXT_KEYS = new Set([
   "provider",
   "checkedAt",
   "status",
-  // Provider result codes only (for example PAYUNi UPP02086 or TradeStatus 2).
+  // Signed provider result codes only (for example PAYUNi UPP02086 or TradeStatus 2).
   // Values still pass SAFE_CONTEXT_VALUE; never card data, tokens or messages.
   "callbackSource",
-  "reason",
-  "providerOuterStatus",
+  "providerOuterStatusMismatch",
   "providerStatus",
   "providerMessageCode",
   "providerTradeStatus",

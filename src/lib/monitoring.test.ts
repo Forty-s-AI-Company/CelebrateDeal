@@ -90,14 +90,15 @@ describe("captureOperationalError", () => {
     );
   });
 
-  it("keeps bounded provider result codes and drops free-text or card-like provider fields", () => {
+  it("keeps bounded signed provider codes and drops unsigned, free-text or card-like provider fields", () => {
     vi.stubEnv("SENTRY_DSN", "test-fixture-dsn");
 
     captureOperationalError(new Error("provider_rejected"), {
       source: "payment_method_setup_webhook",
       callbackSource: "return",
       reason: "provider_declined",
-      providerOuterStatus: "UPP02086",
+      providerOuterStatus: "attacker-controlled",
+      providerOuterStatusMismatch: true,
       providerStatus: "UPP02086",
       providerMessageCode: "商店未提供約定信用卡幕後交易",
       providerTradeStatus: "2",
@@ -115,8 +116,7 @@ describe("captureOperationalError", () => {
           code: "unavailable",
           source: "payment_method_setup_webhook",
           callbackSource: "return",
-          reason: "provider_declined",
-          providerOuterStatus: "UPP02086",
+          providerOuterStatusMismatch: true,
           providerStatus: "UPP02086",
           providerTradeStatus: "2",
           providerResCode: "05",

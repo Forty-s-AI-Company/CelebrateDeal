@@ -9,7 +9,7 @@ vi.mock("@/lib/db", () => ({
 
 import { chargePayUniLiveProbe, normalizePayUniLiveProbeCallback, payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import { payUniSetupNonce } from "@/lib/payuni-setup-correlation";
-import { PaymentMethodSetupProviderResultError } from "@/lib/payment-providers/types";
+import { PaymentMethodSetupMalformedPayloadError, PaymentMethodSetupProviderResultError } from "@/lib/payment-providers/types";
 
 const hashKey = "12345678901234567890123456789012";
 const hashIv = "1234567890123456";
@@ -190,26 +190,51 @@ describe("PAYUNi official UPP setup contract", () => {
     });
     await expect(payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(wrongAmount)).rejects.toThrow();
   });
-  it("classifies an authenticated UPP rejection as a provider decline with codes only", async () => {
+  function pendingIntent() {
+    return {
+      id: orderNumber, vendorId: "vendor-1", providerName: "payuni",
+      status: "pending", expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    };
+  }
+
+  async function normalizeError(body: string) {
+    return payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(body).catch((caught: unknown) => caught);
+  }
+
+  it("classifies a signed UPP rejection as a provider decline with codes only", async () => {
     environment();
-    dbMocks.findUnique.mockResolvedValue({ id: orderNumber, vendorId: "vendor-1", providerName: "payuni" });
+    dbMocks.findUnique.mockResolvedValue(pendingIntent());
     const body = signedCallback({
       MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02086", Message: "商店未提供約定信用卡幕後交易",
       CreditHash: "opaque-credit-hash", Card6No: "414763", Card4No: "0001", UsrMail: "buyer@example.test",
     }, "2.0", hashKey, hashIv, "UPP02086");
     expect(await payUniPaymentProvider.verifyPaymentMethodSetupSignature?.(new Request("https://app.test"), body)).toBe(true);
 
-    const error = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(body).catch((caught: unknown) => caught);
+    const error = await normalizeError(body);
 
     expect(error).toBeInstanceOf(PaymentMethodSetupProviderResultError);
     const result = error as PaymentMethodSetupProviderResultError;
     expect(result.outcome).toBe("declined");
-    expect(result.diagnostics).toEqual({ outerStatus: "UPP02086", status: "UPP02086" });
+    expect(result.diagnostics).toEqual({ status: "UPP02086" });
+    expect(result.resultKey).toMatch(/^[0-9a-f]{32}$/u);
     expect(result.scope).toEqual({ setupIntentId: orderNumber, vendorId: "vendor-1" });
     expect(JSON.stringify(result)).not.toMatch(/opaque-credit-hash|414763|0001|buyer@example|商店未提供/u);
     expect(dbMocks.findUnique).toHaveBeenCalledExactlyOnceWith({
-      where: { id: orderNumber }, select: { id: true, vendorId: true, providerName: true },
+      where: { id: orderNumber }, select: { id: true, vendorId: true, providerName: true, status: true, expiresAt: true },
     });
+  });
+
+  it.each([
+    ["consumed", { status: "verified" }],
+    ["expired", { expiresAt: new Date(Date.now() - 1000) }],
+    ["other provider", { providerName: "demo" }],
+  ])("does not attribute a decline to a %s intent", async (_label, override) => {
+    environment();
+    dbMocks.findUnique.mockResolvedValue({ ...pendingIntent(), ...override });
+    const body = signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02086" }, "2.0", hashKey, hashIv, "UPP02086");
+    const error = await normalizeError(body) as PaymentMethodSetupProviderResultError;
+    expect(error).toBeInstanceOf(PaymentMethodSetupProviderResultError);
+    expect(error.scope).toBeNull();
   });
 
   it("keeps bounded card result codes and a code-shaped message from a declined authorization", async () => {
@@ -220,16 +245,14 @@ describe("PAYUNi official UPP setup contract", () => {
       TradeStatus: "2", PaymentType: "1", TradeAmt: "1", ResCode: "05", ResCodeMsg: "拒絕交易",
     }, "2.0", hashKey, hashIv, "CREDIT05001");
 
-    const error = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(body).catch((caught: unknown) => caught) as PaymentMethodSetupProviderResultError;
+    const error = await normalizeError(body) as PaymentMethodSetupProviderResultError;
 
     expect(error).toBeInstanceOf(PaymentMethodSetupProviderResultError);
-    expect(error.diagnostics).toEqual({
-      outerStatus: "CREDIT05001", status: "CREDIT05001", messageCode: "CREDIT05001", tradeStatus: "2", resCode: "05",
-    });
+    expect(error.diagnostics).toEqual({ status: "CREDIT05001", messageCode: "CREDIT05001", tradeStatus: "2", resCode: "05" });
     expect(error.scope).toBeNull();
   });
 
-  it("classifies UNKNOWN and awaiting-confirmation results as pending", async () => {
+  it("classifies signed UNKNOWN and awaiting-confirmation results as pending", async () => {
     environment();
     dbMocks.findUnique.mockResolvedValue(null);
     const unknown = signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UNKNOWN" }, "2.0", hashKey, hashIv, "UNKNOWN");
@@ -238,20 +261,87 @@ describe("PAYUNi official UPP setup contract", () => {
       MerID: "TESTMER", MerTradeNo: orderNumber, Status: "SUCCESS", TradeStatus: "8", PaymentType: "1", TradeAmt: "1",
     });
     await expect(payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(awaiting)).rejects.toMatchObject({
-      outcome: "pending", diagnostics: { outerStatus: "SUCCESS", status: "SUCCESS", tradeStatus: "8" },
+      outcome: "pending", diagnostics: { status: "SUCCESS", tradeStatus: "8" },
     });
   });
 
-  it("does not attribute a decline to a non-setup order number or leak unbounded status text", async () => {
+  it("classifies only from signed fields when the payer edits the unsigned outer Status", async () => {
+    environment();
+    dbMocks.findUnique.mockResolvedValue(null);
+    const signedDecline = { MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02086" };
+    const original = await normalizeError(signedCallback(signedDecline, "2.0", hashKey, hashIv, "UPP02086")) as PaymentMethodSetupProviderResultError;
+    const edited = await normalizeError(signedCallback(signedDecline, "2.0", hashKey, hashIv, "UNKNOWN")) as PaymentMethodSetupProviderResultError;
+    const editedToSuccess = await normalizeError(signedCallback(signedDecline, "2.0", hashKey, hashIv, "SUCCESS")) as PaymentMethodSetupProviderResultError;
+
+    for (const result of [edited, editedToSuccess]) {
+      expect(result).toBeInstanceOf(PaymentMethodSetupProviderResultError);
+      expect(result.outcome).toBe("declined");
+      expect(result.diagnostics).toEqual({ status: "UPP02086", outerStatusMismatch: true });
+      expect(result.resultKey).toBe(original.resultKey);
+      expect(JSON.stringify(result)).not.toContain("UNKNOWN");
+    }
+
+    // A signed hard-invalid result cannot be relabelled as declined or pending.
+    for (const outer of ["UPP02086", "UNKNOWN"]) {
+      const hardInvalid = signedCallback({
+        MerID: "TESTMER", MerTradeNo: orderNumber, TradeNo: "TRADE-1",
+        Status: "SUCCESS", TradeStatus: "1", PaymentType: "1", TradeAmt: "2", CreditHash: "opaque-credit-hash",
+      }, "2.0", hashKey, hashIv, outer);
+      const error = await normalizeError(hardInvalid);
+      expect(error).toBeInstanceOf(PaymentMethodSetupMalformedPayloadError);
+    }
+    // Signed SUCCESS with an edited outer Status stays malformed, not a decline.
+    const successEdited = signedCallback({
+      MerID: "TESTMER", MerTradeNo: orderNumber, TradeNo: "TRADE-1",
+      Status: "SUCCESS", TradeStatus: "1", PaymentType: "1", TradeAmt: "1", CreditHash: "opaque-credit-hash",
+    }, "2.0", hashKey, hashIv, "UPP02086");
+    expect(await normalizeError(successEdited)).toBeInstanceOf(PaymentMethodSetupMalformedPayloadError);
+  });
+
+  it("treats signed SUCCESS with TradeStatus 0 as malformed rather than declined", async () => {
+    environment();
+    const issued = signedCallback({
+      MerID: "TESTMER", MerTradeNo: orderNumber, TradeNo: "TRADE-1",
+      Status: "SUCCESS", TradeStatus: "0", PaymentType: "2", TradeAmt: "1",
+    });
+    expect(await normalizeError(issued)).toBeInstanceOf(PaymentMethodSetupMalformedPayloadError);
+  });
+
+  it("separates replay keys by signed order and status", async () => {
+    environment();
+    dbMocks.findUnique.mockResolvedValue(null);
+    const first = await normalizeError(signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02086" }, "2.0", hashKey, hashIv, "UPP02086")) as PaymentMethodSetupProviderResultError;
+    const otherOrder = await normalizeError(signedCallback({ MerID: "TESTMER", MerTradeNo: "pmZYXWVUTSRQPONMLKJIHGFE", Status: "UPP02086" }, "2.0", hashKey, hashIv, "UPP02086")) as PaymentMethodSetupProviderResultError;
+    const otherStatus = await normalizeError(signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP02087" }, "2.0", hashKey, hashIv, "UPP02087")) as PaymentMethodSetupProviderResultError;
+    expect(new Set([first.resultKey, otherOrder.resultKey, otherStatus.resultKey]).size).toBe(3);
+
+    const malformedPayload = { MerID: "TESTMER", MerTradeNo: orderNumber, Status: "SUCCESS", TradeStatus: "1" };
+    const malformedA = await normalizeError(signedCallback(malformedPayload, "2.0", hashKey, hashIv, "SUCCESS")) as PaymentMethodSetupMalformedPayloadError;
+    const malformedB = await normalizeError(signedCallback(malformedPayload, "2.0", hashKey, hashIv, "EDITED")) as PaymentMethodSetupMalformedPayloadError;
+    expect(malformedA).toBeInstanceOf(PaymentMethodSetupMalformedPayloadError);
+    expect(malformedA.resultKey).toMatch(/^[0-9a-f]{32}$/u);
+    expect(malformedB.resultKey).toBe(malformedA.resultKey);
+  });
+
+  it("does not attribute a decline to a non-setup order number or record card-like or unbounded codes", async () => {
     environment();
     const body = signedCallback({
       MerID: "TESTMER", MerTradeNo: "../../other-tenant", Status: "card 4147631000000001 declined",
     }, "2.0", hashKey, hashIv, "FAILED");
-    const error = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(body).catch((caught: unknown) => caught) as PaymentMethodSetupProviderResultError;
+    const error = await normalizeError(body) as PaymentMethodSetupProviderResultError;
     expect(error).toBeInstanceOf(PaymentMethodSetupProviderResultError);
-    expect(error.diagnostics).toEqual({ outerStatus: "FAILED", status: "unrecognized" });
+    expect(error.diagnostics).toEqual({ status: "unrecognized", outerStatusMismatch: true });
     expect(error.scope).toBeNull();
     expect(dbMocks.findUnique).not.toHaveBeenCalled();
+
+    const digitRun = signedCallback({
+      MerID: "TESTMER", MerTradeNo: orderNumber, Status: "UPP414763100000", Message: "AB4147631000000001",
+      TradeStatus: "2", ResCode: "05",
+    }, "2.0", hashKey, hashIv, "UPP414763100000");
+    dbMocks.findUnique.mockResolvedValue(null);
+    const digitError = await normalizeError(digitRun) as PaymentMethodSetupProviderResultError;
+    expect(digitError.diagnostics).toEqual({ status: "unrecognized", tradeStatus: "2", resCode: "05" });
+    expect(JSON.stringify(digitError)).not.toMatch(/414763100000|4147631000000001/u);
   });
 
   it("treats a result that breaks the setup contract as malformed, not a provider decline", async () => {
@@ -259,22 +349,16 @@ describe("PAYUNi official UPP setup contract", () => {
     const wrongMerchant = signedCallback({
       MerID: "OTHERMER", MerTradeNo: orderNumber, Status: "UPP02086",
     }, "2.0", hashKey, hashIv, "UPP02086");
-    const merchantError = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(wrongMerchant).catch((caught: unknown) => caught);
-    expect(merchantError).toBeInstanceOf(Error);
-    expect(merchantError).not.toBeInstanceOf(PaymentMethodSetupProviderResultError);
+    expect(await normalizeError(wrongMerchant)).toBeInstanceOf(PaymentMethodSetupMalformedPayloadError);
 
-    const noStatus = signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber }, "2.0", hashKey, hashIv, "");
-    const noStatusError = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(noStatus).catch((caught: unknown) => caught);
-    expect(noStatusError).toBeInstanceOf(Error);
-    expect(noStatusError).not.toBeInstanceOf(PaymentMethodSetupProviderResultError);
+    const noStatus = signedCallback({ MerID: "TESTMER", MerTradeNo: orderNumber }, "2.0", hashKey, hashIv, "UPP02086");
+    expect(await normalizeError(noStatus)).toBeInstanceOf(PaymentMethodSetupMalformedPayloadError);
 
     const wrongAmount = signedCallback({
       MerID: "TESTMER", MerTradeNo: orderNumber, TradeNo: "TRADE-1",
       Status: "SUCCESS", TradeStatus: "1", PaymentType: "1", TradeAmt: "2", CreditHash: "opaque-credit-hash",
     });
-    const amountError = await payUniPaymentProvider.normalizePaymentMethodSetupPayload?.(wrongAmount).catch((caught: unknown) => caught);
-    expect(amountError).toBeInstanceOf(Error);
-    expect(amountError).not.toBeInstanceOf(PaymentMethodSetupProviderResultError);
+    expect(await normalizeError(wrongAmount)).toBeInstanceOf(PaymentMethodSetupMalformedPayloadError);
   });
 
   it("keeps the documented UPP 2.0 card-binding parameters unchanged", async () => {
