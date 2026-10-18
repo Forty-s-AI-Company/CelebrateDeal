@@ -1,0 +1,22 @@
+{
+  "run": 37591948632,
+  "head": "16b5d5c568f124a269704c785bf51308cc42ed0f",
+  "logFetchExit": 0,
+  "failedFiles": [
+    "src/app/portal/[vendorSlug]/notifications/page.test.tsx"
+  ],
+  "locations": [
+    "src/app/portal/[vendorSlug]/notifications/page.test.tsx:14",
+    "src/app/portal/[vendorSlug]/notifications/page.test.tsx:19",
+    "src/app/portal/[vendorSlug]/notifications/page.test.tsx:21",
+    "src/app/portal/[vendorSlug]/notifications/page.test.tsx:22",
+    "src/app/portal/[vendorSlug]/notifications/page.test.tsx:27"
+  ],
+  "coverage": [],
+  "categories": {
+    "assertion": true,
+    "missingMockExport": false,
+    "timeout": false
+  },
+  "rawLogsOutput": false
+}

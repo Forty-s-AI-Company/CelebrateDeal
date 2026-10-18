@@ -1,0 +1,81 @@
+{
+  "goal_id": "remaining-capabilities-20261005",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "observed_at": "2026-10-08T03:59:30.369959+00:00",
+  "full_scope": [
+    "F1",
+    "F2",
+    "F3",
+    "Q1",
+    "Q2",
+    "A1",
+    "E1"
+  ],
+  "whole_goal_complete": false,
+  "scope_removed": [],
+  "scope_moved_to_future": [],
+  "owner": "root sole writer",
+  "prior_delivery_evidence_preserved": true,
+  "historical_references": [
+    "docs/branch-integration-publication-20261004.json",
+    "docs/branch-integration-delivery-state-20261004.json",
+    "docs/remaining-capabilities-work-matrix-20261005.md"
+  ],
+  "production_operations": "NOT_PERFORMED",
+  "schema": "remaining-capabilities-delivery-state/v1",
+  "status": "ACTIVE_NOT_COMPLETE",
+  "current_new_deliveries": [],
+  "current_candidates": [
+    {
+      "id": "f1-learner-notifications",
+      "head": "7a32d1061dcc35cd4db40e94f33f428f39fe486c",
+      "delivered": false,
+      "missing": [
+        "independent review of current revision",
+        "approved four-channel injection and actual enrollment/delivery evidence"
+      ],
+      "pr": null
+    },
+    {
+      "id": "q1-exact-pending-refund",
+      "head": "43ea2ea4c06aaae2ee55b9b6e6d9b7ebe249cc43",
+      "delivered": false,
+      "missing": [
+        "independent review of current revision",
+        "approved exact sandbox transaction handoff and secret injection",
+        "actual exact-transaction refund browser/proof"
+      ],
+      "pr": {
+        "number": 371,
+        "state": "OPEN",
+        "draft": true
+      }
+    },
+    {
+      "id": "f2-post-purchase-commerce",
+      "head": "6db24c3962a66d4b379c76ccae0acbd0755107b3",
+      "delivered": false,
+      "missing": [
+        "authoritative same-issued-trade PayUni recovery contract",
+        "implementation and actual non-production recovery evidence"
+      ],
+      "pr": null
+    },
+    {
+      "id": "f2-meta-server-tracking",
+      "head": "c4b76a246940fc18f20faacebce8328476582eb4",
+      "delivered": false,
+      "missing": [
+        "approved test Pixel/token/event code/API version injection",
+        "actual current-source events and deduplication evidence"
+      ],
+      "pr": {
+        "number": 384,
+        "state": "OPEN",
+        "draft": true
+      }
+    }
+  ],
+  "publication": "docs/remaining-capabilities-publication-20261008.json",
+  "dependency_scope_retained": "Unfinished provider work remains part of F1/F2/Q1 and dependent A1/E1; prior delivered batches retain their own immutable receipts."
+}
