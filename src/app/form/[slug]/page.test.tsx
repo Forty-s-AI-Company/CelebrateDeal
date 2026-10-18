@@ -170,3 +170,8 @@ it("does not hide the form for an unverified shared success URL", async () => {
   expect(html).toContain('data-testid="lead-form"');
   expect(html).not.toContain("請到 Email 開啟確認連結");
 });
+
+it("decodes a percent-encoded CJK slug before the public form lookup", async () => {
+  await PublicFormPage({ params: Promise.resolve({ slug: "%E5%A4%8F%E5%AD%A3-%E6%96%B0%E5%93%81" }), searchParams: Promise.resolve({}) });
+  expect(mocks.getPublicRegistrationForm).toHaveBeenCalledWith("夏季-新品");
+});

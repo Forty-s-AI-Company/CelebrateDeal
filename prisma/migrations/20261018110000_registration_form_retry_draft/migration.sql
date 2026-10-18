@@ -12,16 +12,23 @@ CREATE TABLE "RegistrationFormRetryDraft" (
     CONSTRAINT "RegistrationFormRetryDraft_pkey" PRIMARY KEY ("idHash"),
     -- Only the SHA-256 lookup hash of the browser capability is stored.
     CONSTRAINT "RegistrationFormRetryDraft_idHash_check" CHECK ("idHash" ~ '^[a-f0-9]{64}$'),
-    -- Public registration entry paths only; no query, fragment or host.
+    -- Canonical (percent-decoded) public registration entry path only: one
+    -- or two segments that may contain CJK and other letters, as toSlug()
+    -- allows; no query, fragment, host, dot segment, "%", whitespace,
+    -- control character or backslash. The application additionally limits
+    -- segments to letters, digits, "_" and "-".
     CONSTRAINT "RegistrationFormRetryDraft_sourcePath_check" CHECK (
         char_length("sourcePath") <= 2048
-        AND "sourcePath" ~ '^/(form|p|lp)/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)?$'
+        AND "sourcePath" ~ '^/(form|p|lp)/[^/?#%.\\[:space:][:cntrl:]]+(/[^/?#%.\\[:space:][:cntrl:]]+)?$'
     ),
     -- Ciphertext envelope only, bounded like the application reader.
     CONSTRAINT "RegistrationFormRetryDraft_payload_check" CHECK (
         "encryptedPayload" ~ '^v1\.' AND char_length("encryptedPayload") <= 533400
     ),
-    CONSTRAINT "RegistrationFormRetryDraft_expiry_check" CHECK ("expiresAt" > "createdAt")
+    -- Short-lived by construction: at most the 10-minute application TTL.
+    CONSTRAINT "RegistrationFormRetryDraft_expiry_check" CHECK (
+        "expiresAt" > "createdAt" AND "expiresAt" <= "createdAt" + interval '10 minutes'
+    )
 );
 
 CREATE INDEX "RegistrationFormRetryDraft_expiresAt_idx" ON "RegistrationFormRetryDraft"("expiresAt");

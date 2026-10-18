@@ -37,7 +37,7 @@ import {
   hasPublicRegistrationSession,
   publicRegistrationSessionWhere,
 } from "@/lib/public-registration-form";
-import { clearRegistrationRetry, registrationRetryResponse } from "@/lib/registration-form-retry-response";
+import { clearRegistrationRetry, registrationRetryResponse, trustedNativeRetryRequest } from "@/lib/registration-form-retry-response";
 import { attachRegistrationResult } from "@/lib/registration-submission-receipt";
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
@@ -303,6 +303,18 @@ function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: 
   };
 }
 
+/**
+ * Registration succeeds independently from marketing delivery. The durable
+ * automation execution key makes a retried request converge without a resend.
+ */
+async function dispatchFormRegistered(vendorId: string, submissionId: string, email: string, funnelSource: TrustedFunnelSource | null) {
+  try {
+    await dispatchAutomationEvent(getDb(), formRegisteredAutomationEvent({ vendorId, submissionId, email, funnelSource }));
+  } catch (error) {
+    captureOperationalError(error, { area: "form_registration_automation", vendorId });
+  }
+}
+
 async function refreshExpiredVerification(submission: VerifiableSubmission, now = new Date()) {
   if (
     submission.verificationStatus === "VERIFIED"
@@ -384,20 +396,30 @@ function availablePublicForm<T extends { isActive: boolean }>(form: T | null): T
   return form;
 }
 
-async function processSubmission(request: Request, retryFormData?: FormData | null) {
-  const contentType = request.headers.get("content-type") ?? "";
-  const isNativeFormPost = contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data");
+const NATIVE_FORM_CONTENT_TYPE = /application\/x-www-form-urlencoded|multipart\/form-data/i;
+function isNativeFormContentType(request: Request) {
+  return NATIVE_FORM_CONTENT_TYPE.test(request.headers.get("content-type") ?? "");
+}
+
+/**
+ * `native` is supplied by the native POST wrapper, which has already applied
+ * the Origin, same-origin and rate-limit gates before reading the body.
+ */
+async function processSubmission(request: Request, native?: { formData: FormData | null }) {
+  const isNativeFormPost = isNativeFormContentType(request);
   if (isNativeFormPost && !request.headers.get("origin")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: !isNativeFormPost });
   if (sameOrigin) return sameOrigin;
 
-  const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
-  if (limited) return limited;
+  if (!native) {
+    const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
+    if (limited) return limited;
+  }
 
   const nativeFormData = isNativeFormPost
-    ? retryFormData !== undefined ? retryFormData : await readFormDataBody(request)
+    ? native ? native.formData : await readFormDataBody(request)
     : null;
   const parsed = SubmissionPayload.safeParse(
     isNativeFormPost ? nativeFormPayload(nativeFormData) : await readJsonBody(request),
@@ -516,6 +538,12 @@ async function processSubmission(request: Request, retryFormData?: FormData | nu
     if (!verificationQueued) {
       return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
     }
+    // A retry after a 503 lands here: the first attempt created the row but
+    // never reached the automation step. The execution log's durable key on
+    // `form-registered:<submissionId>` keeps this exactly-once. The LINE
+    // binding capability is deliberately not issued: proving knowledge of an
+    // email address must not let a browser bind LINE to an existing record.
+    await dispatchFormRegistered(form.vendorId, duplicate.id, email, funnelSource);
     return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, duplicate.id);
   }
 
@@ -573,6 +601,7 @@ async function processSubmission(request: Request, retryFormData?: FormData | nu
     if (!verificationQueued) {
       return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
     }
+    await dispatchFormRegistered(form.vendorId, concurrentSubmission.id, email, funnelSource);
     return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id);
   }
   await recordLeadAttribution(submission.id, attribution);
@@ -590,13 +619,7 @@ async function processSubmission(request: Request, retryFormData?: FormData | nu
     return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
   }
 
-  // Registration succeeds independently from marketing delivery. The durable
-  // automation execution key makes a retried request converge without a resend.
-  try {
-    await dispatchAutomationEvent(getDb(), formRegisteredAutomationEvent({ vendorId: form.vendorId, submissionId: submission.id, email, funnelSource }));
-  } catch (error) {
-    captureOperationalError(error, { area: "form_registration_automation", vendorId: form.vendorId });
-  }
+  await dispatchFormRegistered(form.vendorId, submission.id, email, funnelSource);
 
   return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);
 }
@@ -675,24 +698,51 @@ function nativeFormPayload(formData: FormData | null) {
 
 // URL-encoded 32 x 2000 CJK characters (9 bytes each) plus hidden fields.
 const MAX_NATIVE_FORM_BODY_BYTES = 1_000_000;
+// A throttled client only gets a small body read: enough for a normal form's
+// return path and fields, never the full native allowance.
+const RATE_LIMITED_NATIVE_BODY_BYTES = 16 * 1024;
+
+function withRetryAfter(response: NextResponse, source: Response) {
+  // Keep the server rate-limit wait; no other error header is forwarded.
+  const retryAfter = source.headers.get("Retry-After");
+  if (retryAfter && /^\d{1,8}$/.test(retryAfter)) response.headers.set("Retry-After", retryAfter);
+  return response;
+}
 
 /**
  * JSON clients keep their exact status/body contract. A native (no-JavaScript)
  * POST never ends on a raw JSON error: every 4xx/5xx becomes a 303 back to a
  * verified same-origin source page, retaining fields only in an encrypted,
  * short-lived, form/path-bound draft.
+ *
+ * Gates that need no body (trusted Origin, declared length, rate limit) run
+ * before the body is read; the parsed form data is then handed to
+ * processSubmission so it is read exactly once.
  */
 export async function POST(request: Request) {
-  const native = /application\/x-www-form-urlencoded|multipart\/form-data/i.test(request.headers.get("content-type") ?? "");
-  if (!native) {
+  if (!isNativeFormContentType(request)) {
     const response = await processSubmission(request);
     if (response.ok) await clearRegistrationRetry(request, response);
     return response;
   }
+  if (!trustedNativeRetryRequest(request)) {
+    await request.body?.cancel().catch(() => undefined);
+    return registrationRetryResponse(request, null, 403);
+  }
+  const declaredLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_NATIVE_FORM_BODY_BYTES) {
+    await request.body?.cancel().catch(() => undefined);
+    return registrationRetryResponse(request, null, 400);
+  }
+  const limited = await checkRateLimit(request, "form-submissions", 10, 60_000);
+  if (limited) {
+    const smallFormData = await readFormDataBody(request, RATE_LIMITED_NATIVE_BODY_BYTES);
+    return withRetryAfter(await registrationRetryResponse(request, smallFormData, 429), limited);
+  }
   const formData = await readFormDataBody(request, MAX_NATIVE_FORM_BODY_BYTES);
   let response: NextResponse;
   try {
-    response = await processSubmission(request, formData);
+    response = await processSubmission(request, { formData });
   } catch (error) {
     // Never include the request, answers or identifiers in the report.
     captureOperationalError(error, { area: "form_submission_native" });
@@ -700,10 +750,7 @@ export async function POST(request: Request) {
   }
   if (response.status >= 400) {
     const retryResponse = await registrationRetryResponse(request, formData, response.status);
-    // Keep the server rate-limit wait; no other error header is forwarded.
-    const retryAfter = response.headers.get("Retry-After");
-    if (response.status === 429 && retryAfter && /^\d{1,8}$/.test(retryAfter)) retryResponse.headers.set("Retry-After", retryAfter);
-    return retryResponse;
+    return response.status === 429 ? withRetryAfter(retryResponse, response) : retryResponse;
   }
   await clearRegistrationRetry(request, response);
   attachRegistrationResult(request, response, formData);

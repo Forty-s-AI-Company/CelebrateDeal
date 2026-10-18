@@ -16,6 +16,7 @@ const db = {
   teamLeadAttribution: { upsert: vi.fn() },
   emailDelivery: { create: vi.fn(), findUnique: vi.fn() },
   emailSuppression: { findUnique: vi.fn() },
+  automationRule: { findMany: vi.fn(async () => []) },
 };
 
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
@@ -905,4 +906,60 @@ describe("native registration retry (WP-05)", () => {
     expect(response.cookies.get("__Host-celebratedeal_registration_result")?.value).toMatch(/^v1\./);
     expect(retryStorage.save).not.toHaveBeenCalled();
   });
+
+  it("keeps a CJK slug: retry draft and success receipt use one canonical path", async () => {
+    const cjk = "/form/夏季-新品-live";
+    const failed = await POST(nativeRetryRequest({ name: "Lead", email: "not-an-email", __registrationReturnPath: cjk, redirectTo: cjk }));
+    expect(failed.headers.get("location")).toBe("https://app.example.test/form/%E5%A4%8F%E5%AD%A3-%E6%96%B0%E5%93%81-live?registrationRetry=400");
+    expect(retryStorage.save).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sourcePath: cjk }));
+
+    const success = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test", __registrationReturnPath: cjk, redirectTo: cjk }));
+    expect(success.headers.get("location")).toBe("https://app.example.test/form/%E5%A4%8F%E5%AD%A3-%E6%96%B0%E5%93%81-live?submitted=verification_required");
+    const receipt = success.cookies.get("__Host-celebratedeal_registration_result")?.value;
+    expect(receipt).toBeDefined();
+    const { verifyRegistrationResult } = await import("@/lib/registration-submission-receipt");
+    expect(verifyRegistrationResult(receipt, "form-1", cjk)).toBe(true);
+    expect(verifyRegistrationResult(receipt, "form-1", "/form/%E5%A4%8F%E5%AD%A3-%E6%96%B0%E5%93%81-live")).toBe(true);
+  });
+
+  it("rate-limits a native POST before reading a large body", async () => {
+    vi.mocked(checkRateLimit).mockResolvedValueOnce(NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "12" } }));
+    const response = await POST(nativeRetryRequest({ name: "x".repeat(20 * 1024), email: "lead@example.test" }));
+    expect(vi.mocked(checkRateLimit).mock.calls[0][1]).toBe("form-submissions");
+    // Over the throttled read allowance: nothing is parsed or kept.
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
+    expect(response.headers.get("Retry-After")).toBe("12");
+    expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
+    expect(retryStorage.save).not.toHaveBeenCalled();
+  });
+
+  it("rejects an untrusted Origin before reading the body or consuming the rate limit", async () => {
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }, { origin: "https://attacker.example.test" }));
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
+    expect(checkRateLimit).not.toHaveBeenCalled();
+    expect(db.registrationForm.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects a declared oversized native body before rate limiting or reading", async () => {
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }, { "content-length": "1000001" }));
+    expect(response.headers.get("location")).toBe("https://app.example.test/registration-error");
+    expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("treats the native Content-Type case-insensitively and applies the rate limit once", async () => {
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }, { "content-type": "Application/X-WWW-Form-Urlencoded" }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/form/summer?submitted=verification_required");
+    expect(vi.mocked(checkRateLimit).mock.calls.filter(([, key]) => key === "form-submissions")).toHaveLength(1);
+  });
+
+  it("dispatches form_registered on a retry that lands on the existing submission, without a LINE binding capability", async () => {
+    db.formSubmission.findFirst.mockResolvedValueOnce(pendingSubmission("existing-after-503"));
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }));
+    expect(response.status).toBe(303);
+    expect(db.formSubmission.create).not.toHaveBeenCalled();
+    expect(db.automationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", trigger: "form_registered" }) }));
+    expect(response.headers.get("set-cookie") ?? "").not.toContain("line_binding");
+  });
 });
+

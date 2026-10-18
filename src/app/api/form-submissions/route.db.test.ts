@@ -93,6 +93,7 @@ it("retains native fields after a queue 503 and resubmits without a duplicate re
   const vendor = await getDb().vendor.create({ data: { name: "Synthetic Retry", slug: suffix, email: `${suffix}@example.test`, passwordHash: "synthetic-unused" } });
   createdVendorIds.push(vendor.id);
   const form = await getDb().registrationForm.create({ data: { vendorId: vendor.id, name: "Synthetic Retry", slug: suffix, headline: "Synthetic Retry", fields: [{ key: "name", label: "Name", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }] } });
+  const rule = await getDb().automationRule.create({ data: { vendorId: vendor.id, name: "Synthetic registration tag", trigger: "form_registered", condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: "wp05-synthetic" }] } });
   const sourcePath = `/form/${form.slug}`;
   const native = (cookie?: string) => new Request("https://app.example.test/api/form-submissions", {
     method: "POST",
@@ -117,6 +118,13 @@ it("retains native fields after a queue 503 and resubmits without a duplicate re
   expect(await getDb().formSubmission.count({ where: { formId: form.id } })).toBe(1);
   expect(await getDb().registrationFormRetryDraft.count({ where: { formId: form.id } })).toBe(0);
   expect(await getDb().emailDelivery.count({ where: { vendorId: vendor.id, status: "sent" } })).toBe(0);
+  // The 503 attempt never reached automation; the retry dispatched it, and a
+  // later duplicate submission converges on the same durable execution key.
+  expect(await getDb().automationExecutionLog.count({ where: { ruleId: rule.id } })).toBe(1);
+  const again = await POST(native());
+  expect(again.status).toBe(303);
+  expect(await getDb().formSubmission.count({ where: { formId: form.id } })).toBe(1);
+  expect(await getDb().automationExecutionLog.count({ where: { ruleId: rule.id } })).toBe(1);
 });
 
 it("deletes retry drafts with their form's tenant", async () => {

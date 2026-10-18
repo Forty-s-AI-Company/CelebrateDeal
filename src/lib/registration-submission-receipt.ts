@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { trustedRequestOrigin } from "@/lib/api-security";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 import { registrationRetrySourcePath, registrationRetrySecureCookies } from "@/lib/registration-form-retry";
 
@@ -16,14 +17,18 @@ export function attachRegistrationResult(request: Request, response: NextRespons
   if (!data || !Number.isFinite(now)) return;
   try {
     const location = response.headers.get("location");
-    const origin = new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin;
-    if (!location || request.headers.get("origin") !== origin) return;
+    // Same allowed-origin set as requireSameOriginRequest; Referer never counts.
+    const origin = trustedRequestOrigin(request);
+    if (!location || !origin) return;
     const target = new URL(location, origin);
     const formId = data.get("formId");
-    if ((target.origin !== origin && target.origin !== new URL(request.url).origin) || target.searchParams.get("submitted") !== "verification_required" || typeof formId !== "string" || !formId || formId.length > 128 || !registrationRetrySourcePath(target.pathname)) return;
-    // 成功返回也使用已驗證的公開origin，避免內部host導向造成回條跨host遺失。
+    // The Location pathname is percent-encoded (e.g. a CJK slug); the receipt
+    // stores the same canonical decoded path that the page verifies against.
+    const path = registrationRetrySourcePath(target.pathname);
+    if ((target.origin !== origin && target.origin !== new URL(request.url).origin) || target.searchParams.get("submitted") !== "verification_required" || typeof formId !== "string" || !formId || formId.length > 128 || !path) return;
+    // 成功返回也使用已驗證的瀏覽器origin，避免內部host導向造成回條跨host遺失。
     response.headers.set("Location", new URL(target.pathname + target.search + target.hash, origin).toString());
-    const value = encryptSensitiveValue(JSON.stringify({ formId, path: target.pathname, expiresAt: now + REGISTRATION_RESULT_TTL_MS }), PURPOSE);
+    const value = encryptSensitiveValue(JSON.stringify({ formId, path, expiresAt: now + REGISTRATION_RESULT_TTL_MS }), PURPOSE);
     if (value.length > 3800) return;
     const secure = registrationRetrySecureCookies(new URL(request.url).host);
     response.cookies.set(registrationResultCookieName(secure), value, { httpOnly: true, sameSite: "strict", secure, path: "/", maxAge: REGISTRATION_RESULT_TTL_MS / 1000 });
@@ -31,11 +36,12 @@ export function attachRegistrationResult(request: Request, response: NextRespons
 }
 
 export function verifyRegistrationResult(value: string | undefined, formId: string | undefined, path: string, now = Date.now()): boolean {
-  if (!value || value.length > 3800 || !formId || !Number.isFinite(now) || !registrationRetrySourcePath(path)) return false;
+  const canonicalPath = registrationRetrySourcePath(path);
+  if (!value || value.length > 3800 || !formId || !Number.isFinite(now) || !canonicalPath) return false;
   try {
     const result: unknown = JSON.parse(decryptSensitiveValue(value, PURPOSE));
     if (!result || typeof result !== "object") return false;
     const entry = result as Record<string, unknown>;
-    return entry.formId === formId && entry.path === path && typeof entry.expiresAt === "number" && entry.expiresAt > now && entry.expiresAt <= now + REGISTRATION_RESULT_TTL_MS;
+    return entry.formId === formId && entry.path === canonicalPath && typeof entry.expiresAt === "number" && entry.expiresAt > now && entry.expiresAt <= now + REGISTRATION_RESULT_TTL_MS;
   } catch { return false; }
 }

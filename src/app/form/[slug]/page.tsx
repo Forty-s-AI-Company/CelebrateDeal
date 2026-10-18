@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { FORM_SUBMISSION_VERIFICATION_MESSAGE, LeadForm } from "@/components/lead-form";
 import { PromoVideoPlayer } from "@/components/promo-video-player";
 import { RichTextContent } from "@/components/rich-text-content";
+import { decodeRouteSlug } from "@/lib/format";
 import { getPublicRegistrationForm } from "@/lib/public-registration-form";
 
 type PublicFormPageProps = {
@@ -24,7 +25,7 @@ function submittedVerificationMessage(successMessage: string) {
 }
 
 export async function generateMetadata({ params }: Pick<PublicFormPageProps, "params">): Promise<Metadata> {
-  const { slug } = await params;
+  const slug = decodeRouteSlug((await params).slug);
   const form = await getPublicRegistrationForm(slug);
   if (!form) {
     return {
@@ -49,13 +50,13 @@ export async function generateMetadata({ params }: Pick<PublicFormPageProps, "pa
 }
 
 export async function generateViewport({ params }: Pick<PublicFormPageProps, "params">): Promise<Viewport> {
-  const { slug } = await params;
+  const slug = decodeRouteSlug((await params).slug);
   const form = await getPublicRegistrationForm(slug);
   return form?.themeColor ? { themeColor: form.themeColor } : {};
 }
 
 export default async function PublicFormPage({ params, searchParams }: PublicFormPageProps) {
-  const { slug } = await params;
+  const slug = decodeRouteSlug((await params).slug);
   const query = await searchParams;
   let form = await getPublicRegistrationForm(slug);
   if (!form) notFound();
