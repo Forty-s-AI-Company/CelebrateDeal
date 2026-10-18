@@ -80,6 +80,12 @@ describe("LiveProduct tenant binding contract", () => {
     }
     expect(vendorExpressions).toEqual(["input.vendorId", "input.vendorId"]);
     expect(actions).toContain("replaceLiveProductBindings(tx, { vendorId: input.vendorId, liveId: input.liveId!, productIds: input.productIds })");
-    expect(seed).toContain("create: products.map((product, index) => ({\n          vendorId: vendor.id,");
+    // Seed LiveProduct rows are nested under a Live created for vendor.id; the
+    // composite (vendorId, liveId) relation copies that vendorId, so the nested
+    // input must not carry its own.
+    const seedLive = seed.slice(seed.indexOf("prisma.live.create({"), seed.indexOf("LiveProductUncheckedCreateWithoutLiveInput"));
+    expect(seedLive).toMatch(/^prisma\.live\.create\(\{\n    data: \{\n      vendorId: vendor\.id,/);
+    expect(seedLive).toContain("products: {");
+    expect(seedLive.slice(seedLive.indexOf("products: {"))).not.toContain("vendorId:");
   });
 });
