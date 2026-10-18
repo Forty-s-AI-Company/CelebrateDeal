@@ -30,7 +30,7 @@ test.describe("Funnel advanced element browser boundaries", () => {
     await expect(page.locator('[data-exit-count="true"]')).toHaveText("1");
     await page.evaluate(() => window.dispatchEvent(new MouseEvent("mouseout", { clientY: -1 })));
     await expect(page.locator('[data-exit-count="true"]')).toHaveText("1");
-    const close = page.getByRole("button", { name: "關閉 Popup" });
+    const close = page.getByRole("button", { name: "關閉彈出視窗" });
     if (await close.isVisible()) await close.click();
     await page.getByRole("button", { name: "清理 Exit Intent 測試" }).click();
     await page.getByRole("button", { name: "卸載 Popup" }).click();

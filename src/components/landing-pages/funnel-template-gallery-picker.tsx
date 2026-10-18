@@ -30,7 +30,7 @@ export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [preview]);
 
-  if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 一頁式網站 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入 版型區塊。</span></div>;
+  if (templates.length === 0) return <div role="status" className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><strong className="block text-slate-900">這個 一頁式網站 類型還沒有可用模板</strong><span className="mt-1 block">你仍可從空白頁開始，之後再加入版型區塊。</span></div>;
 
   const apply = (templateId: string) => {
     setError(undefined);

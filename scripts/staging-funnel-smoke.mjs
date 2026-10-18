@@ -251,7 +251,7 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     }
     result.createPageStatus = createResponse?.status() ?? null;
     result.createPageRoute = funnelRouteCategory(page.url());
-    const createHeadingVisible = await visible(page.getByRole("heading", { name: "建立新的 Funnel" }));
+    const createHeadingVisible = await visible(page.getByRole("heading", { name: "建立新的一頁式網站" }));
     result.projectStillMissing = await visible(page.getByText("請先選擇一個銷售專案，再建立一頁式網站。", { exact: true }), 1_000);
     if (result.createPageStatus !== 200 || !createHeadingVisible) { result.reason = "CREATE_PAGE_UNAVAILABLE"; return result; }
     await page.getByRole("textbox", { name: "名稱 *", exact: true }).fill("Staging Synthetic Funnel");
