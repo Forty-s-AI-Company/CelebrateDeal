@@ -66,9 +66,23 @@ function statusMessage(status: string | undefined) {
   return null;
 }
 
+/** 只呈現目前紀錄的有效性；發布仍由既有 guard 重新檢查，不代表顧客收款核可。 */
+function referenceDisplayStatus(reference: { scopeType: string; membershipId: string | null; status: string; verifiedAt: Date | null; expiresAt: Date | null }, now: Date) {
+  if (reference.status !== "verified") {
+    return ["pending", "expired", "revoked"].includes(reference.status) ? reference.status : "unknown";
+  }
+  if (reference.scopeType === "VENDOR" && reference.membershipId !== null) return "unconfirmed";
+  const verifiedAt = reference.verifiedAt?.getTime();
+  const expiresAt = reference.expiresAt?.getTime();
+  if (verifiedAt === undefined || !Number.isFinite(verifiedAt) || verifiedAt > now.getTime()
+    || (expiresAt !== undefined && !Number.isFinite(expiresAt))) return "unconfirmed";
+  if (expiresAt !== undefined && expiresAt <= now.getTime()) return "expired";
+  return "verified";
+}
+
 function statusTone(status: string) {
   if (status === "verified") return "green" as const;
-  if (status === "pending") return "orange" as const;
+  if (status === "pending" || status === "unconfirmed") return "orange" as const;
   return "gray" as const;
 }
 
@@ -78,7 +92,8 @@ function statusLabel(status: string) {
     case "pending": return "待驗證";
     case "expired": return "已過期";
     case "revoked": return "已撤銷";
-    default: return status;
+    case "unconfirmed": return "驗證資料待確認";
+    default: return "狀態待確認";
   }
 }
 
@@ -115,6 +130,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
   const message = errorMessage(queryValue(params.error));
   const status = statusMessage(queryValue(params.status));
   const provider = providerSetupState(vendor.id);
+  const renderedAt = new Date();
   const membershipNames = new Map(
     memberships.map((membership) => [membership.id, `${membership.team.name} · ${membership.vendorMember.user.name}`]),
   );
@@ -122,11 +138,12 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
   return (
     <>
       <PageHeader
-        title="付款方式設定"
-        description="管理平台方案與 Stream 用量需要的付款方式驗證狀態；CelebrateDeal 只保留 provider opaque reference，不接觸卡號。"
+        title="平台服務付款方式"
+        description="管理平台方案與 Stream 用量的付款驗證；這不是顧客結帳收款設定。平台不保存卡號。"
       />
       {message ? <p role="alert" className="mb-6 rounded-md bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800">{message}</p> : null}
       {status ? <p role="status" className="mb-6 rounded-md bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{status}</p> : null}
+      <p className="mb-6 text-sm text-slate-600">專案發布仍檢查有效的商家層級付款驗證紀錄，成員紀錄不計入。完成本頁設定不代表顧客收款已啟用或取得收款核可；顧客收款需另外確認，發布時也會重新檢查驗證有效性。</p>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
@@ -135,21 +152,21 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
           <div className="mt-2"><Badge tone={provider.available ? "green" : "orange"}>{provider.available ? "可發起設定" : "尚未提供設定流程"}</Badge></div>
         </Card>
         <Card>
-          <p className="text-sm font-medium text-slate-500">商店付款方式</p>
+          <p className="text-sm font-medium text-slate-500">商家平台服務付款紀錄</p>
           <p className="mt-2 text-xl font-semibold text-slate-950">{references.filter((reference) => reference.scopeType === "VENDOR").length} 筆</p>
-          <p className="mt-1 text-xs text-slate-500">需有已驗證且未過期的 reference 才能啟用商店扣款。</p>
+          <p className="mt-1 text-xs text-slate-500">筆數包含待驗證與過期紀錄；平台扣款仍需已驗證且未過期的有效紀錄。</p>
         </Card>
         <Card>
-          <p className="text-sm font-medium text-slate-500">成員扣款對象</p>
+          <p className="text-sm font-medium text-slate-500">成員平台服務付款對象</p>
           <p className="mt-2 text-xl font-semibold text-slate-950">{memberships.length} 位</p>
-          <p className="mt-1 text-xs text-slate-500">逐位成員驗證，避免把商店付款方式誤套用到會員扣款。</p>
+          <p className="mt-1 text-xs text-slate-500">成員與商家紀錄分開驗證，不代表顧客結帳付款已啟用。</p>
         </Card>
       </div>
 
       <Card className="mt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-950">商店付款方式</h2>
+            <h2 className="text-lg font-semibold text-slate-950">商家平台服務付款方式</h2>
             <p className="mt-1 text-sm text-slate-500">用於商店層級的平台方案、用量與扣款流程。設定完成前，相關流程會安全停止。</p>
           </div>
           {provider.available ? (
@@ -164,7 +181,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
 
       <Card className="mt-6">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-slate-950">成員付款方式</h2>
+          <h2 className="text-lg font-semibold text-slate-950">成員付款方式（平台服務）</h2>
           <p className="mt-1 text-sm text-slate-500">需要由每位成員各自建立並驗證付款 reference；頁面不顯示 provider customer reference 或付款方式 reference。</p>
         </div>
         {memberships.length > 0 ? (
@@ -198,25 +215,28 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
         <h2 className="text-lg font-semibold text-slate-950">已保存的驗證狀態</h2>
         <p className="mt-1 text-sm text-slate-500">以下只呈現必要的狀態與時間，不呈現任何 card number、token 或 provider opaque reference。</p>
         <div className="mt-4 grid gap-3">
-          {references.length > 0 ? references.map((reference) => (
-            <div key={reference.id} className="grid gap-2 rounded-md border border-border p-4 md:grid-cols-[1fr_auto] md:items-center">
-              <div>
-                <p className="font-medium text-slate-950">{reference.scopeType === "VENDOR" ? "商店付款方式" : membershipNames.get(reference.membershipId ?? "") ?? "成員付款方式"}</p>
-                <p className="mt-1 text-xs text-slate-500">Provider：{reference.providerName} · 建立於 {formatDateTime(reference.createdAt)}</p>
-                <p className="mt-1 text-xs text-slate-500">最後驗證：{reference.lastValidatedAt ? formatDateTime(reference.lastValidatedAt) : "尚未驗證"}{reference.expiresAt ? ` · 到期 ${formatDateTime(reference.expiresAt)}` : ""}</p>
+          {references.length > 0 ? references.map((reference) => {
+            const displayStatus = referenceDisplayStatus(reference, renderedAt);
+            return (
+              <div key={reference.id} className="grid gap-2 rounded-md border border-border p-4 md:grid-cols-[1fr_auto] md:items-center">
+                <div>
+                  <p className="font-medium text-slate-950">{reference.scopeType === "VENDOR" ? "商家平台服務付款方式" : membershipNames.get(reference.membershipId ?? "") ?? "成員付款方式"}</p>
+                  <p className="mt-1 text-xs text-slate-500">Provider：{reference.providerName} · 建立於 {formatDateTime(reference.createdAt)}</p>
+                  <p className="mt-1 text-xs text-slate-500">最近檢查時間：{reference.lastValidatedAt ? formatDateTime(reference.lastValidatedAt) : "尚無時間紀錄"}{reference.expiresAt ? ` · 到期 ${formatDateTime(reference.expiresAt)}` : ""}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge tone={statusTone(displayStatus)}>{statusLabel(displayStatus)}</Badge>
+                  {reference.status !== "revoked" ? (
+                    <form action={revokePaymentMethodReferenceAction}>
+                      <CsrfField />
+                      <input type="hidden" name="referenceId" value={reference.id} />
+                      <FormSubmitButton pendingChildren="撤銷中…" pendingMessage="正在撤銷付款方式並停用後續扣款，請勿重複送出。" confirmMessage="確認撤銷這個付款方式？後續扣款會立即 fail closed。" className="min-h-10 rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">撤銷</FormSubmitButton>
+                    </form>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Badge tone={statusTone(reference.status)}>{statusLabel(reference.status)}</Badge>
-                {reference.status !== "revoked" ? (
-                  <form action={revokePaymentMethodReferenceAction}>
-                    <CsrfField />
-                    <input type="hidden" name="referenceId" value={reference.id} />
-                    <FormSubmitButton pendingChildren="撤銷中…" pendingMessage="正在撤銷付款方式並停用後續扣款，請勿重複送出。" confirmMessage="確認撤銷這個付款方式？後續扣款會立即 fail closed。" className="min-h-10 rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">撤銷</FormSubmitButton>
-                  </form>
-                ) : null}
-              </div>
-            </div>
-          )) : <p className="text-sm text-slate-500">尚無付款方式 reference。</p>}
+            );
+          }) : <p className="text-sm text-slate-500">尚無平台服務付款紀錄。</p>}
         </div>
       </Card>
     </>

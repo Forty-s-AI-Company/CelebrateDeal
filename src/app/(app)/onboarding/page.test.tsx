@@ -86,11 +86,12 @@ describe("/onboarding route", () => {
         scopeType: "VENDOR",
         membershipId: null,
         status: "verified",
+        verifiedAt: { not: null, lte: expect.any(Date) },
         OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
       },
     });
     expect(mocks.liveFindMany).toHaveBeenCalledWith(sellableLiveReadinessQuery(vendor.id));
-    expect(html).toContain("商家上線導引");
+    expect(html).toContain(">上線導引<");
     expect(html).toContain("5 / 5");
     expect(html).toContain("核心流程完成");
     expect(html).toContain('aria-valuenow="100"');

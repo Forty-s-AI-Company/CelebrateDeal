@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireVendorFinance: vi.fn(),
@@ -24,6 +24,7 @@ import PaymentMethodsPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("PAYUNI_ENV", "sandbox");
   mocks.requireVendorFinance.mockResolvedValue({ vendor: { id: "vendor-current" } });
   mocks.referenceFindMany.mockResolvedValue([
     {
@@ -56,11 +57,17 @@ beforeEach(() => {
   mocks.getCsrfToken.mockResolvedValue("csrf-payment-method");
 });
 
+afterEach(() => { vi.unstubAllEnvs(); });
+
 describe("/billing/payment-methods route", () => {
   it("renders actionable vendor and member setup forms without exposing opaque references", async () => {
     const html = renderToStaticMarkup(await PaymentMethodsPage({}));
 
-    expect(html).toContain("付款方式設定");
+    expect(html).toContain("可發起設定");
+    expect(html).toContain("平台服務付款方式");
+    expect(html).toContain("這不是顧客結帳收款設定");
+    expect(html).toContain("完成本頁設定不代表顧客收款已啟用或取得收款核可");
+    expect(html).toContain("成員紀錄不計入");
     expect(html).toContain("北區團隊 · 王小明");
     expect(html).toContain("已驗證");
     expect(html).toContain('name="scopeType" value="VENDOR"');
@@ -184,7 +191,38 @@ describe("/billing/payment-methods route", () => {
 
     mocks.referenceFindMany.mockResolvedValue([]);
     const emptyHtml = renderToStaticMarkup(await PaymentMethodsPage({}));
-    expect(emptyHtml).toContain("尚無付款方式 reference");
+    expect(emptyHtml).toContain("尚無平台服務付款紀錄");
+  });
+
+  it.each([
+    ["verified", "2026-10-16T12:00:00.000Z", null, "已驗證", null],
+    ["verified", "2026-10-16T11:00:00.000Z", "2026-10-16T12:00:00.001Z", "已驗證", null],
+    ["verified", "2026-10-16T11:00:00.000Z", "2026-10-16T12:00:00.000Z", "已過期", null],
+    ["verified", "2026-10-16T11:00:00.000Z", "2026-10-16T11:59:59.999Z", "已過期", null],
+    ["verified", null, null, "驗證資料待確認", null],
+    ["verified", "2026-10-16T12:00:00.001Z", null, "驗證資料待確認", null],
+    ["pending", null, null, "待驗證", null],
+    ["provider_unknown_state", null, null, "狀態待確認", null],
+    ["revoked", null, null, "已撤銷", null],
+    ["expired", "2026-10-16T11:00:00.000Z", null, "已過期", null],
+    ["verified", "2026-10-16T11:00:00.000Z", null, "驗證資料待確認", "synthetic-member"],
+  ] as const)("renders reference state %s/%s/%s as %s with binding %s without implying collection approval", async (status, verifiedAt, expiresAt, label, membershipId) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-16T12:00:00.000Z"));
+    try {
+      mocks.referenceFindMany.mockResolvedValue([{
+        id: "synthetic-state-reference", scopeType: "VENDOR", membershipId, providerName: "payuni", status,
+        verifiedAt: verifiedAt ? new Date(verifiedAt) : null, expiresAt: expiresAt ? new Date(expiresAt) : null,
+        lastValidatedAt: null, createdAt: new Date("2026-10-01T00:00:00.000Z"),
+      }]);
+      const html = renderToStaticMarkup(await PaymentMethodsPage({}));
+      expect(html).toContain(`>${label}<`);
+      if (label !== "已驗證") expect(html).not.toContain(">已驗證<");
+      expect(html).not.toContain("provider_unknown_state");
+      expect(html).toContain("顧客收款需另外確認");
+      expect(html).toContain('name="scopeType" value="VENDOR"');
+      expect(mocks.referenceFindMany).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ where: { vendorId: "vendor-current" } }));
+    } finally { vi.useRealTimers(); }
   });
 
   it("fails closed when provider discovery throws", async () => {

@@ -24,6 +24,24 @@ export type PaymentMethodSetupVerificationInput = {
   expiresAt?: string | null;
 };
 
+/**
+ * The one readiness predicate for a vendor's platform-service payment method:
+ * a vendor-scoped (non-member) reference whose verification is proven
+ * (`verifiedAt` set and not in the future) and that has not expired.
+ * Shared by the publish gate, task panel, dashboard and onboarding so a
+ * legacy row cannot look ready on one surface and blocked on another.
+ */
+export function verifiedVendorPaymentMethodWhere(vendorId: string, now: Date): Prisma.PaymentMethodReferenceWhereInput {
+  return {
+    vendorId,
+    scopeType: "VENDOR",
+    membershipId: null,
+    status: "verified",
+    verifiedAt: { not: null, lte: now },
+    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+  };
+}
+
 const OPAQUE_REFERENCE_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { canPublishSalesProject, parseSalesWorkspaceQuestionnaire, projectOnboardingTasks, recommendSalesWorkspaceMode, SalesProjectCreateSchema, WORKSPACE_ONBOARDING_TASKS, type SalesWorkspaceQuestionnaire } from "@/lib/sales-workspace";
 import { assertServerActionOrigin, assertServerActionSecurity } from "@/lib/csrf";
 
@@ -114,7 +115,7 @@ export async function publishSalesProjectAction(formData: FormData) {
     db.live.count({ where: { vendorId: vendor.id, projectId } }),
     db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId, isActive: true }, select: { weeklySchedule: true } }),
     // A legacy or inconsistent row cannot satisfy the publication gate merely by status.
-    db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+    db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendor.id, now) }),
   ]);
   const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
     if (!entry || typeof entry !== "object") return false;
