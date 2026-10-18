@@ -2,7 +2,17 @@ name: Staging migrate
 
 # Applies the protected master migration chain to the fixed non-Production
 # staging Supabase project. Run "status" first; "deploy" only applies pending
-# forward migrations (prisma migrate deploy never resets or drops data).
+# forward migrations (prisma migrate deploy never resets or drops data), and
+# refuses when the staging history diverged or a migration failed.
+#
+# STAGING_DATABASE_URL must use the Supabase session pooler
+# (user postgres.<project-ref>, host aws-N-<region>.pooler.supabase.com, port
+# 5432): GitHub-hosted runners have no IPv6, and the direct
+# db.<project-ref>.supabase.co host is IPv6-only.
+# Port 6543 (transaction pooler) is refused because migrations need a session.
+# Only sslmode=require|verify-full, schema=public and pgbouncer=true are
+# accepted as query parameters. The repository is public, so the script prints
+# only fixed codes and allowlisted Prisma summary lines.
 on:
   workflow_dispatch:
     inputs:
@@ -17,8 +27,10 @@ on:
 permissions:
   contents: read
 
+# Shares the staging-migration-apply.yml group so the two staging migration
+# workflows can never run against the database at the same time.
 concurrency:
-  group: fixed-staging-migrate
+  group: fixed-staging-migration-apply
   cancel-in-progress: false
 
 jobs:
