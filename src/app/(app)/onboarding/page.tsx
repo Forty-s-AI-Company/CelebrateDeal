@@ -5,6 +5,7 @@ import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
+import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import {
   hasUsableMessageTemplateContent,
@@ -30,16 +31,7 @@ export default async function OnboardingPage() {
     readyVideoCount,
     sellableLiveCandidates,
   ] = await Promise.all([
-    db.paymentMethodReference.count({
-      where: {
-        vendorId: vendor.id,
-        scopeType: "VENDOR",
-        membershipId: null,
-        status: "verified",
-        verifiedAt: { not: null, lte: now },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-    }),
+    db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendor.id, now) }),
     db.product.count({
       where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
     }),

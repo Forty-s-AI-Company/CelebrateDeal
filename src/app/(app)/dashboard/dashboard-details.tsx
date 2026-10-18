@@ -6,6 +6,7 @@ import {
   type DashboardMeasurementSnapshot,
 } from "@/lib/dashboard-read-model";
 import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
+import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } from "@/lib/message-template";
 import { countSellableLiveReadinessCandidates, sellableLiveReadinessQuery } from "@/lib/sellable-live";
 
@@ -94,16 +95,7 @@ export async function loadDashboardDetails({
     ]);
     const [roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount] = await Promise.all([
       measurement.measure("active-role.count", () => db.interactionRole.count({ where: { vendorId, isActive: true } })),
-      measurement.measure("verified-payment-method.count", () => db.paymentMethodReference.count({
-        where: {
-          vendorId,
-          scopeType: "VENDOR",
-          membershipId: null,
-          status: "verified",
-          verifiedAt: { not: null, lte: now },
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-        },
-      })),
+      measurement.measure("verified-payment-method.count", () => db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendorId, now) })),
       measurement.measure("active-form.count", () => db.registrationForm.count({ where: { vendorId, isActive: true } })),
       measurement.measure("registration-template.count", () => db.messageTemplate.count({ where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } })),
     ]);

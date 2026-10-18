@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDb } from "@/lib/db";
+import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 
 const createdVendorIds: string[] = [];
 const createdUserIds: string[] = [];
@@ -110,14 +111,7 @@ describe("WP-02 payment-method readiness on disposable PostgreSQL", () => {
     });
 
     const ready = await db.paymentMethodReference.findMany({
-      where: {
-        vendorId: vendor.id,
-        scopeType: "VENDOR",
-        membershipId: null,
-        status: "verified",
-        verifiedAt: { not: null, lte: now },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
+      where: verifiedVendorPaymentMethodWhere(vendor.id, now),
       select: { providerPaymentMethodRef: true },
       orderBy: { providerPaymentMethodRef: "asc" },
     });
