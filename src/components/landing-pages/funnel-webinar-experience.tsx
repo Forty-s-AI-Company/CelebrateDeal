@@ -76,6 +76,9 @@ function WebinarRegistrationForm({ resource, source, redirectTo, preview }: {
     <input type="hidden" name="liveId" value={resource.live.id} />
     <input type="hidden" name="landingPageId" value={source.landingPageId} />
     <input type="hidden" name="funnelStepId" value={source.stepId} />
+    {/* Validated server attribution (draft or page query), as LeadForm sends it. */}
+    <input type="hidden" name="referralCode" value={retry?.attribution?.referralCode ?? ""} />
+    <input type="hidden" name="shareCode" value={retry?.attribution?.shareCode ?? ""} />
     <input type="hidden" name="redirectTo" value={redirectTo} />
     {resource.form.fields.map((field) => <label key={field.key} className="grid gap-1 text-sm">{field.label}<input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={["email", "tel", "number", "url"].includes(field.type ?? "") ? field.type : "text"} required={field.required} className="min-h-11 rounded-lg border px-3" /></label>)}
     <RegistrationSubmissionFeedback pending={pending} errorMessage={retry?.message ?? ""} />

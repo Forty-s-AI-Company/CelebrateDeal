@@ -1,6 +1,7 @@
 import type { RegistrationAttributionQuery } from "@/lib/registration-attribution";
 import { registrationDeadlineOutcome } from "@/components/registration-deadline-outcome";
-import { registrationRetryBoundary } from "@/components/registration-retry-boundary";
+import { hasRegistrationFeedbackQuery, registrationRetryBoundary } from "@/components/registration-retry-boundary";
+import { pageDocumentRendersRegistrationForm } from "@/lib/funnel-registration-surface";
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -39,7 +40,9 @@ export default async function PublicLandingPage({ params, searchParams }: { sear
   const query = await searchParams ?? {};
   const page = await load((await params).slug);
   if (!page) notFound();
-  const buildRetryBoundary = () => registrationRetryBoundary({ formId: isFunnelStepPages(page.content) && page.content.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}`, attributionQuery: query, retry: query.registrationRetry, submitted: query.submitted });
+  // Built only after availability, deadline and rendered-step decisions, so the
+  // single-use draft is read only when a registration form will show it.
+  const buildRetryBoundary = (readDraft: boolean) => registrationRetryBoundary({ formId: isFunnelStepPages(page.content) && page.content.flow.goal === "webinar" ? page.webinar?.form.id : page.submissionForm?.id, sourcePath: `/lp/${page.slug}`, attributionQuery: query, retry: query.registrationRetry, submitted: query.submitted, readDraft });
   const consultation = page.consultationEvents?.length ? { csrfToken: await getCsrfToken(), events: page.consultationEvents } : undefined;
   if (isFunnelStepPages(page.content)) {
     const requestedStep = page.content.flow.steps.find((step) => !step.isSystem);
@@ -47,18 +50,20 @@ export default async function PublicLandingPage({ params, searchParams }: { sear
     const visitorId = resolveFunnelVisitorId((await cookies()).get(FUNNEL_VISITOR_COOKIE)?.value);
     const runtime = await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: requestedStep.id, visitorId });
     if (!runtime || runtime.decision.status === "unavailable") notFound();
-    const withRetry = await buildRetryBoundary();
-    if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: page.content.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry });
+    if (runtime.decision.status !== "render") return registrationDeadlineOutcome({ decision: runtime.decision, query, form: page.content.flow.goal === "webinar" ? page.webinar?.form : page.submissionForm, slug: page.slug, withRetry: await buildRetryBoundary(hasRegistrationFeedbackQuery(query)) });
     const decision = runtime.decision;
     await recordPublicFunnelVisit({ pageId: runtime.page.id, vendorId: runtime.page.vendorId, stepId: decision.renderedStepId, logicalStepId: decision.requestedStepId, visitorId, experiment: decision.experiment });
-    if (page.content.flow.goal === "webinar") return withRetry(<FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
-    const document = getPublicFunnelPage(page.content, page.content.flow.steps.find((step) => step.id === decision.renderedStepId)?.path);
+    const renderedStep = page.content.flow.steps.find((step) => step.id === decision.renderedStepId);
+    if (page.content.flow.goal === "webinar") return (await buildRetryBoundary(renderedStep?.type === "webinar_registration_page"))(<FunnelWebinarExperience state={page.content} stepId={decision.renderedStepId} slug={page.slug} resource={page.webinar} funnelSource={{ landingPageId: page.id, stepId: decision.requestedStepId }} />);
+    const document = getPublicFunnelPage(page.content, renderedStep?.path);
     if (!document) notFound();
+    const withRetry = await buildRetryBoundary(Boolean(page.submissionForm) && pageDocumentRendersRegistrationForm(document));
     const logicalDocument = getPublicFunnelPage(page.content, requestedStep.path);
     const nextPath = logicalDocument ? getNextPublicFunnelStepPath(page.content, logicalDocument.id, { excludeStepIds: decision.progressionExcludedStepId ? [decision.progressionExcludedStepId] : [] }) : null;
     return withRetry(<PublicFunnelDocument document={document} consultation={consultation} commerce={page.commerceByPageId?.[document.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, funnelStepId: decision.requestedStepId, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}), ...(nextPath ? { redirectTo: `/lp/${encodeURIComponent(page.slug)}/${encodeURIComponent(nextPath)}` } : {}) } : undefined} />);
   }
-  const withRetry = await buildRetryBoundary();
-  if (!isPageDocument(page.content)) return withRetry(<LandingPageRenderer content={page.content} context={page.context} />);
+  // Legacy landing content cannot be inspected for forms; keep reading as before.
+  if (!isPageDocument(page.content)) return (await buildRetryBoundary(true))(<LandingPageRenderer content={page.content} context={page.context} />);
+  const withRetry = await buildRetryBoundary(Boolean(page.submissionForm) && pageDocumentRendersRegistrationForm(page.content));
   return withRetry(<PublicFunnelDocument document={page.content} consultation={consultation} commerce={page.commerceByPageId?.[page.content.id]} submission={page.submissionForm ? { form: page.submissionForm, landingPageId: page.id, ...(page.submissionLiveId ? { liveId: page.submissionLiveId } : {}) } : undefined} />);
 }

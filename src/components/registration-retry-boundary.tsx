@@ -6,13 +6,16 @@ import { getDb } from "@/lib/db";
 import { readRegistrationRetryDraft, registrationRetrySecureCookies, registrationRetryCookieName } from "@/lib/registration-form-retry";
 import { RegistrationRetryProvider } from "@/components/registration-retry-context";
 
-/** 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。 */
-export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted, attributionQuery }: {
-  formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string; attributionQuery?: RegistrationAttributionQuery;
+/**
+ * 公開入口載入後才讀草稿，避免跳過原本的發布與存取檢查。草稿只能讀一次：
+ * `readDraft` 為 false 時（例如 A/B 或步驟決定此頁不會顯示表單）不讀取、不消耗。
+ */
+export async function registrationRetryBoundary({ formId, sourcePath, retry, submitted, attributionQuery, readDraft = true }: {
+  formId?: string; sourcePath: string; retry?: string | string[]; submitted?: string; attributionQuery?: RegistrationAttributionQuery; readDraft?: boolean;
 }) {
   const failed = typeof retry === "string" && ["400", "403", "404", "429", "503", "unavailable"].includes(retry);
   let draft = null;
-  if (failed && retry !== "unavailable" && formId) {
+  if (readDraft && failed && retry !== "unavailable" && formId) {
     const jar = await cookies();
     const host = (await headers()).get("host") ?? "";
     const capability = jar.get(registrationRetryCookieName(registrationRetrySecureCookies(host)))?.value;

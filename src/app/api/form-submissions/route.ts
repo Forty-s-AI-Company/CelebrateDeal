@@ -290,7 +290,7 @@ async function createPublicSubmission(data: Prisma.FormSubmissionCreateArgs["dat
   });
 }
 
-function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: string; email: string; funnelSource: TrustedFunnelSource | null }) {
+function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: string; email: string; funnelPageId: string | null }) {
   return {
     vendorId: input.vendorId,
     eventId: `form-registered:${input.submissionId}`,
@@ -299,7 +299,7 @@ function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: 
     subjectId: input.submissionId,
     subjectKeyHash: automationCustomerKeyHash(input.vendorId, input.email),
     recipientEmail: input.email,
-    ...(input.funnelSource ? { funnelPageId: input.funnelSource.pageId } : {}),
+    ...(input.funnelPageId ? { funnelPageId: input.funnelPageId } : {}),
   };
 }
 
@@ -307,12 +307,49 @@ function formRegisteredAutomationEvent(input: { vendorId: string; submissionId: 
  * Registration succeeds independently from marketing delivery. The durable
  * automation execution key makes a retried request converge without a resend.
  */
-async function dispatchFormRegistered(vendorId: string, submissionId: string, email: string, funnelSource: TrustedFunnelSource | null) {
+async function dispatchFormRegistered(vendorId: string, submissionId: string, email: string, funnelPageId: string | null) {
   try {
-    await dispatchAutomationEvent(getDb(), formRegisteredAutomationEvent({ vendorId, submissionId, email, funnelSource }));
+    await dispatchAutomationEvent(getDb(), formRegisteredAutomationEvent({ vendorId, submissionId, email, funnelPageId }));
   } catch (error) {
     captureOperationalError(error, { area: "form_registration_automation", vendorId });
   }
+}
+
+/**
+ * A request that lands on an existing submission (duplicate or concurrent
+ * conflict) is not that registration's source. It may only close one gap:
+ * the earlier attempt answered 503 because its verification email could not
+ * be queued, and so it never reached the automation step. In the original
+ * flow automation runs only after the verification delivery is queued, so
+ * "no verification delivery existed before this request" identifies exactly
+ * that gap; any other duplicate dispatches nothing, as on master. Read before
+ * this request queues its own delivery. A failed lookup never fails the
+ * registration and dispatches nothing.
+ */
+async function automationMissedBySubmission(vendorId: string, submissionId: string) {
+  try {
+    const prior = await getDb().emailDelivery.findFirst({
+      where: { vendorId, sourceFormSubmissionId: submissionId, trigger: "form_submission_verification" },
+      select: { id: true },
+    });
+    return !prior;
+  } catch (error) {
+    captureOperationalError(error, { area: "form_registration_automation", vendorId });
+    return false;
+  }
+}
+
+/** The funnel scope stored with the registration, never the current request's. */
+async function dispatchMissedFormRegistered(vendorId: string, submissionId: string, email: string, missed: boolean) {
+  if (!missed) return;
+  let funnelPageId: string | null = null;
+  try {
+    funnelPageId = (await getDb().funnelSubmission.findFirst({ where: { vendorId, submissionId }, select: { pageId: true } }))?.pageId ?? null;
+  } catch (error) {
+    captureOperationalError(error, { area: "form_registration_automation", vendorId });
+    return;
+  }
+  await dispatchFormRegistered(vendorId, submissionId, email, funnelPageId);
 }
 
 async function refreshExpiredVerification(submission: VerifiableSubmission, now = new Date()) {
@@ -524,6 +561,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     return NextResponse.json({ error: "Live share unavailable" }, { status: 400 });
   }
   if (duplicate) {
+    const missedAutomation = await automationMissedBySubmission(form.vendorId, duplicate.id);
     const refreshed = await refreshExpiredVerification(duplicate);
     const verificationQueued = await enqueueSubmissionVerificationSafely({
       vendorId: form.vendorId,
@@ -543,7 +581,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     // `form-registered:<submissionId>` keeps this exactly-once. The LINE
     // binding capability is deliberately not issued: proving knowledge of an
     // email address must not let a browser bind LINE to an existing record.
-    await dispatchFormRegistered(form.vendorId, duplicate.id, email, funnelSource);
+    await dispatchMissedFormRegistered(form.vendorId, duplicate.id, email, missedAutomation);
     return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, duplicate.id);
   }
 
@@ -588,6 +626,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
       },
     });
     if (!concurrentSubmission) throw error;
+    const missedAutomation = await automationMissedBySubmission(form.vendorId, concurrentSubmission.id);
     const verificationQueued = await enqueueSubmissionVerificationSafely({
       vendorId: form.vendorId,
       vendorName: form.vendor.name,
@@ -601,7 +640,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     if (!verificationQueued) {
       return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
     }
-    await dispatchFormRegistered(form.vendorId, concurrentSubmission.id, email, funnelSource);
+    await dispatchMissedFormRegistered(form.vendorId, concurrentSubmission.id, email, missedAutomation);
     return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, concurrentSubmission.id);
   }
   await recordLeadAttribution(submission.id, attribution);
@@ -619,7 +658,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     return NextResponse.json({ error: "Verification email unavailable" }, { status: 503 });
   }
 
-  await dispatchFormRegistered(form.vendorId, submission.id, email, funnelSource);
+  await dispatchFormRegistered(form.vendorId, submission.id, email, funnelSource?.pageId ?? null);
 
   return submissionResponse(request, parsed.data.redirectTo, isNativeFormPost, submission.id, true);
 }

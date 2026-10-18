@@ -296,11 +296,20 @@ function HeadlineMarkup({ level, text }: { level: string; text: string }) {
   }
 }
 
+/** Validated server attribution (draft or page query), sent only when present. */
+function referralFields(attribution: { referralCode?: string; shareCode?: string } | undefined) {
+  return {
+    ...(attribution?.referralCode ? { referralCode: attribution.referralCode } : {}),
+    ...(attribution?.shareCode ? { shareCode: attribution.shareCode } : {}),
+  };
+}
+
 function PublicSubmissionForm({ submission, label, requireConsent }: { submission: FunnelSubmissionContext; label: string; requireConsent: boolean }) {
   const retry = useRegistrationRetry(submission.form.id);
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(retry?.submitted ? "success" : retry?.message ? "error" : "idle");
   const [message, setMessage] = useState(retry?.submitted ? `${submission.form.successMessage} ${FORM_SUBMISSION_VERIFICATION_MESSAGE}` : retry?.message ?? "");
   const submissionInFlight = useRef(false);
+  const referral = referralFields(retry?.attribution);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // Lock synchronously: disabled is only applied after the next React render.
@@ -310,7 +319,7 @@ function PublicSubmissionForm({ submission, label, requireConsent }: { submissio
     try {
       const values = new FormData(event.currentTarget);
       const payload = Object.fromEntries(submission.form.fields.map((field) => [field.key, String(values.get(field.key) ?? "")]));
-      const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload });
+      const response = await postRegistrationSubmission({ formId: submission.form.id, landingPageId: submission.landingPageId, funnelStepId: submission.funnelStepId, liveId: submission.liveId ?? null, payload, ...referral });
       if (!response.ok) {
         submissionInFlight.current = false;
         setStatus("error"); setMessage(formSubmissionErrorMessage(response.status));
@@ -328,6 +337,9 @@ function PublicSubmissionForm({ submission, label, requireConsent }: { submissio
     <input type="hidden" name="landingPageId" value={submission.landingPageId ?? ""} />
     <input type="hidden" name="funnelStepId" value={submission.funnelStepId ?? ""} />
     <input type="hidden" name="liveId" value={submission.liveId ?? ""} />
+    {/* Validated server attribution (draft or page query), as LeadForm sends it. */}
+    <input type="hidden" name="referralCode" value={referral.referralCode ?? ""} />
+    <input type="hidden" name="shareCode" value={referral.shareCode ?? ""} />
     <input type="hidden" name="redirectTo" value={submission.redirectTo ?? retry?.sourcePath ?? ""} />
     {retry ? <input type="hidden" name="__registrationReturnPath" value={retry.sourcePath} /> : null}
     {submission.form.fields.map((field) => <label key={field.key} className="block space-y-1"><span className="text-sm font-medium text-slate-700">{field.label}{field.required ? " *" : ""}</span><input name={field.key} defaultValue={retry?.draft?.answers[field.key] ?? ""} type={field.type} required={field.required} disabled={status === "submitting" || status === "success"} autoComplete={field.key === "email" ? "email" : field.key === "name" ? "name" : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></label>)}

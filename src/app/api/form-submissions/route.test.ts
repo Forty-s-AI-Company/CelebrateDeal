@@ -14,7 +14,8 @@ const db = {
   teamMembership: { findMany: vi.fn() },
   teamMembershipRelationship: { findMany: vi.fn() },
   teamLeadAttribution: { upsert: vi.fn() },
-  emailDelivery: { create: vi.fn(), findUnique: vi.fn() },
+  emailDelivery: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: "prior-verification" })) },
+  funnelSubmission: { findFirst: vi.fn(async (): Promise<{ pageId: string } | null> => null) },
   emailSuppression: { findUnique: vi.fn() },
   automationRule: { findMany: vi.fn(async () => []) },
 };
@@ -953,13 +954,27 @@ describe("native registration retry (WP-05)", () => {
     expect(vi.mocked(checkRateLimit).mock.calls.filter(([, key]) => key === "form-submissions")).toHaveLength(1);
   });
 
-  it("dispatches form_registered on a retry that lands on the existing submission, without a LINE binding capability", async () => {
+  it("dispatches form_registered with the stored funnel only when the earlier attempt never queued its verification", async () => {
     db.formSubmission.findFirst.mockResolvedValueOnce(pendingSubmission("existing-after-503"));
+    db.emailDelivery.findFirst.mockResolvedValueOnce(null);
+    db.funnelSubmission.findFirst.mockResolvedValueOnce({ pageId: "stored-funnel-a" });
     const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }));
     expect(response.status).toBe(303);
     expect(db.formSubmission.create).not.toHaveBeenCalled();
-    expect(db.automationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", trigger: "form_registered" }) }));
+    expect(db.emailDelivery.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", sourceFormSubmissionId: "existing-after-503", trigger: "form_submission_verification" } }));
+    // Scoped by the registration's own stored funnel, never the current request.
+    expect(db.automationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      vendorId: "vendor-1", trigger: "form_registered", OR: [{ funnelPageId: null }, { funnelPageId: "stored-funnel-a" }],
+    }) }));
     expect(response.headers.get("set-cookie") ?? "").not.toContain("line_binding");
+  });
+
+  it("dispatches nothing for an ordinary duplicate whose verification was already queued", async () => {
+    db.formSubmission.findFirst.mockResolvedValueOnce(pendingSubmission("completed-earlier"));
+    const response = await POST(nativeRetryRequest({ name: "Lead", email: "lead@example.test" }));
+    expect(response.status).toBe(303);
+    expect(db.automationRule.findMany).not.toHaveBeenCalled();
+    expect(db.funnelSubmission.findFirst).not.toHaveBeenCalled();
   });
 });
 

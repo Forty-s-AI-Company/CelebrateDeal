@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FunnelWebinarExperience, type WebinarExperienceResource } from "./funnel-webinar-experience";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
+import { RegistrationRetryProvider } from "@/components/registration-retry-context";
 
 const resource: WebinarExperienceResource = {
   live: { id: "owned_live", slug: "owned-live", videoId: "owned_video", videoTitle: "已授權來源" },
@@ -55,3 +56,16 @@ describe("Webinar shared preview/public experience", () => {
     expect(html).not.toContain('/broadcast/play');
   });
 });
+
+it("posts the boundary's validated ref/share attribution in the native webinar form", () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
+  const attribution = { referralCode: "synthetic-ref", shareCode: `tls1.${"a".repeat(32)}` };
+  const html = renderToStaticMarkup(<RegistrationRetryProvider value={{ formId: "owned_form", sourcePath: "/lp/current-slug", draft: null, failed: false, attribution }}>
+    <FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} />
+  </RegistrationRetryProvider>);
+  expect(html).toContain('name="referralCode" value="synthetic-ref"');
+  expect(html).toContain(`name="shareCode" value="tls1.${"a".repeat(32)}"`);
+  expect(html).toContain('name="__registrationReturnPath" value="/lp/current-slug"');
+  vi.useRealTimers();
+});
+

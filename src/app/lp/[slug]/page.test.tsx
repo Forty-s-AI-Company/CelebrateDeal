@@ -22,6 +22,7 @@ vi.mock("@/components/landing-pages/funnel-webinar-experience", async () => {
   } };
 });
 import { createFunnelFlow } from "@/lib/funnel-flow";
+import { createEmptyPageDocument, FunnelNodeSchema } from "@/lib/funnel-page-document";
 import { createFunnelStepPages } from "@/lib/funnel-step-pages";
 import PublicStepPage from "./[stepPath]/page";
 import PublicPage, { generateMetadata } from "./page";
@@ -115,3 +116,40 @@ it.each(["closed", "redirect"] as const)("renders bound draft and verified succe
   expect(mocks.verifyResult).toHaveBeenLastCalledWith(expect.any(String),"webinar-form",sourcePath);
  }
 });
+
+it("reads the single-use draft only when the rendered Webinar step shows the registration form", async () => {
+  const content = createFunnelStepPages(createFunnelFlow({ id: "webinar", name: "Webinar", goal: "webinar", domain: "webinar" })!)!;
+  mocks.load.mockResolvedValue({ id: "page1", slug: "webinar", content, context: { forms: [] }, webinar: { form: { id: "webinar-form" } } });
+  mocks.readDraft.mockResolvedValue(null);
+  const searchParams = () => Promise.resolve({ registrationRetry: "429" });
+  await PublicStepPage({ params: Promise.resolve({ slug: "webinar", stepPath: "broadcast" }), searchParams: searchParams() });
+  expect(mocks.readDraft).not.toHaveBeenCalled();
+  // A runtime decision that renders another step than requested decides, not the URL.
+  const registration = content.flow.steps.find((step) => step.type === "webinar_registration_page")!;
+  const broadcast = content.flow.steps.find((step) => step.type === "webinar_broadcast_page")!;
+  mocks.runtime.mockResolvedValueOnce({ page: { id: "page1", vendorId: "vendor-1" }, decision: { status: "render", requestedStepId: registration.id, renderedStepId: broadcast.id, experiment: null } });
+  await PublicPage({ params: Promise.resolve({ slug: "webinar" }), searchParams: searchParams() });
+  expect(mocks.readDraft).not.toHaveBeenCalled();
+  await PublicPage({ params: Promise.resolve({ slug: "webinar" }), searchParams: searchParams() });
+  expect(mocks.readDraft).toHaveBeenCalledOnce();
+});
+
+it("reads the single-use draft for a page document only when it renders a lead form", async () => {
+  mocks.readDraft.mockResolvedValue(null);
+  const searchParams = () => Promise.resolve({ registrationRetry: "400" });
+  const withoutForm = createEmptyPageDocument();
+  mocks.load.mockResolvedValueOnce({ id: "page1", slug: "lead", content: withoutForm, context: { forms: [] }, submissionForm: { id: "form", fields: [], submitLabel: "送出", successMessage: "ok" } });
+  await PublicPage({ params: Promise.resolve({ slug: "lead" }), searchParams: searchParams() });
+  expect(mocks.readDraft).not.toHaveBeenCalled();
+  const withForm = createEmptyPageDocument();
+  withForm.root = [FunnelNodeSchema.parse({ schemaVersion: 1, id: "lead", type: "form" })];
+  mocks.load.mockResolvedValueOnce({ id: "page1", slug: "lead", content: withForm, context: { forms: [] }, submissionForm: { id: "form", fields: [], submitLabel: "送出", successMessage: "ok" } });
+  await PublicPage({ params: Promise.resolve({ slug: "lead" }), searchParams: searchParams() });
+  expect(mocks.readDraft).toHaveBeenCalledOnce();
+  const checkoutContact = createEmptyPageDocument();
+  checkoutContact.root = [FunnelNodeSchema.parse({ schemaVersion: 1, id: "contact", type: "form", props: { variant: "checkout-contact" } })];
+  mocks.load.mockResolvedValueOnce({ id: "page1", slug: "lead", content: checkoutContact, context: { forms: [] }, submissionForm: { id: "form", fields: [], submitLabel: "送出", successMessage: "ok" } });
+  await PublicPage({ params: Promise.resolve({ slug: "lead" }), searchParams: searchParams() });
+  expect(mocks.readDraft).toHaveBeenCalledOnce();
+});
+

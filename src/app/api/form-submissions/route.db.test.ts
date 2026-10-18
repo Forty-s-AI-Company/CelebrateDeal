@@ -5,7 +5,18 @@ import { getDb } from "@/lib/db";
 vi.mock("@/lib/rate-limit", () => ({
   checkRateLimit: vi.fn(async () => null),
 }));
+// Real funnel trust by default; individual tests substitute a trusted source
+// for synthetic pages without seeding a full published Funnel and visit.
+vi.mock("@/lib/funnel-runtime", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/funnel-runtime")>();
+  return {
+    ...original,
+    funnelVisitorIdFromRequest: vi.fn(original.funnelVisitorIdFromRequest),
+    resolveTrustedFunnelSubmission: vi.fn(original.resolveTrustedFunnelSubmission),
+  };
+});
 
+import { funnelVisitorIdFromRequest, resolveTrustedFunnelSubmission } from "@/lib/funnel-runtime";
 import { POST } from "@/app/api/form-submissions/route";
 
 const createdVendorIds: string[] = [];
@@ -141,3 +152,65 @@ it("deletes retry drafts with their form's tenant", async () => {
   await getDb().vendor.delete({ where: { id: vendor.id } });
   expect(await getDb().registrationFormRetryDraft.count({ where: { formId: form.id } })).toBe(0);
 });
+
+describe("form_registered automation on existing submissions", () => {
+  async function funnelFixture(label: string) {
+    const suffix = `wp05-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const db = getDb();
+    const vendor = await db.vendor.create({ data: { name: "Synthetic Funnel", slug: suffix, email: `${suffix}@example.test`, passwordHash: "synthetic-unused" } });
+    createdVendorIds.push(vendor.id);
+    const project = await db.salesProject.create({ data: { vendorId: vendor.id, name: "Synthetic", slug: suffix, mode: "live_course", primaryFlow: "live" } });
+    const form = await db.registrationForm.create({ data: { vendorId: vendor.id, name: "Synthetic", slug: suffix, headline: "Synthetic", fields: [{ key: "name", label: "Name", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }] } });
+    const page = (name: string) => db.landingPage.create({ data: { vendorId: vendor.id, projectId: project.id, name, slug: `${suffix}-${name}`, draftContent: {} } });
+    const [pageA, pageB] = [await page("a"), await page("b")];
+    const rule = (name: string, funnelPageId: string | null) => db.automationRule.create({ data: { vendorId: vendor.id, name, trigger: "form_registered", funnelPageId, condition: { type: "always" }, actions: [{ type: "add_customer_tag", tag: name }] } });
+    const ruleA = await rule("funnel-a", pageA.id);
+    const ruleB = await rule("funnel-b", pageB.id);
+    vi.mocked(funnelVisitorIdFromRequest).mockReturnValue("synthetic-visitor-123456789012345678901234");
+    vi.mocked(resolveTrustedFunnelSubmission).mockImplementation(async (input) => ({ vendorId: vendor.id, pageId: input.pageId, stepId: input.stepId, visitId: null as unknown as string }));
+    const submit = (pageId: string) => POST(new Request("https://app.example.test/api/form-submissions", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://app.example.test", "x-celebratedeal-client": "web" },
+      body: JSON.stringify({ formId: form.id, landingPageId: pageId, funnelStepId: "opt_in", payload: { name: "Synthetic", email: `${suffix}@example.test` } }),
+    }));
+    const executions = async (ruleId: string) => db.automationExecutionLog.count({ where: { ruleId } });
+    const actual = await vi.importActual<typeof import("@/lib/funnel-runtime")>("@/lib/funnel-runtime");
+    const cleanup = async () => {
+      vi.mocked(funnelVisitorIdFromRequest).mockImplementation(actual.funnelVisitorIdFromRequest);
+      vi.mocked(resolveTrustedFunnelSubmission).mockImplementation(actual.resolveTrustedFunnelSubmission);
+      // FunnelSubmission restricts deleting its FormSubmission; remove it before the vendor cascade.
+      await db.funnelSubmission.deleteMany({ where: { vendorId: vendor.id } });
+    };
+    return { form, pageA, pageB, ruleA, ruleB, submit, executions, cleanup };
+  }
+
+  it("does not fire a funnel-B rule for a registration that came from funnel A", async () => {
+    const fixture = await funnelFixture("ab");
+    try {
+      expect((await fixture.submit(fixture.pageA.id)).status).toBe(200);
+      expect(await fixture.executions(fixture.ruleA.id)).toBe(1);
+      expect(await fixture.executions(fixture.ruleB.id)).toBe(0);
+      expect((await fixture.submit(fixture.pageB.id)).status).toBe(200);
+      expect(await getDb().formSubmission.count({ where: { formId: fixture.form.id } })).toBe(1);
+      expect(await fixture.executions(fixture.ruleA.id)).toBe(1);
+      expect(await fixture.executions(fixture.ruleB.id)).toBe(0);
+    } finally { await fixture.cleanup(); }
+  });
+
+  it("closes a 503-before-dispatch gap exactly once, scoped to the stored funnel", async () => {
+    const fixture = await funnelFixture("gap");
+    try {
+      vi.spyOn(emailDelivery, "ensureFormSubmissionVerificationDelivery").mockRejectedValueOnce(new Error("synthetic queue unavailable"));
+      expect((await fixture.submit(fixture.pageA.id)).status).toBe(503);
+      expect(await fixture.executions(fixture.ruleA.id)).toBe(0);
+      // The retry arrives through funnel B; only the stored funnel A scope applies.
+      expect((await fixture.submit(fixture.pageB.id)).status).toBe(200);
+      expect(await fixture.executions(fixture.ruleA.id)).toBe(1);
+      expect(await fixture.executions(fixture.ruleB.id)).toBe(0);
+      expect((await fixture.submit(fixture.pageA.id)).status).toBe(200);
+      expect(await fixture.executions(fixture.ruleA.id)).toBe(1);
+      expect(await getDb().formSubmission.count({ where: { formId: fixture.form.id } })).toBe(1);
+    } finally { await fixture.cleanup(); }
+  });
+});
+

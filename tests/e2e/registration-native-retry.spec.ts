@@ -13,8 +13,9 @@ const runId = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const vendor = { id: "" };
 // toSlug() keeps CJK characters, so a CJK slug is a supported public URL.
 const cases = [
-  { label: "ASCII slug", slug: `wp05-retry-${runId}`, formId: "", email: `wp05-a-${runId}@celebratedeal.local` },
-  { label: "CJK slug", slug: `夏季-新品-${runId}`, formId: "", email: `wp05-c-${runId}@celebratedeal.local` },
+  // The ASCII case arrives with an affiliate `ref`, which must survive the retry.
+  { label: "ASCII slug", slug: `wp05-retry-${runId}`, formId: "", email: `wp05-a-${runId}@celebratedeal.local`, ref: "wp05-synthetic-ref" },
+  { label: "CJK slug", slug: `夏季-新品-${runId}`, formId: "", email: `wp05-c-${runId}@celebratedeal.local`, ref: "" },
 ];
 const visitorName = "合成訪客";
 
@@ -51,12 +52,13 @@ for (const entry of cases) {
     const context = await browser.newContext({ javaScriptEnabled: false });
     const page = await context.newPage();
     try {
-      await page.goto(`/form/${encodeURIComponent(entry.slug)}`);
+      await page.goto(`/form/${encodeURIComponent(entry.slug)}${entry.ref ? `?ref=${entry.ref}` : ""}`);
       await page.getByLabel("姓名").fill(visitorName);
       await page.getByLabel("Email").fill(entry.email);
       await page.getByRole("button", { name: "送出報名" }).click();
 
-      await expect(page).toHaveURL(pathRegex(entry.slug, "registrationRetry=403"));
+      await expect(page).toHaveURL(pathRegex(entry.slug, `${entry.ref ? `ref=${entry.ref}&` : ""}registrationRetry=403`));
+      await expect(page.locator('input[name="referralCode"]')).toHaveValue(entry.ref);
       expect(page.url()).not.toContain(encodeURIComponent(entry.email));
       await expect(page.getByRole("alert").filter({ hasText: "這次送出未通過安全檢查" })).toBeVisible();
       await expect(page.getByLabel("姓名")).toHaveValue(visitorName);

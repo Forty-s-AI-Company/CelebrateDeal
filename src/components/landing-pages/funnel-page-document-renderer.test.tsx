@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
 import { FUNNEL_BLOCK_REGISTRY, instantiateBlock } from "@/lib/funnel-block-library";
+import { RegistrationRetryProvider } from "@/components/registration-retry-context";
 
 function node(type: FunnelNode["type"], id: string, extra: Partial<FunnelNode> | FunnelNode[] = {}): FunnelNode {
   const details = Array.isArray(extra) ? { children: extra } : extra;
@@ -217,5 +218,19 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).toContain("影片網址不安全或尚未設定");
     expect(html).toContain("音訊網址不安全或尚未設定");
   });
+});
+
+it("posts the boundary's validated ref/share attribution in the native funnel form fallback", () => {
+  const page = documentWith([node("form", "lead-form", { children: [node("form_input", "lead-email", { props: { name: "email", label: "Email" } })] })]);
+  const fields = [{ key: "name", label: "姓名", type: "text" as const, required: true }, { key: "email", label: "Email", type: "email" as const, required: true }];
+  const render = (attribution?: { referralCode?: string; shareCode?: string }) => renderToStaticMarkup(<RegistrationRetryProvider value={{ formId: "form-1", sourcePath: "/lp/campaign", draft: null, failed: false, attribution }}>
+    <FunnelPageDocumentRenderer document={page} submission={{ landingPageId: "page-1", funnelStepId: "opt_in", form: { id: "form-1", submitLabel: "送出", successMessage: "收到", fields } }} />
+  </RegistrationRetryProvider>);
+  const html = render({ referralCode: "synthetic-ref", shareCode: `tls1.${"b".repeat(32)}` });
+  expect(html).toContain('name="referralCode" value="synthetic-ref"');
+  expect(html).toContain(`name="shareCode" value="tls1.${"b".repeat(32)}"`);
+  // The funnel page itself stays the landingPageId; attribution never overrides it.
+  expect(html).toContain('name="landingPageId" value="page-1"');
+  expect(render()).toContain('name="referralCode" value=""');
 });
 
