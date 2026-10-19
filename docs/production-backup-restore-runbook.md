@@ -59,6 +59,7 @@
 
 目標：證明「一份真實備份可以在隔離環境還原、帳務數字一致」，並量測 RTO。全程不碰 Production 的寫入，也不覆寫任何既有資料庫。
 
+0. **備份當下產生彙總快照**（PR #447 審查 m4）：與 `pg_dump` 同一個 snapshot（例如先 `pg_export_snapshot()` 再以 `--snapshot` 傾印），或在備份完成後立刻以唯讀連線，對來源跑一次 §C 的 SQL，把輸出與 archive 一起加密保存（例如 `<archive-id>.aggregates.txt.age`）。只記聚合值，不含個資。使用 PITR 還原時，改在還原出的時間點產生這份快照。
 1. **準備隔離目標**：本機 PostgreSQL 17，只聽 `127.0.0.1`，建立空資料庫 `celebratedeal_restore_drill_<日期>`。連線字串存在 SecretManagement（例如 `CelebrateDeal.Restore.IsolatedTarget`），`sslmode=disable` 只允許 loopback（`Set-CelebrateDealPostgresEnvironment -AllowLocalNonTls` 會強制檢查）。
 2. **乾跑**：
 
@@ -72,8 +73,12 @@
    `-DryRun` 只檢查 archive 是否存在、`age`／`pg_restore`／`psql` 是否可用，並印出完整步驟、擴充準備 SQL 與 `pg_restore` 參數；不讀密鑰、不解密、不連資料庫，即使同時帶 `-Execute` 也一樣。
 3. **執行**：同一指令改帶 `-Execute -Confirmation RESTORE-TO-ISOLATED-TARGET`。腳本會：解密到暫存檔 → 以 `pg_restore --schema-only` 找出 archive 期望的 `pg_trgm` schema（見 §D）→ 在目標建立 `extensions` schema、`pgcrypto` 與 `pg_trgm` → 只還原 `public` → 刪除暫存檔。成功時輸出 `{"isolatedRestore":"passed","elapsedSeconds":…,"trigramExtensionSchema":…}`，失敗只輸出安全分類（例如 `pg_restore_extension_compatibility`）。
 4. **驗證結構與筆數**：`ops/backup/Test-CelebrateDealRestoreEvidence.ps1 -Execute`（逐表 count、migration 清單、欄位結構）。
-5. **驗證帳務彙總**：在來源（Production 唯讀連線，需 owner 授權）與目標各跑一次 §C 的 SQL，逐列比對，必須完全相同。
-6. **驗證加密資料可讀**：用備份當時版本的 `CSRF_SECRET` 起一個指向隔離目標的本機 app，抽查一筆加密欄位能解密（例如後台訂單買家資訊能正常顯示）。缺對應金鑰就判定演練失敗（見 §E）。
+5. **驗證帳務彙總**：對隔離還原庫跑 §C 的 SQL，與第 0 步「備份當下的彙總快照」逐列比對，必須完全相同。**不要拿持續寫入中的 Production 比對**：備份後的任何交易、退款或結算都會讓比對失敗，失去驗收作用。
+6. **驗證加密資料可讀**（需 owner 明確授權後才執行）：
+   - 預設只在 **staging 備份＋staging 的 `CSRF_SECRET`＋合成資料**上做；不得把 Production 根金鑰與可解密的正式個資同時放到開發機。
+   - 不啟動整個 app；用只解密單一欄位、只輸出 PASS／FAIL 的唯讀腳本抽查一筆合成資料的加密欄位（腳本尚未建立，列為待辦）。若暫時只能起 app，必須清空所有 provider env（Email、LINE、PayUni、Sentry DSN、Cloudflare），且只連隔離還原庫。
+   - Production 備份的解密驗證，需要 owner 另行授權並指定執行環境與在場人員。
+   - 缺對應金鑰就判定演練失敗（見 §E）。
 7. **收尾**：刪除隔離資料庫與暫存檔；把 §C 的比對結果與 RTO 記到下方表格與 `reports/` 收據（只記數字與 PASS／FAIL）。
 
 ### RTO 記錄表
@@ -86,7 +91,7 @@
 
 ## C. 帳務彙總一致性檢查 SQL
 
-只回傳筆數與加總，不含任何個資。來源與目標各跑一次，輸出必須逐列相同。已於 2026-10-19 在套用全部 108 條 migration 的 loopback PostgreSQL 17 驗證可執行。
+只回傳筆數與加總，不含任何個資。備份當下的快照（§B 第 0 步）與隔離還原庫各跑一次，輸出必須逐列相同。2026-10-19 已在套用全部 108 條 migration 的 loopback PostgreSQL 17（空資料庫）執行成功，命令與輸出見 `reports/review-2026Q4/B-line-B4-loopback-receipt.md`。
 
 ```sql
 SELECT 'migrations' AS item, count(*)::text AS row_count, NULL::text AS sum_1, NULL::text AS sum_2, NULL::text AS sum_3
@@ -100,20 +105,43 @@ SELECT 'RefundRecord:' || status, count(*)::text,
        sum("refundAmountCents")::text, sum("gatewayFeeRefundCents")::text, sum("platformFeeRefundCents")::text
   FROM public."RefundRecord" GROUP BY status
 UNION ALL
-SELECT 'Settlement:' || status, count(*)::text,
+SELECT 'Settlement:' || status || ':' || CASE WHEN "lockedAt" IS NULL THEN 'unlocked' ELSE 'locked' END, count(*)::text,
        sum("grossRevenueCents")::text, sum("payoutableAmountCents")::text, sum("finalPayoutAmountCents")::text
-  FROM public."Settlement" GROUP BY status
+  FROM public."Settlement" GROUP BY status, ("lockedAt" IS NULL)
+UNION ALL
+SELECT 'Invoice:' || status, count(*)::text,
+       sum("subtotalCents")::text, sum("taxCents")::text, sum("totalCents")::text
+  FROM public."Invoice" GROUP BY status
+UNION ALL
+SELECT 'AffiliateCommission:' || status::text, count(*)::text,
+       sum("orderAmountCents")::text, sum("commissionBaseAmountCents")::text, sum("commissionAmountCents")::text
+  FROM public."AffiliateCommission" GROUP BY status
+UNION ALL
+SELECT 'AffiliatePayout:' || status, count(*)::text,
+       sum("commissionAmountCents")::text, sum("adjustmentAmountCents")::text, sum("finalAmountCents")::text
+  FROM public."AffiliatePayout" GROUP BY status
+UNION ALL
+SELECT 'CoursePayout:' || status, count(*)::text,
+       sum("commissionAmountCents")::text, sum("adjustmentAmountCents")::text, sum("finalAmountCents")::text
+  FROM public."CoursePayout" GROUP BY status
+UNION ALL
+SELECT 'PayoutItem:' || status, count(*)::text,
+       sum("payoutAmountCents")::text, NULL::text, NULL::text
+  FROM public."PayoutItem" GROUP BY status
+UNION ALL
+SELECT 'WebhookEvent:' || status, count(*)::text, NULL::text, NULL::text, NULL::text
+  FROM public."WebhookEvent" GROUP BY status
 ORDER BY 1;
 ```
 
-欄位對照：PaymentTransaction 的 sum_1～3 是 gross／net／refunded；RefundRecord 是 refund／gatewayFeeRefund／platformFeeRefund；Settlement 是 grossRevenue／payoutable／finalPayout（單位都是分）。
+欄位對照（單位都是分）：PaymentTransaction 的 sum_1～3 是 gross／net／refunded；RefundRecord 是 refund／gatewayFeeRefund／platformFeeRefund；Settlement 依 `status` 與是否鎖定分組，是 grossRevenue／payoutable／finalPayout；Invoice 是 subtotal／tax／total；AffiliateCommission 是 orderAmount／commissionBase／commission；AffiliatePayout 與 CoursePayout 是 commission／adjustment／final；PayoutItem 是 payoutAmount；WebhookEvent 只計數。
 
 ## D. `pg_trgm` 擴充的 schema（F-074／B04-21）
 
-- migration `20260810051000_g7_54_form_submission_search_indexes` 執行 `CREATE EXTENSION IF NOT EXISTS pg_trgm` 時沒有指定 schema，`gin_trgm_ops` 也沒有限定。結果依環境不同：Supabase 慣例放在 `extensions`；一般 PostgreSQL 會落在 `public`（2026-10-19 在 loopback PG17 套用全部 migration 後實測為 `public`）。
-- `pg_dump` 會把 index 寫成 `extensions.gin_trgm_ops` 或 `public.gin_trgm_ops`，但只還原 `public` 時不會帶出擴充本身，所以目標若沒有在同一個 schema 預先建立 `pg_trgm`，三個 `FormSubmission_*_trgm_idx` 會建立失敗（2026-09-29 收據的失敗原因；2026-10-19 在 loopback PG17 對兩種放置方式都重現並驗證修正）。
+- migration `20260810051000_g7_54_form_submission_search_indexes` 執行 `CREATE EXTENSION IF NOT EXISTS pg_trgm` 時沒有指定 schema，`gin_trgm_ops` 也沒有限定，所以位置取決於當時的 `search_path`，**不能假設，一律以中繼資料查詢或 archive DDL 為準**。已知事實：staging（主對話 2026-10-19 唯讀查證）的 `pg_trgm` 在 `public`（1.6），`pgcrypto` 與 `uuid-ossp` 在 `extensions`；loopback PG17 套用全部 migration 後也在 `public`。Production 尚未查證。
+- `pg_dump` 會把 index 寫成 `extensions.gin_trgm_ops` 或 `public.gin_trgm_ops`，但只還原 `public` 時不會帶出擴充本身，所以目標若沒有在同一個 schema 預先建立 `pg_trgm`，三個 `FormSubmission_*_trgm_idx` 會建立失敗（2026-09-29 收據的失敗原因；2026-10-19 以合成資料在 loopback PG17 對兩種放置方式重現並驗證修正，命令與輸出見 `reports/review-2026Q4/B-line-B4-loopback-receipt.md`）。
 - `Invoke-CelebrateDealRestoreDrill.ps1` 的處理：`-TrigramExtensionSchema auto`（預設）從 archive 的 schema-only DDL 找出被引用的 schema；找不到就用 `extensions`；同時引用兩個 schema 就停止。目標上若已有 `pg_trgm` 但在別的 schema，會 `ALTER EXTENSION pg_trgm SET SCHEMA` 搬過去。也可手動指定 `extensions` 或 `public`。
-- staging 的 GitHub 還原 runner（`scripts/staging-backup-recovery.mjs`）固定在 `extensions` 建立，受 blob 白名單保護，本次未修改；若 staging 的 `pg_trgm` 實際在 `public`，該 runner 會回報 `BLOCKED`，屆時再另開審查過的變更。
+- staging 的 GitHub 還原 runner（`scripts/staging-backup-recovery.mjs`）原本固定在 `extensions` 建立，對 staging（`public`）一定會失敗。已改為先以 `pg_restore --schema-only` 讀 archive 的 index DDL，照來源位置建立 `pg_trgm`（`pgcrypto` 仍在 `extensions`），兩種位置都有測試。這個檔案不在 `staging-backup-recovery-source.mjs` 的 blob 白名單內（白名單只鎖備份端的檔案），先前「受 blob 白名單保護」的說法是錯的。
 - 日後的新 migration：建立擴充一律寫 `WITH SCHEMA extensions`，operator class 寫成 `extensions.gin_trgm_ops`。既有 migration 不改（migration 只能往前）。
 
 ## E. `CSRF_SECRET`：備份與還原必須一併處理的加密根金鑰（F-031①／B04-03）

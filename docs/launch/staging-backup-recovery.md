@@ -33,22 +33,23 @@ PostgreSQL 17 container 使用 `--network none`、資料目錄與 `/tmp` 的 tmp
 一律停止，不能將本機合約測試當成回復成功。
 
 備份是 `public` schema 的邏輯 archive，不包含 Supabase 管理的角色、其他 schema
-或擴充安裝位置。隔離容器先於 `extensions` schema 建立 `pgcrypto`、`pg_trgm`；
-若 archive 依賴其他位置，還原會失敗並回報 `BLOCKED`。此演練不聲稱完整的
-Supabase project restore。
+或擴充安裝位置。隔離容器先於 `extensions` schema 建立 `pgcrypto`；`pg_trgm`
+則照 archive index DDL 引用的 schema 建立（見下節）。其他依賴位置不符時，還原會
+失敗並回報 `BLOCKED`。此演練不聲稱完整的 Supabase project restore。
 
-## `pg_trgm` 位置的已知風險（F-074，2026-10-19）
+## `pg_trgm` 位置（F-074，2026-10-19）
 
-`g7_54` migration 建立 `pg_trgm` 時沒有指定 schema，實際位置取決於當時的
-`search_path`：Supabase 的預設 `search_path` 是 `"$user", public, extensions`，
-所以 staging 的 `pg_trgm` 可能在 `public` 而不是 `extensions`。若是 `public`，
-archive 的 index 會引用 `public.gin_trgm_ops`，本 runner 的固定初始化
-（只在 `extensions` 建立）會讓還原失敗並回報 `BLOCKED`。
+`g7_54` migration 建立 `pg_trgm` 時沒有指定 schema，位置取決於當時的
+`search_path`，所以不能假設。主對話已唯讀查證 staging：**`pg_trgm` 在 `public`
+（1.6），`pgcrypto` 與 `uuid-ossp` 在 `extensions`**。archive 的 index 因此引用
+`public.gin_trgm_ops`。
 
-- 確認方式（唯讀、需 owner 同意查 staging 中繼資料）：
-  `SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pg_trgm';`
-- 本 runner 受 blob 白名單保護，本次未修改。若查到 `public`，另開審查過的變更，
-  比照 `ops/backup/Invoke-CelebrateDealRestoreDrill.ps1` 的作法：從 archive 的
-  schema-only DDL 找出被引用的 schema 後再建立擴充。
+- 原本 runner 固定只在 `extensions` 建立 `pg_trgm`，對 staging 一定會還原失敗。
+- 現在 runner 在準備目標前先跑 `pg_restore --schema-only`，從 archive 的 index
+  DDL 找出 `pg_trgm` 的 schema（同時引用兩個 schema 就停止，沒有引用就用
+  `extensions`），再照來源位置建立。還原 job 刻意不連來源資料庫，所以以 archive
+  DDL 作為來源位置的依據。兩種位置的單元測試在 `scripts/staging-backup-recovery.test.mjs`，
+  loopback 重現在 `reports/review-2026Q4/B-line-B4-loopback-receipt.md`。
+- 這個 runner 不在 blob 白名單內（白名單只鎖備份端），改動走一般審查。
 - Production 的隔離還原步驟、RTO 記錄表與帳務彙總 SQL 見
   [`production-backup-restore-runbook.md`](../production-backup-restore-runbook.md) §B～§D。
