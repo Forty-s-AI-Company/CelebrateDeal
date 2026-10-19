@@ -36,3 +36,19 @@ PostgreSQL 17 container 使用 `--network none`、資料目錄與 `/tmp` 的 tmp
 或擴充安裝位置。隔離容器先於 `extensions` schema 建立 `pgcrypto`、`pg_trgm`；
 若 archive 依賴其他位置，還原會失敗並回報 `BLOCKED`。此演練不聲稱完整的
 Supabase project restore。
+
+## `pg_trgm` 位置的已知風險（F-074，2026-10-19）
+
+`g7_54` migration 建立 `pg_trgm` 時沒有指定 schema，實際位置取決於當時的
+`search_path`：Supabase 的預設 `search_path` 是 `"$user", public, extensions`，
+所以 staging 的 `pg_trgm` 可能在 `public` 而不是 `extensions`。若是 `public`，
+archive 的 index 會引用 `public.gin_trgm_ops`，本 runner 的固定初始化
+（只在 `extensions` 建立）會讓還原失敗並回報 `BLOCKED`。
+
+- 確認方式（唯讀、需 owner 同意查 staging 中繼資料）：
+  `SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pg_trgm';`
+- 本 runner 受 blob 白名單保護，本次未修改。若查到 `public`，另開審查過的變更，
+  比照 `ops/backup/Invoke-CelebrateDealRestoreDrill.ps1` 的作法：從 archive 的
+  schema-only DDL 找出被引用的 schema 後再建立擴充。
+- Production 的隔離還原步驟、RTO 記錄表與帳務彙總 SQL 見
+  [`production-backup-restore-runbook.md`](../production-backup-restore-runbook.md) §B～§D。
