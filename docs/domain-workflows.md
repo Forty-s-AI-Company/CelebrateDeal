@@ -17,7 +17,7 @@
 | Staff | 明確授予的功能 | 不推定 owner／finance 權限 |
 | Visitor／buyer | 公開互動及已購買的權益 | 不可存取後台、私人分析或他人的訂單 |
 
-區分 live、scheduled prerecorded、VOD、preview 與 published；區分 visitor、lead、click、checkout、paid、refund、commission、payout。官方／AI／system 互動角色必須揭露，不能假扮真人觀眾。外部 storefront 流程依序使用有效 promoter URL、vendor default URL、click event；只有 API、webhook、核准匯入或 reconciliation 的訂單證據可計入 conversion。
+區分 live、scheduled prerecorded、VOD、preview 與 published；區分 visitor、lead、click、checkout、paid、refund、commission、payout。官方／AI／system 互動角色與腳本化虛擬使用者只存在於觀眾端聊天室（2026-10-18 owner 決策，允許不標示的虛擬觀眾帳號）；它們的發言、觀看與互動不得計入商家後台的報名、訂單、付款、成效統計或任何 conversion。外部 storefront 流程依序使用有效 promoter URL、vendor default URL、click event；只有 API、webhook、核准匯入或 reconciliation 的訂單證據可計入 conversion。
 
 ## 歸因與佣金
 
