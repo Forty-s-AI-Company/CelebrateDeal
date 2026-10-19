@@ -17,6 +17,7 @@
 | O-14 | ⏳ | **新增 GitHub environment secret `PAYUNI_QA_FINANCE_TOTP_SECRET`**（環境 `Preview – celebrate-deal-staging`）：值是一組 base32 的 TOTP seed，用任何 TOTP 產生器或 `node -e "console.log(require('crypto').randomBytes(20).toString('base64'))"` 轉 base32 皆可；主對話沒有權限新增 secret。工作線 A 的 runner 會用它讓 staging 財務 QA 帳號通過雙重驗證 | GitHub → Settings → Environments → Preview – celebrate-deal-staging → Add secret | 回「加了」 | #436 合併後，PayUni 退款自動化 runner 會卡在 `/mfa/setup` | A1、F-168 |
 | O-15 | ⏳ | **資料庫與主機跨區二選一**：Supabase 正式專案「CelebrateDeal」在孟買（ap-south-1），Vercel 函式設在東京（hnd1），正式上線會跨區、後台容易逾時。A（建議）：正式上線前把 Supabase 正式專案遷到東京（等還原演練通過後再做，主對話會備好步驟）；B：Vercel Production 改設孟買 `bom1`。封測跑 staging（兩邊都在東京），所以不急，但要在正式上線前決定 | 回「A」或「B」 | 回「A」或「B」 | 正式環境後台逾時 | B3、F-090、D-19 |
 | O-16 | ⏳ | **Vercel staging 專案是 Hobby 方案**：GitHub Actions 排程每 5 分鐘呼叫 staging，每天約 290 筆 deployment／function 紀錄；若 Hobby 的用量上限被撞到，排程會失敗。建議把 staging 專案升 Pro，或接受較低頻率（主對話會先用 5 分鐘觀察一週） | Vercel Dashboard | 回「升了」或「維持」 | 排程可能被限流 | B2、F-042 |
+| O-17 | ⏳ | **Sentry 告警規則**：在 Sentry 的 staging 專案建立 alert rule：事件 tag 或 message 含 `webhook-retry exhausted` 或 `InventoryUnavailableError` 時，以 Email（或 LINE Notify 替代管道）通知你；另外確認 Sentry 專案已連到正確的 DSN 環境 | Sentry Dashboard → Alerts | 回「建了」 | 付款通知重試失敗或超賣時沒人知道（B03-07） | B2、M2 |
 | O-7 | ⏳ | **Cloudflare**：正式網域是否全程經 Cloudflare 代理（橘雲）且沒有其他直連入口 | Cloudflare DNS | 回「是／否」 | 否則限流可被偽造標頭繞過，要多修 1～1.5 人日 | D-20 |
 
 ## 封測前（10-27～10-29）
