@@ -112,12 +112,11 @@ function payUniUppEventType(envelope: Record<string, unknown>, payload: Record<s
   if (tradeStatus !== PAYUNI_PAID_TRADE_STATUS) throw new Error("Unsupported PayUni payment status.");
   // The outer Status is not covered by HashInfo and passes through the payer's
   // browser on ReturnURL. It can only veto a paid decision, never create one.
-  if (optionalPayloadText(payload.Status) !== "SUCCESS" || optionalPayloadText(envelope.Status) !== "SUCCESS") {
-    throw notActionable("provider_status_not_success");
-  }
+  if (optionalPayloadText(payload.Status) !== "SUCCESS") throw notActionable("provider_status_not_success");
   if (!PAYUNI_PAYABLE_PAYMENT_TYPES.has(optionalPayloadText(payload.PaymentType) ?? "")) {
     throw notActionable("payment_type_not_allowed");
   }
+  if (optionalPayloadText(envelope.Status) !== "SUCCESS") throw notActionable("outer_status_mismatch");
   return "paid";
 }
 

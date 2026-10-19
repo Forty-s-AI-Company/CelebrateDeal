@@ -895,11 +895,13 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     await expect(normalizeReal({ ...realPaid, ...override }, outerStatus)).rejects.toThrow();
   });
 
-  it("keeps a missing outer Status on a paid trade as a manual reconciliation case with identifiers", async () => {
+  it("separates an unsigned outer Status mismatch from a signed provider status (RR-01)", async () => {
     await expect(normalizeReal(realPaid, null)).rejects.toMatchObject({
-      reason: "provider_status_not_success", requiresManualReconciliation: true,
+      reason: "outer_status_mismatch", requiresManualReconciliation: true,
       identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "1", paymentType: "1" },
     });
+    await expect(normalizeReal(realPaid, "UNKNOWN")).rejects.toMatchObject({ reason: "outer_status_mismatch" });
+    await expect(normalizeReal({ ...realPaid, Status: "UNKNOWN" }, "SUCCESS")).rejects.toMatchObject({ reason: "provider_status_not_success" });
   });
 
   it.each(["12abc", "1e3", "-5", "35.5"])("rejects a non-strict provider fee %j (R448-08)", async (fee) => {

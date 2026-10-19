@@ -206,7 +206,9 @@ export class PaymentMethodSetupMalformedPayloadError extends Error {
  * yet paid), a payment method outside the allowlist, or a provider status that
  * is not a final success.
  */
-export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_not_allowed" | "provider_status_not_success";
+export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_not_allowed" | "provider_status_not_success"
+  /** Signed result is a paid card trade; only the unsigned outer Status disagrees. */
+  | "outer_status_mismatch";
 
 /** Bounded provider identifiers only (order/trade numbers and status codes), never PII or card data. */
 export type PaymentWebhookCallbackIdentifiers = {

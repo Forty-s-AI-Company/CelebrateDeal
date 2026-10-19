@@ -144,9 +144,35 @@ async function processedPayerReturnResponse(requestUrl: URL, event: WebhookEvent
  * Notify is acknowledged with 200 so the provider does not redeliver forever;
  * the payer sees a neutral "under review" page.
  */
+async function payerReturnTransaction(providerId: string, orderNumber: string | undefined) {
+  if (!orderNumber) return null;
+  try {
+    // Presentation only: an exact, unambiguous server record decides the page.
+    const matches = await getDb().paymentTransaction.findMany({
+      where: { providerName: providerId, orderNumber },
+      select: { vendorId: true, providerName: true, orderNumber: true, paymentMode: true, metadata: true },
+      take: 2,
+    });
+    return matches.length === 1 ? matches[0]! : null;
+  } catch {
+    return null;
+  }
+}
+
+function platformPlanReturnFor(transaction: PayerReturnTransaction | null, providerId: string) {
+  return Boolean(transaction && isPlatformPlanReturnTransaction(transaction, {
+    vendorId: transaction.vendorId, provider: providerId, orderNumber: transaction.orderNumber ?? undefined,
+  }));
+}
+
 async function notActionableResponse(requestUrl: URL, providerId: string, bodyBytes: number, error: PaymentWebhookNotActionableError, diagnostics: unknown) {
+  const source = classifyCallbackSource(requestUrl.searchParams);
+  // The outer Status is unsigned and passes through the payer's browser on
+  // ReturnURL. When it is the only disagreement, the Return decides nothing
+  // and the server-to-server Notify settles the trade (RR-01).
+  const pendingOnly = error.reason === "trade_pending" || (error.reason === "outer_status_mismatch" && source === "return");
   let recorded: Awaited<ReturnType<typeof recordPaymentWebhookManualReconciliation>> = null;
-  if (error.requiresManualReconciliation) {
+  if (!pendingOnly) {
     try {
       recorded = await recordPaymentWebhookManualReconciliation({ provider: providerId, error, diagnostics });
     } catch {
@@ -157,15 +183,19 @@ async function notActionableResponse(requestUrl: URL, providerId: string, bodyBy
       }, { level: "error" });
       return webhookResponse(requestUrl, 500, { error: "Payment webhook processing failed", code: "processing_failed" });
     }
+  }
+  const alreadyPaid = recorded?.alreadyPaid === true;
+  const manualReconciliation = Boolean(recorded && !alreadyPaid && recorded.event);
+  if (manualReconciliation) {
     captureOperationalError(new Error("Payment webhook requires manual reconciliation"), {
       source: "payment_webhook",
       operation: "manual_reconciliation",
       provider: providerId,
       status: error.reason,
-      callbackSource: classifyCallbackSource(requestUrl.searchParams),
+      callbackSource: source,
       providerTradeStatus: error.identifiers.tradeStatus,
       providerPaymentType: error.identifiers.paymentType,
-      webhookEventId: recorded?.event.id,
+      webhookEventId: recorded?.event?.id,
     }, { level: "error", fingerprint: ["payment-webhook-manual-reconciliation", providerId, error.reason] });
   }
   await writeAuditLog({
@@ -173,24 +203,21 @@ async function notActionableResponse(requestUrl: URL, providerId: string, bodyBy
     actorLabel: `webhook:${providerId}`,
     action: "payment_webhook_not_actionable",
     targetType: "WebhookEvent",
-    targetId: recorded?.event.id,
+    targetId: recorded?.event?.id,
     before: auditSnapshot({ providerId, bodyBytes }),
     after: auditSnapshot({
       errorCode: "not_actionable",
       reason: error.reason,
       ...error.identifiers,
-      manualReconciliation: error.requiresManualReconciliation,
+      manualReconciliation,
+      ...(alreadyPaid ? { alreadyPaid: true } : {}),
     }),
   });
-  const transaction = recorded?.transaction ?? null;
-  const platformPlanReturn = Boolean(transaction && isPlatformPlanReturnTransaction(transaction, {
-    vendorId: transaction.vendorId, provider: providerId, orderNumber: transaction.orderNumber ?? undefined,
-  }));
-  return webhookResponse(requestUrl, 200, {
-    ok: true,
-    actionable: false,
-    code: error.requiresManualReconciliation ? "manual_reconciliation" : "not_actionable",
-  }, platformPlanReturn, error.requiresManualReconciliation ? "review" : "pending");
+  const transaction = recorded?.transaction
+    ?? (isPayUniPayerReturn(requestUrl) ? await payerReturnTransaction(providerId, error.identifiers.orderNumber) : null);
+  const code = manualReconciliation ? "manual_reconciliation" : alreadyPaid ? "already_processed" : "not_actionable";
+  const payerOutcome = manualReconciliation ? "review" : alreadyPaid ? "updated" : "pending";
+  return webhookResponse(requestUrl, 200, { ok: true, actionable: false, code }, platformPlanReturnFor(transaction, providerId), payerOutcome);
 }
 
 export async function HEAD(request: Request) {

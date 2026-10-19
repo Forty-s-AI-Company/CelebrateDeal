@@ -68,6 +68,11 @@ describe("fixed callback uses the remaining event budget without resetting it", 
         paymentTransactionId: payment.id, providerName: "payuni", orderNumber: payment.orderNumber },
     });
   });
+  it("reports a legacy paid event held for manual reconciliation with its own failure code (RR-04)", async () => {
+    const { db } = fixedRetryFixture(2, 5);
+    vi.mocked(retryWebhookEvent).mockResolvedValueOnce({ status: "needs_manual_reconciliation" } as Awaited<ReturnType<typeof retryWebhookEvent>>);
+    await expect(retryQ1OriginalBuyerCallback(db)).resolves.toEqual({ status: "RETRY_FAILED", retryAttempts: 1, failureCode: "MANUAL_RECONCILIATION" });
+  });
   it.each([[-1, 5], [1.5, 5], [5, 5], [2, 0]])("rejects invalid/exhausted count %s budget %s before writes", async (count, budget) => {
     const { db, reservePayment, fenceEvent } = fixedRetryFixture(count, budget);
     await expect(retryQ1OriginalBuyerCallback(db)).resolves.toMatchObject({ status: "RETRY_REJECTED", retryAttempts: 0 });

@@ -13,7 +13,7 @@ const db = getDb();
 const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
  vi.unstubAllEnvs();
- await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-trade:1", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent:1", "synthetic-buyer-trade:2", "synthetic-buyer-legacy-trade"] } }] } });
+ await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { startsWith: "manual:synthetic-buyer-" } }, { eventId: { in: ["synthetic-buyer-trade:1", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent:1", "synthetic-buyer-trade:2", "synthetic-buyer-legacy-trade"] } }] } });
  await db.vendor.deleteMany({ where: { id: { in: [fixed.vendorId, raceVendorId] } } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
@@ -199,9 +199,13 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", "0123456789abcdef0123456789abcdef");
   vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", "0123456789abcdef");
  }
- function callback(source: "notify" | "return", overrides: Record<string, string | number>, orderNumber: string, tradeNo: string) {
-  const body = buildPayUniSandboxWebhookFixture({ fixture: "paid", merchantId: "SYNTHETIC", hashKey: "0123456789abcdef0123456789abcdef", hashIv: "0123456789abcdef",
-   overrides: { MerTradeNo: orderNumber, TradeNo: tradeNo, TradeAmt: 1, ...overrides } });
+ function callback(source: "notify" | "return", overrides: Record<string, string | number>, orderNumber: string, tradeNo: string, outerStatus?: string | null) {
+  const signed = new URLSearchParams(buildPayUniSandboxWebhookFixture({ fixture: "paid", merchantId: "SYNTHETIC", hashKey: "0123456789abcdef0123456789abcdef", hashIv: "0123456789abcdef",
+   overrides: { MerTradeNo: orderNumber, TradeNo: tradeNo, TradeAmt: 1, ...overrides } }));
+  // The outer Status is unsigned: a payer's browser can alter or drop it.
+  if (outerStatus === null) signed.delete("Status");
+  else if (outerStatus !== undefined) signed.set("Status", outerStatus);
+  const body = signed.toString();
   return paymentCallback(new Request(`http://127.0.0.1:31041/api/webhooks/payments?provider=payuni&source=${source}`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }));
  }
 
@@ -229,7 +233,7 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   ["paid ATM PaymentType 2", { PaymentType: "2" }, "payment_type_not_allowed"],
   ["paid CVS PaymentType 3", { PaymentType: "3" }, "payment_type_not_allowed"],
   ["paid trade with provider status UNKNOWN", { Status: "UNKNOWN" }, "provider_status_not_success"],
- ])("records %s for manual reconciliation and holds the payment from expiry (R448-01)", async (_label, overrides, reason) => {
+ ])("records %s for manual reconciliation and holds the payment from expiry (R448-01)", async (_label, overrides: Record<string, string>, reason) => {
   const { payment } = await checkout();
   stubPayUni();
   const response = await callback("notify", overrides, payment.orderNumber!, payment.providerTradeNo!);
@@ -237,7 +241,9 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   // Return of the same callback converges on the same reconciliation event.
   expect((await callback("return", overrides, payment.orderNumber!, payment.providerTradeNo!)).headers.get("location"))
    .toBe("http://127.0.0.1:31041/checkout/result?payment=review");
-  const events = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: `${payment.providerTradeNo}:1` } });
+  const events = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: `manual:${payment.providerTradeNo}:1:${overrides.PaymentType ?? "1"}` } });
+  // The real payment key stays free for a later verified paid callback (RR-01).
+  expect(await db.webhookEvent.count({ where: { provider: "payuni", eventId: `${payment.providerTradeNo}:1` } })).toBe(0);
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({ status: "needs_manual_reconciliation", eventType: "manual_reconciliation", vendorId: fixed.vendorId });
   expect(events[0]!.payload).toMatchObject({ reconciliation: { reason, orderNumber: payment.orderNumber, tradeStatus: "1", matchedTransaction: payment.id } });
@@ -283,5 +289,44 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   expect(paid).toMatchObject({ status: "paid", grossAmountCents: 100, netAmountCents: 100 });
   const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
   expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
+ });
+
+ it("pays once when a verified Notify follows a tampered Return and an unconfirmed Notify (RR-01)", async () => {
+  const { payment } = await checkout();
+  stubPayUni();
+  const tradeNo = payment.providerTradeNo!;
+  // 1) Return with an altered unsigned outer Status records nothing.
+  expect((await callback("return", {}, payment.orderNumber!, tradeNo, "UNKNOWN")).headers.get("location"))
+   .toBe("http://127.0.0.1:31041/checkout/result?payment=pending");
+  expect(await db.webhookEvent.count({ where: { provider: "payuni", eventId: { contains: tradeNo } } })).toBe(0);
+  // 2) An unconfirmed signed result goes to manual reconciliation and holds the payment.
+  expect((await callback("notify", { Status: "UNKNOWN" }, payment.orderNumber!, tradeNo)).status).toBe(200);
+  const manual = await db.webhookEvent.findUniqueOrThrow({ where: { provider_eventId: { provider: "payuni", eventId: `manual:${tradeNo}:1:1` } } });
+  expect(manual.status).toBe("needs_manual_reconciliation");
+  // 3) The verified paid Notify is processed normally and resolves the hold.
+  const paidResponse = await callback("notify", {}, payment.orderNumber!, tradeNo);
+  expect(paidResponse.status).toBe(200);
+  expect(await db.webhookEvent.findUniqueOrThrow({ where: { provider_eventId: { provider: "payuni", eventId: `${tradeNo}:1` } } }))
+   .toMatchObject({ status: "processed", eventType: "paid" });
+  expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: manual.id } })).toMatchObject({ status: "manual_reconciliation_resolved" });
+  const paid = await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } });
+  expect(paid.status).toBe("paid");
+  expect(paid.metadata).not.toHaveProperty("paymentManualReconciliation");
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
+ });
+
+ it("treats an unconfirmed callback after a verified payment as already processed, without a reconciliation record (RR-02)", async () => {
+  const { payment } = await checkout();
+  stubPayUni();
+  const tradeNo = payment.providerTradeNo!;
+  expect((await callback("notify", {}, payment.orderNumber!, tradeNo)).status).toBe(200);
+  const late = await callback("notify", {}, payment.orderNumber!, tradeNo, null);
+  expect(late.status).toBe(200);
+  await expect(late.json()).resolves.toEqual({ ok: true, actionable: false, code: "already_processed" });
+  expect((await callback("notify", { Status: "UNKNOWN" }, payment.orderNumber!, tradeNo)).status).toBe(200);
+  expect(await db.webhookEvent.count({ where: { provider: "payuni", eventId: { startsWith: "manual:" }, vendorId: fixed.vendorId } })).toBe(0);
+  expect(await db.webhookEvent.count({ where: { provider: "payuni", eventId: { startsWith: `manual:${tradeNo}:` } } })).toBe(0);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "paid" });
  });
 });

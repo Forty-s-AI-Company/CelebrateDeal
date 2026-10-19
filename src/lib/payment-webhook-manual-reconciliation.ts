@@ -11,6 +11,19 @@ import { redactedJsonSnapshot } from "@/lib/redaction";
  * status; a finance administrator reconciles it manually.
  */
 export const MANUAL_RECONCILIATION_STATUS = "needs_manual_reconciliation";
+/** Closed by a later verified paid event for the same trade (RR-01). */
+export const MANUAL_RECONCILIATION_RESOLVED_STATUS = "manual_reconciliation_resolved";
+const MANUAL_RECONCILIATION_EVENT_PREFIX = "manual:";
+const PAID_STATUSES = new Set(["paid", "partially_refunded", "refunded"]);
+
+/**
+ * Reconciliation events live in their own eventId namespace. They must never
+ * occupy the TradeNo:TradeStatus key of a real payment event, or a later
+ * verified paid callback would be blocked (RR-01).
+ */
+export function manualReconciliationEventId(tradeRef: string, tradeStatus: string, paymentType: string | undefined) {
+  return `${MANUAL_RECONCILIATION_EVENT_PREFIX}${tradeRef}:${tradeStatus}:${paymentType ?? "none"}`;
+}
 export const MANUAL_RECONCILIATION_EVENT_TYPE = "manual_reconciliation";
 
 /** Metadata key on a pending PaymentTransaction that holds it from automatic expiry. */
@@ -18,6 +31,10 @@ export const PAYMENT_MANUAL_RECONCILIATION_METADATA_KEY = "paymentManualReconcil
 
 function metadataObject(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+export function withoutManualReconciliationHold(metadata: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== PAYMENT_MANUAL_RECONCILIATION_METADATA_KEY));
 }
 
 export function paymentHeldForManualReconciliation(metadata: unknown) {
@@ -44,7 +61,7 @@ export async function recordPaymentWebhookManualReconciliation(input: {
   const { orderNumber, providerTradeNo, tradeStatus, paymentType } = input.error.identifiers;
   if (!orderNumber || !tradeStatus) return null;
   const db = getDb();
-  const eventId = `${providerTradeNo ?? orderNumber}:${tradeStatus}`;
+  const eventId = manualReconciliationEventId(providerTradeNo ?? orderNumber, tradeStatus, paymentType);
   const matches = await db.paymentTransaction.findMany({
     where: { providerName: input.provider, orderNumber },
     select: { id: true, vendorId: true, status: true, metadata: true, providerName: true, orderNumber: true, paymentMode: true },
@@ -52,6 +69,12 @@ export async function recordPaymentWebhookManualReconciliation(input: {
   });
   // An ambiguous order number is never attributed to a tenant.
   const transaction = matches.length === 1 ? matches[0]! : null;
+  // A verified paid callback already settled this trade (for example Notify
+  // before a Return whose unsigned outer Status was altered): nothing to
+  // reconcile, no hold and no alert (RR-02).
+  if (transaction && tradeStatus === "1" && PAID_STATUSES.has(transaction.status)) {
+    return { event: null, transaction, alreadyPaid: true as const };
+  }
   const key = { provider_eventId: { provider: input.provider, eventId } };
   let event = await db.webhookEvent.findUnique({ where: key });
   if (!event) {
@@ -96,5 +119,29 @@ export async function recordPaymentWebhookManualReconciliation(input: {
       },
     });
   }
-  return { event, transaction };
+  return { event, transaction, alreadyPaid: false as const };
+}
+
+/**
+ * Called inside the serializable paid transition: closes reconciliation
+ * events recorded for the same trade before the verified paid event arrived.
+ * The caller removes the transaction hold in the same write.
+ */
+export async function resolveManualReconciliationForPaidTrade(
+  tx: Pick<Prisma.TransactionClient, "webhookEvent">,
+  input: { provider: string; orderNumber: string; providerTradeNo?: string; resolvedByEventId: string },
+) {
+  const refs = [...new Set([input.providerTradeNo, input.orderNumber].filter((value): value is string => Boolean(value)))];
+  return tx.webhookEvent.updateMany({
+    where: {
+      provider: input.provider,
+      status: MANUAL_RECONCILIATION_STATUS,
+      OR: refs.map((ref) => ({ eventId: { startsWith: `${MANUAL_RECONCILIATION_EVENT_PREFIX}${ref}:1:` } })),
+    },
+    data: {
+      status: MANUAL_RECONCILIATION_RESOLVED_STATUS,
+      processedAt: new Date(),
+      errorMessage: `Resolved by verified provider payment event ${input.resolvedByEventId}`.slice(0, 500),
+    },
+  });
 }

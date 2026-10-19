@@ -36,6 +36,7 @@ import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
+import { resolveManualReconciliationForPaidTrade, withoutManualReconciliationHold } from "@/lib/payment-webhook-manual-reconciliation";
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import {
   isRefundEvent,
@@ -1009,7 +1010,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     // checkout; callbacks may advance state, but may not extend or replace it.
     const formSubmissionId = formSubmissionIdFromMetadata(existingMetadata);
     const transactionMetadata = {
-      ...existingMetadata,
+      // A verified paid event supersedes a manual-reconciliation hold (RR-01).
+      ...(payload.eventType === "paid" ? withoutManualReconciliationHold(existingMetadata) : existingMetadata),
       ...(checkoutReferralCode ? { referralCode: checkoutReferralCode } : {}),
       ...(formSubmissionId ? { formSubmissionId } : {}),
     } as Prisma.InputJsonObject;
@@ -1063,6 +1065,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
 
     // Product identity is trusted only from the server-created checkout
     // transaction. Provider metadata must never choose another tenant's stock.
+    if (payload.eventType === "paid" && nextStatus === "paid") await resolveManualReconciliationForPaidTrade(tx, { provider: payload.provider,
+      orderNumber: payload.orderNumber, providerTradeNo: payload.providerTradeNo ?? currentTransaction?.providerTradeNo ?? undefined, resolvedByEventId: payload.eventId });
     const lifecycleEventType = payload.eventType;
     if (isPaymentLifecycleEvent(lifecycleEventType) && !ignoredIncomingState && !invariant.duplicateRefundEvent) {
 
