@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Affiliate, InteractionScript, MessageTemplate, Product, RegistrationForm, Video } from "@prisma/client";
 import { Ban, Calendar, Check, Gauge, Package, PlaySquare, Shield } from "lucide-react";
 import { upsertLiveAction } from "@/app/actions";
+import { formatTimeZoneLabel } from "@/lib/format";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MediaUploadField } from "@/components/media-upload-field";
 import {
@@ -158,9 +159,9 @@ function StepPanel({
 function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone: string; defaultValue: string; onChange?: (value: string) => void }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-      開播時間（{timeZone}）
+      開播時間（{formatTimeZoneLabel(timeZone)}）
       <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-10 rounded-md border border-border px-3" />
-      <span className="text-xs font-normal text-slate-500">請依商家時區輸入；儲存時會轉成 UTC，提醒與公開頁會使用同一時間。</span>
+      <span className="text-xs font-normal text-slate-500">請依商家時區輸入，提醒與公開頁會使用同一時間。</span>
     </label>
   );
 }
@@ -943,7 +944,7 @@ function renderLiveStudioScheduleStep(input: {
       </label>
       <input type="hidden" name="replayAvailableUntil" value="" disabled={input.replayEnabled} readOnly />
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-        回放觀看期限（{input.timeZone}，選填）
+        回放觀看期限（{formatTimeZoneLabel(input.timeZone)}，選填）
         <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
         <span className="text-xs font-normal text-slate-500">依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。</span>
       </label>

@@ -310,6 +310,14 @@ describe("LiveStepperForm", () => {
     expect(markup).not.toContain('name="timezone"');
   });
 
+  it("labels the default Taipei zone as Taiwan time", () => {
+    const markup = renderToStaticMarkup(renderForm([], { timeZone: "Asia/Taipei" }) as ReactElement);
+
+    expect(markup).toContain("開播時間（台灣時間）");
+    expect(markup).not.toContain("Asia/Taipei");
+    expect(markup).not.toContain("UTC");
+  });
+
   it("submits the optional replay deadline and clears it when replay is disabled", () => {
     const initialValues = {
       ...emptyLiveStudioDraft(),
