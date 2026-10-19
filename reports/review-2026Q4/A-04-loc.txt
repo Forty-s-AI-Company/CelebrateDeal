@@ -1,0 +1,54 @@
+   6830 src/app/actions.test.ts
+   2472 src/app/actions.ts
+   2382 src/lib/payment-webhooks.test.ts
+   1838 src/components/live-playback.tsx
+   1572 src/components/live-playback.test.tsx
+   1520 src/app/api/payments/checkout/route.test.ts
+   1302 src/lib/payment-webhooks.ts
+   1233 src/components/live-stepper-form.tsx
+   1220 src/lib/email-delivery.ts
+   1155 src/app/actions/interaction-actions.ts
+   1127 src/components/media-upload-field.tsx
+   1099 src/app/api/payments/checkout/route.ts
+   1088 src/components/live-stepper-form.test.tsx
+   1058 src/lib/email-delivery.test.ts
+    940 src/lib/support-case-domain.ts
+    898 src/lib/payment-providers/payuni.ts
+    863 src/lib/commerce-orders.ts
+    855 src/lib/post-purchase-credit.db.test.ts
+    815 src/app/api/form-submissions/route.test.ts
+    800 src/app/api/webhooks/payments/route.test.ts
+    789 src/lib/payment-providers/payuni.test.ts
+    748 src/components/interaction-roles-workbench.tsx
+    746 src/lib/live-notification-delivery.ts
+    705 src/components/interaction-script-form.tsx
+    701 src/lib/landing-page-service.ts
+    698 src/components/interaction-roles-workbench.test.tsx
+    670 src/app/api/form-submissions/route.ts
+    633 src/app/actions.payout-db.test.ts
+    633 src/app/(viewer)/live/[slug]/page.test.tsx
+    606 src/lib/automation-workflow.ts
+---OVER800---
+   6830 src/app/actions.test.ts
+   2472 src/app/actions.ts
+   2382 src/lib/payment-webhooks.test.ts
+   1838 src/components/live-playback.tsx
+   1572 src/components/live-playback.test.tsx
+   1520 src/app/api/payments/checkout/route.test.ts
+   1302 src/lib/payment-webhooks.ts
+   1233 src/components/live-stepper-form.tsx
+   1220 src/lib/email-delivery.ts
+   1155 src/app/actions/interaction-actions.ts
+   1127 src/components/media-upload-field.tsx
+   1099 src/app/api/payments/checkout/route.ts
+   1088 src/components/live-stepper-form.test.tsx
+   1058 src/lib/email-delivery.test.ts
+    940 src/lib/support-case-domain.ts
+    898 src/lib/payment-providers/payuni.ts
+    863 src/lib/commerce-orders.ts
+    855 src/lib/post-purchase-credit.db.test.ts
+    815 src/app/api/form-submissions/route.test.ts
+---COUNTS---
+  57909 total
+663
+815
