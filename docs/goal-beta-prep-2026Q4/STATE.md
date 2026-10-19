@@ -41,12 +41,12 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 | B2 排程 | IN_REVIEW | B，PR #447 `ad199160` | 改以 GitHub Actions 每 5 分鐘為唯一路徑：Preview 專案不觸發 Vercel Cron、staging 是 Hobby；6 個端點排程，billing-cycle 與 electronic-invoices 每日；tracking-deliveries 未排（需 vendorId） |
 | B3 區域與連線池 | IN_REVIEW | B，PR #447 `ee6d082c` | regions hnd1；preflight 只警告。**跨區待 owner 決定（O-15）** |
 | B4 備份還原演練 | 準備完成（待審）／演練 BLOCKED_OWNER | B，PR #447 `9663d543` | runbook、`pg_trgm` 修正已驗證；真實演練等 O-4 |
-| C1 結帳頁內部備註 | TODO | C | |
-| C2 時區與 404 | TODO | C | |
-| C3 虛擬使用者角色與不標示 | TODO | C | |
-| C4 Slug | TODO | C | |
-| C5 腳本改選配 | TODO | C | |
-| C6 Sentry 個資過濾 | TODO | C | |
+| C1 結帳頁內部備註 | IN_REVIEW | C，PR #449 `71235e6a` | |
+| C2 時區與 404 | IN_REVIEW | C，PR #449 `f7c2224e` | 依 Next 16.3.8 文件用 `retry` |
+| C3 虛擬使用者角色與不標示 | IN_REVIEW | C，PR #449 `55b7d4e3` | 播放頁揭露語改「部分互動」未移除，待律師（O-11） |
+| C4 Slug | IN_REVIEW | C，PR #449 `55041c53` | |
+| C5 腳本改選配 | IN_REVIEW | C，PR #449 `2caf9cbc` | |
+| C6 Sentry 個資過濾 | IN_REVIEW | C，PR #449 `fb66c229` | 含 F-098 取樣率 |
 
 ## 每日摘要
 
