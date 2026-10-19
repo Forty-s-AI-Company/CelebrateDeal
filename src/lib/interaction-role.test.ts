@@ -76,13 +76,23 @@ describe("interaction role helpers", () => {
       data: {
         name: "小幫手",
         avatarUrl: interactionRoleAvatarUrl("host-blue"),
-        label: "一般觀眾",
+        label: "",
         roleType: "audience",
         tone: "清楚、自然",
         isActive: true,
         isScheduled: true,
       },
     });
+  });
+
+  it("keeps a merchant-written label and never invents a default label", () => {
+    const base = { name: "小編", roleType: "official", isActive: true } as const;
+    const empty = normalizeInteractionRoleDraft({ ...base, label: "  " });
+    const missing = normalizeInteractionRoleDraft({ ...base });
+    const written = normalizeInteractionRoleDraft({ ...base, label: " 品牌顧問 " });
+    expect(empty).toMatchObject({ success: true, data: { label: "" } });
+    expect(missing).toMatchObject({ success: true, data: { label: "" } });
+    expect(written).toMatchObject({ success: true, data: { label: "品牌顧問" } });
   });
 
   it("rejects legacy role types for new writes", () => {

@@ -62,7 +62,7 @@ export const publicPolicies: Record<string, PolicyDefinition> = {
         paragraphs: [
           `${publicSupportContact.displayName}（以下稱「我們」）提供 CelebrateDeal 平台，協助商家建立活動、報名頁、銷售頁、直播或回放，並管理訂單與通知。聯絡信箱為 ${publicSupportContact.email}。`,
           "商家提供的課程、活動、商品或服務，其內容、價格、交付方式、使用期限與個別交易條件，以購買頁及訂單紀錄為準。平台功能不代表我們替商家保證內容成效或專業資格。",
-          "部分場次可能是預先錄製、依排程播出的內容；聊天室中標示為官方的互動，也可能是商家預先設定的腳本，不一定是即時真人回覆。",
+          "部分場次可能是預先錄製、依排程播出的內容；聊天室中的部分互動，也可能是商家預先設定的腳本，不一定是即時真人回覆。",
         ],
       },
       {

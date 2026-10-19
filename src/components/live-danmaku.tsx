@@ -42,7 +42,7 @@ export function InstructorDanmakuSwitch({ liveId }: { liveId: string }) {
   }
   return <div className="flex flex-wrap items-center gap-3" aria-label="活動彈幕設定">
     <button type="button" className={buttonClass} disabled={!state || busy} aria-pressed={state?.enabled ?? false} onClick={() => void toggle()}>{state?.enabled ? "關閉全場彈幕" : "開啟全場彈幕"}</button>
-    <span className="text-xs">公開卡片回答顯示為「觀眾」；預編內容標示「暖場角色」。關閉會清空待播內容。</span>
+    <span className="text-xs">公開卡片回答顯示為「觀眾」；預編內容以角色暱稱顯示，不計入後台統計。關閉會清空待播內容。</span>
     {error && <span role="status">{error}</span>}
     <ScriptedRolesControl liveId={liveId} />
   </div>;
@@ -134,7 +134,7 @@ export function LiveDanmaku({ vendorId, liveId, enabled, videoRef }: { vendorId:
   return <aside className="danmaku-strip" aria-label="公開互動彈幕">
     <button type="button" className={buttonClass} aria-pressed={!hidden} onClick={toggle}>{hidden ? "顯示彈幕" : "隱藏彈幕"}</button>
     <div className="danmaku-lane" aria-live="off">
-      {!hidden && available && item ? <span key={item.id} className="danmaku-message">{item.source === "scripted_role" && <><strong>暖場角色／預設互動 · </strong>{item.avatarUrl && <span aria-hidden="true" className="mr-1 inline-block h-6 w-6 rounded-full align-middle bg-cover" style={{ backgroundImage: `url("${item.avatarUrl}")` }} />}</>}{item.displayName}：{item.value}</span> : <span className="text-xs opacity-70">{hidden ? "已為你隱藏" : available ? "公開卡片回答與暖場角色會在這裡出現" : "全場彈幕尚未開啟或正在同步"}</span>}
+      {!hidden && available && item ? <span key={item.id} className="danmaku-message">{item.source === "scripted_role" && <>{item.avatarUrl && <span aria-hidden="true" className="mr-1 inline-block h-6 w-6 rounded-full align-middle bg-cover" style={{ backgroundImage: `url("${item.avatarUrl}")` }} />}</>}{item.displayName}：{item.value}</span> : <span className="text-xs opacity-70">{hidden ? "已為你隱藏" : available ? "公開卡片回答與暖場角色會在這裡出現" : "全場彈幕尚未開啟或正在同步"}</span>}
     </div>
   </aside>;
 }

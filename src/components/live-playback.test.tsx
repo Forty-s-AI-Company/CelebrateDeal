@@ -1303,7 +1303,7 @@ describe("LivePlayback checkout", () => {
     const pageCopy = textContent(tree);
     const chatPanel = findElements(tree, (element) => element.type === LiveChatPanel)[0];
 
-    expect(pageCopy).toContain("官方互動為商家預先設定的腳本");
+    expect(pageCopy).toContain("部分互動為商家預先設定的腳本");
     expect(pageCopy).toContain("不代表即時真人留言、真實購買或觀看人數");
     expect(pageCopy).toContain("腳本推薦");
     expect(pageCopy).toContain("商家腳本");

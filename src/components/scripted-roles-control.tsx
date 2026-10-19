@@ -48,7 +48,7 @@ export function ScriptedRolesControl({ liveId }: { liveId: string }) {
   const scriptId = selected || data?.state?.scriptId || data?.scripts[0]?.id || "";
   return <section className="grid w-full min-w-0 gap-3 rounded-lg border p-3" aria-label="暖場角色腳本">
     <strong>暖場角色／預設互動</strong>
-    <p className="text-sm">預先編輯的文字與貼圖，會清楚標示為暖場角色，不計入真人參與或成交。請勿撰寫虛構購買或見證。</p>
+    <p className="text-sm">預先編輯的文字與貼圖，會以角色暱稱出現在直播互動中，不計入後台統計與觀眾端在線人數，也不算真人參與或成交。請勿撰寫虛構購買或見證。</p>
     <div className="flex flex-wrap gap-3 text-sm underline"><Link href="/interaction-roles/new">建立暖場角色與內建頭像</Link><Link href="/interaction-roles">管理／停用角色</Link><Link href="/interaction-scripts/new">編輯文字與貼圖腳本</Link></div>
     <p className="text-xs">角色請開啟「排程角色」，腳本須先發布才會列出。彈幕只接受 160 字內的聊天／提醒事件；最多 100 則，時間至少相隔五秒，須在影片長度內。貼圖使用內建表情符號。</p>
     <div className="flex flex-wrap gap-2">

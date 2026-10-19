@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from "@prisma/client";
 import { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, MessageCircle, Megaphone, ShoppingBag, Trash2, VideoIcon } from "lucide-react";
@@ -101,6 +102,15 @@ function initialTimelineEvents(
       productId: event.eventType === "product_spotlight" ? products[0]?.id : null,
     }];
   });
+}
+
+export function NoScheduledRolesHint({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  return (
+    <p role="status" data-testid="interaction-roles-empty" className="rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+      還沒有可以在腳本中發言的角色。<Link href="/interaction-roles/new" className="font-semibold underline">去建立角色</Link>，建立後回到這裡就能選用。
+    </p>
+  );
 }
 
 function scheduledRolesOnly(roles: InteractionRole[]) {
@@ -306,10 +316,11 @@ function renderInteractionEventRow({
                     className="h-11 min-w-0 flex-1 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
                   >
                     <option value="">{invalidRoleReference ? "原角色無效，請重新選擇" : "請選擇排程角色"}</option>
-                    {roles.map((role) => <option key={role.id} value={role.id}>{role.name} · {role.label}</option>)}
+                    {roles.map((role) => <option key={role.id} value={role.id}>{role.label ? `${role.name} · ${role.label}` : role.name}</option>)}
                   </select>
                 </span>
               </label>
+              <NoScheduledRolesHint visible={roles.length === 0} />
               {invalidRoleReference ? <p role="alert" className="text-xs font-medium text-amber-700">此事件原本引用的角色目前無法使用，請重新選擇排程角色。</p> : null}
               <label className="grid gap-1 text-xs font-semibold text-slate-600">
                 訊息內容

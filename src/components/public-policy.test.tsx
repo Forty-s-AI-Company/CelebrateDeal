@@ -58,7 +58,7 @@ describe("public policy and operations entrypoints", () => {
     expect(terms).not.toContain("2 個工作日內以 Email 確認");
     expect(terms).toContain("客服不另承諾固定回覆時間");
     expect(terms).toContain("預先錄製、依排程播出");
-    expect(terms).toContain("標示為官方的互動，也可能是商家預先設定的腳本");
+    expect(terms).toContain("聊天室中的部分互動，也可能是商家預先設定的腳本");
     expect(privacy).not.toContain("SMS 尚未開放");
     expect(privacy).toContain("蒐集者與聯絡方式");
     expect(privacy).not.toContain("告知者與聯絡方式");

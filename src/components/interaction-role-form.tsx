@@ -6,7 +6,6 @@ import type { InteractionRole } from "@prisma/client";
 import { Bot, CheckCircle2, Sparkles } from "lucide-react";
 import { upsertInteractionRoleAction } from "@/app/actions";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
-import { getInteractionRoleDefaultLabel, getInteractionRoleLabelOnTypeChange } from "@/lib/interaction-role-label";
 import { SubmitButton } from "@/components/ui";
 
 const avatarSeeds = [
@@ -38,10 +37,9 @@ export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRol
     role?.avatarUrl ?? avatarUrl(avatarSeeds[0] ?? defaultAvatarSeed),
   );
   const [roleType, setRoleType] = useState(role?.roleType ?? "official");
-  const [label, setLabel] = useState(role?.label ?? getInteractionRoleDefaultLabel(role?.roleType ?? "official"));
+  const [label, setLabel] = useState(role?.label ?? "");
 
   function handleRoleTypeChange(nextRoleType: string) {
-    setLabel((currentLabel) => getInteractionRoleLabelOnTypeChange(currentLabel, roleType, nextRoleType));
     setRoleType(nextRoleType);
   }
 
@@ -55,7 +53,7 @@ export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRol
         <div className="bg-gradient-to-r from-slate-950 via-blue-800 to-blue-600 p-6 text-white">
           <p className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
             <Bot size={14} />
-            官方互動代理
+            互動角色
           </p>
           <h1 className="mt-3 text-2xl font-bold">選一個插畫頭像，輸入暱稱就能建立角色</h1>
           <p className="mt-2 max-w-2xl text-sm text-blue-50">頭像統一使用插畫式 SVG，不使用真實人臉，降低設定摩擦，也讓品牌角色保持合規、清楚、可控。</p>
@@ -112,8 +110,8 @@ export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRol
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  顯示標籤
-                  <input name="label" value={label} onChange={(event) => setLabel(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                  顯示標籤（選填）
+                  <input name="label" maxLength={80} placeholder="留白就不顯示標籤" value={label} onChange={(event) => setLabel(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
                 </label>
               </div>
 
@@ -125,6 +123,10 @@ export function InteractionRoleForm({ role, csrfToken }: { role?: InteractionRol
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                 <input name="isActive" type="checkbox" defaultChecked={role?.isActive ?? true} className="h-4 w-4 accent-blue-600" />
                 啟用角色
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input name="isScheduled" type="checkbox" value="true" defaultChecked={role?.isScheduled ?? true} className="h-4 w-4 accent-violet-600" />
+                可用於互動腳本
               </label>
             </div>
           </div>

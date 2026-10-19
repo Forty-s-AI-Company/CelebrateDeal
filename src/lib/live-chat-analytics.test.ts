@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildLiveChatExportRows, liveChatRowsToCsv, realViewerMessageWhere, scheduledMessageEventWhere } from "./live-chat-analytics";
@@ -68,5 +70,30 @@ describe("live chat analytics isolation", () => {
       scheduledMessages: [],
     });
     expect(liveChatRowsToCsv(rows)).toContain(`"${expected.replaceAll('"', '""')}"`);
+  });
+
+  it("keeps virtual users out of real-viewer statistics: every liveChatMessage count goes through realViewerMessageWhere", () => {
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (/\.(ts|tsx)$/u.test(name) && !/\.(test|spec)\./u.test(name)) files.push(path);
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    const offenders = files.filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return /liveChatMessage\.(count|aggregate|groupBy)\(/u.test(source) && !source.includes("realViewerMessageWhere");
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it("never treats a role-backed, simulated or scheduled message as a real viewer message", () => {
+    const where = realViewerMessageWhere({ vendorId: "vendor-1" });
+    expect(where.roleId).toBeNull();
+    expect(where.isSimulated).toBe(false);
+    expect(where.source).toBe("viewer");
+    expect(where.formSubmissionId).toEqual({ not: null });
   });
 });
