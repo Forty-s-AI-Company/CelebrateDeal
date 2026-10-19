@@ -290,6 +290,15 @@ describe("InteractionRolesWorkbench", () => {
     expect(manualOfficialPreview).not.toContain("可用於腳本");
   });
 
+  it("tells the merchant when a label is a system default that the live room hides", () => {
+    const selected = role({ label: "官方角色" });
+    const html = renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-hidden-label-token" });
+    expect(html).toContain("直播間不會顯示標籤");
+    const custom = role({ label: "品牌顧問" });
+    hookState.stateValues = [];
+    expect(renderHtml({ roles: [custom], selectedRole: custom, csrfToken: "csrf-custom-label-token" })).not.toContain("直播間不會顯示標籤");
+  });
+
   it("makes a new role usable in scripts by default and keeps the label optional", () => {
     const html = renderHtml({ roles: [], selectedRole: null, csrfToken: "csrf-new-role-token" });
     expect(html).toMatch(/name="isScheduled"[^>]*checked=""/u);

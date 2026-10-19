@@ -4,7 +4,7 @@ import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
 
 import { LoaderCircle, LockKeyhole, PackageCheck } from "lucide-react";
 import Link from "next/link";
-import { policyCenterPublication, resolvePolicyStatus } from "@/lib/public-policy-content";
+import { policyCenterPublication, resolvePolicyStatus } from "@/lib/policy-publication";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   CommerceCheckoutAdmissionResponseSchema,

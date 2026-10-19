@@ -558,7 +558,7 @@ function liveFormError(error?: string) {
     invalid_status: "直播狀態轉換無效，內容尚未發布。",
     invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
     slug_taken: "這個直播網址已被使用，內容沒有發布；草稿已保留。請在「直播網址」欄位換一個再儲存。",
-    publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第八步檢查清單補齊後再發布。",
+    publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第八步檢查清單補齊後再發布；銷售直播至少需要一項商品，也可以改成內容直播。",
   };
   const message = error ? messages[error] : undefined;
   return message ? (

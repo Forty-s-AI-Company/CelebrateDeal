@@ -28,6 +28,7 @@ import {
   type InteractionAvatarGender,
 } from "@/lib/interaction-role";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { publicRoleLabel } from "@/lib/live-chat-contract";
 import type { InteractionRoleUsage } from "@/lib/interaction-role-usage";
 
 const DEFAULT_INTERACTION_AVATAR_SEED = "host-blue";
@@ -107,6 +108,7 @@ function InteractionRolePreview({
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-bold">{name}</p>
               {label ? <span className="rounded-full bg-blue-400/20 px-2 py-0.5 text-xs font-semibold text-blue-100">{label}</span> : null}
+              {label && publicRoleLabel(label) === null ? <span className="text-xs text-amber-200">這是系統預設字樣，直播間不會顯示標籤</span> : null}
               {isScheduled ? <span className="rounded-full bg-violet-400/20 px-2 py-0.5 text-xs font-semibold text-violet-100">可用於腳本</span> : null}
             </div>
             <p className="mt-2 text-sm leading-6 text-white/90">歡迎來到直播！實際訊息內容會在互動腳本的時間軸中設定。</p>
@@ -479,7 +481,7 @@ export function InteractionRolesWorkbench({
                   {role.avatarUrl ? <Image src={role.avatarUrl} alt="" width={44} height={44} unoptimized className="h-11 w-11 rounded-full bg-slate-100 object-cover" /> : <span className="h-11 w-11 rounded-full bg-slate-100" />}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-slate-950">{role.name}</span>
-                    <span className="block truncate text-xs text-slate-600">{role.label ? `${role.label} · ` : ""}{role.isActive ? "啟用" : "停用"}</span>
+                    <span className="block truncate text-xs text-slate-600">{publicRoleLabel(role.label) ? `${role.label} · ` : ""}{role.isActive ? "啟用" : "停用"}</span>
                   </span>
                 </Link>
               ))}

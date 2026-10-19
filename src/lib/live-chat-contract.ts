@@ -70,7 +70,7 @@ const SYSTEM_DEFAULT_ROLE_LABELS: ReadonlySet<string> = new Set([
   "客服助手",
 ]);
 
-function publicRoleLabel(value: string | null | undefined) {
+export function publicRoleLabel(value: string | null | undefined) {
   const label = boundedText(value ?? "", 80);
   return label && !SYSTEM_DEFAULT_ROLE_LABELS.has(label) ? label : null;
 }

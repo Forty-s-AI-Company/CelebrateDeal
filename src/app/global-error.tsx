@@ -25,7 +25,9 @@ export default function GlobalError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
-  const [retrying, setRetrying] = useState(false);
+  // 以「已重試的那個錯誤」判斷：retry 後若又出現新的錯誤，按鈕自動恢復可按。
+  const [retriedError, setRetriedError] = useState<Error | null>(null);
+  const retrying = retriedError === error;
 
   useEffect(() => {
     Sentry.captureException(error);
@@ -42,7 +44,7 @@ export default function GlobalError({
               <button
                 type="button"
                 disabled={retrying}
-                onClick={() => { setRetrying(true); retry(); }}
+                onClick={() => { setRetriedError(error); retry(); }}
                 style={{ ...buttonStyle, border: 0, background: "#2563eb", color: "#fff", opacity: retrying ? 0.6 : 1 }}
               >
                 {retrying ? "正在重新載入…" : "重新載入"}
