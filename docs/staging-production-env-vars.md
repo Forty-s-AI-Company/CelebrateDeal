@@ -13,7 +13,9 @@
 
 | Key | Staging | Production | 來源 | 驗收標準 |
 |---|---|---|---|---|
-| `DATABASE_URL` | Supabase staging pooled/runtime URL | Supabase production pooled/runtime URL | Supabase Project Settings | `/api/health` DB ok |
+| `DATABASE_URL` | Supabase staging transaction pooler（6543）＋`pgbouncer=true&connection_limit=<N>` | Supabase production transaction pooler（6543）＋`pgbouncer=true&connection_limit=<N>` | Supabase Project Settings | `/api/health` DB ok；preflight 的 `DATABASE_POOLER*`、`DATABASE_CONNECTION_LIMIT` 為 PASS（見 §6） |
+| `EXPECTED_FUNCTION_REGION` | 選填；未設時用 `vercel.json` 的 `regions`（`hnd1`） | 選填；Production 若改用其他區域（例如 `bom1`）就設這個值 | 部署設定 | preflight `FUNCTION_REGION`／`DATABASE_REGION` 為 PASS |
+| `DATABASE_REGION` | 選填；AWS 區域 ID，例如 `ap-northeast-1` | 選填；例如 `ap-south-1` | Supabase Project Settings | 只在 `DATABASE_URL` 不是 Supabase pooler 網址、無法推得區域時需要 |
 | `DIRECT_URL` | Supabase staging direct URL | Supabase production direct URL | Supabase Project Settings | `npm run db:migrate:status` up to date |
 | `NEXT_PUBLIC_APP_URL` | `https://staging-app...` | `https://app...` | Vercel domain | Email links / webhook URLs 正確 |
 | `JOB_SECRET` | staging random secret | production random secret | Password manager | `/api/admin/preflight` Bearer token 可通過 |
@@ -91,3 +93,11 @@ Production／Preview 的 live chat route 使用專用 header `x-celebratedeal-li
 RUN_CLOUDFLARE_SMOKE=true npm run external:smoke
 RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run external:smoke
 ```
+
+## 6. 函式區域與連線池（F-090／B06-03）
+
+- `vercel.json` 與 `vercel.staging.json` 都寫明 `"regions": ["hnd1"]`（東京）。staging 的 Supabase 專案在 `ap-northeast-1`，兩者同區。
+- **已知跨區：Supabase production 專案在 `ap-south-1`（孟買）。** 若 Production 也讀 `vercel.json`，函式會在 `hnd1`、資料庫在孟買，每次資料庫往返多約 100 ms 以上（仍比 Vercel 預設的 `iad1` 近）。這需要 owner 二選一：把 Supabase production 遷到東京，或讓 Production 函式改用 `bom1`。在決定之前，preflight 會對 Production build 印出 `[WARN] DATABASE_REGION` 但不阻擋建置。
+- 區域不寫死在程式裡：preflight 先看 `EXPECTED_FUNCTION_REGION`，沒有才讀 `vercel.json` 的 `regions`；資料庫區域由 Supabase pooler 主機名稱推得（只印區域 ID，不印主機），或由 `DATABASE_REGION` 指定。函式執行時另有 Vercel 注入的 `VERCEL_REGION`，有值時會一併比對。
+- 連線池參數只放在 `DATABASE_URL`（`src/lib/db.ts` 不覆寫）：6543 transaction pooler、`pgbouncer=true`、`connection_limit` 從 3～5 起依負載測試調整。Migration 走 `DIRECT_URL`（session mode）。
+- 這些檢查只在 `VERCEL_ENV` 是 `production` 或 `preview` 時執行，結果一律是 PASS／WARN，不改變 build 的 exit code。
