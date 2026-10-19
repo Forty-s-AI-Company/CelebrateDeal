@@ -5,7 +5,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { resolveSentryEnvironment } from "@/lib/sentry-environment";
 import {
-  resolveTraceSampleRate,
+  createTracesSampler,
   sentryBeforeBreadcrumb,
   sentryBeforeSend,
   sentryBeforeSendLog,
@@ -19,10 +19,8 @@ Sentry.init({
     process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT,
     process.env.NODE_ENV,
   ),
-  // 輪詢類 route 幾乎不取樣，付款／結帳／webhook 全取樣（F-098）。
-  tracesSampler: ({ name, attributes, inheritOrSampleWith }) => inheritOrSampleWith(
-    resolveTraceSampleRate({ name, attributes }, process.env.NODE_ENV === "development"),
-  ),
+  // 付款／結帳／webhook 固定全取樣，輪詢類幾乎不取樣，其餘沿用上游或 10%（F-098）。
+  tracesSampler: createTracesSampler(process.env.NODE_ENV === "development"),
   enableLogs: true,
   replaysSessionSampleRate: 0,
   replaysOnErrorSampleRate: 0.1,

@@ -1,7 +1,9 @@
+import { createEventEnvelope } from "@sentry/core";
 import { describe, expect, it } from "vitest";
 import {
   REDACTED,
   REQUEST_HEADER_ALLOWLIST,
+  createTracesSampler,
   isSensitiveKey,
   resolveTraceSampleRate,
   scrubSentryBreadcrumb,
@@ -214,5 +216,98 @@ describe("resolveTraceSampleRate", () => {
     expect(resolveTraceSampleRate({ name: "http.server", attributes: { "url.path": "/api/payments/status?x=1" } }, false)).toBe(1);
     expect(resolveTraceSampleRate({ name: "GET /dashboard" }, false)).toBe(0.1);
     expect(resolveTraceSampleRate({ name: "" }, false)).toBe(0.1);
+  });
+});
+
+describe("scrubSentryEvent keeps structural identifiers intact (C-01)", () => {
+  const eventId = "0123456789abcdef0123456789abcdef";
+  const traceId = "fedcba9876543210fedcba9876543210";
+  const spanId = "0123456789abcdef";
+  const parentSpanId = "89abcdef01234567";
+  const release = "3f786850e387550fdab836ed7e6dc881de23001b";
+  const debugId = "c3a1f0aa-2b4d-4e7f-9a10-0123456789ab";
+  const realEvent = {
+    event_id: eventId,
+    release,
+    dist: "1234567890",
+    environment: "production",
+    timestamp: 1760875200.123,
+    level: "error",
+    platform: "node",
+    sdk: { name: "sentry.javascript.nextjs", version: "10.64.0" },
+    transaction: "GET /api/payments/status",
+    tags: { runtime: "node", region: "hnd1" },
+    contexts: { trace: { trace_id: traceId, span_id: spanId, parent_span_id: parentSpanId, op: "http.server", status: "ok" } },
+    spans: [{ trace_id: traceId, span_id: spanId, parent_span_id: parentSpanId, start_timestamp: 1760875200.1, timestamp: 1760875200.2, description: "GET /api/payments/status?TradeNo=1" }],
+    debug_meta: { images: [{ type: "sourcemap", debug_id: debugId, code_file: "app:///_next/static/chunks/0123456789abcdef0123456789abcdef.js" }] },
+    exception: {
+      values: [{
+        type: "Error",
+        value: "failed for buyer@example.com",
+        stacktrace: { frames: [{ filename: "app:///_next/static/chunks/0123456789abcdef0123456789abcdef.js", function: "handleSubmit", lineno: 120, colno: 15, in_app: true, instruction_addr: "0x0123456789abcdef" }] },
+      }],
+    },
+  };
+
+  it("keeps event, trace, span, release and debug identifiers byte-for-byte", () => {
+    const scrubbed = scrubSentryEvent(realEvent);
+    expect(scrubbed.event_id).toBe(eventId);
+    expect(scrubbed.release).toBe(release);
+    expect(scrubbed.dist).toBe("1234567890");
+    expect(scrubbed.environment).toBe("production");
+    expect(scrubbed.timestamp).toBe(1760875200.123);
+    expect(scrubbed.level).toBe("error");
+    expect(scrubbed.platform).toBe("node");
+    expect(scrubbed.sdk).toEqual(realEvent.sdk);
+    expect(scrubbed.contexts.trace).toEqual(realEvent.contexts.trace);
+    expect(scrubbed.spans[0]).toMatchObject({ trace_id: traceId, span_id: spanId, parent_span_id: parentSpanId, start_timestamp: 1760875200.1, timestamp: 1760875200.2 });
+    expect(scrubbed.debug_meta).toEqual(realEvent.debug_meta);
+    expect(scrubbed.tags).toEqual({ runtime: "node", region: "hnd1" });
+    expect(scrubbed.transaction).toBe("GET /api/payments/status");
+  });
+
+  it("keeps stack frame locations while still scrubbing free text", () => {
+    const scrubbed = scrubSentryEvent(realEvent);
+    expect(scrubbed.exception.values[0]?.stacktrace.frames[0]).toEqual(realEvent.exception.values[0]?.stacktrace.frames[0]);
+    expect(scrubbed.exception.values[0]?.value).toBe(`failed for ${REDACTED}`);
+    expect(scrubbed.spans[0]?.description).toBe(`GET /api/payments/status?${REDACTED}`);
+  });
+
+  it("still produces a valid envelope header with the original event_id", () => {
+    const envelope = createEventEnvelope(scrubSentryEvent(realEvent) as never);
+    expect((envelope[0] as { event_id?: string }).event_id).toMatch(/^[0-9a-f]{32}$/u);
+    expect((envelope[0] as { event_id?: string }).event_id).toBe(eventId);
+  });
+
+  it("keeps sentry.* attributes on logs but scrubs the message and user attributes", () => {
+    const log = scrubSentryLog({
+      level: "info",
+      message: "sent to a@b.co",
+      attributes: { "sentry.release": release, "sentry.trace_id": traceId, orderRef: "ok", email: "a@b.co" },
+    });
+    expect(log.attributes).toEqual({ "sentry.release": release, "sentry.trace_id": traceId, orderRef: "ok", email: REDACTED });
+  });
+});
+
+describe("createTracesSampler", () => {
+  const inherit = (rate: number) => (value: number) => value === rate ? 0.42 : -1;
+
+  it("does not inherit the upstream decision for checkout, payment and webhook routes", () => {
+    const sampler = createTracesSampler(false);
+    for (const name of ["POST /api/payments/checkout", "POST /api/webhooks/payuni", "GET /checkout/result"]) {
+      expect(sampler({ name, inheritOrSampleWith: () => 0 }), name).toBe(1);
+    }
+  });
+
+  it("does not let an upstream sampled trace lift polling routes above 1%", () => {
+    expect(createTracesSampler(false)({ name: "GET /api/live-chat", inheritOrSampleWith: () => 1 })).toBeLessThanOrEqual(0.01);
+  });
+
+  it("inherits the upstream decision for ordinary pages, falling back to 10%", () => {
+    expect(createTracesSampler(false)({ name: "GET /dashboard", inheritOrSampleWith: inherit(0.1) })).toBe(0.42);
+  });
+
+  it("samples everything in development", () => {
+    expect(createTracesSampler(true)({ name: "GET /dashboard", inheritOrSampleWith: () => 0 })).toBe(1);
   });
 });

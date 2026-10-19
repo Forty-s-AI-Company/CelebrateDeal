@@ -134,6 +134,24 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 const MAX_DEPTH = 8;
 
+/**
+ * 事件的結構欄位（識別碼、版本、時間、堆疊位置）不是使用者輸入，原樣保留。
+ * 若連它們一起過濾，event_id、trace_id、release、debug_id 會被遮成無效值，事件會被 Relay 拒收或無法對應 source map。
+ */
+const PRESERVED_LEAF_KEYS: ReadonlySet<string> = new Set([
+  "event_id", "trace_id", "span_id", "parent_span_id", "release", "dist", "environment", "debug_id",
+  "timestamp", "start_timestamp", "level", "platform", "sampled", "sample_rate", "sample_rand", "op", "origin", "status",
+  "filename", "abs_path", "function", "module", "package", "lineno", "colno", "in_app",
+  "instruction_addr", "image_addr", "symbol_addr", "code_file", "code_id", "image_size",
+]);
+
+/** 整棵子樹原樣保留（SDK 與符號化需要的中繼資料，不含使用者資料）。 */
+const PRESERVED_SUBTREE_KEYS: ReadonlySet<string> = new Set(["sdk", "debug_meta", "modules", "sdkProcessingMetadata"]);
+
+function isPreservedKey(key: string) {
+  return PRESERVED_LEAF_KEYS.has(key) || PRESERVED_SUBTREE_KEYS.has(key) || key.startsWith("sentry.");
+}
+
 /** 深度走訪任意結構：敏感欄位名稱整個遮蔽，其餘字串逐一過濾。不修改輸入。 */
 export function scrubValue(value: unknown, depth = 0): unknown {
   if (typeof value === "string") return scrubString(value);
@@ -143,6 +161,10 @@ export function scrubValue(value: unknown, depth = 0): unknown {
   if (!isPlainObject(value)) return value;
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
+    if (isPreservedKey(key) && (PRESERVED_SUBTREE_KEYS.has(key) || typeof item !== "object" || item === null)) {
+      result[key] = item;
+      continue;
+    }
     result[key] = isSensitiveKey(key) && item !== null && item !== undefined && item !== ""
       ? REDACTED
       : scrubValue(item, depth + 1);
@@ -241,4 +263,23 @@ export function resolveTraceSampleRate(
   if (CRITICAL_PATH_PATTERN.test(path)) return TRACE_SAMPLE_RATES.critical;
   if (POLLING_PATH_PATTERN.test(path)) return TRACE_SAMPLE_RATES.polling;
   return TRACE_SAMPLE_RATES.default;
+}
+
+type SamplerContext = {
+  name?: string;
+  attributes?: Record<string, unknown> | undefined;
+  inheritOrSampleWith: (fallbackSampleRate: number) => number;
+};
+
+/**
+ * 伺服器與瀏覽器共用的取樣器。
+ * - 付款／結帳／webhook：固定 1，不沿用上游決定（否則從 10% 的商品頁發出的結帳 API 會被丟掉）。
+ * - 輪詢類：固定 0.005，不沿用上游決定（否則會被上游的 10% 帶高）。
+ * - 其餘：沿用上游 trace 的決定，沒有上游時 10%，讓一般頁面的 trace 保持完整。
+ */
+export function createTracesSampler(isDevelopment: boolean) {
+  return (context: SamplerContext): number => {
+    const rate = resolveTraceSampleRate(context, isDevelopment);
+    return rate === TRACE_SAMPLE_RATES.default ? context.inheritOrSampleWith(rate) : rate;
+  };
 }
