@@ -46,6 +46,7 @@ vi.mock("@/lib/payment-providers/ecpay-like", () => ({
 }));
 
 import { HEAD, POST } from "@/app/api/webhooks/payments/route";
+import { PaymentWebhookNotActionableError } from "@/lib/payment-providers/types";
 import { MAX_JSON_BODY_BYTES } from "@/lib/api-security";
 
 function webhookRequest(providerQuery = "", headers?: HeadersInit, body = JSON.stringify({ eventId: "event-test" })) {
@@ -508,6 +509,36 @@ describe("payment webhook provider selection", () => {
     expect(payload).toEqual({ error: "Invalid payment webhook payload", code: "invalid_payload" });
     expect(JSON.stringify(payload)).not.toContain("provider-private-value");
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("provider-private-value");
+  });
+
+  it.each(["trade_pending", "payment_type_not_allowed", "provider_status_not_success"] as const)(
+    "records an authentic but not actionable callback (%s) without creating or processing an event",
+    async (reason) => {
+      vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+      mocks.payUniVerifySignature.mockResolvedValue(true);
+      mocks.payUniNormalizePayload.mockRejectedValue(new PaymentWebhookNotActionableError(reason));
+
+      const response = await POST(webhookRequest("?provider=payuni&source=notify"));
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: "Payment webhook is not actionable", code: "not_actionable" });
+      expect(mocks.webhookEventCreate).not.toHaveBeenCalled();
+      expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+      expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "payment_webhook_not_actionable" }));
+      expect(mocks.auditSnapshot).toHaveBeenCalledWith({ errorCode: "not_actionable", reason });
+    },
+  );
+
+  it("sends the payer of a not actionable PayUni return to the neutral unverified result", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockRejectedValue(new PaymentWebhookNotActionableError("trade_pending"));
+
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=unverified");
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
   });
 
   it("stores and returns only a closed failure code when processing throws an unknown exception", async () => {

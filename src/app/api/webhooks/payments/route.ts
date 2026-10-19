@@ -4,6 +4,7 @@ import { readTextBody } from "@/lib/api-security";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-providers";
+import { PaymentWebhookNotActionableError } from "@/lib/payment-providers/types";
 import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
 import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
@@ -208,7 +209,20 @@ export async function POST(request: Request) {
   let normalized;
   try {
     normalized = await adapter.normalizePayload(rawBody);
-  } catch {
+  } catch (error) {
+    if (error instanceof PaymentWebhookNotActionableError) {
+      // Authentic, but must not change payment state (for example a non-card
+      // PaymentType or an issued-not-paid trade). No WebhookEvent is created;
+      // only the closed reason is audited so operators can reconcile it.
+      await writeAuditLog({
+        actorLabel: `webhook:${adapter.id}`,
+        action: "payment_webhook_not_actionable",
+        targetType: "WebhookEvent",
+        before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
+        after: auditSnapshot({ errorCode: "not_actionable", reason: error.reason }),
+      });
+      return webhookResponse(requestUrl, 400, { error: "Payment webhook is not actionable", code: "not_actionable" });
+    }
     await writeAuditLog({
       actorLabel: `webhook:${adapter.id}`,
       action: "payment_webhook_invalid",

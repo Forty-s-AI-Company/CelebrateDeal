@@ -12,7 +12,7 @@ const db = getDb();
 const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
  vi.unstubAllEnvs();
- await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-paid", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent-paid"] } }] } });
+ await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-paid", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent-paid", "synthetic-buyer-trade:1", "synthetic-buyer-trade:2"] } }] } });
  await db.vendor.deleteMany({ where: { id: { in: [fixed.vendorId, raceVendorId] } } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
@@ -102,10 +102,10 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
   // A recoverable local payment mismatch must fail after signature verification.
   await db.paymentTransaction.update({ where: { id: payment.id }, data: { grossAmountCents: 101 } });
   const body = buildPayUniSandboxWebhookFixture({ fixture: "paid", merchantId: "SYNTHETIC", hashKey: "0123456789abcdef0123456789abcdef", hashIv: "0123456789abcdef",
-   overrides: { EventId: "synthetic-buyer-route-paid", MerTradeNo: payment.orderNumber!, TradeNo: payment.providerTradeNo!, TradeAmt: 1, NetAmount: 1, GatewayFee: 0, PlatformFee: 0, ReferralCode: "" } });
+   overrides: { MerTradeNo: payment.orderNumber!, TradeNo: payment.providerTradeNo!, TradeAmt: 1, NetAmount: 1, GatewayFee: 0, PlatformFee: 0, ReferralCode: "" } });
   const response = await paymentCallback(new Request("http://127.0.0.1:31041/api/webhooks/payments?provider=payuni&source=notify", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }));
   expect(response.status).toBe(500);
-  const event = await db.webhookEvent.findUniqueOrThrow({ where: { provider_eventId: { provider: "payuni", eventId: "synthetic-buyer-route-paid" } } });
+  const event = await db.webhookEvent.findUniqueOrThrow({ where: { provider_eventId: { provider: "payuni", eventId: `${payment.providerTradeNo}:1` } } });
   expect(event).toMatchObject({ status: "failed", retryCount: 1, vendorId: null });
   expect(event.payload).toMatchObject({ normalized: { orderNumber: payment.orderNumber, grossAmountCents: 100 } });
   expect((event.payload as { normalized: Record<string, unknown> }).normalized).not.toHaveProperty("currency");
@@ -186,5 +186,57 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
   await db.paymentTransaction.update({ where: { id: payment.id }, data: { metadata: { billingPurpose: "buyer_order", productId: fixed.productId, wp4SourceCommit: "b".repeat(40), wp4PaymentSubmissionReserved: true } } });
   await expect(readWp4ExistingBuyerState(db)).resolves.toEqual({ status: "FIXTURE_UNAVAILABLE" });
   await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toMatchObject({ status: "FIXTURE_UNAVAILABLE", retryAttempts: 0 });
+ });
+});
+
+// F-037: documented UPP 2.0 callbacks through the real route and PostgreSQL.
+describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
+ function stubPayUni() {
+  vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+  vi.stubEnv("PAYUNI_ENV", "sandbox");
+  vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "SYNTHETIC");
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", "0123456789abcdef0123456789abcdef");
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", "0123456789abcdef");
+ }
+ function callback(source: "notify" | "return", overrides: Record<string, string | number>, orderNumber: string, tradeNo: string) {
+  const body = buildPayUniSandboxWebhookFixture({ fixture: "paid", merchantId: "SYNTHETIC", hashKey: "0123456789abcdef0123456789abcdef", hashIv: "0123456789abcdef",
+   overrides: { MerTradeNo: orderNumber, TradeNo: tradeNo, TradeAmt: 1, ...overrides } });
+  return paymentCallback(new Request(`http://127.0.0.1:31041/api/webhooks/payments?provider=payuni&source=${source}`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }));
+ }
+
+ it.each([
+  ["issued number TradeStatus 0", { TradeStatus: "0" }],
+  ["awaiting confirmation TradeStatus 8", { TradeStatus: "8" }],
+  ["paid ATM PaymentType 2", { PaymentType: "2" }],
+  ["paid CVS PaymentType 3", { PaymentType: "3" }],
+ ])("keeps the checkout pending with no event or commission for %s", async (_label, overrides) => {
+  const { payment } = await checkout();
+  stubPayUni();
+  const response = await callback("notify", overrides, payment.orderNumber!, payment.providerTradeNo!);
+  expect(response.status).toBe(400);
+  expect(await db.webhookEvent.count({ where: { provider: "payuni", eventId: { startsWith: `${payment.providerTradeNo}:` } } })).toBe(0);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending" });
+  expect(await db.affiliateCommission.count({ where: { vendorId: fixed.vendorId } })).toBe(0);
+  expect(await db.auditLog.count({ where: { action: "payment_webhook_not_actionable", createdAt: { gte: payment.createdAt } } })).toBeGreaterThan(0);
+ });
+
+ it("records a failed attempt and a later paid result of one trade as two events and pays once", async () => {
+  const { payment } = await checkout();
+  stubPayUni();
+  expect((await callback("notify", { TradeStatus: "2" }, payment.orderNumber!, payment.providerTradeNo!)).status).toBe(200);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "failed" });
+  expect((await callback("notify", {}, payment.orderNumber!, payment.providerTradeNo!)).status).toBe(200);
+  // ReturnURL repeats the same signed paid result: one event, no second payment.
+  expect((await callback("return", {}, payment.orderNumber!, payment.providerTradeNo!)).status).toBe(303);
+  const events = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: { startsWith: `${payment.providerTradeNo}:` } }, orderBy: { eventId: "asc" } });
+  expect(events.map(event => [event.eventId, event.eventType, event.status])).toEqual([
+   [`${payment.providerTradeNo}:1`, "paid", "processed"],
+   [`${payment.providerTradeNo}:2`, "failed", "processed"],
+  ]);
+  const paid = await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } });
+  // No provider net amount: the checkout's stored value is kept, never zeroed (F-040).
+  expect(paid).toMatchObject({ status: "paid", grossAmountCents: 100, netAmountCents: 100 });
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
  });
 });

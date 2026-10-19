@@ -199,6 +199,21 @@ export class PaymentMethodSetupMalformedPayloadError extends Error {
   }
 }
 
+/**
+ * An authenticated payment callback that must not change any payment state:
+ * a pending provider state (for example a number issued but not yet paid), a
+ * payment method outside the allowlist, or a provider status that is not a
+ * final success. Only this closed reason is recorded; never the payload.
+ */
+export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_not_allowed" | "provider_status_not_success";
+
+export class PaymentWebhookNotActionableError extends Error {
+  constructor(public readonly reason: PaymentWebhookNotActionableReason) {
+    super("Payment webhook is not actionable.");
+    this.name = "PaymentWebhookNotActionableError";
+  }
+}
+
 export type PaymentProviderAdapter = {
   id: string;
   /** Session preparation is pure local work; no remote trade is created. */

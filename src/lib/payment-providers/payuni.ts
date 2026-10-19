@@ -10,6 +10,7 @@ import {
   PaymentQueryProviderError,
   PaymentMethodSetupMalformedPayloadError,
   PaymentMethodSetupProviderResultError,
+  PaymentWebhookNotActionableError,
   type PaymentMethodReferenceRevocationInput,
   type PaymentMethodSetupProviderDiagnostics,
   type PaymentMethodSetupProviderOutcome,
@@ -41,6 +42,8 @@ const PAYUNI_WEBHOOK_AUDIT_KEYS = new Set([
   "OrderNo",
   "orderNumber",
   "TradeNo",
+  "TradeStatus",
+  "PaymentType",
   "TsNo",
   "VendorSlug",
   "VendorId",
@@ -55,9 +58,55 @@ const PAYUNI_WEBHOOK_AUDIT_KEYS = new Set([
   "OccurredAt",
 ]);
 
-function cents(value: unknown) {
-  const amount = typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
-  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+/**
+ * Optional provider amount. An absent field stays undefined so the webhook
+ * pipeline keeps the stored or server-derived value instead of writing 0
+ * (F-040: real UPP callbacks carry no NetAmount or GatewayFee).
+ */
+function optionalCents(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const amount = typeof value === "number" ? value : Number.parseFloat(String(value));
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("Invalid PayUni amount field.");
+  return Math.round(amount * 100);
+}
+
+// PayUni UPP 2.0 Notify/Return result codes (docs.payuni.com.tw/web/#/7/34,
+// read 2026-10-19). TradeStatus: 0 number issued (ATM/CVS, not paid), 1 paid,
+// 2 payment failed, 3 payment cancelled, 8 awaiting confirmation. 4 (expired)
+// and 9 (unpaid) are not in the UPP table; they follow the 2026Q4 review
+// (F-037) and the trade query contract. 待 Sandbox 樣本驗證.
+// PaymentType: 1 credit card, 2 ATM, 3 CVS code, 5 CVS pickup COD, 6 icash,
+// 7 AFTEE, 9 LINE Pay, 10 home-delivery COD, 11 JKOPAY.
+const PAYUNI_PAID_TRADE_STATUS = "1";
+const PAYUNI_FAILED_TRADE_STATUSES = new Set(["2", "3", "4", "9"]);
+const PAYUNI_PENDING_TRADE_STATUSES = new Set(["0", "8"]);
+// Closed beta accepts credit card only; buyer checkout sends Credit=1.
+const PAYUNI_PAYABLE_PAYMENT_TYPES = new Set(["1"]);
+
+/**
+ * Decides a signed UPP 2.0 payment callback. Only signed Status=SUCCESS with
+ * TradeStatus=1 and an allowlisted PaymentType is paid, and the unsigned outer
+ * Status must agree. Failed/cancelled/expired/unpaid are failed; issued or
+ * awaiting-confirmation states change nothing; anything else fails closed.
+ */
+function payUniUppEventType(envelope: Record<string, unknown>, payload: Record<string, unknown>): "paid" | "failed" {
+  if (payload.EventType !== undefined) {
+    // Real UPP callbacks never carry the former synthetic EventType field.
+    throw new Error("Unsupported PayUni payment status.");
+  }
+  const tradeStatus = optionalPayloadText(payload.TradeStatus) ?? "";
+  if (PAYUNI_PENDING_TRADE_STATUSES.has(tradeStatus)) throw new PaymentWebhookNotActionableError("trade_pending");
+  if (PAYUNI_FAILED_TRADE_STATUSES.has(tradeStatus)) return "failed";
+  if (tradeStatus !== PAYUNI_PAID_TRADE_STATUS) throw new Error("Unsupported PayUni payment status.");
+  // The outer Status is not covered by HashInfo and passes through the payer's
+  // browser on ReturnURL. It can only veto a paid decision, never create one.
+  if (optionalPayloadText(payload.Status) !== "SUCCESS" || optionalPayloadText(envelope.Status) !== "SUCCESS") {
+    throw new PaymentWebhookNotActionableError("provider_status_not_success");
+  }
+  if (!PAYUNI_PAYABLE_PAYMENT_TYPES.has(optionalPayloadText(payload.PaymentType) ?? "")) {
+    throw new PaymentWebhookNotActionableError("payment_type_not_allowed");
+  }
+  return "paid";
 }
 
 function normalizeEventType(value: unknown) {
@@ -879,6 +928,11 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       TradeAmt: payUniTradeAmount(transaction.grossAmountCents),
       Timestamp: Math.floor(Date.now() / 1000),
       ProdDesc: productDescription.slice(0, 80),
+      // Closed beta: credit card only. Sending one payment-tool flag replaces
+      // the shop defaults (ATM/CVS/wallets); the callback also rejects any
+      // other PaymentType. 待 Sandbox 樣本驗證 that the UPP page shows no
+      // other tool and how Apple/Google Pay report PaymentType.
+      Credit: 1,
       ReturnURL: payUniCallbackUrl(returnAppUrl ?? appUrl, "return"),
       NotifyURL: payUniCallbackUrl(appUrl, "notify"),
     });
@@ -959,7 +1013,16 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   async normalizePayload(rawBody) {
     const outerPayload = parseRawPayload(rawBody);
     const rawPayload = outerPayload.EncryptInfo ? decryptInfo(String(outerPayload.EncryptInfo)) : outerPayload;
-    const eventType = normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus);
+    // A signed TradeStatus marks the documented UPP 2.0 callback. Without it,
+    // only the legacy synthetic refund/failure notices remain; they can never
+    // produce a paid event (F-037).
+    const isUppCallback = Object.hasOwn(rawPayload, "TradeStatus");
+    const eventType = isUppCallback
+      ? payUniUppEventType(outerPayload, rawPayload)
+      : normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus);
+    if (!isUppCallback && eventType === "paid") {
+      throw new Error("Unsupported PayUni payment status.");
+    }
     const tradeAmount = rawPayload.Amount ?? rawPayload.TradeAmt;
     const parsedTradeAmountCents = queryAmountCents(tradeAmount);
     // Paid callbacks require signed proof of the full order amount. Refund
@@ -971,9 +1034,15 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
     }
     const grossAmountCents = parsedTradeAmountCents ?? 0;
     const orderNumber = rawPayload.MerTradeNo ?? rawPayload.OrderNo ?? rawPayload.orderNumber;
-    const eventId = rawPayload.EventId ?? rawPayload.TradeNo ?? rawPayload.TsNo ?? orderNumber;
     const normalizedOrderNumber = requiredPayloadText(orderNumber, "order number");
-    const normalizedEventId = requiredPayloadText(eventId, "event ID");
+    // One event per provider trade state: "issued -> paid" or "failed -> paid"
+    // on one TradeNo must not be swallowed by WebhookEvent de-duplication,
+    // while Return and Notify of the same state converge on one event.
+    const normalizedEventId = isUppCallback
+      ? `${eventType === "paid"
+        ? requiredPayloadText(rawPayload.TradeNo, "trade number")
+        : optionalPayloadText(rawPayload.TradeNo) ?? normalizedOrderNumber}:${requiredPayloadText(rawPayload.TradeStatus, "trade status")}`
+      : requiredPayloadText(rawPayload.EventId ?? rawPayload.TradeNo ?? rawPayload.TsNo ?? orderNumber, "event ID");
     const normalized = {
       provider: "payuni",
       eventId: normalizedEventId,
@@ -984,12 +1053,12 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       providerTradeNo: optionalPayloadText(rawPayload.TradeNo),
       paymentMode: "platform",
       grossAmountCents,
-      gatewayFeeCents: cents(rawPayload.GatewayFee),
-      platformFeeCents: cents(rawPayload.PlatformFee),
-      netAmountCents: cents(rawPayload.NetAmount),
-      refundAmountCents: cents(rawPayload.RefundAmount),
-      gatewayFeeRefundCents: cents(rawPayload.GatewayFeeRefund),
-      platformFeeRefundCents: cents(rawPayload.PlatformFeeRefund),
+      gatewayFeeCents: optionalCents(rawPayload.GatewayFee),
+      platformFeeCents: optionalCents(rawPayload.PlatformFee),
+      netAmountCents: optionalCents(rawPayload.NetAmount),
+      refundAmountCents: optionalCents(rawPayload.RefundAmount),
+      gatewayFeeRefundCents: optionalCents(rawPayload.GatewayFeeRefund),
+      platformFeeRefundCents: optionalCents(rawPayload.PlatformFeeRefund),
       refundReason: rawPayload.RefundReason ? String(rawPayload.RefundReason) : undefined,
       referralCode: rawPayload.ReferralCode ? String(rawPayload.ReferralCode) : undefined,
       occurredAt: rawPayload.OccurredAt ? new Date(String(rawPayload.OccurredAt)).toISOString() : undefined,
