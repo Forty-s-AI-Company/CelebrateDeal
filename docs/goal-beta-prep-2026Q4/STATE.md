@@ -32,15 +32,15 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 | P-1 文件 PR | DONE | #445 | PRODUCT.md、domain-workflows.md 已含 |
 | P-2 STATE.md | DONE | 本檔 | |
 | P-3 prisma generate | DONE | 主目錄與三個 worktree | |
-| P-4／D1 CSRF_SECRET 說明 | TODO | 工作線 B | |
+| P-4／D1 CSRF_SECRET 說明 | DONE（待審） | B，PR #447 `99c2990b` | |
 | A1 staging QA 帳號 TOTP | TODO | A | |
 | A2 #436 rebase＋MFA | TODO | A | |
 | A3 PayUni TradeStatus | TODO | A | 等 O-2 樣本；先寫紅燈測試 |
 | A4 註冊同意紀錄 | TODO | A | 條款等 O-11；先做勾選與版本紀錄 |
 | B1 RLS 查證 | IN_PROGRESS | 主對話 | |
-| B2 排程 | TODO | B | |
-| B3 區域與連線池 | TODO | B | |
-| B4 備份還原演練 | BLOCKED_OWNER | B | 等 O-4 Supabase 升級；先準備腳本與 runbook |
+| B2 排程 | IN_REVIEW | B，PR #447 `ad199160` | 改以 GitHub Actions 每 5 分鐘為唯一路徑：Preview 專案不觸發 Vercel Cron、staging 是 Hobby；6 個端點排程，billing-cycle 與 electronic-invoices 每日；tracking-deliveries 未排（需 vendorId） |
+| B3 區域與連線池 | IN_REVIEW | B，PR #447 `ee6d082c` | regions hnd1；preflight 只警告。**跨區待 owner 決定（O-15）** |
+| B4 備份還原演練 | 準備完成（待審）／演練 BLOCKED_OWNER | B，PR #447 `9663d543` | runbook、`pg_trgm` 修正已驗證；真實演練等 O-4 |
 | C1 結帳頁內部備註 | TODO | C | |
 | C2 時區與 404 | TODO | C | |
 | C3 虛擬使用者角色與不標示 | TODO | C | |
