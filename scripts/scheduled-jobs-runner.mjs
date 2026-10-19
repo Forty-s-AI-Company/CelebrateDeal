@@ -2,14 +2,18 @@
 // Calls one CelebrateDeal background job on the fixed staging alias with
 // JOB_SECRET. Used by .github/workflows/scheduled-jobs.yml (F-042 / B09-01).
 //
-// Output contract: one line with the job name, HTTP status and a fixed outcome
-// word. Response bodies, headers, URLs with credentials and error messages are
-// never printed, so the Actions log can serve as invocation evidence without
-// leaking customer or provider data.
+// Output contract: one line with the job name, HTTP status, a fixed outcome
+// word and, when a job reports them, two non-negative attention counts. Response
+// bodies, headers, URLs with credentials and error messages are never printed,
+// so the Actions log can serve as invocation evidence without leaking customer
+// or provider data.
 import { pathToFileURL } from "node:url";
 
 export const STAGING_ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
 export const REQUEST_TIMEOUT_MS = 120_000;
+const MAX_BODY_BYTES = 256 * 1024;
+/** Top-level response counters that mean "a human must look" (PR #447 review M2). */
+export const ATTENTION_COUNTERS = Object.freeze(["exhausted", "inventoryUnavailable"]);
 
 /**
  * cadence:
@@ -56,7 +60,24 @@ export function classifyStatus(status) {
 }
 
 /**
- * @returns {Promise<{ name: string, status: number, outcome: string }>}
+ * Extracts only the attention counters from a JSON body. Every other field is
+ * discarded; non-integer or negative values are ignored.
+ */
+export function attentionCounts(bodyText) {
+  const counts = {};
+  if (typeof bodyText !== "string" || bodyText.length === 0 || bodyText.length > MAX_BODY_BYTES) return counts;
+  let parsed;
+  try { parsed = JSON.parse(bodyText); } catch { return counts; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return counts;
+  for (const key of ATTENTION_COUNTERS) {
+    const value = parsed[key];
+    if (Number.isSafeInteger(value) && value >= 0) counts[key] = value;
+  }
+  return counts;
+}
+
+/**
+ * @returns {Promise<{ name: string, status: number, outcome: string, counts?: Record<string, number> }>}
  * status 0 means no HTTP response was received.
  */
 export async function runScheduledJob(name, env = process.env, fetchImpl = globalThis.fetch) {
@@ -79,13 +100,24 @@ export async function runScheduledJob(name, env = process.env, fetchImpl = globa
     return { name: job.name, status: 0, outcome: timedOut ? "timeout" : "network_error" };
   }
 
-  // Release the connection without reading or logging the job body.
-  try { await response.body?.cancel(); } catch { /* body already consumed or closed */ }
-  return { name: job.name, status: response.status, outcome: classifyStatus(response.status) };
+  const outcome = classifyStatus(response.status);
+  if (outcome !== "ok") {
+    // Release the connection without reading or logging the job body.
+    try { await response.body?.cancel(); } catch { /* body already consumed or closed */ }
+    return { name: job.name, status: response.status, outcome };
+  }
+  let counts = {};
+  try { counts = attentionCounts(await response.text()); } catch { /* counts stay empty */ }
+  const needsAttention = ATTENTION_COUNTERS.some((key) => (counts[key] ?? 0) > 0);
+  return { name: job.name, status: response.status, outcome: needsAttention ? "needs_attention" : "ok", counts };
 }
 
 export function formatResult(result) {
-  return `scheduled-job name=${result.name} http=${result.status} outcome=${result.outcome}`;
+  const counts = ATTENTION_COUNTERS
+    .filter((key) => Number.isSafeInteger(result.counts?.[key]))
+    .map((key) => ` ${key}=${result.counts[key]}`)
+    .join("");
+  return `scheduled-job name=${result.name} http=${result.status} outcome=${result.outcome}${counts}`;
 }
 
 async function main(argv) {

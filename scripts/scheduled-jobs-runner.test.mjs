@@ -11,6 +11,7 @@ import {
   SCHEDULE_FREQUENT,
   STAGING_ALIAS,
   UNSCHEDULED_ENDPOINTS,
+  attentionCounts,
   classifyStatus,
   formatResult,
   jobUrl,
@@ -21,14 +22,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workflowPath = path.join(root, ".github", "workflows", "scheduled-jobs.yml");
 const secret = "scheduled-jobs-test-secret-value";
 
-function fakeResponse(status) {
+function fakeResponse(status, bodyText = "") {
   let cancelled = false;
   let read = false;
   return {
     status,
     body: { cancel: async () => { cancelled = true; } },
-    json: async () => { read = true; return {}; },
-    text: async () => { read = true; return ""; },
+    json: async () => { read = true; return JSON.parse(bodyText || "{}"); },
+    text: async () => { read = true; return bodyText; },
     get cancelled() { return cancelled; },
     get read() { return read; },
   };
@@ -41,16 +42,32 @@ test("calls only the fixed staging alias with POST, JOB_SECRET and no redirect f
     calls.push({ url, init });
     return response;
   });
-  assert.deepEqual(result, { name: "webhook-retry", status: 200, outcome: "ok" });
+  assert.deepEqual(result, { name: "webhook-retry", status: 200, outcome: "ok", counts: {} });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, `https://${STAGING_ALIAS}/api/jobs/webhook-retry`);
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[0].init.headers.Authorization, `Bearer ${secret}`);
   assert.equal(calls[0].init.redirect, "manual");
   assert.ok(calls[0].init.signal instanceof AbortSignal);
-  assert.equal(response.cancelled, true);
-  assert.equal(response.read, false);
   assert.equal(REQUEST_TIMEOUT_MS, 120_000);
+});
+
+test("fails a 2xx run that reports exhausted or sold-out webhook events, printing only the counts", async () => {
+  const body = JSON.stringify({ ok: true, processed: 3, exhausted: 1, inventoryUnavailable: 2, results: [{ eventId: "private-event", status: "exhausted" }], email: "buyer@example.test" });
+  const result = await runScheduledJob("webhook-retry", { JOB_SECRET: secret }, async () => fakeResponse(200, body));
+  assert.deepEqual(result, { name: "webhook-retry", status: 200, outcome: "needs_attention", counts: { exhausted: 1, inventoryUnavailable: 2 } });
+  const line = formatResult(result);
+  assert.equal(line, "scheduled-job name=webhook-retry http=200 outcome=needs_attention exhausted=1 inventoryUnavailable=2");
+  assert.doesNotMatch(line, /private-event|buyer@example/u);
+
+  const clean = await runScheduledJob("webhook-retry", { JOB_SECRET: secret }, async () => fakeResponse(200, JSON.stringify({ ok: true, exhausted: 0, inventoryUnavailable: 0 })));
+  assert.equal(clean.outcome, "ok");
+  const noCounters = await runScheduledJob("email-deliveries", { JOB_SECRET: secret }, async () => fakeResponse(200, JSON.stringify({ ok: true, processed: 2 })));
+  assert.deepEqual(noCounters, { name: "email-deliveries", status: 200, outcome: "ok", counts: {} });
+  const malformed = await runScheduledJob("webhook-retry", { JOB_SECRET: secret }, async () => fakeResponse(200, "not json"));
+  assert.equal(malformed.outcome, "ok");
+  assert.deepEqual(attentionCounts(JSON.stringify({ exhausted: -1, inventoryUnavailable: 1.5 })), {});
+  assert.deepEqual(attentionCounts(JSON.stringify([1, 2])), {});
 });
 
 test("never sends a request without JOB_SECRET or for an unknown job", async () => {
@@ -80,7 +97,10 @@ test("classifies failures with fixed words and never echoes secrets or error tex
   const timeout = await runScheduledJob("billing-cycle", { JOB_SECRET: secret }, async () => { throw timeoutError; });
   assert.equal(timeout.outcome, "timeout");
 
-  const line = formatResult(await runScheduledJob("email-deliveries", { JOB_SECRET: secret }, async () => fakeResponse(503)));
+  const failed = fakeResponse(503, `{"secret":"${secret}"}`);
+  const line = formatResult(await runScheduledJob("email-deliveries", { JOB_SECRET: secret }, async () => failed));
+  assert.equal(failed.read, false, "non-2xx bodies are never read");
+  assert.equal(failed.cancelled, true);
   assert.equal(line, "scheduled-job name=email-deliveries http=503 outcome=job_reported_failure");
   assert.doesNotMatch(line, new RegExp(secret, "u"));
 });

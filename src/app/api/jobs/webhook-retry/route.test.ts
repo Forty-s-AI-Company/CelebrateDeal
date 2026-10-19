@@ -68,6 +68,8 @@ describe("POST /api/jobs/webhook-retry", () => {
       ok: true,
       inventory: { examined: 0, released: 0, committed: 0 },
       processed: 2,
+      exhausted: 1,
+      inventoryUnavailable: 0,
       results,
     });
   });
@@ -93,6 +95,8 @@ describe("POST /api/jobs/webhook-retry", () => {
       ok: false,
       inventory: null,
       processed: 1,
+      exhausted: 0,
+      inventoryUnavailable: 0,
       results: [{ status: "processed" }],
       failures: ["inventory_cleanup"],
     });
@@ -121,6 +125,8 @@ describe("POST /api/jobs/webhook-retry", () => {
       ok: false,
       inventory,
       processed: 0,
+      exhausted: 0,
+      inventoryUnavailable: 0,
       results: [],
       failures: ["webhook_retry"],
     });
@@ -152,6 +158,8 @@ describe("POST /api/jobs/webhook-retry", () => {
       ok: false,
       inventory: null,
       processed: 0,
+      exhausted: 0,
+      inventoryUnavailable: 0,
       results: [],
       failures: ["inventory_cleanup", "webhook_retry"],
     });
@@ -172,6 +180,8 @@ describe("POST /api/jobs/webhook-retry", () => {
       ok: false,
       inventory: null,
       processed: 1,
+      exhausted: 0,
+      inventoryUnavailable: 0,
       results: [{ status: "unknown" }],
       failures: ["inventory_cleanup"],
     });
@@ -203,6 +213,17 @@ describe("GET /api/jobs/webhook-retry (Vercel Cron entry)", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true, processed: 0 });
     expect(mocks.releaseExpiredInventoryReservations).toHaveBeenCalledBefore(mocks.processDueWebhookRetries);
+  });
+
+  it("reports exhausted and sold-out inventory counts for the scheduler", async () => {
+    mocks.processDueWebhookRetries.mockResolvedValueOnce([
+      { eventId: "event-a", status: "exhausted", inventoryUnavailable: true },
+      { eventId: "event-b", status: "failed", inventoryUnavailable: true },
+      { eventId: "event-c", status: "processed", inventoryUnavailable: false },
+    ]);
+    const response = await GET(cronRequest(`Bearer ${cronSecret}`));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, processed: 3, exhausted: 1, inventoryUnavailable: 2 });
   });
 
   it("keeps the sanitized partial-failure contract", async () => {

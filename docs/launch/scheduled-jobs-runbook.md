@@ -45,7 +45,18 @@
 2. 每個 job step 只印一行，例如 `scheduled-job name=webhook-retry http=200 outcome=ok`。不會印 response body、header 或密鑰。
 3. Run 的 Summary 有一張表，列出每個 job 的 `success`／`failure`／`skipped`。
 4. 交叉比對：Vercel → `celebrate-deal-staging` → Logs，篩選路徑（例如 `/api/jobs/webhook-retry`）與方法 POST，時間應該與 Actions run 對得上。
-5. `outcome` 對照：`unauthorized`＝staging 的 `JOB_SECRET` 與 GitHub environment 的值不一致；`route_missing`＝staging 部署還沒有本次的 POST／GET 入口；`job_reported_failure`＝handler 回 503（看 Sentry 的 `captureOperationalError`）；`redirected`＝alias 被部署保護或網域設定攔截；`timeout`／`network_error`＝staging 沒有回應。
+5. `outcome` 對照：`unauthorized`＝staging 的 `JOB_SECRET` 與 GitHub environment 的值不一致；`route_missing`＝staging 部署還沒有本次的 POST／GET 入口；`job_reported_failure`＝handler 回 503（看 Sentry 的 `captureOperationalError`）；`redirected`＝alias 被部署保護或網域設定攔截；`timeout`／`network_error`＝staging 沒有回應；`needs_attention`＝HTTP 200，但 webhook-retry 回報 `exhausted` 或 `inventoryUnavailable` 大於 0（見 §3.1），該行會附上這兩個數字，run 會標紅。
+
+### 3.1 webhook-retry 的人工處理訊號（B03-07）
+
+排程啟用後，保留超過 30 分鐘的庫存會被釋放、交易改成 `expired`。若 PayUni 之後才送來 `paid` 而商品已售完，`InventoryUnavailableError` 會讓整筆付款處理 rollback，重試 5 次後變成 `exhausted`：**買家已付款，訂單卻停在未付**。目前的最小保護：
+
+- 每次重試遇到售完、或事件進入 `exhausted`，都會以 **error 等級**送出 Sentry 訊息 `webhook_retry_requires_attention`，tag `reason` 是 `inventory_unavailable` 或 `exhausted`，extra 只有內部 `eventId` 與 `orderNumber`（不含買家資料、payload 或 provider 訊息）。
+- `/api/jobs/webhook-retry` 的回應多了 `exhausted`、`inventoryUnavailable` 兩個計數；任一大於 0，scheduler 的該 step 會以 `needs_attention` 標紅。
+- owner 需在 staging 的 Sentry 專案為 `webhook_retry_requires_attention` 建立告警規則（通知到值班信箱或 Slack）。
+- 處理方式：用 `eventId`／`orderNumber` 在後台找到交易，向 PayUni 查實際付款狀態；已付款就人工補庫存或走退款，並在付款事件 SOP 記錄。
+
+**Production 上線前硬性 gate：B03-07 必修。** 付款事實一律先記帳、不得因庫存 rollback；庫存不足時把訂單標記為超賣並建立退款或人工工單；UPP 的 `TradeLExpireSec` 必須 ≤ 保留 TTL。上述完成前，Production 不得啟用 webhook-retry 排程。
 
 ### 暫停與恢復
 

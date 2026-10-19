@@ -28,6 +28,18 @@ function reportMaintenanceFailure(error: unknown, operation: "inventory_cleanup"
   }
 }
 
+/**
+ * Counts the scheduler reads to fail a run (PR #447 review M2): any event that
+ * became exhausted, or hit sold-out inventory after its reservation expired
+ * (B03-07), needs a human even though the HTTP call itself succeeded.
+ */
+function attentionCounts(results: Awaited<ReturnType<typeof processDueWebhookRetries>>) {
+  return {
+    exhausted: results.filter((result) => result.status === "exhausted").length,
+    inventoryUnavailable: results.filter((result) => result.inventoryUnavailable === true).length,
+  };
+}
+
 function safeRetryResults(results: Awaited<ReturnType<typeof processDueWebhookRetries>>) {
   return results.slice(0, 20).map((result) => ({
     status: SAFE_RETRY_STATUSES.has(result.status) ? result.status : "unknown",
@@ -60,6 +72,7 @@ async function processWebhookRetryMaintenance() {
       ok: false,
       inventory,
       processed: results.length,
+      ...attentionCounts(results),
       results: safeRetryResults(results),
       failures,
     }, { status: 503 });
@@ -69,6 +82,7 @@ async function processWebhookRetryMaintenance() {
     ok: true,
     inventory,
     processed: results.length,
+    ...attentionCounts(results),
     results,
   });
 }
