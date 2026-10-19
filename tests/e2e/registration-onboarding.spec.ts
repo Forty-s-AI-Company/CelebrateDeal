@@ -12,7 +12,7 @@ for(const width of [1440,390])test(`registration and questionnaire round trip at
   await expect(page.getByRole('heading',{name:'建立你的商家帳號'})).toBeVisible();
   // F-114: the native required checkbox blocks submission until consent is given.
   await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/register$/u);
-  await expect(page.getByRole('link',{name:'服務條款'})).toHaveAttribute('href','/policies/terms');await expect(page.getByRole('link',{name:'隱私權政策'})).toHaveAttribute('href','/policies/privacy');
+  await expect(page.getByRole('link',{name:'使用條款'})).toHaveAttribute('href','/policies/terms');await expect(page.getByRole('link',{name:'隱私通知'})).toHaveAttribute('href','/policies/privacy');
   await page.getByRole('checkbox',{name:/我已閱讀並同意/u}).check();
   await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/welcome$/u);
   expect(await db.userPolicyConsent.count({where:{user:{email},context:'merchant_registration'}})).toBe(1);

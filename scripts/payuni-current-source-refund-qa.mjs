@@ -161,8 +161,12 @@ export async function openFinanceLoginPage(page) {
 
 /** Restricted QA egress may stall unrelated assets after a valid redirect. */
 export async function waitFinanceLoginRedirect(page, afterMfa = false) {
+  // After an MFA submit, a rejected code returns to /mfa/verify?error=...;
+  // settle there too so the caller classifies it instead of timing out.
   await page.waitForURL((url) => url.origin === APP_ORIGIN
-    && (afterMfa ? !url.pathname.startsWith("/mfa/") : url.pathname !== "/login"),
+    && (afterMfa
+      ? !url.pathname.startsWith("/mfa/") || (url.pathname === "/mfa/verify" && url.searchParams.has("error"))
+      : url.pathname !== "/login"),
   { waitUntil: "domcontentloaded" });
   requireSafe(new URL(page.url()).origin === APP_ORIGIN);
 }

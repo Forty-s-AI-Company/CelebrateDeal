@@ -191,7 +191,8 @@ async function executePendingRefund() {
     await login.getByRole("button", { name: "登入", exact: true }).click();
     await login.waitForURL((url) => url.pathname !== "/login", { waitUntil: "domcontentloaded" });
     await completeQaFinanceMfa(login, { seed: totpSeed,
-      waitAfterMfa: () => login.waitForURL((url) => !url.pathname.startsWith("/mfa/"), { waitUntil: "domcontentloaded" }) });
+      waitAfterMfa: () => login.waitForURL((url) => !url.pathname.startsWith("/mfa/")
+        || (url.pathname === "/mfa/verify" && url.searchParams.has("error")), { waitUntil: "domcontentloaded" }) });
     await login.close();
     stage = "refund-ui-and-persistence";
     const completed = await consumePendingRefund({ receipt, transactionId, expectedSourceSha: sourceSha, context, loadProof,

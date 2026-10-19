@@ -162,6 +162,8 @@ it.each([false, true])("waits for a same-origin login redirect DOM with MFA=%s",
     expect(predicate(new URL(`https://${host}/admin/billing/dashboard`))).toBe(true);
     expect(predicate(new URL("https://attacker.example/admin/billing/dashboard"))).toBe(false);
     expect(predicate(new URL(`https://${host}${afterMfa ? "/mfa/verify" : "/login"}`))).toBe(false);
+    // A rejected TOTP settles on the verify page so it is classified, not timed out.
+    expect(predicate(new URL(`https://${host}/mfa/verify?error=invalid`))).toBe(true);
   }) };
   await expect(waitFinanceLoginRedirect(page, afterMfa)).resolves.toBeUndefined();
   expect(page.waitForURL).toHaveBeenCalledTimes(1);
