@@ -139,7 +139,7 @@ it("does not fall back to another dashboard transaction when the exact target is
 
 it("keeps injected finance and provider credentials out of the standalone CLI browser", async () => {
   const names = ["JOB_SECRET", "GITHUB_TOKEN", "PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV",
-    "PAYUNI_QA_FINANCE_EMAIL", "PAYUNI_QA_FINANCE_PASSWORD", "PAYUNI_QA_FINANCE_OTP"];
+    "PAYUNI_QA_FINANCE_EMAIL", "PAYUNI_QA_FINANCE_PASSWORD", "PAYUNI_QA_FINANCE_TOTP_SECRET"];
   try {
     for (const name of names) vi.stubEnv(name, "synthetic-cli-secret-sentinel");
     const chromium = { launch: vi.fn(async (options) => {

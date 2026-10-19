@@ -7,6 +7,7 @@ import { verifyReservedOriginalRefund } from "./q1-original-refund-verify.mjs";
 import { createOriginalRefundHandoff, assertOriginalRefundProof, originalPaidQueryChecks, originalPaidQueryShape, originalRefundEligibilityChecks, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
 import { consumePendingRefund, launchPendingRefundBrowser, fillExactRefundForm } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { openFinanceLoginPage, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
+import { completeQaFinanceMfa, requireQaFinanceTotpSeed } from "./qa-finance-totp.mjs";
 const SOURCE = "a76330b5961a48892bc03be779438128816d1a8c";
 const ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 function safe(condition) { if (!condition) throw new Error("Original refund runner rejected."); }
@@ -32,6 +33,8 @@ export async function executeOriginalRefund() {
       && env.PAYUNI_ENV === "sandbox" && env.CELEBRATEDEAL_SOURCE_SHA === SOURCE);
     for (const key of ["JOB_SECRET", "STAGING_DATABASE_URL", "PAYUNI_SANDBOX_MERCHANT_ID", "PAYUNI_SANDBOX_HASH_KEY",
       "PAYUNI_SANDBOX_HASH_IV", "PAYUNI_QA_FINANCE_EMAIL", "PAYUNI_QA_FINANCE_PASSWORD"]) safe(Boolean(env[key]?.trim()));
+    // WP-10: the finance account must pass TOTP; a missing seed fails before any external call.
+    const totpSeed = requireQaFinanceTotpSeed(env);
     const bootstrapModule = await import("../src/lib/staging-qa-finance-bootstrap.ts");
     const bootstrap = bootstrapModule.default ?? bootstrapModule;
     const databaseUrl = bootstrap.qaFinanceDatabaseUrl(env.STAGING_DATABASE_URL);
@@ -74,11 +77,7 @@ export async function executeOriginalRefund() {
     await login.locator('input[name="email"]').fill(env.PAYUNI_QA_FINANCE_EMAIL);
     await login.locator('input[name="password"]').fill(env.PAYUNI_QA_FINANCE_PASSWORD);
     await login.getByRole("button", { name: "登入", exact: true }).click(); await waitFinanceLoginRedirect(login);
-    if (new URL(login.url()).pathname === "/mfa/verify") {
-      safe(/^\d{6}$/.test(env.PAYUNI_QA_FINANCE_OTP ?? ""));
-      await login.locator('input[name="code"]').fill(env.PAYUNI_QA_FINANCE_OTP);
-      await login.getByRole("button", { name: "確認並繼續", exact: true }).click(); await waitFinanceLoginRedirect(login, true);
-    }
+    await completeQaFinanceMfa(login, { seed: totpSeed, waitAfterMfa: () => waitFinanceLoginRedirect(login, true) });
     safe(new URL(login.url()).origin === ORIGIN && new URL(login.url()).pathname === "/admin/billing/dashboard");
     const startedAt = new Date().toISOString();
     stage = "exact-original-finance-form";

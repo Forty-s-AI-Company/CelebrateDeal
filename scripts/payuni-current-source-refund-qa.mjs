@@ -2,6 +2,7 @@ import { defaultRequest, defaultBrowserSubmit, fixedBrowserEnvironment, runMvpPa
 import { createPendingRefundHandoff, writePaymentHandoff } from "./payuni-sandbox-payment-handoff.mjs";
 import { assertProofMatchesHandoff, consumePendingRefund } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { pathToFileURL } from "node:url";
+import { completeQaFinanceMfa, QaFinanceMfaError, requireQaFinanceTotpSeed } from "./qa-finance-totp.mjs";
 import { resolve } from "node:path";
 
 const APP_HOST = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -61,7 +62,7 @@ export function classifyFinanceLoginFailure(value) {
 export function currentSourceFailureReceipt(stage, error, loginUrl) {
   const stages = new Set(["configuration", "deployment-lineage", "canonical-runtime-preflight",
     "exact-existing-state-diagnostic", "platform-login-page", "platform-login-form",
-    "platform-login-submit", "platform-login-redirect", "platform-mfa",
+    "platform-login-submit", "platform-login-redirect", "platform-mfa-configuration", "platform-mfa",
     "platform-finance-dashboard", "exact-payment-and-refund"]);
   let paymentReceipt;
   try {
@@ -74,6 +75,8 @@ export function currentSourceFailureReceipt(stage, error, loginUrl) {
     stage: stages.has(stage) ? stage : "configuration",
     ...(loginUrl !== undefined ? { failureCategory: classifyFinanceLoginFailure(loginUrl) } : {}),
     ...(paymentReceipt ? { paymentReceipt } : {}),
+    // Closed MFA categories only (seed missing/invalid, not enrolled, not completed).
+    ...(error instanceof QaFinanceMfaError ? { mfaFailure: error.category } : {}),
     productionOperations: false, alternateTransactionSelected: false };
 }
 
@@ -190,6 +193,10 @@ export async function executeCurrentSourceRefundQa(dependencies = {}) {
       if (!receipt.canonicalSandboxBoundaryVerified) process.exitCode = 1;
       return;
     }
+    // WP-10: the finance account must pass TOTP. The read-only diagnostic above
+    // never signs in; every finance path fails here, before any payment.
+    stage = "platform-mfa-configuration";
+    const totpSeed = requireQaFinanceTotpSeed(process.env);
     // The mutable canonical alias must independently prove the same runtime
     // identity before finance credentials are entered or a payment is created.
     stage = "canonical-runtime-preflight";
@@ -215,13 +222,8 @@ export async function executeCurrentSourceRefundQa(dependencies = {}) {
     await page.getByRole("button", { name: "登入", exact: true }).click();
     stage = "platform-login-redirect";
     await waitFinanceLoginRedirect(page);
-    if (new URL(page.url()).pathname === "/mfa/verify") {
-      stage = "platform-mfa";
-      requireSafe(/^\d{6}$/.test(process.env.PAYUNI_QA_FINANCE_OTP ?? ""));
-      await page.locator('input[name="code"]').fill(process.env.PAYUNI_QA_FINANCE_OTP);
-      await page.getByRole("button", { name: "確認並繼續", exact: true }).click();
-      await waitFinanceLoginRedirect(page, true);
-    }
+    stage = "platform-mfa";
+    await completeQaFinanceMfa(page, { seed: totpSeed, waitAfterMfa: () => waitFinanceLoginRedirect(page, true) });
     stage = "platform-finance-dashboard";
     requireSafe(new URL(page.url()).pathname === "/admin/billing/dashboard");
     await page.close();

@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { isStagingDatabaseUrl } from "./database-identity";
+import { decryptMfaSecret, encryptMfaSecret, generateRecoveryCodes, hashRecoveryCodeAsync } from "./mfa";
 import { hashPasswordAsync, verifyPasswordAsync } from "./password";
 
 export const QA_FINANCE_ID = "q1_synthetic_platform_finance_v1";
@@ -36,6 +37,22 @@ export class QaFinanceBootstrapFailure extends Error {
   constructor(public readonly category: string) { super("STAGING_QA_FINANCE_BOOTSTRAP_REJECTED"); }
 }
 
+/** Base32 TOTP seed of at least 160 bits, the size src/lib/mfa.ts generates.
+ * Returns undefined when the optional seed is absent; rejects malformed input.
+ */
+export function normalizeQaFinanceTotpSeed(value: string | undefined) {
+  if (value === undefined || value.trim() === "") return undefined;
+  const seed = value.replace(/\s+/g, "").replace(/=+$/, "").toUpperCase();
+  if (!/^[A-Z2-7]{32,128}$/.test(seed)) throw rejected();
+  return seed;
+}
+
+function sameSecret(left: string, right: string) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /** Prisma honors query host overrides. Permit only bounded operational options,
  * and force encrypted, certificate-verified transport without logging the URL.
  */
@@ -65,37 +82,75 @@ export function qaFinanceDatabaseUrl(value: string) {
 }
 
 /** Creates one fixed synthetic account only after the caller's runtime preflight.
- * Never promotes an existing user, resets a password, or removes an MFA factor.
- * All credentials remain inside the approved process; output is a closed enum.
+ * Never promotes an existing user, resets a password, or removes or replaces an
+ * MFA factor. With the optional TOTP seed (PAYUNI_QA_FINANCE_TOTP_SECRET) it
+ * enrolls that seed as the account's factor, encrypted and with hashed
+ * recovery codes exactly like src/lib/mfa-enrollment.ts, so finance QA runners
+ * can pass /mfa/verify after WP-10 (F-024, F-168). An existing factor must
+ * decrypt to the same seed. All credentials remain inside the approved
+ * process; output is a closed enum.
  */
 export async function ensureStagingQaFinance(
   db: PrismaClient,
-  input: { databaseUrl: string; sourceSha: string; password: string; runtimeReady: boolean; payuniEnv: string },
+  input: {
+    databaseUrl: string; sourceSha: string; password: string; runtimeReady: boolean; payuniEnv: string;
+    totpSeed?: string;
+  },
 ) {
   qaFinanceDatabaseUrl(input.databaseUrl);
   if (!/^[a-f0-9]{40}$/.test(input.sourceSha)
     || input.payuniEnv !== "sandbox" || input.runtimeReady !== true || input.password.length < 24
     || input.password.length > 256) throw rejected();
+  const totpSeed = normalizeQaFinanceTotpSeed(input.totpSeed);
+  // The app derives the MFA key from CSRF_SECRET before JOB_SECRET. Encrypting
+  // with the JOB_SECRET fallback would store a factor the app cannot decrypt.
+  if (totpSeed && !process.env.CSRF_SECRET?.trim()) throw rejected();
   try {
     return await db.$transaction(async (tx) => {
+      const enrollSeed = async (seed: string) => {
+        const codeHashes = await Promise.all(generateRecoveryCodes().map(hashRecoveryCodeAsync));
+        await tx.userMfaFactor.create({ data: { userId: QA_FINANCE_ID, factorType: "totp",
+          label: "CelebrateDeal Authenticator", secretEncrypted: encryptMfaSecret(seed) } });
+        // Plaintext recovery codes are never shown or stored; only hashes persist.
+        await tx.userRecoveryCode.deleteMany({ where: { userId: QA_FINANCE_ID } });
+        await tx.userRecoveryCode.createMany({ data: codeHashes.map((codeHash) => ({ userId: QA_FINANCE_ID, codeHash })) });
+        await tx.auditLog.create({ data: { actorId: QA_FINANCE_ID, actorLabel: "q1-synthetic-bootstrap",
+          action: "mfa_enabled", targetType: "UserMfaFactor", targetId: QA_FINANCE_ID,
+          after: { synthetic: true, factorType: "totp", sourceSha: input.sourceSha } } });
+      };
       const existing = await tx.user.findFirst({
         where: { OR: [{ id: QA_FINANCE_ID }, { email: QA_FINANCE_EMAIL }] },
-        select: { id: true, email: true, name: true, status: true, platformRole: true, passwordHash: true },
+        select: { id: true, email: true, name: true, status: true, platformRole: true, passwordHash: true,
+          mfaFactor: { select: { secretEncrypted: true } } },
       });
       if (existing) {
         if (existing.id !== QA_FINANCE_ID || existing.email !== QA_FINANCE_EMAIL || existing.name !== NAME
           || existing.status !== "active" || existing.platformRole !== "platform_admin"
           || !await verifyPasswordAsync(input.password, existing.passwordHash)) throw rejected();
-        return { email: QA_FINANCE_EMAIL, outcome: "EXISTING_VERIFIED" as const };
+        if (!totpSeed) {
+          return { email: QA_FINANCE_EMAIL, outcome: "EXISTING_VERIFIED" as const,
+            mfa: existing.mfaFactor ? "UNCHECKED" as const : "ABSENT" as const };
+        }
+        if (existing.mfaFactor) {
+          let stored: string;
+          try { stored = decryptMfaSecret(existing.mfaFactor.secretEncrypted); } catch { throw new QaFinanceBootstrapFailure("MFA_FACTOR_MISMATCH"); }
+          if (!sameSecret(stored, totpSeed)) throw new QaFinanceBootstrapFailure("MFA_FACTOR_MISMATCH");
+          return { email: QA_FINANCE_EMAIL, outcome: "EXISTING_VERIFIED" as const, mfa: "VERIFIED" as const };
+        }
+        await enrollSeed(totpSeed);
+        return { email: QA_FINANCE_EMAIL, outcome: "EXISTING_VERIFIED" as const, mfa: "ENROLLED" as const };
       }
       await tx.user.create({ data: { id: QA_FINANCE_ID, email: QA_FINANCE_EMAIL, name: NAME,
         status: "active", platformRole: "platform_admin", passwordHash: await hashPasswordAsync(input.password) } });
       await tx.auditLog.create({ data: { actorId: QA_FINANCE_ID, actorLabel: "q1-synthetic-bootstrap",
         action: "staging_qa_finance_created", targetType: "User", targetId: QA_FINANCE_ID,
         after: { synthetic: true, sourceSha: input.sourceSha } } });
-      return { email: QA_FINANCE_EMAIL, outcome: "CREATED" as const };
+      if (!totpSeed) return { email: QA_FINANCE_EMAIL, outcome: "CREATED" as const, mfa: "ABSENT" as const };
+      await enrollSeed(totpSeed);
+      return { email: QA_FINANCE_EMAIL, outcome: "CREATED" as const, mfa: "ENROLLED" as const };
     });
   } catch (error) {
+    if (error instanceof QaFinanceBootstrapFailure) throw error;
     // No raw Prisma diagnostics or account credentials escape this boundary.
     throw new QaFinanceBootstrapFailure(qaFinanceFailureCategory(error));
   }

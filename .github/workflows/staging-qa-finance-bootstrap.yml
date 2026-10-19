@@ -51,6 +51,10 @@ jobs:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
           PAYUNI_QA_FINANCE_PASSWORD: ${{ secrets.PAYUNI_QA_FINANCE_PASSWORD }}
+          # Base32 TOTP seed shared with the finance QA runners (WP-10 MFA).
+          # Encrypting it requires the deployment's CSRF_SECRET-derived MFA key.
+          PAYUNI_QA_FINANCE_TOTP_SECRET: ${{ secrets.PAYUNI_QA_FINANCE_TOTP_SECRET }}
+          CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
