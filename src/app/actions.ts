@@ -865,9 +865,21 @@ function liveSlugTakenPath(liveId: string | null, createDraftSuffix: string) {
 /** 直播網址全站唯一：送出前先檢查，撞名時回到欄位錯誤並保留草稿。 */
 async function requireLiveSlugAvailable(
   db: PrismaClient,
-  input: { slug: string; existingLive: { id: string } | null; slugTakenPath: string },
+  input: {
+    vendorId: string;
+    slug: string;
+    existingLive: { id: string } | null;
+    draftClaim: { draftId: string; revision: number; conflictPath: string };
+    slugTakenPath: string;
+  },
 ) {
-  if (await isLiveSlugTaken(db, input.slug, input.existingLive?.id ?? null)) redirect(input.slugTakenPath);
+  if (!(await isLiveSlugTaken(db, input.slug, input.existingLive?.id ?? null))) return;
+  // 順序：ownership → 草稿／版本衝突 → 撞名。草稿已被用掉或版本過期時，優先回報草稿衝突。
+  const claimable = await db.liveStudioDraft.findFirst({
+    where: { id: input.draftClaim.draftId, vendorId: input.vendorId, revision: input.draftClaim.revision, consumedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  redirect(claimable ? input.slugTakenPath : input.draftClaim.conflictPath);
 }
 
 function parseSubmittedLiveDraft(
@@ -1277,7 +1289,7 @@ export async function upsertLiveAction(formData: FormData) {
   } = references;
   void ignoredSubmittedReminderTemplate;
   // 排除條件只用已驗證屬於目前 vendor 的 live，避免用別人的 live id 探測 slug 歸屬。
-  await requireLiveSlugAvailable(db, { slug: parsedSubmission.slug, existingLive, slugTakenPath });
+  await requireLiveSlugAvailable(db, { vendorId: vendor.id, slug: parsedSubmission.slug, existingLive, draftClaim, slugTakenPath });
   const authoritativeReminder = await resolveAuthoritativeLegacyReminder({
     db,
     vendorId: vendor.id,

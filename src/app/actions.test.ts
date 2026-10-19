@@ -57,6 +57,7 @@ const mocks = vi.hoisted(() => ({
   liveUpdate: vi.fn(),
   liveCreate: vi.fn(),
   liveStudioDraftUpdateMany: vi.fn(),
+  liveStudioDraftFindFirst: vi.fn(),
   liveProductDeleteMany: vi.fn(),
   liveProductCreate: vi.fn(),
   liveNotificationRuleFindMany: vi.fn(),
@@ -278,7 +279,7 @@ vi.mock("@/lib/db", () => ({
     },
     emailDelivery: { updateMany: mocks.emailDeliveryUpdateMany },
     salesProject: { findFirst: mocks.projectFindFirst },
-    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
+    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany, findFirst: mocks.liveStudioDraftFindFirst },
     product: { findMany: mocks.productFindMany },
     video: {
       create: mocks.videoCreate,
@@ -790,6 +791,7 @@ beforeEach(() => {
   mocks.liveFindMany.mockResolvedValue([]);
   mocks.projectFindFirst.mockResolvedValue(null);
   mocks.liveStudioDraftUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1" });
   mocks.liveUpdate.mockResolvedValue({ id: "live-1" });
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
   mocks.liveProductDeleteMany.mockResolvedValue({ count: 1 });
@@ -874,7 +876,7 @@ beforeEach(() => {
     },
     auditLog: { create: mocks.auditLogCreate },
     salesProject: { findFirst: mocks.projectFindFirst },
-    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
+    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany, findFirst: mocks.liveStudioDraftFindFirst },
     live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, update: mocks.liveUpdate, updateMany: mocks.liveUpdateMany },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
@@ -1985,6 +1987,14 @@ describe("upsertLiveAction", () => {
 
     expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
     expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("reports a draft conflict instead of slug_taken when the draft was already consumed", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockImplementation(async ({ where }: { where: { slug?: string } }) => (where.slug !== undefined ? { id: "existing-live" } : null));
+    mocks.liveStudioDraftFindFirst.mockResolvedValue(null);
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/new?error=draft_conflict&draft=draft-1");
   });
 
   it("excludes the live being edited when checking the address", async () => {
