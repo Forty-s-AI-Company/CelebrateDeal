@@ -8,7 +8,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 import { BACKUP_SOURCE_SHA, createInitialReceipt, sourceInventory } from "./secure-staging-runner.mjs";
 import { BACKUP_MIGRATION_TREE_SHA, BACKUP_SOURCE, attestBackupRun, validateBackupRun, verifyBackupSource } from "./staging-backup-recovery-source.mjs";
-import { createRecoveryReceipt, runRecoveryDrill, validateRecoveryReceipt, verifyDownloadedBackup } from "./staging-backup-recovery.mjs";
+import { archiveTrigramSchema, createRecoveryReceipt, recoveryTargetPreparationSql, runRecoveryDrill, validateRecoveryReceipt, verifyDownloadedBackup } from "./staging-backup-recovery.mjs";
 
 const hash = (value) => `sha256:${crypto.createHash("sha256").update(value).digest("hex")}`;
 
@@ -113,4 +113,32 @@ test("missing private identity blocks recovery before any Docker call", async ()
   const unsafe = createRecoveryReceipt("12345");
   unsafe.archiveDigest = "customer@example.test";
   assert.equal(validateRecoveryReceipt(unsafe), false);
+});
+
+test("pg_trgm is prepared in the schema the archive DDL references (staging: public)", () => {
+  const publicDdl = 'CREATE INDEX "FormSubmission_name_trgm_idx" ON public."FormSubmission" USING gin (name public.gin_trgm_ops);';
+  assert.equal(archiveTrigramSchema(publicDdl), "public");
+  const publicSql = recoveryTargetPreparationSql(archiveTrigramSchema(publicDdl));
+  assert.match(publicSql, /CREATE EXTENSION pg_trgm WITH SCHEMA public;$/u);
+  assert.match(publicSql, /CREATE EXTENSION pgcrypto WITH SCHEMA extensions;/u);
+  assert.ok(publicSql.indexOf("CREATE SCHEMA public;") < publicSql.indexOf("CREATE EXTENSION pg_trgm"));
+});
+
+test("pg_trgm is prepared in extensions when the archive references extensions or nothing", () => {
+  const extensionsDdl = 'CREATE INDEX i ON public."FormSubmission" USING gin (email extensions.gin_trgm_ops);';
+  assert.equal(archiveTrigramSchema(extensionsDdl), "extensions");
+  assert.match(recoveryTargetPreparationSql("extensions"), /CREATE EXTENSION pg_trgm WITH SCHEMA extensions;$/u);
+  assert.equal(archiveTrigramSchema("CREATE INDEX i ON public.t USING btree (a);"), "extensions");
+});
+
+test("ambiguous or unsafe pg_trgm placement fails closed", () => {
+  assert.throws(() => archiveTrigramSchema("x public.gin_trgm_ops y extensions.gist_trgm_ops"), /RECOVERY_EXTENSION_SCHEMA_AMBIGUOUS/u);
+  assert.throws(() => recoveryTargetPreparationSql("public; DROP DATABASE x"), /RECOVERY_EXTENSION_SCHEMA_INVALID/u);
+});
+
+test("the recovery runner derives the placement from the archive before preparing the target", () => {
+  const source = fs.readFileSync(new URL("./staging-backup-recovery.mjs", import.meta.url), "utf8");
+  assert.match(source, /"pg_restore", "--schema-only", "--file=-", "\/tmp\/staging-public\.dump"/u);
+  assert.match(source, /recoveryTargetPreparationSql\(archiveTrigramSchema\(schemaOnly\.stdout\)\)/u);
+  assert.doesNotMatch(source, /CREATE EXTENSION pg_trgm WITH SCHEMA extensions;"/u);
 });

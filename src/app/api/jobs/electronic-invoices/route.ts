@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { runElectronicInvoiceJob } from "@/lib/taiwan-electronic-invoice-job";
 import { captureOperationalError } from "@/lib/monitoring";
 
-export async function POST(request: Request) {
-  if (!requireJobSecret(request)) return unauthorizedJson();
+async function processElectronicInvoices() {
   try {
     // No production provider is silently selected. Until a fiscal adapter is
     // explicitly wired, rows remain durable `queued` snapshots.
@@ -18,4 +17,16 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: false, error: "electronic_invoice_job_failed" }, { status: 503 });
   }
+}
+
+/** Vercel Cron entry: Vercel sends GET with `Authorization: Bearer CRON_SECRET`. */
+export async function GET(request: Request) {
+  if (!requireCronSecret(request)) return unauthorizedJson();
+  return processElectronicInvoices();
+}
+
+/** Controlled job runner entry (GitHub Actions schedule or manual operations). */
+export async function POST(request: Request) {
+  if (!requireJobSecret(request)) return unauthorizedJson();
+  return processElectronicInvoices();
 }

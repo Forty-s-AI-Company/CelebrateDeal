@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCronSecret, unauthorizedJson } from "@/lib/api-security";
+import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { materializeLineNotifications } from "@/lib/line-notification-materializer";
 import { processDueLineDeliveries } from "@/lib/line-notification";
@@ -46,5 +46,14 @@ async function runLineNotificationCron() {
 export async function GET(request: Request) {
   // requireCronSecret uses a length-checked timingSafeEqual comparison.
   if (!requireCronSecret(request)) return unauthorizedJson();
+  return runLineNotificationCron();
+}
+
+/**
+ * Controlled job runner entry. The GitHub Actions scheduler only holds
+ * JOB_SECRET, so it reaches the same handler through POST.
+ */
+export async function POST(request: Request) {
+  if (!requireJobSecret(request)) return unauthorizedJson();
   return runLineNotificationCron();
 }

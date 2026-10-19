@@ -1734,7 +1734,7 @@ describe("payment webhook processing", () => {
       db.paymentTransaction.count(),
     ]);
 
-    expect(results).toContainEqual({ eventId: event.id, status: "exhausted" });
+    expect(results).toContainEqual({ eventId: event.id, status: "exhausted", inventoryUnavailable: false });
     expect(updated.status).toBe("exhausted");
     expect(updated.nextRetryAt).toBeNull();
     expect(transactionCountAfter).toBe(transactionCountBefore);
