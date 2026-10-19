@@ -115,3 +115,11 @@ ORDER BY 1;
 - `Invoke-CelebrateDealRestoreDrill.ps1` 的處理：`-TrigramExtensionSchema auto`（預設）從 archive 的 schema-only DDL 找出被引用的 schema；找不到就用 `extensions`；同時引用兩個 schema 就停止。目標上若已有 `pg_trgm` 但在別的 schema，會 `ALTER EXTENSION pg_trgm SET SCHEMA` 搬過去。也可手動指定 `extensions` 或 `public`。
 - staging 的 GitHub 還原 runner（`scripts/staging-backup-recovery.mjs`）固定在 `extensions` 建立，受 blob 白名單保護，本次未修改；若 staging 的 `pg_trgm` 實際在 `public`，該 runner 會回報 `BLOCKED`，屆時再另開審查過的變更。
 - 日後的新 migration：建立擴充一律寫 `WITH SCHEMA extensions`，operator class 寫成 `extensions.gin_trgm_ops`。既有 migration 不改（migration 只能往前）。
+
+## E. `CSRF_SECRET`：備份與還原必須一併處理的加密根金鑰（F-031①／B04-03）
+
+- `CSRF_SECRET` 是應用層資料加密根金鑰（`src/lib/sensitive-data.ts` 以它經 HMAC 衍生 AES-256-GCM 金鑰；沒有它時改用 `JOB_SECRET`）。MFA secret、LINE 憑證、買家與收件個資、私訊、tracking token、學員通知、發票請求、交付網址與各種雜湊索引都依賴它。詳細清單見 `docs/staging-production-env-vars.md` §7。
+- **禁止輪替。** 目前密文沒有 key id，換金鑰等於所有加密資料永久不可讀。
+- **每份備份都要能對應到備份當下的 `CSRF_SECRET` 版本**（若該環境曾以 `JOB_SECRET` 作為來源，也要保存）。金鑰放在與備份分開保管的密碼管理器，備份清單只記「金鑰版本代號」，不記值。
+- **還原時缺對應金鑰＝加密資料全部不可讀**：資料表、筆數、§C 的帳務彙總都會一致，但個資與 MFA 無法解密、雜湊查詢全部對不上。因此 §B 第 6 步「加密欄位可讀」是必要驗收項，不可省略。
+- age 私鑰（解密備份檔）與 `CSRF_SECRET`（解密欄位）是兩把不同的金鑰，兩把都要在還原時可取得，且都不得與備份檔放在同一處。

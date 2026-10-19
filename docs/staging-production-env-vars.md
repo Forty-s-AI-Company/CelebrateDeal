@@ -1,6 +1,6 @@
 # CelebrateDeal Staging / Production Env Vars 對照表
 
-最後更新：2026-10-01
+最後更新：2026-10-19
 
 ## 1. 使用原則
 
@@ -20,7 +20,7 @@
 | `NEXT_PUBLIC_APP_URL` | `https://staging-app...` | `https://app...` | Vercel domain | Email links / webhook URLs 正確 |
 | `JOB_SECRET` | staging random secret | production random secret | Password manager | `/api/admin/preflight` Bearer token 可通過 |
 | `CRON_SECRET` | staging random secret | production random secret | Password manager | Vercel Cron 對 `/api/jobs/email-deliveries` 的 Bearer 驗證可通過；不得輸出值 |
-| `CSRF_SECRET` | staging random secret | production 獨立 random secret | Password manager | preflight 通過；不得與 `JOB_SECRET` 共用 |
+| `CSRF_SECRET` | staging random secret | production 獨立 random secret | Password manager | preflight 通過；不得與 `JOB_SECRET` 共用。**這是應用層資料加密根金鑰：禁止輪替；備份時必須一併保存對應版本**（見 §7） |
 | `LIVE_CHAT_INGRESS_SECRET` | staging random secret，至少 32 字元 | production random secret，至少 32 字元 | Password manager＋edge secret store | preflight 通過；不得輸出或進入 client bundle |
 | `RATE_LIMIT_PROVIDER` | `cloudflare_waf` 或 `upstash_redis` | `cloudflare_waf` 或 `upstash_redis` | Cloudflare / Upstash | preflight 不得顯示 `memory`；Staging 實測 429 |
 | `CLOUDFLARE_ACCOUNT_ID` | same or staging account | production account | Cloudflare dashboard | direct upload API 可建立 upload URL |
@@ -101,3 +101,19 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 - 區域不寫死在程式裡：preflight 先看 `EXPECTED_FUNCTION_REGION`，沒有才讀 `vercel.json` 的 `regions`；資料庫區域由 Supabase pooler 主機名稱推得（只印區域 ID，不印主機），或由 `DATABASE_REGION` 指定。函式執行時另有 Vercel 注入的 `VERCEL_REGION`，有值時會一併比對。
 - 連線池參數只放在 `DATABASE_URL`（`src/lib/db.ts` 不覆寫）：6543 transaction pooler、`pgbouncer=true`、`connection_limit` 從 3～5 起依負載測試調整。Migration 走 `DIRECT_URL`（session mode）。
 - 這些檢查只在 `VERCEL_ENV` 是 `production` 或 `preview` 時執行，結果一律是 PASS／WARN，不改變 build 的 exit code。
+
+## 7. `CSRF_SECRET` 是資料加密根金鑰（F-031①／B04-03）
+
+`CSRF_SECRET` 的名稱容易讓人以為只管 CSRF token，實際上它是**應用層資料加密的根金鑰**：
+
+- `src/lib/sensitive-data.ts` 的 `deriveSensitiveDataKey()` 以 `CSRF_SECRET` 經 HMAC-SHA256 依用途衍生 AES-256-GCM 金鑰與雜湊索引金鑰（沒有 `CSRF_SECRET` 時改用 `JOB_SECRET`）。
+- 受影響的資料包含：MFA secret、LINE 憑證、訂單買家與收件個資、私訊、tracking token、學員通知、發票請求、交付網址，以及各種 token 雜湊與查詢用雜湊索引（例如 customerKeyHash、destinationKeyHash）。
+- 密文格式只有 `v1`，沒有 key id，也沒有舊金鑰解密清單。銀行帳號另用 `BANK_ACCOUNT_KEYRING_JSON`，有輪替設計，不在此列。
+
+因此：
+
+1. **禁止輪替 `CSRF_SECRET`**，包括資安事件時。換掉它，上述密文會永久無法解密，雜湊索引全部對不上（GCM auth failure）。要能輪替，必須先完成 B04-03 ②③：獨立的 `DATA_ENCRYPTION_KEYRING`（含 key id、decrypt-only 舊金鑰）與可重跑的 re-encrypt 腳本。
+2. **不可在已有資料的環境「補設」或「改設」**：某環境原本沒有 `CSRF_SECRET`、一直用 `JOB_SECRET` 加密，之後才補上 `CSRF_SECRET`，效果等同輪替。這種環境的 `JOB_SECRET` 也同樣不可輪替。
+3. **備份必須一併保存對應版本**：每一份資料庫備份都要能對應到「備份當下」的 `CSRF_SECRET`（必要時含 `JOB_SECRET`）。金鑰存放在與備份分開的密碼管理器，記錄「哪一段期間的備份對應哪一版」；不得與備份檔放在同一處，不得寫進 repo、log、收據或聊天。
+4. **還原時缺它，加密資料全部不可讀**：資料表與筆數都會還原成功，但所有加密欄位與雜湊查詢失效，等同遺失個資與 MFA。隔離還原演練必須用對應版本的金鑰抽查加密欄位可讀，見 `docs/production-backup-restore-runbook.md` §B 第 6 步與 §E。
+5. staging 與 production 必須使用不同值；staging 值外洩不影響 production 資料。
