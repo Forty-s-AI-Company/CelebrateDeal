@@ -33,10 +33,10 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 | P-2 STATE.md | DONE | 本檔 | |
 | P-3 prisma generate | DONE | 主目錄與三個 worktree | |
 | P-4／D1 CSRF_SECRET 說明 | DONE（待審） | B，PR #447 `99c2990b` | |
-| A1 staging QA 帳號 TOTP | TODO | A | |
-| A2 #436 rebase＋MFA | TODO | A | |
-| A3 PayUni TradeStatus | TODO | A | 等 O-2 樣本；先寫紅燈測試 |
-| A4 註冊同意紀錄 | TODO | A | 條款等 O-11；先做勾選與版本紀錄 |
+| A1 staging QA 帳號 TOTP | IN_REVIEW | A，PR #448 `29705acc` | runner 遇 `/mfa/setup` 明確失敗，需先帶 seed 跑 bootstrap；bootstrap workflow 多注入 `CSRF_SECRET`；**owner 需新增 `PAYUNI_QA_FINANCE_TOTP_SECRET`（O-14）** |
+| A2 #436 rebase＋MFA | IN_REVIEW | A，PR #448 `fbd090fb` | 取代 #436；合併後關閉 #436 |
+| A3 PayUni TradeStatus | IN_REVIEW | A，PR #448 `84f22d38` | 待 Sandbox 樣本驗證：TradeStatus 4／9、外層 Status、`Credit=1`、Apple／Google Pay 的 PaymentType；B03-13 未做 |
+| A4 註冊同意紀錄 | IN_REVIEW | A，PR #448 `82f09e08` | 新 model `UserPolicyConsent`＋migration `20261019120000`；條款文字仍等 O-11 |
 | B1 RLS 查證 | IN_PROGRESS | 主對話 | |
 | B2 排程 | IN_REVIEW | B，PR #447 `ad199160` | 改以 GitHub Actions 每 5 分鐘為唯一路徑：Preview 專案不觸發 Vercel Cron、staging 是 Hobby；6 個端點排程，billing-cycle 與 electronic-invoices 每日；tracking-deliveries 未排（需 vendorId） |
 | B3 區域與連線池 | IN_REVIEW | B，PR #447 `ee6d082c` | regions hnd1；preflight 只警告。**跨區待 owner 決定（O-15）** |
