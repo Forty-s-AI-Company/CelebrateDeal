@@ -6,6 +6,8 @@ import {
   getDatabasePoolerChecks,
   getDeploymentTopologyChecks,
   getRegionAlignmentChecks,
+  getSchedulerSecretChecks,
+  selectVercelConfigFile,
   supabasePoolerAwsRegion,
 } from "./deployment-topology";
 
@@ -38,13 +40,52 @@ describe("deployment topology checks (F-090)", () => {
     expect(checks.DATABASE_REGION.message).toContain("ap-south-1");
   });
 
-  it("lets configuration choose the function region instead of hard-coding hnd1", () => {
+  it("never lets EXPECTED_FUNCTION_REGION override the Vercel config; a mismatch is a warning", () => {
     const checks = byKey(getDeploymentTopologyChecks(
       { VERCEL_ENV: "production", DATABASE_URL: mumbaiPooler, EXPECTED_FUNCTION_REGION: "bom1" },
       { regions: ["hnd1"] },
     ));
+    expect(checks.FUNCTION_REGION.status).toBe("warning");
     expect(checks.FUNCTION_REGION.message).toContain("bom1");
+    expect(checks.FUNCTION_REGION.message).toContain("hnd1");
+    // The database comparison uses the region the functions will really run in.
+    expect(checks.DATABASE_REGION.status).toBe("warning");
+    expect(checks.DATABASE_REGION.message).toContain("hnd1");
+  });
+
+  it("passes when the config file and EXPECTED_FUNCTION_REGION agree", () => {
+    const checks = byKey(getDeploymentTopologyChecks(
+      { VERCEL_ENV: "production", DATABASE_URL: mumbaiPooler, EXPECTED_FUNCTION_REGION: "bom1" },
+      { regions: ["bom1"] },
+    ));
+    expect(checks.FUNCTION_REGION.status).toBe("pass");
     expect(checks.DATABASE_REGION.status).toBe("pass");
+  });
+
+  it("uses EXPECTED_FUNCTION_REGION only when the config file declares no region", () => {
+    const checks = byKey(getDeploymentTopologyChecks(
+      { VERCEL_ENV: "production", DATABASE_URL: mumbaiPooler, EXPECTED_FUNCTION_REGION: "bom1" },
+      {},
+    ));
+    expect(checks.FUNCTION_REGION).toMatchObject({ status: "pass" });
+    expect(checks.DATABASE_REGION.status).toBe("pass");
+  });
+
+  it("warns when CRON_SECRET and JOB_SECRET are identical without echoing either", () => {
+    const same = byKey(getDeploymentTopologyChecks(
+      { VERCEL_ENV: "preview", DATABASE_URL: tokyoPooler, CRON_SECRET: "same-secret-value-123", JOB_SECRET: "same-secret-value-123" },
+      { regions: ["hnd1"] },
+    ));
+    expect(same.SCHEDULER_SECRET_SEPARATION.status).toBe("warning");
+    expect(JSON.stringify(same)).not.toContain("same-secret-value-123");
+    expect(getSchedulerSecretChecks({ CRON_SECRET: "a-secret-value-1234", JOB_SECRET: "b-secret-value-1234" })[0]?.status).toBe("pass");
+    expect(getSchedulerSecretChecks({ CRON_SECRET: "a-secret-value-1234" })).toEqual([]);
+  });
+
+  it("reads only allow-listed Vercel config files", () => {
+    expect(selectVercelConfigFile({})).toBe("vercel.json");
+    expect(selectVercelConfigFile({ VERCEL_CONFIG_FILE: "vercel.staging.json" })).toBe("vercel.staging.json");
+    expect(selectVercelConfigFile({ VERCEL_CONFIG_FILE: "../secrets.json" })).toBe("vercel.json");
   });
 
   it("prefers the runtime VERCEL_REGION and flags a drift from the expected region", () => {

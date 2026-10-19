@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { config } from "dotenv";
-import { getDeploymentTopologyChecks } from "../src/lib/deployment-topology";
+import { getDeploymentTopologyChecks, selectVercelConfigFile } from "../src/lib/deployment-topology";
 import { getEnvCheckReport } from "../src/lib/env";
 import { getStagingPreviewBuildIdentityCheck, getStagingPreviewMediaIsolationCheck } from "../src/lib/database-identity";
 
@@ -41,12 +41,13 @@ if (stagingMedia.applicable) {
   if (!stagingMedia.passed) process.exitCode = 1;
 }
 
-// F-090: function region, database region and pooler parameters. Advisory only:
+// F-090: function region, database region, pooler parameters and scheduler
+// secret separation. VERCEL_CONFIG_FILE may name vercel.staging.json. Advisory only:
 // these lines never change the exit code. Only region IDs and fixed words are
 // printed; database hosts and credentials never enter the build output.
 function readVercelConfig(): unknown {
   try {
-    return JSON.parse(readFileSync("vercel.json", "utf8"));
+    return JSON.parse(readFileSync(selectVercelConfigFile(process.env), "utf8"));
   } catch {
     return undefined;
   }

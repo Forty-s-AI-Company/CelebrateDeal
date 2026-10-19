@@ -4,6 +4,6 @@
   "regions": [
     "hnd1"
   ],
-  "buildCommand": "DIRECT_URL=\"$STAGING_DATABASE_URL\" npm run db:migrate:deploy && npm run build",
+  "buildCommand": "DIRECT_URL=\"$STAGING_DATABASE_URL\" npm run db:migrate:deploy && VERCEL_CONFIG_FILE=vercel.staging.json npm run build",
   "crons": []
 }

@@ -6,9 +6,11 @@
  * never blocked by topology, and messages only contain fixed words and public
  * region IDs. Database hosts, credentials and query values are never echoed.
  *
- * The expected function region is configuration, not code: it comes from
- * `EXPECTED_FUNCTION_REGION`, otherwise from the first `regions` entry of the
- * Vercel config file that preflight reads.
+ * The function region is configuration, not code. The Vercel config file that
+ * preflight reads (`regions`) is authoritative because Vercel lets it override
+ * the dashboard; `EXPECTED_FUNCTION_REGION` only verifies it and never replaces
+ * it (PR #447 review m2). Without a `regions` entry the env value is the best
+ * available description of the dashboard setting.
  */
 
 export type TopologyCheck = {
@@ -116,11 +118,14 @@ export function getDatabasePoolerChecks(databaseUrl: string | undefined): Topolo
 
 export function getRegionAlignmentChecks(env: EnvironmentValues, configuredRegion: string | null): TopologyCheck[] {
   const checks: TopologyCheck[] = [];
-  const expected = normalizeVercelRegion(env.EXPECTED_FUNCTION_REGION) ?? configuredRegion;
+  const declared = normalizeVercelRegion(env.EXPECTED_FUNCTION_REGION);
+  const expected = configuredRegion ?? declared;
   const runtime = normalizeVercelRegion(env.VERCEL_REGION);
 
   if (!expected) {
-    checks.push({ key: "FUNCTION_REGION", status: "warning", message: "未設定函式區域（EXPECTED_FUNCTION_REGION 或 vercel 設定的 regions）；Vercel 會用預設區域" });
+    checks.push({ key: "FUNCTION_REGION", status: "warning", message: "未設定函式區域（vercel 設定的 regions 或 EXPECTED_FUNCTION_REGION）；Vercel 會用預設區域" });
+  } else if (configuredRegion && declared && declared !== configuredRegion) {
+    checks.push({ key: "FUNCTION_REGION", status: "warning", message: `EXPECTED_FUNCTION_REGION ${declared} 與 Vercel 設定 regions ${configuredRegion} 不一致；實際以 Vercel 設定為準，要換區域必須改設定檔` });
   } else {
     checks.push({ key: "FUNCTION_REGION", status: "pass", message: `預期函式區域 ${expected}` });
   }
@@ -148,10 +153,32 @@ export function getRegionAlignmentChecks(env: EnvironmentValues, configuredRegio
   return checks;
 }
 
+/**
+ * GET (Vercel Cron) and POST (job runner) entries only stay separated when the
+ * two bearer secrets differ (PR #447 review n2). Values are never echoed.
+ */
+export function getSchedulerSecretChecks(env: EnvironmentValues): TopologyCheck[] {
+  const cron = env.CRON_SECRET?.trim();
+  const job = env.JOB_SECRET?.trim();
+  if (!cron || !job) return [];
+  return [cron === job
+    ? { key: "SCHEDULER_SECRET_SEPARATION", status: "warning", message: "CRON_SECRET 與 JOB_SECRET 相同；GET／POST 排程入口的密鑰分離失效" }
+    : { key: "SCHEDULER_SECRET_SEPARATION", status: "pass", message: "CRON_SECRET 與 JOB_SECRET 不同" }];
+}
+
+/** Only these checked-in files may be named by VERCEL_CONFIG_FILE (PR #447 review n1). */
+export const VERCEL_CONFIG_FILES: readonly string[] = Object.freeze(["vercel.json", "vercel.staging.json"]);
+
+export function selectVercelConfigFile(env: EnvironmentValues) {
+  const requested = env.VERCEL_CONFIG_FILE?.trim();
+  return requested && VERCEL_CONFIG_FILES.includes(requested) ? requested : "vercel.json";
+}
+
 export function getDeploymentTopologyChecks(env: EnvironmentValues, vercelConfig?: unknown): TopologyCheck[] {
   if (!topologyChecksApplicable(env)) return [];
   return [
     ...getRegionAlignmentChecks(env, configuredVercelRegion(vercelConfig)),
     ...getDatabasePoolerChecks(env.DATABASE_URL),
+    ...getSchedulerSecretChecks(env),
   ];
 }

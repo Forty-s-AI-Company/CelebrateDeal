@@ -14,7 +14,8 @@
 | Key | Staging | Production | 來源 | 驗收標準 |
 |---|---|---|---|---|
 | `DATABASE_URL` | Supabase staging transaction pooler（6543）＋`pgbouncer=true&connection_limit=<N>` | Supabase production transaction pooler（6543）＋`pgbouncer=true&connection_limit=<N>` | Supabase Project Settings | `/api/health` DB ok；preflight 的 `DATABASE_POOLER*`、`DATABASE_CONNECTION_LIMIT` 為 PASS（見 §6） |
-| `EXPECTED_FUNCTION_REGION` | 選填；未設時用 `vercel.json` 的 `regions`（`hnd1`） | 選填；Production 若改用其他區域（例如 `bom1`）就設這個值 | 部署設定 | preflight `FUNCTION_REGION`／`DATABASE_REGION` 為 PASS |
+| `EXPECTED_FUNCTION_REGION` | 選填；只用來驗證，與 Vercel 設定檔的 `regions` 不一致時警告 | 選填；同左。**設這個值不會換區域**，換區域必須改 Production 實際讀取的 Vercel 設定檔 | 部署設定 | preflight `FUNCTION_REGION`／`DATABASE_REGION` 為 PASS |
+| `VERCEL_CONFIG_FILE` | `vercel.staging.json`（由 staging 的 buildCommand 設定） | 不設（讀 `vercel.json`） | 部署設定 | 只接受 `vercel.json`、`vercel.staging.json`；其他值一律改讀 `vercel.json` |
 | `DATABASE_REGION` | 選填；AWS 區域 ID，例如 `ap-northeast-1` | 選填；例如 `ap-south-1` | Supabase Project Settings | 只在 `DATABASE_URL` 不是 Supabase pooler 網址、無法推得區域時需要 |
 | `DIRECT_URL` | Supabase staging direct URL | Supabase production direct URL | Supabase Project Settings | `npm run db:migrate:status` up to date |
 | `NEXT_PUBLIC_APP_URL` | `https://staging-app...` | `https://app...` | Vercel domain | Email links / webhook URLs 正確 |
@@ -98,7 +99,9 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 
 - `vercel.json` 與 `vercel.staging.json` 都寫明 `"regions": ["hnd1"]`（東京）。staging 的 Supabase 專案在 `ap-northeast-1`，兩者同區。
 - **已知跨區：Supabase production 專案在 `ap-south-1`（孟買）。** 若 Production 也讀 `vercel.json`，函式會在 `hnd1`、資料庫在孟買，每次資料庫往返多約 100 ms 以上（仍比 Vercel 預設的 `iad1` 近）。這需要 owner 二選一：把 Supabase production 遷到東京，或讓 Production 函式改用 `bom1`。在決定之前，preflight 會對 Production build 印出 `[WARN] DATABASE_REGION` 但不阻擋建置。
-- 區域不寫死在程式裡：preflight 先看 `EXPECTED_FUNCTION_REGION`，沒有才讀 `vercel.json` 的 `regions`；資料庫區域由 Supabase pooler 主機名稱推得（只印區域 ID，不印主機），或由 `DATABASE_REGION` 指定。函式執行時另有 Vercel 注入的 `VERCEL_REGION`，有值時會一併比對。
+- 區域不寫死在程式裡：preflight 讀 Vercel 設定檔（預設 `vercel.json`，`VERCEL_CONFIG_FILE=vercel.staging.json` 時讀 staging 設定）的 `regions`，以它為準，因為設定檔會覆蓋 Dashboard。`EXPECTED_FUNCTION_REGION` 只用來驗證：兩者不一致就警告，資料庫比對仍用設定檔的區域；設定檔沒有 `regions` 時才以 `EXPECTED_FUNCTION_REGION` 描述 Dashboard 設定。資料庫區域由 Supabase pooler 主機名稱推得（只印區域 ID，不印主機），或由 `DATABASE_REGION` 指定。函式執行時另有 Vercel 注入的 `VERCEL_REGION`，有值時會一併比對。
+- **Production 上線前，preflight 的 `DATABASE_REGION` 必須是 PASS**（PR #447 審查 m3）。若 owner 選 Production 改用 `bom1`，只改 Dashboard 會被 `vercel.json` 的 `regions` 蓋掉，必須改 Production 讀取的設定檔（或讓 Production 使用專屬設定）。是否把跨區從 WARN 升為 FAIL 會改變 build gate，需要 owner 同意。
+- preflight 也會比對 `CRON_SECRET` 與 `JOB_SECRET`：兩者相同時警告（不印值），因為 GET／POST 排程入口的密鑰分離會失效。
 - 連線池參數只放在 `DATABASE_URL`（`src/lib/db.ts` 不覆寫）：6543 transaction pooler、`pgbouncer=true`、`connection_limit` 從 3～5 起依負載測試調整。Migration 走 `DIRECT_URL`（session mode）。
 - 這些檢查只在 `VERCEL_ENV` 是 `production` 或 `preview` 時執行，結果一律是 PASS／WARN，不改變 build 的 exit code。
 
