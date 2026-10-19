@@ -259,7 +259,9 @@ export function resolveTraceSampleRate(
 ): number {
   if (isDevelopment) return TRACE_SAMPLE_RATES.development;
   const attributePath = context.attributes?.["url.path"] ?? context.attributes?.["http.target"];
-  const path = typeof attributePath === "string" && attributePath ? attributePath.split("?")[0] : pathFromName(context.name ?? "");
+  const path = typeof attributePath === "string" && attributePath
+    ? (attributePath.split("?")[0] ?? "")
+    : pathFromName(context.name ?? "");
   if (CRITICAL_PATH_PATTERN.test(path)) return TRACE_SAMPLE_RATES.critical;
   if (POLLING_PATH_PATTERN.test(path)) return TRACE_SAMPLE_RATES.polling;
   return TRACE_SAMPLE_RATES.default;
