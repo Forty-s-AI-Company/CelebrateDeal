@@ -1,5 +1,7 @@
+import * as Sentry from "@sentry/nextjs";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { InventoryUnavailableError } from "@/lib/inventory-reservations";
 import { captureOperationalError } from "@/lib/monitoring";
 import { classifyPaymentWebhookErrorClass, classifyPaymentWebhookFailure, paymentWebhookErrorStage, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
 import { MANUAL_RECONCILIATION_STATUS } from "@/lib/payment-webhook-manual-reconciliation";
@@ -27,6 +29,46 @@ function nextRetryDate() {
   return new Date(Date.now() + 1000 * 60 * 15);
 }
 
+export type WebhookRetryAlertReason = "exhausted" | "inventory_unavailable";
+
+const SAFE_ALERT_IDENTIFIER = /^[A-Za-z0-9_.:@+-]{1,128}$/u;
+
+function safeAlertIdentifier(value: unknown) {
+  return typeof value === "string" && SAFE_ALERT_IDENTIFIER.test(value) ? value : "unavailable";
+}
+
+/** Reads only the order number from a stored webhook payload; never other fields. */
+function storedOrderNumber(payload: unknown) {
+  if (!payload || typeof payload !== "object") return undefined;
+  const normalized = (payload as { normalized?: unknown }).normalized;
+  const source = normalized && typeof normalized === "object" ? normalized : payload;
+  return (source as { orderNumber?: unknown }).orderNumber;
+}
+
+/**
+ * Error-level Sentry alert for a payment webhook that needs a human (PR #447
+ * review M2 / B03-07): the retry budget is exhausted, or a late `paid` found its
+ * released inventory sold out. Only the internal event id and the order number
+ * are attached; no buyer data, payload or provider message.
+ */
+export function reportWebhookRetryAlert(input: {
+  eventId: string;
+  orderNumber: unknown;
+  provider: string;
+  reason: WebhookRetryAlertReason;
+}) {
+  try {
+    Sentry.captureMessage("webhook_retry_requires_attention", {
+      level: "error",
+      fingerprint: ["webhook-retry-requires-attention", input.reason],
+      tags: { source: "webhook_retry", reason: input.reason, provider: safeAlertIdentifier(input.provider) },
+      extra: { eventId: safeAlertIdentifier(input.eventId), orderNumber: safeAlertIdentifier(input.orderNumber) },
+    });
+  } catch {
+    // Alerting must never change the retry state machine.
+  }
+}
+
 type RetryableWebhookEvent = {
   id: string;
   vendorId: string | null;
@@ -35,6 +77,7 @@ type RetryableWebhookEvent = {
   retryCount: number;
   maxRetries: number;
   updatedAt: Date;
+  payload?: unknown;
 };
 
 /**
@@ -72,7 +115,10 @@ export async function recoverStaleWebhookRetryClaim(event: RetryableWebhookEvent
   });
 
   if (recovered.count !== 1) return { status: "claimed_elsewhere" as const, event };
-  if (exhausted) return { status: "exhausted" as const, event };
+  if (exhausted) {
+    reportWebhookRetryAlert({ eventId: event.id, orderNumber: storedOrderNumber(event.payload), provider: event.provider, reason: "exhausted" });
+    return { status: "exhausted" as const, event };
+  }
   return retryWebhookEvent(event.id);
 }
 
@@ -114,6 +160,7 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       data: { status: "exhausted", nextRetryAt: null },
     });
     if (exhausted.count !== 1) return { status: "claimed_elsewhere" as const, event };
+    reportWebhookRetryAlert({ eventId: event.id, orderNumber: storedOrderNumber(event.payload), provider: event.provider, reason: "exhausted" });
     return { status: "exhausted" as const, event };
   }
 
@@ -152,6 +199,9 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       },
     });
     if (finalized.count !== 1) return { status: "claimed_elsewhere" as const, event: claimedEvent };
+    if (status === "exhausted") {
+      reportWebhookRetryAlert({ eventId: event.id, orderNumber: storedOrderNumber(event.payload), provider: event.provider, reason: "exhausted" });
+    }
     return { status, event };
   }
 
@@ -194,6 +244,17 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       },
     });
     if (finalized.count !== 1) return { status: "claimed_elsewhere" as const, event: claimedEvent };
+    // B03-07: a late paid whose released reservation can no longer be
+    // re-acquired rolls back. Alert on every such attempt, not only the last.
+    const inventoryUnavailable = error instanceof InventoryUnavailableError;
+    if (inventoryUnavailable || status === "exhausted") {
+      reportWebhookRetryAlert({
+        eventId: event.id,
+        orderNumber: parsed.data.orderNumber,
+        provider: event.provider,
+        reason: inventoryUnavailable ? "inventory_unavailable" : "exhausted",
+      });
+    }
     captureOperationalError(error, {
       source: "webhook_retry",
       operation: "retry_claim",
@@ -209,7 +270,7 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
       before: auditSnapshot(claimedEvent),
       after: auditSnapshot({ errorCode, errorClass, errorStage, status }),
     });
-    return { status, event: claimedEvent, error: message, errorCode };
+    return { status, event: claimedEvent, error: message, errorCode, inventoryUnavailable };
   }
 }
 
@@ -229,7 +290,7 @@ export async function processDueWebhookRetries(limit = 20) {
   const results = [];
   for (const event of staleRetryingEvents) {
     const result = await recoverStaleWebhookRetryClaim(event, now);
-    results.push({ eventId: event.id, status: result.status });
+    results.push({ eventId: event.id, status: result.status, inventoryUnavailable: false });
   }
 
   const remaining = Math.max(0, limit - results.length);
@@ -246,7 +307,11 @@ export async function processDueWebhookRetries(limit = 20) {
 
   for (const event of events) {
     const result = await retryWebhookEvent(event.id);
-    results.push({ eventId: event.id, status: result.status });
+    results.push({
+      eventId: event.id,
+      status: result.status,
+      inventoryUnavailable: "inventoryUnavailable" in result && result.inventoryUnavailable === true,
+    });
   }
 
   return results;

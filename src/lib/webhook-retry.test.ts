@@ -15,8 +15,11 @@ const dependencies = vi.hoisted(() => {
     auditSnapshot: vi.fn(() => ({ snapshot: "redacted" })),
     writeAuditLog: vi.fn(),
     captureOperationalError: vi.fn(),
+    captureMessage: vi.fn(),
   };
 });
+
+vi.mock("@sentry/nextjs", () => ({ captureMessage: dependencies.captureMessage }));
 
 vi.mock("@/lib/db", () => ({ getDb: () => dependencies.db }));
 vi.mock("@/lib/audit", () => ({
@@ -38,6 +41,7 @@ vi.mock("@/lib/payment-webhooks", () => ({
   processPaymentWebhook: dependencies.processPaymentWebhook,
 }));
 
+import { InventoryUnavailableError } from "@/lib/inventory-reservations";
 import { processDueWebhookRetries, recoverStaleWebhookRetryClaim, retryWebhookEvent } from "@/lib/webhook-retry";
 
 const now = new Date("2025-01-01T00:00:00.000Z");
@@ -289,9 +293,10 @@ describe("webhook retry worker", () => {
     dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(processDueWebhookRetries(2)).resolves.toEqual([
-      { eventId: first.id, status: "exhausted" },
-      { eventId: second.id, status: "exhausted" },
+      { eventId: first.id, status: "exhausted", inventoryUnavailable: false },
+      { eventId: second.id, status: "exhausted", inventoryUnavailable: false },
     ]);
+    expect(dependencies.captureMessage).toHaveBeenCalledTimes(2);
     expect(dependencies.db.webhookEvent.findMany).toHaveBeenNthCalledWith(1, {
       where: { status: "retrying", updatedAt: { lte: new Date("2024-12-31T23:50:00.000Z") } },
       orderBy: { updatedAt: "asc" },
@@ -302,5 +307,61 @@ describe("webhook retry worker", () => {
       orderBy: { nextRetryAt: "asc" },
       take: 2,
     });
+  });
+
+  it("sends an error-level alert with only the event id and order number when a retry hits sold-out inventory (B03-07)", async () => {
+    const storedEvent = event({
+      retryCount: 0,
+      payload: { normalized: { provider: "demo", eventId: "event-reference-1", orderNumber: "CD-ORDER-1001", buyerEmail: "buyer@example.test" } },
+    });
+    dependencies.db.webhookEvent.findUnique.mockResolvedValue(storedEvent);
+    dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+    dependencies.processPaymentWebhook.mockRejectedValueOnce(new InventoryUnavailableError());
+
+    const result = await retryWebhookEvent(storedEvent.id);
+
+    expect(result).toMatchObject({ status: "failed", inventoryUnavailable: true });
+    expect(dependencies.captureMessage).toHaveBeenCalledOnce();
+    const [message, context] = dependencies.captureMessage.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(message).toBe("webhook_retry_requires_attention");
+    expect(context).toMatchObject({
+      level: "error",
+      tags: { source: "webhook_retry", reason: "inventory_unavailable", provider: "demo" },
+      extra: { eventId: "event-1", orderNumber: "CD-ORDER-1001" },
+    });
+    expect(JSON.stringify(context)).not.toContain("buyer@example.test");
+  });
+
+  it("alerts once when the final processing attempt exhausts the event", async () => {
+    const storedEvent = event({ retryCount: 2, maxRetries: 3, payload: { normalized: { provider: "demo", eventId: "e", orderNumber: "CD-ORDER-2002" } } });
+    dependencies.db.webhookEvent.findUnique.mockResolvedValue(storedEvent);
+    dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+    dependencies.processPaymentWebhook.mockRejectedValueOnce(new Error("processor failed"));
+
+    await expect(retryWebhookEvent(storedEvent.id)).resolves.toMatchObject({ status: "exhausted", inventoryUnavailable: false });
+    expect(dependencies.captureMessage).toHaveBeenCalledOnce();
+    expect(dependencies.captureMessage.mock.calls[0]?.[1]).toMatchObject({
+      tags: { reason: "exhausted" },
+      extra: { eventId: "event-1", orderNumber: "CD-ORDER-2002" },
+    });
+  });
+
+  it("does not alert on an ordinary retryable failure", async () => {
+    const storedEvent = event({ retryCount: 0, maxRetries: 3 });
+    dependencies.db.webhookEvent.findUnique.mockResolvedValue(storedEvent);
+    dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+    dependencies.processPaymentWebhook.mockRejectedValueOnce(new Error("processor failed"));
+
+    await expect(retryWebhookEvent(storedEvent.id)).resolves.toMatchObject({ status: "failed", inventoryUnavailable: false });
+    expect(dependencies.captureMessage).not.toHaveBeenCalled();
+  });
+
+  it("replaces an unsafe order number with a fixed placeholder", async () => {
+    const storedEvent = event({ retryCount: 3, payload: { normalized: { provider: "demo", eventId: "e", orderNumber: "<script>alert(1)</script> buyer@example.test" } } });
+    dependencies.db.webhookEvent.findUnique.mockResolvedValue(storedEvent);
+    dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(retryWebhookEvent(storedEvent.id)).resolves.toMatchObject({ status: "exhausted" });
+    expect(dependencies.captureMessage.mock.calls[0]?.[1]).toMatchObject({ extra: { orderNumber: "unavailable" } });
   });
 });

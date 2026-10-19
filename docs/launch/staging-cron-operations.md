@@ -25,10 +25,21 @@ The job runner must obtain credentials from the approved secret manager at
 runtime. Secret values, request headers, customer data, and delivery payloads
 must not be written to this repository, evidence, or chat.
 
+## Staging scheduler (2026-10-19, F-042)
+
+The staging scheduler is now `.github/workflows/scheduled-jobs.yml`, a
+protected-`master` GitHub Actions schedule that calls every schedulable job
+through its `POST` + `JOB_SECRET` entry. Vercel Cron cannot drive staging at
+all: Vercel invokes crons only on Production deployments, and the staging alias
+serves a Preview deployment. Endpoint inventory, verification, pausing, and the
+`JOB_SECRET`／`CRON_SECRET` split are in
+[`scheduled-jobs-runbook.md`](./scheduled-jobs-runbook.md).
+
 ## Readiness boundary
 
-Until a staging scheduler is selected and a sanitized delivery receipt exists,
-staging scheduler readiness remains `PENDING_EXTERNAL` and Production remains
+Until the scheduled workflow has run on `master` and a sanitized invocation
+receipt (Actions run lines plus matching Vercel log entries) exists, staging
+scheduler readiness remains `PENDING_EXTERNAL` and Production remains
 fail-closed `NO_GO`. Do not replace the removed Cron with a daily schedule only
 to make a build pass; that would change delivery semantics without an owner
 decision.

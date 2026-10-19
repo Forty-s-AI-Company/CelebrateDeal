@@ -55,6 +55,29 @@ export function verifyDownloadedBackup(runnerTemp, readFile = fs.readFileSync) {
   return { files, receipt };
 }
 
+const TRIGRAM_OPCLASS_REFERENCE = /\b([a-z_][a-z0-9_]*)\.(?:gin|gist)_trgm_ops\b/gu;
+const SAFE_SCHEMA_NAME = /^[a-z_][a-z0-9_]*$/u;
+
+/**
+ * F-074: the public-only archive never carries the pg_trgm extension, but its
+ * index DDL names the schema the source had it in (`public.gin_trgm_ops` or
+ * `extensions.gin_trgm_ops`). Staging was verified read-only to have pg_trgm in
+ * `public`, while pgcrypto is in `extensions`, so the placement must follow the
+ * archive instead of a fixed assumption. The recovery job has no connection to
+ * the source database by design, so the archive's DDL is the source of truth.
+ */
+export function archiveTrigramSchema(schemaOnlyDdl) {
+  const schemas = new Set([...String(schemaOnlyDdl ?? "").matchAll(TRIGRAM_OPCLASS_REFERENCE)].map((match) => match[1]));
+  if (schemas.size > 1) throw new Error("RECOVERY_EXTENSION_SCHEMA_AMBIGUOUS");
+  return schemas.size === 1 ? [...schemas][0] : "extensions";
+}
+
+export function recoveryTargetPreparationSql(trigramSchema) {
+  if (typeof trigramSchema !== "string" || !SAFE_SCHEMA_NAME.test(trigramSchema)) throw new Error("RECOVERY_EXTENSION_SCHEMA_INVALID");
+  return "DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE SCHEMA extensions; CREATE EXTENSION pgcrypto WITH SCHEMA extensions; "
+    + `CREATE SCHEMA IF NOT EXISTS ${trigramSchema}; CREATE EXTENSION pg_trgm WITH SCHEMA ${trigramSchema};`;
+}
+
 export function createRecoveryReceipt(runId) {
   return {
     schemaVersion: "celebratedeal-staging-recovery/v1", backupRunId: runId, sourceCommit: BACKUP_SOURCE_SHA,
@@ -142,9 +165,12 @@ export async function runRecoveryDrill({ runId, runnerTemp, identity = process.e
     if (listed.code !== 0) throw new Error("RECOVERY_ARCHIVE_LIST_FAILED");
     receipt.restore.archiveListed = true;
     const restoreList = filteredRestoreList(listed.stdout);
-    // The public-only archive omits Supabase-managed extension placement.
-    // A dependency that needs a different placement will fail the restore closed.
-    const prepared = run("docker", ["exec", containerId, "psql", "-U", "postgres", "-d", "celebratedeal_restore", "-X", "-v", "ON_ERROR_STOP=1", "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE SCHEMA extensions; CREATE EXTENSION pgcrypto WITH SCHEMA extensions; CREATE EXTENSION pg_trgm WITH SCHEMA extensions;"], { spawnImpl });
+    // The public-only archive omits extension objects. Place pg_trgm where the
+    // archive's index DDL expects it; any other mismatch still fails closed.
+    const schemaOnly = run("docker", ["exec", containerId, "pg_restore", "--schema-only", "--file=-", "/tmp/staging-public.dump"], { spawnImpl });
+    if (schemaOnly.code !== 0) throw new Error("RECOVERY_ARCHIVE_DDL_FAILED");
+    const preparationSql = recoveryTargetPreparationSql(archiveTrigramSchema(schemaOnly.stdout));
+    const prepared = run("docker", ["exec", containerId, "psql", "-U", "postgres", "-d", "celebratedeal_restore", "-X", "-v", "ON_ERROR_STOP=1", "-c", preparationSql], { spawnImpl });
     if (prepared.code !== 0) throw new Error("RECOVERY_TARGET_PREPARE_FAILED");
     if (run("docker", ["exec", "-i", containerId, "tee", "/tmp/staging-public.list"], { input: restoreList, spawnImpl }).code !== 0) throw new Error("RECOVERY_RESTORE_LIST_WRITE_FAILED");
     const restored = run("docker", ["exec", containerId, "pg_restore", "--username=postgres", "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction", "--use-list=/tmp/staging-public.list", "--dbname=celebratedeal_restore", "/tmp/staging-public.dump"], { spawnImpl });

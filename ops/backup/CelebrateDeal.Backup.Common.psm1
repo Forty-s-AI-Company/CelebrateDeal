@@ -318,9 +318,56 @@ function Get-CelebrateDealRestoreFailureCategory {
   if ($text -match 'timeout|could not connect|connection refused|could not translate host|network') { return 'network' }
   if ($text -match 'role .* does not exist') { return 'role_compatibility' }
   if ($text -match 'extension .* is not available|could not open extension control file') { return 'extension_compatibility' }
+  # F-074: a public-only archive references pg_trgm operator classes by schema
+  # (for example extensions.gin_trgm_ops) but never carries the extension itself.
+  if ($text -match 'operator class .* does not exist|schema "?extensions"? does not exist') { return 'extension_compatibility' }
   if ($text -match 'already exists|multiple primary keys|duplicate key') { return 'object_conflict' }
   if ($text -match 'errors ignored on restore|could not execute query') { return 'restore_objects' }
   return 'unknown'
+}
+
+function Get-CelebrateDealTrigramSchema {
+  <#
+    Returns the schema that an archive's schema-only DDL expects pg_trgm in,
+    $null when the archive does not use trigram operator classes. Input must be
+    schema-only output (no row data); nothing from it is returned or logged.
+  #>
+  param([AllowEmptyString()][string]$SchemaOnlyDdl)
+
+  $found = [regex]::Matches([string]$SchemaOnlyDdl, '(?<schema>[a-z_][a-z0-9_]*)\.(?:gin|gist)_trgm_ops\b') |
+    ForEach-Object { $_.Groups['schema'].Value } |
+    Sort-Object -Unique
+  $schemas = @($found)
+  if ($schemas.Count -gt 1) { throw 'Archive references pg_trgm in more than one schema.' }
+  if ($schemas.Count -eq 0) { return $null }
+  return $schemas[0]
+}
+
+function Get-CelebrateDealExtensionPreparationSql {
+  <#
+    SQL that makes a plain PostgreSQL isolation target match Supabase's
+    extension placement before a public-only pg_restore (F-074 / B04-21).
+    pgcrypto follows the Supabase convention (extensions schema); pg_trgm is
+    created in, or moved to, the schema the archive's index DDL references.
+  #>
+  param([Parameter(Mandatory)][string]$TrigramSchema)
+
+  if ($TrigramSchema -notmatch '^[a-z_][a-z0-9_]*$') { throw 'Unsafe pg_trgm schema name.' }
+  $template = @'
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+CREATE SCHEMA IF NOT EXISTS {0};
+DO $prepare$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+    CREATE EXTENSION pg_trgm WITH SCHEMA {0};
+  ELSIF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' AND extnamespace = '{0}'::regnamespace) THEN
+    ALTER EXTENSION pg_trgm SET SCHEMA {0};
+  END IF;
+END
+$prepare$;
+'@
+  return $template -f $TrigramSchema
 }
 
 function Copy-CelebrateDealGoogleDriveArchive {
