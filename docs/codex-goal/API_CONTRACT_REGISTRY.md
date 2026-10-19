@@ -248,3 +248,15 @@
 - `POST /api/form-submissions`：見表格第 16 列。新增原生（無 JavaScript）錯誤重試：303 回原頁、加密單次使用草稿、`/registration-error` 固定錯誤頁、retry 與成功回條兩個 cookie。JSON 契約不變。
 - `GET`／`POST /api/jobs/email-deliveries`：回應新增 `registrationRetryDraftsPurged`（非負計數；清除失敗時為 `null`，不影響其他步驟），每次批次刪除已過期的 `RegistrationFormRetryDraft`。未新增 route 或排程。
 
+
+## 2026-10-19 PR #447 背景工作排程入口（F-042）
+
+每個可排程 job 都有兩個入口、共用同一個 handler：`GET` 只接受 timing-safe `CRON_SECRET` Bearer（Vercel Cron），`POST` 只接受 timing-safe `JOB_SECRET` Bearer（`.github/workflows/scheduled-jobs.yml` 或受控人工 runner）；兩者互不接受對方的密鑰。新入口都不接受 query 或 body，回應與錯誤契約和原入口完全相同。排程、暫停與驗證見 `docs/launch/scheduled-jobs-runbook.md`。
+
+| API | 授權 | 輸入與範圍 | 行為與安全契約 | 回應 | 驗證 |
+| --- | --- | --- | --- | --- | --- |
+| `GET /api/jobs/webhook-retry` | timing-safe `CRON_SECRET` Bearer | 無 body；server-owned due queue | 與 `POST` 相同：先釋放過期 reservation，再以 atomic claim 重試；事件 exhausted 或遇到售完時送 error 等級 Sentry 告警（只帶 eventId、orderNumber） | 401；200／503 bounded result，含 `exhausted`、`inventoryUnavailable` 非負計數 | 同路徑 route unit（GET／POST 密鑰互斥、計數）＋ `webhook-retry` unit |
+| `GET /api/jobs/billing-cycle` | timing-safe `CRON_SECRET` Bearer | 無 body；月份由 server 決定 | 與 `POST` 相同的月結 handler；會 upsert issued 月費帳單並標記逾期，不扣款；staging 排程預設關閉，需 `SCHEDULED_JOBS_ENABLE_BILLING_CYCLE` | 401 或 bounded counts；失敗 503 `billing_cycle_failed` | 同路徑 route unit |
+| `GET /api/jobs/electronic-invoices` | timing-safe `CRON_SECRET` Bearer | 無 body；server-owned tenant invoice queue | 與 `POST` 相同；adapter 未接時保留 queued | 401、202 queued 或 200 bounded counts；失敗 503 safe code | 同路徑 route unit |
+| `POST /api/cron/line-notifications` | timing-safe `JOB_SECRET` Bearer | 無 body | 與 `GET` 相同：materialize 後以 atomic lease 派送 LINE due queue | 401 或 sanitized aggregate；錯誤 503，不回 recipient／provider detail | 同路徑 route unit |
+| `POST /api/cron/live-media` | timing-safe `JOB_SECRET` Bearer | 無外部 payload | 與 `GET` 相同的 bounded session cleanup；staging 排程預設關閉，需 `SCHEDULED_JOBS_ENABLE_LIVE_MEDIA` | 401／503 或 sanitized `{ scanned, stopped }` | 同路徑 route unit（真實 api-security） |
