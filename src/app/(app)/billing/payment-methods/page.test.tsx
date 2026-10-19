@@ -143,6 +143,47 @@ describe("/billing/payment-methods route", () => {
     expect(alreadyRevokedHtml).toContain("先前已撤銷");
   });
 
+  it.each([
+    ["provider_declined", "金流未完成綁定驗證，請稍後再試或改用其他卡片"],
+    ["provider_pending", "金流尚未確認這次綁定驗證的結果"],
+    ["rejected", "這次驗證已失效或已處理過"],
+    ["processing_failed", "系統暫時無法完成處理"],
+    ["invalid_payload", "無法確認金流回傳的綁定結果"],
+    ["unverified", "無法確認金流回傳的綁定結果"],
+    ["unavailable", "付款方式設定暫時無法使用"],
+    ["<script>alert(1)</script>", "付款方式綁定未完成"],
+    [undefined, "付款方式綁定未完成"],
+  ] as const)("renders fixed Traditional Chinese copy for a failed PAYUNi return (%s)", async (reason, expected) => {
+    const html = renderToStaticMarkup(await PaymentMethodsPage({
+      searchParams: Promise.resolve(reason === undefined ? { setup: "failed" } : { setup: ["failed", "success"], reason }),
+    }));
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain(expected);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).not.toContain("金流已回傳綁定驗證結果");
+  });
+
+  it("renders a neutral success note that defers to saved reference status", async () => {
+    const html = renderToStaticMarkup(await PaymentMethodsPage({
+      searchParams: Promise.resolve({ setup: "success", reason: "provider_declined" }),
+    }));
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain("金流已回傳綁定驗證結果；請以下方「已保存的驗證狀態」為準。");
+    expect(html).not.toContain("金流未完成綁定驗證");
+    expect(mocks.referenceFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-current" } }));
+  });
+
+  it("ignores unknown setup result values", async () => {
+    const html = renderToStaticMarkup(await PaymentMethodsPage({
+      searchParams: Promise.resolve({ setup: "maybe", reason: "provider_declined" }),
+    }));
+
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain("金流已回傳綁定驗證結果");
+  });
+
   it("renders empty and non-active reference states with stable labels", async () => {
     mocks.referenceFindMany.mockResolvedValue([
       {

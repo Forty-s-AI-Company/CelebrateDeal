@@ -90,6 +90,42 @@ describe("captureOperationalError", () => {
     );
   });
 
+  it("keeps bounded signed provider codes and drops unsigned, free-text or card-like provider fields", () => {
+    vi.stubEnv("SENTRY_DSN", "test-fixture-dsn");
+
+    captureOperationalError(new Error("provider_rejected"), {
+      source: "payment_method_setup_webhook",
+      callbackSource: "return",
+      reason: "provider_declined",
+      providerOuterStatus: "attacker-controlled",
+      providerOuterStatusMismatch: true,
+      providerStatus: "UPP02086",
+      providerMessageCode: "商店未提供約定信用卡幕後交易",
+      providerTradeStatus: "2",
+      providerResCode: "05",
+      creditHash: "opaque-credit-hash",
+      card4No: "0001",
+    }, { fingerprint: ["payment-method-setup", "provider_declined", "UPP02086"] });
+
+    expect(mocks.captureException).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "OperationalError" }),
+      {
+        extra: {
+          event: "operational_error",
+          category: "provider-rejected",
+          code: "unavailable",
+          source: "payment_method_setup_webhook",
+          callbackSource: "return",
+          providerOuterStatusMismatch: true,
+          providerStatus: "UPP02086",
+          providerTradeStatus: "2",
+          providerResCode: "05",
+        },
+        fingerprint: ["payment-method-setup", "provider_declined", "UPP02086"],
+      },
+    );
+  });
+
   it("uses the same safe payload for the local fallback logger", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SENTRY_DSN", undefined);

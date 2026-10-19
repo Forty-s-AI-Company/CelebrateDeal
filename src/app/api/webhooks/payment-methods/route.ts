@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { readTextBody } from "@/lib/api-security";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
+import { captureOperationalError } from "@/lib/monitoring";
 import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-providers";
+import { PaymentMethodSetupMalformedPayloadError, PaymentMethodSetupProviderResultError } from "@/lib/payment-providers/types";
 import {
   applyVerifiedPaymentMethodSetup,
   PaymentMethodReferenceValidationError,
@@ -13,8 +16,56 @@ import { consumePaymentMethodSetupIntent, PaymentMethodSetupIntentRejectedError 
 import { PAYUNI_LIVE_PROBE_AMOUNT_CENTS, PAYUNI_LIVE_PROBE_DELAY_MS } from "@/lib/payuni-live-probe";
 
 const SETUP_EVENT_TYPE = "payment_method_setup_verified";
+// Fixed, path-only destination: the Location header is relative, so a forged
+// Host header or callback parameter can never turn this into an open redirect.
+const SETUP_RETURN_PATH = "/billing/payment-methods";
 
-function response(payload: unknown, status: number) {
+type CallbackSource = "return" | "notify" | "unknown";
+
+/** Closed set of browser-visible failure reasons; the page maps each to fixed copy. */
+type PaymentMethodSetupReturnReason =
+  | "provider_declined"
+  | "provider_pending"
+  | "invalid_payload"
+  | "unverified"
+  | "rejected"
+  | "processing_failed"
+  | "unavailable";
+
+type BrowserOutcome = { setup: "success" } | { setup: "failed"; reason: PaymentMethodSetupReturnReason };
+
+const SUCCESS: BrowserOutcome = { setup: "success" };
+
+function failed(reason: PaymentMethodSetupReturnReason): BrowserOutcome {
+  return { setup: "failed", reason };
+}
+
+function callbackSource(url: URL): CallbackSource {
+  const values = url.searchParams.getAll("source");
+  if (values.length !== 1) return "unknown";
+  return values[0] === "return" || values[0] === "notify" ? values[0] : "unknown";
+}
+
+function browserRedirect(outcome: BrowserOutcome) {
+  const query = new URLSearchParams({ setup: outcome.setup });
+  if (outcome.setup === "failed") query.set("reason", outcome.reason);
+  return new NextResponse(null, {
+    status: 303,
+    headers: {
+      Location: `${SETUP_RETURN_PATH}?${query.toString()}`,
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
+}
+
+/**
+ * `source=return` is the payer's browser posting PAYUNi's ReturnURL form, so it
+ * always gets a 303 to the fixed billing page. Notify and unknown callers keep
+ * the server-to-server JSON contract and status codes.
+ */
+function respond(source: CallbackSource, payload: unknown, status: number, outcome: BrowserOutcome) {
+  if (source === "return") return browserRedirect(outcome);
   return NextResponse.json(payload, { status, headers: { "Cache-Control": "no-store" } });
 }
 
@@ -42,29 +93,139 @@ function supportsSetupWebhook(provider: PaymentProviderAdapter): provider is Pay
   return Boolean(provider.verifyPaymentMethodSetupSignature && provider.normalizePaymentMethodSetupPayload);
 }
 
+// A payer can replay their own signed ReturnURL form. Identical classified
+// results inside this window add no further audit rows or monitoring events.
+const SETUP_RESULT_DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
+const SETUP_RESULT_TARGET_TYPE = "PaymentMethodSetupResult";
+
+function captureSafely(...args: Parameters<typeof captureOperationalError>) {
+  try {
+    captureOperationalError(...args);
+  } catch {
+    // Monitoring must never change the callback response.
+  }
+}
+
+/** Uses the (targetType, targetId) audit index; any lookup failure records again. */
+async function setupResultRecentlyRecorded(resultKey: string) {
+  try {
+    const recorded = await getDb().auditLog.findFirst({
+      where: {
+        targetType: SETUP_RESULT_TARGET_TYPE,
+        targetId: resultKey,
+        createdAt: { gte: new Date(Date.now() - SETUP_RESULT_DEDUP_WINDOW_MS) },
+      },
+      select: { id: true },
+    });
+    return Boolean(recorded);
+  } catch {
+    return false;
+  }
+}
+
+function fallbackResultKey(providerId: string, rawBody: string) {
+  return createHash("sha256").update(`${providerId}\u0000payment-method-setup-result\u0000unclassified\u0000${rawBody}`).digest("hex").slice(0, 32);
+}
+
+/**
+ * Records why a signed callback could not be normalized. An authenticated
+ * provider decision (decline, request rejection, pending) is kept apart from a
+ * malformed payload, and only bounded signed provider codes are recorded.
+ */
+async function rejectUnnormalizedSetup(error: unknown, providerId: string, rawBody: string, source: CallbackSource) {
+  const notifyBody = { error: "Invalid payment method setup payload", code: "invalid_payload" };
+  const before = auditSnapshot({ providerId, bodyBytes: rawBody.length, callbackSource: source });
+  if (error instanceof PaymentMethodSetupProviderResultError) {
+    const errorCode = error.outcome === "pending" ? "provider_pending" : "provider_declined";
+    if (!await setupResultRecentlyRecorded(error.resultKey)) {
+      const providerCodes = {
+        providerStatus: error.diagnostics.status,
+        providerMessageCode: error.diagnostics.messageCode,
+        providerTradeStatus: error.diagnostics.tradeStatus,
+        providerResCode: error.diagnostics.resCode,
+        providerOuterStatusMismatch: error.diagnostics.outerStatusMismatch,
+      };
+      await writeAuditLog({
+        vendorId: error.scope?.vendorId ?? null,
+        actorLabel: `payment-method-webhook:${providerId}`,
+        action: `payment_method_setup_${errorCode}`,
+        targetType: SETUP_RESULT_TARGET_TYPE,
+        targetId: error.resultKey,
+        before,
+        after: auditSnapshot({ errorCode, setupIntentId: error.scope?.setupIntentId, ...providerCodes }),
+      });
+      captureSafely(new Error("provider_rejected"), {
+        source: "payment_method_setup_webhook",
+        operation: errorCode,
+        provider: providerId,
+        callbackSource: source,
+        ...providerCodes,
+      }, { fingerprint: ["payment-method-setup", errorCode, providerCodes.providerStatus ?? "none"] });
+    }
+    // The notify contract predates this distinction and stays a 400.
+    return respond(source, notifyBody, 400, failed(errorCode));
+  }
+  const resultKey = error instanceof PaymentMethodSetupMalformedPayloadError
+    ? error.resultKey
+    : fallbackResultKey(providerId, rawBody);
+  if (!await setupResultRecentlyRecorded(resultKey)) {
+    await writeAuditLog({
+      actorLabel: `payment-method-webhook:${providerId}`,
+      action: "payment_method_setup_invalid",
+      targetType: SETUP_RESULT_TARGET_TYPE,
+      targetId: resultKey,
+      before,
+      after: auditSnapshot({ errorCode: "invalid_payload" }),
+    });
+    captureSafely(new Error("payment_method_setup_invalid_payload"), {
+      source: "payment_method_setup_webhook",
+      operation: "invalid_payload",
+      provider: providerId,
+      callbackSource: source,
+    }, { fingerprint: ["payment-method-setup", "invalid_payload"] });
+  }
+  return respond(source, notifyBody, 400, failed("invalid_payload"));
+}
+
 export async function POST(request: Request) {
   const requestUrl = new URL(request.url);
+  const source = callbackSource(requestUrl);
+  if (source !== "return") return handleSetupCallback(request, requestUrl, source);
+  try {
+    return await handleSetupCallback(request, requestUrl, source);
+  } catch {
+    // The payer's browser must never see a framework error page or JSON.
+    captureSafely(new Error("payment_method_setup_return_unhandled"), {
+      source: "payment_method_setup_webhook",
+      operation: "return_unhandled",
+      callbackSource: source,
+    }, { fingerprint: ["payment-method-setup", "return_unhandled"] });
+    return browserRedirect(failed("processing_failed"));
+  }
+}
+
+async function handleSetupCallback(request: Request, requestUrl: URL, source: CallbackSource) {
   let provider: PaymentProviderAdapter;
   try {
     provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
   } catch {
-    return response({ error: "Invalid payment provider configuration" }, 500);
+    return respond(source, { error: "Invalid payment provider configuration" }, 500, failed("unavailable"));
   }
 
   if (process.env.NODE_ENV === "production" && provider.id === "demo") {
-    return response({ error: "Demo payment method webhooks are not allowed in production" }, 403);
+    return respond(source, { error: "Demo payment method webhooks are not allowed in production" }, 403, failed("unavailable"));
   }
 
   const ids = providerIds(request, requestUrl);
   if (ids.length === 0 || ids.some((providerId) => providerId !== provider.id)) {
-    return response({ error: "Unsupported payment provider" }, 400);
+    return respond(source, { error: "Unsupported payment provider" }, 400, failed("unavailable"));
   }
   if (!supportsSetupWebhook(provider)) {
-    return response({ error: "Payment method setup webhook is not configured" }, 501);
+    return respond(source, { error: "Payment method setup webhook is not configured" }, 501, failed("unavailable"));
   }
 
   const rawBody = await readTextBody(request);
-  if (rawBody === null) return response({ error: "Setup payload too large" }, 413);
+  if (rawBody === null) return respond(source, { error: "Setup payload too large" }, 413, failed("invalid_payload"));
 
   if (!await provider.verifyPaymentMethodSetupSignature(request, rawBody)) {
     await writeAuditLog({
@@ -73,25 +234,18 @@ export async function POST(request: Request) {
       targetType: "WebhookEvent",
       before: auditSnapshot({ providerId: provider.id, bodyBytes: rawBody.length }),
     });
-    return response({ error: "Invalid signature" }, 401);
+    return respond(source, { error: "Invalid signature" }, 401, failed("unverified"));
   }
 
   let event;
   try {
     event = await provider.normalizePaymentMethodSetupPayload(rawBody);
-  } catch {
-    await writeAuditLog({
-      actorLabel: `payment-method-webhook:${provider.id}`,
-      action: "payment_method_setup_invalid",
-      targetType: "WebhookEvent",
-      before: auditSnapshot({ providerId: provider.id, bodyBytes: rawBody.length }),
-      after: auditSnapshot({ errorCode: "invalid_payload" }),
-    });
-    return response({ error: "Invalid payment method setup payload", code: "invalid_payload" }, 400);
+  } catch (error) {
+    return rejectUnnormalizedSetup(error, provider.id, rawBody, source);
   }
 
   if (event.providerName !== provider.id) {
-    return response({ error: "Invalid payment method setup provider" }, 400);
+    return respond(source, { error: "Invalid payment method setup provider" }, 400, failed("invalid_payload"));
   }
 
   const db = getDb();
@@ -134,11 +288,13 @@ export async function POST(request: Request) {
       before: safeEventSnapshot(event),
       after: { errorCode: "event_id_collision" },
     });
-    return response({ error: "Payment method setup processing failed", code: "event_id_collision" }, 409);
+    return respond(source, { error: "Payment method setup processing failed", code: "event_id_collision" }, 409, failed("rejected"));
   }
 
   if (eventRecord.status === "processed") {
-    return response({ ok: true, duplicate: true, eventId: eventRecord.id }, 200);
+    // Return and notify carry the same signed result; whichever arrives second
+    // converges here without touching the intent or reference again.
+    return respond(source, { ok: true, duplicate: true, eventId: eventRecord.id }, 200, SUCCESS);
   }
 
   try {
@@ -183,6 +339,13 @@ export async function POST(request: Request) {
       });
     }, { isolationLevel: "Serializable" });
   } catch (error) {
+    // `processed` is written only by this event's binding transaction, so on
+    // the payer's return any failure here (intent already consumed, P2034
+    // serialization loss, ...) after a committed concurrent notify is a
+    // success. Nothing is marked failed or audited as failed in that case.
+    if (source === "return" && await setupEventProcessed(db, eventRecord.id)) {
+      return browserRedirect(SUCCESS);
+    }
     const isRejected = error instanceof PaymentMethodReferenceValidationError
       || error instanceof PaymentMethodSetupConflictError
       || error instanceof PaymentMethodSetupIntentRejectedError;
@@ -203,8 +366,22 @@ export async function POST(request: Request) {
       before: safeEventSnapshot(event),
       after: { errorCode: isRejected ? "payment_method_setup_rejected" : "payment_method_setup_processing_failed" },
     });
-    return response({ error: "Payment method setup processing failed", code: isRejected ? "payment_method_setup_rejected" : "processing_failed" }, isRejected ? 409 : 500);
+    return respond(
+      source,
+      { error: "Payment method setup processing failed", code: isRejected ? "payment_method_setup_rejected" : "processing_failed" },
+      isRejected ? 409 : 500,
+      failed(isRejected ? "rejected" : "processing_failed"),
+    );
   }
 
-  return response({ ok: true, eventId: eventRecord.id }, 200);
+  return respond(source, { ok: true, eventId: eventRecord.id }, 200, SUCCESS);
+}
+
+async function setupEventProcessed(db: ReturnType<typeof getDb>, eventId: string) {
+  try {
+    const latest = await db.webhookEvent.findUnique({ where: { id: eventId }, select: { status: true, eventType: true } });
+    return latest?.status === "processed" && latest.eventType === SETUP_EVENT_TYPE;
+  } catch {
+    return false;
+  }
 }

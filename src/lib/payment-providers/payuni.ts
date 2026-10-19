@@ -3,11 +3,16 @@ import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import { getDb } from "@/lib/db";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
 import { payUniStagingPlanSessionAllowed } from "@/lib/payuni-staging-plan-test";
-import { payUniSetupNonce } from "@/lib/payuni-setup-correlation";
+import type { PaymentMethodSetupVerificationInput } from "@/lib/payment-method-reference";
+import { isPayUniSetupOrderNumber, payUniSetupNonce } from "@/lib/payuni-setup-correlation";
 import { PAYUNI_MAX_CREDIT_TRADE_AMOUNT, PAYUNI_MIN_TRADE_AMOUNT } from "@/lib/payment-providers/payuni-amount";
 import {
   PaymentQueryProviderError,
+  PaymentMethodSetupMalformedPayloadError,
+  PaymentMethodSetupProviderResultError,
   type PaymentMethodReferenceRevocationInput,
+  type PaymentMethodSetupProviderDiagnostics,
+  type PaymentMethodSetupProviderOutcome,
   RefundProviderError,
   type PaymentProviderAdapter,
   type RefundPaymentInput,
@@ -566,6 +571,95 @@ function payUniCallbackUrl(appUrl: string, source: "notify" | "return") {
   return url.toString();
 }
 
+const PAYUNI_STATUS_CODE = /^[A-Za-z0-9_-]{1,32}$/;
+const PAYUNI_MESSAGE_CODE = /^[A-Z]{2,10}[0-9]{2,10}$/;
+const PAYUNI_PENDING_STATUSES = new Set(["UNKNOWN", "UNAPPROVED"]);
+
+function payUniDiagnosticCode(value: unknown, pattern: RegExp) {
+  const text = optionalPayloadText(value);
+  if (text === undefined) return undefined;
+  // Same card-number guard as payUniOpaqueReference: a 12-19 digit run is
+  // never recorded, even when it would fit the code pattern.
+  return pattern.test(text) && !/\d{12,19}/.test(text) ? text : "unrecognized";
+}
+
+/** Opaque, non-reversible key for de-duplicating replays of one signed result. */
+function payUniSetupResultKey(parts: string[]) {
+  return createHash("sha256").update(["payuni", "payment-method-setup-result", "v1", ...parts].join("\u0000")).digest("hex").slice(0, 32);
+}
+
+/**
+ * Reduces an authenticated setup result to provider status codes. Only the
+ * signed EncryptInfo fields decide the outcome: the outer Status is not covered
+ * by HashInfo and passes through the payer's browser on ReturnURL, so it is
+ * never classified or recorded, only flagged when it disagrees. Message is free
+ * text in PAYUNi's contract, so it is kept only when it is itself a code.
+ */
+function payUniSetupProviderResult(
+  envelope: Record<string, unknown>,
+  decrypted: Record<string, unknown>,
+): { outcome: PaymentMethodSetupProviderOutcome; diagnostics: PaymentMethodSetupProviderDiagnostics; resultKey: string } | null {
+  const status = optionalPayloadText(decrypted.Status);
+  const tradeStatus = optionalPayloadText(decrypted.TradeStatus);
+  // Without a signed provider status this is not a provider decision; the
+  // caller treats it as a malformed payload.
+  if (status === undefined) return null;
+  // Signed SUCCESS is a provider decision only for TradeStatus 2/3
+  // (failed/cancelled) or 8 (awaiting confirmation). Every other signed
+  // SUCCESS combination, including TradeStatus 0 (a non-card "number issued"
+  // result) and a mismatched outer Status, must satisfy the strict setup
+  // contract and is otherwise intentionally invalid, not declined.
+  if (status === "SUCCESS" && tradeStatus !== "2" && tradeStatus !== "3" && tradeStatus !== "8") return null;
+
+  const message = optionalPayloadText(decrypted.Message);
+  const outerStatus = optionalPayloadText(envelope.Status);
+  const diagnostics: PaymentMethodSetupProviderDiagnostics = {
+    status: payUniDiagnosticCode(status, PAYUNI_STATUS_CODE),
+    messageCode: message && PAYUNI_MESSAGE_CODE.test(message) && !/\d{12,19}/.test(message) ? message : undefined,
+    tradeStatus: payUniDiagnosticCode(tradeStatus, /^[0-9]{1,2}$/),
+    resCode: payUniDiagnosticCode(decrypted.ResCode, /^[A-Za-z0-9]{1,8}$/),
+    ...(outerStatus !== undefined && outerStatus !== status ? { outerStatusMismatch: true } : {}),
+  };
+  for (const key of Object.keys(diagnostics) as (keyof PaymentMethodSetupProviderDiagnostics)[]) {
+    if (diagnostics[key] === undefined) delete diagnostics[key];
+  }
+  const pending = PAYUNI_PENDING_STATUSES.has(status.toUpperCase()) || tradeStatus === "8";
+  // A request-level rejection may omit MerTradeNo. Correlate such results by
+  // the signed EncryptInfo instead, so one tenant's result never de-duplicates
+  // another tenant's identical status code.
+  const merTradeNo = optionalPayloadText(decrypted.MerTradeNo);
+  const correlation = merTradeNo && isPayUniSetupOrderNumber(merTradeNo)
+    ? merTradeNo
+    : `encrypted:${createHash("sha256").update(String(envelope.EncryptInfo ?? "")).digest("hex")}`;
+  return {
+    outcome: pending ? "pending" : "declined",
+    diagnostics,
+    resultKey: payUniSetupResultKey([
+      "result", correlation, status, tradeStatus ?? "", diagnostics.resCode ?? "", diagnostics.messageCode ?? "",
+    ]),
+  };
+}
+
+/**
+ * Best-effort audit attribution. Only a stored PAYUNi intent that is still
+ * pending and unexpired can name a vendor; a replay of an old result cannot.
+ */
+async function payUniSetupDiagnosticScope(merTradeNo: unknown) {
+  const orderNumber = optionalPayloadText(merTradeNo);
+  if (!orderNumber || !isPayUniSetupOrderNumber(orderNumber)) return null;
+  try {
+    const intent = await getDb().paymentMethodSetupIntent.findUnique({
+      where: { id: orderNumber },
+      select: { id: true, vendorId: true, providerName: true, status: true, expiresAt: true },
+    });
+    return intent && intent.providerName === "payuni" && intent.status === "pending" && intent.expiresAt > new Date()
+      ? { setupIntentId: intent.id, vendorId: intent.vendorId }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function payUniSetupCallbackUrl(appUrl: string, source: "notify" | "return") {
   const url = new URL("/api/webhooks/payment-methods", appUrl);
   url.searchParams.set("provider", "payuni");
@@ -704,6 +798,55 @@ function verifyPayUniSignature(rawBody: string) {
   }
 }
 
+async function normalizePayUniSetupResult(envelope: Record<string, unknown>): Promise<PaymentMethodSetupVerificationInput> {
+  const decrypted = decryptInfo(requiredPayloadText(envelope.EncryptInfo, "setup payload"));
+  const merchantId = activePayUniCredentials().merchantId;
+  if (!merchantId || optionalPayloadText(decrypted.MerID) !== merchantId) {
+    throw new Error("PayUni setup merchant does not match.");
+  }
+  // A signed non-SUCCESS result is a provider decision (for example a
+  // UPP0xxxx request rejection or a card decline), not a forged payload.
+  const providerResult = payUniSetupProviderResult(envelope, decrypted);
+  if (providerResult) {
+    throw new PaymentMethodSetupProviderResultError(
+      providerResult.outcome,
+      providerResult.diagnostics,
+      providerResult.resultKey,
+      await payUniSetupDiagnosticScope(decrypted.MerTradeNo),
+    );
+  }
+  const intentId = requiredPayloadText(decrypted.MerTradeNo, "setup order number");
+  if (optionalPayloadText(envelope.Status) !== "SUCCESS"
+    || optionalPayloadText(decrypted.Status) !== "SUCCESS"
+    || optionalPayloadText(decrypted.PaymentType) !== "1"
+    || optionalPayloadText(decrypted.TradeStatus) !== "1"
+    || optionalPayloadText(decrypted.TradeAmt) !== "1") {
+    throw new Error("PayUni setup transaction is not a paid one-dollar card authorization.");
+  }
+  const tradeNo = requiredPayloadText(decrypted.TradeNo, "setup trade number");
+  const creditHash = payUniOpaqueReference(requiredPayloadText(decrypted.CreditHash, "CreditHash"));
+  const intent = await getDb().paymentMethodSetupIntent.findUnique({
+    where: { id: intentId },
+    select: { id: true, vendorId: true, providerName: true, scopeType: true, teamId: true, membershipId: true },
+  });
+  if (!intent || intent.providerName !== "payuni"
+    || (intent.scopeType !== "VENDOR" && intent.scopeType !== "MEMBERSHIP")) {
+    throw new Error("PayUni setup intent is unavailable.");
+  }
+  return {
+    setupIntentId: intent.id,
+    setupNonce: payUniSetupNonce(intent.id),
+    providerName: "payuni",
+    eventId: `setup:${tradeNo}`,
+    vendorId: intent.vendorId,
+    scopeType: intent.scopeType,
+    teamId: intent.teamId,
+    membershipId: intent.membershipId,
+    providerPaymentMethodRef: creditHash,
+    verifiedAt: new Date().toISOString(),
+  };
+}
+
 export const payUniPaymentProvider: PaymentProviderAdapter = {
   id: "payuni",
   checkoutSessionPreparation: "local",
@@ -799,39 +942,16 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   },
   async normalizePaymentMethodSetupPayload(rawBody) {
     const envelope = parseRawPayload(rawBody);
-    const decrypted = decryptInfo(requiredPayloadText(envelope.EncryptInfo, "setup payload"));
-    const intentId = requiredPayloadText(decrypted.MerTradeNo, "setup order number");
-    const merchantId = activePayUniCredentials().merchantId;
-    if (optionalPayloadText(envelope.Status) !== "SUCCESS"
-      || optionalPayloadText(decrypted.Status) !== "SUCCESS"
-      || optionalPayloadText(decrypted.MerID) !== merchantId
-      || optionalPayloadText(decrypted.PaymentType) !== "1"
-      || optionalPayloadText(decrypted.TradeStatus) !== "1"
-      || optionalPayloadText(decrypted.TradeAmt) !== "1") {
-      throw new Error("PayUni setup transaction is not a paid one-dollar card authorization.");
+    try {
+      return await normalizePayUniSetupResult(envelope);
+    } catch (error) {
+      if (error instanceof PaymentMethodSetupProviderResultError) throw error;
+      // Keyed on the signed EncryptInfo so editing unsigned outer fields does
+      // not defeat replay de-duplication.
+      throw new PaymentMethodSetupMalformedPayloadError(
+        payUniSetupResultKey(["malformed", optionalPayloadText(envelope.EncryptInfo) ?? rawBody]),
+      );
     }
-    const tradeNo = requiredPayloadText(decrypted.TradeNo, "setup trade number");
-    const creditHash = payUniOpaqueReference(requiredPayloadText(decrypted.CreditHash, "CreditHash"));
-    const intent = await getDb().paymentMethodSetupIntent.findUnique({
-      where: { id: intentId },
-      select: { id: true, vendorId: true, providerName: true, scopeType: true, teamId: true, membershipId: true },
-    });
-    if (!intent || intent.providerName !== "payuni"
-      || (intent.scopeType !== "VENDOR" && intent.scopeType !== "MEMBERSHIP")) {
-      throw new Error("PayUni setup intent is unavailable.");
-    }
-    return {
-      setupIntentId: intent.id,
-      setupNonce: payUniSetupNonce(intent.id),
-      providerName: "payuni",
-      eventId: `setup:${tradeNo}`,
-      vendorId: intent.vendorId,
-      scopeType: intent.scopeType,
-      teamId: intent.teamId,
-      membershipId: intent.membershipId,
-      providerPaymentMethodRef: creditHash,
-      verifiedAt: new Date().toISOString(),
-    };
   },
   async verifySignature(_request, rawBody) {
     return verifyPayUniSignature(rawBody);

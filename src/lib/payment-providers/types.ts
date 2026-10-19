@@ -152,6 +152,53 @@ export class PaymentQueryProviderError extends Error {
   }
 }
 
+/**
+ * Provider status codes from the signed part of a setup result. Every value is
+ * a bounded provider code or fixed enum; never card data, tokens or free text.
+ * Unsigned envelope fields are never copied; `outerStatusMismatch` only says
+ * that the unauthenticated outer status disagreed with the signed one.
+ */
+export type PaymentMethodSetupProviderDiagnostics = {
+  status?: string;
+  messageCode?: string;
+  tradeStatus?: string;
+  resCode?: string;
+  outerStatusMismatch?: boolean;
+};
+
+/** "declined": the provider did not bind a card. "pending": the provider has not decided yet. */
+export type PaymentMethodSetupProviderOutcome = "declined" | "pending";
+
+/**
+ * Thrown by `normalizePaymentMethodSetupPayload` only after the callback is
+ * authenticated and the signed provider fields report a non-successful result.
+ */
+export class PaymentMethodSetupProviderResultError extends Error {
+  constructor(
+    public readonly outcome: PaymentMethodSetupProviderOutcome,
+    public readonly diagnostics: PaymentMethodSetupProviderDiagnostics,
+    /** Opaque digest of signed identity fields; replays of the same result share it. */
+    public readonly resultKey: string,
+    /** Server-owned intent scope, present only for a still-pending, unexpired stored intent. */
+    public readonly scope: { setupIntentId: string; vendorId: string } | null = null,
+  ) {
+    super("Payment provider did not complete payment method setup.");
+    this.name = "PaymentMethodSetupProviderResultError";
+  }
+}
+
+/**
+ * Thrown by `normalizePaymentMethodSetupPayload` for an authenticated payload
+ * that breaks the setup contract. `resultKey` is an opaque digest of the signed
+ * content so replays can be de-duplicated without storing the payload.
+ */
+export class PaymentMethodSetupMalformedPayloadError extends Error {
+  constructor(public readonly resultKey: string) {
+    super("Payment method setup payload is malformed.");
+    this.name = "PaymentMethodSetupMalformedPayloadError";
+  }
+}
+
 export type PaymentProviderAdapter = {
   id: string;
   /** Session preparation is pure local work; no remote trade is created. */
