@@ -14,7 +14,7 @@ export const REQUEST_TIMEOUT_MS = 120_000;
 /**
  * cadence:
  * - "frequent": every GitHub Actions `*\/5` firing (best effort; GitHub may delay or drop runs).
- * - "daily": only the daily firing, because the handler recomputes financial drafts.
+ * - "daily": only the daily firing (financial and fiscal jobs).
  * optInVariable: repository/environment variable that must be "true" for scheduled calls.
  */
 export const SCHEDULED_JOBS = Object.freeze([
@@ -22,7 +22,9 @@ export const SCHEDULED_JOBS = Object.freeze([
   Object.freeze({ name: "line-notifications", path: "/api/cron/line-notifications", cadence: "frequent" }),
   Object.freeze({ name: "webhook-retry", path: "/api/jobs/webhook-retry", cadence: "frequent" }),
   Object.freeze({ name: "live-media", path: "/api/cron/live-media", cadence: "frequent", optInVariable: "SCHEDULED_JOBS_ENABLE_LIVE_MEDIA" }),
-  Object.freeze({ name: "billing-cycle", path: "/api/jobs/billing-cycle", cadence: "daily" }),
+  // Issues monthly invoices (and marks due ones overdue); billing is hidden during the beta,
+  // so it never runs on a schedule unless the owner opts in (PR #447 review M1).
+  Object.freeze({ name: "billing-cycle", path: "/api/jobs/billing-cycle", cadence: "daily", optInVariable: "SCHEDULED_JOBS_ENABLE_BILLING_CYCLE" }),
   Object.freeze({ name: "electronic-invoices", path: "/api/jobs/electronic-invoices", cadence: "daily" }),
 ]);
 
@@ -34,7 +36,7 @@ export const UNSCHEDULED_ENDPOINTS = Object.freeze([
 ]);
 
 export const SCHEDULE_FREQUENT = "*/5 * * * *";
-export const SCHEDULE_DAILY = "20 17 * * *";
+export const SCHEDULE_DAILY = "22 17 * * *";
 
 export function findScheduledJob(name) {
   return SCHEDULED_JOBS.find((job) => job.name === name) ?? null;

@@ -14,8 +14,8 @@
 | `/api/cron/line-notifications` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`（新增）／GET＋`CRON_SECRET` | 與上一列重疊，但能在 email 流程中途失敗時獨立推進 LINE outbox；有 claim lease，不會重送 |
 | `/api/jobs/webhook-retry` | 是 | 每 5 分鐘 | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 先釋放過期庫存保留，再重試失敗的付款 webhook（金流路徑） |
 | `/api/cron/live-media` | 需開啟 | 每 5 分鐘 | POST＋`JOB_SECRET`（新增）／GET＋`CRON_SECRET` | 只在 `vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` 時排程。瀏覽器直播封測隱藏（D-09），未設定 `CELEBRATEDEAL_MEDIA_ORIGIN` 時固定回 503，預設排程會讓每次執行都標紅 |
-| `/api/jobs/billing-cycle` | 是 | 每日 01:20（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 每次執行會重算未鎖定月份的 draft 結算，所以只排每日；不會自動扣款（`automaticCharges: 0`） |
-| `/api/jobs/electronic-invoices` | 是 | 每日 01:20（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | fiscal adapter 未接時回 202，視為成功 |
+| `/api/jobs/billing-cycle` | **需開啟** | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 只在 `vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true` 時排程，`all` 也一樣；單選 `billing-cycle` 的手動 dispatch 才會直接執行。這個 job 會重算未鎖定月份的 draft 結算，並替每個 active 訂閱 upsert `issued` 月費帳單；因為帳單在 `dueAt <= now` 才產生，同一次執行結尾就會被標成 `overdue`（既有問題，另案處理）。封測期間 billing 隱藏（D-02、D-16），所以預設關閉。不會扣款（`automaticCharges: 0`） |
+| `/api/jobs/electronic-invoices` | 是 | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | fiscal adapter 未接時回 202，視為成功 |
 | `/api/jobs/tracking-deliveries` | 否 | — | POST＋`JOB_SECRET` | 需要 body 帶 `vendorId`，且預設 `tracking_executor_disabled`。要排程得先做「列出待派送商家」的批次入口（後續工作） |
 | `/api/jobs/payuni-live-probe` | 否 | — | 專屬密鑰 | 一次性正式環境探針，刻意不排程 |
 | `/api/cron/line-notifications/runtime-binding` | 否 | — | GET＋`CRON_SECRET` | staging 驗證探針，不是工作 |
@@ -25,18 +25,18 @@
 ## 3. 主要路徑：GitHub Actions 排程（staging）
 
 - Workflow：`.github/workflows/scheduled-jobs.yml`
-- 觸發：`schedule`（`*/5 * * * *` 與 `20 17 * * *`）＋`workflow_dispatch`（可選單一 job 或 `all`）
+- 觸發：`schedule`（`*/5 * * * *` 與 `22 17 * * *`；每日分鐘刻意避開 5 的倍數）＋`workflow_dispatch`（可選單一 job 或 `all`）
 - 只在受保護的 `master` 執行；GitHub 的 `schedule` 一律跑預設分支，**PR 合併到 master 之後才會開始排程**
 - Environment：`Preview – celebrate-deal-staging`，只讀取 `secrets.JOB_SECRET`
 - 目標固定為 `https://celebrate-deal-staging.carry-digital-nomad.in.net`，不接受任何主機輸入
 - 每個 job 一個 step、`continue-on-error: true`；最後一步只要有任何 job 不是 2xx 就讓 run 失敗（標紅）
-- `concurrency: scheduled-jobs-staging`，上一輪還沒跑完時下一輪排隊，不會重疊
+- `concurrency` 依觸發來源分組（`*/5`、每日、手動各一組）：同一組上一輪還沒跑完時下一輪排隊。分組是為了避免每日 run 在排隊時被下一輪 `*/5` 取代而被取消（被取消的 run 不會標紅）。不同組可能同時執行，各 job 都有 claim lease，不會重複處理同一筆
 
 ### 已知限制
 
 - GitHub 排程是盡力而為：尖峰時段常延遲 5～15 分鐘，偶爾會整輪略過。交易信與 webhook 重試因此可能延遲十幾分鐘。
 - 公開 repo 若 60 天沒有任何 commit，GitHub 會自動停用排程 workflow（Actions 頁面會出現提示，需要手動重新啟用）。
-- 每次執行都會在 `Preview – celebrate-deal-staging` environment 留下一筆 deployment 紀錄（每天約 290 筆）。
+- 每次執行都會在 `Preview – celebrate-deal-staging` environment 留下一筆 deployment 紀錄（每天約 290 筆）。這個 environment 也是 Vercel 預覽部署使用的，還存著 DB URL、Vercel token 等 secret。最小權限的做法是 owner 在 GitHub 新增只存 `JOB_SECRET`、只允許 `master` 的專屬 environment（例如 `staging-scheduler`），再把 workflow 的 `environment` 改過去（PR #447 審查 n4，待 owner 設定）。
 - 若該 environment 設了「required reviewers」，每次排程都會卡在等待核准。合併前請確認該 environment 沒有 reviewer 規則，只有分支限制。
 
 ### 怎麼確認「真的有被呼叫」
@@ -54,8 +54,9 @@
 | repo variable `SCHEDULED_JOBS_PAUSED=true` | job 被 `if` 跳過，run 顯示 skipped | 最快、可留痕；事故處理首選 |
 | Actions 頁面 Disable workflow | 不再觸發 | 長時間停用 |
 | repo variable `SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` | 開始排程 live-media 清理 | browser_live 部署好再開 |
+| repo variable `SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true` | 開始每日執行 billing-cycle（開立帳單、標記逾期） | billing 對商家開放、owner 同意後再開；先修「開立當下就逾期」 |
 
-恢復：刪除 `SCHEDULED_JOBS_PAUSED` 或改成 `false`，再用 `workflow_dispatch` 手動跑一次 `all` 確認全部 `ok`。
+恢復：刪除 `SCHEDULED_JOBS_PAUSED` 或改成 `false`，再用 `workflow_dispatch` 手動跑一次 `all` 確認全部 `ok`。`all` 不會執行 billing-cycle（除非已設 `SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true`），也不會執行 live-media（除非已設 `SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true`）。要單獨驗證 billing-cycle，先確認 owner 同意在 staging 開立帳單，再單選 `billing-cycle` dispatch。
 
 ## 4. 次要路徑：Vercel Cron（Production 用，目前未啟用）
 
@@ -72,14 +73,14 @@ Production 專案確認是 Pro 方案、由 owner 決定 D-06 之後，把下面
   { "path": "/api/jobs/email-deliveries", "schedule": "0 * * * *" },
   { "path": "/api/cron/line-notifications", "schedule": "0 * * * *" },
   { "path": "/api/jobs/webhook-retry", "schedule": "0 * * * *" },
-  { "path": "/api/jobs/billing-cycle", "schedule": "20 17 * * *" },
-  { "path": "/api/jobs/electronic-invoices", "schedule": "20 17 * * *" }
+  { "path": "/api/jobs/billing-cycle", "schedule": "22 17 * * *" },
+  { "path": "/api/jobs/electronic-invoices", "schedule": "22 17 * * *" }
 ]
 ```
 
 - 先以每小時一次上線；**Pro 方案可把前三列縮到 `*/5 * * * *`（或更短）**。
 - `live-media` 等 browser_live 有部署（F-095）再加。
-- Vercel Cron 以 UTC 解讀排程；`20 17 * * *` 是台灣時間 01:20。
+- Vercel Cron 以 UTC 解讀排程；`22 17 * * *` 是台灣時間 01:22。billing-cycle 一列只在 billing 開放、owner 同意後才加入。
 - 確認方式：Vercel → Production 專案 → Settings → Cron Jobs 會列出每個 cron 與最近一次執行；Logs 篩選 `user-agent: vercel-cron/1.0`。
 - 暫停：Settings → Cron Jobs → Disable Cron Jobs（不需重新部署）。
 

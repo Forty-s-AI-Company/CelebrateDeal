@@ -130,7 +130,9 @@ test("workflow is valid YAML, protected-branch only, and calls every scheduled j
   assert.deepEqual(workflow.on.schedule, [{ cron: SCHEDULE_FREQUENT }, { cron: SCHEDULE_DAILY }]);
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.job.options, ["all", ...SCHEDULED_JOBS.map((job) => job.name)]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
-  assert.deepEqual(workflow.concurrency, { group: "scheduled-jobs-staging", "cancel-in-progress": false });
+  // Each trigger has its own group so a pending daily run is never replaced by a */5 run.
+  assert.deepEqual(workflow.concurrency, { group: "scheduled-jobs-staging-${{ github.event.schedule || 'dispatch' }}", "cancel-in-progress": false });
+  assert.notEqual(Number(SCHEDULE_DAILY.split(" ")[0]) % 5, 0, "daily minute must not collide with */5");
 
   const job = workflow.jobs["staging-jobs"];
   assert.equal(job.environment, "Preview – celebrate-deal-staging");
@@ -148,7 +150,12 @@ test("workflow is valid YAML, protected-branch only, and calls every scheduled j
     const cadence = scheduled.cadence === "daily" ? SCHEDULE_DAILY : SCHEDULE_FREQUENT;
     assert.ok(step.if.includes(`github.event.schedule == '${cadence}'`), `${scheduled.name} cadence`);
     assert.ok(step.if.includes(`inputs.job == '${scheduled.name}'`), `${scheduled.name} dispatch`);
-    if (scheduled.optInVariable) assert.ok(step.if.includes(`vars.${scheduled.optInVariable} == 'true'`), `${scheduled.name} opt-in`);
+    if (scheduled.optInVariable) {
+      const optIn = `vars.${scheduled.optInVariable} == 'true'`;
+      assert.ok(step.if.includes(`github.event.schedule == '${cadence}' && ${optIn}`), `${scheduled.name} schedule opt-in`);
+      assert.ok(step.if.includes(`inputs.job == 'all' && ${optIn}`), `${scheduled.name} dispatch-all opt-in`);
+      assert.doesNotMatch(step.if, /inputs\.job == 'all' \|\|/u, `${scheduled.name} must not run on plain 'all'`);
+    }
   }
 
   const enforce = steps.at(-1);
@@ -163,6 +170,11 @@ test("workflow is valid YAML, protected-branch only, and calls every scheduled j
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
   assert.ok(actionUses.length > 0);
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
+});
+
+test("financial billing cycle is opt-in only", () => {
+  const billing = SCHEDULED_JOBS.find((job) => job.name === "billing-cycle");
+  assert.equal(billing.optInVariable, "SCHEDULED_JOBS_ENABLE_BILLING_CYCLE");
 });
 
 test("job URLs stay on the fixed alias", () => {

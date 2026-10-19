@@ -4,13 +4,15 @@ name: Scheduled background jobs (staging)
 # Runbook: docs/launch/scheduled-jobs-runbook.md
 # - "*/5 * * * *": email/live/learner/LINE delivery, webhook retry + inventory release,
 #   LINE outbox, and (opt-in) live media cleanup.
-# - "20 17 * * *" (01:20 Asia/Taipei): billing cycle and electronic invoices.
+# - "22 17 * * *" (01:22 Asia/Taipei): electronic invoices, and (opt-in) billing cycle.
+#   The billing cycle issues monthly invoices and marks them overdue, so it only runs
+#   when vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE == 'true' or when dispatched alone.
 # Pause without a code change: set the repository variable SCHEDULED_JOBS_PAUSED=true,
 # or disable this workflow in the Actions tab.
 on:
   schedule:
     - cron: "*/5 * * * *"
-    - cron: "20 17 * * *"
+    - cron: "22 17 * * *"
   workflow_dispatch:
     inputs:
       job:
@@ -30,8 +32,10 @@ on:
 permissions:
   contents: read
 
+# One group per trigger: a pending daily run must never be replaced (and silently
+# cancelled) by the next */5 run, which shares a single-pending slot otherwise.
 concurrency:
-  group: scheduled-jobs-staging
+  group: scheduled-jobs-staging-${{ github.event.schedule || 'dispatch' }}
   cancel-in-progress: false
 
 jobs:
@@ -87,7 +91,7 @@ jobs:
 
       - name: billing-cycle
         id: billing-cycle
-        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '20 17 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'billing-cycle')) }}
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '22 17 * * *' && vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'billing-cycle' || (inputs.job == 'all' && vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE == 'true'))) }}
         continue-on-error: true
         env:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
@@ -95,7 +99,7 @@ jobs:
 
       - name: electronic-invoices
         id: electronic-invoices
-        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '20 17 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'electronic-invoices')) }}
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '22 17 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'electronic-invoices')) }}
         continue-on-error: true
         env:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
