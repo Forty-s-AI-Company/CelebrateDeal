@@ -863,8 +863,11 @@ function liveSlugTakenPath(liveId: string | null, createDraftSuffix: string) {
 }
 
 /** 直播網址全站唯一：送出前先檢查，撞名時回到欄位錯誤並保留草稿。 */
-async function requireLiveSlugAvailable(db: PrismaClient, input: { slug: string; liveId: string | null; slugTakenPath: string }) {
-  if (await isLiveSlugTaken(db, input.slug, input.liveId)) redirect(input.slugTakenPath);
+async function requireLiveSlugAvailable(
+  db: PrismaClient,
+  input: { slug: string; existingLive: { id: string } | null; slugTakenPath: string },
+) {
+  if (await isLiveSlugTaken(db, input.slug, input.existingLive?.id ?? null)) redirect(input.slugTakenPath);
 }
 
 function parseSubmittedLiveDraft(
@@ -1238,7 +1241,6 @@ export async function upsertLiveAction(formData: FormData) {
   }
   const db = getDb();
   const slugTakenPath = liveSlugTakenPath(id, createDraftSuffix);
-  await requireLiveSlugAvailable(db, { slug: parsedSubmission.slug, liveId: id, slugTakenPath });
   const quotaMembershipIds = [
     ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
     ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
@@ -1274,6 +1276,8 @@ export async function upsertLiveAction(formData: FormData) {
     quotaPages,
   } = references;
   void ignoredSubmittedReminderTemplate;
+  // 排除條件只用已驗證屬於目前 vendor 的 live，避免用別人的 live id 探測 slug 歸屬。
+  await requireLiveSlugAvailable(db, { slug: parsedSubmission.slug, existingLive, slugTakenPath });
   const authoritativeReminder = await resolveAuthoritativeLegacyReminder({
     db,
     vendorId: vendor.id,

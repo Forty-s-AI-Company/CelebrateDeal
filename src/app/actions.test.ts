@@ -1995,6 +1995,17 @@ describe("upsertLiveAction", () => {
     expect(slugLookup?.where).toEqual({ slug: expect.any(String), id: { not: "live-1" } });
   });
 
+  it("never uses an unverified live id to exclude a slug: a foreign id is rejected as an invalid reference", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockImplementation(async ({ where }: { where: { slug?: string } }) => (where.slug !== undefined ? null : null));
+    const formData = liveFormData(); formData.set("id", "foreign-live");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("error=invalid_reference");
+
+    const slugLookups = mocks.liveFindFirst.mock.calls.map(([args]) => args as { where: { slug?: string; id?: unknown } }).filter((args) => args.where.slug !== undefined);
+    expect(slugLookups.every((args) => args.where.id === undefined)).toBe(true);
+  });
+
   it("turns a concurrent unique-constraint race on the address into slug_taken instead of a 500", async () => {
     allowCurrentVendorLiveReferences();
     let slugLookups = 0;

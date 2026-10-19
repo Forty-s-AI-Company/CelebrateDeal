@@ -26,4 +26,18 @@ describe("LiveSlugField", () => {
     expect(renderToStaticMarkup(<LiveSlugField {...base} initialValue="friday-sale" draftTaken />)).toContain("這個直播網址已被使用");
     expect(renderToStaticMarkup(<LiveSlugField {...base} initialValue="" draftTaken />)).not.toContain("這個直播網址已被使用");
   });
+
+  it("keeps the accessible name to just 直播網址 and links help text with aria-describedby", () => {
+    const html = renderToStaticMarkup(<LiveSlugField {...base} />);
+    expect(html).toMatch(/<label for="live-slug">直播網址<\/label>/u);
+    expect(html).toContain('id="live-slug"');
+    expect(html).toContain('aria-describedby="live-slug-message"');
+    expect(html).toMatch(/<span id="live-slug-message"[^>]*>[^<]*預設會依標題自動產生/u);
+  });
+
+  it("tells the user the duplicate check is unavailable without blocking", () => {
+    const html = renderToStaticMarkup(<LiveSlugField {...base} initialValue="friday-sale" checkFailed />);
+    expect(html).toContain("暫時無法檢查這個網址是否重複");
+    expect(html).toContain('aria-invalid="false"');
+  });
 });

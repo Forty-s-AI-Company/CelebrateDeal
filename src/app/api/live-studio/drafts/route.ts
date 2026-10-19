@@ -32,8 +32,7 @@ export async function POST(request: Request) {
     if (!live) return error("INVALID_LIVE", 400);
   }
   // 草稿存檔時順便檢查直播網址，讓使用者在填表時就看到撞名提示（僅回傳是否被使用）。
-  const slug = toSlug(parsed.data.payload.slug);
-  const slugTaken = slug ? await isLiveSlugTaken(db, slug, liveId) : false;
+  const slugCheck = await checkSlug(db, parsed.data.payload.slug, liveId);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + DRAFT_TTL_MS);
   const payload = parsed.data.payload as Prisma.InputJsonValue;
@@ -61,7 +60,7 @@ export async function POST(request: Request) {
         });
         const [revivedDraft, ...additionalRevivedDrafts] = revived;
         if (revivedDraft && additionalRevivedDrafts.length === 0) {
-          return NextResponse.json(envelope(revivedDraft, parsed.data.payload, slugTaken));
+          return NextResponse.json(envelope(revivedDraft, parsed.data.payload, slugCheck));
         }
         if (additionalRevivedDrafts.length > 0) return error("DRAFT_CONFLICT", 409);
       }
@@ -75,7 +74,7 @@ export async function POST(request: Request) {
         },
         select: { id: true, revision: true, updatedAt: true },
       });
-      return NextResponse.json(envelope(created, parsed.data.payload, slugTaken));
+      return NextResponse.json(envelope(created, parsed.data.payload, slugCheck));
     }
 
     const revision = parsed.data.revision;
@@ -100,10 +99,21 @@ export async function POST(request: Request) {
     });
     const [updatedDraft] = updated;
     if (!updatedDraft || updated.length !== 1) return error("DRAFT_CONFLICT", 409);
-    return NextResponse.json(envelope(updatedDraft, parsed.data.payload, slugTaken));
+    return NextResponse.json(envelope(updatedDraft, parsed.data.payload, slugCheck));
   } catch (reason) {
     if (liveId && isUniqueConstraint(reason)) return error("DRAFT_CONFLICT", 409);
     return error("DRAFT_SAVE_FAILED", 500);
+  }
+}
+
+/** 撞名檢查失敗時不能影響草稿存檔：回報「無法檢查」，由送出時的檢查把關。 */
+async function checkSlug(db: ReturnType<typeof getDb>, rawSlug: string, liveId: string | null) {
+  const slug = toSlug(rawSlug);
+  if (!slug) return { slugTaken: false, slugCheckFailed: false };
+  try {
+    return { slugTaken: await isLiveSlugTaken(db, slug, liveId), slugCheckFailed: false };
+  } catch {
+    return { slugTaken: false, slugCheckFailed: true };
   }
 }
 
@@ -114,14 +124,15 @@ function isUniqueConstraint(reason: unknown) {
 function envelope(
   record: { id: string; revision: number; updatedAt: Date },
   payload: LiveStudioDraftPayload,
-  slugTaken: boolean,
+  slugCheck: { slugTaken: boolean; slugCheckFailed: boolean },
 ) {
   return {
     id: record.id,
     revision: record.revision,
     payload,
     updatedAt: record.updatedAt.toISOString(),
-    slugTaken,
+    slugTaken: slugCheck.slugTaken,
+    slugCheckFailed: slugCheck.slugCheckFailed,
   };
 }
 

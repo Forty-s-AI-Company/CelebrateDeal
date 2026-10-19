@@ -12,6 +12,7 @@ export function LiveSlugField({
   initialValue,
   serverTaken,
   draftTaken,
+  checkFailed = false,
   onChange,
   onAutoFill,
 }: {
@@ -21,6 +22,8 @@ export function LiveSlugField({
   serverTaken: boolean;
   /** 最近一次草稿存檔時，伺服器回報這個網址已被使用。 */
   draftTaken: boolean;
+  /** 草稿存檔時伺服器暫時無法檢查網址是否重複。 */
+  checkFailed?: boolean;
   onChange: (value: string) => void;
   /** 自動產生網址後通知外層儲存草稿（讀取的是 DOM 上已更新的值）。 */
   onAutoFill: () => void;
@@ -30,16 +33,16 @@ export function LiveSlugField({
   const [edited, setEdited] = useState(false);
   const [autoFillCount, setAutoFillCount] = useState(0);
   const suffixRef = useRef("");
+  const valueRef = useRef(initialValue);
 
   useEffect(() => {
     if (touched) return;
     if (!suffixRef.current) suffixRef.current = randomLiveSlugSuffix();
     const next = title.trim() ? liveSlugFromTitle(title, suffixRef.current) : "";
-    setValue((current) => {
-      if (current === next) return current;
-      setAutoFillCount((count) => count + 1);
-      return next;
-    });
+    if (next === valueRef.current) return;
+    valueRef.current = next;
+    setValue(next);
+    setAutoFillCount((count) => count + 1);
   }, [title, touched]);
 
   useEffect(() => {
@@ -52,13 +55,19 @@ export function LiveSlugField({
 
   const taken = (draftTaken && value.trim() !== "") || (serverTaken && !edited);
   const messageId = "live-slug-message";
+  const message = taken
+    ? "這個直播網址已被使用，請換一個（可在後面加上日期或編號）。"
+    : checkFailed
+      ? "暫時無法檢查這個網址是否重複，送出時會再確認。"
+      : "觀眾會用這個網址進入直播間。預設會依標題自動產生，你也可以自己修改。";
 
   return (
-    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-      直播網址
+    <div className="grid gap-1.5 text-sm font-medium text-slate-700">
+      <label htmlFor="live-slug">直播網址</label>
       <span className="flex min-w-0 items-center overflow-hidden rounded-md border border-border bg-white focus-within:ring-2 focus-within:ring-blue-100">
         <span aria-hidden="true" className="shrink-0 bg-slate-50 px-3 py-2.5 text-xs font-normal text-slate-500">/live/</span>
         <input
+          id="live-slug"
           name="slug"
           required
           autoComplete="off"
@@ -67,6 +76,7 @@ export function LiveSlugField({
           onChange={(event) => {
             setTouched(true);
             setEdited(true);
+            valueRef.current = event.target.value;
             setValue(event.target.value);
             onChange(event.target.value);
           }}
@@ -77,10 +87,8 @@ export function LiveSlugField({
         />
       </span>
       <span id={messageId} role={taken ? "alert" : undefined} className={`text-xs font-normal ${taken ? "text-red-700" : "text-slate-500"}`}>
-        {taken
-          ? "這個直播網址已被使用，請換一個（可在後面加上日期或編號）。"
-          : "觀眾會用這個網址進入直播間。預設會依標題自動產生，你也可以自己修改。"}
+        {message}
       </span>
-    </label>
+    </div>
   );
 }

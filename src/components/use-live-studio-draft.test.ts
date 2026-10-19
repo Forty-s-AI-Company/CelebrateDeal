@@ -225,7 +225,16 @@ describe("LiveStudioDraftSaveQueue", () => {
     expect(transitions.at(-1)).toMatchObject({ status: "saved", slugTaken: true });
 
     await queue.flush(freePayload);
-    expect(transitions.at(-1)).toMatchObject({ status: "saved", slugTaken: false });
+    expect(transitions.at(-1)).toMatchObject({ status: "saved", slugTaken: false, slugCheckFailed: false });
+  });
+
+  it("reports when the server could not check the address", async () => {
+    const payload = { ...emptyLiveStudioDraft(), slug: "x" };
+    const save = vi.fn().mockResolvedValue({ ...envelope("draft-1", 1, payload), slugTaken: false, slugCheckFailed: true });
+    const transitions: LiveStudioDraftSaveState[] = [];
+    const queue = new LiveStudioDraftSaveQueue({ liveId: "", save, onTransition: (state) => transitions.push(state) });
+    await queue.flush(payload);
+    expect(transitions.at(-1)).toMatchObject({ status: "saved", slugCheckFailed: true });
   });
 
   it("keeps dirty when a newer local payload is scheduled before the debounce flush", async () => {

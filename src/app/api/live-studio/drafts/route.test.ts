@@ -222,4 +222,15 @@ describe("POST /api/live-studio/drafts", () => {
     await expect((await POST(request())).json()).resolves.toMatchObject({ slugTaken: false });
     expect(mocks.liveFindFirst).toHaveBeenCalledWith({ where: { slug: "mine", id: { not: "live-1" } }, select: { id: true } });
   });
+
+  it("still saves the draft and reports slugCheckFailed when the address lookup throws", async () => {
+    mocks.liveFindFirst.mockRejectedValue(new Error("db down"));
+    mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, payload: { ...payload, slug: "my-live" } });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ id: "draft-1", slugTaken: false, slugCheckFailed: true });
+    expect(mocks.create).toHaveBeenCalled();
+  });
 });

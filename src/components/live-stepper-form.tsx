@@ -928,6 +928,7 @@ function renderLiveStudioBasicsStep(input: {
   onSlugAutoFill: () => void;
   slugTakenOnSubmit: boolean;
   slugTakenInDraft: boolean;
+  slugCheckFailed: boolean;
 }) {
   return (
     <StepPanel active={input.activeStep === 0} index={0}>
@@ -942,6 +943,7 @@ function renderLiveStudioBasicsStep(input: {
         initialValue={input.initialValues.slug}
         serverTaken={input.slugTakenOnSubmit}
         draftTaken={input.slugTakenInDraft}
+        checkFailed={input.slugCheckFailed}
         onChange={input.onSlugChange}
         onAutoFill={input.onSlugAutoFill}
       />
@@ -1206,6 +1208,7 @@ export function LiveStepperForm({
         onSlugAutoFill: () => draft.scheduleSave(),
         slugTakenOnSubmit: error === "slug_taken",
         slugTakenInDraft: Boolean(draft.slugTaken),
+        slugCheckFailed: Boolean(draft.slugCheckFailed),
       })}
 
       {renderLiveStudioStepPanels({
