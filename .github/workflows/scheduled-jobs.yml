@@ -1,0 +1,133 @@
+name: Scheduled background jobs (staging)
+
+# F-042 / B09-01: drives the staging background jobs on a fixed schedule.
+# Runbook: docs/launch/scheduled-jobs-runbook.md
+# - "*/5 * * * *": email/live/learner/LINE delivery, webhook retry + inventory release,
+#   LINE outbox, and (opt-in) live media cleanup.
+# - "22 17 * * *" (01:22 Asia/Taipei): electronic invoices, and (opt-in) billing cycle.
+#   The billing cycle issues monthly invoices and marks them overdue, so it only runs
+#   when vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE == 'true' or when dispatched alone.
+# Pause without a code change: set the repository variable SCHEDULED_JOBS_PAUSED=true,
+# or disable this workflow in the Actions tab.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "22 17 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Background job to call once on the fixed staging alias
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - email-deliveries
+          - line-notifications
+          - webhook-retry
+          - live-media
+          - billing-cycle
+          - electronic-invoices
+
+permissions:
+  contents: read
+
+# One group per trigger: a pending daily run must never be replaced (and silently
+# cancelled) by the next */5 run, which shares a single-pending slot otherwise.
+concurrency:
+  group: scheduled-jobs-staging-${{ github.event.schedule || 'dispatch' }}
+  cancel-in-progress: false
+
+jobs:
+  staging-jobs:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected && vars.SCHEDULED_JOBS_PAUSED != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: Preview – celebrate-deal-staging
+    steps:
+      - name: Checkout fixed scheduler runner
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/scheduled-jobs-runner.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: email-deliveries
+        id: email-deliveries
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'email-deliveries')) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs email-deliveries
+
+      - name: line-notifications
+        id: line-notifications
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'line-notifications')) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs line-notifications
+
+      - name: webhook-retry
+        id: webhook-retry
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'webhook-retry')) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs webhook-retry
+
+      - name: live-media
+        id: live-media
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'live-media' || (inputs.job == 'all' && vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA == 'true'))) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs live-media
+
+      - name: billing-cycle
+        id: billing-cycle
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '22 17 * * *' && vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'billing-cycle' || (inputs.job == 'all' && vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE == 'true'))) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs billing-cycle
+
+      - name: electronic-invoices
+        id: electronic-invoices
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '22 17 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'all' || inputs.job == 'electronic-invoices')) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs electronic-invoices
+
+      - name: Record step outcomes
+        if: ${{ always() }}
+        env:
+          OUTCOME_EMAIL_DELIVERIES: ${{ steps.email-deliveries.outcome }}
+          OUTCOME_LINE_NOTIFICATIONS: ${{ steps.line-notifications.outcome }}
+          OUTCOME_WEBHOOK_RETRY: ${{ steps.webhook-retry.outcome }}
+          OUTCOME_LIVE_MEDIA: ${{ steps.live-media.outcome }}
+          OUTCOME_BILLING_CYCLE: ${{ steps.billing-cycle.outcome }}
+          OUTCOME_ELECTRONIC_INVOICES: ${{ steps.electronic-invoices.outcome }}
+        run: |
+          {
+            echo "| job | outcome |"
+            echo "|---|---|"
+            echo "| email-deliveries | ${OUTCOME_EMAIL_DELIVERIES} |"
+            echo "| line-notifications | ${OUTCOME_LINE_NOTIFICATIONS} |"
+            echo "| webhook-retry | ${OUTCOME_WEBHOOK_RETRY} |"
+            echo "| live-media | ${OUTCOME_LIVE_MEDIA} |"
+            echo "| billing-cycle | ${OUTCOME_BILLING_CYCLE} |"
+            echo "| electronic-invoices | ${OUTCOME_ELECTRONIC_INVOICES} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the run when any called job failed
+        if: ${{ always() && (steps.email-deliveries.outcome == 'failure' || steps.line-notifications.outcome == 'failure' || steps.webhook-retry.outcome == 'failure' || steps.live-media.outcome == 'failure' || steps.billing-cycle.outcome == 'failure' || steps.electronic-invoices.outcome == 'failure') }}
+        run: |
+          echo "::error::At least one scheduled job did not return 2xx. See the scheduled-job lines above."
+          exit 1

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ run: vi.fn(), capture: vi.fn() }));
 vi.mock("@/lib/taiwan-electronic-invoice-job", () => ({ runElectronicInvoiceJob: mocks.run }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.capture }));
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const secret = "test-electronic-invoice-job-secret";
 function request(authorization?: string) {
@@ -36,5 +36,27 @@ describe("POST /api/jobs/electronic-invoices", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ ok: false, error: "electronic_invoice_job_failed" });
     expect(mocks.capture).toHaveBeenCalledOnce();
+  });
+});
+
+describe("GET /api/jobs/electronic-invoices (Vercel Cron entry)", () => {
+  const cronSecret = "test-electronic-invoice-cron-secret";
+  const cronRequest = (authorization?: string) => new Request("https://app.example.test/api/jobs/electronic-invoices", { headers: authorization ? { authorization } : undefined });
+
+  beforeEach(() => vi.stubEnv("CRON_SECRET", cronSecret));
+
+  it("accepts only CRON_SECRET, and POST does not accept CRON_SECRET", async () => {
+    for (const authorization of [undefined, `Bearer ${secret}`]) {
+      expect((await GET(cronRequest(authorization))).status).toBe(401);
+    }
+    expect((await POST(request(`Bearer ${cronSecret}`))).status).toBe(401);
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it("shares the POST handler contract", async () => {
+    const response = await GET(cronRequest(`Bearer ${cronSecret}`));
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, adapterAvailable: false });
+    expect(mocks.run).toHaveBeenCalledOnce();
   });
 });

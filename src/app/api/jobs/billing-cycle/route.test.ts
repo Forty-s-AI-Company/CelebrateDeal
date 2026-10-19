@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
 vi.mock("@/lib/billing-cycle-job", () => ({ runBillingCycleJob: mocks.runBillingCycleJob }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const jobSecret = "test-fixture-job-secret";
 
@@ -89,5 +89,42 @@ describe("POST /api/jobs/billing-cycle", () => {
       status: "failed",
     });
     expect(JSON.stringify(body)).not.toContain("provider secret");
+  });
+});
+
+describe("GET /api/jobs/billing-cycle (Vercel Cron entry)", () => {
+  const cronSecret = "test-fixture-billing-cron-secret";
+
+  function cronRequest(authorization?: string) {
+    return new Request("https://app.example.test/api/jobs/billing-cycle", {
+      headers: authorization ? { authorization } : undefined,
+    });
+  }
+
+  beforeEach(() => vi.stubEnv("CRON_SECRET", cronSecret));
+
+  it("accepts only CRON_SECRET and never the job runner secret", async () => {
+    for (const authorization of [undefined, `Bearer ${jobSecret}`, "Bearer test-fixture-wrong-cron-secret"]) {
+      expect((await GET(cronRequest(authorization))).status).toBe(401);
+    }
+    expect(mocks.runBillingCycleJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects CRON_SECRET on the POST job runner entry", async () => {
+    expect((await POST(request(`Bearer ${cronSecret}`))).status).toBe(401);
+    expect(mocks.runBillingCycleJob).not.toHaveBeenCalled();
+  });
+
+  it("runs the same billing cycle handler and contract as POST", async () => {
+    const response = await GET(cronRequest(`Bearer ${cronSecret}`));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, monthKey: "2026-07", automaticCharges: 0 });
+    expect(mocks.runBillingCycleJob).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when CRON_SECRET is not configured", async () => {
+    vi.stubEnv("CRON_SECRET", undefined);
+    expect((await GET(cronRequest(`Bearer ${cronSecret}`))).status).toBe(401);
+    expect(mocks.runBillingCycleJob).not.toHaveBeenCalled();
   });
 });
