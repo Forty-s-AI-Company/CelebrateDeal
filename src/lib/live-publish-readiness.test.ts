@@ -22,12 +22,13 @@ describe("live publish readiness", () => {
         { code: "registration_form", ready: true },
         { code: "registration_email", ready: true },
       ],
+      recommendations: [],
       blockers: [],
       ready: true,
     });
   });
 
-  it("requires the complete conversion path when products are selected", () => {
+  it("requires products, media, form and email for a sales live, but only recommends an interaction script", () => {
     expect(getLivePublishReadiness({
       productCount: 2,
       productsReady: true,
@@ -43,14 +44,41 @@ describe("live publish readiness", () => {
         { code: "products", ready: true },
         { code: "registration_form", ready: false },
         { code: "registration_email", ready: true },
-        { code: "interaction_script", ready: false },
       ],
-      blockers: [
-        { code: "registration_form", ready: false },
-        { code: "interaction_script", ready: false },
-      ],
+      recommendations: [{ code: "interaction_script", ready: false }],
+      blockers: [{ code: "registration_form", ready: false }],
       ready: false,
     });
+  });
+
+  it("lets a sales live with products publish without any interaction script", () => {
+    const readiness = getLivePublishReadiness({
+      productCount: 1,
+      productsReady: true,
+      videoReady: true,
+      formReady: true,
+      registrationEmailReady: true,
+      liveReminderEmailReady: true,
+      interactionScriptReady: false,
+    });
+    expect(readiness.mode).toBe("commerce");
+    expect(readiness.ready).toBe(true);
+    expect(readiness.blockers).toEqual([]);
+    expect(readiness.requirements.map((requirement) => requirement.code)).not.toContain("interaction_script");
+    expect(readiness.recommendations).toEqual([{ code: "interaction_script", ready: false }]);
+  });
+
+  it("still blocks an explicit commerce live that has no product selected", () => {
+    const readiness = getLivePublishReadiness({
+      studioPreset: "COMMERCE",
+      productCount: 0,
+      productsReady: true,
+      videoReady: true,
+      formReady: true,
+      registrationEmailReady: true,
+      interactionScriptReady: true,
+    });
+    expect(readiness.blockers).toEqual([{ code: "products", ready: false }]);
   });
 
   it("can evaluate a commerce starter before the first product is created", () => {
@@ -140,8 +168,9 @@ describe("live publish readiness", () => {
       interactionScriptReady: false,
     })).toMatchObject({
       mode: "commerce",
-      blockers: [{ code: "interaction_script", ready: false }],
-      ready: false,
+      blockers: [],
+      recommendations: [{ code: "interaction_script", ready: false }],
+      ready: true,
     });
   });
 

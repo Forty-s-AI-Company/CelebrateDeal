@@ -993,6 +993,42 @@ describe("LiveStepperForm", () => {
     expect(scheduleButton?.props.disabled).toBe(false);
   });
 
+  it("lets a sales live publish without an interaction script and only recommends one", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      title: "不用腳本的銷售直播",
+      slug: "no-script-live",
+      scheduledAt: "2026-08-10T20:00",
+      productIds: [products[0].id],
+      videoId: "video-1",
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      liveReminderTemplateId: "template-2",
+      interactionScriptId: "",
+      activeStep: 7,
+    };
+    const form = renderForm(products, {
+      liveId: "live-1",
+      currentStatus: "draft",
+      initialValues,
+      videos: [{ id: "video-1", title: "可播放影片" }],
+      forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播提醒", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
+      scripts: [],
+    });
+    const markup = renderToStaticMarkup(form as ReactElement);
+
+    expect(markup).toContain("銷售型直播發布檢查");
+    expect(markup).toContain("發布條件已完成");
+    expect(markup).toContain("建議（選配，不影響發布）");
+    expect(markup).toContain("已發布的互動腳本");
+    expect(markup).not.toContain("待完成 · 已發布的互動腳本");
+    expect(submitAction(form, "排程發布")?.props.disabled).toBe(false);
+  });
+
   it("keeps sales publishing disabled and links each missing requirement to its step", () => {
     const initialValues = {
       ...emptyLiveStudioDraft(),

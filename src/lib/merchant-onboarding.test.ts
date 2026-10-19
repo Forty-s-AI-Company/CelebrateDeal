@@ -26,23 +26,23 @@ describe("merchantOnboardingProgress", () => {
     });
   });
 
-  it("routes the merchant to the first missing persisted requirement", () => {
+  it("treats interaction roles and scripts as optional suggestions, not required steps", () => {
     const progress = merchantOnboardingProgress({
       ...completeSignals,
       activeInteractionRoleCount: 0,
       publishedInteractionScriptCount: 0,
     });
 
-    expect(progress.complete).toBe(false);
-    expect(progress.nextStep).toMatchObject({
-      key: "journey",
-      href: "/interaction-roles/new",
-      actionLabel: "啟用互動角色",
-    });
-    expect(progress.steps.find((item) => item.key === "journey")?.requirements).toContainEqual({
-      label: "發布互動腳本",
-      done: false,
-    });
+    // 互動角色與腳本是選配：不影響完成度，也不是下一個必要步驟。
+    expect(progress.complete).toBe(true);
+    expect(progress.nextStep).toBeNull();
+    const journey = progress.steps.find((item) => item.key === "journey");
+    expect(journey?.done).toBe(true);
+    expect(journey?.requirements.map((item) => item.label)).toEqual(["啟用報名表單", "啟用報名確認 Email"]);
+    expect(journey?.suggestions).toEqual([
+      expect.objectContaining({ label: "啟用互動角色", done: false, href: "/interaction-roles/new" }),
+      expect.objectContaining({ label: "發布互動腳本", done: false, href: "/interaction-scripts/new" }),
+    ]);
   });
 
   it("does not make optional tracking block commerce onboarding", () => {
@@ -69,7 +69,6 @@ describe("merchantOnboardingProgress", () => {
       expect.objectContaining({ label: "建立可販售商品", done: false, href: "/products/new" }),
       expect.objectContaining({ label: "準備有效報名表單", done: false, href: "/forms/new" }),
       expect.objectContaining({ label: "啟用報名成功 Email", done: false, href: "/messages/templates/new" }),
-      expect.objectContaining({ label: "發布互動腳本", done: false, href: "/interaction-scripts/new" }),
       expect.objectContaining({ label: "完成直播綁定並進入可販售狀態", done: false, href: "/lives/new" }),
     ]);
   });
@@ -91,5 +90,13 @@ describe("merchantOnboardingProgress", () => {
     expect(payment).toMatchObject({ key: "payment", title: "平台服務付款驗證", href: "/billing/payment-methods", actionLabel: "設定平台付款方式", deferred: true });
     expect(payment?.description).toContain("顧客收款設定需另外確認");
     expect(payment?.requirements).toEqual([{ label: "有效的商家平台服務付款紀錄", done: count > 0 }]);
+  });
+});
+
+describe("merchantOnboardingProgress required path", () => {
+  it("still routes the merchant to the first missing required requirement", () => {
+    const progress = merchantOnboardingProgress({ ...completeSignals, activeFormCount: 0 });
+    expect(progress.complete).toBe(false);
+    expect(progress.nextStep).toMatchObject({ key: "journey", href: "/forms/new" });
   });
 });

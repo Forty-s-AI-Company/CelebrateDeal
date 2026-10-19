@@ -2316,7 +2316,7 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveNotificationRuleCreate).not.toHaveBeenCalled();
   });
 
-  it("keeps an explicit commerce setup blocked when its product and script are absent", async () => {
+  it("keeps an explicit commerce setup blocked when its product is absent", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("studioPreset", "COMMERCE");
@@ -2331,18 +2331,15 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
-  it("promotes a content preset with products to commerce readiness", async () => {
+  it("publishes a sales live with products even when no interaction script is bound", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("studioPreset", "CONTENT");
     formData.set("status", "scheduled");
     formData.delete("interactionScriptId");
 
-    await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=publish_not_ready&draft=draft-1",
-    );
-    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
-    expect(mocks.liveCreate).not.toHaveBeenCalled();
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+    expect(mocks.liveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "scheduled", interactionScriptId: null }) });
   });
 
   it("blocks a content live from publishing without playable media", async () => {

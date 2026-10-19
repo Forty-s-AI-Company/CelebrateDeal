@@ -241,7 +241,7 @@ const readinessCopy: Record<LivePublishRequirementCodeWithReminder, { label: str
   registration_form: { label: "有效的報名表單", step: 3, action: "前往報名頁" },
   registration_email: { label: "可寄送的報名成功 Email", step: 5, action: "前往 Email" },
   live_reminder_email: { label: "可寄送的開播提醒 Email", step: 5, action: "前往 Email" },
-  interaction_script: { label: "已發布的互動腳本", step: 6, action: "前往互動設定" },
+  interaction_script: { label: "已發布的互動腳本（虛擬使用者發言）", step: 6, action: "前往互動設定" },
 };
 
 const readinessFocusSelector: Record<LivePublishRequirementCodeWithReminder, string> = {
@@ -252,6 +252,32 @@ const readinessFocusSelector: Record<LivePublishRequirementCodeWithReminder, str
   live_reminder_email: '[name="liveReminderTemplateId"]',
   interaction_script: '[name="interactionScriptId"]',
 };
+
+function ReadinessRecommendations({
+  recommendations,
+  onFix,
+}: {
+  recommendations: ReturnType<typeof getLivePublishReadiness>["recommendations"];
+  onFix: (code: LivePublishRequirementCodeWithReminder) => void;
+}) {
+  const pending = recommendations.filter((item) => !item.ready);
+  if (pending.length === 0) return null;
+  return (
+    <div className="mt-3 rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-sm">
+      <p className="font-semibold text-slate-700">建議（選配，不影響發布）</p>
+      <ul className="mt-2 grid gap-2">
+        {pending.map((item) => (
+          <li key={item.code} className="flex flex-wrap items-center justify-between gap-2 text-slate-700">
+            <span>尚未設定 · {readinessCopy[item.code].label}</span>
+            <button type="button" onClick={() => onFix(item.code)} className="min-h-9 rounded-md border border-slate-300 bg-white px-3 font-semibold text-slate-700">
+              {readinessCopy[item.code].action}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function LiveReviewPanel({
   preview,
@@ -285,7 +311,7 @@ function LiveReviewPanel({
           </h3>
           <p className="mt-1 text-sm text-slate-600">
             {readiness.mode === "commerce"
-              ? "已選擇商品。公開前需要完整的播放、報名、通知與互動路徑。"
+              ? "已選擇商品。公開前需要播放、商品、報名與報名成功 Email；互動腳本是選配，建議準備但不會擋住發布。"
               : "目前沒有選擇商品，會以內容直播發布；公開前仍需播放、報名與報名成功 Email。"}
           </p>
           <p className={`mt-3 text-sm font-semibold ${readiness.ready ? "text-emerald-800" : "text-amber-900"}`}>
@@ -308,6 +334,7 @@ function LiveReviewPanel({
               );
             })}
           </ul>
+          <ReadinessRecommendations recommendations={readiness.recommendations} onFix={onFix} />
         </section>
 
         <div>
