@@ -19,6 +19,8 @@ export type LiveStudioDraftSaveState = {
   revision: number | null;
   updatedAt: string;
   errorCode: string;
+  /** 草稿存檔時伺服器回報：目前填的直播網址已被其他直播使用。 */
+  slugTaken: boolean;
 };
 
 export type LiveStudioDraftClaim = {
@@ -51,7 +53,7 @@ type SaveDraft = (input: {
   liveId: string;
   revision: number | null;
   payload: LiveStudioDraftPayload;
-}) => Promise<LiveStudioDraftEnvelope>;
+}) => Promise<LiveStudioDraftEnvelope & { slugTaken?: boolean }>;
 
 /**
  * Serializes draft writes so an older request can never finish after a newer
@@ -65,6 +67,7 @@ export class LiveStudioDraftSaveQueue {
   private draftId: string;
   private revision: number | null;
   private updatedAt: string;
+  private slugTaken = false;
   private latestLocalPayload: LiveStudioDraftPayload | null;
   private lastSavedPayload: LiveStudioDraftPayload | null;
 
@@ -142,6 +145,7 @@ export class LiveStudioDraftSaveQueue {
         this.draftId = saved.id;
         this.revision = saved.revision;
         this.updatedAt = saved.updatedAt;
+        this.slugTaken = saved.slugTaken === true;
         this.lastSavedPayload = saved.payload;
         this.transition(
           this.latestLocalPayload !== null
@@ -171,6 +175,7 @@ export class LiveStudioDraftSaveQueue {
       revision: this.revision,
       updatedAt: this.updatedAt,
       errorCode,
+      slugTaken: this.slugTaken,
     });
   }
 }
@@ -182,6 +187,7 @@ function initialSaveState(initialDraft?: LiveStudioDraftEnvelope): LiveStudioDra
     revision: initialDraft?.revision ?? null,
     updatedAt: initialDraft?.updatedAt ?? "",
     errorCode: "",
+    slugTaken: false,
   };
 }
 

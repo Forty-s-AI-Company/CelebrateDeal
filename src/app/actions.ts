@@ -31,6 +31,7 @@ import {
 } from "@/lib/payment-refund-accounting";
 import { executePayUniRefund } from "@/lib/payuni-refund-execution";
 import { toSlug } from "@/lib/format";
+import { isLiveSlugTaken, isUniqueConstraintError } from "@/lib/live-slug";
 import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
@@ -837,13 +838,33 @@ async function commitLiveDraft(input: {
   });
 }
 
-async function commitLiveDraftOrRedirect(input: Parameters<typeof commitLiveDraft>[0], invalidReferencePath: string) {
+async function commitLiveDraftOrRedirect(
+  input: Parameters<typeof commitLiveDraft>[0],
+  invalidReferencePath: string,
+  slugTakenPath: string,
+) {
   try {
     return await commitLiveDraft(input);
   } catch (error) {
     if (error instanceof SalesProjectBindingError) redirect(invalidReferencePath);
+    // 兩人同時搶同一個直播網址時，資料庫唯一鍵會擋下第二個；交易已回滾，草稿保留，
+    // 回到欄位層級的錯誤，而不是整頁 500。
+    if (isUniqueConstraintError(error) && await isLiveSlugTaken(input.db, input.data.slug, input.liveId)) {
+      redirect(slugTakenPath);
+    }
     throw error;
   }
+}
+
+function liveSlugTakenPath(liveId: string | null, createDraftSuffix: string) {
+  return liveId
+    ? `/lives/${encodeURIComponent(liveId)}/edit?error=slug_taken`
+    : `/lives/new?error=slug_taken${createDraftSuffix}`;
+}
+
+/** 直播網址全站唯一：送出前先檢查，撞名時回到欄位錯誤並保留草稿。 */
+async function requireLiveSlugAvailable(db: PrismaClient, input: { slug: string; liveId: string | null; slugTakenPath: string }) {
+  if (await isLiveSlugTaken(db, input.slug, input.liveId)) redirect(input.slugTakenPath);
 }
 
 function parseSubmittedLiveDraft(
@@ -1216,6 +1237,8 @@ export async function upsertLiveAction(formData: FormData) {
     redirect(invalidReferencePath);
   }
   const db = getDb();
+  const slugTakenPath = liveSlugTakenPath(id, createDraftSuffix);
+  await requireLiveSlugAvailable(db, { slug: parsedSubmission.slug, liveId: id, slugTakenPath });
   const quotaMembershipIds = [
     ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
     ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
@@ -1378,7 +1401,7 @@ export async function upsertLiveAction(formData: FormData) {
       templateId: existingLive.liveReminderTemplateId,
       offsetMinutes: existingLive.liveReminderOffsetMinutes,
     } : null,
-  }, invalidReferencePath);
+  }, invalidReferencePath, slugTakenPath);
   if (!committed) redirect(draftClaim.conflictPath);
   await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
   try {

@@ -197,4 +197,29 @@ describe("POST /api/live-studio/drafts", () => {
     expect(body).toContain("DRAFT_SAVE_FAILED");
     expect(body).not.toContain("database-secret-response");
   });
+
+  it("reports whether the live address is already used, scoped to other lives only", async () => {
+    mocks.liveFindFirst.mockResolvedValue({ id: "someone-elses-live" });
+    mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, payload: { ...payload, slug: "Friday Sale" } });
+
+    const taken = await POST(request());
+
+    await expect(taken.json()).resolves.toMatchObject({ slugTaken: true });
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith({ where: { slug: "friday-sale" }, select: { id: true } });
+
+    mocks.liveFindFirst.mockResolvedValue(null);
+    const free = await POST(request());
+    await expect(free.json()).resolves.toMatchObject({ slugTaken: false });
+  });
+
+  it("skips the address check for an empty address and excludes the edited live", async () => {
+    mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, payload: { ...payload, slug: "" } });
+    await expect((await POST(request())).json()).resolves.toMatchObject({ slugTaken: false });
+    expect(mocks.liveFindFirst).not.toHaveBeenCalled();
+
+    mocks.readJsonBody.mockResolvedValue({ draftId: "", revision: null, liveId: "live-1", payload: { ...payload, slug: "mine" } });
+    mocks.liveFindFirst.mockResolvedValue({ id: "live-1" });
+    await expect((await POST(request())).json()).resolves.toMatchObject({ slugTaken: false });
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith({ where: { slug: "mine", id: { not: "live-1" } }, select: { id: true } });
+  });
 });

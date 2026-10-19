@@ -74,6 +74,7 @@ vi.mock("@/components/stream-allocation-editor", () => ({
 }));
 
 import { LiveStepperForm } from "./live-stepper-form";
+import { LiveSlugField } from "./live-slug-field";
 
 type ElementNode = {
   type: unknown;
@@ -484,6 +485,13 @@ describe("LiveStepperForm", () => {
     });
   });
 
+  it("reports a taken live address as a message that tells the user the draft is kept", () => {
+    const html = renderToStaticMarkup(renderForm(products, { error: "slug_taken" }) as ReactElement);
+    expect(html).toContain("這個直播網址已被使用");
+    expect(html).toContain("草稿已保留");
+    expect(html).not.toContain("Slug");
+  });
+
   it("keeps every field in its canonical eight-step panel", () => {
     const form = renderForm();
     const expectedFields = [
@@ -501,7 +509,9 @@ describe("LiveStepperForm", () => {
       expect(panel).toBeDefined();
       for (const name of names) {
         expect(
-          findElement(panel?.props.children, (candidate) => candidate.props.name === name),
+          findElement(panel?.props.children, (candidate) => (
+            name === "slug" ? candidate.type === LiveSlugField : candidate.props.name === name
+          )),
           `step ${index + 1} should own ${name}`,
         ).toBeDefined();
       }

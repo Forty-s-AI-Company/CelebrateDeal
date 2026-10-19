@@ -6,6 +6,7 @@ import type { Affiliate, InteractionScript, MessageTemplate, Product, Registrati
 import { Ban, Calendar, Check, Gauge, Package, PlaySquare, Shield } from "lucide-react";
 import { upsertLiveAction } from "@/app/actions";
 import { formatTimeZoneLabel } from "@/lib/format";
+import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MediaUploadField } from "@/components/media-upload-field";
 import {
@@ -529,6 +530,7 @@ function liveFormError(error?: string) {
     draft_conflict: "這份直播草稿已有較新的版本；系統沒有覆蓋它。請確認目前載入內容後再繼續。",
     invalid_status: "直播狀態轉換無效，內容尚未發布。",
     invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
+    slug_taken: "這個直播網址已被使用，內容沒有發布；草稿已保留。請在「直播網址」欄位換一個再儲存。",
     publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第八步檢查清單補齊後再發布。",
   };
   const message = error ? messages[error] : undefined;
@@ -893,8 +895,12 @@ function renderLiveStudioBasicsStep(input: {
   initialValues: LiveStudioDraftPayload;
   studioPreset: LiveStudioPreset;
   purposeStarter: React.ReactNode;
+  title: string;
   onTitleChange: (value: string) => void;
   onSlugChange: (value: string) => void;
+  onSlugAutoFill: () => void;
+  slugTakenOnSubmit: boolean;
+  slugTakenInDraft: boolean;
 }) {
   return (
     <StepPanel active={input.activeStep === 0} index={0}>
@@ -904,10 +910,14 @@ function renderLiveStudioBasicsStep(input: {
         直播標題
         <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
       </label>
-      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-        Slug
-        <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={input.initialValues.slug} onChange={(event) => input.onSlugChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
-      </label>
+      <LiveSlugField
+        title={input.title}
+        initialValue={input.initialValues.slug}
+        serverTaken={input.slugTakenOnSubmit}
+        draftTaken={input.slugTakenInDraft}
+        onChange={input.onSlugChange}
+        onAutoFill={input.onSlugAutoFill}
+      />
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         直播說明
         <textarea name="description" rows={4} autoComplete="off" defaultValue={input.initialValues.description} className="rounded-md border border-border px-3 py-2" />
@@ -1163,8 +1173,12 @@ export function LiveStepperForm({
         initialValues,
         studioPreset,
         purposeStarter: !liveId ? <LiveStudioPurposeStarter selectedPreset={studioPreset} onSelect={selectStudioPreset} /> : null,
+        title: previewTitle,
         onTitleChange: setPreviewTitle,
         onSlugChange: setSlug,
+        onSlugAutoFill: () => draft.scheduleSave(),
+        slugTakenOnSubmit: error === "slug_taken",
+        slugTakenInDraft: Boolean(draft.slugTaken),
       })}
 
       {renderLiveStudioStepPanels({
