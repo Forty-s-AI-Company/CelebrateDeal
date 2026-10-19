@@ -16,7 +16,7 @@ vi.mock("@/lib/monitoring", () => ({
   captureOperationalError: mocks.captureOperationalError,
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const jobSecret = "test-fixture-job-secret";
 
@@ -175,5 +175,43 @@ describe("POST /api/jobs/webhook-retry", () => {
       results: [{ status: "unknown" }],
       failures: ["inventory_cleanup"],
     });
+  });
+});
+
+describe("GET /api/jobs/webhook-retry (Vercel Cron entry)", () => {
+  const cronSecret = "test-fixture-webhook-retry-cron-secret";
+
+  function cronRequest(authorization?: string) {
+    return new Request("https://app.example.test/api/jobs/webhook-retry", {
+      headers: authorization ? { authorization } : undefined,
+    });
+  }
+
+  beforeEach(() => vi.stubEnv("CRON_SECRET", cronSecret));
+
+  it("accepts only CRON_SECRET and never the job runner secret", async () => {
+    for (const authorization of [undefined, `Bearer ${jobSecret}`, "Bearer test-fixture-wrong-cron-secret"]) {
+      expect((await GET(cronRequest(authorization))).status).toBe(401);
+    }
+    expect((await POST(request(`Bearer ${cronSecret}`))).status).toBe(401);
+    expect(mocks.processDueWebhookRetries).not.toHaveBeenCalled();
+    expect(mocks.releaseExpiredInventoryReservations).not.toHaveBeenCalled();
+  });
+
+  it("runs inventory release before webhook retries, exactly like POST", async () => {
+    const response = await GET(cronRequest(`Bearer ${cronSecret}`));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, processed: 0 });
+    expect(mocks.releaseExpiredInventoryReservations).toHaveBeenCalledBefore(mocks.processDueWebhookRetries);
+  });
+
+  it("keeps the sanitized partial-failure contract", async () => {
+    mocks.releaseExpiredInventoryReservations.mockRejectedValueOnce(new Error("private inventory detail"));
+    const response = await GET(cronRequest(`Bearer ${cronSecret}`));
+    const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({ ok: false, failures: ["inventory_cleanup"] });
+    expect(JSON.stringify(body)).not.toContain("private inventory detail");
+    expect(mocks.processDueWebhookRetries).toHaveBeenCalledOnce();
   });
 });

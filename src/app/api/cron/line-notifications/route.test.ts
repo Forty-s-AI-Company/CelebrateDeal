@@ -12,7 +12,7 @@ vi.mock("@/lib/line-notification-materializer", () => ({
 }));
 vi.mock("@/lib/line-notification", () => ({ processDueLineDeliveries: mocks.processDueLineDeliveries }));
 
-import { GET } from "./route";
+import { GET, POST } from "./route";
 
 function request(secret?: string) {
   return new Request("https://app.example.test/api/cron/line-notifications", {
@@ -80,5 +80,46 @@ describe("GET /api/cron/line-notifications", () => {
     const response = await GET(request("line-cron-test-secret-at-least-32-bytes"));
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ ok: false, materialized: 0, processed: 0 });
+  });
+});
+
+describe("POST /api/cron/line-notifications (job runner entry)", () => {
+  const jobSecret = "line-job-test-secret-at-least-32-bytes";
+  const cronSecret = "line-cron-test-secret-at-least-32-bytes";
+
+  function jobRequest(secret?: string) {
+    return new Request("https://app.example.test/api/cron/line-notifications", {
+      method: "POST",
+      headers: secret ? { authorization: `Bearer ${secret}` } : undefined,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("JOB_SECRET", jobSecret);
+    vi.stubEnv("CRON_SECRET", cronSecret);
+    mocks.materializeLineNotifications.mockResolvedValue([]);
+    mocks.processDueLineDeliveries.mockResolvedValue([]);
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("accepts only JOB_SECRET, and GET does not accept JOB_SECRET", async () => {
+    for (const secret of [undefined, cronSecret, "wrong-secret"]) {
+      expect((await POST(jobRequest(secret))).status).toBe(401);
+    }
+    expect((await GET(request(jobSecret))).status).toBe(401);
+    expect(mocks.materializeLineNotifications).not.toHaveBeenCalled();
+    expect(mocks.processDueLineDeliveries).not.toHaveBeenCalled();
+  });
+
+  it("runs the same materialize-then-dispatch handler with sanitized counts", async () => {
+    mocks.processDueLineDeliveries.mockResolvedValue([{ id: "private-delivery-5", status: "sent" }]);
+    const response = await POST(jobRequest(jobSecret));
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, materialized: 0, materializedStatuses: {}, processed: 1, processedStatuses: { sent: 1 } });
+    expect(JSON.stringify(body)).not.toContain("private-delivery");
+    expect(mocks.materializeLineNotifications).toHaveBeenCalledBefore(mocks.processDueLineDeliveries);
   });
 });

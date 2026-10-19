@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { releaseExpiredInventoryReservations } from "@/lib/inventory-reservations";
 import { captureOperationalError } from "@/lib/monitoring";
 import { processDueWebhookRetries } from "@/lib/webhook-retry";
@@ -34,11 +34,7 @@ function safeRetryResults(results: Awaited<ReturnType<typeof processDueWebhookRe
   }));
 }
 
-export async function POST(request: Request) {
-  if (!requireJobSecret(request)) {
-    return unauthorizedJson();
-  }
-
+async function processWebhookRetryMaintenance() {
   let inventory: Awaited<ReturnType<typeof releaseExpiredInventoryReservations>> | null = null;
   let results: Awaited<ReturnType<typeof processDueWebhookRetries>> = [];
   const failures: Array<"inventory_cleanup" | "webhook_retry"> = [];
@@ -75,4 +71,18 @@ export async function POST(request: Request) {
     processed: results.length,
     results,
   });
+}
+
+/** Vercel Cron entry: Vercel sends GET with `Authorization: Bearer CRON_SECRET`. */
+export async function GET(request: Request) {
+  if (!requireCronSecret(request)) return unauthorizedJson();
+  return processWebhookRetryMaintenance();
+}
+
+/** Controlled job runner entry (GitHub Actions schedule or manual operations). */
+export async function POST(request: Request) {
+  if (!requireJobSecret(request)) {
+    return unauthorizedJson();
+  }
+  return processWebhookRetryMaintenance();
 }

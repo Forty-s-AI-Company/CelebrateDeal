@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
+import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { runBillingCycleJob } from "@/lib/billing-cycle-job";
 import { captureOperationalError } from "@/lib/monitoring";
 
-export async function POST(request: Request) {
-  if (!requireJobSecret(request)) return unauthorizedJson();
-
+async function processBillingCycle() {
   try {
     const result = await runBillingCycleJob();
     return NextResponse.json({ ok: true, ...result });
@@ -21,4 +19,16 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: false, error: "billing_cycle_failed" }, { status: 503 });
   }
+}
+
+/** Vercel Cron entry: Vercel sends GET with `Authorization: Bearer CRON_SECRET`. */
+export async function GET(request: Request) {
+  if (!requireCronSecret(request)) return unauthorizedJson();
+  return processBillingCycle();
+}
+
+/** Controlled job runner entry (GitHub Actions schedule or manual operations). */
+export async function POST(request: Request) {
+  if (!requireJobSecret(request)) return unauthorizedJson();
+  return processBillingCycle();
 }
