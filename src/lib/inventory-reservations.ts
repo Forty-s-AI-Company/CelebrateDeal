@@ -1,4 +1,5 @@
 import { Prisma, type PaymentTransaction } from "@prisma/client";
+import { paymentHeldForManualReconciliation } from "@/lib/payment-webhook-manual-reconciliation";
 import {
   expireCommerceOrderForPayment,
   reconcileCommerceOrderPaymentTransition,
@@ -503,6 +504,7 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
   });
   let released = 0;
   let committed = 0;
+  let held = 0;
 
   for (const candidate of candidates) {
     const outcome = await runSerializable(async (tx) => {
@@ -523,8 +525,11 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
 
       const transaction = await tx.paymentTransaction.findUnique({
         where: { id: reservation.paymentTransactionId },
-        select: { status: true },
+        select: { status: true, metadata: true },
       });
+      // A provider-reported collection awaiting manual reconciliation (R448-01)
+      // keeps its stock and pending state until finance resolves it.
+      if (transaction?.status === "pending" && paymentHeldForManualReconciliation(transaction.metadata)) return "held";
       if (transaction?.status === "paid") {
         snapshotReservationItems(reservation);
         const updated = await tx.inventoryReservation.updateMany({
@@ -568,7 +573,8 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
 
     if (outcome === "released") released += 1;
     if (outcome === "committed") committed += 1;
+    if (outcome === "held") held += 1;
   }
 
-  return { examined: candidates.length, released, committed };
+  return { examined: candidates.length, released, committed, held };
 }

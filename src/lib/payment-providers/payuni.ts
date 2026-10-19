@@ -11,6 +11,7 @@ import {
   PaymentMethodSetupMalformedPayloadError,
   PaymentMethodSetupProviderResultError,
   PaymentWebhookNotActionableError,
+  type PaymentWebhookNotActionableReason,
   type PaymentMethodReferenceRevocationInput,
   type PaymentMethodSetupProviderDiagnostics,
   type PaymentMethodSetupProviderOutcome,
@@ -44,6 +45,8 @@ const PAYUNI_WEBHOOK_AUDIT_KEYS = new Set([
   "TradeNo",
   "TradeStatus",
   "PaymentType",
+  // Unsigned envelope Status, kept only on reconciliation records.
+  "OuterStatus",
   "TsNo",
   "VendorSlug",
   "VendorId",
@@ -65,9 +68,10 @@ const PAYUNI_WEBHOOK_AUDIT_KEYS = new Set([
  */
 function optionalCents(value: unknown) {
   if (value === undefined || value === null || value === "") return undefined;
-  const amount = typeof value === "number" ? value : Number.parseFloat(String(value));
-  if (!Number.isFinite(amount) || amount < 0) throw new Error("Invalid PayUni amount field.");
-  return Math.round(amount * 100);
+  // Same complete-token rule as trade amounts: "12abc" or "1e3" never parse.
+  const amount = queryAmountCents(value);
+  if (amount === undefined) throw new Error("Invalid PayUni amount field.");
+  return amount;
 }
 
 // PayUni UPP 2.0 Notify/Return result codes (docs.payuni.com.tw/web/#/7/34,
@@ -90,21 +94,29 @@ const PAYUNI_PAYABLE_PAYMENT_TYPES = new Set(["1"]);
  * awaiting-confirmation states change nothing; anything else fails closed.
  */
 function payUniUppEventType(envelope: Record<string, unknown>, payload: Record<string, unknown>): "paid" | "failed" {
+  // Bounded identifiers and the allowlisted snapshot travel with a refusal so
+  // a captured payment is recorded for reconciliation, never silently dropped.
+  const notActionable = (reason: PaymentWebhookNotActionableReason) => new PaymentWebhookNotActionableError(reason, {
+    orderNumber: optionalPayloadText(payload.MerTradeNo),
+    providerTradeNo: optionalPayloadText(payload.TradeNo),
+    tradeStatus: optionalPayloadText(payload.TradeStatus),
+    paymentType: optionalPayloadText(payload.PaymentType),
+  }, payUniWebhookAuditSnapshot({ ...payload, OuterStatus: envelope.Status }));
   if (payload.EventType !== undefined) {
     // Real UPP callbacks never carry the former synthetic EventType field.
     throw new Error("Unsupported PayUni payment status.");
   }
   const tradeStatus = optionalPayloadText(payload.TradeStatus) ?? "";
-  if (PAYUNI_PENDING_TRADE_STATUSES.has(tradeStatus)) throw new PaymentWebhookNotActionableError("trade_pending");
+  if (PAYUNI_PENDING_TRADE_STATUSES.has(tradeStatus)) throw notActionable("trade_pending");
   if (PAYUNI_FAILED_TRADE_STATUSES.has(tradeStatus)) return "failed";
   if (tradeStatus !== PAYUNI_PAID_TRADE_STATUS) throw new Error("Unsupported PayUni payment status.");
   // The outer Status is not covered by HashInfo and passes through the payer's
   // browser on ReturnURL. It can only veto a paid decision, never create one.
   if (optionalPayloadText(payload.Status) !== "SUCCESS" || optionalPayloadText(envelope.Status) !== "SUCCESS") {
-    throw new PaymentWebhookNotActionableError("provider_status_not_success");
+    throw notActionable("provider_status_not_success");
   }
   if (!PAYUNI_PAYABLE_PAYMENT_TYPES.has(optionalPayloadText(payload.PaymentType) ?? "")) {
-    throw new PaymentWebhookNotActionableError("payment_type_not_allowed");
+    throw notActionable("payment_type_not_allowed");
   }
   return "paid";
 }
@@ -304,6 +316,11 @@ function payUniQueryRow(payload: Record<string, unknown>, orderNumber: string) {
   const grossAmountCents = queryAmountCents(normalized.TradeAmt);
   const refundStatus = optionalPayloadText(normalized.RefundStatus);
   const tradeStatus = optionalPayloadText(normalized.TradeStatus);
+  if (tradeStatus === "1" && optionalPayloadText(normalized.PaymentType) !== "1") {
+    // A collected non-card payment (R448-01): surface it for manual
+    // reconciliation instead of a generic provider error.
+    throw new PaymentQueryProviderError("manual_reconciliation");
+  }
   if (!providerTradeNo || grossAmountCents === undefined || tradeStatus !== "1"
     || optionalPayloadText(normalized.DataSource) !== "A"
     || optionalPayloadText(normalized.PaymentType) !== "1") {

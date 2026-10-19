@@ -3,7 +3,8 @@ import { POST as paymentCallback } from "../app/api/webhooks/payments/route";
 import { buildPayUniSandboxWebhookFixture } from "./payment-providers/payuni-fixtures";
 import { getDb } from "./db";
 import { ensureWp4SandboxFixture, WP4_SANDBOX_FIXTURE as fixed } from "./wp4-sandbox-fixture";
-import { createReservedPaymentTransaction } from "./inventory-reservations";
+import { createReservedPaymentTransaction, releaseExpiredInventoryReservations } from "./inventory-reservations";
+import { retryWebhookEvent } from "./webhook-retry";
 import { createCommerceOrderForCheckout } from "./commerce-orders";
 import { PaymentWebhookPayload, processPaymentWebhook } from "./payment-webhooks";
 import { readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE as source } from "./wp4-buyer-recovery";
@@ -12,7 +13,7 @@ const db = getDb();
 const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
  vi.unstubAllEnvs();
- await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-paid", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent-paid", "synthetic-buyer-trade:1", "synthetic-buyer-trade:2"] } }] } });
+ await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-trade:1", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent:1", "synthetic-buyer-trade:2", "synthetic-buyer-legacy-trade"] } }] } });
  await db.vendor.deleteMany({ where: { id: { in: [fixed.vendorId, raceVendorId] } } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
@@ -26,7 +27,7 @@ async function checkout(paymentSource = source) {
    metadata: { billingPurpose: "buyer_order", productId: fixed.productId, wp4SourceCommit: paymentSource, wp4PaymentSubmissionReserved: true } },
   createCommerceOrder: async (tx, transaction) => { await createCommerceOrderForCheckout(tx, { vendorId: fixed.vendorId, productId: fixed.productId, orderNumber: "synthetic-historical-buyer", checkoutIdempotencyKey: key, paymentTransactionId: transaction.id, totalAmountCents: 100, currency: "TWD", buyer: { name: "Synthetic buyer", email: "synthetic-buyer@invalid.example" }, shipping: null }); },
  });
- const payload = PaymentWebhookPayload.parse({ provider: "payuni", eventId: "synthetic-buyer-paid", eventType: "paid", vendorId: fixed.vendorId, orderNumber: payment.orderNumber, providerTradeNo: payment.providerTradeNo, grossAmountCents: 100, netAmountCents: 100, currency: "TWD" });
+ const payload = PaymentWebhookPayload.parse({ provider: "payuni", eventId: "synthetic-buyer-trade:1", eventType: "paid", vendorId: fixed.vendorId, orderNumber: payment.orderNumber, providerTradeNo: payment.providerTradeNo, grossAmountCents: 100, netAmountCents: 100, currency: "TWD" });
  return { payment, payload };
 }
 async function verifyOriginalCallbackRecovery(retryCount: number) {
@@ -80,8 +81,8 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
   const normalized = { ...payload };
   delete normalized.vendorId;
   delete normalized.currency;
-  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: "synthetic-buyer-concurrent-paid", eventType: "paid", status: "failed", retryCount: 1, maxRetries: 5,
-   payload: { normalized: JSON.parse(JSON.stringify({ ...normalized, eventId: "synthetic-buyer-concurrent-paid" })) } } });
+  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: "synthetic-buyer-concurrent:1", eventType: "paid", status: "failed", retryCount: 1, maxRetries: 5,
+   payload: { normalized: JSON.parse(JSON.stringify({ ...normalized, eventId: "synthetic-buyer-concurrent:1" })) } } });
   const outcomes = await Promise.all([retryWp4HistoricalBuyerCallback(db), retryWp4HistoricalBuyerCallback(db)]);
   expect(outcomes.filter(outcome => outcome.status === "PROCESSED")).toHaveLength(1);
   expect(outcomes.reduce((total, outcome) => total + outcome.retryAttempts, 0)).toBe(1);
@@ -204,20 +205,64 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   return paymentCallback(new Request(`http://127.0.0.1:31041/api/webhooks/payments?provider=payuni&source=${source}`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }));
  }
 
+ async function notActionableAudit(after: Date) {
+  const rows = await db.auditLog.findMany({ where: { action: "payment_webhook_not_actionable", createdAt: { gte: after } }, orderBy: { createdAt: "desc" }, take: 1 });
+  return rows[0]?.after as Record<string, unknown> | undefined;
+ }
+
  it.each([
-  ["issued number TradeStatus 0", { TradeStatus: "0" }],
-  ["awaiting confirmation TradeStatus 8", { TradeStatus: "8" }],
-  ["paid ATM PaymentType 2", { PaymentType: "2" }],
-  ["paid CVS PaymentType 3", { PaymentType: "3" }],
- ])("keeps the checkout pending with no event or commission for %s", async (_label, overrides) => {
+  ["issued number TradeStatus 0", "0"],
+  ["awaiting confirmation TradeStatus 8", "8"],
+ ])("acknowledges %s without any event, payment change or commission", async (_label, tradeStatus) => {
   const { payment } = await checkout();
   stubPayUni();
-  const response = await callback("notify", overrides, payment.orderNumber!, payment.providerTradeNo!);
-  expect(response.status).toBe(400);
+  const response = await callback("notify", { TradeStatus: tradeStatus }, payment.orderNumber!, payment.providerTradeNo!);
+  expect(response.status).toBe(200);
   expect(await db.webhookEvent.count({ where: { provider: "payuni", eventId: { startsWith: `${payment.providerTradeNo}:` } } })).toBe(0);
   expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending" });
   expect(await db.affiliateCommission.count({ where: { vendorId: fixed.vendorId } })).toBe(0);
-  expect(await db.auditLog.count({ where: { action: "payment_webhook_not_actionable", createdAt: { gte: payment.createdAt } } })).toBeGreaterThan(0);
+  expect(await notActionableAudit(payment.createdAt)).toMatchObject({ reason: "trade_pending", orderNumber: payment.orderNumber,
+   providerTradeNo: payment.providerTradeNo, tradeStatus, paymentType: "1", manualReconciliation: false });
+ });
+
+ it.each([
+  ["paid ATM PaymentType 2", { PaymentType: "2" }, "payment_type_not_allowed"],
+  ["paid CVS PaymentType 3", { PaymentType: "3" }, "payment_type_not_allowed"],
+  ["paid trade with provider status UNKNOWN", { Status: "UNKNOWN" }, "provider_status_not_success"],
+ ])("records %s for manual reconciliation and holds the payment from expiry (R448-01)", async (_label, overrides, reason) => {
+  const { payment } = await checkout();
+  stubPayUni();
+  const response = await callback("notify", overrides, payment.orderNumber!, payment.providerTradeNo!);
+  expect(response.status).toBe(200);
+  // Return of the same callback converges on the same reconciliation event.
+  expect((await callback("return", overrides, payment.orderNumber!, payment.providerTradeNo!)).headers.get("location"))
+   .toBe("http://127.0.0.1:31041/checkout/result?payment=review");
+  const events = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: `${payment.providerTradeNo}:1` } });
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({ status: "needs_manual_reconciliation", eventType: "manual_reconciliation", vendorId: fixed.vendorId });
+  expect(events[0]!.payload).toMatchObject({ reconciliation: { reason, orderNumber: payment.orderNumber, tradeStatus: "1", matchedTransaction: payment.id } });
+  const held = await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } });
+  expect(held).toMatchObject({ status: "pending", metadata: { paymentManualReconciliation: { reason, webhookEventId: events[0]!.id } } });
+  expect(await db.affiliateCommission.count({ where: { vendorId: fixed.vendorId } })).toBe(0);
+  expect(await notActionableAudit(payment.createdAt)).toMatchObject({ reason, orderNumber: payment.orderNumber,
+   providerTradeNo: payment.providerTradeNo, tradeStatus: "1", manualReconciliation: true });
+  // Neither the expiry job nor the retry job releases or replays the held collection.
+  const expiry = await releaseExpiredInventoryReservations(100, new Date(Date.now() + 1000 * 60 * 60 * 24));
+  expect(expiry.held).toBeGreaterThanOrEqual(1);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending" });
+  expect(await db.inventoryReservation.count({ where: { paymentTransactionId: payment.id, status: "reserved" } })).toBe(1);
+  await expect(retryWebhookEvent(events[0]!.id)).resolves.toMatchObject({ status: "claimed_elsewhere" });
+ });
+
+ it("holds a stored legacy PayUni paid decision for manual reconciliation instead of replaying it (R448-02)", async () => {
+  const { payment, payload } = await checkout();
+  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: "synthetic-buyer-legacy-trade", eventType: "paid", status: "failed",
+   retryCount: 1, maxRetries: 5, payload: { normalized: JSON.parse(JSON.stringify({ ...payload, eventId: "synthetic-buyer-legacy-trade" })) } } });
+  await expect(retryWebhookEvent(event.id)).resolves.toMatchObject({ status: "needs_manual_reconciliation" });
+  expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "needs_manual_reconciliation", nextRetryAt: null, retryCount: 1 });
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending" });
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(0);
  });
 
  it("records a failed attempt and a later paid result of one trade as two events and pays once", async () => {

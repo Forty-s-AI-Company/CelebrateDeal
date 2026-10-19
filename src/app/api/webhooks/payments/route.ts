@@ -7,12 +7,14 @@ import { getPaymentProvider, type PaymentProviderAdapter } from "@/lib/payment-p
 import { PaymentWebhookNotActionableError } from "@/lib/payment-providers/types";
 import { buildPaymentWebhookDiagnostics } from "@/lib/payment-webhook-diagnostics";
 import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
+import { recordPaymentWebhookManualReconciliation } from "@/lib/payment-webhook-manual-reconciliation";
+import { captureOperationalError } from "@/lib/monitoring";
 import { processPaymentWebhook } from "@/lib/payment-webhooks";
 import { redactedJsonSnapshot } from "@/lib/redaction";
 
 type CallbackSource = "return" | "notify" | "unknown";
 type ObservedMethod = "POST" | "HEAD" | "OTHER";
-type PayerReturnOutcome = "updated" | "pending" | "unverified";
+type PayerReturnOutcome = "updated" | "pending" | "unverified" | "review";
 
 function classifyCallbackSource(searchParams: URLSearchParams): CallbackSource {
   const values = searchParams.getAll("source");
@@ -78,12 +80,12 @@ function payerReturnOutcome(status: number): PayerReturnOutcome {
   return "unverified";
 }
 
-function webhookResponse(requestUrl: URL, status: number, payload: unknown, platformPlanReturn = false) {
+function webhookResponse(requestUrl: URL, status: number, payload: unknown, platformPlanReturn = false, payerOutcome?: PayerReturnOutcome) {
   if (isPayUniPayerReturn(requestUrl)) {
     // The plan page authenticates again and reads the current tenant's actual
     // subscription. No success flag or transaction identifier grants access.
     const destination = new URL(platformPlanReturn ? "/billing/plans" : "/checkout/result", requestUrl.origin);
-    if (!platformPlanReturn) destination.searchParams.set("payment", payerReturnOutcome(status));
+    if (!platformPlanReturn) destination.searchParams.set("payment", payerOutcome ?? payerReturnOutcome(status));
     observeCallbackRequest(requestUrl, "POST", 303);
     const response = NextResponse.redirect(destination, 303);
     response.headers.set("cache-control", "no-store");
@@ -130,6 +132,65 @@ async function processedPayerReturnResponse(requestUrl: URL, event: WebhookEvent
     }
   }
   return webhookResponse(requestUrl, 200, responsePayload);
+}
+
+/**
+ * Authentic callbacks that must not change payment state automatically
+ * (R448-01). A pending trade (issued/awaiting confirmation) is acknowledged
+ * and audited. A reported collection we refuse to apply (non-card
+ * PaymentType, or a paid trade without a final provider status) may mean the
+ * buyer was charged: it becomes a needs_manual_reconciliation WebhookEvent,
+ * holds the pending payment from expiry, and raises an error-level alert.
+ * Notify is acknowledged with 200 so the provider does not redeliver forever;
+ * the payer sees a neutral "under review" page.
+ */
+async function notActionableResponse(requestUrl: URL, providerId: string, bodyBytes: number, error: PaymentWebhookNotActionableError, diagnostics: unknown) {
+  let recorded: Awaited<ReturnType<typeof recordPaymentWebhookManualReconciliation>> = null;
+  if (error.requiresManualReconciliation) {
+    try {
+      recorded = await recordPaymentWebhookManualReconciliation({ provider: providerId, error, diagnostics });
+    } catch {
+      // Never acknowledge a captured payment we could not record; let the
+      // provider redeliver and keep the payer on the neutral pending page.
+      captureOperationalError(new Error("Payment webhook manual reconciliation record failed"), {
+        source: "payment_webhook", operation: "manual_reconciliation_record", provider: providerId, status: error.reason,
+      }, { level: "error" });
+      return webhookResponse(requestUrl, 500, { error: "Payment webhook processing failed", code: "processing_failed" });
+    }
+    captureOperationalError(new Error("Payment webhook requires manual reconciliation"), {
+      source: "payment_webhook",
+      operation: "manual_reconciliation",
+      provider: providerId,
+      status: error.reason,
+      callbackSource: classifyCallbackSource(requestUrl.searchParams),
+      providerTradeStatus: error.identifiers.tradeStatus,
+      providerPaymentType: error.identifiers.paymentType,
+      webhookEventId: recorded?.event.id,
+    }, { level: "error", fingerprint: ["payment-webhook-manual-reconciliation", providerId, error.reason] });
+  }
+  await writeAuditLog({
+    vendorId: recorded?.transaction?.vendorId ?? null,
+    actorLabel: `webhook:${providerId}`,
+    action: "payment_webhook_not_actionable",
+    targetType: "WebhookEvent",
+    targetId: recorded?.event.id,
+    before: auditSnapshot({ providerId, bodyBytes }),
+    after: auditSnapshot({
+      errorCode: "not_actionable",
+      reason: error.reason,
+      ...error.identifiers,
+      manualReconciliation: error.requiresManualReconciliation,
+    }),
+  });
+  const transaction = recorded?.transaction ?? null;
+  const platformPlanReturn = Boolean(transaction && isPlatformPlanReturnTransaction(transaction, {
+    vendorId: transaction.vendorId, provider: providerId, orderNumber: transaction.orderNumber ?? undefined,
+  }));
+  return webhookResponse(requestUrl, 200, {
+    ok: true,
+    actionable: false,
+    code: error.requiresManualReconciliation ? "manual_reconciliation" : "not_actionable",
+  }, platformPlanReturn, error.requiresManualReconciliation ? "review" : "pending");
 }
 
 export async function HEAD(request: Request) {
@@ -211,17 +272,7 @@ export async function POST(request: Request) {
     normalized = await adapter.normalizePayload(rawBody);
   } catch (error) {
     if (error instanceof PaymentWebhookNotActionableError) {
-      // Authentic, but must not change payment state (for example a non-card
-      // PaymentType or an issued-not-paid trade). No WebhookEvent is created;
-      // only the closed reason is audited so operators can reconcile it.
-      await writeAuditLog({
-        actorLabel: `webhook:${adapter.id}`,
-        action: "payment_webhook_not_actionable",
-        targetType: "WebhookEvent",
-        before: auditSnapshot({ providerId: adapter.id, bodyBytes: rawBody.length }),
-        after: auditSnapshot({ errorCode: "not_actionable", reason: error.reason }),
-      });
-      return webhookResponse(requestUrl, 400, { error: "Payment webhook is not actionable", code: "not_actionable" });
+      return notActionableResponse(requestUrl, adapter.id, rawBody.length, error, diagnostics);
     }
     await writeAuditLog({
       actorLabel: `webhook:${adapter.id}`,

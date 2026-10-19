@@ -149,13 +149,16 @@ describe("documented CREDIT query v2.0 refund evidence", () => {
     await expect(query({ RefundStatus, RemainAmt: "0" })).rejects.toMatchObject({ category: "provider_response" });
   });
   it.each([
-    { DataSource: "B" }, { DataSource: "" }, { PaymentType: "2" }, { PaymentType: "" },
+    { DataSource: "B" }, { DataSource: "" },
     { TradeStatus: "2" }, { TradeStatus: "4" }, { TradeStatus: "8" }, { TradeStatus: "6" },
     { RemainAmt: "" }, { RemainAmt: "1001" }, { RemainAmt: "-1" }, { RemainAmt: "500junk" },
     { RefundAmt: "0" }, { RefundAmt: "501" }, { RefundAmt: "200junk" },
     { RefundStatus: "", RemainAmt: "500" }, { RefundStatus: "", RemainAmt: "1000", RefundAmt: "1" },
-  ])("rejects incomplete, non-credit or inconsistent evidence %j", async (patch) => {
+  ])("rejects incomplete or inconsistent evidence %j", async (patch) => {
     await expect(query(patch)).rejects.toMatchObject({ category: "provider_response" });
+  });
+  it.each([{ PaymentType: "2" }, { PaymentType: "" }])("routes a collected non-card trade %j to manual reconciliation (R448-01)", async (patch) => {
+    await expect(query(patch)).rejects.toMatchObject({ category: "manual_reconciliation" });
   });
 });
 
@@ -861,7 +864,8 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
 
   it.each(["0", "8"])("never pays a pending TradeStatus %s and leaves the payment unchanged", async (tradeStatus) => {
     await expect(normalizeReal({ ...realPaid, TradeStatus: tradeStatus })).rejects.toMatchObject({
-      name: "PaymentWebhookNotActionableError", reason: "trade_pending",
+      name: "PaymentWebhookNotActionableError", reason: "trade_pending", requiresManualReconciliation: false,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus, paymentType: "1" },
     });
   });
 
@@ -875,7 +879,10 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     const fields: Record<string, string> = { ...realPaid, PaymentType: paymentType };
     if (!paymentType) delete fields.PaymentType;
     await expect(normalizeReal(fields)).rejects.toMatchObject({
-      name: "PaymentWebhookNotActionableError", reason: "payment_type_not_allowed",
+      name: "PaymentWebhookNotActionableError", reason: "payment_type_not_allowed", requiresManualReconciliation: true,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "1",
+        ...(paymentType ? { paymentType } : {}) },
+      rawSnapshot: expect.objectContaining({ MerTradeNo: "CD-REAL-001", TradeStatus: "1", OuterStatus: "SUCCESS" }),
     });
   });
 
@@ -886,6 +893,17 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     ["outer status disagrees", {}, "UNKNOWN"],
   ] as const)("never pays TradeStatus 1 when %s", async (_label, override, outerStatus) => {
     await expect(normalizeReal({ ...realPaid, ...override }, outerStatus)).rejects.toThrow();
+  });
+
+  it("keeps a missing outer Status on a paid trade as a manual reconciliation case with identifiers", async () => {
+    await expect(normalizeReal(realPaid, null)).rejects.toMatchObject({
+      reason: "provider_status_not_success", requiresManualReconciliation: true,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "1", paymentType: "1" },
+    });
+  });
+
+  it.each(["12abc", "1e3", "-5", "35.5"])("rejects a non-strict provider fee %j (R448-08)", async (fee) => {
+    await expect(normalizeReal({ ...realPaid, GatewayFee: fee })).rejects.toThrow("Invalid PayUni amount field.");
   });
 
   it.each(["5", "10", "x", ""])("fails closed on an undocumented TradeStatus %j", async (tradeStatus) => {
