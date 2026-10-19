@@ -9,6 +9,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
+import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const RegistrationInput = z.object({
@@ -22,6 +23,12 @@ const RegistrationInput = z.object({
 /** Create the original self-service workspace flow using current security boundaries. */
 export async function registerAction(formData: FormData) {
   await assertServerActionSecurity(formData);
+  // F-114: the merchant must accept the terms and privacy policy. The stored
+  // versions are the server's current ones; the form echoes the version it
+  // displayed so a stale page cannot record consent to a newer text.
+  const policyVersions = merchantRegistrationPolicyVersions();
+  if (formData.get("acceptPolicies") !== "on") redirect("/register?error=consent_required");
+  if (formData.get("policyVersion") !== policyVersions.consentVersion) redirect("/register?error=policy_updated");
   const parsed = RegistrationInput.safeParse({ name: formData.get("name"), workspaceName: formData.get("workspaceName"), email: formData.get("email"), password: formData.get("password") });
   if (!parsed.success) redirect("/register?error=invalid");
   const input = parsed.data;
@@ -43,7 +50,9 @@ export async function registerAction(formData: FormData) {
       const vendor = await tx.vendor.create({ data: { name: input.workspaceName, slug: `${slugBase}-${randomUUID()}`, email: input.email, passwordHash } });
       await tx.vendorMember.create({ data: { vendorId: vendor.id, userId: user.id, role: "owner", status: "active" } });
       await tx.userOnboardingPreference.create({ data: { userId: user.id, vendorId: vendor.id, questionnaireStep: 0, taskPanelCollapsed: true } });
-      await tx.auditLog.create({ data: { vendorId: vendor.id, actorId: user.id, actorLabel: "owner", action: "registration_completed", targetType: "User", targetId: user.id } });
+      await tx.userPolicyConsent.create({ data: { userId: user.id, vendorId: vendor.id, context: "merchant_registration", termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion } });
+      await tx.auditLog.create({ data: { vendorId: vendor.id, actorId: user.id, actorLabel: "owner", action: "registration_completed", targetType: "User", targetId: user.id,
+        after: { policyConsent: { termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion } } } });
       return { userId: user.id, vendorId: vendor.id };
     });
   } catch (error) {

@@ -200,6 +200,20 @@ export const publicPolicies: Record<string, PolicyDefinition> = {
   },
 };
 
+/**
+ * Versions a merchant accepts at registration (F-114). `consentVersion` is the
+ * single token the registration form displays and echoes back.
+ */
+export function merchantRegistrationPolicyVersions() {
+  const termsVersion = publicPolicies.terms!.publication.version;
+  const privacyVersion = publicPolicies.privacy!.publication.version;
+  return {
+    termsVersion,
+    privacyVersion,
+    consentVersion: termsVersion === privacyVersion ? termsVersion : `${termsVersion}+${privacyVersion}`,
+  };
+}
+
 export const publicPolicyLinks = [
   { href: "/policies", label: "政策與協助中心" },
   { href: "/policies/terms", label: "使用條款" },

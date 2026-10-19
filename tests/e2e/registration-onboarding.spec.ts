@@ -9,7 +9,13 @@ for(const width of [1440,390])test(`registration and questionnaire round trip at
  try{
   await page.goto('/login');await page.getByRole('link',{name:'建立商家 Workspace'}).click();await expect(page).toHaveURL(/\/register$/u);
   await page.locator('input[name="name"]').fill('Synthetic owner');await page.locator('input[name="workspaceName"]').fill('Synthetic browser workspace');await page.locator('input[name="email"]').fill(email);await page.locator('input[name="password"]').fill(password);
+  await expect(page.getByRole('heading',{name:'建立你的商家帳號'})).toBeVisible();
+  // F-114: the native required checkbox blocks submission until consent is given.
+  await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/register$/u);
+  await expect(page.getByRole('link',{name:'服務條款'})).toHaveAttribute('href','/policies/terms');await expect(page.getByRole('link',{name:'隱私權政策'})).toHaveAttribute('href','/policies/privacy');
+  await page.getByRole('checkbox',{name:/我已閱讀並同意/u}).check();
   await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/welcome$/u);
+  expect(await db.userPolicyConsent.count({where:{user:{email},context:'merchant_registration'}})).toBe(1);
   for(let step=0;step<4;step++){
    if(step===2)await page.getByRole('checkbox').first().click();else await page.getByRole('radio').first().click();
    const next=page.getByRole('button',{name:step===3?'產生我的工作空間':'下一題',exact:true});await expect(next).toBeEnabled();await next.click();
