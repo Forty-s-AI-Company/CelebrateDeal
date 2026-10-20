@@ -99,6 +99,7 @@ const mocks = vi.hoisted(() => ({
   refundRecordUpdate: vi.fn(),
   getPaymentProvider: vi.fn(),
   submitSettlementAdjustment: vi.fn(),
+  inventoryReservationFindUnique: vi.fn(),
   approveSettlementAdjustment: vi.fn(),
   rejectSettlementAdjustment: vi.fn(),
   requireFinanceAdmin: vi.fn(),
@@ -158,6 +159,15 @@ vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 // F-049: the adjustment rules and their DB writes are covered by
 // src/lib/settlement-adjustment.db.test.ts; actions only parse and route.
+// F-045 (review m-3): pass-through spies prove every refund path reaches the shared hook.
+vi.mock("@/lib/payment-post-refund", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/payment-post-refund")>();
+  return {
+    ...actual,
+    applyPostRefundInTransaction: vi.fn(actual.applyPostRefundInTransaction),
+    applyPostRefundAfterCommit: vi.fn(actual.applyPostRefundAfterCommit),
+  };
+});
 vi.mock("@/lib/settlement-adjustment", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/settlement-adjustment")>()),
   submitSettlementAdjustment: mocks.submitSettlementAdjustment,
@@ -419,6 +429,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { hashPassword } from "@/lib/password";
 import { BillingCycleError } from "@/lib/billing-cycle";
 import { SettlementAdjustmentError } from "@/lib/settlement-adjustment";
+import { applyPostRefundAfterCommit, applyPostRefundInTransaction } from "@/lib/payment-post-refund";
 import { initialMessageTemplateActionState } from "@/lib/message-template";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 
@@ -833,6 +844,7 @@ beforeEach(() => {
   mocks.materializeLiveNotificationRules.mockResolvedValue([]);
   mocks.dispatchLiveStartedLineNotificationsSafely.mockResolvedValue(undefined);
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
+  mocks.inventoryReservationFindUnique.mockResolvedValue(null);
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
       findUnique: mocks.findUnique,
@@ -876,6 +888,8 @@ beforeEach(() => {
       create: mocks.coursePayoutCreate,
       updateMany: mocks.coursePayoutUpdateMany,
     },
+    // F-045 (review m-3): the shared post-refund hook reads the inventory reservation.
+    inventoryReservation: { findUnique: mocks.inventoryReservationFindUnique },
     interactionEvent: {
       create: mocks.interactionEventCreate,
       deleteMany: mocks.interactionEventDeleteMany,
@@ -5526,6 +5540,19 @@ describe("refundPaymentTransactionAction", () => {
       "redirect:/admin/billing/dashboard",
     );
 
+    // A non-PayUni manual refund runs the same post-refund hook (inventory, then invoice after commit).
+    expect(vi.mocked(applyPostRefundInTransaction)).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      eventType: "refunded",
+      transaction: expect.objectContaining({ id: transaction.id }),
+    }));
+    expect(mocks.inventoryReservationFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { paymentTransactionId: transaction.id } }));
+    expect(vi.mocked(applyPostRefundAfterCommit)).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      paymentTransactionId: transaction.id,
+      eventType: "refunded",
+      refundAmountCents: 4_000,
+      previousRefundedAmountCents: transaction.refundedAmountCents,
+    }));
+
     expect(mocks.refundRecordCreate).toHaveBeenCalledWith({
       data: {
         vendorId: transaction.vendorId,
@@ -5708,6 +5735,7 @@ describe("refundPaymentTransactionAction", () => {
           create: mocks.coursePayoutCreate,
           updateMany: mocks.coursePayoutUpdateMany,
         },
+        inventoryReservation: { findUnique: mocks.inventoryReservationFindUnique },
       });
 
       // PostgreSQL detects that the transaction read stale data at commit time.
@@ -5795,6 +5823,7 @@ describe("refundPaymentTransactionAction", () => {
           create: mocks.coursePayoutCreate,
           updateMany: mocks.coursePayoutUpdateMany,
         },
+        inventoryReservation: { findUnique: mocks.inventoryReservationFindUnique },
       });
 
       if (transactionAttempts === 1) {

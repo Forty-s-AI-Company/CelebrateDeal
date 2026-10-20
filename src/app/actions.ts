@@ -80,6 +80,7 @@ import {
 } from "./actions/vendor-member-actions";
 import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
 import { parseWholeYuanToCents, parseYuanWithCentsToCents } from "@/lib/money-input";
+import { applyPostRefundAfterCommit, applyPostRefundInTransaction, postRefundEventType } from "@/lib/payment-post-refund";
 import {
   approveSettlementAdjustment,
   parseSettlementAdjustmentInput,
@@ -2205,7 +2206,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
-  const { transaction, updated } = await (async () => {
+  const { transaction, updated, postRefund } = await (async () => {
     for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
       try {
         return await db.$transaction(async (tx) => {
@@ -2260,7 +2261,8 @@ export async function refundPaymentTransactionAction(formData: FormData) {
             where: { paymentTransactionId: updated.id, status: "processed" },
             _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
           });
-          await applyPaymentRefundAccounting(tx, {
+          const refundOccurredAt = new Date();
+          const accounting = await applyPaymentRefundAccounting(tx, {
             vendorId: transaction.vendorId,
             transactionId: transaction.id,
             orderNumber: transaction.orderNumber,
@@ -2276,10 +2278,31 @@ export async function refundPaymentTransactionAction(formData: FormData) {
             }),
             isFullRefund: refundedAmountCents >= transaction.grossAmountCents,
             transactionOccurredAt: transaction.occurredAt,
-            occurredAt: new Date(),
+            occurredAt: refundOccurredAt,
+          });
+          // F-045 (review m-3): manual refunds of other providers share the
+          // post-refund hook with the PayUni and webhook paths.
+          const eventType = postRefundEventType(refundedAmountCents, transaction.grossAmountCents);
+          await applyPostRefundInTransaction(tx, {
+            transaction: updated,
+            eventType,
+            trustedCheckoutMetadata: transaction.metadata,
+            occurredAt: refundOccurredAt,
           });
 
-          return { transaction, updated };
+          return {
+            transaction,
+            updated,
+            postRefund: {
+              vendorId: transaction.vendorId,
+              paymentTransactionId: transaction.id,
+              eventType,
+              occurredAt: refundOccurredAt,
+              refundAmountCents,
+              previousRefundedAmountCents: transaction.refundedAmountCents,
+              commerceOrderRefund: accounting.commerceOrderRefund,
+            },
+          };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       } catch (error) {
         if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) {
@@ -2296,6 +2319,8 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     throw new Error("Refund transaction retry loop exited unexpectedly");
   })();
 
+  // After commit: invoice void/allowance never undoes the committed refund.
+  await applyPostRefundAfterCommit(db, postRefund);
   await finishRefundAction({ transaction, updated, actor: { id: member.id, label: member.role } });
 }
 
