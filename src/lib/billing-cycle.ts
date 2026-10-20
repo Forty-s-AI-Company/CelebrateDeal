@@ -201,7 +201,8 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
       const { finalPayoutAmountCents, carriedOutCents } = await settleNetPayable(tx, {
         vendorId,
         monthKey,
-        netPayableCents: calculation.payoutableAmountCents + adjustmentAmountCents,
+        payableCents: calculation.payoutableAmountCents,
+        adjustmentCents: adjustmentAmountCents,
       });
       const amounts = { ...calculatedAmounts, finalPayoutAmountCents, carriedOutCents };
 

@@ -338,6 +338,20 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     expect(september.settlement).toMatchObject({ grossRevenueCents: 20_000, payoutableAmountCents: 20_000, finalPayoutAmountCents: 20_000 });
   });
 
+  it("never turns an earlier negative adjustment into a carry when a regeneration shrinks the payable (review m-1)", async () => {
+    const vendor = await vendorWithPlatformPlan();
+    const sale = await buyerPayment(vendor.id, 1_000, new Date("2026-09-05T00:00:00.000Z"), "partially_refunded");
+    const { settlement } = await generateSettlementForVendor(vendor.id, "2026-09");
+    await expect(submitSettlementAdjustment(db, { settlementId: settlement.id, amountCents: -800, reason: "recover", actor: admin }))
+      .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: 200 } });
+
+    await processedRefund(vendor.id, sale.id, "2026-09", 500);
+    const regenerated = await generateSettlementForVendor(vendor.id, "2026-09");
+
+    expect(regenerated.settlement).toMatchObject({ payoutableAmountCents: 500, adjustmentAmountCents: -800, finalPayoutAmountCents: 0, carriedOutCents: 0 });
+    await expect(db.settlementAdjustmentLedgerEntry.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
+  });
+
   it("enforces carry invariants in the database", async () => {
     const vendor = await vendorWithPlatformPlan();
     await expect(db.settlement.create({ data: { vendorId: vendor.id, monthKey: "2026-09", finalPayoutAmountCents: 100, carriedOutCents: -1 } }))

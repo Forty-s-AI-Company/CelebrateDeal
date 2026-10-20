@@ -116,9 +116,9 @@ beforeEach(() => {
   mocks.invoiceUpsert.mockResolvedValue(invoice);
   mocks.reconciliationFindFirstInTransaction.mockResolvedValue(null);
   mocks.assertSettlementInputsUnchanged.mockResolvedValue(undefined);
-  mocks.settleNetPayable.mockImplementation(async (_tx: unknown, input: { netPayableCents: number }) => ({
-    finalPayoutAmountCents: Math.max(0, input.netPayableCents),
-    carriedOutCents: Math.min(0, input.netPayableCents),
+  mocks.settleNetPayable.mockImplementation(async (_tx: unknown, input: { payableCents: number; adjustmentCents: number }) => ({
+    finalPayoutAmountCents: Math.max(0, input.payableCents + input.adjustmentCents),
+    carriedOutCents: Math.min(0, input.payableCents + input.adjustmentCents),
   }));
   mocks.upsertUsageSnapshot.mockResolvedValue({ snapshot: {}, record: { id: "usage-snapshot" } });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
@@ -225,7 +225,7 @@ describe("generateSettlementForVendor", () => {
     expect(mocks.assertSettlementInputsUnchanged).toHaveBeenCalledWith(expect.any(Object), {
       vendorId: "vendor-1", monthKey: "2026-07", refundAmountCents: 15_000, carriedInCents: -1_000,
     });
-    expect(mocks.settleNetPayable).toHaveBeenCalledWith(expect.any(Object), { vendorId: "vendor-1", monthKey: "2026-07", netPayableCents: -6_500 });
+    expect(mocks.settleNetPayable).toHaveBeenCalledWith(expect.any(Object), { vendorId: "vendor-1", monthKey: "2026-07", payableCents: -6_500, adjustmentCents: 0 });
     expect(mocks.settlementCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         payoutableAmountCents: -6_500,

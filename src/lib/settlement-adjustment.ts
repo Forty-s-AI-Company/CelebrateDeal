@@ -109,7 +109,8 @@ async function applyAdjustment(
     carry = await settleNetPayable(tx, {
       vendorId: settlement.vendorId,
       monthKey: settlement.monthKey,
-      netPayableCents: settlement.payoutableAmountCents + input.amountCents,
+      payableCents: settlement.payoutableAmountCents,
+      adjustmentCents: input.amountCents,
     });
   } catch (error) {
     if (error instanceof SettlementCarryForwardError) throw new SettlementAdjustmentError("carry_forward_target_locked");

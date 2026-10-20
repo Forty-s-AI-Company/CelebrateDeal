@@ -61,16 +61,29 @@ export class SettlementCarryForwardError extends Error {
 }
 
 /**
+ * Review m-1: a manual negative adjustment can reduce the payout to 0 but
+ * never creates or deepens a carry, also when a later regeneration shrinks
+ * the payable under an adjustment approved earlier. A positive adjustment
+ * may reduce a carry.
+ */
+export function splitNetPayable(payableCents: number, adjustmentCents: number) {
+  const netCents = payableCents + adjustmentCents;
+  return {
+    finalPayoutAmountCents: Math.max(0, netCents),
+    carriedOutCents: adjustmentCents < 0 ? Math.min(0, payableCents) : Math.min(0, netCents),
+  };
+}
+
+/**
  * Split a month's net payable into a payout (>= 0) and a carry (<= 0), and
  * keep the single ledger row of this source month in step. Must run in the
  * same Serializable transaction that writes the settlement.
  */
 export async function settleNetPayable(
   tx: CarryForwardDb,
-  input: { vendorId: string; monthKey: string; netPayableCents: number },
+  input: { vendorId: string; monthKey: string; payableCents: number; adjustmentCents: number },
 ) {
-  const carriedOutCents = Math.min(0, input.netPayableCents);
-  const finalPayoutAmountCents = Math.max(0, input.netPayableCents);
+  const { carriedOutCents, finalPayoutAmountCents } = splitNetPayable(input.payableCents, input.adjustmentCents);
   const existing = await tx.settlementAdjustmentLedgerEntry.findUnique({
     where: {
       vendorId_kind_sourceMonthKey: {
