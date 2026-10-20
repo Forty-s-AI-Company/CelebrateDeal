@@ -136,6 +136,42 @@ function useLiveStudioPresetSave(preset: LiveStudioPreset, scheduleSave: () => v
   }, [preset, scheduleSave]);
 }
 
+export function LiveStepPicker({
+  activeStep,
+  steps: stepList,
+  completion,
+  compact,
+  onSelect,
+}: {
+  activeStep: number;
+  steps: ReadonlyArray<{ key: string; label: string }>;
+  completion: boolean[];
+  compact: boolean;
+  onSelect: (step: number) => void;
+}) {
+  return (
+    <div className="grid gap-2 md:hidden">
+      <p role="status" aria-live="polite" className="text-sm font-semibold text-slate-900">
+        第 {activeStep + 1} 步／共 {stepList.length} 步
+      </p>
+      {compact ? (
+        <select
+          aria-label="切換步驟"
+          value={activeStep}
+          onChange={(event) => onSelect(Number(event.target.value))}
+          className="min-h-11 rounded-md border border-border-control bg-white px-3 text-sm"
+        >
+          {stepList.map((step, index) => (
+            <option key={step.key} value={index}>
+              {`第 ${index + 1} 步：${step.label}（${completion[index] ? "已完成" : "待完成"}）`}
+            </option>
+          ))}
+        </select>
+      ) : null}
+    </div>
+  );
+}
+
 function StepPanel({
   active,
   index,
@@ -1050,6 +1086,16 @@ export function LiveStepperForm({
   const invalidFocusPendingRef = useRef(false);
   const readinessFocusPendingRef = useRef<LivePublishRequirementCodeWithReminder | null>(null);
   const stepHeadingFocusPendingRef = useRef(false);
+  const [compactStepper, setCompactStepper] = useState(false);
+  useEffect(() => {
+    // F-118: 手機改用「第 N 步／共 8 步」與下拉；只在掛載後依視窗寬度切換，桌機 DOM 維持原樣。
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 767px)");
+    const update = () => setCompactStepper(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [selectedVideoId, setSelectedVideoId] = useState(initialValues.videoId);
   const [selectedFormId, setSelectedFormId] = useState(initialValues.formId);
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialValues.messageTemplateId);
@@ -1181,25 +1227,13 @@ export function LiveStepperForm({
           {draft.status === "saving" ? "儲存中…" : "立即儲存草稿"}
         </button>
       </div>
-      <div className="grid gap-2 md:hidden">
-        <p role="status" aria-live="polite" className="text-sm font-semibold text-slate-900">
-          第 {activeStep + 1} 步／共 {steps.length} 步：{steps[activeStep]?.label}
-        </p>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          切換步驟
-          <select
-            value={activeStep}
-            onChange={(event) => moveToStep(Number(event.target.value))}
-            className="min-h-11 rounded-md border border-border-control bg-white px-3 text-sm"
-          >
-            {steps.map((step, index) => (
-              <option key={step.key} value={index}>
-                {`第 ${index + 1} 步：${step.label}（${stepCompletion[index] ? "已完成" : "待完成"}）`}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <LiveStepPicker
+        activeStep={activeStep}
+        steps={steps}
+        completion={stepCompletion}
+        compact={compactStepper}
+        onSelect={moveToStep}
+      />
       <div className="hidden gap-2 md:grid md:grid-cols-2 xl:grid-cols-4">
         {steps.map((step, index) => (
           <button
