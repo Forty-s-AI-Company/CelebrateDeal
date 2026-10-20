@@ -543,7 +543,7 @@ export function InteractionRolesWorkbench({
           ) : null}
 
           <p className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            互動角色會依你預先設定的腳本，以角色暱稱在直播聊天室發言。它們的發言與互動不會計入後台統計，也不計入觀眾端在線人數，並不代表真人、報名、訂單、付款、評論或成效。
+            互動角色會依你預先設定的腳本，以角色暱稱在直播聊天室發言。它們的發言與互動不會計入後台統計，也不計入觀眾端在線人數。它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。
           </p>
 
           {selectedRole && !filteredRoles.some((role) => role.id === selectedRole.id) ? (

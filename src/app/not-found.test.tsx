@@ -17,12 +17,15 @@ describe("Traditional Chinese 404 and error pages", () => {
     const html = renderToStaticMarkup(<NotFound />);
     expect(html).toContain("找不到這個頁面");
     expect(html).toContain('href="/"');
-    expect(html).not.toMatch(/not found|404/iu);
+    // 保留 404 標題（監控與 E2E 以它辨識查無頁面），主訊息是繁中。
+    expect(html).toContain(">404</h1>");
+    expect(html).not.toMatch(/not found/iu);
   });
 
   it("viewer not-found has back and home exits", () => {
     const html = renderToStaticMarkup(<ViewerNotFound />);
     expect(html).toContain("找不到這個頁面");
+    expect(html).toContain(">404</h1>");
     expect(html).toContain("返回上一頁");
     expect(html).toContain('href="/"');
   });
