@@ -9,9 +9,15 @@ import { getDb } from "@/lib/db";
  * nothing: every public table keeps RLS enabled with no policy for them, and
  * neither role nor PUBLIC holds any table privilege.
  *
- * Plain PostgreSQL in CI and on loopback does not ship the Supabase roles, so
- * the test creates them as NOLOGIN roles first. They are left in place; they
- * cannot log in and own nothing.
+ * The combined coverage runner (scripts/run-combined-coverage.mjs) creates
+ * anon, authenticated and service_role plus Supabase's default
+ * `GRANT ALL ... TO anon, authenticated, service_role` privileges BEFORE
+ * migrations run, so the revokes in 20260724150000 and every conditional
+ * role statement in later migrations execute as they do on Supabase, and the
+ * assertions below catch a migration that grants to these roles.
+ * For ad-hoc local runs against a database migrated without that fixture the
+ * roles are created here as a fallback (NOLOGIN, cluster-wide, left in place);
+ * those runs then only prove the PUBLIC-grant and RLS assertions.
  */
 const DATA_API_ROLES = ["anon", "authenticated"] as const;
 const TABLE_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"] as const;

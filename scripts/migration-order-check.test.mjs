@@ -9,7 +9,9 @@ import {
   evaluateMigrationOrder,
   latestMigration,
   migrationSortKey,
+  parseChangedMigrationDirectories,
   parseMigrationTree,
+  readHeadMigrations,
   runMigrationOrderCheck,
 } from "./migration-order-check.mjs";
 
@@ -20,18 +22,56 @@ const master = [
   "20261019120000_user_policy_consent",
 ];
 
+// Each of these would be applied by Prisma; none may slip past the check.
+const malformedNames = [
+  "20261001000000_AddFoo",
+  "20261001000000-add-foo",
+  "2026100100_x",
+  "202610210001_short_prefix",
+  "20991231235959_trailing-hyphen",
+  "add_foo",
+];
+
+function addMigration(root, name) {
+  const directory = path.join(root, "prisma", "migrations", name);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, "migration.sql"), "SELECT 1;\n");
+}
+
+function gitIn(cwd, ...args) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
 test("legacy 12-digit prefixes sort by time with 14-digit ones", () => {
   assert.ok(migrationSortKey("202607170001_team_funnel_domain") < migrationSortKey("20260724150000_harden_supabase_data_api"));
   assert.ok(migrationSortKey("20260709090000_postgresql_baseline") < migrationSortKey("202607170001_team_funnel_domain"));
   assert.equal(migrationSortKey("migration_lock.toml"), null);
   assert.equal(latestMigration(master), "20261019120000_user_policy_consent");
+  assert.equal(latestMigration([...master, "20991231235959_AddFoo"]), "20261019120000_user_policy_consent");
   assert.equal(latestMigration([]), null);
 });
 
-test("parses ls-tree output and ignores non-migration entries", () => {
+test("parses every directory from ls-tree output without filtering names", () => {
+  const tree = [
+    "040000 tree 1111111111111111111111111111111111111111\t20261019120000_user_policy_consent",
+    "100644 blob 2222222222222222222222222222222222222222\tmigration_lock.toml",
+    "",
+    "040000 tree 3333333333333333333333333333333333333333\t202607170001_team_funnel_domain",
+    "040000 tree 4444444444444444444444444444444444444444\t20261001000000_AddFoo",
+  ].join("\r\n");
+  assert.deepEqual(parseMigrationTree(tree), [
+    "20261019120000_user_policy_consent",
+    "202607170001_team_funnel_domain",
+    "20261001000000_AddFoo",
+  ]);
+});
+
+test("parses edited migration directories from git diff output", () => {
   assert.deepEqual(
-    parseMigrationTree("20261019120000_user_policy_consent\r\nmigration_lock.toml\n\n202607170001_team_funnel_domain\n"),
-    ["20261019120000_user_policy_consent", "202607170001_team_funnel_domain"],
+    [...parseChangedMigrationDirectories("prisma/migrations/20261019120000_user_policy_consent/migration.sql\r\nprisma/migrations/migration_lock.toml\n\n")],
+    ["20261019120000_user_policy_consent"],
   );
 });
 
@@ -77,14 +117,27 @@ test("rejects a branch that fell behind a newer master migration", () => {
   assert.match(result.errors[0], /rebase and rename/u);
 });
 
-test("rejects new legacy-style or malformed names", () => {
+test("rejects every malformed or legacy-style new name, even ones that sort early", () => {
   const result = evaluateMigrationOrder({
     baseMigrations: master,
     mergeBaseMigrations: master,
-    headMigrations: [...master, "202610210001_short_prefix"],
+    headMigrations: [...master, ...malformedNames],
   });
   assert.equal(result.ok, false);
-  assert.match(result.errors[0], /<YYYYMMDDHHMMSS>_<snake_case>/u);
+  assert.deepEqual(result.added, [...malformedNames].sort());
+  assert.equal(result.errors.length, malformedNames.length);
+  for (const error of result.errors) assert.match(error, /<YYYYMMDDHHMMSS>_<lowercase_snake_case>/u);
+});
+
+test("reads every working-tree migration directory without filtering names", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-migration-dirs-"));
+  try {
+    for (const name of ["20261019120000_user_policy_consent", ...malformedNames]) addMigration(root, name);
+    fs.writeFileSync(path.join(root, "prisma", "migrations", "migration_lock.toml"), "provider = \"postgresql\"\n");
+    assert.deepEqual(readHeadMigrations(root).sort(), ["20261019120000_user_policy_consent", ...malformedNames].sort());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("rejects deleting or renaming a migration the branch started from", () => {
@@ -99,19 +152,20 @@ test("rejects deleting or renaming a migration the branch started from", () => {
   ]);
 });
 
-function gitIn(cwd, ...args) {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8", windowsHide: true });
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.trim();
-}
+test("rejects editing a migration the branch started from", () => {
+  const result = evaluateMigrationOrder({
+    baseMigrations: master,
+    mergeBaseMigrations: master,
+    headMigrations: master,
+    // The branch's own new migration may change freely before merge.
+    changedDirectories: new Set(["20261018090000_post_purchase_recovery_guard", "20261020090000_enable_rls_all_tables"]),
+  });
+  assert.deepEqual(result.errors, [
+    "20261018090000_post_purchase_recovery_guard: existing migration was edited; add a new forward migration instead.",
+  ]);
+});
 
-function addMigration(root, name) {
-  const directory = path.join(root, "prisma", "migrations", name);
-  fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, "migration.sql"), "SELECT 1;\n");
-}
-
-test("reads migrations from a real git base ref and merge base", () => {
+test("checks a real git repository end to end", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "celebratedeal-migration-order-"));
   try {
     gitIn(root, "init", "--quiet", "--initial-branch=master");
@@ -137,10 +191,41 @@ test("reads migrations from a real git base ref and merge base", () => {
     addMigration(root, "20261021080000_other_line");
     gitIn(root, "add", ".");
     gitIn(root, "commit", "--quiet", "-m", "newer master");
+
+    // Push to master after a squash merge: compare against the parent.
+    assert.deepEqual(runMigrationOrderCheck({ root, baseRef: "HEAD^1" }), {
+      ok: true,
+      latestBase: "20261019120000_user_policy_consent",
+      added: ["20261021080000_other_line"],
+      errors: [],
+    });
+
     gitIn(root, "checkout", "--quiet", "feature");
     const behind = runMigrationOrderCheck({ root, baseRef: "master" });
     assert.equal(behind.ok, false);
     assert.equal(behind.added.includes("20261020090000_enable_rls_all_tables"), true);
+
+    // Malformed directory names go through the real git path, not around it.
+    gitIn(root, "checkout", "--quiet", "master");
+    gitIn(root, "checkout", "--quiet", "-b", "malformed");
+    for (const name of malformedNames) addMigration(root, name);
+    const malformed = runMigrationOrderCheck({ root, baseRef: "master" });
+    assert.equal(malformed.ok, false);
+    assert.deepEqual(malformed.added, [...malformedNames].sort());
+    assert.equal(malformed.errors.length, malformedNames.length);
+    gitIn(root, "add", ".");
+    gitIn(root, "commit", "--quiet", "-m", "malformed");
+    assert.equal(runMigrationOrderCheck({ root, baseRef: "master" }).errors.length, malformedNames.length);
+
+    // Editing an existing migration fails, uncommitted or committed.
+    gitIn(root, "checkout", "--quiet", "master");
+    gitIn(root, "checkout", "--quiet", "-b", "edit");
+    fs.appendFileSync(path.join(root, "prisma", "migrations", "20261019120000_user_policy_consent", "migration.sql"), "SELECT 2;\n");
+    assert.deepEqual(runMigrationOrderCheck({ root, baseRef: "master" }).errors, [
+      "20261019120000_user_policy_consent: existing migration was edited; add a new forward migration instead.",
+    ]);
+    gitIn(root, "commit", "--quiet", "-am", "edit existing migration");
+    assert.equal(runMigrationOrderCheck({ root, baseRef: "master" }).ok, false);
 
     assert.throws(() => runMigrationOrderCheck({ root, baseRef: "--output=x" }), /plain git ref/u);
     assert.throws(() => runMigrationOrderCheck({ root, baseRef: "missing/ref" }), /fetch-depth: 0/u);

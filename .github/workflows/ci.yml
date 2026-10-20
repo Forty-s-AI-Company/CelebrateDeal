@@ -87,10 +87,14 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
-      # F-063 / B04-09: new migration names must sort after origin/master's
-      # newest migration, and existing migrations may not be deleted or renamed.
+      # F-063 / B04-09: every new migration directory must be named
+      # <YYYYMMDDHHMMSS>_<snake_case> and sort after the base branch's newest
+      # migration; existing migrations may not be deleted, renamed or edited.
+      # A push to master compares against the squash merge's parent.
       - name: Migration name order
         run: node scripts/migration-order-check.mjs
+        env:
+          MIGRATION_ORDER_BASE_REF: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') && 'HEAD^1' || 'origin/master' }}
 
       - name: Apply database migrations
         run: npm run db:migrate:deploy

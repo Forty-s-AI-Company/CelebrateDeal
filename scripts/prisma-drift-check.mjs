@@ -91,6 +91,19 @@ export function compareDrift(statements, allowlist) {
   return { ok: unexpected.length === 0 && stale.length === 0, unexpected, stale, matched: actual.size - unexpected.length };
 }
 
+// Categories whose disappearance most likely means a migration removed a
+// tenant-binding foreign key or a search index, not that drift was fixed.
+const PROTECTED_CATEGORIES = new Set(["trgm_gin_index", "foreign_key_missing_in_schema", "foreign_key_shape_mismatch"]);
+
+/** Human-facing message for an allowlisted statement that no longer appears. */
+export function staleMessage(statement, allowlist) {
+  const category = allowlist.entries.find((entry) => entry.statement === statement)?.category;
+  if (category && PROTECTED_CATEGORIES.has(category)) {
+    return `prisma-drift: protected ${category} entry disappeared. This is a tenant/business invariant: do NOT delete the allowlist entry; fix the migration that dropped or changed it (only remove the entry if schema.prisma now declares the same object, and say so in the PR): ${statement}`;
+  }
+  return `prisma-drift: allowlisted drift no longer present (update the allowlist deliberately): ${statement}`;
+}
+
 export function runPrismaDiff({ root, shadowUrl, spawn = spawnSync }) {
   const prismaCli = path.join(root, "node_modules", "prisma", "build", "index.js");
   const result = spawn(process.execPath, [
@@ -139,7 +152,7 @@ if (invokedScript === currentScript) {
       const allowlist = JSON.parse(fs.readFileSync(allowlistPath, "utf8"));
       const result = compareDrift(statements, allowlist);
       for (const statement of result.unexpected) console.error(`prisma-drift: unexpected (not allowlisted): ${statement}`);
-      for (const statement of result.stale) console.error(`prisma-drift: allowlisted drift no longer present (update the allowlist deliberately): ${statement}`);
+      for (const statement of result.stale) console.error(staleMessage(statement, allowlist));
       console.log(JSON.stringify({ ok: result.ok, statements: statements.length, matched: result.matched, unexpected: result.unexpected.length, stale: result.stale.length }));
       process.exitCode = result.ok ? 0 : 1;
     }

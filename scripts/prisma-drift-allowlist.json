@@ -15,7 +15,7 @@
     }
   },
   "notComparedByPrismaDiff": {
-    "reason": "Prisma 6 does not diff partial indexes, so these never appear in migrate diff output. src/lib/prisma-unmanaged-indexes.db.test.ts asserts they exist after migrate deploy.",
+    "reason": "Prisma 6 does not diff partial indexes, so these never appear in migrate diff output. src/lib/prisma-unmanaged-indexes.db.test.ts asserts their exact pg_get_indexdef after migrate deploy. Prisma 6 also does not diff CHECK constraints, triggers, functions, RLS, policies or grants.",
     "partialUniqueIndexes": [
       "ConsultationBooking_active_slot_key",
       "LiveQuestion_one_spotlight_per_live_key",

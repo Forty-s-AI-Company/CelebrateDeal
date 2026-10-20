@@ -10,6 +10,7 @@ import {
   compareDrift,
   parseDiffStatements,
   runPrismaDiff,
+  staleMessage,
   validateAllowlist,
 } from "./prisma-drift-check.mjs";
 
@@ -116,4 +117,14 @@ test("invokes prisma migrate diff with every URL pinned to the shadow database",
 
   assert.throws(() => runPrismaDiff({ root, shadowUrl, spawn: () => ({ status: 1, stdout: "" }) }), /exit code 1/u);
   assert.throws(() => runPrismaDiff({ root, shadowUrl, spawn: () => ({ error: new Error("spawn"), status: null, stdout: "" }) }), /exit code unknown/u);
+});
+
+test("tells developers not to delete protected allowlist entries when they disappear", () => {
+  const fk = "ALTER TABLE \"Live\" DROP CONSTRAINT \"Live_vendorId_formId_fkey\";";
+  const trgm = "DROP INDEX \"FormSubmission_email_trgm_idx\";";
+  const rename = allowlist.entries.find((entry) => entry.category === "index_name_mismatch").statement;
+  assert.match(staleMessage(fk, allowlist), /protected foreign_key_missing_in_schema entry disappeared.*do NOT delete the allowlist entry/u);
+  assert.match(staleMessage(trgm, allowlist), /protected trgm_gin_index entry disappeared/u);
+  assert.match(staleMessage(rename, allowlist), /^prisma-drift: allowlisted drift no longer present/u);
+  assert.match(staleMessage("DROP INDEX \"unknown\";", allowlist), /^prisma-drift: allowlisted drift no longer present/u);
 });

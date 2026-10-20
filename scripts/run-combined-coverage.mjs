@@ -130,6 +130,21 @@ function psql(containerId, sql, environment, database = "celebratedeal_test") {
   ], environment);
 }
 
+// Supabase ships the Data API roles and, for tables the postgres role
+// creates, default privileges that grant them everything. Recreate both
+// before migrations run so 20260724150000's revokes and the conditional
+// role statements in later migrations execute exactly as on Supabase, and
+// src/lib/rls-catalog.db.test.ts checks real Data API roles, not roles that
+// were created after the fact and therefore hold nothing.
+export const SUPABASE_DATA_API_ROLE_FIXTURE_SQL = [
+  "CREATE ROLE anon NOLOGIN",
+  "CREATE ROLE authenticated NOLOGIN",
+  "CREATE ROLE service_role NOLOGIN",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role",
+].join("; ").concat(";");
+
 function writeOwnershipMarkers(containerId, marker, environment) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const databaseMarker = psql(containerId, `COMMENT ON DATABASE celebratedeal_test IS '${marker}';`, environment, "postgres");
@@ -179,6 +194,7 @@ async function createDisposableDatabase() {
     const port = dockerPort(id, baseEnvironment);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Disposable PostgreSQL loopback port is invalid.");
     if (!writeOwnershipMarkers(id, marker, baseEnvironment)) throw new Error("Disposable PostgreSQL ownership marker could not be written.");
+    if (psql(id, SUPABASE_DATA_API_ROLE_FIXTURE_SQL, baseEnvironment).exitCode !== 0) throw new Error("Disposable PostgreSQL Data API role fixture could not be created.");
 
     const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/celebratedeal_test?schema=public`;
     const migrations = listCanonicalMigrations();
