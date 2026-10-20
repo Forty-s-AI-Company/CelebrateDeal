@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { saveMobileConsultationAction } from "@/app/actions/mobile-consultation-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { SalesScopeNotice } from "@/components/sales-scope-notice";
@@ -67,10 +68,10 @@ export default async function MobileConsultationsPage() {
                   <textarea name="note" maxLength={4_000} rows={2} className="rounded-xl border border-slate-300 p-3 font-normal" placeholder="記下需求與下一步…" />
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="submit" name="tag" value="預算足夠" className="min-h-12 rounded-xl border border-emerald-300 bg-emerald-50 px-2 text-sm font-bold text-emerald-900">＋ 預算足夠</button>
-                  <button type="submit" name="tag" value="需再跟進" className="min-h-12 rounded-xl border border-amber-300 bg-amber-50 px-2 text-sm font-bold text-amber-900">＋ 需再跟進</button>
-                  <button type="submit" className="min-h-12 rounded-xl border border-slate-300 px-2 text-sm font-bold text-slate-800">儲存備註</button>
-                  <button type="submit" name="closedWon" value="true" className="min-h-12 rounded-xl bg-emerald-700 px-2 text-sm font-black text-white">標記成交</button>
+                  <FormSubmitButton name="tag" value="預算足夠" pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-12 rounded-xl border border-emerald-300 bg-emerald-50 px-2 text-sm font-bold text-emerald-900">＋ 預算足夠</FormSubmitButton>
+                  <FormSubmitButton name="tag" value="需再跟進" pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-12 rounded-xl border border-amber-300 bg-amber-50 px-2 text-sm font-bold text-amber-900">＋ 需再跟進</FormSubmitButton>
+                  <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-12 rounded-xl border border-slate-300 px-2 text-sm font-bold text-slate-800">儲存備註</FormSubmitButton>
+                  <FormSubmitButton name="closedWon" value="true" pendingChildren="處理中…" pendingMessage="正在標記，請勿重複送出。" className="min-h-12 rounded-xl bg-emerald-700 px-2 text-sm font-black text-white">標記成交</FormSubmitButton>
                 </div>
               </form> : null}
             </article>

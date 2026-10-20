@@ -1,4 +1,5 @@
 import { formatAffiliateRemuneration } from "@/lib/affiliate-remuneration-format";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
@@ -31,14 +32,14 @@ export default async function AffiliateRemunerationPage({ params, searchParams }
         <label className="block">健保適用<select name="nhiTreatment" defaultValue={current.profile?.nhiTreatment ?? "subject_execution_business"} className="block min-h-11 rounded border"><option value="subject_execution_business">適用執行業務補充保費</option><option value="documented_exemption">有證明的免扣取資格</option><option value="not_insured">非健保保險對象</option><option value="not_applicable_business">事業不適用</option></select></label>
         <label className="block">免扣取／非保險對象證明編號<input name="exemptionReference" maxLength={160} defaultValue={current.profile?.exemptionReference ?? ""} className="block min-h-11 w-full rounded border px-3" /></label>
         <label className="block">事業發票憑證編號<input name="invoiceReference" maxLength={160} defaultValue={current.profile?.invoiceReference ?? ""} className="block min-h-11 w-full rounded border px-3" /></label>
-        <p>分類與證明須由商家核對，填寫聲明本身不代表已取得免扣繳資格。</p><button className="min-h-11 rounded bg-blue-700 px-4 text-white">提交收款資料</button>
+        <p>分類與證明須由商家核對，填寫聲明本身不代表已取得免扣繳資格。</p><FormSubmitButton pendingChildren="提交中…" pendingMessage="正在送出，請勿重複送出。" className="min-h-11 rounded bg-blue-700 px-4 text-white">提交收款資料</FormSubmitButton>
       </form>
     </section><section aria-label="提領與簽署"><h2 className="text-xl font-bold">提領與簽署</h2>
       {!current.policy?.enabled ? <p>商家尚未啟用提領費用政策。</p> : null}
       {!current.payouts.length ? <p>尚無已結算的佣金提領。</p> : current.payouts.map(payout => { const quote = payout.remunerationSnapshots[0]; return <article key={payout.id} className="my-4 rounded border p-4"><h3 className="font-bold">{payout.monthKey} 提領</h3><p>結算狀態：{payout.status}{payout.heldAmountCents > 0 ? "，有爭議款項暫停提領" : ""}</p>
         {payout.status === "paid" && payout.paidNetAmountCents != null ? <p>已記錄實領金額：{formatAffiliateRemuneration(payout.paidNetAmountCents)}</p> : null}{quote ? <><AffiliateRemunerationSummary quote={quote} /><p>簽署狀態：{payout.status === "paid" ? "商家已記錄付款" : quote.status === "signed" ? "已簽署" : quote.status === "exported" ? "商家已匯出，尚不代表付款" : quote.status === "invalidated" ? "已失效，請重新報價" : "待簽署"}</p></> : null}
-        {payout.status === "pending" && !payout.heldAmountCents && approved && current.policy?.enabled ? <form action={createAffiliateRemunerationQuoteAction}>{identity}<input type="hidden" name="payoutId" value={payout.id} /><button className="min-h-11 rounded border px-4">取得最新提領報價</button></form> : null}
-        {quote?.status === "quoted" && approved && current.policy?.enabled ? <form action={signAffiliateRemunerationQuoteAction} className="mt-3 space-y-3">{identity}<input type="hidden" name="snapshotId" value={quote.id} /><input type="hidden" name="expectedRevision" value={quote.revision} /><label className="flex min-h-11 items-center gap-2"><input name="consent" type="checkbox" required />我確認本次佣金、扣繳、補充保費、費用與實領金額，並同意簽署。</label><button className="min-h-11 rounded bg-blue-700 px-4 text-white">簽署本次提領</button></form> : null}
+        {payout.status === "pending" && !payout.heldAmountCents && approved && current.policy?.enabled ? <form action={createAffiliateRemunerationQuoteAction}>{identity}<input type="hidden" name="payoutId" value={payout.id} /><FormSubmitButton pendingChildren="取得報價中…" pendingMessage="正在取得報價，請勿重複送出。" className="min-h-11 rounded border px-4">取得最新提領報價</FormSubmitButton></form> : null}
+        {quote?.status === "quoted" && approved && current.policy?.enabled ? <form action={signAffiliateRemunerationQuoteAction} className="mt-3 space-y-3">{identity}<input type="hidden" name="snapshotId" value={quote.id} /><input type="hidden" name="expectedRevision" value={quote.revision} /><label className="flex min-h-11 items-center gap-2"><input name="consent" type="checkbox" required />我確認本次佣金、扣繳、補充保費、費用與實領金額，並同意簽署。</label><FormSubmitButton pendingChildren="簽署中…" pendingMessage="正在簽署，請勿重複送出。" className="min-h-11 rounded bg-blue-700 px-4 text-white">簽署本次提領</FormSubmitButton></form> : null}
       </article>; })}
       {current.nextCursor ? <Link className="block min-h-11 underline" href={`${path}?cursor=${encodeURIComponent(current.nextCursor)}`}>下一頁提領</Link> : null}
     </section><Link className="block min-h-11 underline" href={path.replace(/\/remuneration$/u, "")}>回到佣金帳本</Link>

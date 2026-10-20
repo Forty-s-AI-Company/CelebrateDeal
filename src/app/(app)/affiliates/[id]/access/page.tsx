@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import {notFound} from "next/navigation";
 import {requireVendorManager} from "@/lib/auth";
 import {getDb} from "@/lib/db";
@@ -34,6 +35,6 @@ export default async function AffiliateAccessPage({params,searchParams}:{params:
  <CsrfField/><input type="hidden" name="affiliateId" value={id}/><input type="hidden" name="expectedRevision" value={affiliate.portalAccess?.revision??0}/>
  <div><label htmlFor="affiliate-portal-member">授權成員</label><select id="affiliate-portal-member" name="vendorMemberId" required defaultValue={affiliate.portalAccess?.vendorMemberId??""} className="block min-h-11 w-full rounded border p-2"><option value="" disabled>請選擇成員</option>{members.map(member=><option key={member.id} value={member.id}>{member.user.name}{member.status!=="active"||member.user.status!=="active"?"（已停用，可撤銷）":""}</option>)}</select></div>
  <label><input name="active" type="checkbox" defaultChecked={affiliate.portalAccess?.active??true}/>啟用夥伴入口</label>
- <button className="min-h-11 rounded bg-blue-700 px-4 py-2 text-white">儲存入口授權</button>
+ <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-11 rounded bg-blue-700 px-4 py-2 text-white">儲存入口授權</FormSubmitButton>
  </form>{next?<Link className="mt-4 block min-h-11 underline" href={`?q=${encodeURIComponent(search)}&cursor=${encodeURIComponent(next)}`}>下一頁成員</Link>:null}<p className="mt-4">若成員未列出，請先確認其商家成員與帳號皆為啟用狀態。</p><ButtonLink href="/affiliate-portal">開啟夥伴入口</ButtonLink></>;
 }

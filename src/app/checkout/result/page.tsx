@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import Link from "next/link";
 import { cookies } from "next/headers";
 
@@ -142,7 +143,7 @@ export default async function PaymentResultPage({ searchParams }: {
                   {["paid", "partially_refunded", "refunded"].includes(grant.order.status) ? (
                     <form action={enterStudentPortalFromCheckoutAction}>
                       <CsrfField /><input type="hidden" name="grantId" value={grant.id} />
-                      <button type="submit" className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2">前往學員中心，驗證 Email →</button>
+                      <FormSubmitButton pendingChildren="前往中…" pendingMessage="正在前往學員中心，請稍候。" className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2">前往學員中心，驗證 Email →</FormSubmitButton>
                     </form>
                   ) : null}
                   <LineLoginButton request={{ mode: "buyer", grantId: grant.id, redirectPath: "/checkout/result" }}>🟢 接收 LINE 開播提醒與電子票券</LineLoginButton>
