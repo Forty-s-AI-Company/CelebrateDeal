@@ -16,6 +16,8 @@ const LINE_SETTINGS_PATH = "/settings/line";
 export type LineOfficialAccountActionState = {
   status: "idle" | "saved" | "error";
   error: "invalid_credentials" | "save_failed" | null;
+  /** 格式有誤的欄位名稱（只含欄位 key，不含任何憑證內容）。 */
+  fields?: string[];
 };
 
 export type LineConnectionActionState = {
@@ -83,7 +85,9 @@ export async function saveLineOfficialAccountAction(
     loginChannelId: optionalFormText(formData, "loginChannelId"),
     loginChannelSecret: optionalFormText(formData, "loginChannelSecret"),
   });
-  if (!parsed.success) return { status: "error", error: "invalid_credentials" };
+  if (!parsed.success) {
+    return { status: "error", error: "invalid_credentials", fields: Object.keys(parsed.errors ?? {}) };
+  }
 
   const protectedCredentials = protectLineOfficialAccountCredentials(auth.vendor.id, parsed.data);
   let account: { id: string; status: string; connectedAt: Date };
