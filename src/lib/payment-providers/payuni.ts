@@ -55,6 +55,8 @@ const PAYUNI_WEBHOOK_AUDIT_KEYS = new Set([
   "PlatformFee",
   "NetAmount",
   "RefundAmount",
+  "CloseNo",
+  "RefundNo",
   "GatewayFeeRefund",
   "PlatformFeeRefund",
   "OccurredAt",
@@ -137,24 +139,28 @@ function normalizeEventType(value: unknown) {
 
 /**
  * Event identity for the legacy (non-UPP) refund/failure notice shape (F-067).
- * The former fallback was the bare TradeNo, so a second notice for the same
- * trade (a refund after a failure, or a second partial refund) collided on
- * WebhookEvent(provider, eventId) and was acknowledged as a duplicate. Without
- * a provider EventId the identity now carries the event type and, for refunds,
- * the refunded amount; a paid UPP callback keys on `${TradeNo}:${TradeStatus}`,
- * so it can never collide with a refund notice of the same trade.
- * 待 Sandbox 確認: PayUni 是否會對同一 TradeNo 主動推送退款／爭議通知，以及其
- * 欄位（退款序號、狀態碼）。確認後改用 provider 的退款序號，兩筆同金額的部分
- * 退款才不會被視為同一事件。
+ * A refund notice is keyed by the provider refund serial (CloseNo, then
+ * RefundNo): the same value a refund started here stores as
+ * RefundRecord.providerEventId, so a notice for a refund we already booked is
+ * recognised as a duplicate. Without a serial the refund cannot be told apart
+ * from another refund of the same trade (or from a refund we booked under the
+ * TradeNo), so it is never applied automatically: it becomes a manual
+ * reconciliation record and alert (PR #454 A-1/A-2). A failure notice keeps a
+ * state-specific identity so it never collides with the paid `${TradeNo}:1`.
+ * 待 Sandbox 確認: PayUni 是否會對同一 TradeNo 主動推送退款／爭議通知，以及
+ * 退款序號的實際欄位名稱。
  */
 function legacyNoticeEventId(rawPayload: Record<string, unknown>, eventType: string, orderNumber: string) {
-  const providerEventId = optionalPayloadText(rawPayload.EventId);
-  if (providerEventId) return providerEventId;
-  const trade = optionalPayloadText(rawPayload.TradeNo) ?? optionalPayloadText(rawPayload.TsNo) ?? orderNumber;
-  const refundCents = eventType === "refunded" || eventType === "partially_refunded"
-    ? `:${optionalCents(rawPayload.RefundAmount) ?? 0}`
-    : "";
-  return `${eventType}:${trade}${refundCents}`;
+  const tradeNo = optionalPayloadText(rawPayload.TradeNo);
+  if (eventType === "refunded" || eventType === "partially_refunded") {
+    const refundSerial = optionalPayloadText(rawPayload.CloseNo) ?? optionalPayloadText(rawPayload.RefundNo);
+    if (refundSerial) return refundSerial;
+    throw new PaymentWebhookNotActionableError("refund_reference_missing", {
+      orderNumber, providerTradeNo: tradeNo, tradeStatus: "legacy_refund",
+    }, payUniWebhookAuditSnapshot(rawPayload));
+  }
+  return optionalPayloadText(rawPayload.EventId)
+    ?? `${eventType}:${tradeNo ?? optionalPayloadText(rawPayload.TsNo) ?? orderNumber}`;
 }
 
 function requiredPayloadText(value: unknown, field: string) {

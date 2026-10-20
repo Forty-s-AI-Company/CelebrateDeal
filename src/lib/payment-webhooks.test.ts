@@ -911,6 +911,34 @@ describe("payment webhook processing", () => {
     expect(await db.affiliateCommission.count({ where: { vendorId: vendor.id, orderNumber } })).toBe(0);
   });
 
+  it.each([
+    { label: "a serial notice after a local refund booked under the TradeNo", localRefundEventId: "trade", incomingEventId: "CLOSE-NEW" },
+    { label: "a pre-deploy TradeNo replay after a local refund booked under its serial", localRefundEventId: "CLOSE-LOCAL", incomingEventId: "trade" },
+  ])("refuses $label instead of booking the same partial refund twice (PR #454 A-1)", async ({ label, localRefundEventId, incomingEventId }) => {
+    const suffix = `${Date.now()}-ambiguous-refund-${label.length}`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-AMBIGUOUS-REFUND-${suffix}`;
+    const tradeNo = `PAYUNI-AMBIGUOUS-${suffix}`;
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "payuni", orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "payuni", eventId: `${tradeNo}:1`, eventType: "paid", orderNumber, providerTradeNo: tradeNo, grossAmountCents: 100000,
+    }));
+    const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
+    // A refund started from the admin/refund execution path (CloseNo ?? RefundNo ?? TradeNo).
+    await db.refundRecord.create({ data: { vendorId: vendor.id, paymentTransactionId: transaction.id,
+      providerEventId: localRefundEventId === "trade" ? tradeNo : localRefundEventId,
+      monthKey: new Date().toISOString().slice(0, 7), refundAmountCents: 20000, status: "processed" } });
+    await db.paymentTransaction.update({ where: { id: transaction.id }, data: { status: "partially_refunded", refundedAmountCents: 20000 } });
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "payuni", eventId: incomingEventId === "trade" ? tradeNo : incomingEventId, eventType: "partially_refunded",
+      orderNumber, providerTradeNo: tradeNo, refundAmountCents: 20000,
+    }))).rejects.toThrow("需人工對帳");
+
+    expect(await db.refundRecord.count({ where: { paymentTransactionId: transaction.id } })).toBe(1);
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).toMatchObject({ refundedAmountCents: 20000 });
+  });
+
   it("ignores callback referral and commission-rate overrides for an existing checkout (F-048)", async () => {
     const suffix = `${Date.now()}-callback-rate-override`;
     const { db, vendor, affiliate } = await createFixture(suffix);

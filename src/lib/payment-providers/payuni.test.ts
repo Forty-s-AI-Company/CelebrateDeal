@@ -690,6 +690,7 @@ describe("PayUni provider", () => {
       EventId: "payuni-refund-no-trade-amount-001",
       EventType: "refunded",
       MerTradeNo: "CD-REFUND-NO-TRADE-001",
+      CloseNo: "CLOSE-NO-TRADE-AMOUNT-001",
       RefundAmount: "1990",
     });
 
@@ -953,32 +954,36 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     expect(payerReturn.payload.eventId).toBe(notify.payload.eventId);
   });
 
-  it("never collapses a refund or failure notice into the paid event of the same TradeNo (F-067)", async () => {
-    const paid = await normalizeReal(realPaid);
-    const legacy = (fields: Record<string, string>) => payUniPaymentProvider.normalizePayload(payUniEnvelope({
-      MerID: "TESTMER", MerTradeNo: "CD-REAL-001", TradeNo: "PAYUNI-REAL-TRADE-001", ...fields }));
-    const fullRefund = await legacy({ EventType: "refunded", RefundAmount: "1990" });
-    const firstPartial = await legacy({ EventType: "partially_refunded", RefundAmount: "500" });
-    const secondPartial = await legacy({ EventType: "partially_refunded", RefundAmount: "700" });
-    const failed = await legacy({ EventType: "failed" });
-    const resent = await legacy({ EventType: "partially_refunded", RefundAmount: "500" });
+  describe("legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2)", () => {
+    const legacy = (fields: Record<string, string>) => { stubPayUniEnv(); return payUniPaymentProvider.normalizePayload(payUniEnvelope({
+      MerID: "TESTMER", MerTradeNo: "CD-REAL-001", TradeNo: "PAYUNI-REAL-TRADE-001", ...fields })); };
 
-    const ids = [paid, fullRefund, firstPartial, secondPartial, failed].map((result) => result.payload.eventId);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual([
-      "PAYUNI-REAL-TRADE-001:1",
-      "refunded:PAYUNI-REAL-TRADE-001:199000",
-      "partially_refunded:PAYUNI-REAL-TRADE-001:50000",
-      "partially_refunded:PAYUNI-REAL-TRADE-001:70000",
-      "failed:PAYUNI-REAL-TRADE-001",
-    ]);
-    // A resent identical notice still converges on one event.
-    expect(resent.payload.eventId).toBe(firstPartial.payload.eventId);
-    // A provider-assigned EventId is kept verbatim for legacy notices; blank is ignored.
-    await expect(legacy({ EventType: "refunded", RefundAmount: "1990", EventId: "provider-refund-1" }))
-      .resolves.toMatchObject({ payload: { eventId: "provider-refund-1" } });
-    await expect(legacy({ EventType: "refunded", RefundAmount: "1990", EventId: " " }))
-      .resolves.toMatchObject({ payload: { eventId: "refunded:PAYUNI-REAL-TRADE-001:199000" } });
+    it("keys a refund notice by its provider refund serial, the same value a local refund stores", async () => {
+      const paid = await normalizeReal(realPaid);
+      const closed = await legacy({ EventType: "partially_refunded", RefundAmount: "500", CloseNo: "CLOSE-001", RefundNo: "REFUND-001" });
+      const byRefundNo = await legacy({ EventType: "partially_refunded", RefundAmount: "500", RefundNo: "REFUND-002" });
+      const resent = await legacy({ EventType: "partially_refunded", RefundAmount: "500", CloseNo: "CLOSE-001", EventId: "ignored" });
+      const failed = await legacy({ EventType: "failed" });
+
+      expect([paid, closed, byRefundNo, failed].map((result) => result.payload.eventId)).toEqual([
+        "PAYUNI-REAL-TRADE-001:1", "CLOSE-001", "REFUND-002", "failed:PAYUNI-REAL-TRADE-001",
+      ]);
+      // A resent notice with the same serial converges on one event.
+      expect(resent.payload.eventId).toBe("CLOSE-001");
+    });
+
+    it.each([
+      ["a refund", { EventType: "refunded", RefundAmount: "1990" }],
+      ["a partial refund", { EventType: "partially_refunded", RefundAmount: "500" }],
+      ["a second partial refund of the same amount", { EventType: "partially_refunded", RefundAmount: "500" }],
+      ["a refund with only a synthetic EventId", { EventType: "partially_refunded", RefundAmount: "500", EventId: "synthetic-only" }],
+      ["a refund with a blank serial", { EventType: "refunded", RefundAmount: "1990", CloseNo: " ", RefundNo: "" }],
+    ])("never applies %s without a provider refund serial; it goes to manual reconciliation", async (_label, fields) => {
+      await expect(legacy(fields)).rejects.toMatchObject({
+        name: "PaymentWebhookNotActionableError", reason: "refund_reference_missing", requiresManualReconciliation: true,
+        identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "legacy_refund" },
+      });
+    });
   });
 
   it("keeps a failed attempt and a later paid result of one trade as separate events", async () => {

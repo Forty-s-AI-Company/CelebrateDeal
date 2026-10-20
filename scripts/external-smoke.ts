@@ -330,7 +330,7 @@ async function runPayUniSmoke() {
           MerTradeNo: orderNumber,
           TradeNo: tradeNo,
           TradeAmt: tradeAmount,
-          ...(item.fixture === "refunded" ? { RefundAmount: tradeAmount } : {}),
+          ...(item.fixture === "refunded" ? { RefundAmount: tradeAmount, CloseNo: `${tradeNo}-CLOSE` } : {}),
           EventId: item.eventId,
         },
       });
