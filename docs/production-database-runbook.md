@@ -188,7 +188,9 @@ Prisma 把整份 `migration.sql` 以單一多語句查詢送出，PostgreSQL 會
 
 ### 5.3 大表變更規則
 
-- 新增 CHECK／FK 一律先 `NOT VALID`，再另一句 `VALIDATE CONSTRAINT`（驗證只取 SHARE UPDATE EXCLUSIVE，不擋讀寫）。
+- 新增 CHECK／FK 一律先 `NOT VALID`，`VALIDATE CONSTRAINT` 放在**時間戳較晚的另一個 migration**。Prisma 把每個 migration 檔當成一個隱含交易，`ADD CONSTRAINT`、`DROP CONSTRAINT`、`ADD COLUMN` 取得的 ACCESS EXCLUSIVE 會持有到該檔 commit；同一個檔案裡的 VALIDATE 仍會在 ACCESS EXCLUSIVE 下掃整張表。獨立 migration 的 VALIDATE 只取 SHARE UPDATE EXCLUSIVE，不擋讀寫。
+- 依資料內容可能失敗的 migration（例如 preflight `RAISE`）不要排在新程式必須用到的欄位之前；能在 migration 內安全修正資料的，改為修正並留下稽核紀錄，不要卡住整批部署。
+- 先 `migrate deploy` 成功，才 promote 依賴新欄位的 app。
 - 熱表（`CommerceOrder`、`FormSubmission`、`PaymentTransaction` 等）的索引改用 `CREATE INDEX CONCURRENTLY`，並放在**只含這一句**的獨立 migration（多語句的 migration 是隱含交易，`CONCURRENTLY` 不能在交易內執行；需先在 staging 演練）。
 - migration 內設定交易層級 `lock_timeout`（`SELECT pg_catalog.set_config('lock_timeout', '5s', true)`），並附唯讀 preflight 查詢與失敗時的 `migrate resolve` 指引。
 

@@ -1703,6 +1703,10 @@ model PaymentAccount {
   bankCodeLegacy          String?  @map("bankCode")
   bankAccountLegacyNumber String?  @map("bankAccountNumber")
   bankAccountEncrypted    String?
+  /// F-073: last merchant self-service change of the payout bank account.
+  bankAccountChangedAt    DateTime?
+  /// F-073: a `pending_verification` account may receive payouts only from this time on.
+  payoutEligibleAt        DateTime?
   riskHoldEnabled         Boolean  @default(false)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
