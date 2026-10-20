@@ -137,7 +137,12 @@ describe("funnel history database guards", () => {
     const page = await createPage(tenant);
     await addVisit(tenant, page.id);
 
-    await expect(getDb().landingPage.delete({ where: { id: page.id } })).rejects.toMatchObject({ code: "P2003" });
+    // PostgreSQL <= 17 reports RESTRICT as 23503 (Prisma P2003); 18 reports
+    // 23001 restrict_violation, which Prisma surfaces as an unknown error.
+    const error = await getDb().landingPage.delete({ where: { id: page.id } }).then(() => null, (reason: unknown) => reason);
+    expect(error).not.toBeNull();
+    const detail = `${(error as { code?: string }).code ?? ""} ${String((error as Error).message)}`;
+    expect(detail).toMatch(/P2003|23503|23001|FunnelVisit_vendorId_pageId_fkey|restrict/i);
     expect(await getDb().funnelVisit.count({ where: { pageId: page.id } })).toBe(1);
   });
 
