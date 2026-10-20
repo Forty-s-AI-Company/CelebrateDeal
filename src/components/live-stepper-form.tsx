@@ -1049,6 +1049,7 @@ export function LiveStepperForm({
   const formRef = useRef<HTMLFormElement>(null);
   const invalidFocusPendingRef = useRef(false);
   const readinessFocusPendingRef = useRef<LivePublishRequirementCodeWithReminder | null>(null);
+  const stepHeadingFocusPendingRef = useRef(false);
   const [selectedVideoId, setSelectedVideoId] = useState(initialValues.videoId);
   const [selectedFormId, setSelectedFormId] = useState(initialValues.formId);
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialValues.messageTemplateId);
@@ -1086,7 +1087,18 @@ export function LiveStepperForm({
 
   useEffect(() => {
     const code = readinessFocusPendingRef.current;
-    if (!code) return;
+    if (!code) {
+      // F-118: 手動切換步驟後把焦點移到新步驟的標題，讓鍵盤與螢幕閱讀器知道內容已換。
+      if (!stepHeadingFocusPendingRef.current) return;
+      stepHeadingFocusPendingRef.current = false;
+      const panel = formRef.current?.querySelector<HTMLElement>(`[data-step-index="${activeStep}"]`);
+      const heading = panel?.querySelector<HTMLElement>("h2, h3") ?? panel;
+      if (heading && typeof heading.setAttribute === "function") {
+        if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
+        heading.focus();
+      }
+      return;
+    }
     const target = formRef.current?.querySelector<HTMLElement>(readinessFocusSelector[code]);
     target?.focus();
     readinessFocusPendingRef.current = null;
@@ -1108,6 +1120,7 @@ export function LiveStepperForm({
 
   function moveToStep(nextStep: number) {
     if (nextStep > activeStep && !validateCurrentStep()) return;
+    stepHeadingFocusPendingRef.current = nextStep !== activeStep;
     setValidationMessage(""); setActiveStep(nextStep); draft.scheduleSave(nextStep);
   }
 
@@ -1163,12 +1176,31 @@ export function LiveStepperForm({
           onClick={() => void draft.saveNow()}
           disabled={draft.status === "saving" || draft.status === "conflict"}
           aria-busy={draft.status === "saving"}
-          className="min-h-10 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-11 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"
         >
           {draft.status === "saving" ? "儲存中…" : "立即儲存草稿"}
         </button>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-2 md:hidden">
+        <p role="status" aria-live="polite" className="text-sm font-semibold text-slate-900">
+          第 {activeStep + 1} 步／共 {steps.length} 步：{steps[activeStep]?.label}
+        </p>
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          切換步驟
+          <select
+            value={activeStep}
+            onChange={(event) => moveToStep(Number(event.target.value))}
+            className="min-h-11 rounded-md border border-border-control bg-white px-3 text-sm"
+          >
+            {steps.map((step, index) => (
+              <option key={step.key} value={index}>
+                {`第 ${index + 1} 步：${step.label}（${stepCompletion[index] ? "已完成" : "待完成"}）`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="hidden gap-2 md:grid md:grid-cols-2 xl:grid-cols-4">
         {steps.map((step, index) => (
           <button
             key={step.key}
@@ -1245,11 +1277,11 @@ export function LiveStepperForm({
       </StepPanel>
 
       <div className="flex justify-between">
-        <button type="button" onClick={() => moveToStep(Math.max(0, activeStep - 1))} disabled={activeStep === 0} className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={() => moveToStep(Math.max(0, activeStep - 1))} disabled={activeStep === 0} className="min-h-11 rounded-md border border-border px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
           上一步
         </button>
         {activeStep < steps.length - 1 ? (
-          <button type="button" onClick={() => moveToStep(Math.min(steps.length - 1, activeStep + 1))} className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
+          <button type="button" onClick={() => moveToStep(Math.min(steps.length - 1, activeStep + 1))} className="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
             下一步
           </button>
         ) : (

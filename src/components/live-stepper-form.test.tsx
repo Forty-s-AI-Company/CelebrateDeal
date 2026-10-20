@@ -485,6 +485,22 @@ describe("LiveStepperForm", () => {
     });
   });
 
+  it("shows a compact mobile step picker with the position and 44px minimum controls (F-118)", () => {
+    const form = renderForm();
+    const html = renderToStaticMarkup(form as ReactElement);
+    expect(html).toContain("第 1 步／共 8 步：用途與基本資料");
+    // 手機只顯示下拉；八顆步驟按鈕只在 md 以上出現。
+    expect(html).toMatch(/class="[^"]*hidden[^"]*md:grid[^"]*"/);
+    const picker = findElement(form, (candidate) => candidate.type === "select" && candidate.props["aria-hidden"] === undefined && Array.isArray(candidate.props.children) && candidate.props.children.length === 8);
+    expect(picker).toBeDefined();
+    expect(String(picker?.props.className)).toContain("min-h-11");
+    expect(html).toContain("第 8 步：桌機／手機預覽發布");
+    for (const label of ["上一步", "下一步"]) {
+      const button = findElement(form, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === label);
+      expect(String(button?.props.className)).toContain("min-h-11");
+    }
+  });
+
   it("reports a taken live address as a message that tells the user the draft is kept", () => {
     const html = renderToStaticMarkup(renderForm(products, { error: "slug_taken" }) as ReactElement);
     expect(html).toContain("這個直播網址已被使用");
