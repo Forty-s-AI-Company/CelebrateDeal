@@ -39,6 +39,7 @@ import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase
 import { resolveManualReconciliationForPaidTrade, withoutManualReconciliationHold } from "@/lib/payment-webhook-manual-reconciliation";
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, type PostRefundCommerceOrderRefund } from "@/lib/payment-post-refund";
+import { resolveWebhookPaymentAmounts } from "@/lib/payment-gateway-fee";
 import {
   isRefundEvent,
   isDisputeEvent,
@@ -1020,7 +1021,6 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     invoicePayment,
     commerceOrderRefund,
   // The ordered re-read and writes must remain in one serializable closure.
-  // eslint-disable-next-line complexity -- splitting this scope weakens its transaction invariant.
   } = await db.$transaction(async (tx) => withPaymentWebhookStage("PAYMENT_UPDATE", async () => {
     // Re-read the logical order inside the serializable transaction. This keeps
     // amount, refund and state checks bound to the row version being updated.
@@ -1052,15 +1052,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       || ["refunded", "partially_refunded"].includes(currentTransaction.status)
     ));
     const grossAmountCents = currentTransaction?.grossAmountCents || payload.grossAmountCents;
-    const gatewayFeeCents = payload.eventType === "paid"
-      ? payload.gatewayFeeCents || currentTransaction?.gatewayFeeCents || 0
-      : currentTransaction?.gatewayFeeCents || 0;
-    const platformFeeCents = payload.eventType === "paid"
-      ? payload.platformFeeCents || currentTransaction?.platformFeeCents || 0
-      : currentTransaction?.platformFeeCents || 0;
-    const netAmountCents = payload.eventType === "paid"
-      ? payload.netAmountCents ?? currentTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents)
-      : currentTransaction?.netAmountCents ?? Math.max(0, grossAmountCents - gatewayFeeCents - platformFeeCents);
+    // F-040: a paid PayUni callback without provider fees uses the contract rate.
+    const { gatewayFeeCents, platformFeeCents, netAmountCents, feeMetadata } = resolveWebhookPaymentAmounts({
+      provider: payload.provider, eventType: payload.eventType, grossAmountCents, reported: payload, stored: currentTransaction,
+    });
     const currency = currentTransaction?.currency ?? payload.currency ?? "TWD";
     const existingMetadata = metadataObject(currentTransaction?.metadata);
     const checkoutReferralCode = referralCodeFromMetadata(existingMetadata);
@@ -1077,6 +1072,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       ...(payload.eventType === "paid" ? withoutManualReconciliationHold(existingMetadata) : existingMetadata),
       ...(checkoutReferralCode ? { referralCode: checkoutReferralCode } : {}),
       ...(formSubmissionId ? { formSubmissionId } : {}),
+      ...(feeMetadata ?? {}),
     } as Prisma.InputJsonObject;
     const nextStatus = resolvePaymentStatus(currentTransaction?.status ?? null, payload.eventType);
     const ignoredIncomingState = nextStatus !== payload.eventType;

@@ -285,8 +285,10 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
    [`${payment.providerTradeNo}:2`, "failed", "processed"],
   ]);
   const paid = await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } });
-  // No provider net amount: the checkout's stored value is kept, never zeroed (F-040).
-  expect(paid).toMatchObject({ status: "paid", grossAmountCents: 100, netAmountCents: 100 });
+  // No provider net amount: the server applies the D-30 contract rate, never zero (F-040).
+  // 100 cents x 2.8% x 1.05 = 2.94 -> 3 cents.
+  expect(paid).toMatchObject({ status: "paid", grossAmountCents: 100, gatewayFeeCents: 3, netAmountCents: 97 });
+  expect(paid.metadata).toMatchObject({ feeSource: "contract_rate", gatewayFeePolicy: { feeBps: 280, taxBps: 500 } });
   const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
   expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
  });

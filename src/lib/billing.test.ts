@@ -21,6 +21,7 @@ vi.mock("@/lib/usage-estimation", () => ({
 }));
 
 import { calculateSettlement, calculateStreamUsageMinutes, invoiceDueAt, invoiceNumber, monthRange } from "@/lib/billing";
+import { resolveWebhookPaymentAmounts } from "@/lib/payment-gateway-fee";
 
 const subscription = {
   paymentMode: "platform",
@@ -172,6 +173,23 @@ describe("calculateSettlement transaction service fee", () => {
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
     expect(settlement.transactionServiceFeeCents).toBe(0);
+  });
+});
+
+describe("F-040 contract-rate PayUni fee", () => {
+  it("deducts the fee the paid webhook recorded from the merchant payout", async () => {
+    const policy = { feeBps: 280, taxBps: 500 };
+    const paid = [120_000, 99_900].map((grossAmountCents) => {
+      const amounts = resolveWebhookPaymentAmounts({ provider: "payuni", eventType: "paid", grossAmountCents, reported: {}, stored: null, policy });
+      return { grossAmountCents, gatewayFeeCents: amounts.gatewayFeeCents, platformFeeCents: 0, currency: "TWD" };
+    });
+    expect(paid.map((transaction) => transaction.gatewayFeeCents)).toEqual([3_528, 2_937]);
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce(paid);
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(settlement.paymentGatewayFeeCents).toBe(6_465);
+    expect(settlement.payoutableAmountCents).toBe(219_900 - 6_465);
   });
 });
 
