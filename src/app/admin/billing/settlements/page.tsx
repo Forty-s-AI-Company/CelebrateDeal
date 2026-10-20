@@ -30,6 +30,7 @@ const settlementErrorMessages: Record<string, string> = {
   locked: "這筆月結已鎖定，不能再重新計算或調整。",
   missing: "找不到指定的商家或月結資料。",
   negative_payout: "調整後的結算金額不可小於 0 元，資料未儲存。",
+  unsupported_currency: "這個月份有非新台幣（TWD）的交易，月結不會混加不同幣別；請先人工核對該商家的交易。",
 };
 
 export default async function AdminBillingSettlementsPage({

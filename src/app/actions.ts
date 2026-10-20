@@ -1516,6 +1516,7 @@ export async function generateSettlementAction(formData: FormData) {
       if (error.code === "negative_payout") redirect("/admin/billing/settlements?error=negative_payout");
       if (error.code === "terminal_invoice_amount_conflict") redirect("/admin/billing/settlements?error=invoice_conflict");
       if (error.code === "conflict") redirect("/admin/billing/settlements?error=conflict");
+      if (error.code === "unsupported_currency") redirect("/admin/billing/settlements?error=unsupported_currency");
       redirect("/admin/billing/settlements?error=missing");
     }
     if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {

@@ -54,6 +54,13 @@ describe("payment webhook failure classification", () => {
     expect(classifyPaymentWebhookErrorClass(new Error(message))).toBe(expected);
   });
 
+  it.each([
+    ["付款 webhook 找不到對應的既存結帳交易，拒絕建立權威付款。", "scope_missing"],
+    ["退款 webhook 無法與只帶交易編號的既有退款區分，需人工對帳。", "order_ambiguous"],
+  ])("classifies the F-048 / PR #454 refusal %s as a bounded failure code", (message, code) => {
+    expect(classifyPaymentWebhookFailure(new Error(message))).toBe(code);
+  });
+
   it("never returns arbitrary error names, messages, codes or metadata", () => {
     const error = Object.assign(new Error("synthetic confidential value"), {
       name: "arbitrary-confidential-class", code: "P2022:private", meta: { private: "confidential" },

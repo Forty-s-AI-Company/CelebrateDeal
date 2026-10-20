@@ -37,8 +37,8 @@
     "cloudflare:fixtures": "node --import tsx scripts/cloudflare-webhook-fixtures.ts",
     "admin:bootstrap": "node --import tsx scripts/bootstrap-platform-admin.ts",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate": "node --import tsx scripts/db-migrate-dev.ts",
+    "db:migrate:deploy": "node --import tsx scripts/db-migrate-deploy.ts",
     "db:migrate:status": "prisma migrate status",
     "db:check": "node --import tsx scripts/check-local-database.ts",
     "db:seed": "prisma db seed"

@@ -9,7 +9,8 @@ export type PayUniSandboxFixtureName = "paid" | "refunded" | "duplicate_paid";
  * (F-037). Replace them with a de-identified Sandbox sample when one exists.
  * `refunded` is a synthetic refund notice for the internal webhook pipeline,
  * not a PayUni callback format; PayUni refunds are confirmed through the
- * refund and query APIs.
+ * refund and query APIs. It carries a refund serial (CloseNo): a refund notice
+ * without one is never applied automatically (PR #454 A-1).
  */
 const payUniUppPaidCallback = {
   Status: "SUCCESS",
@@ -25,6 +26,7 @@ export const payUniSandboxPlainFixtures: Record<PayUniSandboxFixtureName, Record
   refunded: {
     EventId: "payuni-sandbox-refunded-001",
     EventType: "refunded",
+    CloseNo: "PAYUNI-SANDBOX-CLOSE-001",
     MerTradeNo: "CD-SANDBOX-PAID-001",
     TradeNo: "PAYUNI-SANDBOX-TRADE-001",
     TradeAmt: 1990,
