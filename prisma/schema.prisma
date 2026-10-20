@@ -2637,6 +2637,10 @@ model AffiliateCommissionLedgerEntry {
   disputeCaseId         String?
   amountCents           Int
   occurredAt            DateTime
+  /// F-039 (review M-1): a refund reversal is settled in the same month as
+  /// its RefundRecord (server completion month past locked months). NULL
+  /// means the entry is settled with its commission's monthKey.
+  settlementMonthKey    String?
   createdAt             DateTime                           @default(now())
 
   vendor     Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
@@ -2645,6 +2649,7 @@ model AffiliateCommissionLedgerEntry {
   @@unique([vendorId, deduplicationKey])
   @@index([vendorId, affiliateCommissionId, createdAt], map: "AffiliateCommissionLedger_v_c_created_idx")
   @@index([vendorId, affiliateCommissionId, disputeCaseId], map: "AffiliateCommissionLedger_v_c_case_idx")
+  @@index([vendorId, settlementMonthKey], map: "AffiliateCommissionLedger_v_settlement_month_idx")
 }
 
 enum CommerceFulfillmentType {

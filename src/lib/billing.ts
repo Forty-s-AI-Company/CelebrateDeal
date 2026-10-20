@@ -248,13 +248,16 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
         platformFeeRefundCents: true,
       },
     }),
+    // F-039 (review M-1): a refund reversal is settled in its refund's month;
+    // every other entry in its commission's month. A commission voided by a
+    // full refund still counts, because its reversal now counts as well.
     db.affiliateCommissionLedgerEntry.aggregate({
       where: {
         vendorId,
-        commission: {
-          monthKey,
-          status: { in: ["pending", "approved", "locked"] },
-        },
+        OR: [
+          { settlementMonthKey: monthKey },
+          { settlementMonthKey: null, commission: { monthKey, status: { in: ["pending", "approved", "locked", "void"] } } },
+        ],
       },
       _sum: { amountCents: true },
     }),

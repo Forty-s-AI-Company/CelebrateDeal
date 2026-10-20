@@ -159,13 +159,14 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
           const refundedAmountCents = currentTransaction.refundedAmountCents + input.refundAmountCents;
           if (refundedAmountCents > currentTransaction.grossAmountCents) throw new PayUniRefundValidationError();
           const refundOccurredAt = new Date();
+          // F-039: the server completion month, past any locked month.
+          const settlementMonthKey = await refundSettlementMonthKey(tx, currentTransaction.vendorId, refundOccurredAt);
           await tx.refundRecord.update({
             where: { id: reserved.refundId, status: "pending", providerEventId: requestReservationEventId },
             data: {
               status: "processed",
               providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
-              // F-039: the server completion month, past any locked month.
-              monthKey: await refundSettlementMonthKey(tx, currentTransaction.vendorId, refundOccurredAt),
+              monthKey: settlementMonthKey,
               processedAt: refundOccurredAt,
             },
           });
@@ -202,6 +203,7 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
             isFullRefund: refundedAmountCents >= currentTransaction.grossAmountCents,
             transactionOccurredAt: currentTransaction.occurredAt,
             occurredAt: refundOccurredAt,
+            settlementMonthKey,
           });
           const eventType = postRefundEventType(refundedAmountCents, currentTransaction.grossAmountCents);
           // F-045: the same post-refund hook as the provider webhook path.

@@ -2252,11 +2252,12 @@ export async function refundPaymentTransactionAction(formData: FormData) {
           const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
           const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
           const refundOccurredAt = new Date();
+          const settlementMonthKey = await refundSettlementMonthKey(tx, transaction.vendorId, refundOccurredAt);
           const refund = await tx.refundRecord.create({
             data: {
               vendorId: transaction.vendorId,
               paymentTransactionId: transaction.id,
-              monthKey: await refundSettlementMonthKey(tx, transaction.vendorId, refundOccurredAt),
+              monthKey: settlementMonthKey,
               processedAt: refundOccurredAt,
               refundAmountCents,
               gatewayFeeRefundCents,
@@ -2294,6 +2295,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
             isFullRefund: refundedAmountCents >= transaction.grossAmountCents,
             transactionOccurredAt: transaction.occurredAt,
             occurredAt: refundOccurredAt,
+            settlementMonthKey,
           });
           // F-045 (review m-3): manual refunds of other providers share the
           // post-refund hook with the PayUni and webhook paths.

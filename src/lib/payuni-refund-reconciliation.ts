@@ -185,6 +185,8 @@ export async function reconcilePayUniRefund(input: {
       pendingRefund.id,
       pendingRefund.providerEventId,
     );
+    // F-039: the month the refund was confirmed, past any locked month.
+    const settlementMonthKey = await refundSettlementMonthKey(tx, transaction.vendorId, now);
     await tx.refundRecord.update({
       where: {
         id: pendingRefund.id,
@@ -195,8 +197,7 @@ export async function reconcilePayUniRefund(input: {
         status: "processed",
         processedAt: now,
         providerEventId: eventIdentity,
-        // F-039: the month the refund was confirmed, past any locked month.
-        monthKey: await refundSettlementMonthKey(tx, transaction.vendorId, now),
+        monthKey: settlementMonthKey,
       },
     });
     const updated = await tx.paymentTransaction.update({
@@ -226,6 +227,7 @@ export async function reconcilePayUniRefund(input: {
       isFullRefund: updated.status === "refunded",
       transactionOccurredAt: transaction.occurredAt instanceof Date ? transaction.occurredAt : now,
       occurredAt: now,
+      settlementMonthKey,
     });
     const eventType = postRefundEventType(updated.refundedAmountCents, transaction.grossAmountCents);
     // F-045: a reconciled refund gets the same post-refund hook as the

@@ -58,6 +58,8 @@ export type CommissionLedgerAppendInput = {
   disputeCaseId?: string | null;
   amountCents: number;
   occurredAt: Date;
+  /** F-039 (review M-1): refund entries only; the RefundRecord's settlement month. */
+  settlementMonthKey?: string | null;
 };
 
 type LedgerClient = Pick<Prisma.TransactionClient, "affiliateCommissionLedgerEntry">;
@@ -128,6 +130,7 @@ export async function appendCommissionLedgerEntry(db: LedgerClient, input: Commi
       disputeCaseId,
       amountCents: input.amountCents,
       occurredAt: input.occurredAt,
+      ...(entryType === "refund" && input.settlementMonthKey ? { settlementMonthKey: input.settlementMonthKey } : {}),
     },
   });
 }

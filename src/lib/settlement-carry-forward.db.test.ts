@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { appendCommissionLedgerEntry } from "@/lib/affiliate-commission-accounting";
 import { generateSettlementForVendor } from "@/lib/billing-cycle";
 import { getDb } from "@/lib/db";
+import { applyPaymentRefundAccounting } from "@/lib/payment-refund-accounting";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 import { submitSettlementAdjustment } from "@/lib/settlement-adjustment";
 import {
@@ -23,8 +25,18 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.unstubAllEnvs();
-  await db.vendor.deleteMany({ where: { id: { in: vendorIds.splice(0) } } });
-  await db.billingPlan.deleteMany({ where: { id: { in: planIds.splice(0) } } });
+  const ids = vendorIds.splice(0);
+  const plans = planIds.splice(0);
+  // Append-only commission ledger rows intentionally block vendor deletion;
+  // the disposable database keeps those synthetic fixtures (same as payment-webhooks.test.ts).
+  try {
+    await db.vendor.deleteMany({ where: { id: { in: ids } } });
+  } catch (error) {
+    if (!(error instanceof Error) || !/append-only|foreign key constraint|RESTRICT setting/i.test(error.message)) throw error;
+    await db.billingPlan.updateMany({ where: { id: { in: plans } }, data: { isActive: false } });
+    return;
+  }
+  await db.billingPlan.deleteMany({ where: { id: { in: plans } } });
 });
 
 async function vendorWithPlatformPlan() {
@@ -214,6 +226,88 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
       .resolves.toMatchObject({ outcome: "applied", settlement: { finalPayoutAmountCents: 5_000, carriedOutCents: 0 } });
     await expect(db.settlementAdjustmentLedgerEntry.findFirstOrThrow({ where: { vendorId: vendor.id } }))
       .resolves.toMatchObject({ amountCents: 0 });
+  });
+
+  it("settles the commission reversal of a cross-month refund in the refund month when the sale month is locked (review M-1)", async () => {
+    const vendor = await vendorWithPlatformPlan();
+    const affiliate = await db.affiliate.create({
+      data: { vendorId: vendor.id, name: "Carry affiliate", code: `CARRY-${randomUUID()}`.toUpperCase(), commissionRateBps: 1000 },
+    });
+    const sale = await buyerPayment(vendor.id, 10_000, new Date("2026-09-10T00:00:00.000Z"));
+    const commission = await db.affiliateCommission.create({
+      data: {
+        vendorId: vendor.id, affiliateId: affiliate.id, monthKey: "2026-09", sourceType: "webhook", sourceId: sale.id,
+        deduplicationKey: `carry-commission-${sale.id}`, referralCode: affiliate.code, orderNumber: sale.orderNumber,
+        orderAmountCents: 10_000, commissionBaseAmountCents: 10_000, netReferenceAmountCents: 10_000,
+        commissionRateBps: 1000, commissionAmountCents: 1_000, status: "approved",
+      },
+    });
+    await appendCommissionLedgerEntry(db, {
+      vendorId: vendor.id, affiliateCommissionId: commission.id, entryType: "accrual", providerName: "payuni",
+      eventIdentity: `paid-${sale.id}`, amountCents: 1_000, occurredAt: sale.occurredAt,
+    });
+
+    const september = await generateSettlementForVendor(vendor.id, "2026-09");
+    expect(september.settlement).toMatchObject({ grossRevenueCents: 10_000, payoutableAmountCents: 9_000, finalPayoutAmountCents: 9_000 });
+    await lockMonth(vendor.id, "2026-09");
+
+    // October: the full refund is booked into October; so is its commission reversal.
+    const refundedAt = new Date("2026-10-04T00:00:00.000Z");
+    const refund = await processedRefund(vendor.id, sale.id, "2026-10", 10_000);
+    await db.paymentTransaction.update({ where: { id: sale.id }, data: { status: "refunded", refundedAmountCents: 10_000, refundedAt } });
+    await db.$transaction((tx) => applyPaymentRefundAccounting(tx, {
+      vendorId: vendor.id, transactionId: sale.id, orderNumber: sale.orderNumber, providerName: "payuni",
+      eventIdentity: `refund:${refund.id}`, refundRecordId: refund.id, refundAmountCents: 10_000,
+      netReferenceAmountCents: 0, isFullRefund: true, transactionOccurredAt: sale.occurredAt, occurredAt: refundedAt,
+      settlementMonthKey: refund.monthKey,
+    }));
+    await expect(db.affiliateCommissionLedgerEntry.findFirstOrThrow({ where: { affiliateCommissionId: commission.id, entryType: "refund" } }))
+      .resolves.toMatchObject({ amountCents: -1_000, settlementMonthKey: "2026-10" });
+
+    const october = await generateSettlementForVendor(vendor.id, "2026-10");
+
+    // -10,000 refunded to the buyer, +1,000 commission no longer owed: -9,000 carried.
+    expect(october.settlement).toMatchObject({
+      grossRevenueCents: -10_000,
+      refundAmountCents: 10_000,
+      payoutableAmountCents: -9_000,
+      finalPayoutAmountCents: 0,
+      carriedOutCents: -9_000,
+    });
+  });
+
+  it("nets a sale and its same-month refund reversal to zero commission", async () => {
+    const vendor = await vendorWithPlatformPlan();
+    const affiliate = await db.affiliate.create({
+      data: { vendorId: vendor.id, name: "Same month affiliate", code: `SAME-${randomUUID()}`.toUpperCase(), commissionRateBps: 1000 },
+    });
+    const sale = await buyerPayment(vendor.id, 10_000, new Date("2026-09-10T00:00:00.000Z"));
+    await buyerPayment(vendor.id, 20_000, new Date("2026-09-12T00:00:00.000Z"));
+    const commission = await db.affiliateCommission.create({
+      data: {
+        vendorId: vendor.id, affiliateId: affiliate.id, monthKey: "2026-09", sourceType: "webhook", sourceId: sale.id,
+        deduplicationKey: `same-commission-${sale.id}`, referralCode: affiliate.code, orderNumber: sale.orderNumber,
+        orderAmountCents: 10_000, commissionBaseAmountCents: 10_000, netReferenceAmountCents: 10_000,
+        commissionRateBps: 1000, commissionAmountCents: 1_000, status: "approved",
+      },
+    });
+    await appendCommissionLedgerEntry(db, {
+      vendorId: vendor.id, affiliateCommissionId: commission.id, entryType: "accrual", providerName: "payuni",
+      eventIdentity: `paid-${sale.id}`, amountCents: 1_000, occurredAt: sale.occurredAt,
+    });
+    const refund = await processedRefund(vendor.id, sale.id, "2026-09", 10_000);
+    await db.paymentTransaction.update({ where: { id: sale.id }, data: { status: "refunded", refundedAmountCents: 10_000 } });
+    await db.$transaction((tx) => applyPaymentRefundAccounting(tx, {
+      vendorId: vendor.id, transactionId: sale.id, orderNumber: sale.orderNumber, providerName: "payuni",
+      eventIdentity: `refund:${refund.id}`, refundRecordId: refund.id, refundAmountCents: 10_000,
+      netReferenceAmountCents: 0, isFullRefund: true, transactionOccurredAt: sale.occurredAt, occurredAt: new Date("2026-09-20T00:00:00.000Z"),
+      settlementMonthKey: refund.monthKey,
+    }));
+    await expect(db.affiliateCommission.findUniqueOrThrow({ where: { id: commission.id } })).resolves.toMatchObject({ status: "void" });
+
+    const september = await generateSettlementForVendor(vendor.id, "2026-09");
+
+    expect(september.settlement).toMatchObject({ grossRevenueCents: 20_000, payoutableAmountCents: 20_000, finalPayoutAmountCents: 20_000 });
   });
 
   it("enforces carry invariants in the database", async () => {

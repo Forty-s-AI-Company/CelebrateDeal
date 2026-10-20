@@ -795,14 +795,15 @@ async function applyPaymentRefundsInWebhook(
     return { refundCommission: null, platformReferralRefund: null, courseRefundAllocations: [], commerceOrderRefund: null };
   }
 
+  // F-039: the server's processing month (past any locked month), never
+  // the provider-reported event time.
+  const settlementMonthKey = await refundSettlementMonthKey(db, input.vendorId, new Date());
   const refundRecord = await db.refundRecord.create({
     data: {
       vendorId: input.vendorId,
       paymentTransactionId: input.transaction.id,
       providerEventId: input.payload.eventId,
-      // F-039: the server's processing month (past any locked month), never
-      // the provider-reported event time.
-      monthKey: await refundSettlementMonthKey(db, input.vendorId, new Date()),
+      monthKey: settlementMonthKey,
       refundAmountCents: input.payload.refundAmountCents,
       gatewayFeeRefundCents: input.payload.gatewayFeeRefundCents,
       platformFeeRefundCents: input.payload.platformFeeRefundCents,
@@ -838,6 +839,7 @@ async function applyPaymentRefundsInWebhook(
     isFullRefund: input.payload.eventType === "refunded",
     transactionOccurredAt: input.transaction.occurredAt,
     occurredAt: new Date(input.payload.occurredAt ?? new Date().toISOString()),
+    settlementMonthKey,
   });
 
   return {

@@ -59,3 +59,12 @@ ALTER TABLE "SettlementAdjustmentLedgerEntry" ADD CONSTRAINT "SettlementAdjustme
 
 -- Same defense in depth as every other public table (20261020090000).
 ALTER TABLE "SettlementAdjustmentLedgerEntry" ENABLE ROW LEVEL SECURITY;
+
+-- Review M-1: a commission refund reversal is settled in the month of its
+-- RefundRecord, not in the (possibly locked) month of the original sale.
+-- Existing rows stay NULL and keep the old rule (the commission's month).
+ALTER TABLE "AffiliateCommissionLedgerEntry" ADD COLUMN "settlementMonthKey" TEXT;
+ALTER TABLE "AffiliateCommissionLedgerEntry"
+  ADD CONSTRAINT "AffiliateCommissionLedgerEntry_settlement_month_check"
+    CHECK ("settlementMonthKey" IS NULL OR ("entryType" = 'refund' AND "settlementMonthKey" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'));
+CREATE INDEX "AffiliateCommissionLedger_v_settlement_month_idx" ON "AffiliateCommissionLedgerEntry"("vendorId", "settlementMonthKey");
