@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
 import { PublicResourceLinks } from "@/components/public-policy";
 import { logoutAction } from "@/app/actions";
+import { AppShellMobileNav } from "@/components/app-shell-mobile-nav";
 import { AppShellNavLink } from "@/components/app-shell-nav-link";
 import { AppShellNavGroup } from "@/components/app-shell-nav-group";
 import { AppShellAccountMenu } from "@/components/app-shell-account-menu";
@@ -298,16 +299,9 @@ export function AppShell({
           </form>
         </div>
         {!isPlatformAdmin && selectProject ? <details className="mt-2"><summary className="min-h-11 cursor-pointer rounded-lg border border-slate-200 px-3 py-3 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-blue-700">專案：{projects.find((project) => project.id === selectedProjectId)?.name ?? "全部專案總覽"}</summary><div className="mt-2"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div></details> : null}
-        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="行動版主要導覽">
-          {visibleGroups.flatMap((group) => group.items).map((item) => (
-            <AppShellNavLink key={item.href} href={item.href} mobile>
-              {item.label}
-            </AppShellNavLink>
-          ))}
-        </nav>
       </header>
 
-      <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-72 lg:px-8 xl:px-10">
+      <main id="main-content" tabIndex={-1} className="px-4 pb-24 pt-6 lg:ml-72 lg:px-8 lg:pb-6 xl:px-10">
         {/* Place mobile guidance in normal document flow, outside the sticky header. */}
         <div className="lg:hidden">
         {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
@@ -318,6 +312,10 @@ export function AppShell({
           <PublicResourceLinks />
         </footer>
       </main>
+      <AppShellMobileNav
+        groups={visibleGroups.map((group) => ({ label: group.label, items: group.items.map((item) => ({ href: item.href, label: item.label })) }))}
+        supportLinks={[{ href: "/support", label: "客服與付款協助" }, { href: "/policies", label: "服務條款與政策" }]}
+      />
     </div>
   );
 }

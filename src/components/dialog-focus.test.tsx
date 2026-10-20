@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
+vi.mock("next/navigation", () => ({ usePathname: () => "/dashboard" }));
 import { describe, expect, it, vi } from "vitest";
 import { AppShellAccountMenu } from "./app-shell-account-menu";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
@@ -59,6 +60,32 @@ describe("F-127 dialog focus behaviour", () => {
     await act(async () => button.click());
     await act(async () => { document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })); });
     expect(button.getAttribute("aria-expanded")).toBe("false");
+    await cleanup();
+  });
+});
+
+describe("F-122 mobile navigation", () => {
+  it("keeps four primary tabs plus a 更多 drawer that restores focus on Escape", async () => {
+    const { AppShellMobileNav } = await import("./app-shell-mobile-nav");
+    const groups = [
+      { label: "營運總覽", items: [{ href: "/dashboard", label: "營運總覽" }, { href: "/projects", label: "銷售專案" }] },
+      { label: "銷講中心", items: [{ href: "/lives", label: "直播間" }, { href: "/videos", label: "影片素材" }] },
+      { label: "成交管理", items: [{ href: "/products", label: "商品" }, { href: "/orders", label: "訂單與履約" }, { href: "/customers", label: "學員 CRM" }] },
+    ];
+    const { container, cleanup } = await mount(<AppShellMobileNav groups={groups} supportLinks={[{ href: "/support", label: "客服與付款協助" }]} />);
+    const nav = container.querySelector("nav[aria-label='行動版主要導覽']")!;
+    expect(Array.from(nav.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["營運總覽", "直播間", "訂單與履約", "學員 CRM"]);
+    const more = Array.from(nav.querySelectorAll("button")).find((b) => b.textContent === "更多")!;
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    more.focus();
+    await act(async () => more.click());
+    const dialog = container.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("影片素材");
+    expect(dialog.textContent).toContain("客服與付款協助");
+    expect(more.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(more);
     await cleanup();
   });
 });
