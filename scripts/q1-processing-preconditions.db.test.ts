@@ -63,12 +63,13 @@ describe("processing preconditions against migrated PostgreSQL", () => {
     await seed(undefined, undefined, value);
     expect(await readProcessingPreconditions(db)).toMatchObject({ occurredAtClass: expected });
   });
-  it("detects a provider scope sibling while preserving both payment identities", async () => {
+  it("cannot gain a provider scope sibling once (providerName, orderNumber) is unique (F-050)", async () => {
     const { payment } = await seed();
-    const sibling = await db.paymentTransaction.create({ data: { vendorId: fixed.vendorId, providerName: "payuni",
-      orderNumber: payment.orderNumber, paymentMode: "platform", grossAmountCents: 100, netAmountCents: 100, currency: "TWD", status: "pending" } });
-    expect(await readProcessingPreconditions(db)).toMatchObject({ scopeSiblingCount: "MANY", fixedPaymentIsSoleScopeRow: false });
-    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: sibling.id } })).toEqual(sibling);
+    await expect(db.paymentTransaction.create({ data: { vendorId: fixed.vendorId, providerName: "payuni",
+      orderNumber: payment.orderNumber, paymentMode: "platform", grossAmountCents: 100, netAmountCents: 100, currency: "TWD", status: "pending" } }))
+      .rejects.toMatchObject({ code: "P2002" });
+    expect(await readProcessingPreconditions(db)).toMatchObject({ scopeSiblingCount: "ONE", fixedPaymentIsSoleScopeRow: true });
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment);
   });
   it("stops before projection when the original event is ambiguous", async () => {
     const { event } = await seed();

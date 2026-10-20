@@ -97,12 +97,47 @@
 
 Prisma 6 的 `migrate diff` **不比對**以下物件，這些物件被刪除或改寫時，drift check 不會發現：
 
-- partial index：4 個 partial unique（`ConsultationBooking_active_slot_key`、`LiveQuestion_one_spotlight_per_live_key`、`PostPurchaseCredit_vendorId_sourceOrderId_active_key`、`TeamMembershipRelationship_one_active_upline`）。這 4 個連同 3 個 trgm GIN，改由 `src/lib/prisma-unmanaged-indexes.db.test.ts` 比對完整的 `pg_get_indexdef`。
+- partial index：5 個 partial unique（`ConsultationBooking_active_slot_key`、`LiveQuestion_one_spotlight_per_live_key`、`PostPurchaseCredit_vendorId_sourceOrderId_active_key`、`SettlementAdjustmentRequest_one_pending_per_settlement`、`TeamMembershipRelationship_one_active_upline`）。這 5 個連同 3 個 trgm GIN，改由 `src/lib/prisma-unmanaged-indexes.db.test.ts` 比對完整的 `pg_get_indexdef`。
 - CHECK constraint，包含帳務與金額相關的 CHECK（B04-07）。
 - trigger、function、RLS 狀態、policy、grant（RLS 與 grant 由 `rls-catalog.db.test.ts` 把關）。
 - FK 只以名稱比對：同名重建但欄位不同（例如拿掉 `vendorId`）時，diff 仍輸出同一句 DROP，check 會通過。
 
-## 4. 後續項目（不在 PR #452 處理）
+## 4. 部署前檢查：重複訂單號（`20261021110100_payment_order_number_unique`，F-050）
+
+這條 migration 先檢查 `PaymentTransaction` 是否有重複的 `(providerName, orderNumber)`，有就 `RAISE EXCEPTION` 中止，接著才建 `PaymentTransaction_providerName_orderNumber_key`。如果目標資料庫真的有重複（舊產生器是秒級時間戳加 `Math.random` 6 碼），`migrate deploy` 會停在 failed（P3009），後面的 `20261021110200`、`20261021110300`、`20261021110400` 也一起被擋住。所以部署前必須先用唯讀方式確認。
+
+**步驟**
+
+1. 用唯讀連線（或唯讀交易 `BEGIN READ ONLY; … ROLLBACK;`）在目標資料庫執行下面的查詢。查詢只回傳數量，不輸出訂單號或租戶。
+
+   ```sql
+   SELECT count(*) AS duplicate_groups, coalesce(sum(group_rows), 0) AS duplicate_rows
+     FROM (
+       SELECT count(*) AS group_rows
+         FROM "PaymentTransaction"
+        WHERE "orderNumber" IS NOT NULL
+        GROUP BY "providerName", "orderNumber"
+       HAVING count(*) > 1
+     ) duplicates;
+   ```
+
+2. `duplicate_groups = 0`：把日期與結果記錄到下方表格，再部署。
+3. `duplicate_groups > 0`：不要部署。由 owner 授權後逐組人工判斷（哪一筆是 PayUni 實際收款的交易、另一筆是否從未付款），處理完再查一次，結果為 0 才部署。不要修改這條 migration。
+4. 若部署時仍失敗（P3009）：確認原因是重複資料後，處理資料，執行 `prisma migrate resolve --rolled-back 20261021110100_payment_order_number_unique`，再重新部署。
+5. `CREATE UNIQUE INDEX` 不是 concurrent，建立期間會擋 `PaymentTransaction` 的寫入；目前表很小，仍建議在低流量時段部署。
+
+**查詢紀錄**
+
+| 環境 | 日期 | `duplicate_groups` | 執行者 | 備註 |
+|---|---|---|---|---|
+| staging | 2026-10-21 | 0 | 主對話（唯讀） | 可套用 F-050 migration |
+| production | 待執行 | — | owner | 部署前由 owner 再查一次並補記 |
+
+### 4.1 退款完成後的 post-refund hook 失敗（F-045）
+
+admin、webhook、對帳與非 PayUni 手動退款都在交易內呼叫 `applyPostRefundInTransaction`。如果它因為 inventory reservation 的租戶或商品不一致，或商品回補筆數不是 1 而 throw，代表資料本身不一致，不是暫時性錯誤：PayUni 退款若已成功，本機會停在 pending，之後對帳也會遇到同一個錯誤。遇到這種情況要人工核對 reservation、商品與付款，不要重送退款。本 PR 部署前已完成對帳的歷史退款不會補跑 hook，beta 期間若有這類資料，需另外用唯讀查詢確認庫存。
+
+## 5. 後續項目（不在 PR #452 處理）
 
 1. **11 個租戶 FK 的定義守門**（MINOR-3，B02／B04）：`foreign_key_missing_in_schema` 11 條（`Live_vendorId_formId_fkey`、`Live_vendorId_messageTemplateId_fkey`、`Live_vendorId_videoId_fkey`、`LiveInteractionResponse_formSubmissionId_fkey`、`LiveInteractionResponse_vendorId_runId_fkey`、`PostPurchaseCredit_grant_fkey`、`PostPurchaseCredit_source_fkey`、`PostPurchaseCredit_source_product_fkey`、`PostPurchaseCredit_target_fkey`、`PostPurchaseCredit_target_product_fkey`、`SupportCaseEvent_buyer_case_order_fkey`），加上 `foreign_key_shape_mismatch` 3 條。`prisma migrate dev` 會產生 drop 這些 FK 的語句，而目前只以名稱守門。後續要做三件事：
    - 新增 db test，斷言這 14 條 FK 的 `pg_get_constraintdef` 完全等於預期，做法比照 partial index。

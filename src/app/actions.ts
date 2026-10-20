@@ -1,6 +1,5 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
 import { requestedLiveStatus } from "@/lib/live-status-transition";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { isIP } from "node:net";
@@ -23,8 +22,6 @@ import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cy
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { retryWebhookEvent } from "@/lib/webhook-retry";
 import { getDb } from "@/lib/db";
-import { getPaymentProvider } from "@/lib/payment-providers";
-import { RefundProviderError } from "@/lib/payment-providers/types";
 import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
@@ -82,6 +79,16 @@ import {
   resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
 } from "./actions/vendor-member-actions";
 import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
+import { parseWholeYuanToCents, parseYuanWithCentsToCents } from "@/lib/money-input";
+import { applyPostRefundAfterCommit, applyPostRefundInTransaction, postRefundEventType } from "@/lib/payment-post-refund";
+import {
+  approveSettlementAdjustment,
+  closePendingAdjustmentsOnLock,
+  parseSettlementAdjustmentInput,
+  rejectSettlementAdjustment,
+  SettlementAdjustmentError,
+  submitSettlementAdjustment,
+} from "@/lib/settlement-adjustment";
 import {
   deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
   deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
@@ -142,11 +149,10 @@ function safeExternalUrl(value: string | null, label: string) {
   return safeUrl;
 }
 
-function moneyToCents(formData: FormData, key: string, fallback = 0) {
+/** F-049: optional fee fields; blank is zero, anything malformed is null. */
+function optionalFeeCents(formData: FormData, key: string) {
   const value = text(formData, key);
-  if (!value) return fallback;
-  const parsed = Number.parseFloat(value.replaceAll(",", ""));
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : fallback;
+  return value ? parseYuanWithCentsToCents(value) : 0;
 }
 
 class RefundValidationError extends Error {}
@@ -1542,59 +1548,64 @@ export async function generateSettlementAction(formData: FormData) {
   redirect("/admin/billing/settlements");
 }
 
+const SETTLEMENTS_PATH = "/admin/billing/settlements";
+
+function settlementAdjustmentErrorCode(error: unknown) {
+  if (error instanceof SettlementAdjustmentError) return error.code;
+  if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) return "conflict";
+  return null;
+}
+
 export async function updateSettlementAdjustmentAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
-  const adjustmentAmountCents = moneyToCents(formData, "adjustmentAmount");
-  const adjustmentReason = optionalText(formData, "adjustmentReason");
-  const settlement = await getDb().settlement.findUnique({ where: { id } });
-  if (!settlement || settlement.lockedAt) {
-    redirect("/admin/billing/settlements?error=locked");
-  }
-  const finalPayoutAmountCents = settlement.payoutableAmountCents + adjustmentAmountCents;
-  if (finalPayoutAmountCents < 0) {
-    redirect("/admin/billing/settlements?error=negative_payout");
-  }
-
-  const db = getDb();
-  let updated;
+  let outcome: Awaited<ReturnType<typeof submitSettlementAdjustment>>["outcome"];
   try {
-    updated = await db.$transaction(async (tx) => {
-      const result = await tx.settlement.updateMany({
-        where: { id, lockedAt: null, updatedAt: settlement.updatedAt },
-        data: {
-          adjustmentAmountCents,
-          adjustmentReason,
-          reviewedBy: member.id,
-          finalPayoutAmountCents,
-        },
-      });
-      if (result.count !== 1) throw new SettlementMutationConflict();
-      const saved = await tx.settlement.findUnique({ where: { id } });
-      if (!saved) throw new SettlementMutationConflict();
-      return saved;
-    });
+    // F-049: strict whole-NT$ amount, mandatory reason, second approval above the threshold.
+    const input = parseSettlementAdjustmentInput(text(formData, "adjustmentAmount"), text(formData, "adjustmentReason"));
+    outcome = (await submitSettlementAdjustment(getDb(), {
+      settlementId: id,
+      amountCents: input.amountCents,
+      reason: input.reason,
+      actor: { id: member.id, label: member.role },
+    })).outcome;
   } catch (error) {
-    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
-      redirect("/admin/billing/settlements?error=conflict");
-    }
+    const code = settlementAdjustmentErrorCode(error);
+    if (code) redirect(`${SETTLEMENTS_PATH}?error=${code}`);
     throw error;
   }
 
-  await writeAuditLog({
-    vendorId: settlement.vendorId,
-    actorId: member.id,
-    actorLabel: member.role,
-    action: "update_settlement_adjustment",
-    targetType: "Settlement",
-    targetId: settlement.id,
-    before: auditSnapshot(settlement),
-    after: auditSnapshot(updated),
-  });
+  revalidatePath(SETTLEMENTS_PATH);
+  redirect(outcome === "pending_approval" ? `${SETTLEMENTS_PATH}?status=adjustment_pending` : SETTLEMENTS_PATH);
+}
 
-  revalidatePath("/admin/billing/settlements");
-  redirect("/admin/billing/settlements");
+export async function approveSettlementAdjustmentAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { member } = await requireFinanceAdmin();
+  try {
+    await approveSettlementAdjustment(getDb(), { requestId: text(formData, "requestId"), actor: { id: member.id, label: member.role } });
+  } catch (error) {
+    const code = settlementAdjustmentErrorCode(error);
+    if (code) redirect(`${SETTLEMENTS_PATH}?error=${code}`);
+    throw error;
+  }
+  revalidatePath(SETTLEMENTS_PATH);
+  redirect(`${SETTLEMENTS_PATH}?status=adjustment_approved`);
+}
+
+export async function rejectSettlementAdjustmentAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { member } = await requireFinanceAdmin();
+  try {
+    await rejectSettlementAdjustment(getDb(), { requestId: text(formData, "requestId"), actor: { id: member.id, label: member.role } });
+  } catch (error) {
+    const code = settlementAdjustmentErrorCode(error);
+    if (code) redirect(`${SETTLEMENTS_PATH}?error=${code}`);
+    throw error;
+  }
+  revalidatePath(SETTLEMENTS_PATH);
+  redirect(`${SETTLEMENTS_PATH}?status=adjustment_rejected`);
 }
 
 export async function lockSettlementAction(formData: FormData) {
@@ -1630,6 +1641,8 @@ export async function lockSettlementAction(formData: FormData) {
 
       const locked = await tx.settlement.findUnique({ where: { id } });
       if (!locked) throw new SettlementMutationConflict();
+      // F-049 (review m-4): a pending large adjustment can no longer be approved.
+      await closePendingAdjustmentsOnLock(tx, { settlement: locked, actor: { id: member.id, label: member.role }, now: lockedAt });
       await tx.affiliateCommission.updateMany({
         where: { vendorId: settlement.vendorId, monthKey: settlement.monthKey, status: { in: ["pending", "approved"] } },
         data: { status: "locked", settledAt: lockedAt },
@@ -2158,15 +2171,17 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     redirect("/admin/billing/dashboard?error=refund_already_processed");
   }
 
-  const refundAmountCents = moneyToCents(formData, "refundAmount");
-  const gatewayFeeRefundCents = moneyToCents(formData, "gatewayFeeRefund");
-  const platformFeeRefundCents = moneyToCents(formData, "platformFeeRefund");
+  // F-049: refunds are whole NT$; "1e3", "12abc" or "40.5" never become an amount.
+  const refundAmountCents = parseWholeYuanToCents(text(formData, "refundAmount"));
+  const gatewayFeeRefundCents = optionalFeeCents(formData, "gatewayFeeRefund");
+  const platformFeeRefundCents = optionalFeeCents(formData, "platformFeeRefund");
   const reason = optionalText(formData, "reason");
   const monthKey = text(formData, "monthKey", new Date().toISOString().slice(0, 7));
   if (
+    refundAmountCents === null ||
     refundAmountCents <= 0 ||
-    gatewayFeeRefundCents < 0 ||
-    platformFeeRefundCents < 0 ||
+    gatewayFeeRefundCents === null ||
+    platformFeeRefundCents === null ||
     !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)
   ) {
     redirect("/admin/billing/dashboard?error=refund");
@@ -2194,190 +2209,7 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     redirect("/admin/billing/dashboard?error=refund");
   }
 
-  if (providerTransaction?.providerName === "payuni") {
-    const provider = getPaymentProvider("payuni");
-    if (!provider.refundPayment || !providerTransaction.providerTradeNo) {
-      redirect("/admin/billing/dashboard?error=refund");
-    }
-
-    const requestId = randomBytes(16).toString("hex");
-    const requestReservationEventId = `request:${requestId}`;
-    const ambiguousReservationEventId = `ambiguous:${requestId}`;
-    let reserved: { transaction: typeof providerTransaction; refundId: string };
-    try {
-      reserved = await db.$transaction(async (tx) => {
-        const transaction = await tx.paymentTransaction.findUnique({ where: { id } });
-        if (!transaction) throw new RefundValidationError();
-        if (transaction.status !== "paid" && transaction.status !== "partially_refunded") {
-          throw new RefundValidationError();
-        }
-
-        const reservedRefunds = await tx.refundRecord.aggregate({
-          where: { paymentTransactionId: transaction.id, status: { in: ["pending", "processed"] } },
-          _sum: {
-            refundAmountCents: true,
-            gatewayFeeRefundCents: true,
-            platformFeeRefundCents: true,
-          },
-        });
-        const reservedAmountCents = reservedRefunds._sum.refundAmountCents ?? 0;
-        const reservedGatewayFeeCents = reservedRefunds._sum.gatewayFeeRefundCents ?? 0;
-        const reservedPlatformFeeCents = reservedRefunds._sum.platformFeeRefundCents ?? 0;
-        const pendingReservations = await tx.refundRecord.aggregate({ where: { paymentTransactionId: transaction.id, status: "pending" }, _count: { _all: true } });
-        if ((pendingReservations._count?._all ?? 0) > 0) throw new RefundValidationError();
-        if (
-          refundAmountCents > transaction.grossAmountCents - reservedAmountCents
-          || reservedGatewayFeeCents + gatewayFeeRefundCents > transaction.gatewayFeeCents
-          || reservedPlatformFeeCents + platformFeeRefundCents > transaction.platformFeeCents
-        ) {
-          throw new RefundValidationError();
-        }
-
-        const refund = await tx.refundRecord.create({
-          data: {
-            vendorId: transaction.vendorId,
-            paymentTransactionId: transaction.id,
-            providerEventId: requestReservationEventId,
-            monthKey,
-            refundAmountCents,
-            gatewayFeeRefundCents,
-            platformFeeRefundCents,
-            reason,
-            status: "pending",
-          },
-        });
-        return { transaction, refundId: refund.id };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    } catch (error) {
-      if (error instanceof RefundValidationError || isDatabaseTransactionConflict(error)) {
-        redirect("/admin/billing/dashboard?error=refund");
-      }
-      throw error;
-    }
-
-    let providerResult: Awaited<ReturnType<NonNullable<typeof provider.refundPayment>>>;
-    try {
-      providerResult = await provider.refundPayment({
-        transaction: reserved.transaction,
-        refundAmountCents,
-        requestId,
-      });
-    } catch (error) {
-      const category = error instanceof RefundProviderError ? error.category : "unknown";
-      // request_contract is the only category that is known to fail before a
-      // provider request can be sent. Every other outcome may have reached
-      // PayUni, so keep the reservation pending and require a provider query
-      // before allowing another refund attempt.
-      const requiresReconciliation = category !== "request_contract";
-      await db.refundRecord.update({
-        // This conditional update is the state transition boundary between an
-        // in-flight provider call and a query-only reconciliation. It also
-        // prevents a late action from overwriting a reconciled reservation.
-        where: {
-          id: reserved.refundId,
-          status: "pending",
-          providerEventId: requestReservationEventId,
-        },
-        data: requiresReconciliation
-          ? { providerEventId: ambiguousReservationEventId }
-          : { status: "failed" },
-      });
-      // 僅輸出安全分類，避免 provider payload、URL 或密鑰進入 runtime log。
-      console.info("payuni_refund_failed", {
-        category,
-        reservation: requiresReconciliation ? "pending_reconciliation" : "released",
-      });
-      redirect(`/admin/billing/dashboard?error=${requiresReconciliation ? "refund_reconciliation_required" : "refund"}`);
-    }
-
-    try {
-      await (async () => {
-        for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
-          try {
-            return await db.$transaction(async (tx) => {
-              // The provider has already accepted this exact reservation. Read
-              // the transaction again inside the serializable completion
-              // transaction so a concurrent partial refund cannot overwrite a
-              // newer refunded total with the pre-provider snapshot.
-              const currentTransaction = await tx.paymentTransaction.findUnique({ where: { id: reserved.transaction.id } });
-              if (!currentTransaction) throw new RefundValidationError();
-              const refundedAmountCents = currentTransaction.refundedAmountCents + refundAmountCents;
-              if (refundedAmountCents > currentTransaction.grossAmountCents) throw new RefundValidationError();
-              const refundOccurredAt = new Date();
-
-              await tx.refundRecord.update({
-                where: {
-                  id: reserved.refundId,
-                  status: "pending",
-                  providerEventId: requestReservationEventId,
-                },
-                data: {
-                  status: "processed",
-                  providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
-                },
-              });
-              const completedTransaction = await tx.paymentTransaction.update({
-                where: { id: currentTransaction.id },
-                data: {
-                  status: refundedAmountCents >= currentTransaction.grossAmountCents ? "refunded" : "partially_refunded",
-                  refundedAmountCents,
-                  refundReason: reason,
-                  refundedAt: refundOccurredAt,
-                },
-              });
-              const refundedFeeTotals = await tx.refundRecord.aggregate({
-                where: { paymentTransactionId: completedTransaction.id, status: "processed" },
-                _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
-              });
-              await applyPaymentRefundAccounting(tx, {
-                vendorId: currentTransaction.vendorId,
-                transactionId: currentTransaction.id,
-                orderNumber: currentTransaction.orderNumber,
-                providerName: currentTransaction.providerName,
-                eventIdentity: providerResult.providerEventId ?? `request:${reserved.refundId}`,
-                refundRecordId: reserved.refundId,
-                refundAmountCents,
-                netReferenceAmountCents: calculateNetReferenceAmountCents({
-                  netAmountCents: completedTransaction.netAmountCents,
-                  refundedAmountCents: completedTransaction.refundedAmountCents,
-                  gatewayFeeRefundCents: refundedFeeTotals._sum.gatewayFeeRefundCents ?? 0,
-                  platformFeeRefundCents: refundedFeeTotals._sum.platformFeeRefundCents ?? 0,
-                }),
-                isFullRefund: refundedAmountCents >= currentTransaction.grossAmountCents,
-                transactionOccurredAt: currentTransaction.occurredAt,
-                occurredAt: refundOccurredAt,
-              });
-              const auditData = { vendorId: reserved.transaction.vendorId, actorId: member.id, actorLabel: member.role, action: "refund_payment_transaction", targetType: "PaymentTransaction", targetId: reserved.transaction.id, before: auditSnapshot(reserved.transaction), after: auditSnapshot(completedTransaction) };
-              if (tx.auditLog && typeof tx.auditLog.create === "function") {
-                await tx.auditLog.create({ data: auditData });
-              } else {
-                await writeAuditLog(auditData);
-              }
-              return completedTransaction;
-            }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-          } catch (error) {
-            if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) continue;
-            throw error;
-          }
-        }
-        throw new Error("PayUni refund completion retry loop exited unexpectedly");
-      })();
-    } catch (error) {
-      // Keep the reservation pending after a provider-confirmed refund when
-      // local accounting cannot finish. This is recoverable and must not cause
-      // a second provider call on a later reconciliation attempt.
-      console.info("payuni_refund_completion_failed", {
-        category: isDatabaseTransactionConflict(error) ? "database" : "unknown",
-      });
-      redirect("/admin/billing/dashboard?error=refund");
-    }
-
-    revalidatePath("/admin/billing/dashboard");
-    revalidatePath("/admin/billing/settlements");
-    redirect("/admin/billing/dashboard");
-  }
-
-  const { transaction, updated } = await (async () => {
+  const { transaction, updated, postRefund } = await (async () => {
     for (let attempt = 1; attempt <= REFUND_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
       try {
         return await db.$transaction(async (tx) => {
@@ -2432,7 +2264,8 @@ export async function refundPaymentTransactionAction(formData: FormData) {
             where: { paymentTransactionId: updated.id, status: "processed" },
             _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
           });
-          await applyPaymentRefundAccounting(tx, {
+          const refundOccurredAt = new Date();
+          const accounting = await applyPaymentRefundAccounting(tx, {
             vendorId: transaction.vendorId,
             transactionId: transaction.id,
             orderNumber: transaction.orderNumber,
@@ -2448,10 +2281,31 @@ export async function refundPaymentTransactionAction(formData: FormData) {
             }),
             isFullRefund: refundedAmountCents >= transaction.grossAmountCents,
             transactionOccurredAt: transaction.occurredAt,
-            occurredAt: new Date(),
+            occurredAt: refundOccurredAt,
+          });
+          // F-045 (review m-3): manual refunds of other providers share the
+          // post-refund hook with the PayUni and webhook paths.
+          const eventType = postRefundEventType(refundedAmountCents, transaction.grossAmountCents);
+          await applyPostRefundInTransaction(tx, {
+            transaction: updated,
+            eventType,
+            trustedCheckoutMetadata: transaction.metadata,
+            occurredAt: refundOccurredAt,
           });
 
-          return { transaction, updated };
+          return {
+            transaction,
+            updated,
+            postRefund: {
+              vendorId: transaction.vendorId,
+              paymentTransactionId: transaction.id,
+              eventType,
+              occurredAt: refundOccurredAt,
+              refundAmountCents,
+              previousRefundedAmountCents: transaction.refundedAmountCents,
+              commerceOrderRefund: accounting.commerceOrderRefund,
+            },
+          };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       } catch (error) {
         if (isSerializationConflict(error) && attempt < REFUND_TRANSACTION_MAX_ATTEMPTS) {
@@ -2468,6 +2322,8 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     throw new Error("Refund transaction retry loop exited unexpectedly");
   })();
 
+  // After commit: invoice void/allowance never undoes the committed refund.
+  await applyPostRefundAfterCommit(db, postRefund);
   await finishRefundAction({ transaction, updated, actor: { id: member.id, label: member.role } });
 }
 

@@ -17,6 +17,7 @@ import {
   PLATFORM_REFERRAL_COOKIE,
 } from "@/lib/platform-referral";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
+import { withPaymentOrderNumberRetry } from "@/lib/payment-order-number";
 import {
   payUniStagingAcknowledgedPendingAllowed,
   payUniStagingPlanRetryPermit,
@@ -215,12 +216,6 @@ function nextMonthlyReset(now: Date) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
 }
 
-function orderNumber() {
-  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `CD-${stamp}-${suffix}`;
-}
-
 function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
@@ -295,7 +290,8 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
   for (let attempt = 1; attempt <= PLAN_CHANGE_MAX_ATTEMPTS; attempt += 1) {
     try {
       const selectedAt = new Date();
-      const result = await getDb().$transaction(async (tx) => {
+      // F-050: an order-number collision re-runs the transaction once.
+      const result = await withPaymentOrderNumberRetry((order) => getDb().$transaction(async (tx) => {
         // Prices, quotas and the vendor owner are always read server-side.
         // Client fields other than planId never influence the transaction.
         const plan = await tx.billingPlan.findFirst({ where: { id: planId } });
@@ -413,7 +409,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
               data: {
                 vendorId: vendor.id,
                 providerName: provider.id,
-                orderNumber: orderNumber(),
+                orderNumber: order,
                 paymentMode: DEFAULT_BILLING_PAYMENT_MODE,
                 grossAmountCents: plan.monthlyPriceCents,
                 netAmountCents: plan.monthlyPriceCents,
@@ -461,7 +457,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
           subscription,
           transaction,
         };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
 
       if (result.outcome === "unavailable") {
         return { kind: "redirect", path: "/billing/plans?error=unavailable" };

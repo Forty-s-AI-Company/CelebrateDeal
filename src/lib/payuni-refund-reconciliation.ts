@@ -6,6 +6,11 @@ import {
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
 import type { PaymentQueryResult } from "@/lib/payment-providers/types";
+import {
+  applyPostRefundAfterCommit,
+  applyPostRefundInTransaction,
+  postRefundEventType,
+} from "@/lib/payment-post-refund";
 
 export type RefundReconciliationDisposition = "reconciled" | "already_reconciled";
 
@@ -65,7 +70,9 @@ export function validatePayUniRefundSnapshot(
   }
 }
 
-type ReconciliationDb = Pick<PrismaClient, "paymentTransaction" | "refundRecord" | "auditLog" | "$transaction">;
+type ReconciliationDb = Pick<PrismaClient,
+  | "paymentTransaction" | "refundRecord" | "auditLog" | "$transaction"
+  | "commerceOrder" | "electronicInvoice" | "electronicInvoiceAllowance">;
 
 type TransactionRow = Pick<PaymentTransaction,
   "id" | "vendorId" | "providerName" | "providerTradeNo" | "orderNumber" | "grossAmountCents" | "netAmountCents" | "refundedAmountCents" | "status" | "refundReason" | "refundedAt" | "occurredAt" | "paymentMode" | "metadata"
@@ -81,7 +88,8 @@ function isAmbiguousReservationId(value: string | null): value is string {
   return typeof value === "string" && /^ambiguous:[a-f0-9]{32}$/.test(value);
 }
 
-function isRefundReservationId(value: string | null): value is string {
+/** `request:` (in flight / completion pending) or `ambiguous:` reservation ids. */
+export function isRefundReservationId(value: string | null): value is string {
   return isRequestReservationId(value) || isAmbiguousReservationId(value);
 }
 
@@ -101,7 +109,7 @@ export async function reconcilePayUniRefund(input: {
   actor: RefundReconciliationActor;
   now?: Date;
 }): Promise<RefundReconciliationResult> {
-  return input.db.$transaction(async (tx) => {
+  const outcome = await input.db.$transaction(async (tx) => {
     const transaction = await tx.paymentTransaction.findUnique({ where: { id: input.transactionId } }) as TransactionRow | null;
     if (!transaction) throw new PayUniRefundReconciliationError("transaction_not_found");
     validatePayUniRefundSnapshot(transaction, input.providerSnapshot);
@@ -130,10 +138,13 @@ export async function reconcilePayUniRefund(input: {
       // Repair inside this same transaction; replay never creates another refund.
       await applyPlatformSubscriptionRefundProjection(tx, transaction, input.now ?? new Date());
       return {
-        disposition: "already_reconciled",
-        transactionId: transaction.id,
-        processedRefundRecordCount: 0,
-        refundedAmountCents: transaction.refundedAmountCents,
+        result: {
+          disposition: "already_reconciled",
+          transactionId: transaction.id,
+          processedRefundRecordCount: 0,
+          refundedAmountCents: transaction.refundedAmountCents,
+        } satisfies RefundReconciliationResult,
+        postRefund: null,
       };
     }
     if (pending.length === 0 && (transaction.status === "refunded" || transaction.status === "partially_refunded")) {
@@ -193,7 +204,7 @@ export async function reconcilePayUniRefund(input: {
         refundedAt: now,
       },
     });
-    await applyPaymentRefundAccounting(tx, {
+    const accounting = await applyPaymentRefundAccounting(tx, {
       vendorId: transaction.vendorId,
       transactionId: transaction.id,
       orderNumber: transaction.orderNumber,
@@ -211,6 +222,15 @@ export async function reconcilePayUniRefund(input: {
       }),
       isFullRefund: updated.status === "refunded",
       transactionOccurredAt: transaction.occurredAt instanceof Date ? transaction.occurredAt : now,
+      occurredAt: now,
+    });
+    const eventType = postRefundEventType(updated.refundedAmountCents, transaction.grossAmountCents);
+    // F-045: a reconciled refund gets the same post-refund hook as the
+    // webhook and admin PayUni paths.
+    await applyPostRefundInTransaction(tx, {
+      transaction: updated,
+      eventType,
+      trustedCheckoutMetadata: transaction.metadata,
       occurredAt: now,
     });
     await applyPlatformSubscriptionRefundProjection(tx, updated, now);
@@ -236,10 +256,25 @@ export async function reconcilePayUniRefund(input: {
     });
 
     return {
-      disposition: "reconciled",
-      transactionId: transaction.id,
-      processedRefundRecordCount: pending.length,
-      refundedAmountCents: updated.refundedAmountCents,
+      result: {
+        disposition: "reconciled",
+        transactionId: transaction.id,
+        processedRefundRecordCount: pending.length,
+        refundedAmountCents: updated.refundedAmountCents,
+      } satisfies RefundReconciliationResult,
+      postRefund: {
+        vendorId: transaction.vendorId,
+        eventType,
+        occurredAt: now,
+        refundAmountCents: pendingAmountCents,
+        previousRefundedAmountCents: transaction.refundedAmountCents,
+        commerceOrderRefund: accounting.commerceOrderRefund,
+      },
     };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  if (outcome.postRefund) {
+    await applyPostRefundAfterCommit(input.db, { ...outcome.postRefund, paymentTransactionId: outcome.result.transactionId });
+  }
+  return outcome.result;
 }

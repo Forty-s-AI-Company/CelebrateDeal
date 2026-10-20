@@ -62,6 +62,7 @@ import {
 } from "@/lib/buyer-support-access";
 import { allowsLegacyAffiliateAttribution } from "@/lib/live-quota-policy";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
+import { withPaymentOrderNumberRetry } from "@/lib/payment-order-number";
 import { resolvePublishedFunnelCheckout, type ResolvedFunnelCheckout } from "@/lib/funnel-commerce-service";
 import {
   AUTOMATION_VOUCHER_COOKIE,
@@ -143,12 +144,6 @@ function validatedCheckoutAdmission(
     };
   }
   return { ok: true, admission };
-}
-
-function orderNumber() {
-  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `CD-${stamp}-${suffix}`;
 }
 
 function metadataObject(value: unknown) {
@@ -882,11 +877,12 @@ export async function POST(request: Request) {
   }), ...(postPurchaseQuote ? { postPurchaseCredit: { ...postPurchaseQuote },
     ...(provider.checkoutSessionPreparation === "local" ? { postPurchaseSessionState: "unissued" } : {}) } : {}) };
 
-  const order = orderNumber();
   let transaction;
   let commerceOrderId: string | null = null;
   try {
-    transaction = await createReservedPaymentTransaction({
+    // F-050: the order number is unique per provider; a collision rolls the
+    // whole reservation back and retries once with a fresh number.
+    transaction = await withPaymentOrderNumberRetry((order) => createReservedPaymentTransaction({
       vendorId: parsed.data.vendorId,
       productId: product.id,
       expectedProductRevision: product.revision,
@@ -938,7 +934,7 @@ export async function POST(request: Request) {
         });
         commerceOrderId = commerceOrder.id;
       },
-    });
+    }));
   } catch (error) {
     if (error instanceof CheckoutIdempotencyConflictError) {
       const winner = await db.paymentTransaction.findUnique({
