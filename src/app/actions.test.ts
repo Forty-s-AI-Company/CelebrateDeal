@@ -98,6 +98,9 @@ const mocks = vi.hoisted(() => ({
   refundRecordCreate: vi.fn(),
   refundRecordUpdate: vi.fn(),
   getPaymentProvider: vi.fn(),
+  submitSettlementAdjustment: vi.fn(),
+  approveSettlementAdjustment: vi.fn(),
+  rejectSettlementAdjustment: vi.fn(),
   requireFinanceAdmin: vi.fn(),
   requireAuth: vi.fn(),
   requireVendor: vi.fn(),
@@ -153,6 +156,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+// F-049: the adjustment rules and their DB writes are covered by
+// src/lib/settlement-adjustment.db.test.ts; actions only parse and route.
+vi.mock("@/lib/settlement-adjustment", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/settlement-adjustment")>()),
+  submitSettlementAdjustment: mocks.submitSettlementAdjustment,
+  approveSettlementAdjustment: mocks.approveSettlementAdjustment,
+  rejectSettlementAdjustment: mocks.rejectSettlementAdjustment,
+}));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
   writeAuditLog: mocks.writeAuditLog,
@@ -382,6 +393,8 @@ import {
   sendPasswordResetSmokeAction,
   updatePasswordAction,
   updateSettlementAdjustmentAction,
+  approveSettlementAdjustmentAction,
+  rejectSettlementAdjustmentAction,
   recordAffiliatePayoutOutcomeAction,
   updatePayoutItemStatusAction,
   unbindInteractionScriptFromLiveAction,
@@ -405,6 +418,7 @@ import SecuritySettingsPage from "./(app)/settings/security/page";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { hashPassword } from "@/lib/password";
 import { BillingCycleError } from "@/lib/billing-cycle";
+import { SettlementAdjustmentError } from "@/lib/settlement-adjustment";
 import { initialMessageTemplateActionState } from "@/lib/message-template";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 
@@ -5481,8 +5495,23 @@ describe("refundPaymentTransactionAction", () => {
     });
   });
 
+  it.each(["1e3", "12abc", "40.5", "-5", "0", ""])("rejects a malformed refund amount %j before reading or reserving anything (F-049)", async (amount) => {
+    await expect(refundPaymentTransactionAction(refundFormData(amount))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+    expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(["1e1", "4.001", "abc"])("rejects a malformed fee refund %j", async (fee) => {
+    await expect(refundPaymentTransactionAction(refundFormData("1", fee))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("rejects a refund that exceeds the remaining refundable amount without writing records or updating the transaction", async () => {
-    await expect(refundPaymentTransactionAction(refundFormData("40.01"))).rejects.toThrow(
+    await expect(refundPaymentTransactionAction(refundFormData("41"))).rejects.toThrow(
       "redirect:/admin/billing/dashboard?error=refund",
     );
 
@@ -5990,95 +6019,66 @@ describe("FIN-02 settlement mutation invariants", () => {
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
-  it("rejects a negative manual adjustment before starting a transaction", async () => {
-    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
+  it.each(["1e3", "12abc", "10.5", "1,00", "", "--5"])("rejects a malformed adjustment amount %j before any write (F-049)", async (amount) => {
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData(amount))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=invalid_adjustment",
+    );
+    expect(mocks.submitSettlementAdjustment).not.toHaveBeenCalled();
+  });
 
+  it("requires an adjustment reason", async () => {
+    const formData = adjustmentFormData("100");
+    formData.set("adjustmentReason", "   ");
+    await expect(updateSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=adjustment_reason_required",
+    );
+    expect(mocks.submitSettlementAdjustment).not.toHaveBeenCalled();
+  });
+
+  it("submits a strict whole-NT$ adjustment with the server actor and maps domain errors", async () => {
+    mocks.submitSettlementAdjustment.mockResolvedValueOnce({ outcome: "applied", settlement });
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData("-1,000"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements",
+    );
+    expect(mocks.submitSettlementAdjustment).toHaveBeenCalledWith(expect.any(Object), {
+      settlementId: settlement.id,
+      amountCents: -100_000,
+      reason: "synthetic finance review",
+      actor: { id: "finance-1", label: expect.any(String) },
+    });
+
+    mocks.submitSettlementAdjustment.mockRejectedValueOnce(new SettlementAdjustmentError("negative_payout"));
     await expect(updateSettlementAdjustmentAction(adjustmentFormData("-101"))).rejects.toThrow(
       "redirect:/admin/billing/settlements?error=negative_payout",
     );
-
-    expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
-  it("fails a manual adjustment when the settlement version changes concurrently", async () => {
-    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
-    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
-    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      settlement: {
-        findUnique: mocks.settlementFindUnique,
-        updateMany: mocks.settlementUpdateMany,
-      },
-      courseCommissionAllocation: {
-        findMany: mocks.courseCommissionAllocationFindMany,
-        findUnique: mocks.courseCommissionAllocationFindUnique,
-      },
-      courseCommissionLedgerEntry: {
-        aggregate: mocks.courseCommissionLedgerEntryAggregate,
-        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
-        create: mocks.courseCommissionLedgerEntryCreate,
-      },
-      coursePayout: {
-        findUnique: mocks.coursePayoutFindUnique,
-        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
-        create: mocks.coursePayoutCreate,
-        updateMany: mocks.coursePayoutUpdateMany,
-      },
-    }));
-
-    await expect(updateSettlementAdjustmentAction(adjustmentFormData("5"))).rejects.toThrow(
-      "redirect:/admin/billing/settlements?error=conflict",
+  it("reports a large adjustment as waiting for a second approver", async () => {
+    mocks.submitSettlementAdjustment.mockResolvedValueOnce({ outcome: "pending_approval", request: { id: "request-1" } });
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData("60000"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?status=adjustment_pending",
     );
+  });
 
-    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
-      where: { id: settlement.id, lockedAt: null, updatedAt },
-      data: {
-        adjustmentAmountCents: 500,
-        adjustmentReason: "synthetic finance review",
-        reviewedBy: "finance-1",
-        finalPayoutAmountCents: 10_500,
-      },
+  it("routes approval and rejection through the finance admin with the posted request id", async () => {
+    const formData = new FormData();
+    formData.set("requestId", "request-1");
+    mocks.approveSettlementAdjustment.mockRejectedValueOnce(new SettlementAdjustmentError("same_approver"));
+    await expect(approveSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=same_approver",
+    );
+    mocks.approveSettlementAdjustment.mockResolvedValueOnce({});
+    await expect(approveSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?status=adjustment_approved",
+    );
+    expect(mocks.approveSettlementAdjustment).toHaveBeenLastCalledWith(expect.any(Object), {
+      requestId: "request-1",
+      actor: { id: "finance-1", label: expect.any(String) },
     });
-    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
-  });
-
-  it("persists and audits a non-negative adjustment after a successful conditional write", async () => {
-    const saved = { ...settlement, adjustmentAmountCents: -10_000, finalPayoutAmountCents: 0 };
-    mocks.settlementFindUnique
-      .mockResolvedValueOnce(settlement)
-      .mockResolvedValueOnce(saved);
-    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      settlement: {
-        findUnique: mocks.settlementFindUnique,
-        updateMany: mocks.settlementUpdateMany,
-      },
-      courseCommissionAllocation: {
-        findMany: mocks.courseCommissionAllocationFindMany,
-        findUnique: mocks.courseCommissionAllocationFindUnique,
-      },
-      courseCommissionLedgerEntry: {
-        aggregate: mocks.courseCommissionLedgerEntryAggregate,
-        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
-        create: mocks.courseCommissionLedgerEntryCreate,
-      },
-      coursePayout: {
-        findUnique: mocks.coursePayoutFindUnique,
-        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
-        create: mocks.coursePayoutCreate,
-        updateMany: mocks.coursePayoutUpdateMany,
-      },
-    }));
-
-    await expect(updateSettlementAdjustmentAction(adjustmentFormData("-100"))).rejects.toThrow(
-      "redirect:/admin/billing/settlements",
+    mocks.rejectSettlementAdjustment.mockResolvedValueOnce({});
+    await expect(rejectSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?status=adjustment_rejected",
     );
-
-    expect(mocks.settlementUpdateMany).toHaveBeenCalledOnce();
-    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
-      action: "update_settlement_adjustment",
-      before: settlement,
-      after: saved,
-    }));
   });
 
   it("rejects locking a negative settlement before touching commissions", async () => {

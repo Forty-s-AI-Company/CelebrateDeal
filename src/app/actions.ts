@@ -79,6 +79,14 @@ import {
   resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
 } from "./actions/vendor-member-actions";
 import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
+import { parseWholeYuanToCents, parseYuanWithCentsToCents } from "@/lib/money-input";
+import {
+  approveSettlementAdjustment,
+  parseSettlementAdjustmentInput,
+  rejectSettlementAdjustment,
+  SettlementAdjustmentError,
+  submitSettlementAdjustment,
+} from "@/lib/settlement-adjustment";
 import {
   deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
   deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
@@ -139,11 +147,10 @@ function safeExternalUrl(value: string | null, label: string) {
   return safeUrl;
 }
 
-function moneyToCents(formData: FormData, key: string, fallback = 0) {
+/** F-049: optional fee fields; blank is zero, anything malformed is null. */
+function optionalFeeCents(formData: FormData, key: string) {
   const value = text(formData, key);
-  if (!value) return fallback;
-  const parsed = Number.parseFloat(value.replaceAll(",", ""));
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : fallback;
+  return value ? parseYuanWithCentsToCents(value) : 0;
 }
 
 class RefundValidationError extends Error {}
@@ -1539,59 +1546,64 @@ export async function generateSettlementAction(formData: FormData) {
   redirect("/admin/billing/settlements");
 }
 
+const SETTLEMENTS_PATH = "/admin/billing/settlements";
+
+function settlementAdjustmentErrorCode(error: unknown) {
+  if (error instanceof SettlementAdjustmentError) return error.code;
+  if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) return "conflict";
+  return null;
+}
+
 export async function updateSettlementAdjustmentAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { member } = await requireFinanceAdmin();
   const id = text(formData, "id");
-  const adjustmentAmountCents = moneyToCents(formData, "adjustmentAmount");
-  const adjustmentReason = optionalText(formData, "adjustmentReason");
-  const settlement = await getDb().settlement.findUnique({ where: { id } });
-  if (!settlement || settlement.lockedAt) {
-    redirect("/admin/billing/settlements?error=locked");
-  }
-  const finalPayoutAmountCents = settlement.payoutableAmountCents + adjustmentAmountCents;
-  if (finalPayoutAmountCents < 0) {
-    redirect("/admin/billing/settlements?error=negative_payout");
-  }
-
-  const db = getDb();
-  let updated;
+  let outcome: Awaited<ReturnType<typeof submitSettlementAdjustment>>["outcome"];
   try {
-    updated = await db.$transaction(async (tx) => {
-      const result = await tx.settlement.updateMany({
-        where: { id, lockedAt: null, updatedAt: settlement.updatedAt },
-        data: {
-          adjustmentAmountCents,
-          adjustmentReason,
-          reviewedBy: member.id,
-          finalPayoutAmountCents,
-        },
-      });
-      if (result.count !== 1) throw new SettlementMutationConflict();
-      const saved = await tx.settlement.findUnique({ where: { id } });
-      if (!saved) throw new SettlementMutationConflict();
-      return saved;
-    });
+    // F-049: strict whole-NT$ amount, mandatory reason, second approval above the threshold.
+    const input = parseSettlementAdjustmentInput(text(formData, "adjustmentAmount"), text(formData, "adjustmentReason"));
+    outcome = (await submitSettlementAdjustment(getDb(), {
+      settlementId: id,
+      amountCents: input.amountCents,
+      reason: input.reason,
+      actor: { id: member.id, label: member.role },
+    })).outcome;
   } catch (error) {
-    if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {
-      redirect("/admin/billing/settlements?error=conflict");
-    }
+    const code = settlementAdjustmentErrorCode(error);
+    if (code) redirect(`${SETTLEMENTS_PATH}?error=${code}`);
     throw error;
   }
 
-  await writeAuditLog({
-    vendorId: settlement.vendorId,
-    actorId: member.id,
-    actorLabel: member.role,
-    action: "update_settlement_adjustment",
-    targetType: "Settlement",
-    targetId: settlement.id,
-    before: auditSnapshot(settlement),
-    after: auditSnapshot(updated),
-  });
+  revalidatePath(SETTLEMENTS_PATH);
+  redirect(outcome === "pending_approval" ? `${SETTLEMENTS_PATH}?status=adjustment_pending` : SETTLEMENTS_PATH);
+}
 
-  revalidatePath("/admin/billing/settlements");
-  redirect("/admin/billing/settlements");
+export async function approveSettlementAdjustmentAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { member } = await requireFinanceAdmin();
+  try {
+    await approveSettlementAdjustment(getDb(), { requestId: text(formData, "requestId"), actor: { id: member.id, label: member.role } });
+  } catch (error) {
+    const code = settlementAdjustmentErrorCode(error);
+    if (code) redirect(`${SETTLEMENTS_PATH}?error=${code}`);
+    throw error;
+  }
+  revalidatePath(SETTLEMENTS_PATH);
+  redirect(`${SETTLEMENTS_PATH}?status=adjustment_approved`);
+}
+
+export async function rejectSettlementAdjustmentAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const { member } = await requireFinanceAdmin();
+  try {
+    await rejectSettlementAdjustment(getDb(), { requestId: text(formData, "requestId"), actor: { id: member.id, label: member.role } });
+  } catch (error) {
+    const code = settlementAdjustmentErrorCode(error);
+    if (code) redirect(`${SETTLEMENTS_PATH}?error=${code}`);
+    throw error;
+  }
+  revalidatePath(SETTLEMENTS_PATH);
+  redirect(`${SETTLEMENTS_PATH}?status=adjustment_rejected`);
 }
 
 export async function lockSettlementAction(formData: FormData) {
@@ -2155,15 +2167,17 @@ export async function refundPaymentTransactionAction(formData: FormData) {
     redirect("/admin/billing/dashboard?error=refund_already_processed");
   }
 
-  const refundAmountCents = moneyToCents(formData, "refundAmount");
-  const gatewayFeeRefundCents = moneyToCents(formData, "gatewayFeeRefund");
-  const platformFeeRefundCents = moneyToCents(formData, "platformFeeRefund");
+  // F-049: refunds are whole NT$; "1e3", "12abc" or "40.5" never become an amount.
+  const refundAmountCents = parseWholeYuanToCents(text(formData, "refundAmount"));
+  const gatewayFeeRefundCents = optionalFeeCents(formData, "gatewayFeeRefund");
+  const platformFeeRefundCents = optionalFeeCents(formData, "platformFeeRefund");
   const reason = optionalText(formData, "reason");
   const monthKey = text(formData, "monthKey", new Date().toISOString().slice(0, 7));
   if (
+    refundAmountCents === null ||
     refundAmountCents <= 0 ||
-    gatewayFeeRefundCents < 0 ||
-    platformFeeRefundCents < 0 ||
+    gatewayFeeRefundCents === null ||
+    platformFeeRefundCents === null ||
     !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)
   ) {
     redirect("/admin/billing/dashboard?error=refund");

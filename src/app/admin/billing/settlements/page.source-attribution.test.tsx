@@ -43,6 +43,7 @@ const settlement = (overrides: Record<string, unknown> = {}) => ({
   adjustmentAmountCents: -250,
   adjustmentReason: "退款手續費調整",
   finalPayoutAmountCents: 234250,
+  adjustmentRequests: [],
   ...overrides,
 });
 
@@ -94,6 +95,29 @@ describe("admin settlement source attribution", () => {
     expect(html).toContain("draft");
     expect(html).toContain('name="settlementIds"');
     expect(html).toContain('name="adjustmentAmount"');
+  });
+
+  it("shows a pending large adjustment with approve only for a different admin (F-049)", async () => {
+    const request = { id: "request-1", amountCents: 6_000_000, reason: "年度保證金退還", requestedAt: new Date("2026-08-03T00:00:00.000Z"), requestedBy: "admin-a" };
+    mocks.settlementFindMany.mockResolvedValue([
+      settlement({ id: "settlement-review", status: "reviewing", lockedAt: null, adjustmentRequests: [request] }),
+    ]);
+
+    const html = renderToStaticMarkup(await AdminBillingSettlementsPage({ searchParams: Promise.resolve({ status: "adjustment_pending" }) }));
+    expect(mocks.settlementFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ adjustmentRequests: { where: { status: "pending" }, orderBy: { requestedAt: "desc" }, take: 1 } }),
+    }));
+    expect(html).toContain("待覆核調整");
+    expect(html).toContain("年度保證金退還");
+    expect(html).toContain("核准調整");
+    expect(html).toContain("退回申請");
+    expect(html).toContain('role="status"');
+    expect(html).toContain("需由另一位平台管理員核准後才會生效");
+
+    mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "admin-a" } });
+    const own = renderToStaticMarkup(await AdminBillingSettlementsPage({ searchParams: Promise.resolve({}) }));
+    expect(own).not.toContain("核准調整");
+    expect(own).toContain("撤回申請");
   });
 
   it.each([

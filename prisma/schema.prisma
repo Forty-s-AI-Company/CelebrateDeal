@@ -129,6 +129,7 @@ model Vendor {
   electronicInvoices               ElectronicInvoice[]
   electronicInvoiceAllowances      ElectronicInvoiceAllowance[]
   settlements                      Settlement[]
+  settlementAdjustmentRequests     SettlementAdjustmentRequest[]
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
   paymentMethodReferences          PaymentMethodReference[]
@@ -1609,13 +1610,39 @@ model Settlement {
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
-  vendor      Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  payoutBatch PayoutBatch? @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
-  payoutItems PayoutItem[]
+  vendor             Vendor                        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  payoutBatch        PayoutBatch?                  @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
+  payoutItems        PayoutItem[]
+  adjustmentRequests SettlementAdjustmentRequest[]
 
   @@unique([vendorId, monthKey])
   @@unique([vendorId, id])
   @@index([status, monthKey])
+}
+
+/// F-049: a settlement adjustment above FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS
+/// waits here until a different platform admin approves it. Only an approved
+/// request changes Settlement.adjustmentAmountCents. At most one pending
+/// request per settlement (partial unique index in the migration).
+model SettlementAdjustmentRequest {
+  id           String    @id @default(cuid())
+  vendorId     String
+  settlementId String
+  amountCents  Int
+  reason       String
+  status       String    @default("pending")
+  requestedBy  String
+  requestedAt  DateTime  @default(now())
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  vendor     Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  settlement Settlement @relation(fields: [vendorId, settlementId], references: [vendorId, id], onDelete: Cascade)
+
+  @@index([vendorId, settlementId, status])
+  @@index([status, requestedAt])
 }
 
 model PayoutBatch {

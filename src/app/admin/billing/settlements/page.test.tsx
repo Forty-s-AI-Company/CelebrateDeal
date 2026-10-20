@@ -36,6 +36,9 @@ describe("/admin/billing/settlements feedback", () => {
     ["negative_payout", "調整後的結算金額不可小於 0 元，資料未儲存。"],
     ["conflict", "月結資料已被其他操作更新，請重新整理後再試一次。"],
     ["invalid_payout_account", "每個商家都必須恰好設定一筆有效的平台出款帳戶。"],
+    ["invalid_adjustment", "調整金額必須是整數新台幣"],
+    ["adjustment_reason_required", "請填寫調整原因"],
+    ["same_approver", "申請人不能自行核准"],
   ])("renders safe feedback for %s", async (error, expectedMessage) => {
     const html = renderToStaticMarkup(await AdminBillingSettlementsPage({
       searchParams: Promise.resolve({ error }),

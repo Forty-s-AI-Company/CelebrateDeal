@@ -33,6 +33,7 @@
 | `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV` | 僅隔離正式 1 元測試需要 | CelebrateDeal 正式商店完整一組 | PAYUNi 正式後台 | `PAYUNI_ENV=production` 時專用，缺一即拒絕交易 |
 | PayUni callback 驗證 | 使用所選 Sandbox Hash Key / Hash IV | 使用所選 Production Hash Key / Hash IV | PAYUNi 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
 | `PAYUNI_REFUND_HOLD_RELEASE_CONFIRMATIONS`、`PAYUNI_REFUND_HOLD_RELEASE_WINDOW_HOURS` | 可不設（預設 3 次、24 小時） | 可不設（預設 3 次、24 小時） | 財務政策 | F-046：結果不明的 PayUni 退款保留，需連續幾次查詢確認「沒有退款」、保留建立多久後才可人工釋放；次數 2–20、小時 1–720，超出範圍或格式錯誤時用預設值 |
+| `FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS` | 可不設（預設 5000000 分＝NT$50,000） | 可不設（預設 5000000 分＝NT$50,000） | 財務政策 | F-049：月結人工調整金額絕對值超過此值（分）時，需另一位平台管理員覆核後才生效；只接受非負整數，格式錯誤時用預設值 |
 | `RESEND_API_KEY` | staging key | production key | Resend dashboard | test email delivered |
 | `EMAIL_FROM` | staging sender | production sender | Resend verified domain | SPF / DKIM / DMARC pass |
 | `SMOKE_TEST_EMAIL` | 單一測試收件信箱 | 單一受控維運信箱（非必要可不啟用 smoke） | 維運設定 | 其他收件人呼叫 test-email 必須回 403 |

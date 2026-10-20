@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Banknote, Calculator, LockKeyhole, RefreshCw, ShieldCheck } from "lucide-react";
 import {
+  approveSettlementAdjustmentAction,
   createPayoutBatchAction,
   generateSettlementAction,
   lockSettlementAction,
+  rejectSettlementAdjustmentAction,
   updateSettlementAdjustmentAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
@@ -12,6 +14,7 @@ import { Badge, Card, PageHeader, SubmitButton } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { financeSecondApprovalThresholdCents } from "@/lib/settlement-adjustment";
 
 function currentMonthKey() {
   return new Date().toISOString().slice(0, 7);
@@ -30,17 +33,29 @@ const settlementErrorMessages: Record<string, string> = {
   locked: "這筆月結已鎖定，不能再重新計算或調整。",
   missing: "找不到指定的商家或月結資料。",
   negative_payout: "調整後的結算金額不可小於 0 元，資料未儲存。",
+  invalid_adjustment: "調整金額必須是整數新台幣（可為負數，可用千分位逗號），不接受小數或科學記號；資料未儲存。",
+  adjustment_reason_required: "請填寫調整原因（500 字以內），資料未儲存。",
+  same_approver: "大額調整必須由另一位平台管理員覆核，申請人不能自行核准。",
+  not_pending: "這筆調整申請已處理或已被新的申請取代，請重新整理。",
   unsupported_currency: "這個月份有非新台幣（TWD）的交易，月結不會混加不同幣別；請先人工核對該商家的交易。",
+};
+
+const settlementStatusMessages: Record<string, string> = {
+  adjustment_pending: "調整金額超過覆核門檻，已送出待覆核申請；需由另一位平台管理員核准後才會生效。",
+  adjustment_approved: "已核准調整並更新月結金額。",
+  adjustment_rejected: "已退回調整申請，月結金額未變更。",
 };
 
 export default async function AdminBillingSettlementsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; status?: string }>;
 }) {
-  await requireFinanceAdmin();
-  const { error } = await searchParams;
+  const { member } = await requireFinanceAdmin();
+  const { error, status } = await searchParams;
   const errorMessage = error ? settlementErrorMessages[error] : null;
+  const statusMessage = status ? settlementStatusMessages[status] : null;
+  const approvalThresholdCents = financeSecondApprovalThresholdCents();
   const db = getDb();
   const [vendors, settlements] = await Promise.all([
     db.vendor.findMany({
@@ -49,7 +64,11 @@ export default async function AdminBillingSettlementsPage({
     }),
     db.settlement.findMany({
       orderBy: [{ monthKey: "desc" }, { createdAt: "desc" }],
-      include: { vendor: true, payoutBatch: true },
+      include: {
+        vendor: true,
+        payoutBatch: true,
+        adjustmentRequests: { where: { status: "pending" }, orderBy: { requestedAt: "desc" }, take: 1 },
+      },
     }),
   ]);
 
@@ -67,6 +86,11 @@ export default async function AdminBillingSettlementsPage({
       {errorMessage ? (
         <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
           {errorMessage}
+        </p>
+      ) : null}
+      {statusMessage ? (
+        <p className="mb-6 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
+          {statusMessage}
         </p>
       ) : null}
 
@@ -144,6 +168,14 @@ export default async function AdminBillingSettlementsPage({
               <Metric label="調整" value={settlement.adjustmentAmountCents} />
             </div>
 
+            {settlement.adjustmentRequests[0] ? (
+              <PendingAdjustment
+                request={settlement.adjustmentRequests[0]}
+                requestedByCurrentAdmin={settlement.adjustmentRequests[0].requestedBy === member.id}
+                locked={Boolean(settlement.lockedAt)}
+              />
+            ) : null}
+
             <div className="grid gap-4 xl:grid-cols-[1fr_auto_auto] xl:items-end">
               <form action={updateSettlementAdjustmentAction} className="grid gap-3 md:grid-cols-[150px_1fr_auto] md:items-end">
                 <CsrfField />
@@ -160,11 +192,13 @@ export default async function AdminBillingSettlementsPage({
                   />
                 </label>
                 <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                  調整原因
+                  調整原因（必填）
                   <input
                     name="adjustmentReason"
                     defaultValue={settlement.adjustmentReason ?? ""}
                     disabled={Boolean(settlement.lockedAt)}
+                    required
+                    maxLength={500}
                     placeholder="例如：補扣退款手續費"
                     className="h-10 rounded-md border border-border bg-white px-3 text-sm disabled:bg-slate-100"
                   />
@@ -177,6 +211,9 @@ export default async function AdminBillingSettlementsPage({
                 >
                   儲存調整
                 </FormSubmitButton>
+                <p className="text-xs text-slate-500 md:col-span-3">
+                  整數新台幣；金額絕對值超過 {formatCurrency(approvalThresholdCents)} 時需另一位平台管理員覆核後才生效。
+                </p>
               </form>
 
               {!settlement.lockedAt ? (
@@ -213,6 +250,57 @@ export default async function AdminBillingSettlementsPage({
         ))}
       </div>
     </>
+  );
+}
+
+function PendingAdjustment({
+  request,
+  requestedByCurrentAdmin,
+  locked,
+}: {
+  request: { id: string; amountCents: number; reason: string; requestedAt: Date };
+  requestedByCurrentAdmin: boolean;
+  locked: boolean;
+}) {
+  return (
+    <div className="grid gap-3 rounded-lg border border-orange-200 bg-orange-50 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="orange">待覆核調整</Badge>
+        <span className="font-semibold text-slate-950">{formatCurrency(request.amountCents)}</span>
+        <span className="text-sm text-slate-500">申請於 {formatDateTime(request.requestedAt)}</span>
+      </div>
+      <p className="text-sm text-slate-700">原因：{request.reason}</p>
+      {requestedByCurrentAdmin ? (
+        <p className="text-sm text-slate-600">這筆申請由你送出，需由另一位平台管理員核准；你可以撤回。</p>
+      ) : null}
+      {locked ? <p className="text-sm text-slate-600">月結已鎖定，這筆申請無法再核准，請退回。</p> : null}
+      <div className="flex flex-wrap gap-3">
+        {!requestedByCurrentAdmin && !locked ? (
+          <form action={approveSettlementAdjustmentAction}>
+            <CsrfField />
+            <input type="hidden" name="requestId" value={request.id} />
+            <FormSubmitButton
+              pendingChildren="核准中…"
+              pendingMessage="正在核准調整並更新月結，請勿重複送出。"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              核准調整
+            </FormSubmitButton>
+          </form>
+        ) : null}
+        <form action={rejectSettlementAdjustmentAction}>
+          <CsrfField />
+          <input type="hidden" name="requestId" value={request.id} />
+          <FormSubmitButton
+            pendingChildren="處理中…"
+            pendingMessage="正在退回調整申請，請勿重複送出。"
+            className="inline-flex h-10 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {requestedByCurrentAdmin ? "撤回申請" : "退回申請"}
+          </FormSubmitButton>
+        </form>
+      </div>
+    </div>
   );
 }
 

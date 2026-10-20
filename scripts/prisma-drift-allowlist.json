@@ -3,7 +3,7 @@
   "description": "Known differences between prisma/schema.prisma and the database built by prisma/migrations (B04-04). Each statement is what `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --script` prints today, i.e. what `prisma migrate dev` would generate. Never commit those statements as a migration. scripts/prisma-drift-check.mjs fails on any statement not listed here and on any listed statement that no longer appears.",
   "baseline": {
     "prisma": "6.19.3",
-    "migrations": "through 20261021110200_payuni_refund_hold_release",
+    "migrations": "through 20261021110300_settlement_adjustment_approval",
     "counts": {
       "trgm_gin_index": 3,
       "index_missing_in_schema": 3,
@@ -20,6 +20,7 @@
       "ConsultationBooking_active_slot_key",
       "LiveQuestion_one_spotlight_per_live_key",
       "PostPurchaseCredit_vendorId_sourceOrderId_active_key",
+      "SettlementAdjustmentRequest_one_pending_per_settlement",
       "TeamMembershipRelationship_one_active_upline"
     ]
   },
