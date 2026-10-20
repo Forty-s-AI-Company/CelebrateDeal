@@ -3,7 +3,7 @@
 import { FunnelCommerceBindingSchema, type FunnelCommerceBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import { formatCurrency } from "@/lib/format";
 
-const control = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm disabled:opacity-50";
+const control = "min-h-10 rounded-lg border border-slate-500 bg-white px-3 text-sm disabled:opacity-50";
 
 /** Prices are read-only catalog projections; only references enter the document. */
 export function FunnelCommerceSettings({ binding, products, disabled, onChange }: {

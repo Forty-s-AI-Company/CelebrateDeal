@@ -332,7 +332,7 @@ export function ConsultationBookingCalendar({
                           [field.id]: event.target.value,
                         }))
                       }
-                      className="h-11 rounded-lg border border-slate-300 px-3"
+                      className="h-11 rounded-lg border border-slate-500 px-3"
                     />
                   )}
                 </label>

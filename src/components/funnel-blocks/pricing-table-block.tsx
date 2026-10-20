@@ -19,7 +19,7 @@ export function PricingTableBlockComponent({ settings }: { settings: PricingTabl
           {card.isFeatured ? <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-orange-500 px-4 py-1 text-xs font-black text-white">{card.badgeText}</span> : null}
           <h3 className="text-xl font-black text-slate-950">{card.name}</h3>
           {card.description ? <p className="mt-2 text-sm leading-6 text-slate-600">{card.description}</p> : null}
-          <div className="mt-5">{card.originalPrice !== undefined ? <del className="mr-2 text-sm text-slate-400">{price(card.originalPrice, card.currency)}</del> : null}<strong className="text-3xl text-slate-950">{price(card.salePrice, card.currency)}</strong></div>
+          <div className="mt-5">{card.originalPrice !== undefined ? <del className="mr-2 text-sm text-slate-500">{price(card.originalPrice, card.currency)}</del> : null}<strong className="text-3xl text-slate-950">{price(card.salePrice, card.currency)}</strong></div>
           <ul className="my-6 grid flex-1 gap-3">{card.features.map((feature) => <li key={feature} className="flex gap-2 text-sm text-slate-700"><span aria-hidden="true" className="font-black text-emerald-600">✓</span>{feature}</li>)}</ul>
           <div className="grid gap-2">
             {card.showBuyButton && card.checkoutUrl ? <a href={card.checkoutUrl} className="rounded-xl bg-slate-950 px-4 py-3 text-center text-sm font-bold text-white">{card.buyButtonLabel}</a> : null}

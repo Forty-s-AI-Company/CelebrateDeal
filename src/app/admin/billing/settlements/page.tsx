@@ -123,7 +123,7 @@ export default async function AdminBillingSettlementsPage({
           <CsrfField />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             商家
-            <select name="vendorId" className="h-10 rounded-md border border-border bg-white px-3 text-sm">
+            <select name="vendorId" className="h-10 rounded-md border border-border-control bg-white px-3 text-sm">
               {vendors.map((vendor) => (
                 <option key={vendor.id} value={vendor.id}>
                   {vendor.name} · {vendor.subscriptions[0]?.plan.name ?? "未設定方案"}
@@ -133,7 +133,7 @@ export default async function AdminBillingSettlementsPage({
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             月份
-            <input name="monthKey" type="month" defaultValue={currentMonthKey()} className="h-10 rounded-md border border-border bg-white px-3 text-sm" />
+            <input name="monthKey" type="month" defaultValue={currentMonthKey()} className="h-10 rounded-md border border-border-control bg-white px-3 text-sm" />
           </label>
           <SubmitButton pendingChildren="產生中…" pendingMessage="正在產生月結，請勿重複送出。">
             <RefreshCw size={16} />
@@ -226,7 +226,7 @@ export default async function AdminBillingSettlementsPage({
                   disabled={Boolean(settlement.lockedAt)}
                   pendingChildren="儲存中…"
                   pendingMessage="正在儲存月結調整，請勿重複送出。"
-                  className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                 >
                   儲存調整
                 </FormSubmitButton>

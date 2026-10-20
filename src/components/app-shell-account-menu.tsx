@@ -64,7 +64,7 @@ export function AppShellAccountMenu({
           <span className="flex min-w-0 items-center gap-1.5"><span className="truncate text-sm font-semibold text-slate-800">{vendorName}</span><span className="shrink-0 rounded border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-700">{planLabel}</span></span>
           <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-500">{roleLabel}</span>
         </span>
-        {isOpen ? <ChevronUp className="size-4 text-slate-400" aria-hidden="true" /> : <MoreHorizontal className="size-4 text-slate-400" aria-hidden="true" />}
+        {isOpen ? <ChevronUp className="size-4 text-slate-500" aria-hidden="true" /> : <MoreHorizontal className="size-4 text-slate-500" aria-hidden="true" />}
       </button>
     </div>
   );

@@ -12,7 +12,7 @@ import { EMAIL_DELIVERY_QUERY_MAX_LENGTH } from "@/lib/email-delivery-operations
 
 type EmailDeliveryListItem = NonNullable<EmailDeliveryOperationsActionState["result"]>["items"][number];
 
-const controlClass = "h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
+const controlClass = "h-11 rounded-md border border-border-control bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 const primaryButtonClass = "inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark";
 const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50";
 const retryButtonClass = "inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-3 text-sm font-semibold text-orange-800 transition hover:bg-orange-100";

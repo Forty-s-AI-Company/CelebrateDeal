@@ -143,7 +143,7 @@ export function PartnerPageEditor({ page, products, csrfToken, saveAction, publi
             <div className="grid gap-4 md:grid-cols-2">{slots.map(([key, label]) => {
               const slot = slotByKey.get(key); const disabled = locked.has("PRODUCT_SLOTS") || !slot?.available;
               return <div key={key} className="grid gap-2 rounded-md border border-slate-100 p-3"><label className="grid gap-1 text-sm font-medium text-slate-700">{label}
-                <select name={`product_${key}`} defaultValue={slot?.productId ?? ""} disabled={disabled} className="h-10 rounded-md border border-border bg-white px-3 text-sm disabled:bg-slate-100"><option value="">使用模板預設商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+                <select name={`product_${key}`} defaultValue={slot?.productId ?? ""} disabled={disabled} className="h-10 rounded-md border border-border-control bg-white px-3 text-sm disabled:bg-slate-100"><option value="">使用模板預設商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
                 <label className="grid gap-1 text-xs text-slate-600">或輸入你的外部連結<input name={`url_${key}`} type="url" defaultValue={slot?.overrideUrl ?? ""} disabled={disabled} placeholder="https://..." className="h-9 rounded-md border border-border px-3 text-sm disabled:bg-slate-100" /></label>
                 {!slot?.available ? <p className="text-xs text-slate-500">A 的模板未提供此商品槽。</p> : null}{locked.has("PRODUCT_SLOTS") ? <LockedNotice label={label} source={page.source.ownerName} /> : null}
               </div>;

@@ -6,7 +6,7 @@ import { saveBrandSettingsActionState, type BrandSettingsActionState, type Brand
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MediaUploadField, type MediaUploadPersistedValue } from "@/components/media-upload-field";
 
-const inputClassName = "h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
+const inputClassName = "h-11 rounded-md border border-border-control bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 const SAFE_PRIMARY_COLOR = "#2563eb";
 const SAFE_CTA_COLOR = "#f97316";
 
@@ -246,11 +246,11 @@ export function BrandSettingsForm({
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           主要色
-          <input name="primaryColor" type="color" value={values.primaryColor} onChange={updateValue("primaryColor")} className="h-11 w-full rounded-md border border-border bg-white p-1" />
+          <input name="primaryColor" type="color" value={values.primaryColor} onChange={updateValue("primaryColor")} className="h-11 w-full rounded-md border border-border-control bg-white p-1" />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           CTA 色
-          <input name="ctaColor" type="color" value={values.ctaColor} onChange={updateValue("ctaColor")} className="h-11 w-full rounded-md border border-border bg-white p-1" />
+          <input name="ctaColor" type="color" value={values.ctaColor} onChange={updateValue("ctaColor")} className="h-11 w-full rounded-md border border-border-control bg-white p-1" />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           時區

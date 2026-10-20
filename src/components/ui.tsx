@@ -128,7 +128,7 @@ export function Field({
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <input
-        className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
+        className="h-11 rounded-md border border-border-control bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
         type={type}
         required={required}
@@ -167,7 +167,7 @@ export function TextArea({
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <textarea
-        className="rounded-md border border-border bg-white px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
+        className="rounded-md border border-border-control bg-white px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
         rows={rows}
         placeholder={placeholder}
@@ -198,7 +198,7 @@ export function SelectField({
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <select
-        className="h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
+        className="h-11 rounded-md border border-border-control bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100"
         name={name}
         onChange={onChange}
         {...(value === undefined ? { defaultValue: defaultValue ?? "" } : { value })}

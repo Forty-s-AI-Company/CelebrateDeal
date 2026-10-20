@@ -19,7 +19,7 @@ function UsageBar({ label, used, limit, unit }: { label: string; used: number; l
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
         <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
       </div>
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-slate-500">
         {!hasLimit ? "未設定上限" : overage > 0 ? `已超額 ${overage.toLocaleString()} ${unit}` : `剩餘 ${(limit - used).toLocaleString()} ${unit}`}
       </p>
     </div>

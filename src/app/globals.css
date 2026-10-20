@@ -6,6 +6,9 @@
   --card: #ffffff;
   --muted: #64748b;
   --border: #dbe3ef;
+  /* 表單控件邊框：對白底 ≥ 3:1（WCAG 1.4.11）；--border 只用於裝飾性分隔線。 */
+  --border-control: #64748b;
+  --focus-ring: #1d4ed8;
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
   --cta: #c2410c;
@@ -18,6 +21,7 @@
   --color-card: var(--card);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-border-control: var(--border-control);
   --color-primary: var(--primary);
   --color-primary-dark: var(--primary-dark);
   --color-cta: var(--cta);
@@ -53,8 +57,8 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
 }
 
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 3px solid #2563eb;
-  outline-offset: 3px;
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 ::selection {

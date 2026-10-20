@@ -218,7 +218,7 @@ export function AppShell({
               const item = group.items[0];
               return (
                 <AppShellNavLink key={item.href} href={item.href}>
-                  <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
+                  <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
                   <span className="truncate">{item.label}</span>
                 </AppShellNavLink>
               );
@@ -228,7 +228,7 @@ export function AppShell({
               <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)}>
                 {group.items.map((item) => (
                   <AppShellNavLink key={item.href} href={item.href}>
-                    <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
+                    <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
                     <span className="truncate">{item.label}</span>
                   </AppShellNavLink>
                 ))}
@@ -249,18 +249,18 @@ export function AppShell({
               if (items.length === 0) return null;
               return (
                 <div key={section.label} className="border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
-                  <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{section.label}</p>
+                  <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</p>
                   {items.map((item) => {
                     const Icon = item.icon;
-                    return <Link key={item.href} href={item.href} className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Icon className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />{item.label}</Link>;
+                    return <Link key={item.href} href={item.href} className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Icon className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />{item.label}</Link>;
                   })}
                 </div>
               );
             })}
             <div className="border-t border-slate-100 pt-2">
-              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">支援</p>
-              <Link href="/policies" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><ScrollText className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />說明與政策</Link>
-              <Link href="/support" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Headphones className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />聯絡客服</Link>
+              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">支援</p>
+              <Link href="/policies" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><ScrollText className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />說明與政策</Link>
+              <Link href="/support" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Headphones className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />聯絡客服</Link>
             </div>
             <div className="border-t border-slate-100 pt-2">
               <form action={logoutAction}>
@@ -270,7 +270,7 @@ export function AppShell({
                   pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
                   className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-700"
                 >
-                  <LogOut className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
+                  <LogOut className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />
                   登出
                 </FormSubmitButton>
               </form>
