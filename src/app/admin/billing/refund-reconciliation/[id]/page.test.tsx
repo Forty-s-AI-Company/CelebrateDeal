@@ -39,8 +39,9 @@ vi.mock("@/lib/payuni-refund-reconciliation", () => ({
   PayUniRefundReconciliationError: reconciliationErrors.PayUniRefundReconciliationError,
 }));
 vi.mock("@/lib/payuni-refund-hold-release", () => ({
-  payUniRefundHoldPolicy: () => ({ requiredConfirmations: 3, windowMs: 24 * 60 * 60 * 1000 }),
-  payUniRefundHoldEligibleAt: (reservedAt: Date, policy: { windowMs: number }) => new Date(reservedAt.getTime() + policy.windowMs),
+  payUniRefundHoldPolicy: () => ({ requiredConfirmations: 3, windowMs: 24 * 60 * 60 * 1000, minIntervalMs: 6 * 60 * 60 * 1000 }),
+  payUniRefundHoldNextCountableAt: () => new Date("2026-08-03T06:00:00.000Z"),
+  payUniRefundHoldEarliestReleaseAt: () => new Date("2026-08-03T06:00:00.000Z"),
   recordPayUniRefundHoldCheck: mocks.recordPayUniRefundHoldCheck,
   resetPayUniRefundHoldChecks: mocks.resetPayUniRefundHoldChecks,
 }));
@@ -151,6 +152,8 @@ describe("/admin/billing/refund-reconciliation/[id] route", () => {
     expect(html).not.toContain("trade-synthetic");
     expect(html).toContain("釋放退款保留");
     expect(html).toContain("2 / 3 次");
+    expect(html).toContain("兩次計數至少間隔 6 小時");
+    expect(html).toContain("下次可計數");
     expect(html).toContain("查詢 PayUni 並釋放保留");
   });
 

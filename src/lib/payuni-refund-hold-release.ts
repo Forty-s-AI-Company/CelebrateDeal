@@ -19,10 +19,17 @@ import {
  * cumulative state still equals the local processed state ("no refund"
  * confirmation) and lets a finance admin release the hold only when:
  *
- * - at least `requiredConfirmations` consecutive confirmations exist,
- *   including the fresh query made by the release action itself;
- * - the reservation is older than the window (default 24 hours);
+ * - at least `requiredConfirmations` consecutive *counted* confirmations
+ *   exist, including the fresh query made by the release action itself;
+ * - a confirmation counts only once the reservation is older than the window
+ *   (default 24 hours) and at least `minIntervalMs` (default 6 hours) after
+ *   the previous counted one, so the earliest release with the defaults is
+ *   24 + 2 x 6 = 36 hours after the reservation (review M-1: three clicks in
+ *   a minute must never release a hold);
  * - the trade still has exactly that one pending reservation.
+ *
+ * A query that is too early or too soon after the last counted one is still
+ * audited (`counted: false`) but does not change the streak.
  *
  * Nothing here runs automatically. A validated snapshot that shows any other
  * state, or a local ledger mismatch, resets the streak. A provider transport
@@ -33,8 +40,9 @@ import {
  */
 export const DEFAULT_REFUND_HOLD_RELEASE_CONFIRMATIONS = 3;
 export const DEFAULT_REFUND_HOLD_RELEASE_WINDOW_HOURS = 24;
+export const DEFAULT_REFUND_HOLD_CONFIRMATION_INTERVAL_HOURS = 6;
 
-export type PayUniRefundHoldPolicy = { requiredConfirmations: number; windowMs: number };
+export type PayUniRefundHoldPolicy = { requiredConfirmations: number; windowMs: number; minIntervalMs: number };
 
 function boundedInteger(raw: string | undefined, fallback: number, min: number, max: number) {
   const value = raw?.trim();
@@ -49,7 +57,33 @@ export function payUniRefundHoldPolicy(env: Record<string, string | undefined> =
     env.PAYUNI_REFUND_HOLD_RELEASE_CONFIRMATIONS, DEFAULT_REFUND_HOLD_RELEASE_CONFIRMATIONS, 2, 20,
   );
   const hours = boundedInteger(env.PAYUNI_REFUND_HOLD_RELEASE_WINDOW_HOURS, DEFAULT_REFUND_HOLD_RELEASE_WINDOW_HOURS, 1, 720);
-  return { requiredConfirmations, windowMs: hours * 60 * 60 * 1000 };
+  const intervalHours = boundedInteger(
+    env.PAYUNI_REFUND_HOLD_CONFIRMATION_INTERVAL_HOURS, DEFAULT_REFUND_HOLD_CONFIRMATION_INTERVAL_HOURS, 1, 168,
+  );
+  return { requiredConfirmations, windowMs: hours * HOUR_MS, minIntervalMs: intervalHours * HOUR_MS };
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Earliest moment a release query could complete the streak, assuming every check confirms "no refund". */
+export function payUniRefundHoldEarliestReleaseAt(
+  refund: { createdAt: Date; providerNoRefundCheckCount: number; providerNoRefundLastCheckedAt: Date | null },
+  policy: PayUniRefundHoldPolicy,
+) {
+  const remaining = Math.max(0, policy.requiredConfirmations - refund.providerNoRefundCheckCount - 1);
+  return new Date(payUniRefundHoldNextCountableAt(refund, policy).getTime() + remaining * policy.minIntervalMs);
+}
+
+/** When the next query can count: after the window, and one interval after the last counted confirmation. */
+export function payUniRefundHoldNextCountableAt(
+  refund: { createdAt: Date; providerNoRefundCheckCount: number; providerNoRefundLastCheckedAt: Date | null },
+  policy: PayUniRefundHoldPolicy,
+) {
+  const windowEnd = payUniRefundHoldEligibleAt(refund.createdAt, policy).getTime();
+  const afterLast = refund.providerNoRefundCheckCount > 0 && refund.providerNoRefundLastCheckedAt
+    ? refund.providerNoRefundLastCheckedAt.getTime() + policy.minIntervalMs
+    : windowEnd;
+  return new Date(Math.max(windowEnd, afterLast));
 }
 
 export function payUniRefundHoldEligibleAt(reservedAt: Date, policy: PayUniRefundHoldPolicy) {
@@ -73,6 +107,9 @@ export type PayUniRefundHoldCheckResult = {
   confirmations: number;
   requiredConfirmations: number;
   eligibleAt: Date;
+  /** False when the query was too early or too soon after the last counted one. */
+  counted: boolean;
+  nextCountableAt: Date;
   releasable: boolean;
 };
 
@@ -138,26 +175,34 @@ export async function recordPayUniRefundHoldCheck(input: {
         throw new PayUniRefundHoldError("provider_reports_refund_activity");
       }
 
-      const confirmations = refund.providerNoRefundCheckCount + 1;
       const eligibleAt = payUniRefundHoldEligibleAt(refund.createdAt, policy);
-      const releasable = confirmations >= policy.requiredConfirmations && now.getTime() >= eligibleAt.getTime();
+      const counted = now.getTime() >= payUniRefundHoldNextCountableAt(refund, policy).getTime();
+      const confirmations = refund.providerNoRefundCheckCount + (counted ? 1 : 0);
+      const releasable = counted && confirmations >= policy.requiredConfirmations;
       const release = input.release && releasable;
-      const updated = await tx.refundRecord.updateMany({
-        where: {
-          id: refund.id,
-          vendorId: transaction.vendorId,
-          status: "pending",
-          providerEventId: refund.providerEventId,
-          providerNoRefundCheckCount: refund.providerNoRefundCheckCount,
-        },
-        data: {
-          providerNoRefundCheckCount: confirmations,
-          providerNoRefundFirstCheckedAt: refund.providerNoRefundFirstCheckedAt ?? now,
-          providerNoRefundLastCheckedAt: now,
-          ...(release ? { status: "failed", holdReleasedAt: now } : {}),
-        },
-      });
-      if (updated.count !== 1) throw new PayUniRefundHoldError("concurrent_update");
+      if (counted) {
+        const updated = await tx.refundRecord.updateMany({
+          where: {
+            id: refund.id,
+            vendorId: transaction.vendorId,
+            status: "pending",
+            providerEventId: refund.providerEventId,
+            providerNoRefundCheckCount: refund.providerNoRefundCheckCount,
+          },
+          data: {
+            providerNoRefundCheckCount: confirmations,
+            providerNoRefundFirstCheckedAt: refund.providerNoRefundFirstCheckedAt ?? now,
+            providerNoRefundLastCheckedAt: now,
+            ...(release ? { status: "failed", holdReleasedAt: now } : {}),
+          },
+        });
+        if (updated.count !== 1) throw new PayUniRefundHoldError("concurrent_update");
+      }
+      const nextCountableAt = payUniRefundHoldNextCountableAt({
+        createdAt: refund.createdAt,
+        providerNoRefundCheckCount: confirmations,
+        providerNoRefundLastCheckedAt: counted ? now : refund.providerNoRefundLastCheckedAt,
+      }, policy);
 
       await tx.auditLog.create({
         data: {
@@ -176,8 +221,10 @@ export async function recordPayUniRefundHoldCheck(input: {
           after: {
             status: release ? "failed" : "pending",
             providerNoRefundCheckCount: confirmations,
+            counted,
             requiredConfirmations: policy.requiredConfirmations,
             eligibleAt: eligibleAt.toISOString(),
+            nextCountableAt: nextCountableAt.toISOString(),
             refundAmountCents: refund.refundAmountCents,
             providerStatus: input.providerSnapshot.status,
             providerRefundedAmountCents: input.providerSnapshot.refundedAmountCents,
@@ -190,6 +237,8 @@ export async function recordPayUniRefundHoldCheck(input: {
         confirmations,
         requiredConfirmations: policy.requiredConfirmations,
         eligibleAt,
+        counted,
+        nextCountableAt,
         releasable,
       } satisfies PayUniRefundHoldCheckResult;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

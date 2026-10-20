@@ -10,7 +10,8 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { PayUniRefundReconciliationError, reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
 import {
-  payUniRefundHoldEligibleAt,
+  payUniRefundHoldEarliestReleaseAt,
+  payUniRefundHoldNextCountableAt,
   payUniRefundHoldPolicy,
   recordPayUniRefundHoldCheck,
   resetPayUniRefundHoldChecks,
@@ -178,7 +179,10 @@ export default async function AdminBillingRefundReconciliationPage({
   const pendingAmountCents = transaction.refunds.reduce((sum, refund) => sum + refund.refundAmountCents, 0);
   const holdPolicy = payUniRefundHoldPolicy();
   const heldRefund = transaction.refunds.length === 1 && transaction.status !== "refunded" ? transaction.refunds[0] : undefined;
-  const holdEligibleAt = heldRefund ? payUniRefundHoldEligibleAt(heldRefund.createdAt, holdPolicy) : null;
+  const holdNextCountableAt = heldRefund ? payUniRefundHoldNextCountableAt(heldRefund, holdPolicy) : null;
+  const holdEarliestReleaseAt = heldRefund ? payUniRefundHoldEarliestReleaseAt(heldRefund, holdPolicy) : null;
+  const holdWindowHours = Math.round(holdPolicy.windowMs / 3_600_000);
+  const holdIntervalHours = Math.round(holdPolicy.minIntervalMs / 3_600_000);
 
   return (
     <>
@@ -240,16 +244,17 @@ export default async function AdminBillingRefundReconciliationPage({
             沒有 pending reservation、provider 回應未驗證、金額不一致或環境不是 Sandbox 時，系統會 fail closed，不寫入資料。
           </p>
 
-          {heldRefund && holdEligibleAt ? (
+          {heldRefund && holdNextCountableAt && holdEarliestReleaseAt ? (
             <div className="mt-6 border-t border-slate-200 pt-5">
               <h3 className="text-base font-semibold text-slate-950">釋放退款保留</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                PayUni 連續 {holdPolicy.requiredConfirmations} 次確認「沒有退款」（含釋放時的最新一次查詢），且保留建立超過時間窗後，才可人工釋放。系統不會自動釋放；釋放後該筆保留標為失敗並寫入稽核紀錄。
+                保留建立 {holdWindowHours} 小時後，PayUni 每次確認「沒有退款」才計數，兩次計數至少間隔 {holdIntervalHours} 小時；連續 {holdPolicy.requiredConfirmations} 次（含釋放時的最新一次查詢）後才可人工釋放。太早或間隔不足的查詢只記稽核、不計數。系統不會自動釋放；釋放後該筆保留標為失敗並寫入稽核紀錄。
               </p>
               <dl className="mt-3 grid gap-2 text-sm">
                 <div className="flex justify-between gap-4"><dt className="text-slate-500">已連續確認</dt><dd className="font-semibold text-slate-950">{heldRefund.providerNoRefundCheckCount} / {holdPolicy.requiredConfirmations} 次</dd></div>
                 <div className="flex justify-between gap-4"><dt className="text-slate-500">最近確認</dt><dd className="text-slate-950">{heldRefund.providerNoRefundLastCheckedAt ? formatDateTime(heldRefund.providerNoRefundLastCheckedAt) : "尚未確認"}</dd></div>
-                <div className="flex justify-between gap-4"><dt className="text-slate-500">最早可釋放</dt><dd className="text-slate-950">{formatDateTime(holdEligibleAt)}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">下次可計數</dt><dd className="text-slate-950">{formatDateTime(holdNextCountableAt)}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">最早可釋放</dt><dd className="text-slate-950">{formatDateTime(holdEarliestReleaseAt)}</dd></div>
               </dl>
               <form action={releaseHoldAction} className="mt-4 grid gap-3">
                 <CsrfField />
