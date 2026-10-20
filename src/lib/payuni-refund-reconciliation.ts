@@ -81,7 +81,8 @@ function isAmbiguousReservationId(value: string | null): value is string {
   return typeof value === "string" && /^ambiguous:[a-f0-9]{32}$/.test(value);
 }
 
-function isRefundReservationId(value: string | null): value is string {
+/** `request:` (in flight / completion pending) or `ambiguous:` reservation ids. */
+export function isRefundReservationId(value: string | null): value is string {
   return isRequestReservationId(value) || isAmbiguousReservationId(value);
 }
 

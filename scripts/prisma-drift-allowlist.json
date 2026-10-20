@@ -3,7 +3,7 @@
   "description": "Known differences between prisma/schema.prisma and the database built by prisma/migrations (B04-04). Each statement is what `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --script` prints today, i.e. what `prisma migrate dev` would generate. Never commit those statements as a migration. scripts/prisma-drift-check.mjs fails on any statement not listed here and on any listed statement that no longer appears.",
   "baseline": {
     "prisma": "6.19.3",
-    "migrations": "through 20261021110100_payment_order_number_unique",
+    "migrations": "through 20261021110200_payuni_refund_hold_release",
     "counts": {
       "trgm_gin_index": 3,
       "index_missing_in_schema": 3,

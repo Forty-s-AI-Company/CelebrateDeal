@@ -346,3 +346,10 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 程式：`src/lib/payment-order-number.ts` 產生 `CD-<UTC yymmdd>-<14 碼 Crockford base32>`（24 字元、70 bits，符合 `PAYUNI_ORDER_NUMBER`），checkout route、`invoice-actions`、`platform-plan-checkout` 三處共用；整個建立交易遇 order number 的 P2002 換號重跑一次，第二次仍撞號就照原錯誤處理。無 vendor 的 PayUni 回呼反查 `(providerName, orderNumber)` 改走此索引。
 - 測試：`src/lib/payment-order-number.test.ts`、`src/lib/payment-order-number.db.test.ts`（跨租戶撞號 P2002、重試、provider 命名空間與 NULL、索引定義）。
 - 目前 149 models、111 forward migrations；既有 SQL／checksum 不變。已在 loopback PostgreSQL 全新 `celebratedeal_wp18_ci` 完整套用，並以交易內測試確認 preflight 遇重複會中止。
+
+## 2026-10-21 F-046／B03-11 PayUni 退款保留人工釋放
+
+- `20261021110200_payuni_refund_hold_release`：forward-only、純新增欄位，不改既有資料。`RefundRecord` 新增 `providerNoRefundCheckCount`（預設 0）、`providerNoRefundFirstCheckedAt`、`providerNoRefundLastCheckedAt`、`holdReleasedAt`。CHECK `RefundRecord_provider_no_refund_check`（次數 ≥ 0；次數為 0 時兩個時間皆為 NULL，反之皆有值且 last ≥ first）、`RefundRecord_hold_release_check`（`holdReleasedAt` 只能出現在 `status = 'failed'`）。Prisma 6 不比對 CHECK，drift 檢查維持 100 句。
+- 程式：`src/lib/payuni-refund-hold-release.ts`。對帳頁的 PayUni 查詢若顯示累計狀態與本機已處理狀態完全相同（沒有退款），記一次確認並寫 `confirm_payuni_refund_no_refund` audit；驗證後的 provider 回應與帳務不一致就把連續次數歸零；provider 連線失敗不計也不歸零。`requireFinanceAdmin` 的「查詢 PayUni 並釋放保留」action 會再查一次，連續確認（含這次）達 `PAYUNI_REFUND_HOLD_RELEASE_CONFIRMATIONS`（預設 3）且保留建立超過 `PAYUNI_REFUND_HOLD_RELEASE_WINDOW_HOURS`（預設 24 小時）才把唯一的 pending 保留標為 `failed`、寫 `holdReleasedAt` 與 `release_payuni_refund_hold` audit，全部在同一個 Serializable 交易；不會自動釋放。
+- 目前 149 models、112 forward migrations；既有 SQL／checksum 不變。已在 loopback `celebratedeal_wp18_ci` 套用並以 `src/lib/payuni-refund-hold-release.db.test.ts` 驗證 CHECK 與流程。
+

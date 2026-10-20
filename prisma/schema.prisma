@@ -2478,6 +2478,13 @@ model RefundRecord {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
+  /// F-046: consecutive PayUni queries that confirmed "no refund" while this reservation was pending.
+  providerNoRefundCheckCount     Int       @default(0)
+  providerNoRefundFirstCheckedAt DateTime?
+  providerNoRefundLastCheckedAt  DateTime?
+  /// F-046: set only by the manual hold-release action (status becomes failed).
+  holdReleasedAt                 DateTime?
+
   vendor              Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   paymentTransaction  PaymentTransaction   @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Cascade)
   commerceOrderRefund CommerceOrderRefund? @relation("CommerceOrderRefundRecord")

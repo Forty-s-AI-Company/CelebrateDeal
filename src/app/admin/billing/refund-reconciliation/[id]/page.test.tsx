@@ -10,6 +10,13 @@ const mocks = vi.hoisted(() => ({
   notFound: vi.fn(() => { throw new Error("not-found"); }),
   redirect: vi.fn(),
   reconcilePayUniRefund: vi.fn(),
+  recordPayUniRefundHoldCheck: vi.fn(),
+  resetPayUniRefundHoldChecks: vi.fn(),
+}));
+const reconciliationErrors = vi.hoisted(() => ({
+  PayUniRefundReconciliationError: class PayUniRefundReconciliationError extends Error {
+    constructor(public readonly reason: string) { super("PayUni refund reconciliation failed."); }
+  },
 }));
 const formStatus = vi.hoisted(() => ({ pending: false }));
 
@@ -27,7 +34,16 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerAct
 vi.mock("@/lib/db", () => ({ getDb: () => ({ paymentTransaction: { findUnique: mocks.findUnique } }) }));
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
 vi.mock("@/lib/payment-providers/index", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
-vi.mock("@/lib/payuni-refund-reconciliation", () => ({ reconcilePayUniRefund: mocks.reconcilePayUniRefund }));
+vi.mock("@/lib/payuni-refund-reconciliation", () => ({
+  reconcilePayUniRefund: mocks.reconcilePayUniRefund,
+  PayUniRefundReconciliationError: reconciliationErrors.PayUniRefundReconciliationError,
+}));
+vi.mock("@/lib/payuni-refund-hold-release", () => ({
+  payUniRefundHoldPolicy: () => ({ requiredConfirmations: 3, windowMs: 24 * 60 * 60 * 1000 }),
+  payUniRefundHoldEligibleAt: (reservedAt: Date, policy: { windowMs: number }) => new Date(reservedAt.getTime() + policy.windowMs),
+  recordPayUniRefundHoldCheck: mocks.recordPayUniRefundHoldCheck,
+  resetPayUniRefundHoldChecks: mocks.resetPayUniRefundHoldChecks,
+}));
 vi.mock("@/lib/payment-providers/payuni-refund-reconciliation", () => ({ reconcilePayUniRefund: mocks.reconcilePayUniRefund }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => null }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
@@ -45,7 +61,14 @@ const transaction = {
   createdAt: new Date("2026-08-01T00:00:00.000Z"),
   status: "partially_refunded",
   vendor: { name: "測試商家" },
-  refunds: [{ id: "refund-1", refundAmountCents: 5000, status: "pending", createdAt: new Date("2026-08-02T00:00:00.000Z") }],
+  refunds: [{
+    id: "refund-1",
+    refundAmountCents: 5000,
+    status: "pending",
+    createdAt: new Date("2026-08-02T00:00:00.000Z"),
+    providerNoRefundCheckCount: 2,
+    providerNoRefundLastCheckedAt: new Date("2026-08-03T00:00:00.000Z"),
+  }],
 };
 
 beforeEach(() => {
@@ -73,6 +96,25 @@ function findFormAction(node: unknown): ((formData: FormData) => Promise<unknown
   return findFormAction(element.props?.children);
 }
 
+function findFormActions(node: unknown): Array<(formData: FormData) => Promise<unknown>> {
+  if (!node || typeof node !== "object") return [];
+  if (Array.isArray(node)) return node.flatMap(findFormActions);
+  const element = node as { type?: unknown; props?: { action?: unknown; children?: unknown } };
+  if (element.type === "form" && typeof element.props?.action === "function") {
+    return [element.props.action as (formData: FormData) => Promise<unknown>];
+  }
+  return findFormActions(element.props?.children);
+}
+
+const unchangedSnapshot = {
+  providerTradeNo: transaction.providerTradeNo,
+  orderNumber: transaction.orderNumber,
+  grossAmountCents: transaction.grossAmountCents,
+  refundedAmountCents: transaction.refundedAmountCents,
+  remainingRefundableAmountCents: transaction.grossAmountCents - transaction.refundedAmountCents,
+  status: "partially_refunded",
+};
+
 describe("/admin/billing/refund-reconciliation/[id] route", () => {
   it("renders pending reservation details and the controlled Sandbox action", async () => {
     const html = renderToStaticMarkup(await AdminBillingRefundReconciliationPage({
@@ -88,7 +130,14 @@ describe("/admin/billing/refund-reconciliation/[id] route", () => {
         refunds: {
           where: { status: "pending" },
           orderBy: { createdAt: "asc" },
-          select: { id: true, refundAmountCents: true, status: true, createdAt: true },
+          select: {
+            id: true,
+            refundAmountCents: true,
+            status: true,
+            createdAt: true,
+            providerNoRefundCheckCount: true,
+            providerNoRefundLastCheckedAt: true,
+          },
         },
       },
     });
@@ -100,6 +149,9 @@ describe("/admin/billing/refund-reconciliation/[id] route", () => {
     expect(html).toContain("執行 Sandbox 終態對帳");
     expect(html).toContain("$50 · 1 筆");
     expect(html).not.toContain("trade-synthetic");
+    expect(html).toContain("釋放退款保留");
+    expect(html).toContain("2 / 3 次");
+    expect(html).toContain("查詢 PayUni 並釋放保留");
   });
 
   it("disables duplicate reconciliation and announces the provider query", async () => {
@@ -273,5 +325,79 @@ describe("/admin/billing/refund-reconciliation/[id] route", () => {
     formData.set("id", transaction.id);
     await expect(action!(formData)).rejects.toThrow("redirect:/admin/billing/refund-reconciliation/transaction-1?status=error");
     expect(mocks.reconcilePayUniRefund).not.toHaveBeenCalled();
+  });
+
+  it("records a no-refund confirmation instead of failing when PayUni still reports no refund (F-046)", async () => {
+    const [reconcile] = findFormActions(await AdminBillingRefundReconciliationPage({ params: Promise.resolve({ id: transaction.id }) }));
+    mocks.getPaymentProvider.mockReturnValue({ queryPayment: vi.fn().mockResolvedValue(unchangedSnapshot) });
+    mocks.reconcilePayUniRefund.mockRejectedValue(new reconciliationErrors.PayUniRefundReconciliationError("local_state_ambiguous"));
+    mocks.recordPayUniRefundHoldCheck.mockResolvedValue({ disposition: "no_refund_confirmed" });
+
+    const formData = new FormData();
+    formData.set("id", transaction.id);
+    await expect(reconcile!(formData)).rejects.toThrow("redirect:/admin/billing/refund-reconciliation/transaction-1?status=no_refund_confirmed");
+    expect(mocks.recordPayUniRefundHoldCheck).toHaveBeenCalledExactlyOnceWith({
+      db: expect.any(Object),
+      transactionId: transaction.id,
+      providerSnapshot: unchangedSnapshot,
+      actor: { id: "finance-admin", label: "finance" },
+      release: false,
+    });
+    expect(mocks.resetPayUniRefundHoldChecks).not.toHaveBeenCalled();
+  });
+
+  it("resets the confirmation streak when a validated answer contradicts the ledger", async () => {
+    const [reconcile] = findFormActions(await AdminBillingRefundReconciliationPage({ params: Promise.resolve({ id: transaction.id }) }));
+    mocks.getPaymentProvider.mockReturnValue({ queryPayment: vi.fn().mockResolvedValue(unchangedSnapshot) });
+    mocks.reconcilePayUniRefund.mockRejectedValue(new reconciliationErrors.PayUniRefundReconciliationError("local_amount_mismatch"));
+
+    const formData = new FormData();
+    formData.set("id", transaction.id);
+    await expect(reconcile!(formData)).rejects.toThrow("redirect:/admin/billing/refund-reconciliation/transaction-1?status=error");
+    expect(mocks.resetPayUniRefundHoldChecks).toHaveBeenCalledExactlyOnceWith(expect.any(Object), transaction.id);
+    expect(mocks.recordPayUniRefundHoldCheck).not.toHaveBeenCalled();
+  });
+
+  it("releases the hold only through the explicit finance-admin action with a fresh provider query", async () => {
+    const actions = findFormActions(await AdminBillingRefundReconciliationPage({ params: Promise.resolve({ id: transaction.id }) }));
+    expect(actions).toHaveLength(2);
+    const release = actions[1]!;
+    const providerQuery = vi.fn().mockResolvedValue(unchangedSnapshot);
+    mocks.getPaymentProvider.mockReturnValue({ queryPayment: providerQuery });
+    mocks.recordPayUniRefundHoldCheck.mockResolvedValue({ disposition: "released" });
+
+    const formData = new FormData();
+    formData.set("id", transaction.id);
+    formData.set("refundRecordId", "refund-1");
+    await expect(release(formData)).rejects.toThrow("redirect:/admin/billing/refund-reconciliation/transaction-1?status=hold_released");
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.requireFinanceAdmin).toHaveBeenCalledTimes(2);
+    expect(providerQuery).toHaveBeenCalledExactlyOnceWith({ transaction });
+    expect(mocks.recordPayUniRefundHoldCheck).toHaveBeenCalledExactlyOnceWith({
+      db: expect.any(Object),
+      transactionId: transaction.id,
+      refundRecordId: "refund-1",
+      providerSnapshot: unchangedSnapshot,
+      actor: { id: "finance-admin", label: "finance" },
+      release: true,
+    });
+  });
+
+  it("reports a not-ready release and fails closed on a missing reservation id", async () => {
+    const release = findFormActions(await AdminBillingRefundReconciliationPage({ params: Promise.resolve({ id: transaction.id }) }))[1]!;
+    const providerQuery = vi.fn().mockResolvedValue(unchangedSnapshot);
+    mocks.getPaymentProvider.mockReturnValue({ queryPayment: providerQuery });
+    mocks.recordPayUniRefundHoldCheck.mockResolvedValue({ disposition: "no_refund_confirmed", releasable: false });
+
+    const ready = new FormData();
+    ready.set("id", transaction.id);
+    ready.set("refundRecordId", "refund-1");
+    await expect(release(ready)).rejects.toThrow("redirect:/admin/billing/refund-reconciliation/transaction-1?status=hold_not_ready");
+
+    providerQuery.mockClear();
+    const missing = new FormData();
+    missing.set("id", transaction.id);
+    await expect(release(missing)).rejects.toThrow("redirect:/admin/billing/refund-reconciliation/transaction-1?status=error");
+    expect(providerQuery).not.toHaveBeenCalled();
   });
 });

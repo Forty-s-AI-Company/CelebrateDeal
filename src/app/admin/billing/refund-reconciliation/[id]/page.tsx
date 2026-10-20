@@ -8,12 +8,21 @@ import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { getPaymentProvider } from "@/lib/payment-providers";
-import { reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
+import { PayUniRefundReconciliationError, reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
+import {
+  payUniRefundHoldEligibleAt,
+  payUniRefundHoldPolicy,
+  recordPayUniRefundHoldCheck,
+  resetPayUniRefundHoldChecks,
+} from "@/lib/payuni-refund-hold-release";
 
 const RESULT_MESSAGES = {
   reconciled: "已完成 PayUni Sandbox 退款對帳，待處理退款保留已原子化轉為已處理。",
   already_reconciled: "此交易已完成退款對帳，系統沒有再次查詢後寫入。",
   nothing_pending: "目前沒有可執行的 pending reservation；系統未查詢 PayUni，也未變更本機帳務。",
+  no_refund_confirmed: "PayUni 目前顯示這筆保留沒有退款；已記錄一次確認，保留維持不變。",
+  hold_released: "已依連續確認釋放退款保留，該筆保留標為失敗並寫入稽核紀錄；此交易可重新申請退款。",
+  hold_not_ready: "已記錄本次「沒有退款」確認，但尚未達到釋放條件（連續確認次數或時間窗），保留維持不變。",
   error: "退款對帳未完成，系統未變更本機帳務。",
 } as const;
 
@@ -40,7 +49,14 @@ export default async function AdminBillingRefundReconciliationPage({
       refunds: {
         where: { status: "pending" },
         orderBy: { createdAt: "asc" },
-        select: { id: true, refundAmountCents: true, status: true, createdAt: true },
+        select: {
+          id: true,
+          refundAmountCents: true,
+          status: true,
+          createdAt: true,
+          providerNoRefundCheckCount: true,
+          providerNoRefundLastCheckedAt: true,
+        },
       },
     },
   });
@@ -94,25 +110,75 @@ export default async function AdminBillingRefundReconciliationPage({
       redirect(`/admin/billing/refund-reconciliation/${id}?status=error`);
     }
 
-    let outcome: Awaited<ReturnType<typeof reconcilePayUniRefund>>;
+    let status: string;
     try {
       const snapshot = await provider.queryPayment({ transaction: target });
-      outcome = await reconcilePayUniRefund({
-        db,
-        transactionId: target.id,
-        providerSnapshot: snapshot,
-        actor: { id: finance.member.id, label: finance.member.role },
-      });
+      const actor = { id: finance.member.id, label: finance.member.role };
+      try {
+        status = (await reconcilePayUniRefund({ db, transactionId: target.id, providerSnapshot: snapshot, actor })).disposition;
+      } catch (error) {
+        if (!(error instanceof PayUniRefundReconciliationError)) throw error;
+        if (error.reason !== "local_state_ambiguous") {
+          // A validated answer that contradicts the ledger breaks the streak.
+          await resetPayUniRefundHoldChecks(db, target.id);
+          throw error;
+        }
+        // F-046: PayUni still reports no refund. Record one confirmation only;
+        // releasing the hold is a separate, explicit admin action.
+        await recordPayUniRefundHoldCheck({ db, transactionId: target.id, providerSnapshot: snapshot, actor, release: false });
+        status = "no_refund_confirmed";
+      }
     } catch {
-      redirect(`/admin/billing/refund-reconciliation/${target.id}?status=error`);
+      status = "error";
     }
     revalidatePath(`/admin/billing/refund-reconciliation/${target.id}`);
     revalidatePath("/admin/billing/dashboard");
-    redirect(`/admin/billing/refund-reconciliation/${target.id}?status=${outcome.disposition}`);
+    redirect(`/admin/billing/refund-reconciliation/${target.id}?status=${status}`);
+  }
+
+  async function releaseHoldAction(formData: FormData) {
+    "use server";
+
+    await assertServerActionSecurity(formData);
+    const finance = await requireFinanceAdmin();
+    const targetId = formData.get("id");
+    const refundRecordId = formData.get("refundRecordId");
+    if (typeof targetId !== "string" || targetId !== id || typeof refundRecordId !== "string" || !refundRecordId) {
+      redirect(`/admin/billing/refund-reconciliation/${id}?status=error`);
+    }
+    const db = getDb();
+    const target = await db.paymentTransaction.findUnique({ where: { id: targetId } });
+    const provider = getPaymentProvider("payuni");
+    if (!target || target.providerName !== "payuni" || !target.providerTradeNo || !provider.queryPayment) {
+      redirect(`/admin/billing/refund-reconciliation/${id}?status=error`);
+    }
+
+    let status: string;
+    try {
+      // The release itself needs a fresh "no refund" answer from PayUni.
+      const snapshot = await provider.queryPayment({ transaction: target });
+      const result = await recordPayUniRefundHoldCheck({
+        db,
+        transactionId: target.id,
+        refundRecordId,
+        providerSnapshot: snapshot,
+        actor: { id: finance.member.id, label: finance.member.role },
+        release: true,
+      });
+      status = result.disposition === "released" ? "hold_released" : "hold_not_ready";
+    } catch {
+      status = "error";
+    }
+    revalidatePath(`/admin/billing/refund-reconciliation/${target.id}`);
+    revalidatePath("/admin/billing/dashboard");
+    redirect(`/admin/billing/refund-reconciliation/${target.id}?status=${status}`);
   }
 
   const message = resultMessage(query?.status);
   const pendingAmountCents = transaction.refunds.reduce((sum, refund) => sum + refund.refundAmountCents, 0);
+  const holdPolicy = payUniRefundHoldPolicy();
+  const heldRefund = transaction.refunds.length === 1 && transaction.status !== "refunded" ? transaction.refunds[0] : undefined;
+  const holdEligibleAt = heldRefund ? payUniRefundHoldEligibleAt(heldRefund.createdAt, holdPolicy) : null;
 
   return (
     <>
@@ -173,6 +239,31 @@ export default async function AdminBillingRefundReconciliationPage({
           <p className="mt-3 text-xs leading-5 text-slate-500">
             沒有 pending reservation、provider 回應未驗證、金額不一致或環境不是 Sandbox 時，系統會 fail closed，不寫入資料。
           </p>
+
+          {heldRefund && holdEligibleAt ? (
+            <div className="mt-6 border-t border-slate-200 pt-5">
+              <h3 className="text-base font-semibold text-slate-950">釋放退款保留</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                PayUni 連續 {holdPolicy.requiredConfirmations} 次確認「沒有退款」（含釋放時的最新一次查詢），且保留建立超過時間窗後，才可人工釋放。系統不會自動釋放；釋放後該筆保留標為失敗並寫入稽核紀錄。
+              </p>
+              <dl className="mt-3 grid gap-2 text-sm">
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">已連續確認</dt><dd className="font-semibold text-slate-950">{heldRefund.providerNoRefundCheckCount} / {holdPolicy.requiredConfirmations} 次</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">最近確認</dt><dd className="text-slate-950">{heldRefund.providerNoRefundLastCheckedAt ? formatDateTime(heldRefund.providerNoRefundLastCheckedAt) : "尚未確認"}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">最早可釋放</dt><dd className="text-slate-950">{formatDateTime(holdEligibleAt)}</dd></div>
+              </dl>
+              <form action={releaseHoldAction} className="mt-4 grid gap-3">
+                <CsrfField />
+                <input type="hidden" name="id" value={transaction.id} />
+                <input type="hidden" name="refundRecordId" value={heldRefund.id} />
+                <SubmitButton
+                  pendingChildren="查詢並核對中…"
+                  pendingMessage="正在向 PayUni 查詢最新狀態，確認沒有退款後才會釋放保留，請勿重複送出。"
+                >
+                  查詢 PayUni 並釋放保留
+                </SubmitButton>
+              </form>
+            </div>
+          ) : null}
         </Card>
       </div>
     </>
