@@ -42,8 +42,25 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
     ["recovers the original callback with remaining provider retry budget 2", "recovers the original callback with remaining provider retry budget 4"].includes(test.title));
    const schemaRecoveryCase = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
     test.title === "recovers the original after schema repair once under contention without resetting the earlier marker");
-   // Keep all 67 prior cases, the original once-only case, and both remaining-budget boundaries.
-   if (child.status !== 0 || !result.success || tests.total !== 71 || tests.passed !== 71 || tests.skipped !== 0
+   // PR #448 (F-037, R448-01/02, RR-01/02): nine PayUni UPP 2.0 callback
+   // outcome cases in wp4-buyer-ops.db.test.ts. Each must exist exactly once and pass.
+   const uppCallbackTitles = [
+    "acknowledges issued number TradeStatus 0 without any event, payment change or commission",
+    "acknowledges awaiting confirmation TradeStatus 8 without any event, payment change or commission",
+    "records paid ATM PaymentType 2 for manual reconciliation and holds the payment from expiry (R448-01)",
+    "records paid CVS PaymentType 3 for manual reconciliation and holds the payment from expiry (R448-01)",
+    "records paid trade with provider status UNKNOWN for manual reconciliation and holds the payment from expiry (R448-01)",
+    "holds a stored legacy PayUni paid decision for manual reconciliation instead of replaying it (R448-02)",
+    "records a failed attempt and a later paid result of one trade as two events and pays once",
+    "pays once when a verified Notify follows a tampered Return and an unconfirmed Notify (RR-01)",
+    "treats an unconfirmed callback after a verified payment as already processed, without a reconciliation record (RR-02)",
+   ];
+   const uppCallbackCases = result.testResults.flatMap(suite => suite.assertionResults).filter(test => uppCallbackTitles.includes(test.title));
+   // Keep all 67 prior cases, the original once-only case, both remaining-budget
+   // boundaries, and the nine UPP callback cases (71 + 9).
+   if (child.status !== 0 || !result.success || tests.total !== 80 || tests.passed !== 80 || tests.skipped !== 0
+    || uppCallbackCases.length !== uppCallbackTitles.length || new Set(uppCallbackCases.map(test => test.title)).size !== uppCallbackTitles.length
+    || uppCallbackCases.some(test => test.status !== "passed")
     || originalCallbackCase.length !== 1 || originalCallbackCase[0].status !== "passed"
     || remainingBudgetCases.length !== 2 || new Set(remainingBudgetCases.map(test => test.title)).size !== 2
     || remainingBudgetCases.some(test => test.status !== "passed")
