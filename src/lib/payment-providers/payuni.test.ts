@@ -953,6 +953,34 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     expect(payerReturn.payload.eventId).toBe(notify.payload.eventId);
   });
 
+  it("never collapses a refund or failure notice into the paid event of the same TradeNo (F-067)", async () => {
+    const paid = await normalizeReal(realPaid);
+    const legacy = (fields: Record<string, string>) => payUniPaymentProvider.normalizePayload(payUniEnvelope({
+      MerID: "TESTMER", MerTradeNo: "CD-REAL-001", TradeNo: "PAYUNI-REAL-TRADE-001", ...fields }));
+    const fullRefund = await legacy({ EventType: "refunded", RefundAmount: "1990" });
+    const firstPartial = await legacy({ EventType: "partially_refunded", RefundAmount: "500" });
+    const secondPartial = await legacy({ EventType: "partially_refunded", RefundAmount: "700" });
+    const failed = await legacy({ EventType: "failed" });
+    const resent = await legacy({ EventType: "partially_refunded", RefundAmount: "500" });
+
+    const ids = [paid, fullRefund, firstPartial, secondPartial, failed].map((result) => result.payload.eventId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([
+      "PAYUNI-REAL-TRADE-001:1",
+      "refunded:PAYUNI-REAL-TRADE-001:199000",
+      "partially_refunded:PAYUNI-REAL-TRADE-001:50000",
+      "partially_refunded:PAYUNI-REAL-TRADE-001:70000",
+      "failed:PAYUNI-REAL-TRADE-001",
+    ]);
+    // A resent identical notice still converges on one event.
+    expect(resent.payload.eventId).toBe(firstPartial.payload.eventId);
+    // A provider-assigned EventId is kept verbatim for legacy notices; blank is ignored.
+    await expect(legacy({ EventType: "refunded", RefundAmount: "1990", EventId: "provider-refund-1" }))
+      .resolves.toMatchObject({ payload: { eventId: "provider-refund-1" } });
+    await expect(legacy({ EventType: "refunded", RefundAmount: "1990", EventId: " " }))
+      .resolves.toMatchObject({ payload: { eventId: "refunded:PAYUNI-REAL-TRADE-001:199000" } });
+  });
+
   it("keeps a failed attempt and a later paid result of one trade as separate events", async () => {
     const failed = await normalizeReal({ ...realPaid, TradeStatus: "2" });
     const paid = await normalizeReal(realPaid);

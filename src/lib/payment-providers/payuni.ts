@@ -135,6 +135,28 @@ function normalizeEventType(value: unknown) {
   throw new Error("Unsupported PayUni payment status.");
 }
 
+/**
+ * Event identity for the legacy (non-UPP) refund/failure notice shape (F-067).
+ * The former fallback was the bare TradeNo, so a second notice for the same
+ * trade (a refund after a failure, or a second partial refund) collided on
+ * WebhookEvent(provider, eventId) and was acknowledged as a duplicate. Without
+ * a provider EventId the identity now carries the event type and, for refunds,
+ * the refunded amount; a paid UPP callback keys on `${TradeNo}:${TradeStatus}`,
+ * so it can never collide with a refund notice of the same trade.
+ * 待 Sandbox 確認: PayUni 是否會對同一 TradeNo 主動推送退款／爭議通知，以及其
+ * 欄位（退款序號、狀態碼）。確認後改用 provider 的退款序號，兩筆同金額的部分
+ * 退款才不會被視為同一事件。
+ */
+function legacyNoticeEventId(rawPayload: Record<string, unknown>, eventType: string, orderNumber: string) {
+  const providerEventId = optionalPayloadText(rawPayload.EventId);
+  if (providerEventId) return providerEventId;
+  const trade = optionalPayloadText(rawPayload.TradeNo) ?? optionalPayloadText(rawPayload.TsNo) ?? orderNumber;
+  const refundCents = eventType === "refunded" || eventType === "partially_refunded"
+    ? `:${optionalCents(rawPayload.RefundAmount) ?? 0}`
+    : "";
+  return `${eventType}:${trade}${refundCents}`;
+}
+
 function requiredPayloadText(value: unknown, field: string) {
   const normalized = typeof value === "string" || typeof value === "number"
     ? String(value).trim()
@@ -1062,7 +1084,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       ? `${eventType === "paid"
         ? requiredPayloadText(rawPayload.TradeNo, "trade number")
         : optionalPayloadText(rawPayload.TradeNo) ?? normalizedOrderNumber}:${requiredPayloadText(rawPayload.TradeStatus, "trade status")}`
-      : requiredPayloadText(rawPayload.EventId ?? rawPayload.TradeNo ?? rawPayload.TsNo ?? orderNumber, "event ID");
+      : legacyNoticeEventId(rawPayload, eventType, normalizedOrderNumber);
     const normalized = {
       provider: "payuni",
       eventId: normalizedEventId,

@@ -58,8 +58,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
    const uppCallbackCases = result.testResults.flatMap(suite => suite.assertionResults).filter(test => uppCallbackTitles.includes(test.title));
    // Keep all 67 prior cases, the original once-only case, both remaining-budget
    // boundaries, and the nine UPP callback cases (71 + 9), plus four F-048
-   // unknown-order / override cases in payment-webhooks.test.ts (80 + 4).
-   if (child.status !== 0 || !result.success || tests.total !== 84 || tests.passed !== 84 || tests.skipped !== 0
+   // unknown-order / override cases in payment-webhooks.test.ts (80 + 4), and
+   // the F-067 same-TradeNo refund notice case in wp4-buyer-ops.db.test.ts (+1).
+   if (child.status !== 0 || !result.success || tests.total !== 85 || tests.passed !== 85 || tests.skipped !== 0
     || uppCallbackCases.length !== uppCallbackTitles.length || new Set(uppCallbackCases.map(test => test.title)).size !== uppCallbackTitles.length
     || uppCallbackCases.some(test => test.status !== "passed")
     || originalCallbackCase.length !== 1 || originalCallbackCase[0].status !== "passed"

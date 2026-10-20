@@ -13,7 +13,7 @@ const db = getDb();
 const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
  vi.unstubAllEnvs();
- await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { startsWith: "manual:synthetic-buyer-" } }, { eventId: { in: ["synthetic-buyer-trade:1", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent:1", "synthetic-buyer-trade:2", "synthetic-buyer-legacy-trade"] } }] } });
+ await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { startsWith: "manual:synthetic-buyer-" } }, { eventId: { in: ["synthetic-buyer-trade:1", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent:1", "synthetic-buyer-trade:2", "synthetic-buyer-legacy-trade", "refunded:synthetic-buyer-trade:100"] } }] } });
  await db.vendor.deleteMany({ where: { id: { in: [fixed.vendorId, raceVendorId] } } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
@@ -289,6 +289,30 @@ describe("PayUni UPP 2.0 callback outcomes on a pending buyer checkout", () => {
   expect(paid).toMatchObject({ status: "paid", grossAmountCents: 100, netAmountCents: 100 });
   const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
   expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
+ });
+
+ it("processes a refund notice for the same TradeNo as its own event, not a duplicate of the paid callback (F-067)", async () => {
+  const { payment } = await checkout();
+  stubPayUni();
+  const tradeNo = payment.providerTradeNo!;
+  expect((await callback("notify", {}, payment.orderNumber!, tradeNo)).status).toBe(200);
+  // 待 Sandbox 確認: synthetic legacy refund notice shape (no provider EventId).
+  const refundNotice = () => paymentCallback(new Request("http://127.0.0.1:31041/api/webhooks/payments?provider=payuni&source=notify", {
+   method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+   body: buildPayUniSandboxWebhookFixture({ fixture: "refunded", merchantId: "SYNTHETIC", hashKey: "0123456789abcdef0123456789abcdef", hashIv: "0123456789abcdef",
+    overrides: { MerTradeNo: payment.orderNumber!, TradeNo: tradeNo, TradeAmt: 1, RefundAmount: 1, GatewayFeeRefund: 0, EventId: "" } }) }));
+  const first = await refundNotice();
+  expect(first.status).toBe(200);
+  await expect(first.json()).resolves.not.toHaveProperty("duplicate");
+  const resent = await refundNotice();
+  await expect(resent.json()).resolves.toMatchObject({ duplicate: true });
+  const events = await db.webhookEvent.findMany({ where: { provider: "payuni", eventId: { contains: tradeNo } }, orderBy: { eventId: "asc" } });
+  expect(events.map(event => [event.eventId, event.eventType, event.status])).toEqual([
+   [`refunded:${tradeNo}:100`, "refunded", "processed"],
+   [`${tradeNo}:1`, "paid", "processed"],
+  ]);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "refunded", refundedAmountCents: 100 });
+  expect(await db.refundRecord.count({ where: { paymentTransactionId: payment.id, status: "processed" } })).toBe(1);
  });
 
  it("pays once when a verified Notify follows a tampered Return and an unconfirmed Notify (RR-01)", async () => {
