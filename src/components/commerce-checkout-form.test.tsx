@@ -1,8 +1,28 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommerceCheckoutForm } from "@/components/commerce-checkout-form";
 
 describe("CommerceCheckoutForm", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("shows the policy effective date to buyers without any internal approval note", () => {
+    const render = () => renderToStaticMarkup(<CommerceCheckoutForm vendorId="v" productId="p" productName="商品" fulfillmentType="digital" />);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T00:00:00Z"));
+    const before = render();
+    expect(before).toContain("將自 2026 年 11 月 1 日 起生效");
+    vi.setSystemTime(new Date("2026-11-02T00:00:00Z"));
+    const after = render();
+    expect(after).toContain("自 2026 年 11 月 1 日 起生效");
+    expect(after).not.toContain("將自");
+    for (const html of [before, after]) {
+      expect(html).not.toContain("owner");
+      expect(html).not.toContain("核准");
+      expect(html).toContain('href="/policies/terms"');
+      expect(html).toContain('href="/policies/privacy"');
+    }
+  });
+
   it("renders two-step contact first with order fields disabled until confirmation", () => {
     const html = renderToStaticMarkup(<CommerceCheckoutForm vendorId="v" productId="p" productName="商品" fulfillmentType="physical" formMode="two_step" funnel={{ slug: "shop", stepId: "order", expectedVersion: 1, expectedProductRevision: 1 }} agreementLabel="我同意本商品條款" />);
     expect(html).toContain("下一步：確認訂單");

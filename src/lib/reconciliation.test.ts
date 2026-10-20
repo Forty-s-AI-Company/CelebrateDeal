@@ -85,6 +85,31 @@ describe("invoice payment reconciliation", () => {
     expect(checks.find((check) => check.key === "invoice_status")).toMatchObject({ status: "fail" });
   });
 
+  it("checks the affiliate commission against the checkout metadata referral, never the callback (F-048)", async () => {
+    mocks.paymentTransactionFindFirst.mockResolvedValueOnce({
+      id: "transaction-1", providerName: "demo", orderNumber: "ORDER-1", paymentMode: "platform",
+      grossAmountCents: 2400, refundedAmountCents: 0, status: "paid", metadata: { referralCode: " ref-checkout " }, refunds: [],
+    });
+    mocks.affiliateCommissionFindFirst.mockResolvedValueOnce({ referralCode: "REF-CHECKOUT" });
+    const base = event as unknown as { payload: { normalized: Record<string, unknown> } } & Record<string, unknown>;
+    const forged = { ...base, payload: { normalized: { ...base.payload.normalized, referralCode: "FORGED" } } } as never;
+
+    const checks = await reconcileWebhookEvent(forged);
+    expect(checks.find((check) => check.key === "affiliate_commission")).toMatchObject({ status: "pass", expected: "REF-CHECKOUT" });
+    expect(mocks.affiliateCommissionFindFirst).toHaveBeenCalledWith({ where: expect.objectContaining({
+      vendorId: "vendor-1", sourceType: "webhook", sourceId: "transaction-1", referralCode: "REF-CHECKOUT" }) });
+  });
+
+  it("skips the affiliate commission check when the checkout carries no referral", async () => {
+    mocks.paymentTransactionFindFirst.mockResolvedValueOnce({
+      id: "transaction-1", providerName: "demo", orderNumber: "ORDER-1", paymentMode: "platform",
+      grossAmountCents: 2400, refundedAmountCents: 0, status: "paid", metadata: {}, refunds: [],
+    });
+    const checks = await reconcileWebhookEvent(event);
+    expect(checks.find((check) => check.key === "affiliate_commission")).toBeUndefined();
+    expect(mocks.affiliateCommissionFindFirst).not.toHaveBeenCalled();
+  });
+
   it("keeps non-invoice payment reconciliation unchanged", async () => {
     mocks.paymentTransactionFindFirst.mockResolvedValueOnce({
       id: "transaction-2",

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn() }));
+const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), consent: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ set: mocks.set, delete: mocks.delete }) }));
 vi.mock("@/lib/auth", () => ({ AUTH_COOKIE: "auth", LEGACY_VENDOR_COOKIE: "legacy", createUserSession: mocks.session, sessionCookieOptions: () => ({ httpOnly: true }) }));
@@ -9,10 +9,12 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limit }));
 vi.mock("@/lib/password", () => ({ hashPasswordAsync: mocks.hash }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction }) }));
 import { registerAction } from "./registration-actions";
-function form(extra: Record<string, string | undefined> = {}) { const data = new FormData(); for (const [k,v] of Object.entries({ name: "Owner", workspaceName: "Workspace", email: "Owner@Example.test", password: "  synthetic password  ", ...extra })) if (v !== undefined) data.set(k,v); return data; }
+import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
+const policy = merchantRegistrationPolicyVersions();
+function form(extra: Record<string, string | undefined> = {}) { const data = new FormData(); for (const [k,v] of Object.entries({ name: "Owner", workspaceName: "Workspace", email: "Owner@Example.test", password: "  synthetic password  ", acceptPolicies: "on", policyVersion: policy.consentVersion, ...extra })) if (v !== undefined) data.set(k,v); return data; }
 beforeEach(() => {
  vi.resetAllMocks(); mocks.limit.mockResolvedValue(null); mocks.hash.mockResolvedValue("synthetic-hash"); mocks.user.mockResolvedValue({id:"user-1"}); mocks.vendor.mockResolvedValue({id:"vendor-1"}); mocks.session.mockResolvedValue({token:"synthetic-session",expiresAt:new Date("2026-12-01")});
- mocks.transaction.mockImplementation(async (fn) => fn({user:{create:mocks.user},vendor:{create:mocks.vendor},vendorMember:{create:mocks.member},userOnboardingPreference:{create:mocks.preference},auditLog:{create:mocks.audit}}));
+ mocks.transaction.mockImplementation(async (fn) => fn({user:{create:mocks.user},vendor:{create:mocks.vendor},vendorMember:{create:mocks.member},userOnboardingPreference:{create:mocks.preference},userPolicyConsent:{create:mocks.consent},auditLog:{create:mocks.audit}}));
 });
 describe("workspace registration boundaries", () => {
  it("creates ownership and audit in one transaction before issuing the session", async () => {
@@ -23,6 +25,20 @@ describe("workspace registration boundaries", () => {
   expect(mocks.preference).toHaveBeenCalledWith({data:expect.objectContaining({taskPanelCollapsed:true})}); expect(mocks.preference).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce();
   expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]);
   expect(mocks.set).toHaveBeenCalledWith("auth","synthetic-session",{httpOnly:true});
+ });
+ it("records the server's terms and privacy versions with the account (F-114)", async () => {
+  await expect(registerAction(form())).rejects.toThrow("redirect:/welcome");
+  expect(mocks.consent).toHaveBeenCalledWith({data:{userId:"user-1",vendorId:"vendor-1",context:"merchant_registration",termsVersion:policy.termsVersion,privacyVersion:policy.privacyVersion}});
+  expect(mocks.audit).toHaveBeenCalledWith({data:expect.objectContaining({action:"registration_completed",after:{policyConsent:{termsVersion:policy.termsVersion,privacyVersion:policy.privacyVersion}}})});
+  expect(mocks.consent.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]);
+ });
+ it.each([{acceptPolicies:undefined},{acceptPolicies:""},{acceptPolicies:"off"}])("requires an explicit policy consent before any write %j", async (input) => {
+  await expect(registerAction(form(input))).rejects.toThrow("redirect:/register?error=consent_required");
+  expect(mocks.limit).not.toHaveBeenCalled(); expect(mocks.hash).not.toHaveBeenCalled(); expect(mocks.transaction).not.toHaveBeenCalled();
+ });
+ it.each([{policyVersion:undefined},{policyVersion:"2020.01.01"},{policyVersion:`${policy.consentVersion}x`}])("rejects consent to a policy version the server is not publishing %j", async (input) => {
+  await expect(registerAction(form(input))).rejects.toThrow("redirect:/register?error=policy_updated");
+  expect(mocks.transaction).not.toHaveBeenCalled(); expect(mocks.consent).not.toHaveBeenCalled();
  });
  it("recovers a committed account when session creation fails", async () => { mocks.session.mockRejectedValue(new Error("synthetic session failure")); await expect(registerAction(form())).rejects.toThrow("redirect:/login?registered=1"); expect(mocks.transaction).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce(); expect(mocks.set).not.toHaveBeenCalled(); });
  it("offers login recovery if cookie publication fails", async () => { mocks.set.mockImplementation(() => { throw new Error("synthetic cookie failure"); }); await expect(registerAction(form())).rejects.toThrow("redirect:/login?registered=1"); expect(mocks.transaction).toHaveBeenCalledOnce(); expect(mocks.session).toHaveBeenCalledOnce(); });

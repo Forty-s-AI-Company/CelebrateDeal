@@ -290,12 +290,11 @@ function LiveChatSession({
         ) : null}
 
         {visibleScheduledMessages.map((message) => (
-          <article key={`scheduled:${message.id}`} className={message.actor.presentationRole === "official" ? "rounded-2xl border border-amber-300/30 bg-amber-300/10 p-3" : "rounded-2xl bg-white/5 p-3"}>
+          <article key={`scheduled:${message.id}`} className="rounded-2xl bg-white/5 p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-xs font-bold text-white/85">
                 {message.actor.name}
-                <span className="ml-2 text-white/55">{message.actor.label}</span>
-                {message.actor.presentationRole === "official" ? <span className="ml-2 rounded-full border border-amber-200/40 px-2 py-0.5 text-[10px]">官方</span> : null}
+                {message.actor.label ? <span className="ml-2 text-white/55">{message.actor.label}</span> : null}
               </span>
             </div>
             <p className="mt-1 break-words text-sm leading-6 text-white/85">{message.body}</p>

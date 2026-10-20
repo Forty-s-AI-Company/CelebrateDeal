@@ -10,7 +10,7 @@
 - 精確 candidate source SHA，以及固定 WP4 synthetic vendor、buyer purpose、目前 source metadata 的交易。三個 handoff reference、金額與 processed 付款 callback 必須完全匹配。
 - handoff 為最近 24 小時建立的已付款 PENDING_REFUND；尚無退款紀錄。歷史交接缺少目前來源證明時拒絕接手，不能選另一筆代替。
 - 平台管理員與有效 MFA；商家 owner session 不足以操作退款。交易必須仍在 dashboard 的目前範圍；找不到就停止。
-- 使用核准方式注入 `JOB_SECRET`、`PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV`、`PAYUNI_QA_FINANCE_EMAIL`、`PAYUNI_QA_FINANCE_PASSWORD`。必要時注入當次六碼 `PAYUNI_QA_FINANCE_OTP`；不使用 recovery code。
+- 使用核准方式注入 `JOB_SECRET`、`PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV`、`PAYUNI_QA_FINANCE_EMAIL`、`PAYUNI_QA_FINANCE_PASSWORD`。另注入 `PAYUNI_QA_FINANCE_TOTP_SECRET`（base32 TOTP seed，只存在 GitHub environment secret，由 QA finance bootstrap 登記為該帳號的 MFA factor）；runner 以它計算當下驗證碼通過 `/mfa/verify`，缺少時明確失敗，遇到 `/mfa/setup` 也失敗，不繞過 MFA、不使用 recovery code。
 - `PAYUNI_ENV=sandbox`、`PAYUNI_SANDBOX_QA_ENABLED=true`、`PAYUNI_SANDBOX_REFUND_ENABLED=true`。不讀取 `.env*`、不輸出注入內容、不匯出 cookies 或 browser traces。
 
 ```sh

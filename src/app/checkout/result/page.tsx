@@ -47,6 +47,12 @@ const outcomePresentation: Record<PaymentReturnOutcome, { title: string; message
     tone: "border-red-200 bg-red-50 text-red-900",
     role: "alert",
   },
+  review: {
+    title: "付款處理中",
+    message: "我們已收到付款服務的通知，這筆付款需要人工確認。請勿重複付款，客服將與你聯絡；你也可以從下方安全入口查看訂單或聯絡客服。",
+    tone: "border-orange-200 bg-orange-50 text-orange-900",
+    role: "status",
+  },
   unknown: {
     title: "查看訂單付款狀態",
     message: "這個頁面只顯示目前瀏覽器持有安全訂單憑證的資料，不接受訂單編號或 Email 猜測查詢。",

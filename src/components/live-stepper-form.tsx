@@ -5,6 +5,8 @@ import Link from "next/link";
 import type { Affiliate, InteractionScript, MessageTemplate, Product, RegistrationForm, Video } from "@prisma/client";
 import { Ban, Calendar, Check, Gauge, Package, PlaySquare, Shield } from "lucide-react";
 import { upsertLiveAction } from "@/app/actions";
+import { formatTimeZoneLabel } from "@/lib/format";
+import { LiveSlugField } from "@/components/live-slug-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MediaUploadField } from "@/components/media-upload-field";
 import {
@@ -158,9 +160,9 @@ function StepPanel({
 function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone: string; defaultValue: string; onChange?: (value: string) => void }) {
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-      開播時間（{timeZone}）
+      開播時間（{formatTimeZoneLabel(timeZone)}）
       <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-10 rounded-md border border-border px-3" />
-      <span className="text-xs font-normal text-slate-500">請依商家時區輸入；儲存時會轉成 UTC，提醒與公開頁會使用同一時間。</span>
+      <span className="text-xs font-normal text-slate-500">請依商家時區輸入，提醒與公開頁會使用同一時間。</span>
     </label>
   );
 }
@@ -239,7 +241,7 @@ const readinessCopy: Record<LivePublishRequirementCodeWithReminder, { label: str
   registration_form: { label: "有效的報名表單", step: 3, action: "前往報名頁" },
   registration_email: { label: "可寄送的報名成功 Email", step: 5, action: "前往 Email" },
   live_reminder_email: { label: "可寄送的開播提醒 Email", step: 5, action: "前往 Email" },
-  interaction_script: { label: "已發布的互動腳本", step: 6, action: "前往互動設定" },
+  interaction_script: { label: "已發布的互動腳本（虛擬使用者發言）", step: 6, action: "前往互動設定" },
 };
 
 const readinessFocusSelector: Record<LivePublishRequirementCodeWithReminder, string> = {
@@ -250,6 +252,32 @@ const readinessFocusSelector: Record<LivePublishRequirementCodeWithReminder, str
   live_reminder_email: '[name="liveReminderTemplateId"]',
   interaction_script: '[name="interactionScriptId"]',
 };
+
+function ReadinessRecommendations({
+  recommendations,
+  onFix,
+}: {
+  recommendations: ReturnType<typeof getLivePublishReadiness>["recommendations"];
+  onFix: (code: LivePublishRequirementCodeWithReminder) => void;
+}) {
+  const pending = recommendations.filter((item) => !item.ready);
+  if (pending.length === 0) return null;
+  return (
+    <div className="mt-3 rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-sm">
+      <p className="font-semibold text-slate-700">建議（選配，不影響發布）</p>
+      <ul className="mt-2 grid gap-2">
+        {pending.map((item) => (
+          <li key={item.code} className="flex flex-wrap items-center justify-between gap-2 text-slate-700">
+            <span>尚未設定 · {readinessCopy[item.code].label}</span>
+            <button type="button" onClick={() => onFix(item.code)} className="min-h-9 rounded-md border border-slate-300 bg-white px-3 font-semibold text-slate-700">
+              {readinessCopy[item.code].action}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function LiveReviewPanel({
   preview,
@@ -283,7 +311,7 @@ function LiveReviewPanel({
           </h3>
           <p className="mt-1 text-sm text-slate-600">
             {readiness.mode === "commerce"
-              ? "已選擇商品。公開前需要完整的播放、報名、通知與互動路徑。"
+              ? "已選擇商品。公開前需要播放、商品、報名與報名成功 Email；互動腳本是選配，建議準備但不會擋住發布。"
               : "目前沒有選擇商品，會以內容直播發布；公開前仍需播放、報名與報名成功 Email。"}
           </p>
           <p className={`mt-3 text-sm font-semibold ${readiness.ready ? "text-emerald-800" : "text-amber-900"}`}>
@@ -306,6 +334,7 @@ function LiveReviewPanel({
               );
             })}
           </ul>
+          <ReadinessRecommendations recommendations={readiness.recommendations} onFix={onFix} />
         </section>
 
         <div>
@@ -528,7 +557,8 @@ function liveFormError(error?: string) {
     draft_conflict: "這份直播草稿已有較新的版本；系統沒有覆蓋它。請確認目前載入內容後再繼續。",
     invalid_status: "直播狀態轉換無效，內容尚未發布。",
     invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
-    publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第八步檢查清單補齊後再發布。",
+    slug_taken: "這個直播網址已被使用，內容沒有發布；草稿已保留。請在「直播網址」欄位換一個再儲存。",
+    publish_not_ready: "公開條件尚未完成，系統保留目前草稿且沒有變更公開狀態。請依第八步檢查清單補齊後再發布；銷售直播至少需要一項商品，也可以改成內容直播。",
   };
   const message = error ? messages[error] : undefined;
   return message ? (
@@ -892,8 +922,13 @@ function renderLiveStudioBasicsStep(input: {
   initialValues: LiveStudioDraftPayload;
   studioPreset: LiveStudioPreset;
   purposeStarter: React.ReactNode;
+  title: string;
   onTitleChange: (value: string) => void;
   onSlugChange: (value: string) => void;
+  onSlugAutoFill: () => void;
+  slugTakenOnSubmit: boolean;
+  slugTakenInDraft: boolean;
+  slugCheckFailed: boolean;
 }) {
   return (
     <StepPanel active={input.activeStep === 0} index={0}>
@@ -903,10 +938,15 @@ function renderLiveStudioBasicsStep(input: {
         直播標題
         <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
       </label>
-      <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-        Slug
-        <input name="slug" required autoComplete="off" spellCheck={false} defaultValue={input.initialValues.slug} onChange={(event) => input.onSlugChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="friday-new-arrivals" />
-      </label>
+      <LiveSlugField
+        title={input.title}
+        initialValue={input.initialValues.slug}
+        serverTaken={input.slugTakenOnSubmit}
+        draftTaken={input.slugTakenInDraft}
+        checkFailed={input.slugCheckFailed}
+        onChange={input.onSlugChange}
+        onAutoFill={input.onSlugAutoFill}
+      />
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         直播說明
         <textarea name="description" rows={4} autoComplete="off" defaultValue={input.initialValues.description} className="rounded-md border border-border px-3 py-2" />
@@ -943,7 +983,7 @@ function renderLiveStudioScheduleStep(input: {
       </label>
       <input type="hidden" name="replayAvailableUntil" value="" disabled={input.replayEnabled} readOnly />
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-        回放觀看期限（{input.timeZone}，選填）
+        回放觀看期限（{formatTimeZoneLabel(input.timeZone)}，選填）
         <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
         <span className="text-xs font-normal text-slate-500">依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。</span>
       </label>
@@ -1162,8 +1202,13 @@ export function LiveStepperForm({
         initialValues,
         studioPreset,
         purposeStarter: !liveId ? <LiveStudioPurposeStarter selectedPreset={studioPreset} onSelect={selectStudioPreset} /> : null,
+        title: previewTitle,
         onTitleChange: setPreviewTitle,
         onSlugChange: setSlug,
+        onSlugAutoFill: () => draft.scheduleSave(),
+        slugTakenOnSubmit: error === "slug_taken",
+        slugTakenInDraft: Boolean(draft.slugTaken),
+        slugCheckFailed: Boolean(draft.slugCheckFailed),
       })}
 
       {renderLiveStudioStepPanels({

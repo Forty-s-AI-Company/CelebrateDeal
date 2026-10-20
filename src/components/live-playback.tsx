@@ -1045,7 +1045,7 @@ export function ScriptedInteractionOverlay({
 
       <p className="mb-2 rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-[11px] leading-4 text-white/85 backdrop-blur-md">
         {hasScriptedEvents
-          ? "官方互動為商家預先設定的腳本，不代表即時真人留言、真實購買或觀看人數。"
+          ? "部分互動為商家預先設定的腳本，不代表即時真人留言、真實購買或觀看人數。"
           : "目前沒有商家預設互動腳本，頁面不會模擬真人留言或購買行為。"}
       </p>
     </>

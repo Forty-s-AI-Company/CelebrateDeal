@@ -8,6 +8,7 @@ import {
   parseCoverageContainerInspection,
   selectedCoverageEnvironment,
   stripNodeTapOwnedVitestCoverage,
+  SUPABASE_DATA_API_ROLE_FIXTURE_SQL,
 } from "./run-combined-coverage.mjs";
 
 const workspaceRoot = process.cwd();
@@ -84,4 +85,14 @@ test("requires exact container identity, labels, and ephemeral data mount", () =
   assert.equal(isOwnedCoverageContainer({ ...inspection, marker: "different" }, expected), false);
   assert.equal(isOwnedCoverageContainer({ ...inspection, mount: "volume=/var/lib/postgresql/data" }, expected), false);
   assert.equal(parseCoverageContainerInspection("malformed"), null);
+});
+
+test("creates Supabase Data API roles and default grants before migrations run", () => {
+  const statements = SUPABASE_DATA_API_ROLE_FIXTURE_SQL.split("; ");
+  assert.deepEqual(statements.slice(0, 3), ["CREATE ROLE anon NOLOGIN", "CREATE ROLE authenticated NOLOGIN", "CREATE ROLE service_role NOLOGIN"]);
+  for (const objects of ["TABLES", "SEQUENCES", "FUNCTIONS"]) {
+    assert.ok(statements.some((statement) => statement.startsWith(`ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON ${objects} TO anon, authenticated, service_role`)));
+  }
+  assert.ok(SUPABASE_DATA_API_ROLE_FIXTURE_SQL.endsWith(";"));
+  assert.doesNotMatch(SUPABASE_DATA_API_ROLE_FIXTURE_SQL, /LOGIN(?<!NOLOGIN)|PASSWORD/u);
 });

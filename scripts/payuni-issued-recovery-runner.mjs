@@ -7,6 +7,7 @@ import { mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { assertProofMatchesHandoff, consumePendingRefund } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { openFinanceLoginPage, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
+import { completeQaFinanceMfa, requireQaFinanceTotpSeed } from "./qa-finance-totp.mjs";
 
 const APP = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 
@@ -195,6 +196,8 @@ export async function executeIssuedRecoveryProbe() {
       && process.env.PAYUNI_QA_FINANCE_EMAIL === "q1-synthetic-finance-v1@invalid.example");
     for (const name of ["JOB_SECRET", "PAYUNI_SANDBOX_MERCHANT_ID", "PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV", "PAYUNI_QA_FINANCE_PASSWORD"])
       requireSafe(Boolean(process.env[name]?.trim()));
+    // WP-10: the finance account must pass TOTP; a missing seed fails before any external call.
+    const totpSeed = requireQaFinanceTotpSeed(process.env);
     const input = readFixedInputs();
     requireSafe(validateInvocation(input).ok);
     stage = "deployment-lineage";
@@ -229,12 +232,7 @@ export async function executeIssuedRecoveryProbe() {
     await page.locator('input[name="password"]').fill(process.env.PAYUNI_QA_FINANCE_PASSWORD);
     await page.getByRole("button", { name: "登入", exact: true }).click();
     await waitFinanceLoginRedirect(page);
-    if (new URL(page.url()).pathname === "/mfa/verify") {
-      requireSafe(/^\d{6}$/.test(process.env.PAYUNI_QA_FINANCE_OTP ?? ""));
-      await page.locator('input[name="code"]').fill(process.env.PAYUNI_QA_FINANCE_OTP);
-      await page.getByRole("button", { name: "確認並繼續", exact: true }).click();
-      await waitFinanceLoginRedirect(page, true);
-    }
+    await completeQaFinanceMfa(page, { seed: totpSeed, waitAfterMfa: () => waitFinanceLoginRedirect(page, true) });
     requireSafe(new URL(page.url()).pathname === "/admin/billing/dashboard");
     await page.close();
     const loadProof = async (transactionId, sourceSha) => {

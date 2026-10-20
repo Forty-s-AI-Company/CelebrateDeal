@@ -57,6 +57,7 @@ const mocks = vi.hoisted(() => ({
   liveUpdate: vi.fn(),
   liveCreate: vi.fn(),
   liveStudioDraftUpdateMany: vi.fn(),
+  liveStudioDraftFindFirst: vi.fn(),
   liveProductDeleteMany: vi.fn(),
   liveProductCreate: vi.fn(),
   liveNotificationRuleFindMany: vi.fn(),
@@ -278,7 +279,7 @@ vi.mock("@/lib/db", () => ({
     },
     emailDelivery: { updateMany: mocks.emailDeliveryUpdateMany },
     salesProject: { findFirst: mocks.projectFindFirst },
-    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
+    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany, findFirst: mocks.liveStudioDraftFindFirst },
     product: { findMany: mocks.productFindMany },
     video: {
       create: mocks.videoCreate,
@@ -790,6 +791,7 @@ beforeEach(() => {
   mocks.liveFindMany.mockResolvedValue([]);
   mocks.projectFindFirst.mockResolvedValue(null);
   mocks.liveStudioDraftUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1" });
   mocks.liveUpdate.mockResolvedValue({ id: "live-1" });
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
   mocks.liveProductDeleteMany.mockResolvedValue({ count: 1 });
@@ -874,7 +876,7 @@ beforeEach(() => {
     },
     auditLog: { create: mocks.auditLogCreate },
     salesProject: { findFirst: mocks.projectFindFirst },
-    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
+    liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany, findFirst: mocks.liveStudioDraftFindFirst },
     live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, update: mocks.liveUpdate, updateMany: mocks.liveUpdateMany },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
     liveProduct: { create: mocks.liveProductCreate, deleteMany: mocks.liveProductDeleteMany },
@@ -1696,15 +1698,20 @@ describe("upsertLiveAction", () => {
     ));
     mocks.interactionScriptFindFirst.mockResolvedValue({ id: "script-1" });
     mocks.affiliateFindFirst.mockResolvedValue({ id: "affiliate-1" });
-    mocks.liveFindFirst.mockResolvedValue({
-      id: "live-1",
-      slug: "tenant-live",
-      title: "租戶限定直播",
-      status: "draft",
-      scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
-      liveReminderTemplateId: null,
-      liveReminderOffsetMinutes: 60,
-    });
+    // 直播網址撞名檢查以 slug 查詢（全站唯一）；預設沒有人用，其餘查詢回傳目前這場直播。
+    mocks.liveFindFirst.mockImplementation(async ({ where }: { where: { slug?: string } }) => (
+      where.slug !== undefined
+        ? null
+        : {
+            id: "live-1",
+            slug: "tenant-live",
+            title: "租戶限定直播",
+            status: "draft",
+            scheduledAt: new Date("2026-08-08T12:00:00.000Z"),
+            liveReminderTemplateId: null,
+            liveReminderOffsetMinutes: 60,
+          }
+    ));
     mocks.liveCreate.mockResolvedValue({ id: "live-1" });
   }
 
@@ -1970,6 +1977,63 @@ describe("upsertLiveAction", () => {
     );
 
     expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns a field-level slug_taken error before touching the draft when the address is already used", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockImplementation(async ({ where }: { where: { slug?: string } }) => (where.slug !== undefined ? { id: "someone-elses-live" } : null));
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/new?error=slug_taken&draft=draft-1");
+
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+  });
+
+  it("reports a draft conflict instead of slug_taken when the draft was already consumed", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockImplementation(async ({ where }: { where: { slug?: string } }) => (where.slug !== undefined ? { id: "existing-live" } : null));
+    mocks.liveStudioDraftFindFirst.mockResolvedValue(null);
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/new?error=draft_conflict&draft=draft-1");
+  });
+
+  it("excludes the live being edited when checking the address", async () => {
+    allowCurrentVendorLiveReferences();
+    const formData = liveFormData(); formData.set("id", "live-1");
+    await expect(upsertLiveAction(formData)).rejects.toThrow();
+    const slugLookup = mocks.liveFindFirst.mock.calls.map(([args]) => args as { where: { slug?: string; id?: unknown } }).find((args) => args.where.slug !== undefined);
+    expect(slugLookup?.where).toEqual({ slug: expect.any(String), id: { not: "live-1" } });
+  });
+
+  it("never uses an unverified live id to exclude a slug: a foreign id is rejected as an invalid reference", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveFindFirst.mockImplementation(async ({ where }: { where: { slug?: string } }) => (where.slug !== undefined ? null : null));
+    const formData = liveFormData(); formData.set("id", "foreign-live");
+
+    await expect(upsertLiveAction(formData)).rejects.toThrow("error=invalid_reference");
+
+    const slugLookups = mocks.liveFindFirst.mock.calls.map(([args]) => args as { where: { slug?: string; id?: unknown } }).filter((args) => args.where.slug !== undefined);
+    expect(slugLookups.every((args) => args.where.id === undefined)).toBe(true);
+  });
+
+  it("turns a concurrent unique-constraint race on the address into slug_taken instead of a 500", async () => {
+    allowCurrentVendorLiveReferences();
+    let slugLookups = 0;
+    mocks.liveFindFirst.mockImplementation(async ({ where }: { where: { slug?: string } }) => {
+      if (where.slug === undefined) return null;
+      slugLookups += 1;
+      return slugLookups === 1 ? null : { id: "winner" };
+    });
+    mocks.liveCreate.mockRejectedValue(Object.assign(new Error("Unique constraint failed"), { code: "P2002", meta: { target: ["slug"] } }));
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("redirect:/lives/new?error=slug_taken&draft=draft-1");
+  });
+
+  it("does not mask other unique-constraint failures as a taken address", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.liveCreate.mockRejectedValue(Object.assign(new Error("Unique constraint failed"), { code: "P2002", meta: { target: ["other"] } }));
+
+    await expect(upsertLiveAction(liveFormData())).rejects.toThrow("Unique constraint failed");
   });
 
   it("allows a new live to schedule only through the explicit scheduled submitter", async () => {
@@ -2273,7 +2337,7 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveNotificationRuleCreate).not.toHaveBeenCalled();
   });
 
-  it("keeps an explicit commerce setup blocked when its product and script are absent", async () => {
+  it("keeps an explicit commerce setup blocked when its product is absent", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("studioPreset", "COMMERCE");
@@ -2288,18 +2352,15 @@ describe("upsertLiveAction", () => {
     expect(mocks.liveCreate).not.toHaveBeenCalled();
   });
 
-  it("promotes a content preset with products to commerce readiness", async () => {
+  it("publishes a sales live with products even when no interaction script is bound", async () => {
     allowCurrentVendorLiveReferences();
     const formData = liveFormData();
     formData.set("studioPreset", "CONTENT");
     formData.set("status", "scheduled");
     formData.delete("interactionScriptId");
 
-    await expect(upsertLiveAction(formData)).rejects.toThrow(
-      "redirect:/lives/new?error=publish_not_ready&draft=draft-1",
-    );
-    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
-    expect(mocks.liveCreate).not.toHaveBeenCalled();
+    await expect(upsertLiveAction(formData)).rejects.toThrow("redirect:/lives/live-1/preview");
+    expect(mocks.liveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "scheduled", interactionScriptId: null }) });
   });
 
   it("blocks a content live from publishing without playable media", async () => {

@@ -48,22 +48,26 @@ export function getLivePublishReadiness(input: LivePublishReadinessInput) {
     { code: "media", ready: input.videoReady },
   ];
   // Keep the operational checklist in the same order as the webinar wizard:
-  // media → product (sales only) → registration → email → interaction.
+  // media → product (sales only) → registration → email. Interaction scripts are
+  // recommendations only (see below).
   if (mode === "commerce") {
-    requirements.push({ code: "products", ready: input.productsReady });
+    requirements.push({ code: "products", ready: input.productsReady && input.productCount > 0 });
   }
   requirements.push(
     { code: "registration_form", ready: input.formReady },
     { code: "registration_email", ready: input.registrationEmailReady },
   );
-  if (mode === "commerce") {
-    requirements.push({ code: "interaction_script", ready: input.interactionScriptReady });
-  }
+  // 互動腳本（虛擬使用者）是選配：沒有腳本也能發布，只在銷售直播提示「建議」。
+  const recommendations: LivePublishRequirement[] = mode === "commerce"
+    ? [{ code: "interaction_script", ready: input.interactionScriptReady }]
+    : [];
 
   const blockers = requirements.filter((requirement) => !requirement.ready);
   return {
     mode,
     requirements,
+    /** 建議但不阻擋發布的項目。 */
+    recommendations,
     blockers,
     ready: blockers.length === 0,
   } as const;

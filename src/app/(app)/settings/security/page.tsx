@@ -24,6 +24,7 @@ import { getDb } from "@/lib/db";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
+import { statusLabel } from "@/lib/status-labels";
 
 const errorMessages: Record<string, string> = {
   current_password: "目前密碼不正確。",
@@ -316,7 +317,7 @@ export default async function SecuritySettingsPage({
                     </td>
                     <td className="px-4 py-3 capitalize text-slate-600">{member.role}</td>
                     <td className="px-4 py-3">
-                      <Badge tone={member.status === "active" ? "green" : "gray"}>{member.status}</Badge>
+                      <Badge tone={member.status === "active" ? "green" : "gray"}>{statusLabel("teamMember", member.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
                       {member.status === "active" && member.userId !== auth.user.id ? (

@@ -21,7 +21,8 @@ export type ScheduledRoleSource = {
 export type ScheduledRolePresentation = {
   name: string;
   avatarUrl: string | null;
-  label: string;
+  /** 商家自訂的顯示標籤；沒有設定時為 null，聊天室不顯示任何標籤。 */
+  label: string | null;
   presentationRole: ScheduledPresentationRole;
 };
 
@@ -58,6 +59,23 @@ function boundedText(value: string, maximum: number) {
 }
 
 /**
+ * 系統過去自動填入的預設標籤（「官方角色」「一般觀眾」等）不是商家寫的，
+ * 一律視為沒有標籤，避免聊天室出現官方或一般觀眾字樣。
+ */
+const SYSTEM_DEFAULT_ROLE_LABELS: ReadonlySet<string> = new Set([
+  "官方角色",
+  "一般觀眾",
+  "AI 主持人",
+  "系統助手",
+  "客服助手",
+]);
+
+export function publicRoleLabel(value: string | null | undefined) {
+  const label = boundedText(value ?? "", 80);
+  return label && !SYSTEM_DEFAULT_ROLE_LABELS.has(label) ? label : null;
+}
+
+/**
  * Converts a role to the only presentation data that a public scheduled
  * message needs. Invalid, inactive, cross-tenant, or non-scheduled roles
  * fail closed instead of being silently presented as an official role.
@@ -80,7 +98,7 @@ export function normalizeScheduledRole(
   const name = boundedText(role.name, 160);
   if (!name) return null;
 
-  const label = boundedText(role.label, 80) ?? (presentationRole === "audience" ? "一般觀眾" : "官方角色");
+  const label = publicRoleLabel(role.label);
   const rawAvatarUrl = role.avatarUrl?.trim() ?? "";
   const avatarUrl = rawAvatarUrl ? parseSafeExternalHttpUrl(rawAvatarUrl) : null;
 

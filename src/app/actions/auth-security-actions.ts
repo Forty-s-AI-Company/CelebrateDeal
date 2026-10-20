@@ -126,8 +126,9 @@ export async function loginAction(formData: FormData) {
     after: { email: auth.user.email, platformRole: auth.user.platformRole, vendorId: auth.vendor?.id ?? null },
   });
   const destination = auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
-  // Enrollment is voluntary for every role; an enabled factor still protects
-  // every new session before the user can access authenticated content.
+  // Vendor roles may enroll voluntarily; the platform finance back office
+  // sends a platform admin without a factor to setup. An enabled factor
+  // protects every new session before authenticated content is available.
   if (auth.user.mfaFactor) redirect(`/mfa/verify?next=${encodeURIComponent(destination)}`);
   redirect(destination);
 }

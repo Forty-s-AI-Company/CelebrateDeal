@@ -4,8 +4,8 @@ import DashboardError from "./error";
 
 describe("dashboard error state", () => {
   it("offers a safe retry without exposing the underlying error", () => {
-    const reset = vi.fn();
-    const html = renderToStaticMarkup(<DashboardError error={new Error("database endpoint detail")} reset={reset} />);
+    const retry = vi.fn();
+    const html = renderToStaticMarkup(<DashboardError error={new Error("database endpoint detail")} retry={retry} />);
 
     expect(html).toContain('role="alert"');
     expect(html).toContain("營運資料暫時無法載入");

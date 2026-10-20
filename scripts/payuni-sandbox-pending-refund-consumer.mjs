@@ -5,6 +5,7 @@ import { isCompletedFullCreditRefund } from "./payuni-credit-refund-query-contra
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { completeQaFinanceMfa, requireQaFinanceTotpSeed } from "./qa-finance-totp.mjs";
 
 /** Keep finance and provider credentials inside Node, outside Chromium. */
 export function launchPendingRefundBrowser(chromium) {
@@ -145,6 +146,8 @@ async function executePendingRefund() {
       && process.env.PAYUNI_SANDBOX_REFUND_ENABLED === "true");
     for (const key of ["JOB_SECRET", "PAYUNI_SANDBOX_MERCHANT_ID", "PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV",
       "PAYUNI_QA_FINANCE_EMAIL", "PAYUNI_QA_FINANCE_PASSWORD"]) requireCondition(Boolean(process.env[key]?.trim()));
+    // WP-10: the finance account must pass TOTP; a missing seed fails before any external call.
+    const totpSeed = requireQaFinanceTotpSeed(process.env);
     const options = new Map();
     const args = process.argv.slice(2);
     requireCondition(args.length === 8);
@@ -187,12 +190,9 @@ async function executePendingRefund() {
     await login.locator('input[name="password"]').fill(process.env.PAYUNI_QA_FINANCE_PASSWORD);
     await login.getByRole("button", { name: "登入", exact: true }).click();
     await login.waitForURL((url) => url.pathname !== "/login", { waitUntil: "domcontentloaded" });
-    if (new URL(login.url()).pathname === "/mfa/verify") {
-      requireCondition(/^\d{6}$/.test(process.env.PAYUNI_QA_FINANCE_OTP ?? ""));
-      await login.locator('input[name="code"]').fill(process.env.PAYUNI_QA_FINANCE_OTP);
-      await login.getByRole("button", { name: "確認並繼續", exact: true }).click();
-      await login.waitForURL((url) => !url.pathname.startsWith("/mfa/"), { waitUntil: "domcontentloaded" });
-    }
+    await completeQaFinanceMfa(login, { seed: totpSeed,
+      waitAfterMfa: () => login.waitForURL((url) => !url.pathname.startsWith("/mfa/")
+        || (url.pathname === "/mfa/verify" && url.searchParams.has("error")), { waitUntil: "domcontentloaded" }) });
     await login.close();
     stage = "refund-ui-and-persistence";
     const completed = await consumePendingRefund({ receipt, transactionId, expectedSourceSha: sourceSha, context, loadProof,

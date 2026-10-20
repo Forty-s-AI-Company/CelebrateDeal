@@ -3,6 +3,7 @@ import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { statusLabel } from "@/lib/status-labels";
 
 export default async function LivesPage() {
   const vendor = await requireVendorManager();
@@ -26,7 +27,7 @@ export default async function LivesPage() {
                   <h2 className="font-semibold text-slate-950">{live.title}</h2>
                   <p className="mt-1 text-sm text-slate-500">{formatDateTime(live.scheduledAt)} · /live/{live.slug}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge tone="blue">{live.status}</Badge>
+                    <Badge tone="blue">{statusLabel("live", live.status)}</Badge>
                     <Badge tone={live.video ? "green" : "gray"}>{live.video ? "已綁影片" : "無影片"}</Badge>
                     <Badge tone={live.form ? "orange" : "gray"}>{live.form ? "已綁表單" : "無表單"}</Badge>
                     <Badge tone="gray">{live.products.length} 商品</Badge>

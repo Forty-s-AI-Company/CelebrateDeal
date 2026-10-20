@@ -1,3 +1,6 @@
+import { policyCenterPublication, resolvePolicyStatus, type PolicyPublicationStatus } from "@/lib/policy-publication";
+
+export { policyCenterPublication, resolvePolicyStatus, type PolicyPublicationStatus };
 export type PolicySection = {
   heading: string;
   paragraphs: string[];
@@ -7,14 +10,6 @@ export const publicSupportContact = {
   displayName: "Carry Digital Nomad 凱瑞數位",
   email: "a88221144@gmail.com",
 } as const;
-
-export const policyCenterPublication = {
-  version: "2026.10.18",
-  effectiveDate: "2026-11-01",
-  effectiveDateLabel: "2026 年 11 月 1 日",
-} as const;
-
-export type PolicyPublicationStatus = "scheduled" | "published";
 
 export type PolicyPublication = {
   version: string;
@@ -33,14 +28,6 @@ type PolicyDefinition = {
 export type PublicPolicy = Omit<PolicyDefinition, "publication"> & {
   publication: PolicyPublication & { status: PolicyPublicationStatus };
 };
-
-const TAIPEI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
-
-/** 以台灣時間（Asia/Taipei，UTC+8）的日期判斷：到達生效日（含當天）即為已生效。 */
-export function resolvePolicyStatus(effectiveDate: string, now: Date = new Date()): PolicyPublicationStatus {
-  const taipeiToday = new Date(now.getTime() + TAIPEI_UTC_OFFSET_MS).toISOString().slice(0, 10);
-  return taipeiToday >= effectiveDate ? "published" : "scheduled";
-}
 
 export function resolvePublication(publication: PolicyPublication, now: Date = new Date()): PublicPolicy["publication"] {
   return { ...publication, status: resolvePolicyStatus(publication.effectiveDate, now) };
@@ -62,7 +49,7 @@ export const publicPolicies: Record<string, PolicyDefinition> = {
         paragraphs: [
           `${publicSupportContact.displayName}（以下稱「我們」）提供 CelebrateDeal 平台，協助商家建立活動、報名頁、銷售頁、直播或回放，並管理訂單與通知。聯絡信箱為 ${publicSupportContact.email}。`,
           "商家提供的課程、活動、商品或服務，其內容、價格、交付方式、使用期限與個別交易條件，以購買頁及訂單紀錄為準。平台功能不代表我們替商家保證內容成效或專業資格。",
-          "部分場次可能是預先錄製、依排程播出的內容；聊天室中標示為官方的互動，也可能是商家預先設定的腳本，不一定是即時真人回覆。",
+          "部分場次可能是預先錄製、依排程播出的內容；聊天室中的部分互動，也可能是商家預先設定的腳本，不一定是即時真人回覆。",
         ],
       },
       {
@@ -199,6 +186,20 @@ export const publicPolicies: Record<string, PolicyDefinition> = {
     ],
   },
 };
+
+/**
+ * Versions a merchant accepts at registration (F-114). `consentVersion` is the
+ * single token the registration form displays and echoes back.
+ */
+export function merchantRegistrationPolicyVersions() {
+  const termsVersion = publicPolicies.terms!.publication.version;
+  const privacyVersion = publicPolicies.privacy!.publication.version;
+  return {
+    termsVersion,
+    privacyVersion,
+    consentVersion: termsVersion === privacyVersion ? termsVersion : `${termsVersion}+${privacyVersion}`,
+  };
+}
 
 export const publicPolicyLinks = [
   { href: "/policies", label: "政策與協助中心" },

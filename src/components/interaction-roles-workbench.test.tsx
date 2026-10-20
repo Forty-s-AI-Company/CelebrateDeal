@@ -190,7 +190,8 @@ describe("InteractionRolesWorkbench", () => {
     expect(html).toContain('name="_csrf" value="csrf-empty-token"');
     expect(html).toContain("角色即時預覽");
     expect(html).toContain("未命名角色");
-    expect(html).toContain("官方外觀");
+    expect(html).not.toContain("官方外觀");
+    expect(html).not.toContain("一般觀眾外觀");
     expect(html).toContain("這個預覽不會發布訊息");
     expect(html).not.toContain("刪除");
     expect(html).not.toContain('name="id"');
@@ -222,7 +223,8 @@ describe("InteractionRolesWorkbench", () => {
 
     expect(html).toContain('role="alert"');
     expect(html).toContain("角色資料無效");
-    expect(html).toContain("不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效");
+    expect(html).toContain("不會計入後台統計，也不計入觀眾端在線人數");
+    expect(html).not.toContain("前台會明確標示");
   });
 
   it("only offers official and audience role types and normalizes legacy roles", () => {
@@ -243,9 +245,8 @@ describe("InteractionRolesWorkbench", () => {
     const html = renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-scheduled-token" });
     expect(html).toMatch(/name="isScheduled"[^>]*checked=""/u);
     expect(html).toContain("排程角色");
-    expect(html).toContain("直播排程與後續分析辨識");
-    expect(html).toContain("標記此角色供直播排程與後續分析辨識");
-    expect(html).toContain("前台呈現與數據排除將在直播互動流程完成後生效");
+    expect(html).toContain("勾選後，這個角色才會出現在互動腳本的角色選單");
+    expect(html).not.toContain("前台呈現與數據排除將在直播互動流程完成後生效");
     expect(html).not.toContain("會顯示在聊天室，但不計入真實觀看、留言或成效數據");
 
     hookState.actionState = {
@@ -271,34 +272,39 @@ describe("InteractionRolesWorkbench", () => {
     expect(errorHtml).not.toContain('src=""');
   });
 
-  it("uses the presentation role for preview appearance while keeping scheduled marker separate", () => {
-    const audience = role({ roleType: "audience", isScheduled: true });
+  it("previews an unlabeled role without official or audience appearance chips", () => {
+    const audience = role({ roleType: "audience", label: "", isScheduled: true });
     const audienceHtml = renderHtml({ roles: [audience], selectedRole: audience, csrfToken: "csrf-audience-preview-token" });
-    expect(audienceHtml).toContain("一般觀眾外觀");
-    expect(audienceHtml).toContain("排程角色");
+    expect(audienceHtml).toContain("可用於腳本");
+    expect(audienceHtml).not.toContain("一般觀眾外觀");
     expect(audienceHtml).not.toContain("官方外觀");
 
     hookState.stateValues = [];
-    const scheduledOfficial = role({ roleType: "official", isScheduled: true });
-    const scheduledOfficialPreview = renderPreviewHtml({
-      roles: [scheduledOfficial],
-      selectedRole: scheduledOfficial,
-      csrfToken: "csrf-official-scheduled-preview-token",
-    });
-    expect(scheduledOfficialPreview).toContain("官方外觀");
-    expect(scheduledOfficialPreview).toContain("排程角色");
-    expect(scheduledOfficialPreview).not.toContain("一般觀眾外觀");
-
-    hookState.stateValues = [];
-    const manualOfficial = role({ roleType: "official", isScheduled: false });
+    const manualOfficial = role({ roleType: "official", label: "", isScheduled: false });
     const manualOfficialPreview = renderPreviewHtml({
       roles: [manualOfficial],
       selectedRole: manualOfficial,
       csrfToken: "csrf-official-manual-preview-token",
     });
-    expect(manualOfficialPreview).toContain("官方外觀");
-    expect(manualOfficialPreview).not.toContain("排程角色");
-    expect(manualOfficialPreview).not.toContain("一般觀眾外觀");
+    expect(manualOfficialPreview).not.toContain("官方外觀");
+    expect(manualOfficialPreview).not.toContain("可用於腳本");
+  });
+
+  it("tells the merchant when a label is a system default that the live room hides", () => {
+    const selected = role({ label: "官方角色" });
+    const html = renderHtml({ roles: [selected], selectedRole: selected, csrfToken: "csrf-hidden-label-token" });
+    expect(html).toContain("直播間不會顯示標籤");
+    const custom = role({ label: "品牌顧問" });
+    hookState.stateValues = [];
+    expect(renderHtml({ roles: [custom], selectedRole: custom, csrfToken: "csrf-custom-label-token" })).not.toContain("直播間不會顯示標籤");
+  });
+
+  it("makes a new role usable in scripts by default and keeps the label optional", () => {
+    const html = renderHtml({ roles: [], selectedRole: null, csrfToken: "csrf-new-role-token" });
+    expect(html).toMatch(/name="isScheduled"[^>]*checked=""/u);
+    expect(html).toContain("顯示標籤（選填）");
+    expect(html).not.toMatch(/<input[^>]*name="label"[^>]*required/u);
+    expect(html).not.toMatch(/name="label"[^>]*value="(官方角色|一般觀眾)"/u);
   });
 
   it("shows exact script impact before an active role is disabled or deleted", () => {
@@ -315,7 +321,7 @@ describe("InteractionRolesWorkbench", () => {
 
     expect(html).toContain("腳本與直播使用狀況");
     expect(html).toContain("2 個腳本 · 2 場直播");
-    expect(html).toContain("3 個官方留言／提醒事件不會出現在公開直播");
+    expect(html).toContain("3 個留言／提醒事件不會出現在公開直播");
     expect(html).toContain("主直播腳本");
     expect(html).toContain("3 個引用事件");
     expect(html).toContain('href="/interaction-scripts/script-1/edit"');

@@ -10,6 +10,8 @@ export type BillingCycleJobResult = {
   conflicts: number;
   terminalInvoiceConflicts: number;
   streamReconciliationRequired: number;
+  /** Vendors whose month contains non-TWD money; settled manually (F-041). */
+  unsupportedCurrency: number;
   missingSubscription: number;
   failed: number;
   overdueMarked: number;
@@ -50,6 +52,7 @@ export async function runBillingCycleJob(now = new Date()): Promise<BillingCycle
     conflicts: 0,
     terminalInvoiceConflicts: 0,
     streamReconciliationRequired: 0,
+    unsupportedCurrency: 0,
     missingSubscription: 0,
     failed: 0,
     overdueMarked: 0,
@@ -77,6 +80,7 @@ export async function runBillingCycleJob(now = new Date()): Promise<BillingCycle
         else if (error.code === "conflict") result.conflicts += 1;
         else if (error.code === "terminal_invoice_amount_conflict") result.terminalInvoiceConflicts += 1;
         else if (error.code === "stream_reconciliation_required") result.streamReconciliationRequired += 1;
+        else if (error.code === "unsupported_currency") result.unsupportedCurrency += 1;
         else if (error.code === "missing_vendor") result.missingSubscription += 1;
         else result.failed += 1;
       } else {

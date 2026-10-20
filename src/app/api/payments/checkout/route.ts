@@ -1,4 +1,5 @@
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
+import { isSupportedCheckoutCurrency } from "@/lib/checkout-currency";
 import { assertFlashSaleAdmission, consumeFlashSaleQuote, flashSaleBearerFromRequest, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
 import { createHash } from "node:crypto";
@@ -785,6 +786,11 @@ export async function POST(request: Request) {
   }
   const unavailableProductResponse = unavailableCheckoutProductResponse(product);
   if (unavailableProductResponse) return unavailableProductResponse;
+  // PayUni charges whole TWD units. Never reinterpret another currency's cents
+  // as TWD (USD 50.00 would otherwise be charged as NT$50).
+  if (!isSupportedCheckoutCurrency(product.currency)) {
+    return NextResponse.json({ error: "Product currency is not supported", code: "UNSUPPORTED_CURRENCY" }, { status: 422 });
+  }
   const orderBumpResult = await resolveCheckoutOrderBump(db, parsed.data, product, funnel?.projectId);
   if (!orderBumpResult.ok) return orderBumpResult.response;
   const { orderBumpProduct } = orderBumpResult;
