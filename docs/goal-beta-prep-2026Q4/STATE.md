@@ -56,6 +56,11 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 - #448 工作線 A：PayUni 交易狀態、財務後台 MFA、QA TOTP、註冊同意（10-20，reviewer 三輪後可合併；CI 擋下 backup blob 白名單、tracking gate 的 src→scripts import、subscription gate 固定總數三個問題後通過）；#436 已關閉並由其取代
 - #449 工作線 C：結帳頁備註、台灣時區與繁中 404、虛擬使用者不標示版、直播網址、腳本選配、Sentry 個資過濾（10-20，reviewer 兩輪後可合併；CI 擋下 secret scan 假金鑰、strict-index、slug 預檢順序、actions.ts 行數上限、e2e 404 標題與文案、g7 契約文案六個問題後通過）
 
+- #452 第二批 B：全表 RLS migration、RLS 目錄測試、migration 順序與 drift 檢查（10-20，reviewer 三輪後可合併）
+- staging：10-20 以 `staging-migrate.yml`（deploy）套用 master 的 migration 兩次（註冊同意表、全表 RLS）；alias 切換仍待 O-18
+
+**第二批（L0 可繞過＋L1）**：#452 已合併；#453（C：錯誤頁 retry、LINE 綁定、狀態中文、健康指示、已付款 KPI、常青場提示）審查通過等 CI；#454（A：只收 TWD、未知訂單封鎖、退款事件 ID、migrate 防呆）複審中。
+
 **L0 核心 18 項狀態（10-20）**：A1、A2、A3（待 Sandbox 樣本驗證）、A4、B2、B3、C1～C6、D1 已合併；B1 唯讀查證完成（非阻擋）；B4 真實還原演練等 O-4 Supabase 升級。
 
 ## 每日摘要
