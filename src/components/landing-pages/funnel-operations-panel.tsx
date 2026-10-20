@@ -24,6 +24,7 @@ import {
   switchFunnelStep,
   type FunnelStepPages,
 } from "@/lib/funnel-step-pages";
+import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 const tabs = funnelTabKeys;
 type Tab = typeof tabs[number];
@@ -61,6 +62,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   const [message, setMessage] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  useDialogBehavior(settingsOpen, () => setSettingsOpen(false));
   const [changeTemplate, setChangeTemplate] = useState(false);
   const [newStepName, setNewStepName] = useState("新步驟");
   const [newStepPath, setNewStepPath] = useState("new-step");
@@ -264,6 +266,7 @@ function SettingsFooter({ pending, dirty, save, reload }: { pending: boolean; di
 function AddStepDialog({ goal, name, path, type, source, templateId, templates, disabled, onName, onPath, onType, onSource, onTemplate, onClose, onSave }: { goal: FunnelStepPages["flow"]["goal"]; name: string; path: string; type: EditableStepType; source: "blank" | "template"; templateId: string; templates: ReturnType<typeof listFunnelTemplateGallery>; disabled: boolean; onName: (value: string) => void; onPath: (value: string) => void; onType: (value: EditableStepType) => void; onSource: (value: "blank" | "template") => void; onTemplate: (value: string) => void; onClose: () => void; onSave: () => void }) {
   const allowedGroups = stepTypeOptions.filter((group) => goal === "webinar" ? group.group === "Webinar" || group.group === "資訊" : group.group !== "Webinar");
   const canSave = Boolean(name.trim() && path.trim() && (source === "blank" || templateId));
+  useDialogBehavior(true, onClose);
   return <div role="dialog" aria-modal="true" aria-labelledby="add-step-title" className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/60 p-4"><div className="max-h-[90dvh] w-full max-w-xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-3"><div><h2 id="add-step-title" className="text-xl font-bold">新增步驟</h2><p className="mt-1 text-sm text-slate-600">選擇頁面類型與起始方式後一次建立，避免留下半完成步驟。</p></div><button type="button" aria-label="關閉新增步驟" onClick={onClose} className="cursor-pointer rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button></div><div className="grid gap-4"><label className="grid gap-1 text-sm font-semibold">名稱 *<input className={control} value={name} onChange={(event) => onName(event.currentTarget.value)} /></label><label className="grid gap-1 text-sm font-semibold">網址路徑 *<input className={control} value={path} onChange={(event) => onPath(event.currentTarget.value.toLowerCase().replace(/[^a-z0-9-]/gu, ""))} /></label><label className="grid gap-1 text-sm font-semibold">類型 *<select className={control} value={type} onChange={(event) => onType(event.currentTarget.value as EditableStepType)}>{allowedGroups.map((group) => <optgroup key={group.group} label={group.group === "Webinar" ? "網路研討會" : group.group}>{group.items.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select></label><fieldset><legend className="text-sm font-semibold">起始內容 *</legend><div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "template"} onChange={() => onSource("template")} />選擇模板</label><label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" checked={source === "blank"} onChange={() => onSource("blank")} />從空白開始</label></div></fieldset>{source === "template" ? <label className="grid gap-1 text-sm font-semibold">相容模板<select className={control} value={templateId} onChange={(event) => onTemplate(event.currentTarget.value)}><option value="">請選擇模板</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>{templates.length === 0 ? <span className="font-normal text-amber-700">這個類型目前沒有模板，請改選從空白開始。</span> : null}</label> : null}</div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} className={button}>取消</button><button type="button" disabled={disabled || !canSave} onClick={onSave} className="min-h-10 cursor-pointer rounded-lg bg-blue-700 px-5 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">儲存</button></div></div></div>;
 }
 
