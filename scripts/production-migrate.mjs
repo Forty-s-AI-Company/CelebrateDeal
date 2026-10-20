@@ -29,8 +29,15 @@ const SAFE_HOSTNAME = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/u;
 const POOLER_HOST = /^[a-z0-9-]+\.pooler\.supabase\.com$/u;
 const PRISMA_TIMEOUT_MS = 15 * 60 * 1000;
 const RUN_ID = /^[1-9]\d{5,14}$/u;
-const WORKFLOW_PATH = /^\.github\/workflows\/[a-z0-9][a-z0-9._-]*\.ya?ml$/u;
-const THIS_WORKFLOW = ".github/workflows/production-migrate.yml";
+/**
+ * The only workflow whose runs count as a Production backup. Fixed in code
+ * (reviewed) rather than a repository variable. That workflow must back up the
+ * fixed Production project only (no target input) and upload an artifact named
+ * `${PRODUCTION_BACKUP_ARTIFACT_PREFIX}<run id>`.
+ */
+export const PRODUCTION_BACKUP_WORKFLOW = ".github/workflows/production-backup.yml";
+export const PRODUCTION_BACKUP_ARTIFACT_PREFIX = "production-database-backup-";
+const BACKUP_EVENTS = new Set(["workflow_dispatch", "schedule"]);
 /** A deploy must follow a backup taken within this window. */
 export const BACKUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -86,36 +93,51 @@ export function parseProductionDatabaseUrl(value) {
   return { url: migrationUrl.toString(), host, password, rawPassword: db.password };
 }
 
+async function githubJson(fetchImpl, url, token) {
+  const response = await fetchImpl(url, {
+    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "x-github-api-version": "2022-11-28" },
+  });
+  if (!response.ok) return { notFound: true };
+  return { body: await response.json() };
+}
+
 /**
  * Checks the backup run through the GitHub API before any database
- * connection: it must be a successful run of the owner-designated backup
- * workflow on protected master, finished within BACKUP_MAX_AGE_MS. Returns a
- * fixed failure code or null.
+ * connection. It must be a run of this repository's fixed Production backup
+ * workflow (PRODUCTION_BACKUP_WORKFLOW), dispatched or scheduled on master,
+ * completed with conclusion=success within BACKUP_MAX_AGE_MS, and it must
+ * have produced the unexpired Production backup artifact. Returns a fixed
+ * failure code or null.
  */
 export async function verifyBackupRun(env, { fetchImpl = fetch, now = Date.now() } = {}) {
   const runId = env.BACKUP_RUN_ID ?? "";
   if (!RUN_ID.test(runId)) return "BACKUP_RUN_ID_INVALID";
-  const workflowPath = env.PRODUCTION_BACKUP_WORKFLOW_PATH ?? "";
-  if (!WORKFLOW_PATH.test(workflowPath) || workflowPath === THIS_WORKFLOW) return "BACKUP_WORKFLOW_NOT_CONFIGURED";
   const repository = env.GITHUB_REPOSITORY ?? "";
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository) || !env.GITHUB_TOKEN) return "BACKUP_RUN_LOOKUP_UNAVAILABLE";
+  const base = `https://api.github.com/repos/${repository}/actions/runs/${runId}`;
 
   let run;
+  let artifacts;
   try {
-    const response = await fetchImpl(`https://api.github.com/repos/${repository}/actions/runs/${runId}`, {
-      headers: { accept: "application/vnd.github+json", authorization: `Bearer ${env.GITHUB_TOKEN}`, "x-github-api-version": "2022-11-28" },
-    });
-    if (!response.ok) return "BACKUP_RUN_NOT_FOUND";
-    run = await response.json();
+    const runResult = await githubJson(fetchImpl, base, env.GITHUB_TOKEN);
+    if (runResult.notFound) return "BACKUP_RUN_NOT_FOUND";
+    run = runResult.body;
+    if (!run || typeof run !== "object") return "BACKUP_RUN_NOT_FOUND";
+    if (run.path !== PRODUCTION_BACKUP_WORKFLOW) return "BACKUP_RUN_WRONG_WORKFLOW";
+    if (run.repository?.full_name !== repository || run.head_repository?.full_name !== repository) return "BACKUP_RUN_WRONG_REPOSITORY";
+    if (run.head_branch !== "master" || !BACKUP_EVENTS.has(run.event)) return "BACKUP_RUN_NOT_MASTER";
+    if (run.status !== "completed" || run.conclusion !== "success") return "BACKUP_RUN_NOT_SUCCESSFUL";
+    const finishedAt = Date.parse(run.updated_at ?? "");
+    if (!Number.isFinite(finishedAt) || finishedAt > now || now - finishedAt > BACKUP_MAX_AGE_MS) return "BACKUP_RUN_TOO_OLD";
+    const artifactResult = await githubJson(fetchImpl, `${base}/artifacts?per_page=100`, env.GITHUB_TOKEN);
+    if (artifactResult.notFound) return "BACKUP_ARTIFACT_MISSING";
+    artifacts = artifactResult.body?.artifacts;
   } catch {
     return "BACKUP_RUN_LOOKUP_FAILED";
   }
-  if (!run || typeof run !== "object") return "BACKUP_RUN_NOT_FOUND";
-  if (run.path !== workflowPath) return "BACKUP_RUN_WRONG_WORKFLOW";
-  if (run.head_branch !== "master") return "BACKUP_RUN_NOT_MASTER";
-  if (run.status !== "completed" || run.conclusion !== "success") return "BACKUP_RUN_NOT_SUCCESSFUL";
-  const finishedAt = Date.parse(run.updated_at ?? "");
-  if (!Number.isFinite(finishedAt) || finishedAt > now || now - finishedAt > BACKUP_MAX_AGE_MS) return "BACKUP_RUN_TOO_OLD";
+  const expected = `${PRODUCTION_BACKUP_ARTIFACT_PREFIX}${runId}`;
+  const artifact = Array.isArray(artifacts) ? artifacts.find((entry) => entry?.name === expected) : undefined;
+  if (!artifact || artifact.expired !== false || !(Number(artifact.size_in_bytes) > 0)) return "BACKUP_ARTIFACT_MISSING";
   return null;
 }
 

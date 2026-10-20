@@ -138,14 +138,14 @@ owner 決策 D-41：Production migration 由 owner 核准、經 workflow 執行�
 
 1. GitHub → Settings → Environments 建立 `production`：設定 required reviewers（owner），並勾選只允許 protected branch（`master`）。
 2. 在 `production` environment 設定 secret `PRODUCTION_DATABASE_URL`：Supabase pooler 的 session 連線（`postgres.awigitueyqdqaqwbjdgu@aws-N-<region>.pooler.supabase.com`；6543 會自動改用 5432）。腳本只接受固定的 Production project ref，遇到 staging ref 會拒絕。
-3. 設定變數 `PRODUCTION_BACKUP_WORKFLOW_PATH`：產生 Production 備份的 workflow 路徑（例如 `.github/workflows/production-backup.yml`）。**目前 repo 還沒有 Production 備份 workflow**，未設定或設成本 workflow 時，`deploy` 一律回 `BACKUP_WORKFLOW_NOT_CONFIGURED`，不會連線資料庫。若 owner 改用 Supabase dashboard／PITR 備份，需另外決定如何產生可驗證的 run ID（例如一個只記錄 restore point 的 workflow）。
+3. 建立 Production 備份 workflow：路徑固定為 `.github/workflows/production-backup.yml`（寫在 `scripts/production-migrate.mjs` 的 `PRODUCTION_BACKUP_WORKFLOW`，改動需經 PR 審查），只能備份固定的 Production 專案（不得有 target 之類的 input），成功時上傳名為 `production-database-backup-<run id>` 的 artifact。**目前 repo 還沒有這個 workflow**，所以 `deploy` 一律回 `BACKUP_RUN_WRONG_WORKFLOW` 或 `BACKUP_ARTIFACT_MISSING`，不會連線資料庫。若 owner 改用 Supabase dashboard／PITR 備份，仍需由該 workflow 產生上述 artifact（例如記錄 restore point 的 receipt）。
 
 **每次部署**
 
 1. 先在 staging 跑同一批 migration（`Staging migrate`），並依 `docs/operations/prisma-migration-guards-runbook.md` 完成各 migration 的唯讀前置查詢（例如 §4 重複訂單號、§6 撥款帳號明文列）。
 2. 執行 Production 備份 workflow，記下成功的 run ID。備份必須在 24 小時內完成，否則 `BACKUP_RUN_TOO_OLD`。
 3. Actions → `Production migrate` → Run workflow（branch `master`）→ `mode=status`，`backup_run_id` 填上一步的 run ID。由 environment reviewer 核准。確認輸出只列出預期的 pending migration。
-4. 同樣方式執行 `mode=deploy`。腳本會依序：驗證 URL 與 project ref → 以 GitHub API 確認備份 run（指定 workflow、`master`、`completed/success`、24 小時內）→ `prisma migrate status` → 歷史一致才 `prisma migrate deploy`。連線固定 `lock_timeout=5s`、`statement_timeout=60s`、`sslmode=require`。
+4. 同樣方式執行 `mode=deploy`。腳本會依序：驗證 URL 與 project ref → 以 GitHub API 確認備份 run（固定的 Production 備份 workflow、同一 repository、`master` 上的 dispatch 或排程、`completed`／`conclusion=success`、24 小時內、有未過期的 `production-database-backup-<run id>` artifact）→ `prisma migrate status` → 歷史一致才 `prisma migrate deploy`。連線固定 `lock_timeout=5s`、`statement_timeout=60s`、`sslmode=require`。
 5. 部署後再跑一次 `mode=status`，應為 `Database schema is up to date!`。
 
 輸出只有固定代碼與 Prisma 摘要行（migration 名稱、`PRISMA_ERROR Pxxxx`、SQLSTATE），不含主機、帳號或資料值。
@@ -154,8 +154,8 @@ owner 決策 D-41：Production migration 由 owner 核准、經 workflow 執行�
 
 | 代碼 | 意義 | 處理 |
 |---|---|---|
-| `BACKUP_RUN_ID_INVALID`／`BACKUP_RUN_NOT_FOUND`／`BACKUP_RUN_WRONG_WORKFLOW`／`BACKUP_RUN_NOT_MASTER`／`BACKUP_RUN_NOT_SUCCESSFUL`／`BACKUP_RUN_TOO_OLD` | 備份 run 不符合條件 | 重新備份後用新的 run ID |
-| `BACKUP_WORKFLOW_NOT_CONFIGURED` | 未設定 `PRODUCTION_BACKUP_WORKFLOW_PATH` | 見一次性設定第 3 點 |
+| `BACKUP_RUN_ID_INVALID`／`BACKUP_RUN_NOT_FOUND`／`BACKUP_RUN_WRONG_WORKFLOW`／`BACKUP_RUN_WRONG_REPOSITORY`／`BACKUP_RUN_NOT_MASTER`／`BACKUP_RUN_NOT_SUCCESSFUL`／`BACKUP_RUN_TOO_OLD` | 備份 run 不是 24 小時內成功的 Production 備份 | 重新備份後用新的 run ID |
+| `BACKUP_ARTIFACT_MISSING` | 該 run 沒有 `production-database-backup-<run id>` artifact，或已過期 | 確認備份 workflow 有上傳 artifact（見一次性設定第 3 點） |
 | `PRODUCTION_PROJECT_MISMATCH`／`PRODUCTION_DATABASE_IS_STAGING` | secret 指向錯誤的專案 | 修正 environment secret |
 | `PRODUCTION_HISTORY_DIVERGED` | 有失敗的 migration（P3009）或資料庫有本地不存在的 migration | 依下方 P3009 SOP |
 | `PRODUCTION_STATUS_FAILED`／`PRODUCTION_DEPLOY_FAILED` | 連線或 migration 執行失敗 | 看 `PRISMA_ERROR`／SQLSTATE；`55P03` 是 `lock_timeout`、`57014` 是 `statement_timeout` |

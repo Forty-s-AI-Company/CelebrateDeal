@@ -7,7 +7,8 @@ import yaml from "js-yaml";
 
 import { FIXED_STAGING_REF, MIGRATION_SESSION_OPTIONS } from "./staging-migrate.mjs";
 import {
-  BACKUP_MAX_AGE_MS, FIXED_PRODUCTION_REF, parseProductionDatabaseUrl, run, verifyBackupRun,
+  BACKUP_MAX_AGE_MS, FIXED_PRODUCTION_REF, PRODUCTION_BACKUP_ARTIFACT_PREFIX, PRODUCTION_BACKUP_WORKFLOW,
+  parseProductionDatabaseUrl, run, verifyBackupRun,
 } from "./production-migrate.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,18 +24,25 @@ const failure = (value) => parseProductionDatabaseUrl(value).failure ?? null;
 const now = Date.parse("2026-10-21T12:00:00.000Z");
 const backupEnv = {
   BACKUP_RUN_ID: "18765432101",
-  PRODUCTION_BACKUP_WORKFLOW_PATH: ".github/workflows/production-backup.yml",
   GITHUB_REPOSITORY: "owner/celebratedeal",
   GITHUB_TOKEN: "synthetic-token",
 };
 const goodRun = {
-  path: ".github/workflows/production-backup.yml",
+  path: PRODUCTION_BACKUP_WORKFLOW,
+  repository: { full_name: "owner/celebratedeal" },
+  head_repository: { full_name: "owner/celebratedeal" },
   head_branch: "master",
+  event: "workflow_dispatch",
   status: "completed",
   conclusion: "success",
   updated_at: new Date(now - 60 * 60 * 1000).toISOString(),
 };
-const fetchReturning = (body, ok = true) => async () => ({ ok, json: async () => body });
+const goodArtifacts = { artifacts: [{ name: `${PRODUCTION_BACKUP_ARTIFACT_PREFIX}18765432101`, expired: false, size_in_bytes: 4096 }] };
+/** Answers the run lookup and the artifact listing like the GitHub REST API. */
+const fetchReturning = (runBody, ok = true, artifactBody = goodArtifacts) => async (requestUrl) => (
+  String(requestUrl).includes("/artifacts")
+    ? { ok: true, json: async () => artifactBody }
+    : { ok, json: async () => runBody });
 
 test("accepts only the fixed Production project over a TLS session connection", () => {
   assert.equal(failure(direct), null);
@@ -60,8 +68,15 @@ test("backup verification requires a fresh successful run of the designated work
   assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning(goodRun), now }), null);
   assert.equal(await verifyBackupRun({ ...backupEnv, BACKUP_RUN_ID: "abc" }, { fetchImpl: fetchReturning(goodRun), now }), "BACKUP_RUN_ID_INVALID");
   assert.equal(await verifyBackupRun({ ...backupEnv, BACKUP_RUN_ID: "1;rm -rf" }, { fetchImpl: fetchReturning(goodRun), now }), "BACKUP_RUN_ID_INVALID");
-  assert.equal(await verifyBackupRun({ ...backupEnv, PRODUCTION_BACKUP_WORKFLOW_PATH: "" }, { fetchImpl: fetchReturning(goodRun), now }), "BACKUP_WORKFLOW_NOT_CONFIGURED");
-  assert.equal(await verifyBackupRun({ ...backupEnv, PRODUCTION_BACKUP_WORKFLOW_PATH: ".github/workflows/production-migrate.yml" }, { fetchImpl: fetchReturning(goodRun), now }), "BACKUP_WORKFLOW_NOT_CONFIGURED");
+  // A repository variable can no longer redirect the check to another workflow.
+  assert.equal(await verifyBackupRun({ ...backupEnv, PRODUCTION_BACKUP_WORKFLOW_PATH: ".github/workflows/staging-backup.yml" }, { fetchImpl: fetchReturning({ ...goodRun, path: ".github/workflows/staging-backup.yml" }), now }), "BACKUP_RUN_WRONG_WORKFLOW");
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({ ...goodRun, path: ".github/workflows/production-migrate.yml" }), now }), "BACKUP_RUN_WRONG_WORKFLOW");
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({ ...goodRun, head_repository: { full_name: "fork/celebratedeal" } }), now }), "BACKUP_RUN_WRONG_REPOSITORY");
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({ ...goodRun, event: "pull_request" }), now }), "BACKUP_RUN_NOT_MASTER");
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({ ...goodRun, conclusion: "skipped" }), now }), "BACKUP_RUN_NOT_SUCCESSFUL");
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning(goodRun, true, { artifacts: [] }), now }), "BACKUP_ARTIFACT_MISSING");
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning(goodRun, true, { artifacts: [{ ...goodArtifacts.artifacts[0], expired: true }] }), now }), "BACKUP_ARTIFACT_MISSING");
+  assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning(goodRun, true, { artifacts: [{ name: `${PRODUCTION_BACKUP_ARTIFACT_PREFIX}1`, expired: false, size_in_bytes: 1 }] }), now }), "BACKUP_ARTIFACT_MISSING");
   assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({}, false), now }), "BACKUP_RUN_NOT_FOUND");
   assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: async () => { throw new Error("network"); }, now }), "BACKUP_RUN_LOOKUP_FAILED");
   assert.equal(await verifyBackupRun(backupEnv, { fetchImpl: fetchReturning({ ...goodRun, path: ".github/workflows/ci.yml" }), now }), "BACKUP_RUN_WRONG_WORKFLOW");
@@ -90,8 +105,8 @@ test("deploy verifies the backup before touching the database, then runs status 
   assert.equal(blocked.calls.length, 0);
 
   const ok = fakeRunner([
-    { status: 1, output: "115 migrations found in prisma/migrations\nFollowing migration have not yet been applied:\n20261021130100_landing_page_archive_restrict_funnel" },
-    { status: 0, output: "The following migration(s) have been applied:\n└─ 20261021130100_landing_page_archive_restrict_funnel/\nAll migrations have been successfully applied." },
+    { status: 1, output: "118 migrations found in prisma/migrations\nFollowing migration have not yet been applied:\n20261021140000_landing_page_archive_restrict_funnel" },
+    { status: 0, output: "The following migration(s) have been applied:\n└─ 20261021140000_landing_page_archive_restrict_funnel/\nAll migrations have been successfully applied." },
   ]);
   const emitted = [];
   const result = await run("deploy", { PRODUCTION_DATABASE_URL: direct, PATH: "/bin", SECRET_EXTRA: "x", ...backupEnv }, { runner: ok.runner, emit: (line) => emitted.push(line), fetchImpl: fetchReturning(goodRun), now });
@@ -103,7 +118,7 @@ test("deploy verifies the backup before touching the database, then runs status 
 });
 
 test("deploy refuses a failed migration (P3009) or diverged history and never retries", async () => {
-  const failed = fakeRunner([{ status: 1, output: "Error: P3009\nmigrate found failed migrations in the target database\nThe `20261021130000_payment_account_masked_legacy_number` migration started at 2026-10-21 failed" }]);
+  const failed = fakeRunner([{ status: 1, output: "Error: P3009\nmigrate found failed migrations in the target database\nThe `20261021140200_payment_account_payout_verification` migration started at 2026-10-21 failed" }]);
   const result = await run("deploy", { PRODUCTION_DATABASE_URL: direct, ...backupEnv }, { runner: failed.runner, emit: () => {}, fetchImpl: fetchReturning(goodRun), now });
   assert.notEqual(result.code, 0);
   assert.ok(result.lines.includes("PRODUCTION_HISTORY_DIVERGED"));
@@ -112,7 +127,7 @@ test("deploy refuses a failed migration (P3009) or diverged history and never re
 });
 
 test("status is read-only, needs no backup and prints only allowlisted lines", async () => {
-  const status = fakeRunner([{ status: 1, output: `Datasource "db": PostgreSQL database "postgres" at "${directHost}:5432"\nFollowing migration have not yet been applied:\n20261021130000_payment_account_masked_legacy_number` }]);
+  const status = fakeRunner([{ status: 1, output: `Datasource "db": PostgreSQL database "postgres" at "${directHost}:5432"\nFollowing migration have not yet been applied:\n20261021140200_payment_account_payout_verification` }]);
   const result = await run("status", { PRODUCTION_DATABASE_URL: direct }, { runner: status.runner, emit: () => {} });
   assert.equal(result.code, 0);
   assert.ok(result.lines.includes("PRODUCTION_MIGRATIONS_PENDING"));
