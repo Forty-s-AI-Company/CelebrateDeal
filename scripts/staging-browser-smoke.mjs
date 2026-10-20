@@ -515,7 +515,13 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         }
         // This read-only navigation must work through the rendered app shell.
         report.browser.executionPhase = "APP_NAVIGATION";
-        await page.locator(`${appNavigationSelectorForViewport(viewport.id)} a[href="/products"]`).click({ timeout: 8_000 });
+        if (viewport.id === "mobile") {
+          // F-122: 手機底部導覽只列 4 個常用入口，商品在「更多」抽屜內。
+          await page.locator(`${appNavigationSelectorForViewport("mobile")} button[aria-haspopup="dialog"]`).click({ timeout: 8_000 });
+          await page.locator('[role="dialog"][aria-label="更多功能"] a[href="/products"]').click({ timeout: 8_000 });
+        } else {
+          await page.locator(`${appNavigationSelectorForViewport(viewport.id)} a[href="/products"]`).click({ timeout: 8_000 });
+        }
         await page.waitForURL(`${origin}/products`, { timeout: 8_000 });
         const navigationPassed = classifyFinalPath(page.url(), "/products", targetHost) === "EXPECTED"
           && await visible(page.getByRole("heading", { name: "商品管理", exact: true }));
