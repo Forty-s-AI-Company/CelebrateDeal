@@ -4,21 +4,25 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 
 // F-133: real PostgreSQL, two tenants. Only the session/CSRF/project-selection
 // boundaries are synthetic; every query below runs against the actual schema.
-const runtime = vi.hoisted(() => ({
-  vendorId: "",
-  projectId: null as string | null,
-}));
+const runtime = vi.hoisted(() => ({ vendorId: "", projectId: null as string | null }));
+const guards = vi.hoisted(() => ({ csrf: vi.fn(), manager: vi.fn(), editable: vi.fn() }));
 vi.mock("@/lib/auth", () => ({
-  requireVendorManagerContext: async () => ({
+  requireVendorManagerContext: async () => {
+    await guards.manager();
+    return {
     auth: { user: { id: "synthetic-user" }, member: { id: "synthetic-member", role: "owner" } },
     vendor: { id: runtime.vendorId, name: "Synthetic tenant" },
-  }),
+    };
+  },
 }));
-vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: async () => undefined }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: (form: FormData) => guards.csrf(form) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/sales-project-scope", () => ({
   getSalesProjectScope: async () => ({ projectId: runtime.projectId, projectName: null, isAggregate: false, isLegacyWorkspace: !runtime.projectId }),
-  requireEditableSalesProjectScope: async () => ({ projectId: runtime.projectId, projectName: null, isAggregate: false, isLegacyWorkspace: !runtime.projectId }),
+  requireEditableSalesProjectScope: async (userId: string, vendorId: string) => {
+    await guards.editable(userId, vendorId);
+    return { projectId: runtime.projectId, projectName: null, isAggregate: false, isLegacyWorkspace: !runtime.projectId };
+  },
 }));
 
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
@@ -57,6 +61,9 @@ function data(entries: Record<string, string>) {
 let vendorA = "";
 let vendorB = "";
 beforeEach(async () => {
+  guards.csrf.mockReset().mockResolvedValue(undefined);
+  guards.manager.mockReset().mockResolvedValue(undefined);
+  guards.editable.mockReset().mockResolvedValue(undefined);
   vendorA = await tenant();
   vendorB = await tenant();
   runtime.vendorId = vendorA;
@@ -119,5 +126,45 @@ describe("customer CRM actions across two tenants", () => {
     // A's own product, but the hash belongs to B's learner: no verified contact exists under A.
     await expect(grantCustomerVoucherAction(data({ customerKeyHash: foreignHash, productId: ownProduct.id }))).rejects.toThrow("找不到已驗證的學員聯絡方式");
     expect(await db.automationVoucherGrant.count({ where: { vendorId: { in: [vendorA, vendorB] } } })).toBe(0);
+  });
+});
+
+describe("customer CRM action guards", () => {
+  const mutations = [
+    ["addCustomerTagAction", addCustomerTagAction, (hash: string) => data({ customerKeyHash: hash, tag: "高意向" })],
+    ["saveConsultantNoteAction", saveConsultantNoteAction, (hash: string) => data({ customerKeyHash: hash, body: "不應寫入", status: "following_up" })],
+  ] as const;
+
+  async function rows() {
+    return {
+      tags: await db.customerTagAssignment.count({ where: { vendorId: { in: [vendorA, vendorB] } } }),
+      notes: await db.consultantNote.count({ where: { vendorId: { in: [vendorA, vendorB] } } }),
+      records: await db.customerCrmRecord.count({ where: { vendorId: { in: [vendorA, vendorB] } } }),
+    };
+  }
+
+  it.each(mutations)("%s rejects a failed CSRF check before any other work", async (_name, action, build) => {
+    const hash = await registrant(vendorA, "member-a@example.test", "甲方學員");
+    const form = build(hash);
+    guards.csrf.mockRejectedValueOnce(new Error("csrf_rejected"));
+    await expect(action(form)).rejects.toThrow("csrf_rejected");
+    expect(guards.csrf).toHaveBeenCalledWith(form);
+    expect(guards.manager).not.toHaveBeenCalled();
+    expect(await rows()).toEqual({ tags: 0, notes: 0, records: 0 });
+  });
+
+  it.each(mutations)("%s rejects a non-manager role", async (_name, action, build) => {
+    const hash = await registrant(vendorA, "member-a@example.test", "甲方學員");
+    guards.manager.mockRejectedValueOnce(new Error("insufficient_role"));
+    await expect(action(build(hash))).rejects.toThrow("insufficient_role");
+    expect(await rows()).toEqual({ tags: 0, notes: 0, records: 0 });
+  });
+
+  it.each(mutations)("%s requires an editable project scope", async (_name, action, build) => {
+    const hash = await registrant(vendorA, "member-a@example.test", "甲方學員");
+    guards.editable.mockRejectedValueOnce(new Error("aggregate_read_only"));
+    await expect(action(build(hash))).rejects.toThrow("aggregate_read_only");
+    expect(guards.editable).toHaveBeenCalledWith("synthetic-user", vendorA);
+    expect(await rows()).toEqual({ tags: 0, notes: 0, records: 0 });
   });
 });

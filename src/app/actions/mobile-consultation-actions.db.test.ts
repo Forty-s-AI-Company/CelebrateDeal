@@ -4,17 +4,24 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 
 // F-133: real PostgreSQL, two tenants, two sales projects.
 const runtime = vi.hoisted(() => ({ vendorId: "", projectId: null as string | null }));
+const guards = vi.hoisted(() => ({ csrf: vi.fn(), manager: vi.fn(), editable: vi.fn() }));
 vi.mock("@/lib/auth", () => ({
-  requireVendorManagerContext: async () => ({
+  requireVendorManagerContext: async () => {
+    await guards.manager();
+    return {
     auth: { user: { id: "synthetic-user" }, member: { id: "synthetic-member", role: "owner" } },
     vendor: { id: runtime.vendorId, name: "Synthetic tenant" },
-  }),
+    };
+  },
 }));
-vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: async () => undefined }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: (form: FormData) => guards.csrf(form) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/sales-project-scope", () => ({
   getSalesProjectScope: async () => ({ projectId: runtime.projectId, projectName: null, isAggregate: false, isLegacyWorkspace: !runtime.projectId }),
-  requireEditableSalesProjectScope: async () => ({ projectId: runtime.projectId, projectName: null, isAggregate: false, isLegacyWorkspace: !runtime.projectId }),
+  requireEditableSalesProjectScope: async (userId: string, vendorId: string) => {
+    await guards.editable(userId, vendorId);
+    return { projectId: runtime.projectId, projectName: null, isAggregate: false, isLegacyWorkspace: !runtime.projectId };
+  },
 }));
 
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
@@ -53,6 +60,9 @@ function data(entries: Record<string, string>) {
 let vendorA = "";
 let vendorB = "";
 beforeEach(async () => {
+  guards.csrf.mockReset().mockResolvedValue(undefined);
+  guards.manager.mockReset().mockResolvedValue(undefined);
+  guards.editable.mockReset().mockResolvedValue(undefined);
   vendorA = await tenant();
   vendorB = await tenant();
   runtime.vendorId = vendorA;
@@ -109,6 +119,34 @@ describe("mobile consultation action across two tenants", () => {
 
     await expect(saveMobileConsultationAction(data({ bookingId: inTwo.id, note: "跨專案" }))).rejects.toThrow("此預約尚未建立可用的客戶識別");
     await expect(saveMobileConsultationAction(data({ bookingId: inOneButNotMember.id, note: "非成員" }))).rejects.toThrow("此客戶不屬於目前專案");
+    expect(await crmRowCounts()).toEqual({ records: 0, notes: 0, tags: 0 });
+  });
+});
+
+describe("mobile consultation action guards", () => {
+  it("checks CSRF first with the submitted form and writes nothing when it fails", async () => {
+    const own = await booking(vendorA, "member-a@example.test");
+    const form = data({ bookingId: own.id, note: "不應寫入" });
+    guards.csrf.mockRejectedValueOnce(new Error("csrf_rejected"));
+    await expect(saveMobileConsultationAction(form)).rejects.toThrow("csrf_rejected");
+    expect(guards.csrf).toHaveBeenCalledWith(form);
+    expect(guards.manager).not.toHaveBeenCalled();
+    expect(await crmRowCounts()).toEqual({ records: 0, notes: 0, tags: 0 });
+  });
+
+  it("rejects a non-manager role and writes nothing", async () => {
+    const own = await booking(vendorA, "member-a@example.test");
+    guards.manager.mockRejectedValueOnce(new Error("insufficient_role"));
+    await expect(saveMobileConsultationAction(data({ bookingId: own.id, note: "不應寫入" }))).rejects.toThrow("insufficient_role");
+    expect(guards.editable).not.toHaveBeenCalled();
+    expect(await crmRowCounts()).toEqual({ records: 0, notes: 0, tags: 0 });
+  });
+
+  it("requires an editable project scope (aggregate overview is read-only) and writes nothing", async () => {
+    const own = await booking(vendorA, "member-a@example.test");
+    guards.editable.mockRejectedValueOnce(new Error("aggregate_read_only"));
+    await expect(saveMobileConsultationAction(data({ bookingId: own.id, note: "不應寫入" }))).rejects.toThrow("aggregate_read_only");
+    expect(guards.editable).toHaveBeenCalledWith("synthetic-user", vendorA);
     expect(await crmRowCounts()).toEqual({ records: 0, notes: 0, tags: 0 });
   });
 });
