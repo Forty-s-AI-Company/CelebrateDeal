@@ -559,7 +559,7 @@ describe("successful checkout response", () => {
     await expect(response.json()).resolves.toStrictEqual({
       ok: true,
       provider: "demo",
-      orderNumber: expect.stringMatching(/^CD-\d{14}-[A-Z0-9]{6}$/),
+      orderNumber: expect.stringMatching(/^CD-\d{6}-[0-9A-HJKMNP-TV-Z]{14}$/),
       transactionId: "transaction-1",
       amountCents: 1200,
       currency: "TWD",

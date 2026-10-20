@@ -1801,6 +1801,8 @@ model PaymentTransaction {
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
   @@unique([vendorId, id])
   @@unique([vendorId, checkoutIdempotencyKey])
+  /// F-050: PayUni callbacks resolve the tenant by provider order number.
+  @@unique([providerName, orderNumber], map: "PaymentTransaction_providerName_orderNumber_key")
   @@index([vendorId, occurredAt])
   @@index([vendorId, orderNumber])
   @@index([status, occurredAt])

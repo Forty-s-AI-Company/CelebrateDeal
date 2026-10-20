@@ -15,6 +15,7 @@ import {
   type CheckoutSessionResult,
 } from "@/lib/payment-providers/types";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
+import { withPaymentOrderNumberRetry } from "@/lib/payment-order-number";
 
 const INVOICE_PAYMENT_PURPOSE = "invoice_payment";
 const INVOICE_PAYMENT_MAX_ATTEMPTS = 3;
@@ -65,12 +66,6 @@ function invoicePaymentIdempotencyKey(vendorId: string, invoiceId: string) {
   return `invoice-payment:v1:${vendorId}:${invoiceId}`;
 }
 
-function orderNumber() {
-  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `CD-${stamp}-${suffix}`;
-}
-
 function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
@@ -109,7 +104,8 @@ export async function payInvoiceAction(formData: FormData) {
   let result;
   for (let attempt = 1; attempt <= INVOICE_PAYMENT_MAX_ATTEMPTS; attempt += 1) {
     try {
-      result = await getDb().$transaction(async (tx) => {
+      // F-050: an order-number collision re-runs the transaction once.
+      result = await withPaymentOrderNumberRetry((order) => getDb().$transaction(async (tx) => {
         const invoice = await tx.invoice.findFirst({ where: { id: invoiceId, vendorId: vendor.id } });
         if (!invoice) return { outcome: "missing" as const };
         if (invoice.status === "paid") return { outcome: "already_paid" as const, invoice };
@@ -166,7 +162,7 @@ export async function payInvoiceAction(formData: FormData) {
           data: {
             vendorId: vendor.id,
             providerName: currentProvider.id,
-            orderNumber: orderNumber(),
+            orderNumber: order,
             paymentMode: "platform",
             grossAmountCents: invoice.totalCents,
             netAmountCents: invoice.totalCents,
@@ -183,7 +179,7 @@ export async function payInvoiceAction(formData: FormData) {
           },
         });
         return { outcome: "created" as const, invoice, transaction, hasCheckoutSession: false };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
       break;
     } catch (error) {
       if (!isSerializationConflict(error)) throw error;

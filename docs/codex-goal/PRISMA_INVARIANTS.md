@@ -177,7 +177,7 @@
 
 | ID | 範圍 | 目前 schema | 可造成的狀態 | 目前補償控制 | 最小候選修正 | 變更前必要證據 |
 |---|---|---|---|---|---|---|
-| DB-I01 | Payment order identity | `@@index([vendorId,orderNumber])`，沒有 unique | 相同 provider/order 可出現多筆，無 vendor callback 只能 fail closed | webhook/checkout 使用 transaction、server-generated order、ambiguous match 拒絕 | D-005：platform merchant 採 `[providerName,orderNumber]`；BYO 則需 account-scoped key | local duplicate aggregate=0；Production/Staging aggregate；merchant namespace 決策 |
+| DB-I01 | Payment order identity | 2026-10-21 起 `@@unique([providerName,orderNumber])`（`PaymentTransaction_providerName_orderNumber_key`，見下方 F-050 段） | 已關閉：相同 provider/order 無法再出現第二筆 | 訂單號由 `crypto.randomBytes` 產生；P2002 換號重試一次；webhook ambiguous match 仍拒絕 | 已完成（D-005 platform merchant 命名空間）；BYO 若改由商家自訂訂單號需另議 account-scoped key | migration preflight 遇重複即 `RAISE EXCEPTION`；Production/Staging 套用前仍建議先跑只讀 aggregate |
 | DB-I02 | Refund provider event | `@@index([paymentTransactionId,providerEventId])`，沒有 unique | future/direct write path 可重複記錄事件；直接 unique 又可能誤拒 provider trade-number fallback | payment webhook unique event + SERIALIZABLE ledger | D-006：拆分 idempotency/provider refund/event identity，或取得 provider 唯一性保證後加 compound unique | local duplicate aggregate=0；Production/Staging aggregate；PayUni partial-refund identifier semantics |
 | DB-I03 | Refund tenant binding | 已在本機候選 migration 改為 composite FK `[vendorId,paymentTransactionId]` | 外部環境未套用前仍可能形成 vendor A refund 指向 vendor B payment | 現行 service 以 vendor/payment 一起查詢 | 本機 isolated DB 已套用候選 migration，跨 tenant write 為 Prisma `P2003` | local mismatch aggregate=0；Production/Staging 仍需只讀 aggregate preflight |
 | DB-I04 | AffiliateCommission／AffiliatePayout tenant binding | 已在本機候選 migration 改為 nullable composite FK `[vendorId,affiliateId]` | 外部環境未套用前仍可能形成 vendor A ledger 指向 vendor B affiliate | 現行 domain query 綁 vendor | 本機 isolated DB 已套用候選 migration，兩種跨 tenant write 均為 Prisma `P2003` | local mismatch aggregate=0；Production/Staging 仍需只讀 aggregate preflight |
@@ -339,3 +339,10 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - `src/lib/prisma-unmanaged-indexes.db.test.ts`：Prisma 無法表達且 `migrate diff` 不比對的 4 個 partial unique 與 3 個 trgm GIN，比對完整 `pg_get_indexdef`。
 - `scripts/prisma-drift-allowlist.json`：2026-10-20 `migrate diff` 基準 100 句（trgm 3、schema 未宣告索引 3、未宣告 FK 11、FK 形狀不符 3、default 1、FK 名稱 54、索引名稱 25）。
 - 目前 149 models、110 forward migrations；既有 SQL／checksum 不變。已在 loopback PostgreSQL 17.10 全新 `celebratedeal_wp18_ci` 完整套用 110 條，150 張 public 表全數 `relrowsecurity = true`；已驗證部分啟用時重跑、`lock_timeout` 中止與 drift 檢查的正反案例。
+
+## 2026-10-21 F-050／B04-06 訂單號唯一（DB-I01）
+
+- `20261021110100_payment_order_number_unique`：forward-only，不改欄位或資料。先以 `DO` 區塊統計 `"orderNumber" IS NOT NULL` 時 `(providerName, orderNumber)` 的重複組數與列數，有重複就 `RAISE EXCEPTION`（只列數量，不列訂單號或租戶），再建立 `CREATE UNIQUE INDEX "PaymentTransaction_providerName_orderNumber_key" ON "PaymentTransaction"("providerName","orderNumber")`；交易層級 `lock_timeout = 5s`。PostgreSQL 唯一索引把 NULL 視為彼此不同，因此全索引與 `WHERE "orderNumber" IS NOT NULL` 的 partial 索引約束完全相同；改用全索引是為了能在 schema 以 `@@unique([providerName, orderNumber], map: "PaymentTransaction_providerName_orderNumber_key")` 宣告，`prisma-drift-check` 維持 100 句、無新 allowlist 項目。
+- 程式：`src/lib/payment-order-number.ts` 產生 `CD-<UTC yymmdd>-<14 碼 Crockford base32>`（24 字元、70 bits，符合 `PAYUNI_ORDER_NUMBER`），checkout route、`invoice-actions`、`platform-plan-checkout` 三處共用；整個建立交易遇 order number 的 P2002 換號重跑一次，第二次仍撞號就照原錯誤處理。無 vendor 的 PayUni 回呼反查 `(providerName, orderNumber)` 改走此索引。
+- 測試：`src/lib/payment-order-number.test.ts`、`src/lib/payment-order-number.db.test.ts`（跨租戶撞號 P2002、重試、provider 命名空間與 NULL、索引定義）。
+- 目前 149 models、111 forward migrations；既有 SQL／checksum 不變。已在 loopback PostgreSQL 全新 `celebratedeal_wp18_ci` 完整套用，並以交易內測試確認 preflight 遇重複會中止。
