@@ -5428,6 +5428,8 @@ describe("refundPaymentTransactionAction", () => {
           create: mocks.coursePayoutCreate,
           updateMany: mocks.coursePayoutUpdateMany,
         },
+        // F-045: the shared post-refund hook reads the inventory reservation.
+        inventoryReservation: { findUnique: vi.fn().mockResolvedValue(null) },
       });
       if (transactionAttempts === 2) throw Object.assign(new Error("serialization failure"), { code: "P2034" });
       return result;

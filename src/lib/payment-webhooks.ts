@@ -38,6 +38,7 @@ import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
 import { resolveManualReconciliationForPaidTrade, withoutManualReconciliationHold } from "@/lib/payment-webhook-manual-reconciliation";
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
+import { applyPostRefundAfterCommit, applyPostRefundInTransaction, type PostRefundCommerceOrderRefund } from "@/lib/payment-post-refund";
 import {
   isRefundEvent,
   isDisputeEvent,
@@ -953,6 +954,44 @@ async function reconcileCommercePaymentLifecycle(
   return transition;
 }
 
+/** Refunds share the post-refund hook with the admin PayUni path (F-045). */
+function applyLifecycleInventory(
+  tx: Prisma.TransactionClient,
+  transaction: PaymentTransaction,
+  eventType: "paid" | "failed" | "refunded" | "partially_refunded",
+  trustedCheckoutMetadata: unknown,
+  occurredAt: Date,
+) {
+  if (eventType === "refunded" || eventType === "partially_refunded") {
+    return applyPostRefundInTransaction(tx, { transaction, eventType, trustedCheckoutMetadata, occurredAt });
+  }
+  return applyPaymentInventoryTransition(tx, { transaction, eventType, trustedCheckoutMetadata, now: occurredAt });
+}
+
+async function reconcileInvoiceAfterWebhookCommit(
+  db: ReturnType<typeof getDb>,
+  payload: PaymentWebhookPayloadInput,
+  vendorId: string,
+  transaction: PaymentTransaction,
+  occurredAt: Date,
+  commerceOrderRefund: PostRefundCommerceOrderRefund,
+) {
+  if (payload.eventType === "refunded" || payload.eventType === "partially_refunded") {
+    return applyPostRefundAfterCommit(db, {
+      vendorId,
+      paymentTransactionId: transaction.id,
+      eventType: payload.eventType,
+      occurredAt,
+      refundAmountCents: payload.refundAmountCents,
+      previousRefundedAmountCents: transaction.refundedAmountCents,
+      commerceOrderRefund,
+    });
+  }
+  return reconcileElectronicInvoiceAfterPayment(db, {
+    vendorId, paymentTransactionId: transaction.id, eventType: payload.eventType, occurredAt, refund: null,
+  });
+}
+
 /** Only generic billing sessions release their reusable transient checkout key. */
 function shouldClearTransientCheckoutKey(eventType: PaymentWebhookPayloadInput["eventType"], hasCanonicalOrder: boolean) {
   return isPaymentLifecycleEvent(eventType) && !hasCanonicalOrder;
@@ -1092,12 +1131,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     const lifecycleEventType = payload.eventType;
     if (isPaymentLifecycleEvent(lifecycleEventType) && !ignoredIncomingState && !invariant.duplicateRefundEvent) {
 
-      await withPaymentWebhookStage("INVENTORY", () => applyPaymentInventoryTransition(tx, {
-        transaction: savedTransaction,
-        eventType: lifecycleEventType,
-        trustedCheckoutMetadata: existingMetadata,
-        now: occurredAt,
-      }));
+      await withPaymentWebhookStage("INVENTORY", () => applyLifecycleInventory(tx, savedTransaction, lifecycleEventType, existingMetadata, occurredAt));
 
       await withPaymentWebhookStage("ORDER_TRANSITION", () => reconcileCommercePaymentLifecycle(tx, {
         vendorId: vendor.id, transactionId: savedTransaction.id,
@@ -1278,18 +1312,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
 
   // Fiscal issuance is deliberately outside the payment transaction. An
   // adapter or queue outage must never roll back an already-successful payment.
-  await reconcileElectronicInvoiceAfterPayment(db, {
-    vendorId: vendor.id,
-    paymentTransactionId: transaction.id,
-    eventType: payload.eventType,
-    occurredAt,
-    refund: commerceOrderRefund ? {
-      id: commerceOrderRefund.refundId,
-      orderId: commerceOrderRefund.orderId,
-      amountCents: payload.refundAmountCents,
-      cumulativeAmountCents: commerceOrderRefund.refundedAmountCents ?? transaction.refundedAmountCents + payload.refundAmountCents,
-    } : null,
-  });
+  await reconcileInvoiceAfterWebhookCommit(db, payload, vendor.id, transaction, occurredAt, commerceOrderRefund);
 
   await writeAuditLog({
     vendorId: vendor.id,
