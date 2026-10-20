@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
+import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
 import { PublicResourceLinks } from "@/components/public-policy";
 import { logoutAction } from "@/app/actions";
 import { AppShellNavLink } from "@/components/app-shell-nav-link";
@@ -10,6 +10,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";
 import { hasVendorFeature, type VendorFeatureModule } from "@/lib/vendor-feature-toggles";
 import { WorkspaceProjectSwitcher, type ProjectSwitcherItem } from "@/components/workspace-project-switcher";
+import { SystemStatusIndicator } from "@/components/system-status-indicator";
 import { OnboardingTaskPanel, type SidebarOnboardingTask } from "@/components/onboarding-task-panel";
 
 const navGroups = [
@@ -237,10 +238,7 @@ export function AppShell({
         </nav>
 
         <div className="mt-3 shrink-0 border-t border-slate-200 pt-3">
-          <div className="mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-2"><span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-2 rounded-full bg-emerald-500" /></span>系統連線正常</span>
-            <Activity className="size-3.5" aria-hidden="true" />
-          </div>
+          <SystemStatusIndicator />
           <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial} planLabel={planLabel}>
             <Link href="/affiliate-portal" className="flex min-h-11 items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">夥伴入口</Link>
             {accountMenuSections.map((section) => {
