@@ -46,10 +46,24 @@ export function resolveDevMigrateTarget(environment: MigrateEnvironment): Migrat
 }
 
 /**
+ * Remote `migrate deploy` callers, each named by a workflow-specific
+ * MIGRATE_DEPLOY_WORKFLOW value set only in that workflow's own command, plus
+ * the platform marker it must run under. Adding a caller (for example a
+ * GitHub Environment-protected production migrate workflow) is a reviewed
+ * change to this table. This is a guard against mistakes, not an access
+ * control: anyone holding the database credentials can bypass it.
+ */
+const APPROVED_REMOTE_MIGRATE_WORKFLOWS: Readonly<Record<string, (environment: MigrateEnvironment) => boolean>> = {
+  // vercel.staging.json buildCommand.
+  "vercel-staging-build": (environment) => environment.VERCEL === "1",
+};
+
+/**
  * `prisma migrate deploy` is forward-only, but it still writes the schema of
  * whatever database it reaches. Loopback disposable databases are always
- * allowed; any other target needs ALLOW_REMOTE_MIGRATE_DEPLOY=1 inside a
- * GitHub Actions or Vercel build environment, never a developer shell.
+ * allowed; any other target needs ALLOW_REMOTE_MIGRATE_DEPLOY=1 together with
+ * an approved MIGRATE_DEPLOY_WORKFLOW running on its platform, never a
+ * developer shell.
  */
 export function resolveDeployMigrateTarget(environment: MigrateEnvironment): MigrateTarget {
   const directUrl = present(environment.DIRECT_URL);
@@ -60,9 +74,37 @@ export function resolveDeployMigrateTarget(environment: MigrateEnvironment): Mig
   const childEnvironment = { DATABASE_URL: databaseUrl ?? target, DIRECT_URL: target };
   if (classifyLocalTestDatabase(target).safe) return { childEnvironment, remote: false };
 
-  const explicitlyAllowed = environment.ALLOW_REMOTE_MIGRATE_DEPLOY === "1";
-  const workflowEnvironment = environment.GITHUB_ACTIONS === "true" || environment.VERCEL === "1";
-  if (!explicitlyAllowed) throw new MigrateTargetError("remote-not-allowed");
-  if (!workflowEnvironment) throw new MigrateTargetError("remote-outside-workflow");
+  if (environment.ALLOW_REMOTE_MIGRATE_DEPLOY !== "1") throw new MigrateTargetError("remote-not-allowed");
+  const workflow = environment.MIGRATE_DEPLOY_WORKFLOW ?? "";
+  const platformMatches = Object.hasOwn(APPROVED_REMOTE_MIGRATE_WORKFLOWS, workflow)
+    && APPROVED_REMOTE_MIGRATE_WORKFLOWS[workflow]!(environment);
+  if (!platformMatches) throw new MigrateTargetError("remote-outside-workflow");
   return { childEnvironment, remote: true };
+}
+
+const DEV_FLAGS_WITH_VALUE = new Set(["--name", "-n"]);
+const DEV_FLAGS = new Set(["--create-only", "--skip-seed", "--skip-generate"]);
+
+/**
+ * Extra CLI arguments are forwarded to Prisma only from a closed allowlist:
+ * `--schema`, `--config` or `--url` could otherwise retarget the validated
+ * database (PR #454 A-8). `migrate deploy` takes no extra arguments.
+ */
+export function validateMigrateArguments(command: "dev" | "deploy", args: readonly string[]) {
+  if (command === "deploy") {
+    if (args.length > 0) throw new MigrateTargetError("argument-not-allowed");
+    return [...args];
+  }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    const [flag, inlineValue] = arg.split("=", 2) as [string, string | undefined];
+    if (DEV_FLAGS_WITH_VALUE.has(flag)) {
+      const value = inlineValue ?? args[++index];
+      if (!value || !/^[A-Za-z0-9_-]{1,100}$/.test(value)) throw new MigrateTargetError("argument-not-allowed");
+      continue;
+    }
+    if (DEV_FLAGS.has(arg)) continue;
+    throw new MigrateTargetError("argument-not-allowed");
+  }
+  return [...args];
 }
