@@ -68,3 +68,31 @@ describe("payout account eligibility", () => {
     ])).toThrow(PayoutAccountSelectionError);
   });
 });
+
+describe("payout account change cooldown", () => {
+  const now = new Date("2026-10-21T12:00:00.000Z");
+  const pending = {
+    ...activePlatformLegacyAccount,
+    status: "pending_verification",
+    bankAccountEncrypted: "v2.synthetic.envelope",
+    bankAccountLegacyNumber: "****6789",
+    payoutEligibleAt: new Date(now.getTime() + 60_000),
+  };
+
+  it("blocks a pending account until its eligibility time, then accepts it", () => {
+    expect(isEligiblePayoutAccount(pending, now)).toBe(false);
+    expect(() => selectPayoutAccount([pending], now)).toThrow(PayoutAccountSelectionError);
+    const later = new Date(now.getTime() + 60_000);
+    expect(isEligiblePayoutAccount(pending, later)).toBe(true);
+    expect(selectPayoutAccount([pending], later)).toBe(pending);
+  });
+
+  it("never falls back to another account while a change is pending", () => {
+    expect(() => selectPayoutAccount([activePlatformLegacyAccount, pending], now)).toThrow(PayoutAccountSelectionError);
+  });
+
+  it("does not treat a pending account without an eligibility time, or a verified account, as payable", () => {
+    expect(isEligiblePayoutAccount({ ...pending, payoutEligibleAt: null }, now)).toBe(false);
+    expect(isEligiblePayoutAccount({ ...pending, status: "verified", payoutEligibleAt: null }, now)).toBe(false);
+  });
+});

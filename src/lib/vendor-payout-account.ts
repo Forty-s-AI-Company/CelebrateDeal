@@ -5,6 +5,7 @@ import {
   type BankAccountDetails,
   type BankAccountKeyring,
 } from "@/lib/bank-account";
+import { PAYOUT_ACCOUNT_COOLDOWN_MS, PAYOUT_ACCOUNT_PENDING_STATUS } from "@/lib/payout-account";
 
 /**
  * F-073 / B04-20: the only application path that writes a merchant payout
@@ -12,14 +13,20 @@ import {
  * envelope bound to the vendor (AAD); the legacy plaintext columns receive the
  * masked display values only, which the PaymentAccount_bankAccountNumber_masked_check
  * CHECK constraint enforces at the database layer.
+ *
+ * Every save (new account or change) puts the account into
+ * `pending_verification` with `payoutEligibleAt = now + 24h`: no payout batch
+ * can use it before then (src/lib/payout-account.ts), and the owners are
+ * e-mailed by the action so a hijacked session cannot silently redirect
+ * payouts. A platform-imposed status (for example `suspended`) is never lifted.
  */
 
 export const VENDOR_PAYOUT_ACCOUNT_MODE = "platform";
 const NEW_ACCOUNT_PROVIDER = "platform";
 const NEW_ACCOUNT_LABEL = "商家撥款帳號";
-// A merchant may refresh bank details, but must never lift a platform-imposed
-// suspension: only these statuses are (re)activated by a merchant save.
-const MERCHANT_ACTIVATABLE_STATUSES = new Set(["pending", "verified", "active"]);
+// Only these statuses move to pending_verification on a merchant save; any
+// other status was set by the platform and is kept as is.
+const MERCHANT_RESETTABLE_STATUSES = new Set(["pending", "verified", "active", PAYOUT_ACCOUNT_PENDING_STATUS]);
 const ACCOUNT_NAME_MAX = 100;
 
 export type VendorPayoutAccountFormError =
@@ -70,9 +77,17 @@ type SaveInput = {
   details: BankAccountDetails;
   keyring: BankAccountKeyring;
   auditMeta: { ipAddress: string | null; userAgent: string | null };
+  now?: Date;
 };
 
-export type SaveVendorPayoutAccountResult = { kind: "created" | "updated"; accountId: string; status: string };
+export type SaveVendorPayoutAccountResult = {
+  kind: "created" | "updated";
+  accountId: string;
+  status: string;
+  changedAt: Date;
+  payoutEligibleAt: Date;
+  accountNumberLast4: string;
+};
 
 function maskedSnapshot(account: {
   bankAccountLegacyName: string | null;
@@ -80,6 +95,7 @@ function maskedSnapshot(account: {
   bankAccountLegacyNumber: string | null;
   bankAccountEncrypted: string | null;
   status: string;
+  payoutEligibleAt?: Date | null;
 }) {
   const legacyNumber = account.bankAccountLegacyNumber;
   return {
@@ -89,6 +105,7 @@ function maskedSnapshot(account: {
     // Never copy a pre-backfill plaintext number into the audit trail.
     accountNumberLast4: legacyNumber ? legacyNumber.slice(-4) : null,
     hasAccountName: Boolean(account.bankAccountLegacyName),
+    payoutEligibleAt: account.payoutEligibleAt?.toISOString() ?? null,
   };
 }
 
@@ -96,6 +113,8 @@ export async function saveVendorPayoutAccount(
   db: PrismaClient,
   input: SaveInput,
 ): Promise<SaveVendorPayoutAccountResult> {
+  const now = input.now ?? new Date();
+  const payoutEligibleAt = new Date(now.getTime() + PAYOUT_ACCOUNT_COOLDOWN_MS);
   const envelope = encryptBankAccount(input.details, input.vendorId, input.keyring);
   const display = maskBankAccount(input.details);
   const displayData = {
@@ -103,6 +122,8 @@ export async function saveVendorPayoutAccount(
     bankAccountLegacyName: display.accountName,
     bankCodeLegacy: display.bankCode,
     bankAccountLegacyNumber: display.accountNumber,
+    bankAccountChangedAt: now,
+    payoutEligibleAt,
   };
 
   return db.$transaction(async (tx) => {
@@ -115,12 +136,15 @@ export async function saveVendorPayoutAccount(
         bankAccountLegacyName: true,
         bankCodeLegacy: true,
         bankAccountLegacyNumber: true,
+        payoutEligibleAt: true,
       },
       orderBy: { createdAt: "asc" },
     });
     if (existing.length > 1) throw new VendorPayoutAccountAmbiguousError();
 
-    let result: SaveVendorPayoutAccountResult;
+    let kind: SaveVendorPayoutAccountResult["kind"];
+    let accountId: string;
+    let status: string;
     let before: ReturnType<typeof maskedSnapshot> | null = null;
     if (existing.length === 0) {
       const created = await tx.paymentAccount.create({
@@ -129,16 +153,18 @@ export async function saveVendorPayoutAccount(
           mode: VENDOR_PAYOUT_ACCOUNT_MODE,
           providerName: NEW_ACCOUNT_PROVIDER,
           accountLabel: NEW_ACCOUNT_LABEL,
-          status: "active",
+          status: PAYOUT_ACCOUNT_PENDING_STATUS,
           ...displayData,
         },
         select: { id: true, status: true },
       });
-      result = { kind: "created", accountId: created.id, status: created.status };
+      kind = "created";
+      accountId = created.id;
+      status = created.status;
     } else {
       const current = existing[0]!;
       before = maskedSnapshot(current);
-      const status = MERCHANT_ACTIVATABLE_STATUSES.has(current.status) ? "active" : current.status;
+      status = MERCHANT_RESETTABLE_STATUSES.has(current.status) ? PAYOUT_ACCOUNT_PENDING_STATUS : current.status;
       // Compound predicate: the row must still belong to this vendor and be
       // the platform payout account that was read above.
       const updated = await tx.paymentAccount.updateMany({
@@ -146,7 +172,8 @@ export async function saveVendorPayoutAccount(
         data: { ...displayData, status },
       });
       if (updated.count !== 1) throw new Error("Concurrent payout account update conflict.");
-      result = { kind: "updated", accountId: current.id, status };
+      kind = "updated";
+      accountId = current.id;
     }
 
     await tx.auditLog.create({
@@ -156,13 +183,13 @@ export async function saveVendorPayoutAccount(
         actorLabel: input.actorLabel,
         action: "vendor_payout_account_saved",
         targetType: "PaymentAccount",
-        targetId: result.accountId,
+        targetId: accountId,
         before: before ?? undefined,
-        after: maskedSnapshot({ ...displayData, status: result.status }),
+        after: maskedSnapshot({ ...displayData, status }),
         ipAddress: input.auditMeta.ipAddress,
         userAgent: input.auditMeta.userAgent,
       },
     });
-    return result;
+    return { kind, accountId, status, changedAt: now, payoutEligibleAt, accountNumberLast4: display.accountNumber.slice(-4) };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

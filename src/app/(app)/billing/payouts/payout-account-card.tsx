@@ -2,6 +2,7 @@ import { Landmark } from "lucide-react";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, SubmitButton } from "@/components/ui";
 import { maskBankAccount } from "@/lib/bank-account";
+import { formatDateTime } from "@/lib/format";
 import { saveVendorPayoutAccountAction } from "./actions";
 
 export type PayoutAccountSummary = {
@@ -10,10 +11,15 @@ export type PayoutAccountSummary = {
   bankAccountLegacyName: string | null;
   bankCodeLegacy: string | null;
   bankAccountLegacyNumber: string | null;
+  payoutEligibleAt: Date | null;
 };
 
 const RESULT_MESSAGES: Record<string, { tone: "green" | "red"; text: string }> = {
-  saved: { tone: "green", text: "撥款帳號已儲存。帳號以加密方式保存，畫面只顯示末四碼。" },
+  saved: { tone: "green", text: "撥款帳號已儲存，並已寄通知信給所有擁有者。為了安全，新帳號 24 小時後才會用於撥款。" },
+  saved_notification_failed: { tone: "red", text: "撥款帳號已儲存，但通知信沒有寄出，請聯絡平台客服確認。新帳號 24 小時後才會用於撥款。" },
+  step_up_failed: { tone: "red", text: "驗證碼不正確，帳號沒有變更。請輸入驗證器 App 目前顯示的 6 位數驗證碼。" },
+  step_up_rate_limited: { tone: "red", text: "驗證嘗試次數過多，請 15 分鐘後再試。" },
+  step_up_unavailable: { tone: "red", text: "目前無法驗證，請稍後再試。" },
   invalid_account_name: { tone: "red", text: "請填寫戶名（100 字以內）。" },
   invalid_bank_code: { tone: "red", text: "銀行代碼請填 3 碼數字，或 3 碼銀行代碼加 4 碼分行代碼。" },
   invalid_account_number: { tone: "red", text: "帳號請填 6 到 20 碼數字，可省略連字號。" },
@@ -24,6 +30,7 @@ const RESULT_MESSAGES: Record<string, { tone: "green" | "red"; text: string }> =
 
 const STATUS_LABELS: Record<string, string> = {
   active: "啟用中",
+  pending_verification: "等待生效",
   pending: "待設定",
   verified: "已驗證",
 };
@@ -75,6 +82,12 @@ export function PayoutAccountCard({
         </p>
       ) : null}
 
+      {account?.status === "pending_verification" && account.payoutEligibleAt ? (
+        <p className="mt-4 rounded-md bg-orange-50 px-3 py-2 text-sm text-orange-800">
+          帳號變更後需等待 24 小時才會用於撥款，預計 {formatDateTime(account.payoutEligibleAt)} 生效。
+        </p>
+      ) : null}
+
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
         <div>
           <dt className="text-slate-500">銀行代碼</dt>
@@ -100,8 +113,11 @@ export function PayoutAccountCard({
             <Field label="銀行代碼" name="bankCode" required maxLength={7} placeholder="例如 812" autoComplete="off" />
             <Field label="帳號" name="accountNumber" required maxLength={24} autoComplete="off" />
           </div>
+          <div className="max-w-xs">
+            <Field label="兩步驟驗證碼" name="totpCode" required minLength={6} maxLength={7} autoComplete="one-time-code" placeholder="驗證器 App 的 6 位數" />
+          </div>
           <p className="text-xs text-slate-500">
-            送出後會取代目前的撥款帳號；已建立的出款批次仍使用建立當時的帳號。修改需已啟用兩步驟驗證。
+            送出後會取代目前的撥款帳號，並寄通知信給所有擁有者；新帳號 24 小時後才會用於撥款。已建立的出款批次仍使用建立當時的帳號。
           </p>
           <div>
             <SubmitButton>{account ? "更新撥款帳號" : "儲存撥款帳號"}</SubmitButton>
