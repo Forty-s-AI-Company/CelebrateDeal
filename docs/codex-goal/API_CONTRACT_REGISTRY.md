@@ -118,6 +118,7 @@
 | 76 | `GET /(app)/billing/electronic-invoices/export` | authenticated vendor finance context | 無 body | export query 固定目前 vendor；不存在與拒絕存取不洩漏資料 | 只讀 CSV；公式字元 neutralization、`private, no-store` 與 attachment headers | CSV attachment 或安全授權錯誤 | 同路徑 route unit |
 | 77 | `POST /api/jobs/electronic-invoices` | timing-safe `JOB_SECRET` Bearer token | 無 body | job 只處理 server-owned tenant invoice queue；不接受 caller identity | bounded invoice issue／allowance／void reconciliation；adapter unavailable 保留 queued，錯誤回 sanitized monitoring | 401、202 queued 或 200 bounded counts；失敗 503 safe code | 同路徑 route/job unit |
 | 83 | `GET /api/admin/ops/provider-runtime` | timing-safe `JOB_SECRET`，僅 `VERCEL_ENV=preview`；唯讀探測另需部署 source SHA 相符 | 可選 `probe=read-only` 與 `x-celebratedeal-source-sha` | 預設只讀 runtime 設定存在性與 HMAC 資源摘要；探測時各執行一次 R2 HeadBucket 與 Stream list `limit=1` | 無 DB 或 provider 寫入；探測結果僅固定 enum，不能證明 token scope／非正式資源身分 | 200 bounded presence／digest／probe enum，401／403 泛化錯誤；`no-store` | 同路徑 route unit＋合成 provider probe unit；實際非正式資源 scope 仍待外部證據 |
+| 85 | `GET /api/readiness` | timing-safe `CRON_SECRET` Bearer；`JOB_SECRET` 不接受 | 無 body／query | 只讀 aggregate（email、LINE、webhook retry、learner notification、tracking outbox 的 max 成功時間、pending 筆數、最舊 pending 時間）；不選取 tenant、recipient、payload 或 provider 欄位 | 無寫入 | 200 `{ ok, checkedAt, jobs }`；401；失敗 503 泛用錯誤；`no-store` | 同路徑 route unit |
 
 ## 已確認的 contract 缺口
 
