@@ -29,7 +29,7 @@ test("English mailbox login, course and discussion persist locale; PWA stores on
   await expect(page.locator('div[lang="en"]')).toBeVisible();
   await page.getByLabel("Email",{exact:true}).fill(email);
   await page.getByRole("button",{name:"Send sign-in link",exact:true}).click();
-  await expect(page.getByRole("status").filter({hasText:/./u})).toContainText("15 minutes");
+  await expect(page.locator('[role="status"]:not(.sr-only)')).toContainText("15 minutes");
   // Read only this owned synthetic delivery; never call an external mail provider.
   await expect.poll(()=>db.emailDelivery.count({where:{vendorId:vendor.id,trigger:"student_portal_magic_link"}})).toBe(1);
   const delivery=await db.emailDelivery.findFirstOrThrow({where:{vendorId:vendor.id,trigger:"student_portal_magic_link"}});
@@ -58,7 +58,7 @@ test("English mailbox login, course and discussion persist locale; PWA stores on
   await form.getByLabel("Display name",{exact:true}).fill("保留原文學員");
   await form.getByLabel("Share your learning experience",{exact:true}).fill("不翻譯使用者內容");
   await form.getByRole("button",{name:"Post your experience",exact:true}).click();
-  await expect(page.getByRole("status").filter({hasText:/./u})).toHaveText("Saved.");
+  await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("Saved.");
   await page.reload();
   await expect(page.getByText("不翻譯使用者內容",{exact:true})).toBeVisible();
   // Inspect only public cache keys; no session/cookie values are read or logged.

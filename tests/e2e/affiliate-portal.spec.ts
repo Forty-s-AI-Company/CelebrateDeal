@@ -37,7 +37,7 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
   await expect(page.getByRole("link",{name:"下一頁成員",exact:true})).toBeVisible();
   await page.getByLabel("搜尋成員",{exact:true}).fill("合成推廣夥伴");await page.getByRole("button",{name:"搜尋",exact:true}).click();
   await page.getByLabel("授權成員",{exact:true}).selectOption(partner.memberships[0]!.id);await page.getByRole("button",{name:"儲存入口授權",exact:true}).click();
-  await expect(page.getByRole("status").filter({hasText:/./u})).toHaveText("夥伴入口授權已儲存。");
+  await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("夥伴入口授權已儲存。");
   expect(await db.affiliatePortalAccess.findUniqueOrThrow({where:{vendorId_affiliateId:{vendorId:vendor.id,affiliateId:affiliate.id}}})).toMatchObject({vendorMemberId:partner.memberships[0]!.id,active:true,revision:1});
   await login(partnerPage,partner.email);await partnerPage.getByRole("button",{name:"開啟工作區與帳號選單",exact:true}).click();await partnerPage.getByRole("link",{name:"夥伴入口",exact:true}).click();
   await partnerPage.getByRole("link",{name:"合成夥伴商家 · 合成推廣合作",exact:true}).click();
@@ -69,7 +69,7 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
   await outsiderPage.goto(`/affiliates/${affiliate.id}/access`);await expect(outsiderPage.getByRole("button",{name:"儲存入口授權",exact:true})).toHaveCount(0);
   await db.vendorMember.update({where:{id:partner.memberships[0]!.id},data:{status:"inactive"}});
   await page.reload();await expect(page.getByLabel("授權成員",{exact:true})).toHaveValue(partner.memberships[0]!.id);
-  await page.getByLabel("啟用夥伴入口",{exact:true}).uncheck();await page.getByRole("button",{name:"儲存入口授權",exact:true}).click();await expect(page.getByRole("status")).toHaveText("夥伴入口授權已儲存。");
+  await page.getByLabel("啟用夥伴入口",{exact:true}).uncheck();await page.getByRole("button",{name:"儲存入口授權",exact:true}).click();await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("夥伴入口授權已儲存。");
   await db.vendorMember.update({where:{id:partner.memberships[0]!.id},data:{status:"active"}});
   await partnerPage.reload();await expect(partnerPage.getByRole("heading",{name:"合成推廣合作：佣金帳本",exact:true})).toHaveCount(0);
   expect((await db.affiliatePortalAccess.findUniqueOrThrow({where:{vendorId_affiliateId:{vendorId:vendor.id,affiliateId:affiliate.id}}})).revision).toBe(2);
