@@ -506,6 +506,34 @@ describe("payment webhook provider selection", () => {
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
+  it("records a signed PayUni rejection as a failed WebhookEvent with its bounded provider codes (F-047)", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    const failedPayload = {
+      provider: "payuni", eventId: "CD-REJECTED:result:UPP02005", eventType: "failed", orderNumber: "CD-REJECTED",
+      metadata: { providerResult: { status: "UPP02005", messageCode: "UPP02005" } },
+    };
+    mocks.payUniNormalizePayload.mockResolvedValue({ payload: failedPayload, rawPayload: { Status: "UPP02005" } });
+    mocks.webhookEventFindUnique.mockResolvedValue(null);
+    mocks.webhookEventCreate.mockResolvedValue({ id: "webhook-event-rejected", status: "received", retryCount: 0, maxRetries: 5 });
+    mocks.processPaymentWebhook.mockResolvedValue({ transaction: { id: "transaction-rejected", vendorId: "vendor-1", status: "failed" } });
+
+    const response = await POST(webhookRequest("?provider=payuni&source=notify"));
+
+    expect(response.status).not.toBe(400);
+    expect(mocks.webhookEventCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        provider: "payuni",
+        eventId: "CD-REJECTED:result:UPP02005",
+        eventType: "failed",
+        payload: expect.objectContaining({
+          normalized: expect.objectContaining({ metadata: { providerResult: { status: "UPP02005", messageCode: "UPP02005" } } }),
+        }),
+      }),
+    });
+    expect(mocks.processPaymentWebhook).toHaveBeenCalledWith(expect.objectContaining({ eventType: "failed", orderNumber: "CD-REJECTED" }), expect.anything());
+  });
+
   it("does not expose provider parser details when a signed payload is invalid", async () => {
     mocks.demoVerifySignature.mockResolvedValue(true);
     mocks.demoNormalizePayload.mockRejectedValue(new Error("secret=provider-private-value"));
