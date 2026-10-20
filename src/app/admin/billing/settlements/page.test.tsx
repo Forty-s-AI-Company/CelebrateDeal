@@ -39,6 +39,7 @@ describe("/admin/billing/settlements feedback", () => {
     ["invalid_adjustment", "調整金額必須是整數新台幣"],
     ["adjustment_reason_required", "請填寫調整原因"],
     ["same_approver", "申請人不能自行核准"],
+    ["unclassified_payment_purpose", "無法判定用途的付款"],
   ])("renders safe feedback for %s", async (error, expectedMessage) => {
     const html = renderToStaticMarkup(await AdminBillingSettlementsPage({
       searchParams: Promise.resolve({ error }),

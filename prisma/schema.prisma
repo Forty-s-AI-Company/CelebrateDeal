@@ -1794,9 +1794,22 @@ model PayUniLiveProbe {
   @@index([status, dueAt])
 }
 
+/// F-038: why the money moved. Only buyer_order rows are merchant revenue in
+/// the monthly settlement; platform plan and invoice payments are money the
+/// merchant paid the platform. Backfilled from metadata.billingPurpose and
+/// CommerceOrder links; rows that could not be classified stay unclassified
+/// and make that month's settlement fail closed until reviewed.
+enum PaymentTransactionPurpose {
+  buyer_order
+  platform_subscription
+  invoice_payment
+  unclassified
+}
+
 model PaymentTransaction {
   id                     String    @id @default(cuid())
   vendorId               String
+  purpose                PaymentTransactionPurpose @default(unclassified)
   providerName           String
   providerTradeNo        String?
   orderNumber            String?

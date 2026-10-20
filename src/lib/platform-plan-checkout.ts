@@ -408,6 +408,8 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
           ? await tx.paymentTransaction.create({
               data: {
                 vendorId: vendor.id,
+                // F-038: the merchant pays the platform; never merchant revenue.
+                purpose: "platform_subscription",
                 providerName: provider.id,
                 orderNumber: order,
                 paymentMode: DEFAULT_BILLING_PAYMENT_MODE,

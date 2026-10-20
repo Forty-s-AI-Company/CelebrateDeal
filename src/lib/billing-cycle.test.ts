@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
       this.name = "StreamUsageReconciliationRequiredError";
     }
   },
+  UnclassifiedPaymentPurposeError: class UnclassifiedPaymentPurposeError extends Error {
+    readonly code = "unclassified_payment_purpose";
+  },
 }));
 
 vi.mock("@/lib/billing", () => ({
@@ -29,6 +32,7 @@ vi.mock("@/lib/billing", () => ({
   invoiceDueAt: mocks.invoiceDueAt,
   invoiceNumber: mocks.invoiceNumber,
   StreamUsageReconciliationRequiredError: mocks.StreamUsageReconciliationRequiredError,
+  UnclassifiedPaymentPurposeError: mocks.UnclassifiedPaymentPurposeError,
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -186,6 +190,16 @@ describe("generateSettlementForVendor", () => {
 
     await expect(generateSettlementForVendor("vendor-1", "2026-07"))
       .rejects.toMatchObject({ name: "BillingCycleError", code: "unsupported_currency" });
+
+    expect(mocks.settlementCreate).not.toHaveBeenCalled();
+    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+  });
+
+  it("maps an unclassified payment purpose to a bounded billing error without writes (F-038)", async () => {
+    mocks.calculateSettlement.mockRejectedValueOnce(new mocks.UnclassifiedPaymentPurposeError());
+
+    await expect(generateSettlementForVendor("vendor-1", "2026-07"))
+      .rejects.toMatchObject({ name: "BillingCycleError", code: "unclassified_payment_purpose" });
 
     expect(mocks.settlementCreate).not.toHaveBeenCalled();
     expect(mocks.invoiceUpsert).not.toHaveBeenCalled();

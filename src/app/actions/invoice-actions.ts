@@ -161,6 +161,8 @@ export async function payInvoiceAction(formData: FormData) {
         const transaction = await tx.paymentTransaction.create({
           data: {
             vendorId: vendor.id,
+            // F-038: the merchant pays the platform; never merchant revenue.
+            purpose: "invoice_payment",
             providerName: currentProvider.id,
             orderNumber: order,
             paymentMode: "platform",

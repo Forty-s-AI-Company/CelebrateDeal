@@ -1523,6 +1523,7 @@ export async function generateSettlementAction(formData: FormData) {
       if (error.code === "terminal_invoice_amount_conflict") redirect("/admin/billing/settlements?error=invoice_conflict");
       if (error.code === "conflict") redirect("/admin/billing/settlements?error=conflict");
       if (error.code === "unsupported_currency") redirect("/admin/billing/settlements?error=unsupported_currency");
+      if (error.code === "unclassified_payment_purpose") redirect("/admin/billing/settlements?error=unclassified_payment_purpose");
       redirect("/admin/billing/settlements?error=missing");
     }
     if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {

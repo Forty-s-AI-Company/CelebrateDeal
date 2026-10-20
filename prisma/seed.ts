@@ -474,6 +474,7 @@ async function main() {
   const firstTransaction = await prisma.paymentTransaction.create({
     data: {
         vendorId: vendor.id,
+        purpose: "buyer_order",
         providerName: "platform-ecpay",
         providerTradeNo: "PAY20260701001",
         orderNumber: "ORDER-1001",
@@ -489,6 +490,7 @@ async function main() {
   const secondTransaction = await prisma.paymentTransaction.create({
     data: {
         vendorId: vendor.id,
+        purpose: "buyer_order",
         providerName: "platform-ecpay",
         providerTradeNo: "PAY20260701002",
         orderNumber: "ORDER-1002",

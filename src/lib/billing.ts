@@ -1,4 +1,4 @@
-import type { BillingPlan, PaymentTransaction, UsageRecord, VendorSubscription } from "@prisma/client";
+import type { BillingPlan, PaymentTransaction, Prisma, UsageRecord, VendorSubscription } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { isSupportedCheckoutCurrency, SUPPORTED_CHECKOUT_CURRENCY, UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
@@ -12,6 +12,30 @@ export class StreamUsageReconciliationRequiredError extends Error {
   constructor() {
     super("stream_reconciliation_required");
     this.name = "StreamUsageReconciliationRequiredError";
+  }
+}
+
+/**
+ * F-038: a monthly settlement counts only buyer orders as merchant revenue.
+ * Platform plan and invoice payments are money the merchant paid the
+ * platform. A legacy unclassified row counts only when a CommerceOrder names
+ * it as its primary payment (the buyer checkout writes both together).
+ */
+export const SETTLEMENT_REVENUE_TRANSACTION_WHERE = {
+  OR: [
+    { purpose: "buyer_order" },
+    { purpose: "unclassified", primaryCommerceOrder: { isNot: null } },
+  ],
+} satisfies Prisma.PaymentTransactionWhereInput;
+
+const SETTLED_PAYMENT_STATUSES = ["paid", "partially_refunded", "refunded"];
+
+export class UnclassifiedPaymentPurposeError extends Error {
+  readonly code = "unclassified_payment_purpose" as const;
+
+  constructor() {
+    super("unclassified_payment_purpose");
+    this.name = "UnclassifiedPaymentPurposeError";
   }
 }
 
@@ -182,7 +206,7 @@ async function readStreamUsageBillingDecision(
 export async function calculateSettlement(vendorId: string, monthKey: string) {
   const db = getDb();
   const { start, end } = monthRange(monthKey);
-  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount] = await Promise.all([
+  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount, unclassifiedTransactionCount] = await Promise.all([
     db.vendorSubscription.findFirst({
       where: {
         vendorId,
@@ -204,8 +228,9 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     db.paymentTransaction.findMany({
       where: {
         vendorId,
-        status: { in: ["paid", "partially_refunded", "refunded"] },
+        status: { in: SETTLED_PAYMENT_STATUSES },
         occurredAt: { gte: start, lt: end },
+        ...SETTLEMENT_REVENUE_TRANSACTION_WHERE,
       },
     }),
     db.refundRecord.aggregate({
@@ -213,6 +238,9 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
         vendorId,
         monthKey,
         status: "processed",
+        // A refund of a platform plan or invoice payment is the platform
+        // returning its own revenue; it never reduces the merchant payout.
+        paymentTransaction: SETTLEMENT_REVENUE_TRANSACTION_WHERE,
       },
       _sum: {
         refundAmountCents: true,
@@ -235,11 +263,22 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     db.refundRecord.count({
       where: { vendorId, monthKey, status: "processed", paymentTransaction: { currency: { not: SUPPORTED_CHECKOUT_CURRENCY } } },
     }),
+    // F-038: never guess whether an unclassified payment is merchant revenue.
+    db.paymentTransaction.count({
+      where: {
+        vendorId,
+        status: { in: SETTLED_PAYMENT_STATUSES },
+        occurredAt: { gte: start, lt: end },
+        purpose: "unclassified",
+        primaryCommerceOrder: { is: null },
+      },
+    }),
   ]);
 
   if (!subscription) {
     throw new Error("找不到有效訂閱方案，無法產生月結。");
   }
+  if (unclassifiedTransactionCount > 0) throw new UnclassifiedPaymentPurposeError();
   // Settlement sums cents across transactions; mixing currencies would pay out
   // a meaningless total. Refuse instead of adding non-TWD cents to TWD.
   if (nonTwdRefundCount > 0

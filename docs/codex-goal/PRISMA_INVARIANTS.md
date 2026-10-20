@@ -365,3 +365,11 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 覆核門檻改為 `|新調整值| > 門檻` 或 `|新值 − 現值| > 門檻` 任一成立即需第二人（n-2）；金額輸入上限改為 NT$21,474,836，確保分值不超過 PostgreSQL `integer`（n-3）。
 - 目前 150 models、114 forward migrations；既有 SQL／checksum 不變。
 
+
+## 2026-10-21 F-038／B03-02 交易用途（月結只計買家訂單）
+
+- `20261021130100_payment_transaction_purpose`：forward-only。新增 enum `PaymentTransactionPurpose`（`buyer_order／platform_subscription／invoice_payment／unclassified`）與 `PaymentTransaction.purpose`（NOT NULL，預設 `unclassified`）。回填只依伺服器寫入的資料：`metadata.billingPurpose` 為 `platform_subscription_checkout`／`invoice_payment`／`buyer_order` 分別對應三種用途；沒有 `billingPurpose` 但有 `CommerceOrder.primaryPaymentTransactionId` 指向它（同 vendor）的列為 `buyer_order`；明確的方案費／帳單款標記優先於 CommerceOrder 連結；其餘維持 `unclassified`。交易層級 `lock_timeout = 5s`。
+- 程式：checkout route 寫 `buyer_order`、`platform-plan-checkout` 寫 `platform_subscription`、`invoice-actions` 寫 `invoice_payment`；demo provider 回呼建立的未知訂單寫 `buyer_order`（只有 demo 能從回呼建立交易）。`calculateSettlement` 的營收與退款只計 `buyer_order`（或仍是 `unclassified` 但有 primary CommerceOrder 的列）；當月有 `unclassified` 且沒有 CommerceOrder 的已付款交易時拋 `unclassified_payment_purpose`，月結不產生、不寫 Settlement／Invoice，需人工核對後以 SQL 更新 `purpose` 再重算。
+- 部署前盤點：`SELECT purpose, count(*) FROM "PaymentTransaction" WHERE status IN ('paid','partially_refunded','refunded') GROUP BY 1;`，`unclassified` 非 0 時逐筆核對。已鎖定月份不重算，若曾把方案費／帳單款算入商家營收，需人工另立調整。
+- 測試：`src/lib/settlement-revenue.db.test.ts`（精確金額、只有方案費／帳單款的月份撥款為 0、unclassified 拒絕、預設值）；回填 SQL 已在 loopback `celebratedeal_wp18_ci` 以 7 種 metadata／CommerceOrder 組合驗證。
+- 目前 150 models、115 forward migrations；既有 SQL／checksum 不變。

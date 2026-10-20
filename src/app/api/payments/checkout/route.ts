@@ -890,6 +890,8 @@ export async function POST(request: Request) {
       checkoutIdempotencyKey: parsed.data.idempotencyKey,
       transactionData: {
         vendorId: parsed.data.vendorId,
+        // F-038: merchant revenue in the monthly settlement.
+        purpose: "buyer_order",
         checkoutIdempotencyKey: parsed.data.idempotencyKey,
         providerName: provider.id,
         orderNumber: order,

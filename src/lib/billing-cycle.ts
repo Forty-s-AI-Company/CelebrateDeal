@@ -4,6 +4,7 @@ import {
   invoiceDueAt,
   invoiceNumber,
   StreamUsageReconciliationRequiredError,
+  UnclassifiedPaymentPurposeError,
 } from "@/lib/billing";
 import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
@@ -30,6 +31,7 @@ export type BillingCycleErrorCode =
   | "conflict"
   | "stream_reconciliation_required"
   | "unsupported_currency"
+  | "unclassified_payment_purpose"
   | "terminal_invoice_amount_conflict";
 
 /**
@@ -126,6 +128,7 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
       throw new BillingCycleError("stream_reconciliation_required");
     }
     if (error instanceof UnsupportedCurrencyError) throw new BillingCycleError("unsupported_currency");
+    if (error instanceof UnclassifiedPaymentPurposeError) throw new BillingCycleError("unclassified_payment_purpose");
     throw error;
   }
   const adjustmentAmountCents = existingSettlement?.adjustmentAmountCents ?? 0;

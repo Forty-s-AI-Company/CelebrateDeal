@@ -38,6 +38,7 @@ const settlementErrorMessages: Record<string, string> = {
   same_approver: "大額調整必須由另一位平台管理員覆核，申請人不能自行核准。",
   not_pending: "這筆調整申請已處理或已被新的申請取代，請重新整理。",
   unsupported_currency: "這個月份有非新台幣（TWD）的交易，月結不會混加不同幣別；請先人工核對該商家的交易。",
+  unclassified_payment_purpose: "這個月份有無法判定用途的付款（不是買家訂單、方案費或帳單款），月結不會猜測是否計入商家營收；請先由工程人員核對並更新交易用途後再產生月結。",
 };
 
 const settlementStatusMessages: Record<string, string> = {

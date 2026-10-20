@@ -1105,6 +1105,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       : await tx.paymentTransaction.create({
           data: {
             vendorId: vendor.id,
+            // Only the demo provider may create a transaction from a callback
+            // (providerRequiresExistingCheckout); platform plan and invoice
+            // payments always pre-create theirs, so this is a buyer sale.
+            purpose: "buyer_order",
             providerName: payload.provider,
             providerTradeNo: payload.providerTradeNo,
             orderNumber: payload.orderNumber,

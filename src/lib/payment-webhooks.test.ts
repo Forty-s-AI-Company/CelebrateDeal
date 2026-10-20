@@ -41,6 +41,8 @@ async function createCheckoutTransaction(input: {
   return getDb().paymentTransaction.create({
     data: {
       vendorId: input.vendorId,
+      // The checkout route marks buyer sales (F-038); settlement counts only these.
+      purpose: "buyer_order",
       providerName: input.provider ?? "demo",
       orderNumber: input.orderNumber,
       paymentMode: "platform",

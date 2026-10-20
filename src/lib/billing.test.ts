@@ -8,7 +8,7 @@ const dependencies = vi.hoisted(() => ({
     streamUsageLedgerEntry: { findMany: vi.fn() },
     streamUsageAllocationEntry: { findMany: vi.fn() },
     streamUsageReconciliation: { findFirst: vi.fn() },
-    paymentTransaction: { findMany: vi.fn() },
+    paymentTransaction: { findMany: vi.fn(), count: vi.fn() },
     refundRecord: { aggregate: vi.fn(), count: vi.fn() },
     affiliateCommissionLedgerEntry: { aggregate: vi.fn() },
   },
@@ -71,6 +71,7 @@ beforeEach(() => {
   dependencies.db.streamUsageAllocationEntry.findMany.mockResolvedValue([]);
   dependencies.db.streamUsageReconciliation.findFirst.mockResolvedValue(null);
   dependencies.db.paymentTransaction.findMany.mockResolvedValue(transactions);
+  dependencies.db.paymentTransaction.count.mockResolvedValue(0);
   dependencies.db.refundRecord.aggregate.mockResolvedValue(processedRefund(0));
   dependencies.db.refundRecord.count.mockResolvedValue(0);
   dependencies.db.affiliateCommissionLedgerEntry.aggregate.mockResolvedValue({
@@ -158,7 +159,17 @@ describe("calculateSettlement transaction service fee", () => {
 
     expect(settlement.transactionServiceFeeCents).toBe(600);
     expect(dependencies.db.refundRecord.aggregate).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", monthKey: "2026-07", status: "processed" },
+      where: {
+        vendorId: "vendor-1",
+        monthKey: "2026-07",
+        status: "processed",
+        paymentTransaction: {
+          OR: [
+            { purpose: "buyer_order" },
+            { purpose: "unclassified", primaryCommerceOrder: { isNot: null } },
+          ],
+        },
+      },
       _sum: {
         refundAmountCents: true,
         gatewayFeeRefundCents: true,
@@ -173,6 +184,45 @@ describe("calculateSettlement transaction service fee", () => {
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
     expect(settlement.transactionServiceFeeCents).toBe(0);
+  });
+});
+
+describe("F-038 settlement counts only buyer orders", () => {
+  it("selects buyer-order transactions and refunds only, never platform plan or invoice payments", async () => {
+    await calculateSettlement("vendor-1", "2026-07");
+
+    const buyerOrderScope = {
+      OR: [
+        { purpose: "buyer_order" },
+        { purpose: "unclassified", primaryCommerceOrder: { isNot: null } },
+      ],
+    };
+    expect(dependencies.db.paymentTransaction.findMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        status: { in: ["paid", "partially_refunded", "refunded"] },
+        occurredAt: { gte: new Date("2026-07-01T00:00:00.000Z"), lt: new Date("2026-08-01T00:00:00.000Z") },
+        ...buyerOrderScope,
+      },
+    });
+    expect(dependencies.db.refundRecord.aggregate).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ paymentTransaction: buyerOrderScope }),
+    }));
+  });
+
+  it("fails closed when a paid transaction of the month has no known purpose", async () => {
+    dependencies.db.paymentTransaction.count.mockResolvedValueOnce(1);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({ code: "unclassified_payment_purpose" });
+    expect(dependencies.db.paymentTransaction.count).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        status: { in: ["paid", "partially_refunded", "refunded"] },
+        occurredAt: { gte: new Date("2026-07-01T00:00:00.000Z"), lt: new Date("2026-08-01T00:00:00.000Z") },
+        purpose: "unclassified",
+        primaryCommerceOrder: { is: null },
+      },
+    });
   });
 });
 
