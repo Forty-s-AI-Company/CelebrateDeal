@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { CsrfField } from "@/components/csrf-field";
@@ -26,7 +27,7 @@ export default async function CourseCommunityManagement({ params, searchParams }
       <label className="mr-4"><input type="checkbox" name="isPinned" defaultChecked={post.isPinned} />置頂</label>
       <label className="mr-4"><input type="checkbox" name="isAnnouncement" defaultChecked={post.isAnnouncement} />公告</label>
       <label><input type="checkbox" name="hidden" defaultChecked={Boolean(post.hiddenAt)} />隱藏</label>
-      <button className="block rounded bg-blue-700 px-4 py-2 text-white">儲存討論設定</button>
+      <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="block min-h-11 rounded bg-blue-700 px-4 py-2 text-white">儲存討論設定</FormSubmitButton>
     </form>)}
     {posts.length > 20 ? <ButtonLink href={`/products/${encodeURIComponent(id)}/community?cursor=${encodeURIComponent(posts[19]!.id)}`}>下一頁討論</ButtonLink> : null}
   </>;

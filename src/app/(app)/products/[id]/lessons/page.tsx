@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { saveCourseLessonAction } from "@/app/actions/course-curriculum-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { ButtonLink, PageHeader } from "@/components/ui";
@@ -28,7 +29,7 @@ export default async function CourseLessonsPage({ params, searchParams }: {
       <label className="block">影片網址<input className="mt-1 block w-full rounded border p-2" name="videoUrl" type="url" maxLength={2048} placeholder="https://" defaultValue={lesson?.videoUrl ?? ""} /></label>
       <label className="block">影片秒數<input className="mt-1 block w-full rounded border p-2" name="durationSeconds" type="number" required min={0} max={86400} step={1} defaultValue={lesson?.durationSeconds ?? 0} /></label>
       <label className="flex gap-2"><input name="published" type="checkbox" defaultChecked={Boolean(lesson?.publishedAt)} />發布，讓有權益的學員可以學習</label>
-      <button type="submit" className="rounded bg-blue-700 px-4 py-2 font-semibold text-white">{lesson ? "儲存單元" : "新增單元"}</button>
+      <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-11 rounded bg-blue-700 px-4 py-2 font-semibold text-white">{lesson ? "儲存單元" : "新增單元"}</FormSubmitButton>
     </form>)}</div>
   </>;
 }
