@@ -8,13 +8,15 @@
 --
 -- Forward-only. Adds one enum and one NOT NULL column with a default, then
 -- backfills existing rows from server-owned data only:
+--   0. the demo provider never moves money: always "demo", excluded from the
+--      settlement without blocking it (Sandbox/staging history);
 --   1. metadata.billingPurpose written by the server-side checkout creators;
 --   2. a CommerceOrder whose primary payment is the row (buyer checkout).
 -- The explicit platform/invoice purposes win over a CommerceOrder link so a
 -- corrupted row can never turn platform money into merchant revenue.
 -- Anything else stays "unclassified"; calculateSettlement refuses a month
 -- that still contains such a paid row instead of guessing.
-CREATE TYPE "PaymentTransactionPurpose" AS ENUM ('buyer_order', 'platform_subscription', 'invoice_payment', 'unclassified');
+CREATE TYPE "PaymentTransactionPurpose" AS ENUM ('buyer_order', 'platform_subscription', 'invoice_payment', 'demo', 'unclassified');
 
 DO $$
 BEGIN
@@ -28,6 +30,7 @@ ALTER TABLE "PaymentTransaction"
 
 UPDATE "PaymentTransaction" AS payment
    SET "purpose" = CASE
+     WHEN payment."providerName" = 'demo' THEN 'demo'
      WHEN payment."metadata"->>'billingPurpose' = 'platform_subscription_checkout' THEN 'platform_subscription'
      WHEN payment."metadata"->>'billingPurpose' = 'invoice_payment' THEN 'invoice_payment'
      WHEN payment."metadata"->>'billingPurpose' = 'buyer_order' THEN 'buyer_order'

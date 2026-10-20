@@ -1826,11 +1826,13 @@ model PayUniLiveProbe {
 /// the monthly settlement; platform plan and invoice payments are money the
 /// merchant paid the platform. Backfilled from metadata.billingPurpose and
 /// CommerceOrder links; rows that could not be classified stay unclassified
-/// and make that month's settlement fail closed until reviewed.
+/// and make that month's settlement fail closed until reviewed. Demo-provider
+/// rows are always `demo`: never revenue and never blocking.
 enum PaymentTransactionPurpose {
   buyer_order
   platform_subscription
   invoice_payment
+  demo
   unclassified
 }
 

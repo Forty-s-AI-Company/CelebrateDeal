@@ -122,6 +122,17 @@ describe("F-038 settlement revenue excludes payments the merchant made to the pl
     await expect(db.settlement.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
   });
 
+  it("excludes demo payments and their refunds without blocking the month (review m-3)", async () => {
+    const vendor = await vendorWithPlatformPlan();
+    await paidTransaction(vendor.id, "buyer_order", 30_000);
+    const demo = await paidTransaction(vendor.id, "demo", 40_000);
+    await processedRefund(vendor.id, demo.id, 10_000);
+
+    const result = await generateSettlementForVendor(vendor.id, monthKey);
+
+    expect(result.settlement).toMatchObject({ grossRevenueCents: 30_000, refundAmountCents: 0, finalPayoutAmountCents: 30_000 });
+  });
+
   it("defaults a transaction created without a purpose to unclassified", async () => {
     const vendor = await vendorWithPlatformPlan();
     const created = await db.paymentTransaction.create({ data: { vendorId: vendor.id, providerName: "payuni" } });

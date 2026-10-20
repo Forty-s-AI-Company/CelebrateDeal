@@ -228,6 +228,13 @@ describe("F-038 settlement counts only buyer orders", () => {
     });
   });
 
+  it("does not block a merchant-collected (byo) month that pays out nothing (review m-3)", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce({ ...subscription, paymentMode: "byo" });
+    dependencies.db.paymentTransaction.count.mockResolvedValueOnce(1);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).resolves.toMatchObject({ payoutableAmountCents: 0 });
+  });
+
   it("fails closed when a paid transaction of the month has no known purpose", async () => {
     dependencies.db.paymentTransaction.count.mockResolvedValueOnce(1);
 

@@ -1,3 +1,4 @@
+import { paymentTransactionPurposeFor } from "@/lib/payment-transaction-purpose";
 import { reconcileAffiliatePendingPayout } from "@/lib/affiliate-payout-accounting";
 import { accrueMerchantAffiliatePlan } from "@/lib/merchant-affiliate-policy-service";
 import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
@@ -1113,9 +1114,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           data: {
             vendorId: vendor.id,
             // Only the demo provider may create a transaction from a callback
-            // (providerRequiresExistingCheckout); platform plan and invoice
-            // payments always pre-create theirs, so this is a buyer sale.
-            purpose: "buyer_order",
+            // (providerRequiresExistingCheckout); it never moves money.
+            purpose: paymentTransactionPurposeFor(payload.provider, "buyer_order"),
             providerName: payload.provider,
             providerTradeNo: payload.providerTradeNo,
             orderNumber: payload.orderNumber,

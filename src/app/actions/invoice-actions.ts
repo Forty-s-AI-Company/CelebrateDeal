@@ -1,5 +1,6 @@
 "use server";
 
+import { paymentTransactionPurposeFor } from "@/lib/payment-transaction-purpose";
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -162,7 +163,7 @@ export async function payInvoiceAction(formData: FormData) {
           data: {
             vendorId: vendor.id,
             // F-038: the merchant pays the platform; never merchant revenue.
-            purpose: "invoice_payment",
+            purpose: paymentTransactionPurposeFor(currentProvider.id, "invoice_payment"),
             providerName: currentProvider.id,
             orderNumber: order,
             paymentMode: "platform",

@@ -1,3 +1,4 @@
+import { paymentTransactionPurposeFor } from "@/lib/payment-transaction-purpose";
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { isSupportedCheckoutCurrency } from "@/lib/checkout-currency";
 import { assertFlashSaleAdmission, consumeFlashSaleQuote, flashSaleBearerFromRequest, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
@@ -890,8 +891,8 @@ export async function POST(request: Request) {
       checkoutIdempotencyKey: parsed.data.idempotencyKey,
       transactionData: {
         vendorId: parsed.data.vendorId,
-        // F-038: merchant revenue in the monthly settlement.
-        purpose: "buyer_order",
+        // F-038: merchant revenue in the monthly settlement (demo never is).
+        purpose: paymentTransactionPurposeFor(provider.id, "buyer_order"),
         checkoutIdempotencyKey: parsed.data.idempotencyKey,
         providerName: provider.id,
         orderNumber: order,

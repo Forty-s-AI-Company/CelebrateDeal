@@ -296,7 +296,11 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   if (!subscription) {
     throw new Error("找不到有效訂閱方案，無法產生月結。");
   }
-  if (unclassifiedTransactionCount > 0 || unclassifiedRefundCount > 0) throw new UnclassifiedPaymentPurposeError();
+  // Review m-3: only a platform-collected month pays out merchant revenue; a
+  // merchant-collected (byo) month pays 0 either way and is not blocked.
+  if (subscription.paymentMode === "platform" && (unclassifiedTransactionCount > 0 || unclassifiedRefundCount > 0)) {
+    throw new UnclassifiedPaymentPurposeError();
+  }
   // Settlement sums cents across transactions; mixing currencies would pay out
   // a meaningless total. Refuse instead of adding non-TWD cents to TWD.
   if (nonTwdRefundCount > 0
