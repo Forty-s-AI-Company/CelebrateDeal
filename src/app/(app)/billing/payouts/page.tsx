@@ -15,10 +15,9 @@ function statusTone(status: string) {
 }
 
 type BillingPayoutsSearchParams = { payoutAccount?: string | string[] };
+type BillingPayoutsPageProps = { searchParams?: Promise<BillingPayoutsSearchParams> };
 
-export default async function BillingPayoutsPage({
-  searchParams,
-}: { searchParams?: Promise<BillingPayoutsSearchParams> } = {}) {
+export default async function BillingPayoutsPage({ searchParams }: BillingPayoutsPageProps) {
   const { vendor, member } = await requireVendorFinance("/billing/payouts");
   const query = (await searchParams) ?? {};
   const payoutAccountResult = typeof query.payoutAccount === "string" ? query.payoutAccount : undefined;
@@ -30,6 +29,7 @@ export default async function BillingPayoutsPage({
       bankAccountLegacyName: true,
       bankCodeLegacy: true,
       bankAccountLegacyNumber: true,
+      payoutEligibleAt: true,
     },
     orderBy: { createdAt: "asc" },
     take: 2,

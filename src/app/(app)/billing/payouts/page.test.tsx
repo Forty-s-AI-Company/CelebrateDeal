@@ -73,7 +73,7 @@ beforeEach(() => {
 
 describe("/billing/payouts route", () => {
   it("authenticates the current vendor and scopes payout batches and items to it", async () => {
-    await BillingPayoutsPage();
+    await BillingPayoutsPage({});
 
     expect(mocks.requireVendorFinance).toHaveBeenCalledExactlyOnceWith("/billing/payouts");
     expect(mocks.findMany).toHaveBeenCalledWith({
@@ -90,7 +90,7 @@ describe("/billing/payouts route", () => {
   });
 
   it("does not render a bank export control or another vendor's payout data from a shared batch", async () => {
-    const html = renderToStaticMarkup(await BillingPayoutsPage());
+    const html = renderToStaticMarkup(await BillingPayoutsPage({}));
 
     expect(html).toContain("目前商家");
     expect(html).toContain("812");
@@ -116,7 +116,7 @@ describe("/billing/payouts route", () => {
       bankCodeLegacy: "812",
       bankAccountLegacyNumber: "****4321",
     }]);
-    const html = renderToStaticMarkup(await BillingPayoutsPage());
+    const html = renderToStaticMarkup(await BillingPayoutsPage({}));
 
     expect(mocks.paymentAccountFindMany).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       where: { vendorId: currentVendor.id, mode: "platform" },
@@ -135,7 +135,7 @@ describe("/billing/payouts route", () => {
       bankCodeLegacy: "700",
       bankAccountLegacyNumber: "00123456789",
     }]);
-    const html = renderToStaticMarkup(await BillingPayoutsPage());
+    const html = renderToStaticMarkup(await BillingPayoutsPage({}));
 
     expect(html).toContain("****6789");
     expect(html).not.toContain("00123456789");
@@ -143,15 +143,30 @@ describe("/billing/payouts route", () => {
   });
 
   it("shows the edit form only to the vendor owner", async () => {
-    const accountantHtml = renderToStaticMarkup(await BillingPayoutsPage());
+    const accountantHtml = renderToStaticMarkup(await BillingPayoutsPage({}));
     expect(accountantHtml).not.toContain('name="accountNumber"');
     expect(accountantHtml).toContain("只有商家擁有者可以修改撥款帳號");
 
     mocks.requireVendorFinance.mockResolvedValue({ vendor: currentVendor, member: { role: "owner" } });
-    const ownerHtml = renderToStaticMarkup(await BillingPayoutsPage());
+    const ownerHtml = renderToStaticMarkup(await BillingPayoutsPage({}));
     expect(ownerHtml).toContain('name="accountNumber"');
+    expect(ownerHtml).toContain('name="totpCode"');
     expect(ownerHtml).toContain('name="_csrf"');
     expect(ownerHtml).not.toContain('name="vendorId"');
+  });
+
+  it("explains the 24-hour wait for a recently changed account", async () => {
+    mocks.paymentAccountFindMany.mockResolvedValue([{
+      status: "pending_verification",
+      bankAccountEncrypted: "v2.synthetic.envelope",
+      bankAccountLegacyName: "王＊＊",
+      bankCodeLegacy: "812",
+      bankAccountLegacyNumber: "****4321",
+      payoutEligibleAt: new Date("2026-10-22T12:00:00.000Z"),
+    }]);
+    const html = renderToStaticMarkup(await BillingPayoutsPage({}));
+    expect(html).toContain("等待生效");
+    expect(html).toContain("需等待 24 小時");
   });
 
   it("renders a localized result message from the action redirect", async () => {
@@ -164,7 +179,7 @@ describe("/billing/payouts route", () => {
   it("refuses to pick one of several platform accounts", async () => {
     const row = { status: "active", bankAccountEncrypted: null, bankAccountLegacyName: "甲＊", bankCodeLegacy: "812", bankAccountLegacyNumber: "****1111" };
     mocks.paymentAccountFindMany.mockResolvedValue([row, { ...row, bankAccountLegacyNumber: "****2222" }]);
-    const html = renderToStaticMarkup(await BillingPayoutsPage());
+    const html = renderToStaticMarkup(await BillingPayoutsPage({}));
     expect(html).toContain("此商家有多筆撥款帳號紀錄");
     expect(html).not.toContain("****1111");
   });
