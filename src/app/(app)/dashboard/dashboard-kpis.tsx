@@ -1,12 +1,14 @@
 import { Card } from "@/components/ui";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
+import { formatCurrency } from "@/lib/format";
 import {
   createDashboardMeasurement,
   dashboardMeasurementAttributes,
   emitDashboardMeasurement,
   readDashboardAnalyticsCounts,
   readDashboardEmailCounts,
+  readDashboardOrderSummary,
   readDashboardRegistrationCounts,
 } from "@/lib/dashboard-read-model";
 import { realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
@@ -21,6 +23,8 @@ type DashboardKpiData = {
   viewerMessageCount: number;
   scheduledMessageCount: number;
   orderCreatedCount: number;
+  paidOrderCount: number;
+  paidAmountCents: number;
   emailSentCount: number;
   emailFailedCount: number;
   viewCount: number;
@@ -46,9 +50,9 @@ async function loadDashboardKpis(vendorId: string, diagnosticFailureScope: strin
       measurement.measure("scheduled-message.count", () => db.interactionEvent.count({ where: scheduledMessageEventWhere({ vendorId }) })),
     ]);
     if (diagnosticFailureScope === "analytics") throw new Error("dashboard_diagnostic_analytics_failure");
-    const [analyticsCounts, orderCreatedCount, emailCounts] = await Promise.all([
+    const [analyticsCounts, orderSummary, emailCounts] = await Promise.all([
       measurement.measure("analytics.aggregate", () => readDashboardAnalyticsCounts(db, vendorId, sevenDaysAgo)),
-      measurement.measure("order.count", () => db.commerceOrder.count({ where: { vendorId, createdAt: { gte: sevenDaysAgo } } })),
+      measurement.measure("order.grouped-summary", () => readDashboardOrderSummary(db, vendorId, sevenDaysAgo)),
       measurement.measure("email.grouped-count", () => readDashboardEmailCounts(db, vendorId, sevenDaysAgo)),
     ]);
     const funnel = calculateAnalyticsFunnel({
@@ -65,7 +69,9 @@ async function loadDashboardKpis(vendorId: string, diagnosticFailureScope: strin
         verifiedRegistrationCount: registrationCounts.verified,
         viewerMessageCount,
         scheduledMessageCount,
-        orderCreatedCount,
+        orderCreatedCount: orderSummary.created,
+        paidOrderCount: orderSummary.paidOrders,
+        paidAmountCents: orderSummary.paidAmountCents,
         emailSentCount: emailCounts.sent,
         emailFailedCount: emailCounts.failed,
         viewCount: analyticsCounts.views,
@@ -96,6 +102,8 @@ function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
     { label: "完成 Email 驗證", value: data.verifiedRegistrationCount, tone: "green" },
     { label: "商品點擊", value: data.productClicks, tone: "orange" },
     { label: "近 7 天訂單建立", value: data.orderCreatedCount, tone: "orange" },
+    { label: "近 7 天已付款訂單（不含待付款）", value: data.paidOrderCount, tone: "green" },
+    { label: "近 7 天已付款金額（TWD）", value: formatCurrency(data.paidAmountCents, "TWD"), tone: "green" },
     { label: "Email 寄送成功", value: data.emailSentCount, tone: "green" },
     { label: "Email 寄送失敗", value: data.emailFailedCount, tone: "orange" },
     { label: "已驗證報名／觀看", value: `${conversionRate}%`, tone: "gray" },
@@ -109,7 +117,7 @@ function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
     || data.funnel.some((step) => step.count !== 0);
   const metrics = (
     <>
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {kpis.map((kpi) => (
           <Card key={kpi.label}>
             <p className="text-sm text-slate-600">{kpi.label}</p>

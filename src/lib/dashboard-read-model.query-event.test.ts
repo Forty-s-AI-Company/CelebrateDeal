@@ -128,6 +128,8 @@ async function runDashboardKpiEvidence({ poolOne, expectedReadOperationCount }: 
       productClicks: 0,
       ctaClicks: 0,
       orders: 0,
+      paidOrders: 0,
+      paidAmountCents: 0,
       emailSent: 0,
       emailFailed: 0,
       realViewerMessages: 0,

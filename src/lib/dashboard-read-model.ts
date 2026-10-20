@@ -82,6 +82,9 @@ export type DashboardKpiCounts = {
   productClicks: number;
   ctaClicks: number;
   orders: number;
+  /** 已付款（status=paid）、TWD 的訂單數；不含待付款、已退款與部分退款。 */
+  paidOrders: number;
+  paidAmountCents: number;
   emailSent: number;
   emailFailed: number;
   realViewerMessages: number;
@@ -258,6 +261,40 @@ export async function readDashboardAnalyticsCounts(
   };
 }
 
+export type DashboardOrderSummary = {
+  created: number;
+  paidOrders: number;
+  paidAmountCents: number;
+};
+
+/**
+ * 單一 groupBy 取得「建立數」與「已付款數／金額」，避免逐筆或多次查詢（F-116）。
+ * 只計 status=paid 且幣別 TWD；金額來自伺服器端訂單紀錄。
+ */
+export async function readDashboardOrderSummary(
+  db: DashboardDb,
+  vendorId: string,
+  createdAt: Date,
+): Promise<DashboardOrderSummary> {
+  const rows = await db.commerceOrder.groupBy({
+    by: ["status", "currency"],
+    where: { vendorId, createdAt: { gte: createdAt } },
+    _count: { _all: true },
+    _sum: { totalAmountCents: true },
+  });
+  let created = 0;
+  let paidOrders = 0;
+  let paidAmountCents = 0;
+  for (const row of rows) {
+    created += row._count._all;
+    if (row.status === "paid" && row.currency === "TWD") {
+      paidOrders += row._count._all;
+      paidAmountCents += row._sum.totalAmountCents ?? 0;
+    }
+  }
+  return { created, paidOrders, paidAmountCents };
+}
+
 export async function readDashboardKpiCounts(
   db: DashboardDb,
   vendorId: string,
@@ -266,9 +303,7 @@ export async function readDashboardKpiCounts(
 ): Promise<{ counts: DashboardKpiCounts; measurement: DashboardQueryMeasurement }> {
   const registrations = await measuredQuery(measurement, () => readDashboardRegistrationCounts(db, vendorId, createdAt));
   const analytics = await measuredQuery(measurement, () => readDashboardAnalyticsCounts(db, vendorId, createdAt));
-  const orders = await measuredQuery(measurement, () => db.commerceOrder.count({
-    where: { vendorId, createdAt: { gte: createdAt } },
-  }));
+  const orders = await measuredQuery(measurement, () => readDashboardOrderSummary(db, vendorId, createdAt));
   const email = await measuredQuery(measurement, () => readDashboardEmailCounts(db, vendorId, createdAt));
   const realViewerMessages = await measuredQuery(measurement, () => db.liveChatMessage.count({
     where: realViewerMessageWhere({ vendorId, createdAtGte: createdAt }),
@@ -284,7 +319,9 @@ export async function readDashboardKpiCounts(
       views: analytics.views,
       productClicks: analytics.productClicks,
       ctaClicks: analytics.ctaClicks,
-      orders,
+      orders: orders.created,
+      paidOrders: orders.paidOrders,
+      paidAmountCents: orders.paidAmountCents,
       emailSent: email.sent,
       emailFailed: email.failed,
       realViewerMessages,
