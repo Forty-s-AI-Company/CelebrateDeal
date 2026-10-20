@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { automationCustomerKeyHash } from "../src/lib/automation-workflow";
@@ -9,7 +10,7 @@ import {
   ANONYMIZED_TEXT,
   anonymizeCustomer,
   AnonymizeTargetRefusedError,
-  assertAnonymizeTarget,
+  resolveAnonymizeTarget,
 } from "./anonymize-customer";
 
 const vendorIds: string[] = [];
@@ -46,7 +47,7 @@ async function createSubmission(fixture: Fixture, email: string, options: { stor
   });
 }
 
-async function createOrder(fixture: Fixture, email: string) {
+async function createOrder(fixture: Fixture, email: string, options: { legacy?: boolean } = {}) {
   const db = getDb();
   const orderId = `order${randomUUID().replace(/-/g, "")}`;
   const pii = protectCommerceOrderPii({
@@ -57,7 +58,7 @@ async function createOrder(fixture: Fixture, email: string) {
     data: {
       id: orderId,
       vendorId: fixture.vendorId,
-      automationCustomerKeyHash: automationCustomerKeyHash(fixture.vendorId, email),
+      automationCustomerKeyHash: options.legacy ? null : automationCustomerKeyHash(fixture.vendorId, email),
       orderNumber: `SYN-${randomUUID()}`,
       checkoutIdempotencyKey: randomUUID(),
       checkoutIdentityHash: pii.checkoutIdentityHash,
@@ -82,6 +83,7 @@ afterEach(async () => {
     await db.liveChatMessage.deleteMany({ where: { vendorId } });
     await db.formSubmission.deleteMany({ where: { form: { vendorId } } });
     await db.commerceOrder.deleteMany({ where: { vendorId } });
+    await db.blacklist.deleteMany({ where: { vendorId } });
     await db.live.deleteMany({ where: { vendorId } });
     await db.registrationForm.deleteMany({ where: { vendorId } });
     await db.vendor.deleteMany({ where: { id: vendorId } });
@@ -167,18 +169,70 @@ describe("anonymizeCustomer (PostgreSQL)", () => {
       .toMatchObject({ formSubmissions: 0, commerceOrders: 0, liveChatMessages: 0 });
   });
 
+  it("finds legacy orders without a stored hash and email blacklist entries, and re-runs to all zeros", async () => {
+    const fixture = await createVendorFixture("legacy");
+    const email = `legacy-${randomUUID()}@example.test`;
+    const legacyOrder = await createOrder(fixture, email.toUpperCase(), { legacy: true });
+    const unrelatedLegacy = await createOrder(fixture, `someone-${randomUUID()}@example.test`, { legacy: true });
+    const blocked = await getDb().blacklist.create({
+      data: { vendorId: fixture.vendorId, identifier: email, identifierType: "email", reason: "spam", notes: "王小明 多次洗版" },
+    });
+    const customerKeyHash = automationCustomerKeyHash(fixture.vendorId, email);
+
+    const dry = await anonymizeCustomer(getDb(), { vendorId: fixture.vendorId, customerKeyHash, execute: false });
+    expect(dry).toMatchObject({ commerceOrders: 1, blacklistEntries: 1, legacyOrdersUnreadable: 0 });
+
+    await anonymizeCustomer(getDb(), { vendorId: fixture.vendorId, customerKeyHash, execute: true });
+    const stored = await getDb().commerceOrder.findUniqueOrThrow({ where: { id: legacyOrder.id } });
+    expect(stored).toMatchObject({ buyerMaskedName: ANONYMIZED_NAME, shippingEncryptedEnvelope: null, totalAmountCents: 120_000 });
+    expect(await getDb().commerceOrder.findUniqueOrThrow({ where: { id: unrelatedLegacy.id } }))
+      .toMatchObject({ buyerEncryptedEnvelope: unrelatedLegacy.buyerEncryptedEnvelope });
+    const blacklist = await getDb().blacklist.findUniqueOrThrow({ where: { id: blocked.id } });
+    expect(blacklist.identifier).toMatch(/@redacted\.invalid$/);
+    expect(blacklist.notes).toBeNull();
+
+    const rerun = await anonymizeCustomer(getDb(), { vendorId: fixture.vendorId, customerKeyHash, execute: false });
+    expect(Object.values(rerun).every((count) => count === 0)).toBe(true);
+  });
+
   it("rejects malformed identifiers before touching the database", async () => {
     await expect(anonymizeCustomer(getDb(), { vendorId: "bad id", customerKeyHash: "x", execute: false })).rejects.toThrow("Invalid vendor or customer identifier.");
   });
 });
 
-describe("assertAnonymizeTarget", () => {
-  it("allows only a loopback celebratedeal database or the approved workflow", () => {
-    const remote = "postgresql://user:pw@db.example.test:5432/postgres"; // secret-scan: allow-test-fixture
-    expect(assertAnonymizeTarget({ DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5433/celebratedeal_test" })).toBe("loopback");
-    expect(() => assertAnonymizeTarget({ DATABASE_URL: remote })).toThrow(AnonymizeTargetRefusedError);
-    expect(() => assertAnonymizeTarget({ DATABASE_URL: remote, PERSONAL_DATA_REQUEST_WORKFLOW: "true" })).toThrow(AnonymizeTargetRefusedError);
-    expect(() => assertAnonymizeTarget({ DATABASE_URL: remote, GITHUB_ACTIONS: "true" })).toThrow(AnonymizeTargetRefusedError);
-    expect(assertAnonymizeTarget({ DATABASE_URL: remote, PERSONAL_DATA_REQUEST_WORKFLOW: "true", GITHUB_ACTIONS: "true" })).toBe("workflow");
+describe("resolveAnonymizeTarget", () => {
+  const remote = "postgresql://user:pw@db.example.test:5432/postgres"; // secret-scan: allow-test-fixture
+  const loopback = "postgresql://postgres:postgres@127.0.0.1:5433/celebratedeal_test";
+
+  it("allows a loopback celebratedeal database and pins exactly that URL", () => {
+    expect(resolveAnonymizeTarget({ DATABASE_URL: loopback })).toEqual({ url: loopback, target: "loopback" });
+  });
+
+  it("refuses every remote target while no workflow is approved, whatever the environment claims", () => {
+    for (const env of [
+      { DATABASE_URL: remote },
+      { DATABASE_URL: remote, GITHUB_ACTIONS: "true", PERSONAL_DATA_REQUEST_WORKFLOW: "true" },
+      { DATABASE_URL: remote, GITHUB_ACTIONS: "true", ANONYMIZE_CUSTOMER_WORKFLOW: "personal-data-request" },
+      { DATABASE_URL: "" },
+    ]) {
+      expect(() => resolveAnonymizeTarget(env)).toThrow(AnonymizeTargetRefusedError);
+    }
+  });
+
+  it("accepts a remote target only for a reviewed workflow entry running on its platform", () => {
+    const approved = { "personal-data-request": (env: Readonly<Record<string, string | undefined>>) => env.GITHUB_WORKFLOW_REF === "owner/repo/.github/workflows/personal-data-request.yml@refs/heads/master" };
+    const env = { DATABASE_URL: remote, ANONYMIZE_CUSTOMER_WORKFLOW: "personal-data-request" };
+    expect(() => resolveAnonymizeTarget(env, approved)).toThrow(AnonymizeTargetRefusedError);
+    expect(resolveAnonymizeTarget({ ...env, GITHUB_WORKFLOW_REF: "owner/repo/.github/workflows/personal-data-request.yml@refs/heads/master" }, approved).target).toBe("workflow");
+  });
+
+  it("the CLI refuses --execute without the confirmation string before touching data", () => {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "scripts/anonymize-customer.ts", "--vendor-id", "vendor", "--customer-key-hash", "a".repeat(43), "--execute"], {
+      env: { PATH: process.env.PATH ?? "", DATABASE_URL: loopback } as unknown as NodeJS.ProcessEnv,
+      encoding: "utf8",
+      timeout: 60_000,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("target-refused:confirmation-missing");
   });
 });

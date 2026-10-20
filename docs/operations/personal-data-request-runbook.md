@@ -16,15 +16,17 @@
 ## 2. 定位資料
 
 - 每位客戶在每個商家都有一個不可逆的識別碼 `customerKeyHash`＝`HMAC-SHA256(vendorId + "\n" + 小寫 Email)`（`automationCustomerKeyHash`，金鑰由 app 的 sensitive-data key 衍生）。同一個 Email 在不同商家的 hash 不同，因此一次只處理一個商家。
-- 工具會用 hash 找到：`FormSubmission`、`CommerceOrder`（`automationCustomerKeyHash`）、`ConsultationBooking`、`CourseCommunityPost`／`Reply`、`CustomerCrmRecord` 的顧問筆記、`StudentPortalAccessToken`；再由報名紀錄找到 `LiveChatMessage`、`LivePrivateChatMessage`。舊資料若 `customerKeyHash` 為 NULL，工具會以 Email 重新計算 hash 比對。
+- 工具會用 hash 找到：`FormSubmission`、`CommerceOrder`（`automationCustomerKeyHash`）、`ConsultationBooking`、`CourseCommunityPost`／`Reply`、`CustomerCrmRecord` 的顧問筆記、`StudentPortalAccessToken`；再由報名紀錄找到 `LiveChatMessage`、`LivePrivateChatMessage`。
+- 沒有存 hash 的舊資料也會掃：報名與預約以 Email 重算 hash；`automationCustomerKeyHash` 為 NULL 的舊訂單在記憶體中解密買家 envelope 取 Email 重算（不輸出內容），解不開的筆數列在 `legacyOrdersUnreadable`，需人工確認；`Blacklist` 的 Email 名單（明文 `identifier`）同樣以 Email 重算比對。
 - 計算 hash 不需要把 Email 寫在指令列：用環境變數 `ANONYMIZE_CUSTOMER_EMAIL` 傳入，工具在程序內計算後即丟棄。
 
 ## 3. 先 dry run
 
-工具只接受兩種目標，其餘一律在連線前拒絕：
+工具的目標檢查與 `npm run db:migrate:deploy`（`scripts/db-migrate-guard.ts`）相同，在連線前完成，並把通過檢查的 URL 直接交給 Prisma client，`.env` 檔不能再改變目標：
 
-- loopback 上的 `celebratedeal_*` 白名單庫（演練用）。
-- 經核准的 GitHub Actions workflow：`GITHUB_ACTIONS=true` 且 `PERSONAL_DATA_REQUEST_WORKFLOW=true`。Production 只能走這條路，需 owner 核准；workflow 尚未建立，第一次處理正式請求前由 owner 決定是否建立，或改由 owner 在受控環境手動執行。
+- loopback 上的 `celebratedeal_*` 白名單庫（演練用）一律允許。
+- 其他目標必須由 `ANONYMIZE_CUSTOMER_WORKFLOW` 指名 `scripts/anonymize-customer.ts` 內 `APPROVED_ANONYMIZE_WORKFLOWS` 的一個項目，並符合該項目的平台檢查（例如 `GITHUB_WORKFLOW_REF` 等於指定 workflow 檔加 `@refs/heads/master`）。這張表目前是空的，所以**所有遠端目標都會被拒絕**；新增項目要經 PR 審查。Production 請求在 workflow 建立前，由 owner 決定是否建立，或在受控環境由 owner 處理。
+- 這是防止誤用的檢查，不是存取控制：持有資料庫憑證的人可以自行繞過，真正的保護是正式憑證的保管。
 
 ```bash
 # 預設 dry run：只輸出各表筆數，不改資料
@@ -38,14 +40,15 @@ npx tsx scripts/anonymize-customer.ts --vendor-id <vendorId> --customer-key-hash
 
 ## 4. 執行去識別化
 
-確認 dry run 筆數合理、商家已知悉後執行：
+確認 dry run 筆數合理、商家已知悉後執行（必須同時帶 `--execute` 與確認字串）：
 
 ```bash
+ANONYMIZE_CUSTOMER_CONFIRM=ANONYMIZE_CUSTOMER_PII \
 ANONYMIZE_CUSTOMER_EMAIL='<請求者 Email>' \
   npx tsx scripts/anonymize-customer.ts --vendor-id <vendorId> --execute
 ```
 
-全部在一個 Serializable 交易內完成，失敗會整批回滾，可直接重跑。完成後再跑一次 dry run，應全部為 0（hash 連結已清除）。
+全部在一個 Serializable 交易內完成，失敗會整批回滾，可直接重跑。完成後再跑一次 dry run，所有筆數應為 0：報名、訂單、預約、黑名單的 hash 或 Email 已改寫；社群貼文／回覆與顧問筆記雖然保留 hash，但只計算內容尚未改寫的列。唯一的例外是 `legacyOrdersUnreadable`（無法解密的舊訂單），它不會因執行而歸零，需人工確認。
 
 ### 會被覆寫的欄位
 
@@ -56,6 +59,7 @@ ANONYMIZE_CUSTOMER_EMAIL='<請求者 Email>' \
 | `LivePrivateChatMessage` | 以原本的加密範圍重新加密固定文字 |
 | `CommerceOrder` | 買家 envelope 以固定文字重新加密；遮罩姓名／Email 改為「已去識別化」；電話、收件 envelope 與摘要、追蹤 context 清空；`checkoutIdentityHash` 改為去識別後的指紋；`automationCustomerKeyHash` 清空 |
 | `ConsultationBooking` | 姓名、Email、電話、答案、會議連結改寫或清空，`customerKeyHash` 清空 |
+| `Blacklist`（Email） | `identifier` 改為每列唯一的 `anonymized+<id>@redacted.invalid`、`notes` 清空；封鎖因此不再對此人生效，需告知商家 |
 | `CourseCommunityPost`／`Reply` | 作者名稱與內容改為固定文字（保留列，避免討論串斷裂） |
 | `ConsultantNote` | 筆記內容改為固定文字 |
 | `StudentPortalAccessToken` | 刪除（登出學員入口） |
@@ -64,7 +68,7 @@ ANONYMIZE_CUSTOMER_EMAIL='<請求者 Email>' \
 
 - 訂單金額、狀態、品項、付款、退款、佣金、結算、撥款：會計與稅務紀錄（商業會計法、稅捐稽徵法），不刪除。
 - 電子發票與 `invoiceRequestEncryptedEnvelope`：發票資料依稅法保存。
-- 以 hash 為鍵的假名資料：`CustomerTagAssignment`、`CustomerCrmRecord`（狀態）、`SalesProjectCustomer`、`CourseLessonProgress`、`LearnerNotificationPreference`、`AutomationVoucherGrant`、`CourseCommunityReaction`。這些表只有 hash，沒有直接識別資料；由於報名與訂單上的 hash 已清空，無法再與姓名或 Email 連結。若請求者要求連同學習紀錄一起刪除，需另外由 owner 決定是否刪除課程權益。
+- 以 hash 為鍵的**假名化**資料（不是匿名資料）：`CustomerTagAssignment`、`CustomerCrmRecord`（狀態）、`SalesProjectCustomer`、`CourseLessonProgress`、`LearnerNotificationPreference`、`AutomationVoucherGrant`、`CourseCommunityReaction`，以及保留 hash 的社群貼文／回覆。這些表沒有直接識別資料，但持有 app 金鑰與請求者 Email 的人可以重算 hash 連回來。保留是為了讓學習紀錄與課程權益繼續運作；若請求者要求連同學習紀錄一起刪除，需另外由 owner 決定是否刪除課程權益。
 
 ### 工具不處理、需人工確認
 
