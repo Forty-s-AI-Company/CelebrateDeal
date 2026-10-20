@@ -59,7 +59,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 - #452 第二批 B：全表 RLS migration、RLS 目錄測試、migration 順序與 drift 檢查（10-20，reviewer 三輪後可合併）
 - staging：10-20 以 `staging-migrate.yml`（deploy）套用 master 的 migration 兩次（註冊同意表、全表 RLS）；alias 切換仍待 O-18
 
-**第二批（L0 可繞過＋L1）**：#452 已合併；#453（C：錯誤頁 retry、LINE 綁定、狀態中文、健康指示、已付款 KPI、常青場提示）審查通過等 CI；#454（A：只收 TWD、未知訂單封鎖、退款事件 ID、migrate 防呆）複審中。
+**第二批（L0 可繞過＋L1）**：#452、#454（10-20）、#453（10-21）全部合併。累計合併 PR：#445、#446、#447、#448、#449、#452、#453、#454。
 
 **L0 核心 18 項狀態（10-20）**：A1、A2、A3（待 Sandbox 樣本驗證）、A4、B2、B3、C1～C6、D1 已合併；B1 唯讀查證完成（非阻擋）；B4 真實還原演練等 O-4 Supabase 升級。
 
