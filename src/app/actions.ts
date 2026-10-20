@@ -31,7 +31,7 @@ import {
 } from "@/lib/payment-refund-accounting";
 import { executePayUniRefund } from "@/lib/payuni-refund-execution";
 import { toSlug } from "@/lib/format";
-import { isLiveSlugTaken, isUniqueConstraintError } from "@/lib/live-slug";
+import { isLiveSlugRace, liveSlugTakenPath, resolveLiveSlugConflict } from "@/lib/live-slug";
 import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
@@ -847,39 +847,18 @@ async function commitLiveDraftOrRedirect(
     return await commitLiveDraft(input);
   } catch (error) {
     if (error instanceof SalesProjectBindingError) redirect(invalidReferencePath);
-    // 兩人同時搶同一個直播網址時，資料庫唯一鍵會擋下第二個；交易已回滾，草稿保留，
-    // 回到欄位層級的錯誤，而不是整頁 500。
-    if (isUniqueConstraintError(error) && await isLiveSlugTaken(input.db, input.data.slug, input.liveId)) {
-      redirect(slugTakenPath);
-    }
+    if (await isLiveSlugRace(input.db, error, input.data.slug, input.liveId)) redirect(slugTakenPath);
     throw error;
   }
 }
 
-function liveSlugTakenPath(liveId: string | null, createDraftSuffix: string) {
-  return liveId
-    ? `/lives/${encodeURIComponent(liveId)}/edit?error=slug_taken`
-    : `/lives/new?error=slug_taken${createDraftSuffix}`;
-}
-
-/** 直播網址全站唯一：送出前先檢查，撞名時回到欄位錯誤並保留草稿。 */
+/** 直播網址全站唯一：送出前先檢查（順序見 resolveLiveSlugConflict），撞名時回到欄位錯誤並保留草稿。 */
 async function requireLiveSlugAvailable(
   db: PrismaClient,
-  input: {
-    vendorId: string;
-    slug: string;
-    existingLive: { id: string } | null;
-    draftClaim: { draftId: string; revision: number; conflictPath: string };
-    slugTakenPath: string;
-  },
+  input: Parameters<typeof resolveLiveSlugConflict>[1] & { draftClaim: { conflictPath: string }; slugTakenPath: string },
 ) {
-  if (!(await isLiveSlugTaken(db, input.slug, input.existingLive?.id ?? null))) return;
-  // 順序：ownership → 草稿／版本衝突 → 撞名。草稿已被用掉或版本過期時，優先回報草稿衝突。
-  const claimable = await db.liveStudioDraft.findFirst({
-    where: { id: input.draftClaim.draftId, vendorId: input.vendorId, revision: input.draftClaim.revision, consumedAt: null, expiresAt: { gt: new Date() } },
-    select: { id: true },
-  });
-  redirect(claimable ? input.slugTakenPath : input.draftClaim.conflictPath);
+  const conflict = await resolveLiveSlugConflict(db, input);
+  if (conflict) redirect(conflict === "draft_conflict" ? input.draftClaim.conflictPath : input.slugTakenPath);
 }
 
 function parseSubmittedLiveDraft(

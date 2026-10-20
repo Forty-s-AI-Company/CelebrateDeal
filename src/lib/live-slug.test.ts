@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isLiveSlugTaken, isUniqueConstraintError, liveSlugFromTitle, randomLiveSlugSuffix } from "./live-slug";
+import { isLiveSlugRace, isLiveSlugTaken, isUniqueConstraintError, liveSlugFromTitle, liveSlugTakenPath, randomLiveSlugSuffix, resolveLiveSlugConflict } from "./live-slug";
 import { toSlug } from "./format";
 
 describe("liveSlugFromTitle", () => {
@@ -45,5 +45,49 @@ describe("isUniqueConstraintError", () => {
     expect(isUniqueConstraintError({ code: "P2034" })).toBe(false);
     expect(isUniqueConstraintError(new Error("x"))).toBe(false);
     expect(isUniqueConstraintError(null)).toBe(false);
+  });
+});
+
+describe("liveSlugTakenPath", () => {
+  it("goes back to the edit page for an existing live and keeps the draft for a new one", () => {
+    expect(liveSlugTakenPath("live 1", "")).toBe("/lives/live%201/edit?error=slug_taken");
+    expect(liveSlugTakenPath(null, "&draft=draft-1")).toBe("/lives/new?error=slug_taken&draft=draft-1");
+  });
+});
+
+describe("resolveLiveSlugConflict", () => {
+  const input = { vendorId: "vendor-1", slug: "my-live", existingLive: null, draftClaim: { draftId: "draft-1", revision: 3 } };
+  const dbWith = (slugOwner: { id: string } | null, draft: { id: string } | null) => ({
+    live: { findFirst: vi.fn().mockResolvedValue(slugOwner) },
+    liveStudioDraft: { findFirst: vi.fn().mockResolvedValue(draft) },
+  });
+
+  it("returns null without looking at the draft when the address is free", async () => {
+    const db = dbWith(null, { id: "draft-1" });
+    await expect(resolveLiveSlugConflict(db, input)).resolves.toBeNull();
+    expect(db.liveStudioDraft.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("reports slug_taken only when the draft is still claimable for this vendor and revision", async () => {
+    const db = dbWith({ id: "other" }, { id: "draft-1" });
+    await expect(resolveLiveSlugConflict(db, input)).resolves.toBe("slug_taken");
+    expect(db.liveStudioDraft.findFirst).toHaveBeenCalledWith({
+      where: { id: "draft-1", vendorId: "vendor-1", revision: 3, consumedAt: null, expiresAt: { gt: expect.any(Date) } },
+      select: { id: true },
+    });
+  });
+
+  it("reports draft_conflict first when the draft was already consumed or is stale", async () => {
+    await expect(resolveLiveSlugConflict(dbWith({ id: "other" }, null), input)).resolves.toBe("draft_conflict");
+  });
+});
+
+describe("isLiveSlugRace", () => {
+  it("is true only for a unique-constraint error where the address is really taken", async () => {
+    const taken = { live: { findFirst: vi.fn().mockResolvedValue({ id: "winner" }) } };
+    await expect(isLiveSlugRace(taken, { code: "P2002" }, "s", null)).resolves.toBe(true);
+    await expect(isLiveSlugRace(taken, new Error("boom"), "s", null)).resolves.toBe(false);
+    const free = { live: { findFirst: vi.fn().mockResolvedValue(null) } };
+    await expect(isLiveSlugRace(free, { code: "P2002" }, "s", null)).resolves.toBe(false);
   });
 });
