@@ -129,6 +129,7 @@ model Vendor {
   electronicInvoices               ElectronicInvoice[]
   electronicInvoiceAllowances      ElectronicInvoiceAllowance[]
   settlements                      Settlement[]
+  settlementAdjustmentRequests     SettlementAdjustmentRequest[]
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
   paymentMethodReferences          PaymentMethodReference[]
@@ -1609,13 +1610,39 @@ model Settlement {
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
-  vendor      Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  payoutBatch PayoutBatch? @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
-  payoutItems PayoutItem[]
+  vendor             Vendor                        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  payoutBatch        PayoutBatch?                  @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
+  payoutItems        PayoutItem[]
+  adjustmentRequests SettlementAdjustmentRequest[]
 
   @@unique([vendorId, monthKey])
   @@unique([vendorId, id])
   @@index([status, monthKey])
+}
+
+/// F-049: a settlement adjustment above FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS
+/// waits here until a different platform admin approves it. Only an approved
+/// request changes Settlement.adjustmentAmountCents. At most one pending
+/// request per settlement (partial unique index in the migration).
+model SettlementAdjustmentRequest {
+  id           String    @id @default(cuid())
+  vendorId     String
+  settlementId String
+  amountCents  Int
+  reason       String
+  status       String    @default("pending")
+  requestedBy  String
+  requestedAt  DateTime  @default(now())
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  vendor     Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  settlement Settlement @relation(fields: [vendorId, settlementId], references: [vendorId, id], onDelete: Cascade)
+
+  @@index([vendorId, settlementId, status])
+  @@index([status, requestedAt])
 }
 
 model PayoutBatch {
@@ -1801,6 +1828,8 @@ model PaymentTransaction {
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
   @@unique([vendorId, id])
   @@unique([vendorId, checkoutIdempotencyKey])
+  /// F-050: PayUni callbacks resolve the tenant by provider order number.
+  @@unique([providerName, orderNumber], map: "PaymentTransaction_providerName_orderNumber_key")
   @@index([vendorId, occurredAt])
   @@index([vendorId, orderNumber])
   @@index([status, occurredAt])
@@ -2475,6 +2504,13 @@ model RefundRecord {
   processedAt            DateTime @default(now())
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+
+  /// F-046: consecutive PayUni queries that confirmed "no refund" while this reservation was pending.
+  providerNoRefundCheckCount     Int       @default(0)
+  providerNoRefundFirstCheckedAt DateTime?
+  providerNoRefundLastCheckedAt  DateTime?
+  /// F-046: set only by the manual hold-release action (status becomes failed).
+  holdReleasedAt                 DateTime?
 
   vendor              Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   paymentTransaction  PaymentTransaction   @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Cascade)

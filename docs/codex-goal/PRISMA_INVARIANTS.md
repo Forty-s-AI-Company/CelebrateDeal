@@ -177,7 +177,7 @@
 
 | ID | 範圍 | 目前 schema | 可造成的狀態 | 目前補償控制 | 最小候選修正 | 變更前必要證據 |
 |---|---|---|---|---|---|---|
-| DB-I01 | Payment order identity | `@@index([vendorId,orderNumber])`，沒有 unique | 相同 provider/order 可出現多筆，無 vendor callback 只能 fail closed | webhook/checkout 使用 transaction、server-generated order、ambiguous match 拒絕 | D-005：platform merchant 採 `[providerName,orderNumber]`；BYO 則需 account-scoped key | local duplicate aggregate=0；Production/Staging aggregate；merchant namespace 決策 |
+| DB-I01 | Payment order identity | 2026-10-21 起 `@@unique([providerName,orderNumber])`（`PaymentTransaction_providerName_orderNumber_key`，見下方 F-050 段） | 已關閉：相同 provider/order 無法再出現第二筆 | 訂單號由 `crypto.randomBytes` 產生；P2002 換號重試一次；webhook ambiguous match 仍拒絕 | 已完成（D-005 platform merchant 命名空間）；BYO 若改由商家自訂訂單號需另議 account-scoped key | migration preflight 遇重複即 `RAISE EXCEPTION`；Production/Staging 套用前仍建議先跑只讀 aggregate |
 | DB-I02 | Refund provider event | `@@index([paymentTransactionId,providerEventId])`，沒有 unique | future/direct write path 可重複記錄事件；直接 unique 又可能誤拒 provider trade-number fallback | payment webhook unique event + SERIALIZABLE ledger | D-006：拆分 idempotency/provider refund/event identity，或取得 provider 唯一性保證後加 compound unique | local duplicate aggregate=0；Production/Staging aggregate；PayUni partial-refund identifier semantics |
 | DB-I03 | Refund tenant binding | 已在本機候選 migration 改為 composite FK `[vendorId,paymentTransactionId]` | 外部環境未套用前仍可能形成 vendor A refund 指向 vendor B payment | 現行 service 以 vendor/payment 一起查詢 | 本機 isolated DB 已套用候選 migration，跨 tenant write 為 Prisma `P2003` | local mismatch aggregate=0；Production/Staging 仍需只讀 aggregate preflight |
 | DB-I04 | AffiliateCommission／AffiliatePayout tenant binding | 已在本機候選 migration 改為 nullable composite FK `[vendorId,affiliateId]` | 外部環境未套用前仍可能形成 vendor A ledger 指向 vendor B affiliate | 現行 domain query 綁 vendor | 本機 isolated DB 已套用候選 migration，兩種跨 tenant write 均為 Prisma `P2003` | local mismatch aggregate=0；Production/Staging 仍需只讀 aggregate preflight |
@@ -339,3 +339,29 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - `src/lib/prisma-unmanaged-indexes.db.test.ts`：Prisma 無法表達且 `migrate diff` 不比對的 4 個 partial unique 與 3 個 trgm GIN，比對完整 `pg_get_indexdef`。
 - `scripts/prisma-drift-allowlist.json`：2026-10-20 `migrate diff` 基準 100 句（trgm 3、schema 未宣告索引 3、未宣告 FK 11、FK 形狀不符 3、default 1、FK 名稱 54、索引名稱 25）。
 - 目前 149 models、110 forward migrations；既有 SQL／checksum 不變。已在 loopback PostgreSQL 17.10 全新 `celebratedeal_wp18_ci` 完整套用 110 條，150 張 public 表全數 `relrowsecurity = true`；已驗證部分啟用時重跑、`lock_timeout` 中止與 drift 檢查的正反案例。
+
+## 2026-10-21 F-050／B04-06 訂單號唯一（DB-I01）
+
+- `20261021110100_payment_order_number_unique`：forward-only，不改欄位或資料。先以 `DO` 區塊統計 `"orderNumber" IS NOT NULL` 時 `(providerName, orderNumber)` 的重複組數與列數，有重複就 `RAISE EXCEPTION`（只列數量，不列訂單號或租戶），再建立 `CREATE UNIQUE INDEX "PaymentTransaction_providerName_orderNumber_key" ON "PaymentTransaction"("providerName","orderNumber")`；交易層級 `lock_timeout = 5s`。PostgreSQL 唯一索引把 NULL 視為彼此不同，因此全索引與 `WHERE "orderNumber" IS NOT NULL` 的 partial 索引約束完全相同；改用全索引是為了能在 schema 以 `@@unique([providerName, orderNumber], map: "PaymentTransaction_providerName_orderNumber_key")` 宣告，`prisma-drift-check` 維持 100 句、無新 allowlist 項目。
+- 程式：`src/lib/payment-order-number.ts` 產生 `CD-<UTC yymmdd>-<14 碼 Crockford base32>`（24 字元、70 bits，符合 `PAYUNI_ORDER_NUMBER`），checkout route、`invoice-actions`、`platform-plan-checkout` 三處共用；整個建立交易遇 order number 的 P2002 換號重跑一次，第二次仍撞號就照原錯誤處理。無 vendor 的 PayUni 回呼反查 `(providerName, orderNumber)` 改走此索引。
+- 測試：`src/lib/payment-order-number.test.ts`、`src/lib/payment-order-number.db.test.ts`（跨租戶撞號 P2002、重試、provider 命名空間與 NULL、索引定義）。
+- 目前 149 models、111 forward migrations；既有 SQL／checksum 不變。已在 loopback PostgreSQL 全新 `celebratedeal_wp18_ci` 完整套用，並以交易內測試確認 preflight 遇重複會中止。
+
+## 2026-10-21 F-046／B03-11 PayUni 退款保留人工釋放
+
+- `20261021110200_payuni_refund_hold_release`：forward-only、純新增欄位，不改既有資料。`RefundRecord` 新增 `providerNoRefundCheckCount`（預設 0）、`providerNoRefundFirstCheckedAt`、`providerNoRefundLastCheckedAt`、`holdReleasedAt`。CHECK `RefundRecord_provider_no_refund_check`（次數 ≥ 0；次數為 0 時兩個時間皆為 NULL，反之皆有值且 last ≥ first）、`RefundRecord_hold_release_check`（`holdReleasedAt` 只能出現在 `status = 'failed'`）。Prisma 6 不比對 CHECK，drift 檢查維持 100 句。
+- 程式：`src/lib/payuni-refund-hold-release.ts`。對帳頁的 PayUni 查詢若顯示累計狀態與本機已處理狀態完全相同（沒有退款），記一次確認並寫 `confirm_payuni_refund_no_refund` audit；驗證後的 provider 回應與帳務不一致就把連續次數歸零；provider 連線失敗不計也不歸零。`requireFinanceAdmin` 的「查詢 PayUni 並釋放保留」action 會再查一次，連續確認（含這次）達 `PAYUNI_REFUND_HOLD_RELEASE_CONFIRMATIONS`（預設 3）且保留建立超過 `PAYUNI_REFUND_HOLD_RELEASE_WINDOW_HOURS`（預設 24 小時）才把唯一的 pending 保留標為 `failed`、寫 `holdReleasedAt` 與 `release_payuni_refund_hold` audit，全部在同一個 Serializable 交易；不會自動釋放。PR #455 複審 M-1：確認只在保留建立超過時間窗後、且距上一次計數至少 `PAYUNI_REFUND_HOLD_CONFIRMATION_INTERVAL_HOURS`（預設 6 小時）才計數；太早或間隔不足的查詢只寫 audit（`counted: false`），不改欄位。預設最早 36 小時才能釋放。
+- 目前 149 models、112 forward migrations；既有 SQL／checksum 不變。已在 loopback `celebratedeal_wp18_ci` 套用並以 `src/lib/payuni-refund-hold-release.db.test.ts` 驗證 CHECK 與流程。
+
+## 2026-10-21 F-049／B03-15 月結調整覆核
+
+- `20261021110300_settlement_adjustment_approval`：forward-only、純新增 table。新增 `SettlementAdjustmentRequest`（`vendorId`、`settlementId`、`amountCents`、`reason`、`status`、`requestedBy`／`requestedAt`、`reviewedBy`／`reviewedAt`）。CHECK：`status` 只允許 `pending／approved／rejected／superseded`；`reason` 去空白後 1–500 字；只有 pending 沒有 reviewer，其餘狀態必有 `reviewedBy`＋`reviewedAt`；`approved` 時 `reviewedBy <> requestedBy`（第二人規則在 DB 也成立）。Partial unique `SettlementAdjustmentRequest_one_pending_per_settlement`（`settlementId` WHERE `status = 'pending'`）已登記到 `scripts/prisma-drift-allowlist.json` 的 `partialUniqueIndexes` 與 `src/lib/prisma-unmanaged-indexes.db.test.ts`。`(vendorId, settlementId)` composite FK 指向 `Settlement(vendorId, id)` ON DELETE CASCADE（與 Settlement 對 Vendor 一致），`vendorId` FK ON DELETE CASCADE。啟用 RLS（不新增 policy）。
+- 程式：`src/lib/settlement-adjustment.ts`、`src/lib/money-input.ts`。調整金額只接受整數新台幣（可負、可千分位，上限 999,999,999 元），理由必填；`|金額| > FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS`（預設 5,000,000 分）時只建立 pending 申請，月結不變，需另一位平台管理員核准；較小的調整直接生效並把既有 pending 申請標為 superseded。核准時重新檢查未鎖定、調整後不為負數，所有寫入與 AuditLog 在同一個 Serializable 交易。退款金額也改為嚴格整數元；退款手續費欄位為最多兩位小數的嚴格格式。
+- 目前 150 models、113 forward migrations；既有 SQL／checksum 不變。已在 loopback `celebratedeal_wp18_ci` 套用，drift 檢查維持 100 句。
+
+## 2026-10-21 PR #455 複審修正（F-049 m-4）
+
+- `20261021110400_settlement_adjustment_rejected_by_lock`：forward-only，不改資料。把 `SettlementAdjustmentRequest_status_check` 擴充為 `pending／approved／rejected／superseded／rejected_by_lock`。`lockSettlementAction` 在同一交易內把該月結的 pending 調整申請標為 `rejected_by_lock`（`reviewedBy` 為鎖單者、`reviewedAt` 為鎖定時間），並逐筆寫 `reject_settlement_adjustment_on_lock` audit；月結頁列出被自動退回的申請與申請人。
+- 覆核門檻改為 `|新調整值| > 門檻` 或 `|新值 − 現值| > 門檻` 任一成立即需第二人（n-2）；金額輸入上限改為 NT$21,474,836，確保分值不超過 PostgreSQL `integer`（n-3）。
+- 目前 150 models、114 forward migrations；既有 SQL／checksum 不變。
+

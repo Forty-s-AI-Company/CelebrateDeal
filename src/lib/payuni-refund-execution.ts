@@ -8,6 +8,13 @@ import {
   applyPaymentRefundAccounting,
   calculateNetReferenceAmountCents,
 } from "@/lib/payment-refund-accounting";
+import {
+  applyPostRefundAfterCommit,
+  applyPostRefundInTransaction,
+  postRefundEventType,
+  type PostRefundCommerceOrderRefund,
+  type PostRefundEventType,
+} from "@/lib/payment-post-refund";
 
 export class PayUniRefundValidationError extends Error {}
 
@@ -134,10 +141,17 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
       : { disposition: "provider_request_rejected", category };
   }
 
+  let completion: {
+    transaction: PaymentTransaction;
+    eventType: PostRefundEventType;
+    occurredAt: Date;
+    previousRefundedAmountCents: number;
+    commerceOrderRefund: PostRefundCommerceOrderRefund;
+  } | null = null;
   try {
-    for (let attempt = 1; attempt <= MAX_COMPLETION_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= MAX_COMPLETION_ATTEMPTS && !completion; attempt += 1) {
       try {
-        const completed = await input.db.$transaction(async (tx) => {
+        completion = await input.db.$transaction(async (tx) => {
           const currentTransaction = await tx.paymentTransaction.findUnique({ where: { id: reserved.transaction.id } });
           if (!currentTransaction) throw new PayUniRefundValidationError();
           const refundedAmountCents = currentTransaction.refundedAmountCents + input.refundAmountCents;
@@ -163,7 +177,7 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
           // A provider response may identify only the trade, so it is not a
           // unique accounting event for two partial refunds on that trade.
           const accountingEventIdentity = `refund:payuni:${reserved.refundId}`;
-          await applyPaymentRefundAccounting(tx, {
+          const accounting = await applyPaymentRefundAccounting(tx, {
             vendorId: currentTransaction.vendorId,
             transactionId: currentTransaction.id,
             orderNumber: currentTransaction.orderNumber,
@@ -179,6 +193,14 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
             }),
             isFullRefund: refundedAmountCents >= currentTransaction.grossAmountCents,
             transactionOccurredAt: currentTransaction.occurredAt,
+            occurredAt: refundOccurredAt,
+          });
+          const eventType = postRefundEventType(refundedAmountCents, currentTransaction.grossAmountCents);
+          // F-045: the same post-refund hook as the provider webhook path.
+          await applyPostRefundInTransaction(tx, {
+            transaction,
+            eventType,
+            trustedCheckoutMetadata: currentTransaction.metadata,
             occurredAt: refundOccurredAt,
           });
           await applyPlatformSubscriptionRefundProjection(tx, transaction, refundOccurredAt);
@@ -201,9 +223,14 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
           } else {
             await writeAuditLog(auditData);
           }
-          return transaction;
+          return {
+            transaction,
+            eventType,
+            occurredAt: refundOccurredAt,
+            previousRefundedAmountCents: currentTransaction.refundedAmountCents,
+            commerceOrderRefund: accounting.commerceOrderRefund,
+          };
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-        return { disposition: "completed", transaction: completed };
       } catch (error) {
         if (isSerializationConflict(error) && attempt < MAX_COMPLETION_ATTEMPTS) continue;
         throw error;
@@ -212,5 +239,18 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
   } catch {
     return { disposition: "completion_pending_reconciliation" };
   }
-  return { disposition: "completion_pending_reconciliation" };
+  if (!completion) return { disposition: "completion_pending_reconciliation" };
+
+  // After commit, exactly like the webhook path: invoice void/allowance never
+  // rolls back or hides the completed refund.
+  await applyPostRefundAfterCommit(input.db, {
+    vendorId: completion.transaction.vendorId,
+    paymentTransactionId: completion.transaction.id,
+    eventType: completion.eventType,
+    occurredAt: completion.occurredAt,
+    refundAmountCents: input.refundAmountCents,
+    previousRefundedAmountCents: completion.previousRefundedAmountCents,
+    commerceOrderRefund: completion.commerceOrderRefund,
+  });
+  return { disposition: "completed", transaction: completion.transaction };
 }
