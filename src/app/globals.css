@@ -50,6 +50,13 @@ body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-l
   bottom: 13rem;
 }
 
+/* F-122: keep the launcher above the fixed mobile bottom navigation. */
+@media (max-width: 1023px) {
+  body:has(nav[aria-label="行動版主要導覽"]) [data-testid="announcement-center-launcher"] {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+
 @media (max-width: 639px) {
   body:has([data-live-player-mode="page"]) [data-testid="announcement-center-launcher"] {
     bottom: 24rem;
