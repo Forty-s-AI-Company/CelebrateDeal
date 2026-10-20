@@ -103,6 +103,36 @@ if ($restoreSource -notmatch 'CelebrateDeal.Backup.AgeIdentityPath' -or $restore
 if ($restoreSource -notmatch 'ApplicationSchema' -or $restoreSource -notmatch '--schema=') {
   throw 'Isolated restore must support application-only schema recovery on plain PostgreSQL.'
 }
+$restoreScript = Join-Path $root 'Invoke-CelebrateDealRestoreDrill.ps1'
+$restorePlan = & $restoreScript -EncryptedArchive 'C:\backup-work\missing.dump.age' -IsolationTargetSecretName 'CelebrateDeal.Restore.Target'
+if ($LASTEXITCODE -ne 0 -or $restorePlan -notmatch 'executionRequired') { throw 'Restore drill must remain plan-only without -Execute.' }
+# -DryRun wins over -Execute: no secret read, no decryption, no database.
+$dryRun = (& $restoreScript -EncryptedArchive 'C:\backup-work\missing.dump.age' -IsolationTargetSecretName 'CelebrateDeal.Restore.Target' -DryRun -Execute | Out-String) | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $dryRun.mode -ne 'dry_run' -or $dryRun.secretsRead -ne $false -or $dryRun.databaseContacted -ne $false) {
+  throw 'Restore drill -DryRun must not read secrets or contact a database.'
+}
+if ($dryRun.archivePresent -ne $false -or $dryRun.trigramExtensionSchema -ne 'detected_from_archive_ddl' -or $dryRun.extensionPreparationSql -notmatch 'CREATE EXTENSION pg_trgm WITH SCHEMA extensions') {
+  throw 'Restore drill -DryRun must report the pg_trgm preparation plan.'
+}
+Import-Module (Join-Path $root 'CelebrateDeal.Backup.Common.psm1') -Force
+if ((Get-CelebrateDealTrigramSchema -SchemaOnlyDdl 'CREATE INDEX i ON public.t USING gin (name extensions.gin_trgm_ops);') -ne 'extensions') {
+  throw 'pg_trgm schema detection must read the archive opclass schema.'
+}
+if ((Get-CelebrateDealTrigramSchema -SchemaOnlyDdl 'CREATE INDEX i ON public.t USING gin (name public.gin_trgm_ops);') -ne 'public') {
+  throw 'pg_trgm schema detection must support a public placement.'
+}
+if ($null -ne (Get-CelebrateDealTrigramSchema -SchemaOnlyDdl 'CREATE INDEX i ON public.t USING btree (name);')) {
+  throw 'pg_trgm schema detection must return null without trigram indexes.'
+}
+$ambiguousRejected = $false
+try { [void](Get-CelebrateDealTrigramSchema -SchemaOnlyDdl 'a.gin_trgm_ops b.gin_trgm_ops') } catch { $ambiguousRejected = $true }
+if (-not $ambiguousRejected) { throw 'pg_trgm schema detection must reject an ambiguous archive.' }
+$unsafeRejected = $false
+try { [void](Get-CelebrateDealExtensionPreparationSql -TrigramSchema 'public; DROP') } catch { $unsafeRejected = $true }
+if (-not $unsafeRejected) { throw 'Extension preparation must reject an unsafe schema name.' }
+if ((Get-CelebrateDealRestoreFailureCategory -RawOutput 'operator class "public.gin_trgm_ops" does not exist') -ne 'extension_compatibility') {
+  throw 'A missing pg_trgm operator class must be classified as extension compatibility.'
+}
 $evidenceScript = Join-Path $root 'Test-CelebrateDealRestoreEvidence.ps1'
 $evidencePlan = & $evidenceScript
 if ($LASTEXITCODE -ne 0 -or $evidencePlan -notmatch 'executionRequired') {
