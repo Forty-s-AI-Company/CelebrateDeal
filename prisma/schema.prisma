@@ -130,6 +130,7 @@ model Vendor {
   electronicInvoiceAllowances      ElectronicInvoiceAllowance[]
   settlements                      Settlement[]
   settlementAdjustmentRequests     SettlementAdjustmentRequest[]
+  settlementAdjustmentLedger       SettlementAdjustmentLedgerEntry[]
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
   paymentMethodReferences          PaymentMethodReference[]
@@ -1598,6 +1599,12 @@ model Settlement {
   payoutableAmountCents       Int       @default(0)
   adjustmentAmountCents       Int       @default(0)
   adjustmentReason            String?
+  /// F-039: processed buyer refunds booked into this month (input snapshot).
+  refundAmountCents           Int       @default(0)
+  /// F-039 (D-32): negative balance carried in from earlier months (<= 0).
+  carriedInCents              Int       @default(0)
+  /// F-039 (D-32): negative balance carried to the next open month (<= 0).
+  carriedOutCents             Int       @default(0)
   finalPayoutAmountCents      Int       @default(0)
   status                      String    @default("draft")
   lockedAt                    DateTime?
@@ -1643,6 +1650,27 @@ model SettlementAdjustmentRequest {
 
   @@index([vendorId, settlementId, status])
   @@index([status, requestedAt])
+}
+
+/// F-039 (D-32): when a month's payable is negative (refunds above revenue),
+/// the shortfall is not truncated to zero: one row per vendor and source
+/// month carries it into the next open (unlocked) month, whose settlement
+/// deducts it. The row follows its source settlement until that month is
+/// locked; a row whose target month is locked is never changed.
+model SettlementAdjustmentLedgerEntry {
+  id             String   @id @default(cuid())
+  vendorId       String
+  kind           String
+  sourceMonthKey String
+  targetMonthKey String
+  amountCents    Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, kind, sourceMonthKey])
+  @@index([vendorId, targetMonthKey])
 }
 
 model PayoutBatch {

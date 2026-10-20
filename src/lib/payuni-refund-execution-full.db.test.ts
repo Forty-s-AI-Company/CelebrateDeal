@@ -194,7 +194,6 @@ describe("PayUni repeated provider ID with real order accounting", () => {
       gatewayFeeRefundCents: 0,
       platformFeeRefundCents: 0,
       reason: "synthetic",
-      monthKey: "2026-09",
       actor: { id: "synthetic-actor", label: "synthetic" },
     };
     providerMocks.refundPayment.mockClear();

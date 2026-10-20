@@ -38,7 +38,7 @@ describe("WP4 fixed refund execution", () => {
 
   it("selects one exact-source full NT$1 refund without caller values", async () => {
     findMany.mockResolvedValue([row()]);
-    await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit, new Date("2026-09-02T00:00:00.000Z")))
+    await expect(executeNextWp4PayUniSandboxRefund(db as never, sourceCommit))
       .resolves.toEqual({ status: "COMPLETED", purpose: "buyer_order", phase: "remaining", providerWriteAttempted: true });
     expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({
       transactionId: "opaque-transaction",

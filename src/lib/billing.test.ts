@@ -11,6 +11,7 @@ const dependencies = vi.hoisted(() => ({
     paymentTransaction: { findMany: vi.fn(), count: vi.fn() },
     refundRecord: { aggregate: vi.fn(), count: vi.fn() },
     affiliateCommissionLedgerEntry: { aggregate: vi.fn() },
+    settlementAdjustmentLedgerEntry: { aggregate: vi.fn() },
   },
 }));
 
@@ -77,6 +78,7 @@ beforeEach(() => {
   dependencies.db.affiliateCommissionLedgerEntry.aggregate.mockResolvedValue({
     _sum: { amountCents: 0 },
   });
+  dependencies.db.settlementAdjustmentLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountCents: null } });
 });
 
 describe("monthRange", () => {
@@ -292,7 +294,7 @@ describe("FIN-01 settlement boundary coverage", () => {
     expect(settlement.finalPayoutAmountCents).toBe(0);
   });
 
-  it("clamps gross revenue and gateway fees after processed refunds", async () => {
+  it("keeps a refund above revenue negative instead of truncating it (F-039)", async () => {
     dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
       { grossAmountCents: 1_000, gatewayFeeCents: 300, platformFeeCents: 100, currency: "TWD" },
     ]);
@@ -306,9 +308,24 @@ describe("FIN-01 settlement boundary coverage", () => {
 
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
-    expect(settlement.grossRevenueCents).toBe(0);
+    expect(settlement.grossRevenueCents).toBe(-500);
     expect(settlement.paymentGatewayFeeCents).toBe(0);
     expect(settlement.transactionServiceFeeCents).toBe(50);
+    expect(settlement.payoutableAmountCents).toBe(-550);
+    expect(settlement.finalPayoutAmountCents).toBe(0);
+  });
+
+  it("deducts a negative balance carried in from an earlier month (F-039, D-32)", async () => {
+    dependencies.db.settlementAdjustmentLedgerEntry.aggregate.mockResolvedValueOnce({ _sum: { amountCents: -2_000 } });
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(dependencies.db.settlementAdjustmentLedgerEntry.aggregate).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", targetMonthKey: "2026-07" },
+      _sum: { amountCents: true },
+    });
+    // 15,000 gross - 450 gateway - 600 platform fee - 2,000 carried in.
+    expect(settlement).toMatchObject({ carriedInCents: -2_000, payoutableAmountCents: 11_950, finalPayoutAmountCents: 11_950 });
   });
 
   it("uses the highest observed usage totals and charges only positive overflow", async () => {

@@ -40,6 +40,7 @@ import { resolveManualReconciliationForPaidTrade, withoutManualReconciliationHol
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, type PostRefundCommerceOrderRefund } from "@/lib/payment-post-refund";
 import { resolveWebhookPaymentAmounts } from "@/lib/payment-gateway-fee";
+import { refundSettlementMonthKey } from "@/lib/settlement-period";
 import {
   isRefundEvent,
   isDisputeEvent,
@@ -797,7 +798,9 @@ async function applyPaymentRefundsInWebhook(
       vendorId: input.vendorId,
       paymentTransactionId: input.transaction.id,
       providerEventId: input.payload.eventId,
-      monthKey: monthKeyFromDate(input.occurredAt),
+      // F-039: the server's processing month (past any locked month), never
+      // the provider-reported event time.
+      monthKey: await refundSettlementMonthKey(db, input.vendorId, new Date()),
       refundAmountCents: input.payload.refundAmountCents,
       gatewayFeeRefundCents: input.payload.gatewayFeeRefundCents,
       platformFeeRefundCents: input.payload.platformFeeRefundCents,

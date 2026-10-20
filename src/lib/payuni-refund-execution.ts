@@ -15,6 +15,7 @@ import {
   type PostRefundCommerceOrderRefund,
   type PostRefundEventType,
 } from "@/lib/payment-post-refund";
+import { refundSettlementMonthKey, settlementMonthKeyOf } from "@/lib/settlement-period";
 
 export class PayUniRefundValidationError extends Error {}
 
@@ -25,7 +26,6 @@ export type PayUniRefundExecutionInput = {
   gatewayFeeRefundCents: number;
   platformFeeRefundCents: number;
   reason: string | null;
-  monthKey: string;
   actor: { id: string; label: string };
 };
 
@@ -105,7 +105,9 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
           vendorId: transaction.vendorId,
           paymentTransactionId: transaction.id,
           providerEventId: requestReservationEventId,
-          monthKey: input.monthKey,
+          // Provisional: pending reservations are never settled. The month is
+          // fixed from the server completion time when it becomes processed.
+          monthKey: settlementMonthKeyOf(new Date()),
           refundAmountCents: input.refundAmountCents,
           gatewayFeeRefundCents: input.gatewayFeeRefundCents,
           platformFeeRefundCents: input.platformFeeRefundCents,
@@ -159,7 +161,13 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
           const refundOccurredAt = new Date();
           await tx.refundRecord.update({
             where: { id: reserved.refundId, status: "pending", providerEventId: requestReservationEventId },
-            data: { status: "processed", providerEventId: providerResult.providerEventId ?? `request:${requestId}` },
+            data: {
+              status: "processed",
+              providerEventId: providerResult.providerEventId ?? `request:${requestId}`,
+              // F-039: the server completion month, past any locked month.
+              monthKey: await refundSettlementMonthKey(tx, currentTransaction.vendorId, refundOccurredAt),
+              processedAt: refundOccurredAt,
+            },
           });
           const transaction = await tx.paymentTransaction.update({
             where: { id: currentTransaction.id },

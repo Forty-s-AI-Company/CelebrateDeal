@@ -89,6 +89,7 @@ import {
   SettlementAdjustmentError,
   submitSettlementAdjustment,
 } from "@/lib/settlement-adjustment";
+import { assertSettlementInputsUnchanged, refundSettlementMonthKey, SettlementInputsChangedError } from "@/lib/settlement-period";
 import {
   deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
   deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
@@ -1642,6 +1643,8 @@ export async function lockSettlementAction(formData: FormData) {
 
       const locked = await tx.settlement.findUnique({ where: { id } });
       if (!locked) throw new SettlementMutationConflict();
+      // F-039: refunds or carries booked after the calculation need a regeneration.
+      await assertSettlementInputsUnchanged(tx, locked);
       // F-049 (review m-4): a pending large adjustment can no longer be approved.
       await closePendingAdjustmentsOnLock(tx, { settlement: locked, actor: { id: member.id, label: member.role }, now: lockedAt });
       await tx.affiliateCommission.updateMany({
@@ -1745,8 +1748,9 @@ export async function lockSettlementAction(formData: FormData) {
         ...monthRange(settlement.monthKey),
       });
       return locked;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
+    if (error instanceof SettlementInputsChangedError) redirect("/admin/billing/settlements?error=stale_settlement");
     if (error instanceof SettlementMutationConflict || error instanceof CoursePayoutMutationConflict || isSettlementMutationConflict(error)) {
       redirect("/admin/billing/settlements?error=conflict");
     }
@@ -2177,13 +2181,13 @@ export async function refundPaymentTransactionAction(formData: FormData) {
   const gatewayFeeRefundCents = optionalFeeCents(formData, "gatewayFeeRefund");
   const platformFeeRefundCents = optionalFeeCents(formData, "platformFeeRefund");
   const reason = optionalText(formData, "reason");
-  const monthKey = text(formData, "monthKey", new Date().toISOString().slice(0, 7));
+  // F-039: the settlement month comes from the server's refund completion
+  // time (refundSettlementMonthKey); a posted monthKey is ignored.
   if (
     refundAmountCents === null ||
     refundAmountCents <= 0 ||
     gatewayFeeRefundCents === null ||
-    platformFeeRefundCents === null ||
-    !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)
+    platformFeeRefundCents === null
   ) {
     redirect("/admin/billing/dashboard?error=refund");
   }
@@ -2196,7 +2200,6 @@ export async function refundPaymentTransactionAction(formData: FormData) {
       gatewayFeeRefundCents,
       platformFeeRefundCents,
       reason,
-      monthKey,
       actor: { id: member.id, label: member.role },
     });
     if (result.disposition === "completed") {
@@ -2241,11 +2244,13 @@ export async function refundPaymentTransactionAction(formData: FormData) {
 
           const refundedAmountCents = transaction.refundedAmountCents + refundAmountCents;
           const status = refundedAmountCents >= transaction.grossAmountCents ? "refunded" : "partially_refunded";
+          const refundOccurredAt = new Date();
           const refund = await tx.refundRecord.create({
             data: {
               vendorId: transaction.vendorId,
               paymentTransactionId: transaction.id,
-              monthKey,
+              monthKey: await refundSettlementMonthKey(tx, transaction.vendorId, refundOccurredAt),
+              processedAt: refundOccurredAt,
               refundAmountCents,
               gatewayFeeRefundCents,
               platformFeeRefundCents,
@@ -2258,14 +2263,13 @@ export async function refundPaymentTransactionAction(formData: FormData) {
               status,
               refundedAmountCents,
               refundReason: reason,
-              refundedAt: new Date(),
+              refundedAt: refundOccurredAt,
             },
           });
           const refundedFeeTotals = await tx.refundRecord.aggregate({
             where: { paymentTransactionId: updated.id, status: "processed" },
             _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
           });
-          const refundOccurredAt = new Date();
           const accounting = await applyPaymentRefundAccounting(tx, {
             vendorId: transaction.vendorId,
             transactionId: transaction.id,

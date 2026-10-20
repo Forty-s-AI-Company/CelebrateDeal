@@ -11,6 +11,7 @@ import {
   applyPostRefundInTransaction,
   postRefundEventType,
 } from "@/lib/payment-post-refund";
+import { refundSettlementMonthKey } from "@/lib/settlement-period";
 
 export type RefundReconciliationDisposition = "reconciled" | "already_reconciled";
 
@@ -194,6 +195,8 @@ export async function reconcilePayUniRefund(input: {
         status: "processed",
         processedAt: now,
         providerEventId: eventIdentity,
+        // F-039: the month the refund was confirmed, past any locked month.
+        monthKey: await refundSettlementMonthKey(tx, transaction.vendorId, now),
       },
     });
     const updated = await tx.paymentTransaction.update({

@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient, type Settlement, type SettlementAdjustmentRe
 
 import { auditSnapshot } from "@/lib/audit";
 import { parseWholeYuanToCents } from "@/lib/money-input";
+import { SettlementCarryForwardError, settleNetPayable } from "@/lib/settlement-period";
 
 /**
  * F-049 (B03-15): settlement adjustments.
@@ -17,6 +18,9 @@ import { parseWholeYuanToCents } from "@/lib/money-input";
  *   database repeats the second-person rule in a CHECK constraint.
  * - Locking a settlement closes its pending request as `rejected_by_lock`
  *   with an AuditLog row (review m-4); the settlements page lists it.
+ * - F-039 (D-32): a negative adjustment may not push the payout below zero,
+ *   but a positive one may reduce a negative balance that carries forward;
+ *   the carry ledger row is updated in the same transaction.
  *
  * Every write runs in one serializable transaction with its AuditLog row.
  */
@@ -46,7 +50,8 @@ export type SettlementAdjustmentErrorCode =
   | "negative_payout"
   | "conflict"
   | "same_approver"
-  | "not_pending";
+  | "not_pending"
+  | "carry_forward_target_locked";
 
 export class SettlementAdjustmentError extends Error {
   constructor(public readonly code: SettlementAdjustmentErrorCode) {
@@ -87,13 +92,30 @@ async function supersedePending(tx: Prisma.TransactionClient, settlement: Settle
   });
 }
 
+function assertAdjustmentKeepsPayout(settlement: Pick<Settlement, "payoutableAmountCents">, amountCents: number) {
+  if (amountCents < 0 && settlement.payoutableAmountCents + amountCents < 0) {
+    throw new SettlementAdjustmentError("negative_payout");
+  }
+}
+
 async function applyAdjustment(
   tx: Prisma.TransactionClient,
   settlement: Settlement,
   input: { amountCents: number; reason: string; reviewerId: string },
 ) {
-  const finalPayoutAmountCents = settlement.payoutableAmountCents + input.amountCents;
-  if (finalPayoutAmountCents < 0) throw new SettlementAdjustmentError("negative_payout");
+  assertAdjustmentKeepsPayout(settlement, input.amountCents);
+  let carry: Awaited<ReturnType<typeof settleNetPayable>>;
+  try {
+    carry = await settleNetPayable(tx, {
+      vendorId: settlement.vendorId,
+      monthKey: settlement.monthKey,
+      netPayableCents: settlement.payoutableAmountCents + input.amountCents,
+    });
+  } catch (error) {
+    if (error instanceof SettlementCarryForwardError) throw new SettlementAdjustmentError("carry_forward_target_locked");
+    throw error;
+  }
+  const { finalPayoutAmountCents, carriedOutCents } = carry;
   const result = await tx.settlement.updateMany({
     where: { id: settlement.id, vendorId: settlement.vendorId, lockedAt: null, updatedAt: settlement.updatedAt },
     data: {
@@ -101,6 +123,7 @@ async function applyAdjustment(
       adjustmentReason: input.reason,
       reviewedBy: input.reviewerId,
       finalPayoutAmountCents,
+      carriedOutCents,
     },
   });
   if (result.count !== 1) throw new SettlementAdjustmentError("conflict");
@@ -132,7 +155,7 @@ export async function submitSettlementAdjustment(db: AdjustmentDb, input: {
   const thresholdCents = input.thresholdCents ?? financeSecondApprovalThresholdCents();
   return serializable(db, async (tx) => {
     const settlement = await unlockedSettlement(tx, input.settlementId);
-    if (settlement.payoutableAmountCents + input.amountCents < 0) throw new SettlementAdjustmentError("negative_payout");
+    assertAdjustmentKeepsPayout(settlement, input.amountCents);
     const superseded = await supersedePending(tx, settlement, input.actor.id, now);
 
     if (requiresSecondApproval(input.amountCents, thresholdCents, settlement.adjustmentAmountCents)) {

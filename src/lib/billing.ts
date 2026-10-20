@@ -206,7 +206,7 @@ async function readStreamUsageBillingDecision(
 export async function calculateSettlement(vendorId: string, monthKey: string) {
   const db = getDb();
   const { start, end } = monthRange(monthKey);
-  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount, unclassifiedTransactionCount] = await Promise.all([
+  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount, unclassifiedTransactionCount, carriedIn] = await Promise.all([
     db.vendorSubscription.findFirst({
       where: {
         vendorId,
@@ -272,6 +272,11 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
         purpose: "unclassified",
         primaryCommerceOrder: { is: null },
       },
+    }),
+    // F-039 (D-32): negative balances carried in from earlier months.
+    db.settlementAdjustmentLedgerEntry.aggregate({
+      where: { vendorId, targetMonthKey: monthKey },
+      _sum: { amountCents: true },
     }),
   ]);
 
@@ -343,7 +348,10 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   const gatewayFeeRefundCents = refundTotal._sum.gatewayFeeRefundCents ?? 0;
   const platformFeeRefundCents = refundTotal._sum.platformFeeRefundCents ?? 0;
   const grossRevenueBeforeRefundCents = transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.grossAmountCents, 0);
-  const grossRevenueCents = Math.max(0, grossRevenueBeforeRefundCents - refundAmountCents);
+  // F-039: a refund above this month's revenue is not truncated; the
+  // negative payable carries into the next open month (billing-cycle.ts).
+  const grossRevenueCents = grossRevenueBeforeRefundCents - refundAmountCents;
+  const carriedInCents = carriedIn._sum.amountCents ?? 0;
   const paymentGatewayFeeCents = paymentMode === "platform"
     ? Math.max(0, transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents)
     : 0;
@@ -357,9 +365,9 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   const paymentServiceFeeCents = paymentMode === "platform" ? plan.paymentServiceFeeCents : 0;
   const affiliateManagementFeeCents = plan.affiliateManagementFeeCents;
   const monthlyFeeCents = plan.monthlyPriceCents;
-  const payoutableAmountCents = paymentMode === "platform"
+  const payoutableAmountCents = (paymentMode === "platform"
     ? grossRevenueCents - paymentGatewayFeeCents - transactionServiceFeeCents - (commissionTotal._sum.amountCents ?? 0)
-    : 0;
+    : 0) + carriedInCents;
 
   return {
     subscription,
@@ -383,8 +391,10 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     refundAmountCents,
     gatewayFeeRefundCents,
     platformFeeRefundCents,
+    carriedInCents,
     payoutableAmountCents,
-    finalPayoutAmountCents: payoutableAmountCents,
+    // Before any manual adjustment; a negative payable carries forward.
+    finalPayoutAmountCents: Math.max(0, payoutableAmountCents),
   };
 }
 

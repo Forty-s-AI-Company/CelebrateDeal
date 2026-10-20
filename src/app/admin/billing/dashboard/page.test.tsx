@@ -70,7 +70,9 @@ describe("/admin/billing/dashboard route", () => {
     expect(html).toContain("示範商家");
     expect(html).toContain("ORDER-1");
     expect(html).toContain('data-testid="billing-refund-transaction-1"');
-    expect(html).toContain('aria-label="退款月份"');
+    // F-039: the refund month is set by the server, never posted by the form.
+    expect(html).not.toContain('name="monthKey"');
+    expect(html).toContain("退款計入完成當月的月結");
     expect(html).toContain('aria-label="退金流費"');
     expect(html).toContain('aria-label="退平台費"');
     expect(html).toContain('aria-label="退款原因"');

@@ -8,6 +8,12 @@ import {
 } from "@/lib/billing";
 import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
+import {
+  assertSettlementInputsUnchanged,
+  SettlementCarryForwardError,
+  SettlementInputsChangedError,
+  settleNetPayable,
+} from "@/lib/settlement-period";
 import { upsertUsageSnapshot } from "@/lib/usage-estimation";
 
 const TERMINAL_INVOICE_STATUSES = new Set(["paid", "partially_refunded", "refunded"]);
@@ -32,6 +38,7 @@ export type BillingCycleErrorCode =
   | "stream_reconciliation_required"
   | "unsupported_currency"
   | "unclassified_payment_purpose"
+  | "carry_forward_target_locked"
   | "terminal_invoice_amount_conflict";
 
 /**
@@ -133,10 +140,8 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
   }
   const adjustmentAmountCents = existingSettlement?.adjustmentAmountCents ?? 0;
   const adjustmentReason = existingSettlement?.adjustmentReason ?? null;
-  const finalPayoutAmountCents = calculation.payoutableAmountCents + adjustmentAmountCents;
-  if (finalPayoutAmountCents < 0) throw new BillingCycleError("negative_payout");
 
-  const amounts = {
+  const calculatedAmounts = {
     monthlyFeeCents: calculation.monthlyFeeCents,
     overflowFeeCents: calculation.overflowFeeCents,
     paymentServiceFeeCents: calculation.paymentServiceFeeCents,
@@ -145,7 +150,8 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
     paymentGatewayFeeCents: calculation.paymentGatewayFeeCents,
     grossRevenueCents: calculation.grossRevenueCents,
     payoutableAmountCents: calculation.payoutableAmountCents,
-    finalPayoutAmountCents,
+    refundAmountCents: calculation.refundAmountCents,
+    carriedInCents: calculation.carriedInCents,
     status: "draft",
   } as const;
   const expectedInvoiceAmounts = invoiceAmountSnapshot(calculation);
@@ -182,6 +188,22 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
           throw new BillingCycleError("conflict");
         }
       }
+
+      // F-039: the refunds and carries must be the ones the calculation read;
+      // the settlement stores them as the snapshot the lock re-checks.
+      await assertSettlementInputsUnchanged(tx, {
+        vendorId,
+        monthKey,
+        refundAmountCents: calculation.refundAmountCents,
+        carriedInCents: calculation.carriedInCents,
+      });
+      // F-039 (D-32): a negative payable pays 0 and carries to the next open month.
+      const { finalPayoutAmountCents, carriedOutCents } = await settleNetPayable(tx, {
+        vendorId,
+        monthKey,
+        netPayableCents: calculation.payoutableAmountCents + adjustmentAmountCents,
+      });
+      const amounts = { ...calculatedAmounts, finalPayoutAmountCents, carriedOutCents };
 
       let settlement;
       if (existingSettlement) {
@@ -239,6 +261,8 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
     return { vendor, existingSettlement, calculation, ...result };
   } catch (error) {
     if (error instanceof BillingCycleError) throw error;
+    if (error instanceof SettlementInputsChangedError) throw new BillingCycleError("conflict");
+    if (error instanceof SettlementCarryForwardError) throw new BillingCycleError("carry_forward_target_locked");
     if (typeof error === "object" && error !== null && "code" in error
       && ["P2002", "P2025", "P2034"].includes(String(error.code))) {
       throw new BillingCycleError("conflict");
