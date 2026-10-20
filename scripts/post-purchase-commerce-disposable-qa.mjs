@@ -60,8 +60,8 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
   const unitReport = JSON.parse(fs.readFileSync(unitReportPath, "utf8"));
   unit = { total: unitReport.numTotalTests, passed: unitReport.numPassedTests,
     failed: unitReport.numFailedTests, skipped: unitReport.numPendingTests };
-  // 197 = the 189 cases already on master plus eight F-041 TWD-only cases.
-  if (unitResult.status !== 0 || !unitReport.success || unit.total !== 197 || unit.skipped) throw new Error("post-purchase-unit-failed");
+  // 199 = the 189 cases already on master plus ten F-041 TWD-only cases.
+  if (unitResult.status !== 0 || !unitReport.success || unit.total !== 199 || unit.skipped) throw new Error("post-purchase-unit-failed");
   if (process.argv.includes("--browser")) {
     const root = process.cwd(); const mirror = path.join(tempRoot, "post-purchase-browser-app");
     fs.mkdirSync(mirror, { recursive: true });
