@@ -9,7 +9,7 @@ const dependencies = vi.hoisted(() => ({
     streamUsageAllocationEntry: { findMany: vi.fn() },
     streamUsageReconciliation: { findFirst: vi.fn() },
     paymentTransaction: { findMany: vi.fn() },
-    refundRecord: { aggregate: vi.fn() },
+    refundRecord: { aggregate: vi.fn(), count: vi.fn() },
     affiliateCommissionLedgerEntry: { aggregate: vi.fn() },
   },
 }));
@@ -71,6 +71,7 @@ beforeEach(() => {
   dependencies.db.streamUsageReconciliation.findFirst.mockResolvedValue(null);
   dependencies.db.paymentTransaction.findMany.mockResolvedValue(transactions);
   dependencies.db.refundRecord.aggregate.mockResolvedValue(processedRefund(0));
+  dependencies.db.refundRecord.count.mockResolvedValue(0);
   dependencies.db.affiliateCommissionLedgerEntry.aggregate.mockResolvedValue({
     _sum: { amountCents: 0 },
   });
@@ -181,6 +182,14 @@ describe("FIN-01 settlement boundary coverage", () => {
       { grossAmountCents: 5_000, gatewayFeeCents: 150, platformFeeCents: 200, currency: "USD" },
     ]);
     await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({ code: "unsupported_currency" });
+  });
+
+  it("refuses a TWD settlement whose processed refunds belong to an earlier non-TWD payment (F-041)", async () => {
+    dependencies.db.refundRecord.count.mockResolvedValueOnce(1);
+    await expect(calculateSettlement("vendor-1", "2026-08")).rejects.toMatchObject({ code: "unsupported_currency" });
+    expect(dependencies.db.refundRecord.count).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", monthKey: "2026-08", status: "processed", paymentTransaction: { currency: { not: "TWD" } } },
+    });
   });
 
   it("fails closed when no active subscription exists", async () => {

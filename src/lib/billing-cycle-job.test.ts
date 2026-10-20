@@ -64,6 +64,7 @@ describe("runBillingCycleJob", () => {
       conflicts: 0,
       terminalInvoiceConflicts: 0,
       streamReconciliationRequired: 0,
+      unsupportedCurrency: 0,
       missingSubscription: 0,
       failed: 0,
       overdueMarked: 3,
@@ -96,6 +97,15 @@ describe("runBillingCycleJob", () => {
       failed: 1,
       automaticCharges: 0,
     });
+  });
+
+  it("reports non-TWD settlements separately from infrastructure failures (F-041)", async () => {
+    mocks.subscriptionFindMany.mockResolvedValueOnce([
+      { vendorId: "vendor-non-twd", billingCycleDay: 5, startedAt: new Date("2026-01-01T00:00:00.000Z") },
+    ]);
+    mocks.generateSettlementForVendor.mockRejectedValueOnce(new mocks.BillingCycleError("unsupported_currency"));
+
+    await expect(runBillingCycleJob(now)).resolves.toMatchObject({ processed: 0, unsupportedCurrency: 1, failed: 0 });
   });
 
   it("reports unresolved Stream reconciliation separately from infrastructure failures", async () => {
