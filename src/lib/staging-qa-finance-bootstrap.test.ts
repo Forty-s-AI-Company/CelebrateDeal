@@ -5,7 +5,6 @@ import { readFileSync } from "node:fs";
 import { ensureStagingQaFinance, qaFinanceDatabaseUrl, qaFinanceFailureCategory, QA_FINANCE_EMAIL, QA_FINANCE_ID, verifyQaFinanceCertificate } from "./staging-qa-finance-bootstrap";
 import { hashPasswordAsync, verifyPasswordAsync } from "./password";
 import { decryptMfaSecret, encryptMfaSecret, totpCodeForTimestamp, verifyRecoveryCode } from "./mfa";
-import { qaFinanceTotpCode } from "../../scripts/qa-finance-totp.mjs";
 
 const input = { databaseUrl: "postgresql://synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
   sourceSha: "a".repeat(40), password: "synthetic-test-password-24-characters", runtimeReady: true, payuniEnv: "sandbox" };
@@ -145,9 +144,14 @@ describe("fixed staging QA finance account", () => {
       await expect(ensureStagingQaFinance(f.db, withSeed)).rejects.toThrow("STAGING_QA_FINANCE_BOOTSTRAP_REJECTED");
       expect(f.transaction).not.toHaveBeenCalled();
     });
-    it("runners derive the same TOTP code as the application verifier", () => {
-      for (const timestamp of [59_000, 1_111_111_109_000, Date.parse("2026-10-19T00:00:00Z")]) {
-        expect(qaFinanceTotpCode(seed, timestamp)).toBe(totpCodeForTimestamp(seed, timestamp));
+    // src must not import scripts/: isolated Next build mirrors (for example
+    // the tracking browser gate) copy only src. The runner helper
+    // (scripts/qa-finance-totp.test.mjs) pins the same RFC 6238 vectors, so
+    // both sides are held to identical codes.
+    it("the application verifier yields the RFC 6238 vectors the runners are pinned to", () => {
+      for (const [seconds, code] of [[59, "287082"], [1111111109, "081804"], [1111111111, "050471"],
+        [1234567890, "005924"], [2000000000, "279037"]] as const) {
+        expect(totpCodeForTimestamp(seed, seconds * 1000)).toBe(code);
       }
     });
   });
