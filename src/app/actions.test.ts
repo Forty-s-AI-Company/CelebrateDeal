@@ -100,6 +100,8 @@ const mocks = vi.hoisted(() => ({
   getPaymentProvider: vi.fn(),
   submitSettlementAdjustment: vi.fn(),
   inventoryReservationFindUnique: vi.fn(),
+  settlementAdjustmentRequestFindMany: vi.fn(),
+  settlementAdjustmentRequestUpdateMany: vi.fn(),
   approveSettlementAdjustment: vi.fn(),
   rejectSettlementAdjustment: vi.fn(),
   requireFinanceAdmin: vi.fn(),
@@ -845,6 +847,8 @@ beforeEach(() => {
   mocks.dispatchLiveStartedLineNotificationsSafely.mockResolvedValue(undefined);
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
   mocks.inventoryReservationFindUnique.mockResolvedValue(null);
+  mocks.settlementAdjustmentRequestFindMany.mockResolvedValue([]);
+  mocks.settlementAdjustmentRequestUpdateMany.mockResolvedValue({ count: 1 });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
       findUnique: mocks.findUnique,
@@ -6126,6 +6130,8 @@ describe("FIN-02 settlement mutation invariants", () => {
     mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
     mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6175,6 +6181,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       .mockResolvedValueOnce(zeroSettlement)
       .mockResolvedValueOnce(lockedSettlement);
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6214,6 +6222,42 @@ describe("FIN-02 settlement mutation invariants", () => {
       data: expect.objectContaining({ status: "locked", lockedBy: "finance-1" }),
     });
     expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledOnce();
+    // F-049 (review m-4): pending adjustments are looked up and closed inside the lock transaction.
+    expect(mocks.settlementAdjustmentRequestFindMany).toHaveBeenCalledWith({
+      where: { vendorId: settlement.vendorId, settlementId: settlement.id, status: "pending" },
+    });
+  });
+
+  it("closes a pending large adjustment as rejected_by_lock with an audit row (review m-4)", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce(settlement).mockResolvedValueOnce({ ...settlement, status: "locked" });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
+      affiliateCommission: { findMany: mocks.affiliateCommissionFindMany, updateMany: mocks.affiliateCommissionUpdateMany },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate, findMany: mocks.affiliateCommissionLedgerEntryFindMany },
+      affiliatePayout: { findUnique: mocks.affiliatePayoutFindUnique, create: mocks.affiliatePayoutCreate },
+      settlement: { findUnique: mocks.settlementFindUnique, updateMany: mocks.settlementUpdateMany },
+      courseCommissionAllocation: { findMany: mocks.courseCommissionAllocationFindMany, findUnique: mocks.courseCommissionAllocationFindUnique },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate, findUnique: mocks.courseCommissionLedgerEntryFindUnique, create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique, findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate, updateMany: mocks.coursePayoutUpdateMany,
+      },
+    }));
+    mocks.settlementAdjustmentRequestFindMany.mockResolvedValueOnce([
+      { id: "request-1", vendorId: settlement.vendorId, settlementId: settlement.id, requestedBy: "admin-a", status: "pending" },
+    ]);
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow("redirect:/admin/billing/settlements");
+    expect(mocks.settlementAdjustmentRequestUpdateMany).toHaveBeenCalledWith({
+      where: { id: "request-1", vendorId: settlement.vendorId, status: "pending" },
+      data: { status: "rejected_by_lock", reviewedBy: "finance-1", reviewedAt: expect.any(Date) },
+    });
+    expect(mocks.auditLogCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+      action: "reject_settlement_adjustment_on_lock", targetId: settlement.id,
+      after: expect.objectContaining({ requestId: "request-1", requestedBy: "admin-a", status: "rejected_by_lock" }),
+    }) });
   });
 
   it("creates one merchant-owned AffiliatePayout per affiliate from immutable ledger balances", async () => {
@@ -6235,6 +6279,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       .mockResolvedValueOnce({ _sum: { amountCents: 200 } })
       .mockResolvedValueOnce({ _sum: { amountCents: 0 } });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6325,6 +6371,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       status: "pending",
     });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6377,6 +6425,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       status: "pending",
     });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6422,6 +6472,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       status: "pending",
     });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6453,6 +6505,8 @@ describe("FIN-02 settlement mutation invariants", () => {
     mocks.affiliateCommissionFindMany.mockResolvedValueOnce([{ id: "commission-a1", affiliateId: "affiliate-a" }]);
     mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: -1 } });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,

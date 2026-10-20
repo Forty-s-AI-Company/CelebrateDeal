@@ -359,3 +359,9 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 程式：`src/lib/settlement-adjustment.ts`、`src/lib/money-input.ts`。調整金額只接受整數新台幣（可負、可千分位，上限 999,999,999 元），理由必填；`|金額| > FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS`（預設 5,000,000 分）時只建立 pending 申請，月結不變，需另一位平台管理員核准；較小的調整直接生效並把既有 pending 申請標為 superseded。核准時重新檢查未鎖定、調整後不為負數，所有寫入與 AuditLog 在同一個 Serializable 交易。退款金額也改為嚴格整數元；退款手續費欄位為最多兩位小數的嚴格格式。
 - 目前 150 models、113 forward migrations；既有 SQL／checksum 不變。已在 loopback `celebratedeal_wp18_ci` 套用，drift 檢查維持 100 句。
 
+## 2026-10-21 PR #455 複審修正（F-049 m-4）
+
+- `20261021110400_settlement_adjustment_rejected_by_lock`：forward-only，不改資料。把 `SettlementAdjustmentRequest_status_check` 擴充為 `pending／approved／rejected／superseded／rejected_by_lock`。`lockSettlementAction` 在同一交易內把該月結的 pending 調整申請標為 `rejected_by_lock`（`reviewedBy` 為鎖單者、`reviewedAt` 為鎖定時間），並逐筆寫 `reject_settlement_adjustment_on_lock` audit；月結頁列出被自動退回的申請與申請人。
+- 覆核門檻改為 `|新調整值| > 門檻` 或 `|新值 − 現值| > 門檻` 任一成立即需第二人（n-2）；金額輸入上限改為 NT$21,474,836，確保分值不超過 PostgreSQL `integer`（n-3）。
+- 目前 150 models、114 forward migrations；既有 SQL／checksum 不變。
+

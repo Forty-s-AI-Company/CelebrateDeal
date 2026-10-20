@@ -98,14 +98,16 @@ describe("admin settlement source attribution", () => {
   });
 
   it("shows a pending large adjustment with approve only for a different admin (F-049)", async () => {
-    const request = { id: "request-1", amountCents: 6_000_000, reason: "年度保證金退還", requestedAt: new Date("2026-08-03T00:00:00.000Z"), requestedBy: "admin-a" };
+    const request = { id: "request-1", amountCents: 6_000_000, reason: "年度保證金退還", requestedAt: new Date("2026-08-03T00:00:00.000Z"), requestedBy: "admin-a", status: "pending" };
     mocks.settlementFindMany.mockResolvedValue([
       settlement({ id: "settlement-review", status: "reviewing", lockedAt: null, adjustmentRequests: [request] }),
     ]);
 
     const html = renderToStaticMarkup(await AdminBillingSettlementsPage({ searchParams: Promise.resolve({ status: "adjustment_pending" }) }));
     expect(mocks.settlementFindMany).toHaveBeenCalledWith(expect.objectContaining({
-      include: expect.objectContaining({ adjustmentRequests: { where: { status: "pending" }, orderBy: { requestedAt: "desc" }, take: 1 } }),
+      include: expect.objectContaining({
+        adjustmentRequests: { where: { status: { in: ["pending", "rejected_by_lock"] } }, orderBy: { requestedAt: "desc" }, take: 5 },
+      }),
     }));
     expect(html).toContain("待覆核調整");
     expect(html).toContain("年度保證金退還");
@@ -118,6 +120,21 @@ describe("admin settlement source attribution", () => {
     const own = renderToStaticMarkup(await AdminBillingSettlementsPage({ searchParams: Promise.resolve({}) }));
     expect(own).not.toContain("核准調整");
     expect(own).toContain("撤回申請");
+  });
+
+  it("lists a request that locking the settlement closed (review m-4)", async () => {
+    mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "admin-a" } });
+    mocks.settlementFindMany.mockResolvedValue([settlement({
+      adjustmentRequests: [{
+        id: "request-2", amountCents: -7_000_000, reason: "跨期追回", requestedAt: new Date("2026-08-03T00:00:00.000Z"),
+        requestedBy: "admin-a", status: "rejected_by_lock",
+      }],
+    })]);
+    const html = renderToStaticMarkup(await AdminBillingSettlementsPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("鎖定時自動退回");
+    expect(html).toContain("跨期追回");
+    expect(html).toContain("（由你申請）");
+    expect(html).not.toContain("核准調整");
   });
 
   it.each([

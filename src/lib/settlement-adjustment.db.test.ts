@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/lib/db";
 import {
   approveSettlementAdjustment,
+  closePendingAdjustmentsOnLock,
   financeSecondApprovalThresholdCents,
   rejectSettlementAdjustment,
   submitSettlementAdjustment,
@@ -90,6 +91,28 @@ describe("settlement adjustment second approval (F-049)", () => {
     await expect(approveSettlementAdjustment(db, { requestId: third.request.id, actor: approver })).rejects.toMatchObject({ code: "locked" });
     await expect(submitSettlementAdjustment(db, { settlementId: row.id, amountCents: 1, reason: "late", actor: requester, thresholdCents: threshold }))
       .rejects.toMatchObject({ code: "locked" });
+  });
+
+  it("routes a swing from -T to +T through second approval (review n-2)", async () => {
+    const row = await settlement(10_000_000);
+    await expect(submitSettlementAdjustment(db, { settlementId: row.id, amountCents: -4_000_000, reason: "追回", actor: requester, thresholdCents: threshold }))
+      .resolves.toMatchObject({ outcome: "applied" });
+    await expect(submitSettlementAdjustment(db, { settlementId: row.id, amountCents: 4_000_000, reason: "改為補發", actor: requester, thresholdCents: threshold }))
+      .resolves.toMatchObject({ outcome: "pending_approval" });
+    await expect(db.settlement.findUniqueOrThrow({ where: { id: row.id } })).resolves.toMatchObject({ adjustmentAmountCents: -4_000_000 });
+  });
+
+  it("closes a pending request as rejected_by_lock with an audit row when the settlement is locked (review m-4)", async () => {
+    const row = await settlement(10_000_000);
+    const submitted = await submitSettlementAdjustment(db, { settlementId: row.id, amountCents: 6_000_000, reason: "待覆核", actor: requester, thresholdCents: threshold });
+    if (submitted.outcome !== "pending_approval") throw new Error("expected a pending request");
+    const lockedAt = new Date("2026-10-21T00:00:00.000Z");
+    await expect(db.$transaction((tx) => closePendingAdjustmentsOnLock(tx, { settlement: row, actor: approver, now: lockedAt }))).resolves.toBe(1);
+    await expect(db.settlementAdjustmentRequest.findUniqueOrThrow({ where: { id: submitted.request.id } }))
+      .resolves.toMatchObject({ status: "rejected_by_lock", reviewedBy: approver.id, reviewedAt: lockedAt });
+    await expect(db.auditLog.findFirstOrThrow({ where: { vendorId: row.vendorId, action: "reject_settlement_adjustment_on_lock" } }))
+      .resolves.toMatchObject({ targetId: row.id, actorId: approver.id });
+    await expect(approveSettlementAdjustment(db, { requestId: submitted.request.id, actor: approver })).rejects.toMatchObject({ code: "not_pending" });
   });
 
   it("enforces one pending request, a reason and the second approver in the database", async () => {

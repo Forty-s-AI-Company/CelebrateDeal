@@ -8,11 +8,15 @@ import { parseWholeYuanToCents } from "@/lib/money-input";
  *
  * - The amount is strict whole NT$ (see money-input.ts) and a reason is
  *   mandatory (trimmed, at most 500 characters).
- * - |amount| at or below FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS (default
- *   5,000,000 cents = NT$50,000) is applied at once, as before.
- * - A larger amount becomes a pending SettlementAdjustmentRequest and does not
+ * - If both |new amount| and |new amount - current amount| are at or below
+ *   FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS (default 5,000,000 cents =
+ *   NT$50,000) the adjustment is applied at once, as before. Comparing the
+ *   change as well stops one admin from swinging -T to +T (review n-2).
+ * - Otherwise it becomes a pending SettlementAdjustmentRequest and does not
  *   touch the settlement until a different platform admin approves it. The
  *   database repeats the second-person rule in a CHECK constraint.
+ * - Locking a settlement closes its pending request as `rejected_by_lock`
+ *   with an AuditLog row (review m-4); the settlements page lists it.
  *
  * Every write runs in one serializable transaction with its AuditLog row.
  */
@@ -26,8 +30,12 @@ export function financeSecondApprovalThresholdCents(env: Record<string, string |
   return Number.isSafeInteger(value) ? value : DEFAULT_FINANCE_SECOND_APPROVAL_THRESHOLD_CENTS;
 }
 
-export function requiresSecondApproval(amountCents: number, thresholdCents = financeSecondApprovalThresholdCents()) {
-  return Math.abs(amountCents) > thresholdCents;
+export function requiresSecondApproval(
+  amountCents: number,
+  thresholdCents = financeSecondApprovalThresholdCents(),
+  currentAmountCents = 0,
+) {
+  return Math.abs(amountCents) > thresholdCents || Math.abs(amountCents - currentAmountCents) > thresholdCents;
 }
 
 export type SettlementAdjustmentErrorCode =
@@ -127,7 +135,7 @@ export async function submitSettlementAdjustment(db: AdjustmentDb, input: {
     if (settlement.payoutableAmountCents + input.amountCents < 0) throw new SettlementAdjustmentError("negative_payout");
     const superseded = await supersedePending(tx, settlement, input.actor.id, now);
 
-    if (requiresSecondApproval(input.amountCents, thresholdCents)) {
+    if (requiresSecondApproval(input.amountCents, thresholdCents, settlement.adjustmentAmountCents)) {
       const request = await tx.settlementAdjustmentRequest.create({
         data: {
           vendorId: settlement.vendorId,
@@ -204,6 +212,39 @@ export async function approveSettlementAdjustment(db: AdjustmentDb, input: { req
     });
     return { settlement: saved, request: { ...request, status: "approved", reviewedBy: input.actor.id, reviewedAt: now } };
   });
+}
+
+/**
+ * Called inside the lock transaction after the settlement row was locked:
+ * a pending request can no longer be approved, so close it visibly.
+ */
+export async function closePendingAdjustmentsOnLock(
+  tx: Prisma.TransactionClient,
+  input: { settlement: Pick<Settlement, "id" | "vendorId">; actor: Actor; now: Date },
+) {
+  const pending = await tx.settlementAdjustmentRequest.findMany({
+    where: { vendorId: input.settlement.vendorId, settlementId: input.settlement.id, status: "pending" },
+  });
+  for (const request of pending) {
+    const closed = await tx.settlementAdjustmentRequest.updateMany({
+      where: { id: request.id, vendorId: request.vendorId, status: "pending" },
+      data: { status: "rejected_by_lock", reviewedBy: input.actor.id, reviewedAt: input.now },
+    });
+    if (closed.count !== 1) throw new SettlementAdjustmentError("conflict");
+    await tx.auditLog.create({
+      data: {
+        vendorId: request.vendorId,
+        actorId: input.actor.id,
+        actorLabel: input.actor.label,
+        action: "reject_settlement_adjustment_on_lock",
+        targetType: "Settlement",
+        targetId: request.settlementId,
+        before: auditSnapshot(request),
+        after: auditSnapshot({ requestId: request.id, requestedBy: request.requestedBy, status: "rejected_by_lock" }),
+      },
+    });
+  }
+  return pending.length;
 }
 
 /** Any platform finance admin, including the requester, may reject or withdraw. */

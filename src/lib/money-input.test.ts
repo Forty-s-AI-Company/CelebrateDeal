@@ -9,12 +9,12 @@ describe("strict finance amount parsing (F-049)", () => {
     [" 1200 ", 120_000],
     ["1,000", 100_000],
     ["12,345,678", 1_234_567_800],
-    ["999999999", 99_999_999_900],
+    ["21,474,836", 2_147_483_600],
   ])("parses whole NT$ %j", (raw, cents) => {
     expect(parseWholeYuanToCents(raw)).toBe(cents);
   });
 
-  it.each(["", "1e3", "12abc", "40.5", "40.", "1,00", "1,0000", ",100", "+5", "-5", "1 000", "0x10", "1000000000", "Infinity", "NaN"])(
+  it.each(["", "1e3", "12abc", "40.5", "40.", "1,00", "1,0000", ",100", "+5", "-5", "1 000", "0x10", "1000000000", "21474837", "999999999", "Infinity", "NaN"])(
     "rejects %j as a whole NT$ amount",
     (raw) => {
       expect(parseWholeYuanToCents(raw)).toBeNull();
@@ -37,7 +37,7 @@ describe("strict finance amount parsing (F-049)", () => {
     expect(parseYuanWithCentsToCents(raw)).toBe(cents);
   });
 
-  it.each(["", "4.001", "1e1", "-1", ".5", "4.", "abc"])("rejects %j as a fee amount", (raw) => {
+  it.each(["", "4.001", "1e1", "-1", ".5", "4.", "abc", "21474836.48", "999999999"])("rejects %j as a fee amount", (raw) => {
     expect(parseYuanWithCentsToCents(raw)).toBeNull();
   });
 });

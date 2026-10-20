@@ -67,7 +67,12 @@ export default async function AdminBillingSettlementsPage({
       include: {
         vendor: true,
         payoutBatch: true,
-        adjustmentRequests: { where: { status: "pending" }, orderBy: { requestedAt: "desc" }, take: 1 },
+        // Pending requests plus those closed when the settlement was locked (review m-4).
+        adjustmentRequests: {
+          where: { status: { in: ["pending", "rejected_by_lock"] } },
+          orderBy: { requestedAt: "desc" },
+          take: 5,
+        },
       },
     }),
   ]);
@@ -168,13 +173,27 @@ export default async function AdminBillingSettlementsPage({
               <Metric label="調整" value={settlement.adjustmentAmountCents} />
             </div>
 
-            {settlement.adjustmentRequests[0] ? (
+            {settlement.adjustmentRequests.map((request) => request.status === "pending" ? (
               <PendingAdjustment
-                request={settlement.adjustmentRequests[0]}
-                requestedByCurrentAdmin={settlement.adjustmentRequests[0].requestedBy === member.id}
+                key={request.id}
+                request={request}
+                requestedByCurrentAdmin={request.requestedBy === member.id}
                 locked={Boolean(settlement.lockedAt)}
               />
-            ) : null}
+            ) : (
+              <div key={request.id} className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700" role="note">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="gray">鎖定時自動退回</Badge>
+                  <span className="font-semibold text-slate-950">{formatCurrency(request.amountCents)}</span>
+                  <span className="text-slate-500">申請於 {formatDateTime(request.requestedAt)}</span>
+                </div>
+                <p>原因：{request.reason}</p>
+                <p>
+                  月結鎖定時這筆申請尚未覆核，已自動退回，金額沒有生效
+                  {request.requestedBy === member.id ? "（由你申請）" : ""}。如仍需調整，請於下期月結重新申請。
+                </p>
+              </div>
+            ))}
 
             <div className="grid gap-4 xl:grid-cols-[1fr_auto_auto] xl:items-end">
               <form action={updateSettlementAdjustmentAction} className="grid gap-3 md:grid-cols-[150px_1fr_auto] md:items-end">
@@ -258,7 +277,7 @@ function PendingAdjustment({
   requestedByCurrentAdmin,
   locked,
 }: {
-  request: { id: string; amountCents: number; reason: string; requestedAt: Date };
+  request: { id: string; amountCents: number; reason: string; requestedAt: Date; requestedBy: string; status: string };
   requestedByCurrentAdmin: boolean;
   locked: boolean;
 }) {

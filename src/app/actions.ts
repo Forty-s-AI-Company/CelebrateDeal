@@ -83,6 +83,7 @@ import { parseWholeYuanToCents, parseYuanWithCentsToCents } from "@/lib/money-in
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, postRefundEventType } from "@/lib/payment-post-refund";
 import {
   approveSettlementAdjustment,
+  closePendingAdjustmentsOnLock,
   parseSettlementAdjustmentInput,
   rejectSettlementAdjustment,
   SettlementAdjustmentError,
@@ -1640,6 +1641,8 @@ export async function lockSettlementAction(formData: FormData) {
 
       const locked = await tx.settlement.findUnique({ where: { id } });
       if (!locked) throw new SettlementMutationConflict();
+      // F-049 (review m-4): a pending large adjustment can no longer be approved.
+      await closePendingAdjustmentsOnLock(tx, { settlement: locked, actor: { id: member.id, label: member.role }, now: lockedAt });
       await tx.affiliateCommission.updateMany({
         where: { vendorId: settlement.vendorId, monthKey: settlement.monthKey, status: { in: ["pending", "approved"] } },
         data: { status: "locked", settledAt: lockedAt },
