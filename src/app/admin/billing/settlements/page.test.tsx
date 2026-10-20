@@ -41,7 +41,7 @@ describe("/admin/billing/settlements feedback", () => {
     ["same_approver", "申請人不能自行核准"],
     ["unclassified_payment_purpose", "無法判定用途的付款"],
     ["stale_settlement", "請先重新產生月結再鎖定"],
-    ["carry_forward_target_locked", "不能再變更"],
+    ["carry_forward_target_locked", "下一期已經鎖定，因此不能再重新計算或調整。資料未變更"],
   ])("renders safe feedback for %s", async (error, expectedMessage) => {
     const html = renderToStaticMarkup(await AdminBillingSettlementsPage({
       searchParams: Promise.resolve({ error }),

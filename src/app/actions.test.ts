@@ -6049,6 +6049,15 @@ describe("FIN-02 settlement mutation invariants", () => {
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
+  it.each(["unclassified_payment_purpose", "carry_forward_target_locked"] as const)("redirects %s to its own message instead of missing", async (code) => {
+    mocks.generateSettlementForVendor.mockRejectedValueOnce(new BillingCycleError(code));
+
+    await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
+      `redirect:/admin/billing/settlements?error=${code}`,
+    );
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
   it("fails a settlement regeneration when its optimistic conditional write loses", async () => {
     mocks.generateSettlementForVendor.mockRejectedValueOnce(new BillingCycleError("conflict"));
 

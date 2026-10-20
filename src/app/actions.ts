@@ -1526,6 +1526,7 @@ export async function generateSettlementAction(formData: FormData) {
       if (error.code === "conflict") redirect("/admin/billing/settlements?error=conflict");
       if (error.code === "unsupported_currency") redirect("/admin/billing/settlements?error=unsupported_currency");
       if (error.code === "unclassified_payment_purpose") redirect("/admin/billing/settlements?error=unclassified_payment_purpose");
+      if (error.code === "carry_forward_target_locked") redirect("/admin/billing/settlements?error=carry_forward_target_locked");
       redirect("/admin/billing/settlements?error=missing");
     }
     if (error instanceof SettlementMutationConflict || isSettlementMutationConflict(error)) {

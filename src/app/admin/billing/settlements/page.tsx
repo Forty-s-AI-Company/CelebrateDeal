@@ -39,7 +39,7 @@ const settlementErrorMessages: Record<string, string> = {
   not_pending: "這筆調整申請已處理或已被新的申請取代，請重新整理。",
   unsupported_currency: "這個月份有非新台幣（TWD）的交易，月結不會混加不同幣別；請先人工核對該商家的交易。",
   stale_settlement: "月結計算後又有新的退款或上期結轉，請先重新產生月結再鎖定。",
-  carry_forward_target_locked: "上期的負餘額結轉已被已鎖定的下期月結扣抵，不能再變更；請改用人工調整處理差額。",
+  carry_forward_target_locked: "這個月份的負餘額結轉已由下一期月結扣抵，而下一期已經鎖定，因此不能再重新計算或調整。資料未變更。請在下一個未鎖定的月份以人工調整補差額。",
   unclassified_payment_purpose: "這個月份有無法判定用途的付款（不是買家訂單、方案費或帳單款），月結不會猜測是否計入商家營收；請先由工程人員核對並更新交易用途後再產生月結。",
 };
 
