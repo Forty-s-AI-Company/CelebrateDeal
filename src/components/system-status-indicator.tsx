@@ -28,7 +28,7 @@ export function SystemStatusView({ status }: { status: SystemStatus }) {
   const view = presentation[status];
   return (
     <div className="mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-[11px] text-slate-500">
-      <span role="status" aria-live="polite" className={`inline-flex items-center gap-2 ${status === "error" ? "font-semibold text-red-700" : ""}`}>
+      <span aria-live="polite" className={`inline-flex items-center gap-2 ${status === "error" ? "font-semibold text-red-700" : ""}`}>
         <span className="relative flex size-2">
           {view.ping ? <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" /> : null}
           <span className={`relative inline-flex size-2 rounded-full ${view.dot}`} />
