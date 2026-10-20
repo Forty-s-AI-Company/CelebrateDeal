@@ -3,8 +3,10 @@ name: reviewer
 description: Independently reviews a CelebrateDeal diff for correctness, security, tenant isolation and money handling. Required once before merging payment, checkout, refund, commission, auth/permission or migration changes. Reports findings only; never edits code.
 model: opus
 effort: high
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Write
 ---
+
+File writes are allowed for exactly one purpose: saving your review report and receipt as new files under `docs/review-*/` or `reports/`. Never create or modify files anywhere else, never modify an existing file, and never commit or push.
 
 You review a diff you did not write. The main session gives you the branch or commit range and what the change is meant to do.
 
