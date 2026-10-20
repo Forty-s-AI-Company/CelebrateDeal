@@ -65,8 +65,8 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
         </div>
         {isExternalVideo ? (
           <SelectField label="狀態" name="status" defaultValue={video?.status ?? "ready"}>
-            <option value="ready">ready</option>
-            <option value="archived">archived</option>
+            <option value="ready">可使用</option>
+            <option value="archived">已封存</option>
           </SelectField>
         ) : (
           <VideoProviderStatus

@@ -4,6 +4,7 @@ import { Badge, ButtonLink, Card } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import { formatLiveCountdown } from "@/lib/live-countdown";
 import type { DashboardDetailsData } from "./dashboard-details";
+import { statusLabel } from "@/lib/status-labels";
 
 export default function DashboardDetailsContent({ data }: { data: DashboardDetailsData }) {
   const {
@@ -39,7 +40,7 @@ export default function DashboardDetailsContent({ data }: { data: DashboardDetai
                       </span>
                     </span>
                     <span className="flex gap-2">
-                      <Badge tone="blue">{live.status}</Badge>
+                      <Badge tone="blue">{statusLabel("live", live.status)}</Badge>
                       <Badge tone="green">{submissionCounts.verified} 已驗證</Badge>
                       {submissionCounts.pending > 0 ? <Badge tone="gray">{submissionCounts.pending} 待驗證</Badge> : null}
                     </span>

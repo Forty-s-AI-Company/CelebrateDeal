@@ -7,6 +7,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { statusLabel } from "@/lib/status-labels";
 
 function pageHref(page: number, pageSize: number) {
   return `/interaction-scripts?page=${page}&pageSize=${pageSize}`;
@@ -85,7 +86,7 @@ export default async function InteractionScriptsPage({
                       <p className="mt-1 text-sm text-slate-500">{script.description ?? "未填寫說明"}</p>
                     </div>
                     <div className="flex gap-2">
-                      <Badge tone="blue">{script.status}</Badge>
+                      <Badge tone="blue">{statusLabel("script", script.status)}</Badge>
                       <Badge tone="orange">{script.events.length} 句</Badge>
                       <Badge tone="gray">{script.lives.length} 直播</Badge>
                     </div>

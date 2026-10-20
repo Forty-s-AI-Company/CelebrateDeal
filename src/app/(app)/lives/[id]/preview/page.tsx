@@ -5,6 +5,7 @@ import { ButtonLink, Card, PageHeader } from "@/components/ui";
 import { EvergreenPreviewPlayer } from "@/components/evergreen-preview-player";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { statusLabel } from "@/lib/status-labels";
 
 export default async function LivePreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const vendor = await requireVendorManager();
@@ -37,7 +38,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
             <p className="mt-5 text-sm font-semibold text-slate-700">綁定內容</p>
             <ul className="mt-2 space-y-2 text-sm text-slate-600">
               <li>影片：{live.video?.title ?? "未綁定"}</li>
-              <li>串流模式：{live.streamMode}</li>
+              <li>串流模式：{statusLabel("streamMode", live.streamMode)}</li>
               <li>Cloudflare Live Input：{live.cloudflareLiveInputUid ?? live.video?.cloudflareLiveInputUid ?? "未設定"}</li>
               <li>表單：{live.form?.name ?? "未綁定"}</li>
               <li>報名成功 Email：{live.messageTemplate?.name ?? "未綁定"}</li>
