@@ -7,6 +7,8 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    # F-146 / B09-07: the default 360 minutes lets a hung run hold a runner.
+    timeout-minutes: 60
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
