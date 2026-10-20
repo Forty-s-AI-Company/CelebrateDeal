@@ -4,7 +4,7 @@ import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
 import { payUniStagingPlanTestScope } from "@/lib/payuni-staging-plan-test";
 import { isStagingPayUniPreviewCandidate } from "@/lib/database-identity";
 import { payUniCredentialKeys } from "@/lib/payuni-credentials";
-import { isProductionDeployment, PRODUCTION_PAYMENT_PROVIDER } from "@/lib/payment-providers/runtime-policy";
+import { isVercelProductionDeployment, PRODUCTION_PAYMENT_PROVIDER } from "@/lib/payment-providers/runtime-policy";
 import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
 import {
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
@@ -180,7 +180,10 @@ function payUniEnvironmentDeploymentCheck(
 
 /** F-003: only PayUni refunds reach a provider; production accepts nothing else. */
 function productionPaymentProviderChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
-  if (!isProductionDeployment(env) || env.PAYMENT_PROVIDER === PRODUCTION_PAYMENT_PROVIDER) return [];
+  // The runtime policy also covers non-Vercel production servers (review m-5);
+  // the build preflight keeps to the deployment truth so controlled CI builds
+  // with the demo provider still run.
+  if (!isVercelProductionDeployment(env) || env.PAYMENT_PROVIDER === PRODUCTION_PAYMENT_PROVIDER) return [];
   return [{
     key: "PAYMENT_PROVIDER",
     status: "fail",
