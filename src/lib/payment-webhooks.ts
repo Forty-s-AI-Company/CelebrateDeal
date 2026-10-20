@@ -41,6 +41,7 @@ import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, type PostRefundCommerceOrderRefund } from "@/lib/payment-post-refund";
 import { resolveWebhookPaymentAmounts } from "@/lib/payment-gateway-fee";
 import { refundSettlementMonthKey } from "@/lib/settlement-period";
+import { withSerializableRetry } from "@/lib/serializable-retry";
 import { PaymentProviderNotAllowedError, paymentProviderAllowedInRuntime } from "@/lib/payment-providers/runtime-policy";
 import {
   isRefundEvent,
@@ -1331,6 +1332,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
   return { vendor, transaction, commission, refundCommission, platformReferralCommission, platformReferralRefund, platformReferralDispute, platformSubscription, invoicePayment, disputeEntry, courseAllocations, courseRefundAllocations, courseDisputeEntries, commerceOrderRefund };
 }
 
+const PAYMENT_WEBHOOK_MAX_ATTEMPTS = 3;
+
 function isRetryableCommissionWriteConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError
     && (error.code === "P2034" || error.code === "P2002");
@@ -1340,19 +1343,16 @@ function isRetryableCommissionWriteConflict(error: unknown) {
  * A serializable abort is expected when two callbacks race for the same
  * business identity. Retry a bounded number of times; the second read/upsert
  * then returns the existing commission instead of creating another row.
+ * F-055: retries use the shared backoff with full jitter.
  */
 export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
   // F-003: stored events replayed by the retry worker or reconciliation never
   // pass the route's provider check, so production refuses them here too.
   if (!paymentProviderAllowedInRuntime(payload.provider)) throw new PaymentProviderNotAllowedError();
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await processPaymentWebhookOnce(payload, event, expectedScope);
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableCommissionWriteConflict(error) || attempt === 1) break;
-    }
-  }
-  throw lastError;
+  return withSerializableRetry(() => processPaymentWebhookOnce(payload, event, expectedScope), {
+    attempts: PAYMENT_WEBHOOK_MAX_ATTEMPTS,
+    baseDelayMs: 50,
+    maxDelayMs: 500,
+    retryOn: isRetryableCommissionWriteConflict,
+  });
 }

@@ -328,6 +328,23 @@ describe("getEnvCheckReport", () => {
     expect(check(getEnvCheckReport({ ...env, VERCEL_ENV: undefined }), envKey("PAYMENT", "PROVIDER"), "fail")).toBeUndefined();
   });
 
+  it("warns, without echoing the URL, when a deployed DATABASE_URL lacks pooler settings (F-055)", () => {
+    const env = configuredEnv();
+    env.VERCEL_ENV = "preview";
+    const pooled = "postgresql:" + "//app:synthetic@pooler.database.test:6543/app?pgbouncer=true&connection_limit=1";
+
+    const report = getEnvCheckReport(env);
+    const warning = check(report, envKey("DATABASE", "URL"), "warning");
+    expect(warning?.message).toContain("pgbouncer=true、connection_limit");
+    expect(JSON.stringify(report.checks)).not.toContain("database.test");
+
+    expect(check(getEnvCheckReport({ ...env, DATABASE_URL: pooled }), envKey("DATABASE", "URL"), "warning")).toBeUndefined();
+    expect(check(getEnvCheckReport({ ...env, DATABASE_URL: pooled.replace("connection_limit=1", "connection_limit=0") }), envKey("DATABASE", "URL"), "warning")?.message)
+      .toContain("connection_limit");
+    // Local and CI production builds are not checked.
+    expect(check(getEnvCheckReport({ ...env, VERCEL_ENV: undefined }), envKey("DATABASE", "URL"), "warning")).toBeUndefined();
+  });
+
   it.each(["ecpay-like", "platform-ecpay"])("requires the ECPay webhook verification value for %s", (provider) => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = provider;
