@@ -639,7 +639,7 @@ describe("PayUni provider", () => {
     expect(normalized.payload.eventId).toBe("PAYUNI-SANDBOX-TRADE-001:1");
     expect(normalized.payload.orderNumber).toBe("CD-SANDBOX-PAID-001");
     // Real UPP callbacks never carry a referral code or net amount.
-    expect(normalized.payload.referralCode).toBeUndefined();
+    expect(normalized.payload).not.toHaveProperty("referralCode");
     expect(normalized.payload.netAmountCents).toBeUndefined();
     expect(normalized.payload.metadata).toBeUndefined();
     expect(duplicate.payload.eventId).toBe(normalized.payload.eventId);
@@ -867,7 +867,17 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
       grossAmountCents: 199_000,
     });
     expect(payload.vendorId).toBeUndefined();
-    expect(payload.referralCode).toBeUndefined();
+    expect(payload).not.toHaveProperty("referralCode");
+  });
+
+  it("never reads tenant, referral or commission overrides from a signed callback (F-048)", async () => {
+    const { payload } = await normalizeReal({ ...realPaid, VendorId: "vendor-forged", VendorSlug: "forged-shop",
+      ReferralCode: "FORGED", CommissionRateBps: "9999" });
+    expect(payload.vendorId).toBeUndefined();
+    expect(payload.vendorSlug).toBeUndefined();
+    expect(payload).not.toHaveProperty("referralCode");
+    expect(payload).not.toHaveProperty("commissionRateBps");
+    expect(payload.orderNumber).toBe("CD-REAL-001");
   });
 
   it("leaves absent provider fee and net fields undefined instead of writing zero (F-040)", async () => {

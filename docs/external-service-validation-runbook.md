@@ -216,6 +216,11 @@ npm run test -- src/lib/payment-providers/payuni.test.ts
 
 此測試會驗證 checkout form fields、paid fixture、refunded fixture 與 duplicate fixture normalize。
 
+`npm run external:smoke` 的 PayUni webhook smoke（`RUN_PAYUNI_SANDBOX_WEBHOOK_SMOKE=true`）只會結算既有的結帳交易：
+未知訂單的回呼一律拒絕，不會建立付款或佣金（F-048），回呼也不再讀取 `VendorId`、`VendorSlug`、`ReferralCode`。
+請先在目標 Sandbox 部署走一次買家結帳，建立 pending 交易，再設定 `SMOKE_PAYUNI_ORDER_NUMBER`（該交易的 MerTradeNo）
+與 `SMOKE_PAYUNI_TRADE_AMOUNT`（整數新台幣元，需與交易金額一致）；未設定時 smoke 會 skip。
+
 Upstash Redis 路線：
 
 1. 建立 Upstash Redis database。External required

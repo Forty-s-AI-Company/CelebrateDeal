@@ -49,8 +49,6 @@ const PAYUNI_WEBHOOK_AUDIT_KEYS = new Set([
   // Unsigned envelope Status, kept only on reconciliation records.
   "OuterStatus",
   "TsNo",
-  "VendorSlug",
-  "VendorId",
   "Amount",
   "TradeAmt",
   "GatewayFee",
@@ -1069,8 +1067,8 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       provider: "payuni",
       eventId: normalizedEventId,
       eventType,
-      vendorSlug: optionalPayloadText(rawPayload.VendorSlug),
-      vendorId: optionalPayloadText(rawPayload.VendorId),
+      // Tenant scope, referral and commission are never read from the callback:
+      // the order number must match a server-created checkout transaction (F-048).
       orderNumber: normalizedOrderNumber,
       providerTradeNo: optionalPayloadText(rawPayload.TradeNo),
       paymentMode: "platform",
@@ -1082,7 +1080,6 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       gatewayFeeRefundCents: optionalCents(rawPayload.GatewayFeeRefund),
       platformFeeRefundCents: optionalCents(rawPayload.PlatformFeeRefund),
       refundReason: rawPayload.RefundReason ? String(rawPayload.RefundReason) : undefined,
-      referralCode: rawPayload.ReferralCode ? String(rawPayload.ReferralCode) : undefined,
       occurredAt: rawPayload.OccurredAt ? new Date(String(rawPayload.OccurredAt)).toISOString() : undefined,
     };
 

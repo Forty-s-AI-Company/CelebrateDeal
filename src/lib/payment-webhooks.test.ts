@@ -25,6 +25,34 @@ function webhookPayloadJson(payload: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify({ normalized: payload })) as Prisma.InputJsonValue;
 }
 
+/**
+ * Real providers only settle a server-created checkout transaction, and the
+ * referral comes only from its metadata (F-048). Tests that previously let a
+ * callback create an unknown order now create the checkout transaction first.
+ */
+async function createCheckoutTransaction(input: {
+  vendorId: string;
+  orderNumber: string;
+  grossAmountCents: number;
+  provider?: string;
+  referralCode?: string;
+  netAmountCents?: number;
+}) {
+  return getDb().paymentTransaction.create({
+    data: {
+      vendorId: input.vendorId,
+      providerName: input.provider ?? "demo",
+      orderNumber: input.orderNumber,
+      paymentMode: "platform",
+      grossAmountCents: input.grossAmountCents,
+      netAmountCents: input.netAmountCents ?? input.grossAmountCents,
+      currency: "TWD",
+      status: "pending",
+      metadata: input.referralCode ? { referralCode: input.referralCode } : {},
+    },
+  });
+}
+
 async function createFixture(suffix: string) {
   const db = getDb();
   const plan = await db.billingPlan.create({
@@ -285,9 +313,9 @@ describe("payment webhook processing", () => {
       grossAmountCents: 100000,
       gatewayFeeCents: 2000,
       platformFeeCents: 1000,
-      referralCode: `REF${suffix}`.toUpperCase(),
     };
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber: `ORDER-${suffix}`, grossAmountCents: 100000 });
     await processPaymentWebhook(PaymentWebhookPayload.parse(payload));
     await processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-paid-${suffix}-retry` }));
 
@@ -305,9 +333,9 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100000,
-      referralCode: affiliate.code,
     };
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
     const results = await Promise.allSettled([
       processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-a-${suffix}` })),
       processPaymentWebhook(PaymentWebhookPayload.parse({ ...payload, eventId: `evt-b-${suffix}` })),
@@ -325,6 +353,7 @@ describe("payment webhook processing", () => {
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-GROSS-NET-${suffix}`;
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, netAmountCents: 97000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-gross-net-paid-${suffix}`,
@@ -334,7 +363,6 @@ describe("payment webhook processing", () => {
       grossAmountCents: 100000,
       gatewayFeeCents: 2000,
       platformFeeCents: 1000,
-      referralCode: affiliate.code,
     }));
 
     await expect(db.affiliateCommission.findFirstOrThrow({
@@ -858,6 +886,56 @@ describe("payment webhook processing", () => {
     });
   });
 
+  it.each([
+    { label: "vendorId", scope: (vendor: { id: string; slug: string }) => ({ vendorId: vendor.id }) },
+    { label: "vendorSlug", scope: (vendor: { id: string; slug: string }) => ({ vendorSlug: vendor.slug }) },
+    { label: "no tenant hint", scope: () => ({}) },
+  ])("never turns an unknown PayUni order into an authoritative payment or commission ($label) (F-048)", async ({ label, scope }) => {
+    const suffix = `${Date.now()}-unknown-order-${label.replace(/\s+/g, "-")}`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-UNKNOWN-${suffix}`;
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "payuni",
+      eventId: `PAYUNI-UNKNOWN-${suffix}:1`,
+      eventType: "paid",
+      ...scope(vendor),
+      orderNumber,
+      providerTradeNo: `PAYUNI-UNKNOWN-${suffix}`,
+      grossAmountCents: 100000,
+      referralCode: affiliate.code,
+      commissionRateBps: 9_000,
+    }))).rejects.toThrow("既存結帳交易");
+
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id, orderNumber } })).toBe(0);
+    expect(await db.affiliateCommission.count({ where: { vendorId: vendor.id, orderNumber } })).toBe(0);
+  });
+
+  it("ignores callback referral and commission-rate overrides for an existing checkout (F-048)", async () => {
+    const suffix = `${Date.now()}-callback-rate-override`;
+    const { db, vendor, affiliate } = await createFixture(suffix);
+    const orderNumber = `ORDER-RATE-OVERRIDE-${suffix}`;
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "payuni", orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
+
+    const parsed = PaymentWebhookPayload.parse({
+      provider: "payuni",
+      eventId: `PAYUNI-RATE-${suffix}:1`,
+      eventType: "paid",
+      orderNumber,
+      providerTradeNo: `PAYUNI-RATE-${suffix}`,
+      grossAmountCents: 100000,
+      referralCode: "FORGED",
+      commissionRateBps: 9_000,
+    });
+    expect(parsed).not.toHaveProperty("referralCode");
+    expect(parsed).not.toHaveProperty("commissionRateBps");
+    await processPaymentWebhook(parsed);
+
+    const commissions = await db.affiliateCommission.findMany({ where: { vendorId: vendor.id, orderNumber } });
+    // The stored affiliate rate (800 bps) wins over the forged 9,000 bps.
+    expect(commissions).toEqual([expect.objectContaining({ affiliateId: affiliate.id, commissionRateBps: 800, commissionAmountCents: 8000 })]);
+  });
+
   it("uses checkout referral metadata, ignores forged callback codes, and accepts matching retries", async () => {
     const suffix = `${Date.now()}-checkout-referral-authority`;
     const { db, vendor, affiliate } = await createFixture(suffix);
@@ -1050,6 +1128,7 @@ describe("payment webhook processing", () => {
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-${suffix}`;
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-paid-${suffix}`,
@@ -1057,7 +1136,6 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100000,
-      referralCode: affiliate.code,
     }));
 
     const firstPartialRefund = {
@@ -1110,6 +1188,7 @@ describe("payment webhook processing", () => {
     const occurredAt = new Date();
     const monthKey = occurredAt.toISOString().slice(0, 7);
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-paid-${suffix}`,
@@ -1117,7 +1196,6 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100000,
-      referralCode: affiliate.code,
       occurredAt: occurredAt.toISOString(),
     }));
     await processPaymentWebhook(PaymentWebhookPayload.parse({
@@ -1148,6 +1226,7 @@ describe("payment webhook processing", () => {
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-${suffix}`;
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-paid-${suffix}`,
@@ -1155,7 +1234,6 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100000,
-      referralCode: affiliate.code,
     }));
     const commission = await db.affiliateCommission.findFirstOrThrow({
       where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
@@ -1196,6 +1274,7 @@ describe("payment webhook processing", () => {
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-${suffix}`;
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-paid-${suffix}`,
@@ -1203,7 +1282,6 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100000,
-      referralCode: affiliate.code,
     }));
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
@@ -1278,8 +1356,8 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100_000,
-      referralCode: affiliate.code,
     };
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100_000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse(paidPayload));
     const commission = await db.affiliateCommission.findFirstOrThrow({
       where: { vendorId: vendor.id, orderNumber, sourceType: { not: "refund_adjustment" } },
@@ -1331,9 +1409,10 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100_000,
-      referralCode: affiliate.code,
     });
 
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "provider-a", orderNumber, grossAmountCents: 100_000, referralCode: affiliate.code });
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "provider-b", orderNumber, grossAmountCents: 100_000, referralCode: affiliate.code });
     await processPaymentWebhook(paidPayload("provider-a"));
     await processPaymentWebhook(paidPayload("provider-b"));
 
@@ -1384,9 +1463,10 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100_000,
-      referralCode: affiliate.code,
     });
 
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "provider-a", orderNumber, grossAmountCents: 100_000, referralCode: affiliate.code });
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "provider-b", orderNumber, grossAmountCents: 100_000, referralCode: affiliate.code });
     await processPaymentWebhook(paidPayload("provider-a"));
     await processPaymentWebhook(paidPayload("provider-b"));
 
@@ -1434,6 +1514,7 @@ describe("payment webhook processing", () => {
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-${suffix}`;
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-paid-initial-${suffix}`,
@@ -1441,7 +1522,6 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100000,
-      referralCode: affiliate.code,
     }));
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
@@ -1459,7 +1539,6 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents: 100000,
-      referralCode: affiliate.code,
     }));
 
     const transaction = await db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
@@ -1609,11 +1688,12 @@ describe("payment webhook processing", () => {
     expect(transaction.refundedAmountCents).toBe(eventType === "refunded" ? 100000 : 50000);
   });
 
-  it("creates affiliate commission when referralCode is present", async () => {
+  it("creates affiliate commission when the checkout transaction carries a referral code", async () => {
     const suffix = `${Date.now()}c`;
     const { db, vendor, affiliate } = await createFixture(suffix);
     const orderNumber = `ORDER-${suffix}`;
 
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 100000, referralCode: affiliate.code });
     await processPaymentWebhook(PaymentWebhookPayload.parse({
       provider: "demo",
       eventId: `evt-paid-${suffix}`,
@@ -1623,7 +1703,6 @@ describe("payment webhook processing", () => {
       grossAmountCents: 100000,
       gatewayFeeCents: 2000,
       platformFeeCents: 1000,
-      referralCode: affiliate.code,
     }));
 
     const commission = await db.affiliateCommission.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } });
@@ -2347,9 +2426,10 @@ describe("payment webhook processing", () => {
       vendorSlug: vendor.slug,
       orderNumber,
       grossAmountCents,
-      referralCode: affiliate.code,
     });
 
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "provider-a", orderNumber, grossAmountCents: 100_000, referralCode: affiliate.code });
+    await createCheckoutTransaction({ vendorId: vendor.id, provider: "provider-b", orderNumber, grossAmountCents: 120_000, referralCode: affiliate.code });
     await processPaymentWebhook(paidPayload("provider-a", 100_000));
     await processPaymentWebhook(paidPayload("provider-b", 120_000));
 
@@ -2360,7 +2440,6 @@ describe("payment webhook processing", () => {
       vendorId: vendor.id,
       orderNumber,
       grossAmountCents: 120_000,
-      referralCode: affiliate.code,
     });
     const event = await db.webhookEvent.create({
       data: {
