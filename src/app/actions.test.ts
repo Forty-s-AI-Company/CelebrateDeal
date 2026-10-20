@@ -98,6 +98,12 @@ const mocks = vi.hoisted(() => ({
   refundRecordCreate: vi.fn(),
   refundRecordUpdate: vi.fn(),
   getPaymentProvider: vi.fn(),
+  submitSettlementAdjustment: vi.fn(),
+  inventoryReservationFindUnique: vi.fn(),
+  settlementAdjustmentRequestFindMany: vi.fn(),
+  settlementAdjustmentRequestUpdateMany: vi.fn(),
+  approveSettlementAdjustment: vi.fn(),
+  rejectSettlementAdjustment: vi.fn(),
   requireFinanceAdmin: vi.fn(),
   requireAuth: vi.fn(),
   requireVendor: vi.fn(),
@@ -153,6 +159,23 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+// F-049: the adjustment rules and their DB writes are covered by
+// src/lib/settlement-adjustment.db.test.ts; actions only parse and route.
+// F-045 (review m-3): pass-through spies prove every refund path reaches the shared hook.
+vi.mock("@/lib/payment-post-refund", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/payment-post-refund")>();
+  return {
+    ...actual,
+    applyPostRefundInTransaction: vi.fn(actual.applyPostRefundInTransaction),
+    applyPostRefundAfterCommit: vi.fn(actual.applyPostRefundAfterCommit),
+  };
+});
+vi.mock("@/lib/settlement-adjustment", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/settlement-adjustment")>()),
+  submitSettlementAdjustment: mocks.submitSettlementAdjustment,
+  approveSettlementAdjustment: mocks.approveSettlementAdjustment,
+  rejectSettlementAdjustment: mocks.rejectSettlementAdjustment,
+}));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
   writeAuditLog: mocks.writeAuditLog,
@@ -382,6 +405,8 @@ import {
   sendPasswordResetSmokeAction,
   updatePasswordAction,
   updateSettlementAdjustmentAction,
+  approveSettlementAdjustmentAction,
+  rejectSettlementAdjustmentAction,
   recordAffiliatePayoutOutcomeAction,
   updatePayoutItemStatusAction,
   unbindInteractionScriptFromLiveAction,
@@ -405,6 +430,8 @@ import SecuritySettingsPage from "./(app)/settings/security/page";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { hashPassword } from "@/lib/password";
 import { BillingCycleError } from "@/lib/billing-cycle";
+import { SettlementAdjustmentError } from "@/lib/settlement-adjustment";
+import { applyPostRefundAfterCommit, applyPostRefundInTransaction } from "@/lib/payment-post-refund";
 import { initialMessageTemplateActionState } from "@/lib/message-template";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 
@@ -819,6 +846,9 @@ beforeEach(() => {
   mocks.materializeLiveNotificationRules.mockResolvedValue([]);
   mocks.dispatchLiveStartedLineNotificationsSafely.mockResolvedValue(undefined);
   mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
+  mocks.inventoryReservationFindUnique.mockResolvedValue(null);
+  mocks.settlementAdjustmentRequestFindMany.mockResolvedValue([]);
+  mocks.settlementAdjustmentRequestUpdateMany.mockResolvedValue({ count: 1 });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     paymentTransaction: {
       findUnique: mocks.findUnique,
@@ -862,6 +892,8 @@ beforeEach(() => {
       create: mocks.coursePayoutCreate,
       updateMany: mocks.coursePayoutUpdateMany,
     },
+    // F-045 (review m-3): the shared post-refund hook reads the inventory reservation.
+    inventoryReservation: { findUnique: mocks.inventoryReservationFindUnique },
     interactionEvent: {
       create: mocks.interactionEventCreate,
       deleteMany: mocks.interactionEventDeleteMany,
@@ -5428,6 +5460,8 @@ describe("refundPaymentTransactionAction", () => {
           create: mocks.coursePayoutCreate,
           updateMany: mocks.coursePayoutUpdateMany,
         },
+        // F-045: the shared post-refund hook reads the inventory reservation.
+        inventoryReservation: { findUnique: vi.fn().mockResolvedValue(null) },
       });
       if (transactionAttempts === 2) throw Object.assign(new Error("serialization failure"), { code: "P2034" });
       return result;
@@ -5479,8 +5513,23 @@ describe("refundPaymentTransactionAction", () => {
     });
   });
 
+  it.each(["1e3", "12abc", "40.5", "-5", "0", ""])("rejects a malformed refund amount %j before reading or reserving anything (F-049)", async (amount) => {
+    await expect(refundPaymentTransactionAction(refundFormData(amount))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+    expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(["1e1", "4.001", "abc"])("rejects a malformed fee refund %j", async (fee) => {
+    await expect(refundPaymentTransactionAction(refundFormData("1", fee))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund",
+    );
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("rejects a refund that exceeds the remaining refundable amount without writing records or updating the transaction", async () => {
-    await expect(refundPaymentTransactionAction(refundFormData("40.01"))).rejects.toThrow(
+    await expect(refundPaymentTransactionAction(refundFormData("41"))).rejects.toThrow(
       "redirect:/admin/billing/dashboard?error=refund",
     );
 
@@ -5494,6 +5543,19 @@ describe("refundPaymentTransactionAction", () => {
     await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
       "redirect:/admin/billing/dashboard",
     );
+
+    // A non-PayUni manual refund runs the same post-refund hook (inventory, then invoice after commit).
+    expect(vi.mocked(applyPostRefundInTransaction)).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      eventType: "refunded",
+      transaction: expect.objectContaining({ id: transaction.id }),
+    }));
+    expect(mocks.inventoryReservationFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { paymentTransactionId: transaction.id } }));
+    expect(vi.mocked(applyPostRefundAfterCommit)).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      paymentTransactionId: transaction.id,
+      eventType: "refunded",
+      refundAmountCents: 4_000,
+      previousRefundedAmountCents: transaction.refundedAmountCents,
+    }));
 
     expect(mocks.refundRecordCreate).toHaveBeenCalledWith({
       data: {
@@ -5677,6 +5739,7 @@ describe("refundPaymentTransactionAction", () => {
           create: mocks.coursePayoutCreate,
           updateMany: mocks.coursePayoutUpdateMany,
         },
+        inventoryReservation: { findUnique: mocks.inventoryReservationFindUnique },
       });
 
       // PostgreSQL detects that the transaction read stale data at commit time.
@@ -5764,6 +5827,7 @@ describe("refundPaymentTransactionAction", () => {
           create: mocks.coursePayoutCreate,
           updateMany: mocks.coursePayoutUpdateMany,
         },
+        inventoryReservation: { findUnique: mocks.inventoryReservationFindUnique },
       });
 
       if (transactionAttempts === 1) {
@@ -5988,95 +6052,66 @@ describe("FIN-02 settlement mutation invariants", () => {
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
-  it("rejects a negative manual adjustment before starting a transaction", async () => {
-    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
+  it.each(["1e3", "12abc", "10.5", "1,00", "", "--5"])("rejects a malformed adjustment amount %j before any write (F-049)", async (amount) => {
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData(amount))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=invalid_adjustment",
+    );
+    expect(mocks.submitSettlementAdjustment).not.toHaveBeenCalled();
+  });
 
+  it("requires an adjustment reason", async () => {
+    const formData = adjustmentFormData("100");
+    formData.set("adjustmentReason", "   ");
+    await expect(updateSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=adjustment_reason_required",
+    );
+    expect(mocks.submitSettlementAdjustment).not.toHaveBeenCalled();
+  });
+
+  it("submits a strict whole-NT$ adjustment with the server actor and maps domain errors", async () => {
+    mocks.submitSettlementAdjustment.mockResolvedValueOnce({ outcome: "applied", settlement });
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData("-1,000"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements",
+    );
+    expect(mocks.submitSettlementAdjustment).toHaveBeenCalledWith(expect.any(Object), {
+      settlementId: settlement.id,
+      amountCents: -100_000,
+      reason: "synthetic finance review",
+      actor: { id: "finance-1", label: expect.any(String) },
+    });
+
+    mocks.submitSettlementAdjustment.mockRejectedValueOnce(new SettlementAdjustmentError("negative_payout"));
     await expect(updateSettlementAdjustmentAction(adjustmentFormData("-101"))).rejects.toThrow(
       "redirect:/admin/billing/settlements?error=negative_payout",
     );
-
-    expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
-  it("fails a manual adjustment when the settlement version changes concurrently", async () => {
-    mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
-    mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
-    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      settlement: {
-        findUnique: mocks.settlementFindUnique,
-        updateMany: mocks.settlementUpdateMany,
-      },
-      courseCommissionAllocation: {
-        findMany: mocks.courseCommissionAllocationFindMany,
-        findUnique: mocks.courseCommissionAllocationFindUnique,
-      },
-      courseCommissionLedgerEntry: {
-        aggregate: mocks.courseCommissionLedgerEntryAggregate,
-        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
-        create: mocks.courseCommissionLedgerEntryCreate,
-      },
-      coursePayout: {
-        findUnique: mocks.coursePayoutFindUnique,
-        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
-        create: mocks.coursePayoutCreate,
-        updateMany: mocks.coursePayoutUpdateMany,
-      },
-    }));
-
-    await expect(updateSettlementAdjustmentAction(adjustmentFormData("5"))).rejects.toThrow(
-      "redirect:/admin/billing/settlements?error=conflict",
+  it("reports a large adjustment as waiting for a second approver", async () => {
+    mocks.submitSettlementAdjustment.mockResolvedValueOnce({ outcome: "pending_approval", request: { id: "request-1" } });
+    await expect(updateSettlementAdjustmentAction(adjustmentFormData("60000"))).rejects.toThrow(
+      "redirect:/admin/billing/settlements?status=adjustment_pending",
     );
+  });
 
-    expect(mocks.settlementUpdateMany).toHaveBeenCalledWith({
-      where: { id: settlement.id, lockedAt: null, updatedAt },
-      data: {
-        adjustmentAmountCents: 500,
-        adjustmentReason: "synthetic finance review",
-        reviewedBy: "finance-1",
-        finalPayoutAmountCents: 10_500,
-      },
+  it("routes approval and rejection through the finance admin with the posted request id", async () => {
+    const formData = new FormData();
+    formData.set("requestId", "request-1");
+    mocks.approveSettlementAdjustment.mockRejectedValueOnce(new SettlementAdjustmentError("same_approver"));
+    await expect(approveSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=same_approver",
+    );
+    mocks.approveSettlementAdjustment.mockResolvedValueOnce({});
+    await expect(approveSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?status=adjustment_approved",
+    );
+    expect(mocks.approveSettlementAdjustment).toHaveBeenLastCalledWith(expect.any(Object), {
+      requestId: "request-1",
+      actor: { id: "finance-1", label: expect.any(String) },
     });
-    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
-  });
-
-  it("persists and audits a non-negative adjustment after a successful conditional write", async () => {
-    const saved = { ...settlement, adjustmentAmountCents: -10_000, finalPayoutAmountCents: 0 };
-    mocks.settlementFindUnique
-      .mockResolvedValueOnce(settlement)
-      .mockResolvedValueOnce(saved);
-    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      settlement: {
-        findUnique: mocks.settlementFindUnique,
-        updateMany: mocks.settlementUpdateMany,
-      },
-      courseCommissionAllocation: {
-        findMany: mocks.courseCommissionAllocationFindMany,
-        findUnique: mocks.courseCommissionAllocationFindUnique,
-      },
-      courseCommissionLedgerEntry: {
-        aggregate: mocks.courseCommissionLedgerEntryAggregate,
-        findUnique: mocks.courseCommissionLedgerEntryFindUnique,
-        create: mocks.courseCommissionLedgerEntryCreate,
-      },
-      coursePayout: {
-        findUnique: mocks.coursePayoutFindUnique,
-        findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
-        create: mocks.coursePayoutCreate,
-        updateMany: mocks.coursePayoutUpdateMany,
-      },
-    }));
-
-    await expect(updateSettlementAdjustmentAction(adjustmentFormData("-100"))).rejects.toThrow(
-      "redirect:/admin/billing/settlements",
+    mocks.rejectSettlementAdjustment.mockResolvedValueOnce({});
+    await expect(rejectSettlementAdjustmentAction(formData)).rejects.toThrow(
+      "redirect:/admin/billing/settlements?status=adjustment_rejected",
     );
-
-    expect(mocks.settlementUpdateMany).toHaveBeenCalledOnce();
-    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
-      action: "update_settlement_adjustment",
-      before: settlement,
-      after: saved,
-    }));
   });
 
   it("rejects locking a negative settlement before touching commissions", async () => {
@@ -6095,6 +6130,8 @@ describe("FIN-02 settlement mutation invariants", () => {
     mocks.settlementFindUnique.mockResolvedValueOnce(settlement);
     mocks.settlementUpdateMany.mockResolvedValueOnce({ count: 0 });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6144,6 +6181,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       .mockResolvedValueOnce(zeroSettlement)
       .mockResolvedValueOnce(lockedSettlement);
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6183,6 +6222,42 @@ describe("FIN-02 settlement mutation invariants", () => {
       data: expect.objectContaining({ status: "locked", lockedBy: "finance-1" }),
     });
     expect(mocks.affiliateCommissionUpdateMany).toHaveBeenCalledOnce();
+    // F-049 (review m-4): pending adjustments are looked up and closed inside the lock transaction.
+    expect(mocks.settlementAdjustmentRequestFindMany).toHaveBeenCalledWith({
+      where: { vendorId: settlement.vendorId, settlementId: settlement.id, status: "pending" },
+    });
+  });
+
+  it("closes a pending large adjustment as rejected_by_lock with an audit row (review m-4)", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce(settlement).mockResolvedValueOnce({ ...settlement, status: "locked" });
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
+      affiliateCommission: { findMany: mocks.affiliateCommissionFindMany, updateMany: mocks.affiliateCommissionUpdateMany },
+      affiliateCommissionLedgerEntry: { aggregate: mocks.affiliateCommissionLedgerEntryAggregate, findMany: mocks.affiliateCommissionLedgerEntryFindMany },
+      affiliatePayout: { findUnique: mocks.affiliatePayoutFindUnique, create: mocks.affiliatePayoutCreate },
+      settlement: { findUnique: mocks.settlementFindUnique, updateMany: mocks.settlementUpdateMany },
+      courseCommissionAllocation: { findMany: mocks.courseCommissionAllocationFindMany, findUnique: mocks.courseCommissionAllocationFindUnique },
+      courseCommissionLedgerEntry: {
+        aggregate: mocks.courseCommissionLedgerEntryAggregate, findUnique: mocks.courseCommissionLedgerEntryFindUnique, create: mocks.courseCommissionLedgerEntryCreate,
+      },
+      coursePayout: {
+        findUnique: mocks.coursePayoutFindUnique, findUniqueOrThrow: mocks.coursePayoutFindUniqueOrThrow,
+        create: mocks.coursePayoutCreate, updateMany: mocks.coursePayoutUpdateMany,
+      },
+    }));
+    mocks.settlementAdjustmentRequestFindMany.mockResolvedValueOnce([
+      { id: "request-1", vendorId: settlement.vendorId, settlementId: settlement.id, requestedBy: "admin-a", status: "pending" },
+    ]);
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow("redirect:/admin/billing/settlements");
+    expect(mocks.settlementAdjustmentRequestUpdateMany).toHaveBeenCalledWith({
+      where: { id: "request-1", vendorId: settlement.vendorId, status: "pending" },
+      data: { status: "rejected_by_lock", reviewedBy: "finance-1", reviewedAt: expect.any(Date) },
+    });
+    expect(mocks.auditLogCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+      action: "reject_settlement_adjustment_on_lock", targetId: settlement.id,
+      after: expect.objectContaining({ requestId: "request-1", requestedBy: "admin-a", status: "rejected_by_lock" }),
+    }) });
   });
 
   it("creates one merchant-owned AffiliatePayout per affiliate from immutable ledger balances", async () => {
@@ -6204,6 +6279,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       .mockResolvedValueOnce({ _sum: { amountCents: 200 } })
       .mockResolvedValueOnce({ _sum: { amountCents: 0 } });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6294,6 +6371,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       status: "pending",
     });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6346,6 +6425,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       status: "pending",
     });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6391,6 +6472,8 @@ describe("FIN-02 settlement mutation invariants", () => {
       status: "pending",
     });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6422,6 +6505,8 @@ describe("FIN-02 settlement mutation invariants", () => {
     mocks.affiliateCommissionFindMany.mockResolvedValueOnce([{ id: "commission-a1", affiliateId: "affiliate-a" }]);
     mocks.affiliateCommissionLedgerEntryAggregate.mockResolvedValueOnce({ _sum: { amountCents: -1 } });
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlementAdjustmentRequest: { findMany: mocks.settlementAdjustmentRequestFindMany, updateMany: mocks.settlementAdjustmentRequestUpdateMany },
+      auditLog: { create: mocks.auditLogCreate },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,

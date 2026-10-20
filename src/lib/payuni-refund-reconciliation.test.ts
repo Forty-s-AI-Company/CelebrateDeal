@@ -88,6 +88,8 @@ function fakeDb(initial: {
       }),
     },
     auditLog: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { auditLogs.push(data); }) },
+    // F-045: the shared post-refund hook reads the inventory reservation.
+    inventoryReservation: { findUnique: vi.fn(async () => null) },
   };
   const db = { ...tx, $transaction: vi.fn(async <T>(callback: (value: typeof tx) => Promise<T>) => callback(tx)) };
   return { db, tx, transaction, refunds, auditLogs };

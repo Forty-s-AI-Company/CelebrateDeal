@@ -171,6 +171,23 @@ describe("PayUni repeated provider ID with real order accounting", () => {
       },
     });
 
+    // F-045: an invoice still queued for issuance must be voided by the admin
+    // PayUni path's post-refund hook, exactly as the webhook path does.
+    const invoice = await db.electronicInvoice.create({
+      data: {
+        vendorId,
+        orderId: order.id,
+        invoiceType: "B2C",
+        buyerDisplay: "Synthetic Buyer",
+        requestEncryptedEnvelope: "synthetic-envelope",
+        amountCents: 1_200,
+        pretaxAmountCents: 1_143,
+        taxAmountCents: 57,
+        status: "queued",
+      },
+    });
+    expect((await db.product.findUniqueOrThrow({ where: { id: product.id } })).inventory).toBe(2);
+
     const base = {
       db,
       transactionId: payment.id,
@@ -182,7 +199,16 @@ describe("PayUni repeated provider ID with real order accounting", () => {
     };
     providerMocks.refundPayment.mockClear();
     expect((await executePayUniRefund({ ...base, refundAmountCents: 400 })).disposition).toBe("completed");
+    // A partial refund keeps stock committed and leaves the queued invoice alone.
+    await expect(db.inventoryReservation.findUniqueOrThrow({ where: { paymentTransactionId: payment.id } }))
+      .resolves.toMatchObject({ status: "committed" });
+    expect((await db.product.findUniqueOrThrow({ where: { id: product.id } })).inventory).toBe(2);
+    await expect(db.electronicInvoice.findUniqueOrThrow({ where: { id: invoice.id } })).resolves.toMatchObject({ status: "queued" });
     expect((await executePayUniRefund({ ...base, refundAmountCents: 800 })).disposition).toBe("completed");
+    await expect(db.inventoryReservation.findUniqueOrThrow({ where: { paymentTransactionId: payment.id } }))
+      .resolves.toMatchObject({ status: "released", releaseReason: "full_refund" });
+    expect((await db.product.findUniqueOrThrow({ where: { id: product.id } })).inventory).toBe(3);
+    await expect(db.electronicInvoice.findUniqueOrThrow({ where: { id: invoice.id } })).resolves.toMatchObject({ status: "voided" });
 
     expect(providerMocks.refundPayment).toHaveBeenCalledTimes(2);
     const after = await db.commerceOrder.findUniqueOrThrow({
