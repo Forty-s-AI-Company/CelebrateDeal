@@ -18,9 +18,16 @@ import { getDb } from "@/lib/db";
  * For ad-hoc local runs against a database migrated without that fixture the
  * roles are created here as a fallback (NOLOGIN, cluster-wide, left in place);
  * those runs then only prove the PUBLIC-grant and RLS assertions.
+ *
+ * The target schema is the connection's current_schema(): public on the
+ * normal suite and on Supabase, wp17_ci/wp18_ci when the concurrency suite
+ * reruns everything in disposable schemas built by the same migrations.
  */
 const DATA_API_ROLES = ["anon", "authenticated"] as const;
 const TABLE_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"] as const;
+const SAFE_SCHEMA_NAME = /^[a-z_][a-z0-9_]*$/;
+
+let targetSchema = "";
 
 async function ensureNoLoginRole(role: (typeof DATA_API_ROLES)[number]) {
   // Role names come from the fixed list above, never from input.
@@ -35,21 +42,24 @@ async function ensureNoLoginRole(role: (typeof DATA_API_ROLES)[number]) {
   `);
 }
 
-describe("public schema RLS and Data API privilege catalog", () => {
+describe("Prisma schema RLS and Data API privilege catalog", () => {
   beforeAll(async () => {
     for (const role of DATA_API_ROLES) await ensureNoLoginRole(role);
+    const [row] = await getDb().$queryRaw<Array<{ schema: string | null }>>`SELECT pg_catalog.current_schema() AS schema`;
+    targetSchema = row?.schema ?? "";
+    expect(targetSchema).toMatch(SAFE_SCHEMA_NAME);
   });
 
-  it("enables row level security on every public table", async () => {
+  it("enables row level security on every table in the migration schema", async () => {
     const tables = await getDb().$queryRaw<Array<{ relname: string; relrowsecurity: boolean }>>`
       SELECT relation.relname, relation.relrowsecurity
       FROM pg_catalog.pg_class AS relation
       INNER JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-      WHERE namespace.nspname = 'public' AND relation.relkind IN ('r', 'p')
+      WHERE namespace.nspname = ${targetSchema} AND relation.relkind IN ('r', 'p')
       ORDER BY relation.relname
     `;
 
-    // Guard against a vacuous pass on an unmigrated database.
+    // Guard against a vacuous pass on an unmigrated schema.
     expect(tables.map((table) => table.relname)).toEqual(
       expect.arrayContaining(["_prisma_migrations", "Vendor", "CommerceOrder", "SupportCase", "UserPolicyConsent"]),
     );
@@ -63,7 +73,7 @@ describe("public schema RLS and Data API privilege catalog", () => {
           SELECT relation.relname
           FROM pg_catalog.pg_class AS relation
           INNER JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-          WHERE namespace.nspname = 'public'
+          WHERE namespace.nspname = ${targetSchema}
             AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
             AND pg_catalog.has_table_privilege(${role}::text, relation.oid, ${privilege}::text)
           ORDER BY relation.relname
@@ -77,27 +87,30 @@ describe("public schema RLS and Data API privilege catalog", () => {
     const policies = await getDb().$queryRaw<Array<{ tablename: string; policyname: string }>>`
       SELECT tablename, policyname
       FROM pg_catalog.pg_policies
-      WHERE schemaname = 'public'
+      WHERE schemaname = ${targetSchema}
         AND roles && ARRAY['public', 'anon', 'authenticated']::name[]
       ORDER BY tablename, policyname
     `;
     expect(policies).toEqual([]);
   });
 
-  it("does not hand new public tables to the Data API roles through default privileges", async () => {
+  it("does not hand new tables to the Data API roles through default privileges", async () => {
     const probe = `rls_catalog_probe_${crypto.randomUUID().replace(/-/g, "")}`;
+    const qualified = `"${targetSchema}"."${probe}"`;
     const rollback = new Error("rls-catalog-probe-rollback");
     let observed: Array<{ role: string; exposed: boolean }> = [];
 
     // Create a table as the migration role inside a transaction that is
-    // always rolled back, so the probe never persists.
+    // always rolled back, so the probe never persists. Both identifiers are
+    // checked/generated above, never taken from input.
     await expect(getDb().$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`CREATE TABLE public."${probe}" (id integer)`);
+      await tx.$executeRawUnsafe(`CREATE TABLE ${qualified} (id integer)`);
       observed = await tx.$queryRawUnsafe<Array<{ role: string; exposed: boolean }>>(
-        `SELECT role, pg_catalog.has_table_privilege(role, 'public."${probe}"', 'SELECT,INSERT,UPDATE,DELETE') AS exposed
+        `SELECT role, pg_catalog.has_table_privilege(role, $2::text, 'SELECT,INSERT,UPDATE,DELETE') AS exposed
          FROM unnest($1::text[]) AS role
          ORDER BY role`,
         [...DATA_API_ROLES],
+        qualified,
       );
       throw rollback;
     })).rejects.toBe(rollback);

@@ -6,6 +6,7 @@
 
 - 對 `public` 中 `relkind in ('r','p')` 且尚未啟用的表（含 `_prisma_migrations`）執行 `ENABLE ROW LEVEL SECURITY`。不建立 policy，不使用 `FORCE`。Prisma 以 table owner 連線，不受影響；Supabase Data API 角色（`anon`、`authenticated`）在沒有 policy 時一律拒絕，加上沒有 grant，形成兩道防線。
 - 預設權限沿用 `20260724150000_harden_supabase_data_api`，本 migration 不重做。
+- 目標 schema 是 `current_schema()`，也就是 Prisma 實際 migrate 的 schema（`DIRECT_URL` 的 `?schema=`）。Supabase 上是 `public`，CI 併發測試的 disposable 庫是 `wp17_ci`／`wp18_ci`。該 schema 內沒有 `Vendor` 表時（不用 `_prisma_migrations` 判斷，因為 Prisma 的 shadow 庫重放 migration 時沒有這張表），migration 會直接 `RAISE EXCEPTION`，不會動到其他 schema。兩個 db test 也以連線的 `current_schema()` 為準，所以 `test:db:concurrency` 在 `wp18_ci` 重跑時同樣成立。
 - 可重跑：只處理 `relrowsecurity = false` 的表；全部已啟用時不做任何事。
 
 ### 1.1 前置條件：migration 角色必須擁有表的 owner 權限

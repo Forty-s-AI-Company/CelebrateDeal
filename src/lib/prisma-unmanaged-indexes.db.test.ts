@@ -10,25 +10,34 @@ import { getDb } from "@/lib/db";
  * active upline) or keep buyer search off full-table scans, so assert the
  * complete definition (columns, method, operator class and predicate).
  */
-const EXPECTED_INDEX_DEFINITIONS: Record<string, string> = {
-  ConsultationBooking_active_slot_key:
-    `CREATE UNIQUE INDEX "ConsultationBooking_active_slot_key" ON public."ConsultationBooking" USING btree ("vendorId", "eventId", "startTime") WHERE (status = 'scheduled'::"ConsultationBookingStatus")`,
-  FormSubmission_email_trgm_idx:
-    `CREATE INDEX "FormSubmission_email_trgm_idx" ON public."FormSubmission" USING gin (email gin_trgm_ops)`,
-  FormSubmission_name_trgm_idx:
-    `CREATE INDEX "FormSubmission_name_trgm_idx" ON public."FormSubmission" USING gin (name gin_trgm_ops)`,
-  FormSubmission_phone_trgm_idx:
-    `CREATE INDEX "FormSubmission_phone_trgm_idx" ON public."FormSubmission" USING gin (phone gin_trgm_ops)`,
-  LiveQuestion_one_spotlight_per_live_key:
-    `CREATE UNIQUE INDEX "LiveQuestion_one_spotlight_per_live_key" ON public."LiveQuestion" USING btree ("liveId") WHERE (status = 'spotlight'::"LiveQuestionStatus")`,
-  PostPurchaseCredit_vendorId_sourceOrderId_active_key:
-    `CREATE UNIQUE INDEX "PostPurchaseCredit_vendorId_sourceOrderId_active_key" ON public."PostPurchaseCredit" USING btree ("vendorId", "sourceOrderId") WHERE ("releasedAt" IS NULL)`,
-  TeamMembershipRelationship_one_active_upline:
-    `CREATE UNIQUE INDEX "TeamMembershipRelationship_one_active_upline" ON public."TeamMembershipRelationship" USING btree ("downlineMembershipId") WHERE ("endedAt" IS NULL)`,
-};
+// pg_get_indexdef always schema-qualifies the table; the suite runs in public
+// and, for the concurrency rerun, in disposable wp17_ci/wp18_ci schemas built
+// by the same migrations.
+function expectedIndexDefinitions(schema: string): Record<string, string> {
+  return {
+    ConsultationBooking_active_slot_key:
+      `CREATE UNIQUE INDEX "ConsultationBooking_active_slot_key" ON ${schema}."ConsultationBooking" USING btree ("vendorId", "eventId", "startTime") WHERE (status = 'scheduled'::"ConsultationBookingStatus")`,
+    FormSubmission_email_trgm_idx:
+      `CREATE INDEX "FormSubmission_email_trgm_idx" ON ${schema}."FormSubmission" USING gin (email gin_trgm_ops)`,
+    FormSubmission_name_trgm_idx:
+      `CREATE INDEX "FormSubmission_name_trgm_idx" ON ${schema}."FormSubmission" USING gin (name gin_trgm_ops)`,
+    FormSubmission_phone_trgm_idx:
+      `CREATE INDEX "FormSubmission_phone_trgm_idx" ON ${schema}."FormSubmission" USING gin (phone gin_trgm_ops)`,
+    LiveQuestion_one_spotlight_per_live_key:
+      `CREATE UNIQUE INDEX "LiveQuestion_one_spotlight_per_live_key" ON ${schema}."LiveQuestion" USING btree ("liveId") WHERE (status = 'spotlight'::"LiveQuestionStatus")`,
+    PostPurchaseCredit_vendorId_sourceOrderId_active_key:
+      `CREATE UNIQUE INDEX "PostPurchaseCredit_vendorId_sourceOrderId_active_key" ON ${schema}."PostPurchaseCredit" USING btree ("vendorId", "sourceOrderId") WHERE ("releasedAt" IS NULL)`,
+    TeamMembershipRelationship_one_active_upline:
+      `CREATE UNIQUE INDEX "TeamMembershipRelationship_one_active_upline" ON ${schema}."TeamMembershipRelationship" USING btree ("downlineMembershipId") WHERE ("endedAt" IS NULL)`,
+  };
+}
 
 describe("indexes Prisma cannot express", () => {
   it("keeps every partial unique and trigram index with its exact definition", async () => {
+    const [current] = await getDb().$queryRaw<Array<{ schema: string | null }>>`SELECT pg_catalog.current_schema() AS schema`;
+    const targetSchema = current?.schema ?? "";
+    expect(targetSchema).toMatch(/^[a-z_][a-z0-9_]*$/);
+    const expected = expectedIndexDefinitions(targetSchema);
     const rows = await getDb().$queryRaw<Array<{ index: string; definition: string; valid: boolean }>>`
       SELECT index_class.relname AS index,
              pg_catalog.pg_get_indexdef(index_class.oid) AS definition,
@@ -36,11 +45,11 @@ describe("indexes Prisma cannot express", () => {
       FROM pg_catalog.pg_index
       INNER JOIN pg_catalog.pg_class AS index_class ON index_class.oid = pg_index.indexrelid
       INNER JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = index_class.relnamespace
-      WHERE namespace.nspname = 'public'
-        AND index_class.relname = ANY(${Object.keys(EXPECTED_INDEX_DEFINITIONS)}::text[])
+      WHERE namespace.nspname = ${targetSchema}
+        AND index_class.relname = ANY(${Object.keys(expected)}::text[])
       ORDER BY index_class.relname
     `;
-    expect(Object.fromEntries(rows.map((row) => [row.index, row.definition]))).toEqual(EXPECTED_INDEX_DEFINITIONS);
+    expect(Object.fromEntries(rows.map((row) => [row.index, row.definition]))).toEqual(expected);
     expect(rows.every((row) => row.valid)).toBe(true);
   });
 });

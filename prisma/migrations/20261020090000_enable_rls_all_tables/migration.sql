@@ -17,6 +17,14 @@
 -- ALTER DEFAULT PRIVILEGES ... REVOKE ALL for PUBLIC, anon, authenticated and
 -- service_role, and src/lib/rls-catalog.db.test.ts asserts the outcome.
 --
+-- Target schema: current_schema(), i.e. the schema Prisma migrates into
+-- (?schema= in DIRECT_URL; public on Supabase, wp17_ci/wp18_ci in the
+-- disposable concurrency databases). The block refuses to run unless that
+-- schema holds the application's "Vendor" table (created by the baseline), so
+-- it can never touch an unrelated schema. _prisma_migrations is not used for
+-- this check because Prisma's shadow database (migrate diff / migrate dev)
+-- replays migrations without it.
+--
 -- Preconditions and behaviour (see docs/operations/prisma-migration-guards-runbook.md):
 -- * ENABLE ROW LEVEL SECURITY requires the privileges of the table owner;
 --   BYPASSRLS is not enough. Before changing anything, the block checks every
@@ -37,10 +45,23 @@
 --   followed by `prisma migrate deploy`. Deploy outside peak traffic.
 DO $enable_rls_all_tables$
 DECLARE
+  target_schema text := pg_catalog.current_schema();
   table_record record;
   blocked_tables text;
 BEGIN
   PERFORM pg_catalog.set_config('lock_timeout', '2s', true);
+
+  IF target_schema IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS relation
+    INNER JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = target_schema
+      AND relation.relname = 'Vendor'
+      AND relation.relkind IN ('r', 'p')
+  ) THEN
+    RAISE EXCEPTION 'enable_rls_all_tables: current schema % does not hold the CelebrateDeal tables', target_schema;
+  END IF;
 
   SELECT string_agg(
            format('%I (owner %I)', relation.relname, pg_catalog.pg_get_userbyid(relation.relowner)),
@@ -50,7 +71,7 @@ BEGIN
   FROM pg_catalog.pg_class AS relation
   INNER JOIN pg_catalog.pg_namespace AS namespace
     ON namespace.oid = relation.relnamespace
-  WHERE namespace.nspname = 'public'
+  WHERE namespace.nspname = target_schema
     AND relation.relkind IN ('r', 'p')
     AND NOT relation.relrowsecurity
     AND NOT pg_catalog.pg_has_role(current_user, relation.relowner, 'USAGE');
@@ -65,13 +86,14 @@ BEGIN
     FROM pg_catalog.pg_class AS relation
     INNER JOIN pg_catalog.pg_namespace AS namespace
       ON namespace.oid = relation.relnamespace
-    WHERE namespace.nspname = 'public'
+    WHERE namespace.nspname = target_schema
       AND relation.relkind IN ('r', 'p')
       AND NOT relation.relrowsecurity
     ORDER BY relation.relname
   LOOP
     EXECUTE format(
-      'ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',
+      'ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY',
+      target_schema,
       table_record.table_name
     );
   END LOOP;
