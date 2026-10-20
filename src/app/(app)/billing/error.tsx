@@ -2,9 +2,9 @@
 
 import { useTransition } from "react";
 
-export default function MerchantBillingError({ unstable_retry }: {
+export default function MerchantBillingError({ retry }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -17,7 +17,7 @@ export default function MerchantBillingError({ unstable_retry }: {
         disabled={pending}
         aria-disabled={pending}
         aria-busy={pending}
-        onClick={() => startTransition(() => unstable_retry())}
+        onClick={() => startTransition(() => retry())}
         className="mt-4 inline-flex min-h-11 items-center rounded-md bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? "重新載入中…" : "重新載入帳務資料"}

@@ -3,7 +3,7 @@
 import { LoaderCircle } from "lucide-react";
 import { useTransition } from "react";
 
-export default function CommerceCheckoutError({ reset }: { reset: () => void }) {
+export default function CommerceCheckoutError({ retry }: { retry: () => void }) {
   const [isPending, startTransition] = useTransition();
 
   return (
@@ -16,7 +16,7 @@ export default function CommerceCheckoutError({ reset }: { reset: () => void }) 
           disabled={isPending}
           aria-disabled={isPending}
           aria-busy={isPending}
-          onClick={() => startTransition(reset)}
+          onClick={() => startTransition(retry)}
           className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? <LoaderCircle className="animate-spin" size={18} aria-hidden="true" /> : null}

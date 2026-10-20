@@ -64,7 +64,7 @@ describe("saveLineOfficialAccountAction", () => {
     const form = credentialsForm();
     form.set("loginChannelSecret", "");
     await expect(saveLineOfficialAccountAction({ status: "idle", error: null }, form))
-      .resolves.toEqual({ status: "error", error: "invalid_credentials" });
+      .resolves.toEqual({ status: "error", error: "invalid_credentials", fields: ["loginChannelSecret"] });
     expect(mocks.upsert).not.toHaveBeenCalled();
   });
 

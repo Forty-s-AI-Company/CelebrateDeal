@@ -7,7 +7,7 @@ describe("billing usage error UI", () => {
   it("shows a safe retry path without exposing the exception message", () => {
     const html = renderToStaticMarkup(createElement(BillingUsageError, {
       error: new Error("database connection secret detail"),
-      reset: vi.fn(),
+      retry: vi.fn(),
     }));
 
     expect(html).toContain('role="alert"');
