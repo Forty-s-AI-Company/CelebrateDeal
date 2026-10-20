@@ -61,4 +61,4 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 ## 每日摘要
 
 - 10-19：Goal 啟動。三條工作線完成實作並開 PR #447／#448／#449；每個 PR 經 reviewer 一到三輪（A 兩個 MAJOR＋一個 MAJOR、B 兩個 MAJOR、C 一個 BLOCKER 皆已修）；#447 合併。CI 擋下的問題：secret scan 誤判測試 URL／假金鑰、API contract registry 未登記、strict-index typecheck、backup blob 白名單、slug 預檢順序，全部修正。工作線 A 曾因 Opus 額度中斷一次，10-20 重跑完成。
-- 10-20：#446、#448、#449 合併。三條工作線全部進 master。下一步：staging 自動部署後確認 GitHub Actions 排程實際呼叫端點（B2 證據）、owner 待辦 O-1～O-17、L0 可繞過項（§3.3）與 L1 排程。
+- 10-20：#446、#448、#449 合併。三條工作線全部進 master（`bd85be87`）。**staging 尚未更新**：固定網址仍指向 10-18 的舊部署 `celebrate-deal-staging-iczhm0bi7`；staging 專案的 production 部署自 8 月起失敗，master 合併不會自動部署；主對話切 alias 被權限擋下，改列 O-18（目標部署 `2opyiacfr`，tree 已驗證等於 master）。B2 排程證據：GitHub Actions 已自動執行 4 次，`email-deliveries`、`webhook-retry` 回 200，`line-notifications` 回 405（舊部署沒有 GET 入口，切 alias 後應轉綠）。另推了 `codex/staging-release-20261020b`（= master）讓 Vercel 建一個乾淨 preview 備用。下一步：staging 自動部署後確認 GitHub Actions 排程實際呼叫端點（B2 證據）、owner 待辦 O-1～O-17、L0 可繞過項（§3.3）與 L1 排程。
