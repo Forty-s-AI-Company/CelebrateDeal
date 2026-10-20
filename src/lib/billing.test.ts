@@ -42,8 +42,8 @@ const subscription = {
 };
 
 const transactions = [
-  { grossAmountCents: 10_000, gatewayFeeCents: 300, platformFeeCents: 400 },
-  { grossAmountCents: 5_000, gatewayFeeCents: 150, platformFeeCents: 200 },
+  { grossAmountCents: 10_000, gatewayFeeCents: 300, platformFeeCents: 400, currency: "TWD" },
+  { grossAmountCents: 5_000, gatewayFeeCents: 150, platformFeeCents: 200, currency: "TWD" },
 ];
 
 function processedRefund(platformFeeRefundCents: number) {
@@ -175,6 +175,14 @@ describe("calculateSettlement transaction service fee", () => {
 });
 
 describe("FIN-01 settlement boundary coverage", () => {
+  it("refuses to add non-TWD transactions into a TWD settlement (F-041)", async () => {
+    dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
+      { grossAmountCents: 10_000, gatewayFeeCents: 300, platformFeeCents: 400, currency: "TWD" },
+      { grossAmountCents: 5_000, gatewayFeeCents: 150, platformFeeCents: 200, currency: "USD" },
+    ]);
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({ code: "unsupported_currency" });
+  });
+
   it("fails closed when no active subscription exists", async () => {
     dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce(null);
 
@@ -190,7 +198,7 @@ describe("FIN-01 settlement boundary coverage", () => {
     });
     dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
       ...transactions,
-      { grossAmountCents: 50_000, gatewayFeeCents: 500, platformFeeCents: 700 },
+      { grossAmountCents: 50_000, gatewayFeeCents: 500, platformFeeCents: 700, currency: "TWD" },
     ]);
     dependencies.db.affiliateCommissionLedgerEntry.aggregate.mockResolvedValueOnce({
       _sum: { amountCents: 9_999 },
@@ -207,7 +215,7 @@ describe("FIN-01 settlement boundary coverage", () => {
 
   it("clamps gross revenue and gateway fees after processed refunds", async () => {
     dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
-      { grossAmountCents: 1_000, gatewayFeeCents: 300, platformFeeCents: 100 },
+      { grossAmountCents: 1_000, gatewayFeeCents: 300, platformFeeCents: 100, currency: "TWD" },
     ]);
     dependencies.db.refundRecord.aggregate.mockResolvedValueOnce({
       _sum: {

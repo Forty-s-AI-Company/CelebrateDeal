@@ -1,5 +1,6 @@
 import type { BillingPlan, PaymentTransaction, UsageRecord, VendorSubscription } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { isSupportedCheckoutCurrency, UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
 import { estimateVendorUsage, MONTHLY_USAGE_SNAPSHOT_RECORD_TYPE } from "@/lib/usage-estimation";
 
@@ -233,6 +234,11 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
 
   if (!subscription) {
     throw new Error("找不到有效訂閱方案，無法產生月結。");
+  }
+  // Settlement sums cents across transactions; mixing currencies would pay out
+  // a meaningless total. Refuse instead of adding non-TWD cents to TWD.
+  if (transactions.some((transaction: PaymentTransaction) => !isSupportedCheckoutCurrency(transaction.currency))) {
+    throw new UnsupportedCurrencyError("Monthly settlement");
   }
 
   const plan = subscription.plan;

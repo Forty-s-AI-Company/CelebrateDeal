@@ -11,6 +11,7 @@ import {
   type ProductFormDraft,
 } from "@/lib/product-action-state";
 import type { CustomCheckoutField, CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
+import { SUPPORTED_CHECKOUT_CURRENCY } from "@/lib/checkout-currency";
 
 export type ProductFormProduct = {
   id: string;
@@ -94,7 +95,8 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
 }
 
 function errorMessage(error: ProductActionError | undefined) {
-  if (error === "invalid_product") return "商品名稱、Slug、售價、庫存、幣別或網址格式不正確，請修正後再儲存。";
+  if (error === "invalid_product") return "商品名稱、Slug、售價、庫存或網址格式不正確（售價須為整數新台幣元），請修正後再儲存。";
+  if (error === "unsupported_currency") return "平台目前只支援新台幣（TWD）。既有的非新台幣商品，請確認售價已改以新台幣填寫並勾選確認後再儲存。";
   if (error === "invalid_image_asset") return "商品圖片不是目前商家的已完成資產，請重新上傳或移除。";
   if (error === "invalid_course_policy") return "課程商品需要有效的內容所有人與推廣者分潤比例。";
   if (error === "invalid_course_owner") return "課程內容所有人必須是目前商家內有效的團隊成員。";
@@ -110,7 +112,7 @@ function errorMessage(error: ProductActionError | undefined) {
 }
 
 const PRODUCT_ACTION_ERRORS = new Set<ProductActionError>([
-  "invalid_product", "invalid_image_asset", "invalid_course_policy", "invalid_course_owner",
+  "invalid_product", "unsupported_currency", "invalid_image_asset", "invalid_course_policy", "invalid_course_owner",
   "invalid_fulfillment", "invalid_delivery", "invalid_custom_checkout_fields",
   "media_upload_incomplete", "duplicate_slug", "conflict", "not_found", "unavailable",
 ]);
@@ -243,6 +245,7 @@ export function ProductFormClient({
   const [nativePending, setNativePending] = useState(false);
   const [mediaBlocked, setMediaBlocked] = useState(false);
   const draft = state.draft ?? initialDraft(product);
+  const legacyCurrency = product && product.currency !== SUPPORTED_CHECKOUT_CURRENCY ? product.currency : null;
   const [selectedFulfillmentType, setSelectedFulfillmentType] = useState(draft.fulfillmentType);
   const [customCheckoutFields, setCustomCheckoutFields] = useState<CustomCheckoutFields>(draft.customCheckoutFields ?? []);
   const error = errorMessage(nativeError ?? state.error);
@@ -300,13 +303,27 @@ export function ProductFormClient({
           這是既有商品，交付方式尚未確認。請選擇正確類型並儲存；確認前不會開放結帳或綁定新的販售流程。
         </p>
       ) : null}
+      {legacyCurrency ? (
+        <div role="status" className="grid gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+          <p className="font-medium">這個商品原本設定為 {legacyCurrency}，平台只支援新台幣（TWD），儲存後會改為新台幣，售價不會自動換匯。</p>
+          <label className="flex items-start gap-2">
+            <input name="confirmTwdCurrency" type="checkbox" required className="mt-0.5 h-4 w-4 accent-orange-600" />
+            <span>我已確認售價與原價都已改以新台幣元填寫。</span>
+          </label>
+        </div>
+      ) : null}
       {!product ? <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">新商品會先儲存為草稿；確認預覽、價格、庫存與交付方式後，再勾選上架。</p> : null}
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="商品名稱" name="name" required maxLength={200} defaultValue={draft.name} />
         <Field label="Slug" name="slug" required maxLength={200} defaultValue={draft.slug} />
-        <Field label="售價（元）" name="price" type="number" min={0} step={0.01} required defaultValue={draft.price} />
+        <Field label="售價（元）" name="price" type="number" min={0} step={1} required defaultValue={draft.price} />
         <Field label="原價（元）" name="compareAt" type="number" min={0.01} step={0.01} defaultValue={draft.compareAt} />
-        <Field label="幣別（ISO 4217）" name="currency" minLength={3} maxLength={3} defaultValue={draft.currency} />
+        <div className="grid gap-1 text-sm font-medium text-slate-700">
+          <span>幣別</span>
+          <input type="hidden" name="currency" value={SUPPORTED_CHECKOUT_CURRENCY} />
+          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900">新台幣（TWD）</p>
+          <span className="text-xs font-normal text-slate-500">平台結帳、退款與月結目前只支援新台幣，售價須為整數元。</span>
+        </div>
         <Field label="可售庫存" name="inventory" type="number" min={0} step={1} required defaultValue={draft.inventory} />
       </div>
       <div className="grid gap-4 rounded-md border border-blue-100 bg-blue-50/50 p-4 md:grid-cols-2">

@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
+import { isSupportedCheckoutCurrency, UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import { getDb } from "@/lib/db";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
@@ -216,7 +217,10 @@ function payUniOrderNumber(transaction: { id: string; orderNumber: string | null
   return value;
 }
 
-function payUniTradeAmount(grossAmountCents: number) {
+function payUniTradeAmount(grossAmountCents: number, currency: string) {
+  // PayUni only settles TWD. Refuse before any provider call instead of
+  // sending another currency's cents as whole TWD.
+  if (!isSupportedCheckoutCurrency(currency)) throw new UnsupportedCurrencyError("PayUni trade amount");
   if (!Number.isSafeInteger(grossAmountCents) || grossAmountCents % 100 !== 0) {
     throw new Error("PayUni trade amount must use whole TWD units.");
   }
@@ -489,7 +493,9 @@ async function refundPayUniTransaction({ transaction, refundAmountCents }: Refun
   try { merchantId = activePayUniCredentials().merchantId; }
   catch { throw new RefundProviderError("authentication"); }
 
-  const amount = payUniTradeAmount(refundAmountCents);
+  let amount: number;
+  try { amount = payUniTradeAmount(refundAmountCents, transaction.currency); }
+  catch { throw new RefundProviderError("request_contract"); }
   const encrypted = encryptInfo({
     MerID: merchantId,
     TradeNo: tradeNo,
@@ -941,7 +947,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
     const encrypted = encryptInfo({
       MerID: merchantId,
       MerTradeNo: payUniOrderNumber(transaction),
-      TradeAmt: payUniTradeAmount(transaction.grossAmountCents),
+      TradeAmt: payUniTradeAmount(transaction.grossAmountCents, transaction.currency),
       Timestamp: Math.floor(Date.now() / 1000),
       ProdDesc: productDescription.slice(0, 80),
       // Closed beta: credit card only. Sending one payment-tool flag replaces

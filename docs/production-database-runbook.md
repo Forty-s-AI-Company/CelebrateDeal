@@ -222,6 +222,31 @@ npm run db:seed
 - [ ] 備份形式與 organization plan 相符，且 backup / restore evidence 不含 secret 或 customer data
 - [ ] Webhook retry / reconciliation 沒有異常
 
+### 9.1 非 TWD 商品與交易盤點（唯讀，F-041）
+
+平台的結帳、PayUni 交易、退款與月結只支援新台幣（TWD）。程式現在會拒絕非 TWD：
+商品表單只送出 `TWD`、checkout 回 `422 UNSUPPORTED_CURRENCY`、PayUni 金額轉換拒絕非 TWD、
+月結遇到非 TWD 交易會停止並回報 `unsupported_currency`。既有資料不用 migration 改寫，
+上線前先在 staging／production 以唯讀連線執行下列查詢（需 owner 授權連線），結果為空才算通過：
+
+```sql
+-- 只讀：非 TWD 商品（含停用），供人工決定改價或下架
+SELECT "vendorId", "id", "currency", "priceCents", "compareAtCents", "isActive"
+FROM "Product"
+WHERE "currency" <> 'TWD'
+ORDER BY "vendorId", "id";
+
+-- 只讀：非 TWD 付款交易（會讓該商家月結停止）
+SELECT "vendorId", "currency", "status", COUNT(*) AS transactions, SUM("grossAmountCents") AS gross_cents
+FROM "PaymentTransaction"
+WHERE "currency" <> 'TWD'
+GROUP BY "vendorId", "currency", "status"
+ORDER BY "vendorId", "currency", "status";
+```
+
+若有結果：非 TWD 商品由商家在後台重新以新台幣填價並勾選確認後儲存（表單會要求確認，不會自動換匯）；
+非 TWD 交易需人工對帳後再產生月結，不可直接以 SQL 改幣別。
+
 ## 10. 參考資料
 
 - Supabase Prisma guide: https://supabase.com/docs/guides/database/prisma

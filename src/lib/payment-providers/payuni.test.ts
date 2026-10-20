@@ -123,7 +123,7 @@ describe("unreferenced Sandbox order observation", () => {
 
 describe("documented CREDIT query v2.0 refund evidence", () => {
   const transaction = { id: "tx-terminal", providerName: "payuni", orderNumber: "CD-TERMINAL-001",
-    providerTradeNo: "trade-terminal", grossAmountCents: 100_000 } as PaymentTransaction;
+    providerTradeNo: "trade-terminal", grossAmountCents: 100_000, currency: "TWD" } as PaymentTransaction;
   function query(patch: Record<string, unknown>) {
     stubPayUniEnv();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({ Status: "SUCCESS", Result: {
@@ -184,7 +184,7 @@ describe("PayUni provider", () => {
     vi.stubEnv("PAYUNI_ENV", "production");
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
     await expect(payUniPaymentProvider.createCheckoutSession?.({
-      transaction: { id: "tx_1", orderNumber: "CD-TEST-001", grossAmountCents: 199000 } as PaymentTransaction,
+      transaction: { id: "tx_1", orderNumber: "CD-TEST-001", grossAmountCents: 199000, currency: "TWD" } as PaymentTransaction,
       vendor: { id: "vendor-1" } as Vendor,
       description: "Ordinary checkout",
       appUrl: "https://staging.example.test",
@@ -233,6 +233,7 @@ describe("PayUni provider", () => {
       id: "tx_1",
       orderNumber: "CD-TEST-001",
       grossAmountCents: 199000,
+      currency: "TWD",
     } as PaymentTransaction;
     const product = { name: "Sandbox Product" } as Product;
     const vendor = { id: "vendor_1" } as Vendor;
@@ -280,6 +281,7 @@ describe("PayUni provider", () => {
       id: "tx_preview",
       orderNumber: "CD-TEST-006",
       grossAmountCents: 199000,
+      currency: "TWD",
     } as PaymentTransaction;
 
     const session = await payUniPaymentProvider.createCheckoutSession?.({
@@ -306,7 +308,7 @@ describe("PayUni provider", () => {
   it("separates the browser ReturnURL from the canonical NotifyURL", async () => {
     stubPayUniEnv();
     const session = await payUniPaymentProvider.createCheckoutSession?.({
-      transaction: { id: "tx_preview_return", orderNumber: "CD-TEST-007", grossAmountCents: 100 } as PaymentTransaction,
+      transaction: { id: "tx_preview_return", orderNumber: "CD-TEST-007", grossAmountCents: 100, currency: "TWD" } as PaymentTransaction,
       product: { name: "Sandbox Product" } as Product,
       vendor: { id: "vendor_1" } as Vendor,
       appUrl: "https://staging.example.test",
@@ -327,7 +329,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 199_000,
       requestId: "local-request-id",
     })).resolves.toEqual({ providerEventId: "refund-456" });
@@ -355,7 +357,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-direct", providerTradeNo: "trade-direct-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      transaction: { id: "tx-direct", providerTradeNo: "trade-direct-123", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 199_000,
       requestId: "local-request-id",
     })).resolves.toEqual({ providerEventId: "trade-direct-123" });
@@ -371,7 +373,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-bracket", providerTradeNo: "trade-bracket-123", grossAmountCents: 100 } as PaymentTransaction,
+      transaction: { id: "tx-bracket", providerTradeNo: "trade-bracket-123", grossAmountCents: 100, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 100,
       requestId: "local-request-id",
     })).resolves.toEqual({ providerEventId: "refund-bracket-456" });
@@ -438,6 +440,7 @@ describe("PayUni provider", () => {
         orderNumber: "CD-QUERY-001",
         providerTradeNo: "trade-query-123",
         grossAmountCents: 168_000,
+        currency: "TWD",
       } as PaymentTransaction,
     })).resolves.toEqual({
       providerTradeNo: "trade-query-123",
@@ -474,7 +477,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
@@ -492,7 +495,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
@@ -511,7 +514,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).resolves.toEqual({
       providerTradeNo: "trade-query-345",
       orderNumber: "CD-QUERY-003",
@@ -552,7 +555,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-004", providerTradeNo: "trade-query-346", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-004", providerTradeNo: "trade-query-346", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
     expect(fetchMock).toHaveBeenCalledOnce();
   });
@@ -563,7 +566,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "stripe", orderNumber: "CD-QUERY-005", providerTradeNo: "trade-query-347", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "stripe", orderNumber: "CD-QUERY-005", providerTradeNo: "trade-query-347", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -576,10 +579,23 @@ describe("PayUni provider", () => {
     }).toString(), { status: 200 })));
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 199_000,
       requestId: "local-request-id",
     })).rejects.toThrow("Payment provider refund failed.");
+  });
+
+  it("refuses a non-TWD refund as a request-contract failure before contacting PayUni (F-041)", async () => {
+    stubPayUniEnv();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.refundPayment?.({
+      transaction: { id: "tx-usd", providerTradeNo: "trade-usd", grossAmountCents: 5_000, currency: "USD" } as PaymentTransaction,
+      refundAmountCents: 5_000,
+      requestId: "local-request-id",
+    })).rejects.toMatchObject({ category: "request_contract" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -588,11 +604,12 @@ describe("PayUni provider", () => {
     ["fractional TWD", { orderNumber: "CD-TEST-002", grossAmountCents: 199050 }],
     ["credit amount below range", { orderNumber: "CD-TEST-003", grossAmountCents: 0 }],
     ["credit amount above range", { orderNumber: "CD-TEST-004", grossAmountCents: 20_000_000 }],
+    ["non-TWD currency (F-041)", { orderNumber: "CD-TEST-005", grossAmountCents: 199000, currency: "USD" }],
   ])("rejects invalid PayUni checkout contract: %s", async (_label, transactionInput) => {
     stubPayUniEnv();
 
     await expect(payUniPaymentProvider.createCheckoutSession?.({
-      transaction: { id: "tx_invalid", ...transactionInput } as PaymentTransaction,
+      transaction: { id: "tx_invalid", currency: "TWD", ...transactionInput } as PaymentTransaction,
       product: { name: "Sandbox Product" } as Product,
       vendor: { id: "vendor_1" } as Vendor,
       appUrl: "https://app.example.test",
@@ -935,7 +952,7 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
   it("restricts buyer checkout to credit card payment on the UPP page", async () => {
     stubPayUniEnv();
     const session = await payUniPaymentProvider.createCheckoutSession?.({
-      transaction: { id: "tx_credit", orderNumber: "CD-CREDIT-001", grossAmountCents: 199_000 } as PaymentTransaction,
+      transaction: { id: "tx_credit", orderNumber: "CD-CREDIT-001", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
       product: { name: "Credit Only" } as Product,
       vendor: { id: "vendor_1" } as Vendor,
       appUrl: "https://celebratedeal.carry-digital-nomad.in.net",

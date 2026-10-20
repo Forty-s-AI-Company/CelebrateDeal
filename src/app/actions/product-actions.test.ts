@@ -227,7 +227,7 @@ describe("upsertProductAction", () => {
   });
 
   it("uses optimistic concurrency and increments policy version on an edit", async () => {
-    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", commerceDomain: "course", courseContentOwnerMembershipId: "membership-old", coursePromoterShareBps: 2000, coursePolicyVersion: 3, revision: 7 });
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "course", courseContentOwnerMembershipId: "membership-old", coursePromoterShareBps: 2000, coursePolicyVersion: 3, revision: 7 });
     const data = validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
 
     await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=saved");
@@ -237,8 +237,43 @@ describe("upsertProductAction", () => {
     });
   });
 
+  it.each(["USD", "usd", "JPY", "XYZ1"])("refuses a non-TWD currency (%s) without creating a product (F-041)", async (currency) => {
+    const result = await upsertProductAction(initialProductActionState, validProduct({ currency }));
+    expect(result.error).toBe("unsupported_currency");
+    expect(result.draft?.name).toBe("Demo Webinar");
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+    expect(mocks.productUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("defaults an omitted currency to TWD (F-041)", async () => {
+    const data = validProduct();
+    data.delete("currency");
+    await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=created");
+    expect(mocks.productCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ currency: "TWD", priceCents: 1200 }) });
+  });
+
+  it("refuses a fractional TWD selling price that PayUni cannot charge (F-041)", async () => {
+    const result = await upsertProductAction(initialProductActionState, validProduct({ price: "12.50" }));
+    expect(result.error).toBe("invalid_product");
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+  });
+
+  it("only rewrites a legacy non-TWD product after explicit TWD confirmation (F-041)", async () => {
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "USD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 7 });
+    const unconfirmed = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7" }));
+    expect(unconfirmed.error).toBe("unsupported_currency");
+    expect(mocks.productUpdateMany).not.toHaveBeenCalled();
+
+    await expect(upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", confirmTwdCurrency: "on" })))
+      .rejects.toThrow("redirect:/products?updated=saved");
+    expect(mocks.productUpdateMany).toHaveBeenCalledWith({
+      where: { id: "product-existing", vendorId: "vendor-1", revision: 7 },
+      data: expect.objectContaining({ currency: "TWD", priceCents: 1200 }),
+    });
+  });
+
   it("returns a conflict without overwriting data after a concurrent inventory change", async () => {
-    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 8 });
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "merchant", courseContentOwnerMembershipId: null, coursePromoterShareBps: null, coursePolicyVersion: 1, revision: 8 });
     mocks.productUpdateMany.mockResolvedValueOnce({ count: 0 });
     const result = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7" }));
 
@@ -271,7 +306,7 @@ describe("upsertProductAction", () => {
   });
 
   it("reports a tenant-local duplicate slug without losing the draft", async () => {
-    mocks.productFindFirst.mockResolvedValueOnce({ id: "product-existing" });
+    mocks.productFindFirst.mockResolvedValueOnce({ id: "product-existing", currency: "TWD" });
     const result = await upsertProductAction(initialProductActionState, validProduct({ name: "重複商品" }));
     expect(result).toMatchObject({ error: "duplicate_slug", draft: { name: "重複商品" } });
     expect(mocks.productFindFirst).toHaveBeenCalledWith({
