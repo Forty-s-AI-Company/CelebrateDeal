@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   contractGatewayFeeCents,
+  feeRoundingUnitCents,
   payUniFeePolicy,
   resolveWebhookPaymentAmounts,
+  storedFeeSource,
 } from "@/lib/payment-gateway-fee";
 
 const policy = { feeBps: 280, taxBps: 500 };
@@ -18,45 +20,70 @@ describe("PayUni contract-rate gateway fee (F-040, D-30 pending accountant)", ()
     expect(payUniFeePolicy({ PAYUNI_FEE_TAX_BPS: "2001" }).taxBps).toBe(500);
   });
 
+  it("rounds TWD to whole NT$ and other currencies to the cent", () => {
+    expect(feeRoundingUnitCents("TWD")).toBe(100);
+    expect(feeRoundingUnitCents("twd")).toBe(100);
+    expect(feeRoundingUnitCents(undefined)).toBe(100);
+    expect(feeRoundingUnitCents("USD")).toBe(1);
+  });
+
   it.each([
-    [100, 3], // 2.94
-    [1_000, 29], // 29.4
-    [10_000, 294],
-    [120_000, 3_528],
-    [99_900, 2_937], // 2936.06
-    [50, 1], // 1.47
-    [17, 0], // 0.4998
+    [100, 0], // NT$0.0294
+    [10_000, 300], // NT$2.94
+    [120_000, 3_500], // NT$35.28
+    [99_900, 2_900], // NT$29.3706
+    [5_100, 100], // NT$1.4994
+    [5_200, 200], // NT$1.5288
     [0, 0],
     [-100, 0],
-  ])("rounds the taxed fee on %i cents half up to %i cents", (gross, fee) => {
-    expect(contractGatewayFeeCents(gross, policy)).toBe(fee);
+  ])("rounds the taxed TWD fee on %i cents half up to %i cents (whole NT$)", (gross, fee) => {
+    expect(contractGatewayFeeCents(gross, policy, 100)).toBe(fee);
+    expect(fee % 100).toBe(0);
   });
 
   it("rounds an exact half up and stays exact for large amounts", () => {
-    // 2.8% x 1.05 = 2.94%; 2,500 cents -> 73.5 -> 74.
-    expect(contractGatewayFeeCents(2_500, policy)).toBe(74);
-    expect(contractGatewayFeeCents(2_000_000_000, policy)).toBe(58_800_000);
+    // Tax-free 2.8% of NT$125 is exactly NT$3.50 -> NT$4.
+    expect(contractGatewayFeeCents(12_500, { feeBps: 280, taxBps: 0 }, 100)).toBe(400);
+    expect(contractGatewayFeeCents(2_000_000_000, policy, 100)).toBe(58_800_000);
+    // Cent rounding for non-TWD: 99,900 x 2.94% = 2,937.06 -> 2,937.
+    expect(contractGatewayFeeCents(99_900, policy, 1)).toBe(2_937);
   });
 
-  it("computes fee and net for a paid PayUni callback without provider amounts", () => {
+  it("computes fee and net once for a paid PayUni callback without provider amounts", () => {
     expect(resolveWebhookPaymentAmounts({
-      provider: "payuni", eventType: "paid", grossAmountCents: 120_000, reported: { gatewayFeeCents: 0 },
-      stored: { gatewayFeeCents: 0, platformFeeCents: 0, netAmountCents: 120_000 }, policy,
+      provider: "payuni", eventType: "paid", grossAmountCents: 120_000, currency: "TWD", reported: { gatewayFeeCents: 0 },
+      stored: { gatewayFeeCents: 0, platformFeeCents: 0, netAmountCents: 120_000, metadata: {} }, policy,
     })).toEqual({
-      gatewayFeeCents: 3_528,
+      gatewayFeeCents: 3_500,
       platformFeeCents: 0,
-      netAmountCents: 116_472,
+      netAmountCents: 116_500,
       feeMetadata: {
         feeSource: "contract_rate",
-        gatewayFeePolicy: { feeBps: 280, taxBps: 500, basis: "payuni_credit", decision: "D-30 pending accountant confirmation" },
+        gatewayFeePolicy: {
+          feeBps: 280, taxBps: 500, roundingUnitCents: 100, rounding: "half_up",
+          basis: "payuni_credit", decision: "D-30 pending accountant confirmation",
+        },
       },
     });
   });
 
-  it("prefers provider-reported amounts and labels them", () => {
+  it("keeps a stored fee when a later paid event carries no fees (review m-1)", () => {
+    for (const source of ["contract_rate", "provider"]) {
+      const stored = { gatewayFeeCents: 3_000, platformFeeCents: 0, netAmountCents: 117_000, metadata: { feeSource: source } };
+      expect(resolveWebhookPaymentAmounts({
+        provider: "payuni", eventType: "paid", grossAmountCents: 120_000, currency: "TWD", reported: {}, stored,
+        policy: { feeBps: 200, taxBps: 0 },
+      })).toEqual({ gatewayFeeCents: 3_000, platformFeeCents: 0, netAmountCents: 117_000, feeMetadata: null });
+    }
+    expect(storedFeeSource({ feeSource: "contract_rate" })).toBe("contract_rate");
+    expect(storedFeeSource({ feeSource: "spoofed" })).toBeNull();
+    expect(storedFeeSource(null)).toBeNull();
+  });
+
+  it("lets provider-reported amounts replace a stored contract-rate fee", () => {
     expect(resolveWebhookPaymentAmounts({
       provider: "payuni", eventType: "paid", grossAmountCents: 10_000, reported: { gatewayFeeCents: 250, netAmountCents: 9_750 },
-      stored: null, policy,
+      stored: { gatewayFeeCents: 300, platformFeeCents: 0, netAmountCents: 9_700, metadata: { feeSource: "contract_rate" } }, policy,
     })).toMatchObject({ gatewayFeeCents: 250, netAmountCents: 9_750, feeMetadata: { feeSource: "provider" } });
     expect(resolveWebhookPaymentAmounts({
       provider: "payuni", eventType: "paid", grossAmountCents: 10_000, reported: { netAmountCents: 9_700 }, stored: null, policy,
@@ -64,7 +91,7 @@ describe("PayUni contract-rate gateway fee (F-040, D-30 pending accountant)", ()
   });
 
   it("keeps non-paid events and other providers unchanged", () => {
-    const stored = { gatewayFeeCents: 294, platformFeeCents: 0, netAmountCents: 9_706 };
+    const stored = { gatewayFeeCents: 300, platformFeeCents: 0, netAmountCents: 9_700 };
     expect(resolveWebhookPaymentAmounts({ provider: "payuni", eventType: "refunded", grossAmountCents: 10_000, reported: {}, stored, policy }))
       .toEqual({ ...stored, feeMetadata: null });
     expect(resolveWebhookPaymentAmounts({ provider: "demo", eventType: "paid", grossAmountCents: 10_000, reported: {}, stored: { gatewayFeeCents: 0, platformFeeCents: 0, netAmountCents: 10_000 }, policy }))

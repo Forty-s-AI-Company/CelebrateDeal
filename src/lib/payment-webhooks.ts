@@ -1052,11 +1052,11 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       || ["refunded", "partially_refunded"].includes(currentTransaction.status)
     ));
     const grossAmountCents = currentTransaction?.grossAmountCents || payload.grossAmountCents;
-    // F-040: a paid PayUni callback without provider fees uses the contract rate.
-    const { gatewayFeeCents, platformFeeCents, netAmountCents, feeMetadata } = resolveWebhookPaymentAmounts({
-      provider: payload.provider, eventType: payload.eventType, grossAmountCents, reported: payload, stored: currentTransaction,
-    });
     const currency = currentTransaction?.currency ?? payload.currency ?? "TWD";
+    // F-040: a paid PayUni callback without provider fees uses the contract rate once.
+    const { gatewayFeeCents, platformFeeCents, netAmountCents, feeMetadata } = resolveWebhookPaymentAmounts({
+      provider: payload.provider, eventType: payload.eventType, grossAmountCents, currency, reported: payload, stored: currentTransaction,
+    });
     const existingMetadata = metadataObject(currentTransaction?.metadata);
     const checkoutReferralCode = referralCodeFromMetadata(existingMetadata);
     const checkoutAffiliateClickId = affiliateClickIdFromMetadata(existingMetadata);
