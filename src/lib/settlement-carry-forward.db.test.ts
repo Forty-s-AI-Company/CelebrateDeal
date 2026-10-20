@@ -162,6 +162,34 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     });
   });
 
+  it("returns refunded fees from an earlier month to the exact cent instead of truncating them (review M-2)", async () => {
+    const vendor = await vendorWithPlatformPlan();
+    const august = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id, purpose: "buyer_order", providerName: "payuni", orderNumber: `CARRY-${randomUUID()}`,
+        paymentMode: "platform", grossAmountCents: 10_000, gatewayFeeCents: 280, platformFeeCents: 500,
+        netAmountCents: 9_220, currency: "TWD", status: "refunded", occurredAt: new Date("2026-08-20T00:00:00.000Z"),
+      },
+    });
+    await db.refundRecord.create({
+      data: {
+        vendorId: vendor.id, paymentTransactionId: august.id, monthKey: "2026-09", refundAmountCents: 10_000,
+        gatewayFeeRefundCents: 280, platformFeeRefundCents: 500, status: "processed",
+      },
+    });
+
+    const september = await generateSettlementForVendor(vendor.id, "2026-09");
+
+    expect(september.settlement).toMatchObject({
+      grossRevenueCents: -10_000,
+      paymentGatewayFeeCents: 0,
+      transactionServiceFeeCents: 0,
+      payoutableAmountCents: -9_220,
+      finalPayoutAmountCents: 0,
+      carriedOutCents: -9_220,
+    });
+  });
+
   it("follows a regenerated source month and requires the target month to be regenerated before locking", async () => {
     const vendor = await vendorWithPlatformPlan();
     const august = await buyerPayment(vendor.id, 30_000, new Date("2026-08-20T00:00:00.000Z"), "partially_refunded");

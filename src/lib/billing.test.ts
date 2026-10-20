@@ -327,7 +327,9 @@ describe("FIN-01 settlement boundary coverage", () => {
     expect(settlement.grossRevenueCents).toBe(-500);
     expect(settlement.paymentGatewayFeeCents).toBe(0);
     expect(settlement.transactionServiceFeeCents).toBe(50);
-    expect(settlement.payoutableAmountCents).toBe(-550);
+    // Review M-2: the 150 of gateway fee refunded beyond this month's fee is
+    // returned to the merchant, not truncated: -500 - (300 - 450) - 50.
+    expect(settlement.payoutableAmountCents).toBe(-400);
     expect(settlement.finalPayoutAmountCents).toBe(0);
   });
 

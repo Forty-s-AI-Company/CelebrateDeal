@@ -365,21 +365,23 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   // negative payable carries into the next open month (billing-cycle.ts).
   const grossRevenueCents = grossRevenueBeforeRefundCents - refundAmountCents;
   const carriedInCents = carriedIn._sum.amountCents ?? 0;
-  const paymentGatewayFeeCents = paymentMode === "platform"
-    ? Math.max(0, transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents)
-    : 0;
+  const recordedGatewayFeeCents = transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0);
   const recordedPlatformFeeCents = transactions.reduce(
     (sum: number, transaction: PaymentTransaction) => sum + transaction.platformFeeCents,
     0,
   );
-  const transactionServiceFeeCents = paymentMode === "platform"
-    ? Math.max(0, recordedPlatformFeeCents - platformFeeRefundCents)
-    : 0;
+  // Review M-2 (D-32): a fee refund often lands in a month without the
+  // matching fee. The payout uses the untruncated net fee; only the stored
+  // fee fields and the invoice keep a non-negative amount.
+  const netGatewayFeeCents = recordedGatewayFeeCents - gatewayFeeRefundCents;
+  const netPlatformFeeCents = recordedPlatformFeeCents - platformFeeRefundCents;
+  const paymentGatewayFeeCents = paymentMode === "platform" ? Math.max(0, netGatewayFeeCents) : 0;
+  const transactionServiceFeeCents = paymentMode === "platform" ? Math.max(0, netPlatformFeeCents) : 0;
   const paymentServiceFeeCents = paymentMode === "platform" ? plan.paymentServiceFeeCents : 0;
   const affiliateManagementFeeCents = plan.affiliateManagementFeeCents;
   const monthlyFeeCents = plan.monthlyPriceCents;
   const payoutableAmountCents = (paymentMode === "platform"
-    ? grossRevenueCents - paymentGatewayFeeCents - transactionServiceFeeCents - (commissionTotal._sum.amountCents ?? 0)
+    ? grossRevenueCents - netGatewayFeeCents - netPlatformFeeCents - (commissionTotal._sum.amountCents ?? 0)
     : 0) + carriedInCents;
 
   return {
