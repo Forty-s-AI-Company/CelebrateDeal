@@ -34,8 +34,17 @@ const MAX_DAYS = 3650;
 const DAY_MS = 86_400_000;
 export const DATA_RETENTION_BATCH_SIZE = 1_000;
 export const DATA_RETENTION_MAX_BATCHES = 20;
-// In-flight webhook events are never touched, whatever their age.
-const IN_FLIGHT_WEBHOOK_STATUSES = ["received", "retrying"];
+// Webhook events that may still be processed or need a human are never
+// touched, whatever their age: in flight, awaiting retry, or awaiting manual
+// reconciliation (MANUAL_RECONCILIATION_STATUS).
+const PROTECTED_WEBHOOK_STATUSES = ["received", "retrying", "failed", "needs_manual_reconciliation"];
+
+/** Server-side switch: the sweep writes nothing unless this is exactly "true". */
+export const DATA_RETENTION_ENABLED_ENV = "DATA_RETENTION_ENABLED";
+
+export function dataRetentionEnabled(env: Readonly<Record<string, string | undefined>> = process.env) {
+  return env[DATA_RETENTION_ENABLED_ENV] === "true";
+}
 
 export type DataRetentionPolicy = Record<keyof typeof DATA_RETENTION_ENV, number>;
 
@@ -101,7 +110,7 @@ export async function purgeExpiredData(
      WHERE "id" IN (
        SELECT "id" FROM "WebhookEvent"
         WHERE "createdAt" < ${webhookCutoff}
-          AND "status" NOT IN (${Prisma.join(IN_FLIGHT_WEBHOOK_STATUSES)})
+          AND "status" NOT IN (${Prisma.join(PROTECTED_WEBHOOK_STATUSES)})
           AND jsonb_typeof("payload") = 'object'
           AND jsonb_exists_any("payload", ARRAY['raw', 'diagnostics'])
         ORDER BY "id"

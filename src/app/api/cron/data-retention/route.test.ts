@@ -20,6 +20,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("CRON_SECRET", cronSecret);
   vi.stubEnv("JOB_SECRET", jobSecret);
+  vi.stubEnv("DATA_RETENTION_ENABLED", "true");
   m.purge.mockResolvedValue(counts);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -32,6 +33,20 @@ it("never sweeps through GET without CRON_SECRET, and GET rejects JOB_SECRET", a
 it("never sweeps through POST without JOB_SECRET, and POST rejects CRON_SECRET", async () => {
   for (const secret of [undefined, cronSecret, "wrong-secret"]) expect((await POST(request("POST", secret))).status).toBe(401);
   expect(m.purge).not.toHaveBeenCalled();
+});
+
+it.each([undefined, "", "false", "TRUE", "1"])("writes nothing unless DATA_RETENTION_ENABLED is exactly true (%s)", async (value) => {
+  vi.stubEnv("DATA_RETENTION_ENABLED", value as string);
+  for (const response of [await GET(request("GET", cronSecret)), await POST(request("POST", jobSecret))]) {
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ skipped: "disabled" });
+  }
+  expect(m.purge).not.toHaveBeenCalled();
+});
+
+it("still rejects bad secrets while disabled", async () => {
+  vi.stubEnv("DATA_RETENTION_ENABLED", "false");
+  expect((await GET(request("GET", "wrong-secret"))).status).toBe(401);
 });
 
 it("runs with the default 180/365/365-day policy and returns counts only", async () => {

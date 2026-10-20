@@ -49,6 +49,8 @@ describe("purgeExpiredData (PostgreSQL)", () => {
       const vendorId = await createVendor(tx);
       const oldProcessed = await webhook(tx, "processed", daysAgo(200));
       const oldInFlight = await webhook(tx, "retrying", daysAgo(200));
+      const oldFailed = await webhook(tx, "failed", daysAgo(200));
+      const oldManual = await webhook(tx, "needs_manual_reconciliation", daysAgo(200));
       const recent = await webhook(tx, "processed", daysAgo(10));
       const oldEvent = await tx.analyticsEvent.create({ data: { vendorId, eventType: "page_view", visitorId: "v-old", createdAt: daysAgo(400) } });
       const newEvent = await tx.analyticsEvent.create({ data: { vendorId, eventType: "page_view", visitorId: "v-new", createdAt: daysAgo(30) } });
@@ -63,7 +65,9 @@ describe("purgeExpiredData (PostgreSQL)", () => {
       const purged = await tx.webhookEvent.findUniqueOrThrow({ where: { id: oldProcessed.id } });
       expect(purged.payload).toEqual({ normalized: { orderNumber: "SYN-1" }, retentionPurgedAt: now.toISOString() });
       expect(purged).toMatchObject({ provider: oldProcessed.provider, eventId: oldProcessed.eventId, status: "processed" });
-      expect((await tx.webhookEvent.findUniqueOrThrow({ where: { id: oldInFlight.id } })).payload).toEqual(oldInFlight.payload);
+      for (const kept of [oldInFlight, oldFailed, oldManual]) {
+        expect((await tx.webhookEvent.findUniqueOrThrow({ where: { id: kept.id } })).payload).toEqual(kept.payload);
+      }
       expect((await tx.webhookEvent.findUniqueOrThrow({ where: { id: recent.id } })).payload).toEqual(recent.payload);
 
       expect(await tx.analyticsEvent.findUnique({ where: { id: oldEvent.id } })).toBeNull();

@@ -1,10 +1,15 @@
 import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
-import { DataRetentionConfigError, dataRetentionPolicy, purgeExpiredData } from "@/lib/data-retention";
+import { DataRetentionConfigError, dataRetentionEnabled, dataRetentionPolicy, purgeExpiredData } from "@/lib/data-retention";
 import { getDb } from "@/lib/db";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
 async function sweep() {
+  // Off unless the deployment opts in (owner decision on retention windows and
+  // the privacy-policy wording). A valid secret alone never deletes data.
+  if (!dataRetentionEnabled()) {
+    return Response.json({ skipped: "disabled" }, { headers: NO_STORE });
+  }
   let policy;
   try {
     policy = dataRetentionPolicy();

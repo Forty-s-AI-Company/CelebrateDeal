@@ -90,8 +90,9 @@ ANONYMIZE_CUSTOMER_EMAIL='<請求者 Email>' \
 | `AuditLog` IP | `ipAddress` 清空，保留稽核列與 user agent | 365 天 | `DATA_RETENTION_AUDIT_LOG_IP_DAYS` |
 
 - 天數必須是 30–3650 的整數；設定不合法時 endpoint 回 503，不做任何清理。
-- 預設期限是暫定值。**owner 依律師建議定案後**：設定上述環境變數、開啟 `SCHEDULED_JOBS_ENABLE_DATA_RETENTION`，並同步修改隱私權政策「目前沒有依時間自動刪除的機制」這句。
-- `received`、`retrying` 狀態的 webhook 事件不論多舊都不處理。
+- 伺服器端總開關 `DATA_RETENTION_ENABLED`：不是 `true` 時 endpoint 只回 `{ skipped: "disabled" }`，即使持有 `CRON_SECRET`／`JOB_SECRET` 也不會刪任何資料。
+- 預設期限是暫定值。**owner 依律師建議定案後**：設定上述天數、`DATA_RETENTION_ENABLED=true`、開啟 `SCHEDULED_JOBS_ENABLE_DATA_RETENTION`，並同步修改隱私權政策「目前沒有依時間自動刪除的機制」這句。
+- `received`、`retrying`、`failed`、`needs_manual_reconciliation` 狀態的 webhook 事件不論多舊都不處理（可能還要重試或人工對帳）。
 - 每類每次最多處理 20 批 × 1000 列；回應 `remaining=true` 表示還有剩，隔天會接續。
 
 ## 7. 中期改善（未在本次處理）
