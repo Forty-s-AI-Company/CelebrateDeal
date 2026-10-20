@@ -151,7 +151,7 @@ export function LiveStepPicker({
 }) {
   return (
     <div className="grid gap-2 md:hidden">
-      <p role="status" aria-live="polite" className="text-sm font-semibold text-slate-900">
+      <p className="text-sm font-semibold text-slate-900">
         第 {activeStep + 1} 步／共 {stepList.length} 步
       </p>
       {compact ? (

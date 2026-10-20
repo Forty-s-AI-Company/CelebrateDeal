@@ -18,5 +18,7 @@ describe("formatTwd (F-120)", () => {
     expect(formatCurrency(50_000, "TWD")).toBe("NT$500");
     expect(formatCurrency(1_999, "USD")).toContain("19.99");
     expect(formatCurrency(1_999, "USD")).not.toContain("NT$");
+    expect(formatCurrency(50_000, "JPY")).toMatch(/500$/);
+    expect(formatCurrency(50_000, "JPY")).not.toContain(".");
   });
 });

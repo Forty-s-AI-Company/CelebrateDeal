@@ -34,10 +34,29 @@ export function AppShellMobileNav({ groups, supportLinks }: { groups: MobileNavG
   const drawerId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const close = () => setOpen(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const [openedAt, setOpenedAt] = useState<string | null>(null);
   const primary = pickPrimaryItems(groups);
 
-  useDialogBehavior(open, close);
-  useEffect(() => { if (open) closeRef.current?.focus(); }, [open]);
+  // 路由改變（例如瀏覽器上一頁）時視為關閉，不需要在 effect 內 setState。
+  const isOpen = open && openedAt === (pathname ?? "");
+  useDialogBehavior(isOpen, close);
+  useEffect(() => { if (isOpen) closeRef.current?.focus(); }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !drawerRef.current) return;
+      const focusable = drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled])");
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      else if (!drawerRef.current.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", trap);
+    return () => document.removeEventListener("keydown", trap);
+  }, [isOpen]);
 
   const tabClass = "flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-semibold";
 
@@ -53,12 +72,12 @@ export function AppShellMobileNav({ groups, supportLinks }: { groups: MobileNavG
             </Link>
           );
         })}
-        <button type="button" aria-haspopup="dialog" aria-expanded={open} aria-controls={drawerId} onClick={() => setOpen(true)} className={`${tabClass} text-slate-600`}>
+        <button type="button" aria-haspopup="dialog" aria-expanded={isOpen} aria-controls={drawerId} onClick={() => { setOpenedAt(pathname ?? ""); setOpen(true); }} className={`${tabClass} text-slate-600`}>
           <MoreHorizontal className="size-5" aria-hidden="true" />
           <span>更多</span>
         </button>
       </nav>
-      {open ? (
+      {isOpen ? (
         <div
           id={drawerId}
           role="dialog"
@@ -67,7 +86,7 @@ export function AppShellMobileNav({ groups, supportLinks }: { groups: MobileNavG
           className="fixed inset-0 z-50 bg-slate-950/50 lg:hidden"
           onClick={(event) => { if (event.target === event.currentTarget) close(); }}
         >
-          <div className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl">
+          <div ref={drawerRef} className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-base font-bold text-slate-950">所有功能</h2>
               <button ref={closeRef} type="button" onClick={close} aria-label="關閉更多功能" className="grid min-h-11 min-w-11 place-items-center rounded-lg text-slate-700 hover:bg-slate-100">

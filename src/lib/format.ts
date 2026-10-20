@@ -18,8 +18,8 @@ export function formatCurrency(cents: number, currency = "TWD", options: { fract
   return new Intl.NumberFormat("zh-TW", {
     style: "currency",
     currency,
-    minimumFractionDigits: options.fractionDigits ?? 2,
-    maximumFractionDigits: options.fractionDigits ?? 2,
+    // 未指定時交給 Intl 依幣別決定（JPY 不帶小數）。
+    ...(options.fractionDigits === undefined ? {} : { minimumFractionDigits: options.fractionDigits, maximumFractionDigits: options.fractionDigits }),
   }).format(cents / 100);
 }
 
