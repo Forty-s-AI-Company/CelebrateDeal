@@ -113,6 +113,18 @@ for (const { goal } of goals) {
     page.once("dialog", (dialog) => dialog.accept());
     await remove.click();
     await expect(page).toHaveURL(/\/landing-pages$/u);
-    await expect.poll(async () => db.landingPage.findUnique({ where: { id: pageId }, select: { id: true } })).toBeNull();
+    if (goal !== "webinar") {
+      // F-072 (owner decision D-19): a published Funnel is archived, never
+      // deleted, so its visit and lead-source history survives; it is
+      // unpublished and its public URL stops resolving.
+      await expect.poll(async () => {
+        const archived = await db.landingPage.findUnique({ where: { id: pageId }, select: { status: true, publishedVersionId: true, archivedAt: true } });
+        return archived && { status: archived.status, publishedVersionId: archived.publishedVersionId, archived: archived.archivedAt instanceof Date };
+      }).toEqual({ status: "draft", publishedVersionId: null, archived: true });
+      expect((await page.request.get(`/lp/${slug}`)).status()).toBe(404);
+    } else {
+      // Never published and without traffic: permanently removed.
+      await expect.poll(async () => db.landingPage.findUnique({ where: { id: pageId }, select: { id: true } })).toBeNull();
+    }
   });
 }
