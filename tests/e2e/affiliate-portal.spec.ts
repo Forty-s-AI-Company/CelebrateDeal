@@ -37,7 +37,7 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
   await expect(page.getByRole("link",{name:"下一頁成員",exact:true})).toBeVisible();
   await page.getByLabel("搜尋成員",{exact:true}).fill("合成推廣夥伴");await page.getByRole("button",{name:"搜尋",exact:true}).click();
   await page.getByLabel("授權成員",{exact:true}).selectOption(partner.memberships[0]!.id);await page.getByRole("button",{name:"儲存入口授權",exact:true}).click();
-  await expect(page.getByRole("status")).toHaveText("夥伴入口授權已儲存。");
+  await expect(page.getByRole("status").filter({hasText:/./u})).toHaveText("夥伴入口授權已儲存。");
   expect(await db.affiliatePortalAccess.findUniqueOrThrow({where:{vendorId_affiliateId:{vendorId:vendor.id,affiliateId:affiliate.id}}})).toMatchObject({vendorMemberId:partner.memberships[0]!.id,active:true,revision:1});
   await login(partnerPage,partner.email);await partnerPage.getByRole("button",{name:"開啟工作區與帳號選單",exact:true}).click();await partnerPage.getByRole("link",{name:"夥伴入口",exact:true}).click();
   await partnerPage.getByRole("link",{name:"合成夥伴商家 · 合成推廣合作",exact:true}).click();

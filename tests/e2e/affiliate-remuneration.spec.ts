@@ -39,7 +39,7 @@ test("owner sets fee; partner submits, receives approval, signs and exports; ref
     for (const context of [page.context(), partnerContext, foreignContext]) await context.route(url => url.origin !== new URL(baseURL!).origin, route => route.abort());
     await login(page, manager.email); await page.goto("/affiliates"); await page.getByRole("link", { name: "提領費用", exact: true }).click();
     await page.getByLabel("每筆轉帳費用", { exact: false }).fill("1501"); await page.getByLabel("啟用提領報價與匯出", { exact: true }).check(); await page.getByRole("button", { name: "儲存提領政策", exact: true }).click();
-    await expect(page.getByRole("status")).toHaveText("提領政策已儲存。");
+    await expect(page.getByRole("status").filter({hasText:/./u})).toHaveText("提領政策已儲存。");
     expect(await db.merchantAffiliatePayoutPolicy.findUniqueOrThrow({ where: { vendorId: vendor.id } })).toMatchObject({ revision: 1, bankFeeCents: 1501, enabled: true });
     await login(partnerPage, partner.email); await partnerPage.goto(`/affiliate-portal/${vendor.slug}/${affiliate.id}`); await partnerPage.getByRole("link", { name: "收款資料與佣金提領", exact: true }).click();
     await partnerPage.getByLabel("戶名", { exact: true }).fill("Synthetic Payee"); await partnerPage.getByLabel("銀行代碼", { exact: true }).fill("999"); await partnerPage.getByLabel("收款帳號", { exact: true }).fill("123456789012"); await partnerPage.getByLabel("稅籍識別碼", { exact: true }).fill("SYNTHETIC123");

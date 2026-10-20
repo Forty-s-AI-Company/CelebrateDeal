@@ -41,7 +41,7 @@ test("purchased learner posts, replies, likes and reloads a course-isolated comm
     await post.getByLabel("顯示名稱").fill("合成學員");
     await post.getByLabel("分享學習心得").fill("<b>課程心得</b>");
     await post.getByRole("button", {name:"發布心得", exact:true}).click();
-    await expect(page.getByRole("status")).toHaveText("已儲存。");
+    await expect(page.getByRole("status").filter({hasText:/./u})).toHaveText("已儲存。");
     await expect(page.getByText("<b>課程心得</b>", {exact:true})).toBeVisible();
     expect(await page.locator("article b").count()).toBe(0);
     await page.getByRole("button", {name:"讚（0）", exact:true}).click();
@@ -67,7 +67,7 @@ test("purchased learner posts, replies, likes and reloads a course-isolated comm
       await managerPage.getByLabel("置頂",{exact:true}).check();
       await managerPage.getByLabel("公告",{exact:true}).check();
       await managerPage.getByRole("button",{name:"儲存討論設定",exact:true}).click();
-      await expect(managerPage.getByRole("status")).toHaveText("討論設定已儲存。");
+      await expect(managerPage.getByRole("status").filter({hasText:/./u})).toHaveText("討論設定已儲存。");
       expect(await db.courseCommunityPost.findUniqueOrThrow({where:{vendorId_productId_id:{vendorId:vendor.id,productId:product.id,id:savedPost.id}}})).toMatchObject({isPinned:true,isAnnouncement:true});
       await managerPage.goto(`${baseURL}/products/${randomUUID()}/community`);
       await expect(managerPage.getByText("討論設定已儲存。",{exact:true})).toHaveCount(0);
