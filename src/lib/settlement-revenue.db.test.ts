@@ -106,6 +106,22 @@ describe("F-038 settlement revenue excludes payments the merchant made to the pl
     await expect(db.invoice.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
   });
 
+  it("refuses a month whose refund belongs to an older unclassified payment instead of excluding it (review M-3)", async () => {
+    const vendor = await vendorWithPlatformPlan();
+    await paidTransaction(vendor.id, "buyer_order", 30_000);
+    const legacy = await db.paymentTransaction.create({
+      data: {
+        vendorId: vendor.id, purpose: "unclassified", providerName: "payuni", orderNumber: `SET-${randomUUID()}`,
+        grossAmountCents: 20_000, netAmountCents: 20_000, currency: "TWD", status: "partially_refunded",
+        occurredAt: new Date("2026-06-15T00:00:00.000Z"),
+      },
+    });
+    await processedRefund(vendor.id, legacy.id, 5_000);
+
+    await expect(generateSettlementForVendor(vendor.id, monthKey)).rejects.toMatchObject({ code: "unclassified_payment_purpose" });
+    await expect(db.settlement.count({ where: { vendorId: vendor.id } })).resolves.toBe(0);
+  });
+
   it("defaults a transaction created without a purpose to unclassified", async () => {
     const vendor = await vendorWithPlatformPlan();
     const created = await db.paymentTransaction.create({ data: { vendorId: vendor.id, providerName: "payuni" } });

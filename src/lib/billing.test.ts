@@ -10,6 +10,7 @@ const dependencies = vi.hoisted(() => ({
     streamUsageReconciliation: { findFirst: vi.fn() },
     paymentTransaction: { findMany: vi.fn(), count: vi.fn() },
     refundRecord: { aggregate: vi.fn(), count: vi.fn() },
+    // count() is called for non-TWD refunds and for unclassified refunds (M-3).
     affiliateCommissionLedgerEntry: { aggregate: vi.fn() },
     settlementAdjustmentLedgerEntry: { aggregate: vi.fn() },
   },
@@ -210,6 +211,21 @@ describe("F-038 settlement counts only buyer orders", () => {
     expect(dependencies.db.refundRecord.aggregate).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ paymentTransaction: buyerOrderScope }),
     }));
+  });
+
+  it("fails closed when a refund of the month belongs to a payment with no known purpose (review M-3)", async () => {
+    dependencies.db.refundRecord.count.mockImplementation(async ({ where }: { where: { paymentTransaction?: { purpose?: string } } }) =>
+      where.paymentTransaction?.purpose === "unclassified" ? 1 : 0);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({ code: "unclassified_payment_purpose" });
+    expect(dependencies.db.refundRecord.count).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        monthKey: "2026-07",
+        status: "processed",
+        paymentTransaction: { purpose: "unclassified", primaryCommerceOrder: { is: null } },
+      },
+    });
   });
 
   it("fails closed when a paid transaction of the month has no known purpose", async () => {

@@ -206,7 +206,7 @@ async function readStreamUsageBillingDecision(
 export async function calculateSettlement(vendorId: string, monthKey: string) {
   const db = getDb();
   const { start, end } = monthRange(monthKey);
-  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount, unclassifiedTransactionCount, carriedIn] = await Promise.all([
+  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount, unclassifiedTransactionCount, unclassifiedRefundCount, carriedIn] = await Promise.all([
     db.vendorSubscription.findFirst({
       where: {
         vendorId,
@@ -276,6 +276,16 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
         primaryCommerceOrder: { is: null },
       },
     }),
+    // Review M-3: a refund booked this month can belong to an older payment
+    // whose purpose is unknown; refuse instead of silently excluding it.
+    db.refundRecord.count({
+      where: {
+        vendorId,
+        monthKey,
+        status: "processed",
+        paymentTransaction: { purpose: "unclassified", primaryCommerceOrder: { is: null } },
+      },
+    }),
     // F-039 (D-32): negative balances carried in from earlier months.
     db.settlementAdjustmentLedgerEntry.aggregate({
       where: { vendorId, targetMonthKey: monthKey },
@@ -286,7 +296,7 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   if (!subscription) {
     throw new Error("找不到有效訂閱方案，無法產生月結。");
   }
-  if (unclassifiedTransactionCount > 0) throw new UnclassifiedPaymentPurposeError();
+  if (unclassifiedTransactionCount > 0 || unclassifiedRefundCount > 0) throw new UnclassifiedPaymentPurposeError();
   // Settlement sums cents across transactions; mixing currencies would pay out
   // a meaningless total. Refuse instead of adding non-TWD cents to TWD.
   if (nonTwdRefundCount > 0
