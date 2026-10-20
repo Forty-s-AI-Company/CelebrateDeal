@@ -42,8 +42,8 @@ describe("Dashboard KPI read model", () => {
     expect(probe.peak).toBe(3);
     expect(html).toContain('data-dashboard-read-operation-count="6"');
     expect(html).toContain("近 7 天播放 session");
-    expect(html).toContain("近 7 天已付款訂單（不含待付款）");
-    expect(html).toContain("近 7 天已付款金額（TWD）");
+    expect(html).toContain("近 7 天建立、已付款且未退款的訂單");
+    expect(html).toContain("近 7 天建立、已付款且未退款的金額（TWD）");
     expect(html).toContain(formatCurrency(358000, "TWD"));
     expect(html).toContain("近 7 天訂單建立");
     expect(html).not.toContain("Dashboard KPI 暫時無法載入");
