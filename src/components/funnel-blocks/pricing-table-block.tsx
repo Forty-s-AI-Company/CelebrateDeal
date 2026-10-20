@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import type { PricingTableBlock } from "@/lib/funnel-blocks-schema";
+import { formatCurrency } from "@/lib/format";
 
 function price(value: number, currency: string) {
-  return new Intl.NumberFormat("zh-TW", { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
+  return formatCurrency(value * 100, currency, { fractionDigits: 0 });
 }
 
 export function PricingTableBlockComponent({ settings }: { settings: PricingTableBlock["settings"] }) {

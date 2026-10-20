@@ -26,6 +26,7 @@ import {
   readCheckoutIdempotencyKey,
   saveCheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
+import { formatCurrency } from "@/lib/format";
 
 type CheckoutPhase = "idle" | "submitting" | "redirecting" | "success" | "error";
 
@@ -55,7 +56,7 @@ export type CommerceCheckoutFormProps = {
 };
 
 function formatCheckoutPrice(priceCents: number, currency: string) {
-  return new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(priceCents / 100);
+  return formatCurrency(priceCents, currency);
 }
 
 function submitProviderForm(action: string, payload: Record<string, string>) {

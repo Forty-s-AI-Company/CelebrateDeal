@@ -3,6 +3,7 @@
 import { BarChart3, Flame, Gift, MessageCircleQuestion, PartyPopper, Sparkles, Trophy, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdvancedInteractionMetadata } from "@/lib/interaction-event";
+import { formatCurrency } from "@/lib/format";
 
 type AdvancedEvent = {
   id: string;
@@ -267,10 +268,10 @@ function ActiveLiveAdvancedInteractions({
             ) : null}
             <div className="mt-2 flex items-baseline justify-center gap-2">
               {run.sale ? (
-                <span className="text-3xl font-black text-white">{new Intl.NumberFormat("zh-TW", { style: "currency", currency: run.sale.currency }).format(run.sale.salePriceCents / 100)}</span>
+                <span className="text-3xl font-black text-white">{formatCurrency(run.sale.salePriceCents, run.sale.currency)}</span>
               ) : null}
               {run.sale ? (
-                <span className="text-sm line-through text-white/70">{new Intl.NumberFormat("zh-TW", { style: "currency", currency: run.sale.currency }).format(run.sale.priceCents / 100)}</span>
+                <span className="text-sm line-through text-white/70">{formatCurrency(run.sale.priceCents, run.sale.currency)}</span>
               ) : null}
             </div>
             {run.metadata.stockLimit ? (
