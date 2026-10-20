@@ -61,6 +61,9 @@ export default function MerchantOnboardingPage() {
           <p className="text-sm font-semibold text-primary">商家入門</p>
           <h1 id="onboarding-title" className="mt-2 text-3xl font-bold tracking-tight text-slate-950">商家使用指南</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">依照下列六個步驟，從建立帳號到處理客服與退款，完成開始銷售前的準備。</p>
+          <p className="mt-3 max-w-2xl rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-950">
+            已登入的商家請以後台<Link href={"/onboarding" as Route} className="font-semibold underline">「上線導引」</Link>的進度為準；它會依你實際完成的設定即時更新。本頁只提供事前說明。
+          </p>
         </div>
         <PolicyScopeNotice />
         <section className="mt-8 rounded-lg border border-border bg-white p-6 shadow-sm" aria-labelledby="steps-title">
