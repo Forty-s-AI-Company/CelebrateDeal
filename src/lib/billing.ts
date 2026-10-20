@@ -1,5 +1,6 @@
 import type { BillingPlan, PaymentTransaction, UsageRecord, VendorSubscription } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { isSupportedCheckoutCurrency, SUPPORTED_CHECKOUT_CURRENCY, UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
 import { estimateVendorUsage, MONTHLY_USAGE_SNAPSHOT_RECORD_TYPE } from "@/lib/usage-estimation";
 
@@ -181,7 +182,7 @@ async function readStreamUsageBillingDecision(
 export async function calculateSettlement(vendorId: string, monthKey: string) {
   const db = getDb();
   const { start, end } = monthRange(monthKey);
-  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal] = await Promise.all([
+  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount] = await Promise.all([
     db.vendorSubscription.findFirst({
       where: {
         vendorId,
@@ -229,10 +230,21 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
       },
       _sum: { amountCents: true },
     }),
+    // A refund booked this month can belong to an earlier non-TWD payment
+    // whose own month was already refused; never subtract its cents here.
+    db.refundRecord.count({
+      where: { vendorId, monthKey, status: "processed", paymentTransaction: { currency: { not: SUPPORTED_CHECKOUT_CURRENCY } } },
+    }),
   ]);
 
   if (!subscription) {
     throw new Error("找不到有效訂閱方案，無法產生月結。");
+  }
+  // Settlement sums cents across transactions; mixing currencies would pay out
+  // a meaningless total. Refuse instead of adding non-TWD cents to TWD.
+  if (nonTwdRefundCount > 0
+    || transactions.some((transaction: PaymentTransaction) => !isSupportedCheckoutCurrency(transaction.currency))) {
+    throw new UnsupportedCurrencyError("Monthly settlement");
   }
 
   const plan = subscription.plan;

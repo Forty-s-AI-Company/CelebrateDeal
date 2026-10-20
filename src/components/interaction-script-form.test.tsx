@@ -35,7 +35,8 @@ vi.mock("react", async (importOriginal) => {
 
 vi.mock("@/app/actions", () => actionMocks);
 
-import { InteractionScriptForm } from "./interaction-script-form";
+import { renderToStaticMarkup } from "react-dom/server";
+import { InteractionScriptForm, NoScheduledRolesHint } from "./interaction-script-form";
 
 type ElementNode = {
   type: unknown;
@@ -355,5 +356,24 @@ describe("InteractionScriptForm scheduled role selection", () => {
     expect(textContent(roleSelect)).toContain("原角色無效，請重新選擇");
     expect(textContent(form)).toContain("目前無法使用，請重新選擇排程角色");
     expect(textContent(form)).not.toContain("官方系統");
+  });
+
+  it("shows an empty state with a create-role link when no scheduled role is available", () => {
+    const form = renderForm({ roles: [role({ id: "role-unscheduled", isScheduled: false })], events: [invalidRoleEvent()] });
+    const hints = findElements(form, (candidate) => candidate.type === NoScheduledRolesHint);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]?.props.visible).toBe(true);
+    const html = renderToStaticMarkup(<NoScheduledRolesHint visible />);
+    expect(html).toContain("還沒有可以在腳本中發言的角色");
+    expect(html).toContain('href="/interaction-roles/new"');
+    expect(html).toContain("去建立角色");
+    expect(renderToStaticMarkup(<NoScheduledRolesHint visible={false} />)).toBe("");
+  });
+
+  it("does not show the empty state when a scheduled role exists, and omits blank labels", () => {
+    const form = renderForm({ roles: [role({ label: "" })], events: [invalidRoleEvent()] });
+    expect(findElements(form, (candidate) => candidate.type === NoScheduledRolesHint).map((hint) => hint.props.visible)).toEqual([false]);
+    const options = findElements(form, (candidate) => candidate.type === "option" && candidate.props.value === "role-available");
+    expect(textContent(options)).toBe("可用排程角色");
   });
 });

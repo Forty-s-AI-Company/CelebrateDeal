@@ -4,6 +4,7 @@ import type { FunnelCheckoutReference } from "@/lib/funnel-commerce";
 
 import { LoaderCircle, LockKeyhole, PackageCheck } from "lucide-react";
 import Link from "next/link";
+import { policyCenterPublication, resolvePolicyStatus } from "@/lib/policy-publication";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   CommerceCheckoutAdmissionResponseSchema,
@@ -503,7 +504,7 @@ export function CommerceCheckoutForm({
         <span>
           我已閱讀目前的 <Link href="/policies/terms" className="font-semibold text-blue-700 underline">使用條款</Link>、
           <Link href="/policies/privacy" className="font-semibold text-blue-700 underline">隱私通知</Link> 與
-          <Link href="/policies/refunds" className="font-semibold text-blue-700 underline">退款政策</Link>；這些文件在正式上線前仍需真人 owner 核准。
+          <Link href="/policies/refunds" className="font-semibold text-blue-700 underline">退款政策</Link>（{resolvePolicyStatus(policyCenterPublication.effectiveDate) === "published" ? "自" : "將自"} {policyCenterPublication.effectiveDateLabel} 起生效）。
         </span>
       </label>
 

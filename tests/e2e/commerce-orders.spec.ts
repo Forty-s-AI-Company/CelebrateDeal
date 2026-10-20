@@ -2218,7 +2218,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
       const preview = page.getByRole("region", { name: "角色即時預覽" });
       await expect(preview).toContainText("G7-52 合成直播小編");
       await expect(preview).toContainText("官方預設角色");
-      await expect(preview).toContainText("排程角色");
+      await expect(preview).toContainText("可用於腳本");
       await expect(preview).toContainText("這個預覽不會發布訊息，也不會建立觀看、報名、訂單、付款、評論或成效資料。");
       await expect(page.getByText("它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。", { exact: false })).toBeVisible();
 
@@ -2247,7 +2247,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
       await expect(activeToggle).toBeFocused();
       await page.keyboard.press("Space");
       await expect(activeToggle).not.toBeChecked();
-      await expect(usage.getByRole("alert")).toContainText("停用後，下列腳本中 2 個官方留言／提醒事件不會出現在公開直播");
+      await expect(usage.getByRole("alert")).toContainText("停用後，下列腳本中 2 個留言／提醒事件不會出現在公開直播");
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
       await expectNoBlockingAxeViolations(page);
       await captureIfRequested(page, "interaction-role-desktop.png");
@@ -2281,7 +2281,8 @@ test("desktop merchant can recover upload and validation errors, then publish an
     const launchStep = page.locator("li").filter({ has: launchHeading });
     await expect(launchStep).toContainText("準備可播放媒體");
     await expect(launchStep).toContainText("準備有效報名表單");
-    await expect(launchStep).toContainText("發布互動腳本");
+    // 互動腳本是選配（F-113）：不再是上線的必要步驟，改列在 Step 4 的「建議」區。
+    await expect(launchStep).not.toContainText("發布互動腳本");
     await expect(launchStep).toContainText("完成直播綁定並進入可販售狀態");
     const requirementLink = (label: string, action: string) => launchStep
       .locator("li")
@@ -2289,7 +2290,9 @@ test("desktop merchant can recover upload and validation errors, then publish an
       .getByRole("link", { name: action, exact: true });
     await expect(requirementLink("準備可播放媒體", "新增影片或 Live Input")).toHaveAttribute("href", "/videos/new");
     await expect(requirementLink("準備有效報名表單", "建立報名表單")).toHaveAttribute("href", "/forms/new");
-    await expect(requirementLink("發布互動腳本", "建立互動腳本")).toHaveAttribute("href", "/interaction-scripts/new");
+    const journeyStep = page.locator("li").filter({ has: page.getByRole("heading", { name: "Step 4. 完成報名流程", exact: true }) });
+    await expect(journeyStep).toContainText("建議（選配，不影響完成度）");
+    await expect(journeyStep.locator("li").filter({ hasText: "發布互動腳本" }).getByRole("link", { name: "建立互動腳本", exact: true })).toHaveAttribute("href", "/interaction-scripts/new");
     await expect(requirementLink("完成直播綁定並進入可販售狀態", "建立或繼續直播")).toHaveAttribute("href", "/lives/new");
     await expect(page.getByText("內容直播仍可依自己的發布規則建立，不會被銷售檢查誤擋。", { exact: false })).toBeVisible();
 

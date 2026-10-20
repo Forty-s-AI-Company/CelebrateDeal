@@ -74,6 +74,7 @@ vi.mock("@/components/stream-allocation-editor", () => ({
 }));
 
 import { LiveStepperForm } from "./live-stepper-form";
+import { LiveSlugField } from "./live-slug-field";
 
 type ElementNode = {
   type: unknown;
@@ -310,6 +311,14 @@ describe("LiveStepperForm", () => {
     expect(markup).not.toContain('name="timezone"');
   });
 
+  it("labels the default Taipei zone as Taiwan time", () => {
+    const markup = renderToStaticMarkup(renderForm([], { timeZone: "Asia/Taipei" }) as ReactElement);
+
+    expect(markup).toContain("開播時間（台灣時間）");
+    expect(markup).not.toContain("Asia/Taipei");
+    expect(markup).not.toContain("UTC");
+  });
+
   it("submits the optional replay deadline and clears it when replay is disabled", () => {
     const initialValues = {
       ...emptyLiveStudioDraft(),
@@ -476,6 +485,13 @@ describe("LiveStepperForm", () => {
     });
   });
 
+  it("reports a taken live address as a message that tells the user the draft is kept", () => {
+    const html = renderToStaticMarkup(renderForm(products, { error: "slug_taken" }) as ReactElement);
+    expect(html).toContain("這個直播網址已被使用");
+    expect(html).toContain("草稿已保留");
+    expect(html).not.toContain("Slug");
+  });
+
   it("keeps every field in its canonical eight-step panel", () => {
     const form = renderForm();
     const expectedFields = [
@@ -493,7 +509,9 @@ describe("LiveStepperForm", () => {
       expect(panel).toBeDefined();
       for (const name of names) {
         expect(
-          findElement(panel?.props.children, (candidate) => candidate.props.name === name),
+          findElement(panel?.props.children, (candidate) => (
+            name === "slug" ? candidate.type === LiveSlugField : candidate.props.name === name
+          )),
           `step ${index + 1} should own ${name}`,
         ).toBeDefined();
       }
@@ -973,6 +991,42 @@ describe("LiveStepperForm", () => {
     expect(markup).toContain("發布條件已完成");
     expect(markup).toContain("有效的報名表單");
     expect(scheduleButton?.props.disabled).toBe(false);
+  });
+
+  it("lets a sales live publish without an interaction script and only recommends one", () => {
+    const initialValues = {
+      ...emptyLiveStudioDraft(),
+      title: "不用腳本的銷售直播",
+      slug: "no-script-live",
+      scheduledAt: "2026-08-10T20:00",
+      productIds: [products[0].id],
+      videoId: "video-1",
+      formId: "form-1",
+      messageTemplateId: "template-1",
+      liveReminderTemplateId: "template-2",
+      interactionScriptId: "",
+      activeStep: 7,
+    };
+    const form = renderForm(products, {
+      liveId: "live-1",
+      currentStatus: "draft",
+      initialValues,
+      videos: [{ id: "video-1", title: "可播放影片" }],
+      forms: [{ id: "form-1", name: "有效報名表" }] as FormOverrides["forms"],
+      templates: [
+        { id: "template-1", name: "報名成功", channel: "email", trigger: "registration_confirmed" },
+        { id: "template-2", name: "開播提醒", channel: "email", trigger: "live_reminder" },
+      ] as FormOverrides["templates"],
+      scripts: [],
+    });
+    const markup = renderToStaticMarkup(form as ReactElement);
+
+    expect(markup).toContain("銷售型直播發布檢查");
+    expect(markup).toContain("發布條件已完成");
+    expect(markup).toContain("建議（選配，不影響發布）");
+    expect(markup).toContain("已發布的互動腳本");
+    expect(markup).not.toContain("待完成 · 已發布的互動腳本");
+    expect(submitAction(form, "排程發布")?.props.disabled).toBe(false);
   });
 
   it("keeps sales publishing disabled and links each missing requirement to its step", () => {

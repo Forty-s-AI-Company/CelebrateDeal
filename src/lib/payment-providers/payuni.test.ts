@@ -49,6 +49,15 @@ function payUniEnvelope(payload: Record<string, unknown>) {
   }).toString();
 }
 
+/** PayUni repeats the result Status outside the signed EncryptInfo. */
+function withOuterStatus(body: string, status = "SUCCESS") {
+  const params = new URLSearchParams(body);
+  params.set("Status", status);
+  return params.toString();
+}
+
+const uppPaidFields = { Status: "SUCCESS", TradeStatus: "1", PaymentType: "1", TradeNo: "PAYUNI-IDENTITY-001" };
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -114,7 +123,7 @@ describe("unreferenced Sandbox order observation", () => {
 
 describe("documented CREDIT query v2.0 refund evidence", () => {
   const transaction = { id: "tx-terminal", providerName: "payuni", orderNumber: "CD-TERMINAL-001",
-    providerTradeNo: "trade-terminal", grossAmountCents: 100_000 } as PaymentTransaction;
+    providerTradeNo: "trade-terminal", grossAmountCents: 100_000, currency: "TWD" } as PaymentTransaction;
   function query(patch: Record<string, unknown>) {
     stubPayUniEnv();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({ Status: "SUCCESS", Result: {
@@ -140,13 +149,16 @@ describe("documented CREDIT query v2.0 refund evidence", () => {
     await expect(query({ RefundStatus, RemainAmt: "0" })).rejects.toMatchObject({ category: "provider_response" });
   });
   it.each([
-    { DataSource: "B" }, { DataSource: "" }, { PaymentType: "2" }, { PaymentType: "" },
+    { DataSource: "B" }, { DataSource: "" },
     { TradeStatus: "2" }, { TradeStatus: "4" }, { TradeStatus: "8" }, { TradeStatus: "6" },
     { RemainAmt: "" }, { RemainAmt: "1001" }, { RemainAmt: "-1" }, { RemainAmt: "500junk" },
     { RefundAmt: "0" }, { RefundAmt: "501" }, { RefundAmt: "200junk" },
     { RefundStatus: "", RemainAmt: "500" }, { RefundStatus: "", RemainAmt: "1000", RefundAmt: "1" },
-  ])("rejects incomplete, non-credit or inconsistent evidence %j", async (patch) => {
+  ])("rejects incomplete or inconsistent evidence %j", async (patch) => {
     await expect(query(patch)).rejects.toMatchObject({ category: "provider_response" });
+  });
+  it.each([{ PaymentType: "2" }, { PaymentType: "" }])("routes a collected non-card trade %j to manual reconciliation (R448-01)", async (patch) => {
+    await expect(query(patch)).rejects.toMatchObject({ category: "manual_reconciliation" });
   });
 });
 
@@ -172,7 +184,7 @@ describe("PayUni provider", () => {
     vi.stubEnv("PAYUNI_ENV", "production");
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
     await expect(payUniPaymentProvider.createCheckoutSession?.({
-      transaction: { id: "tx_1", orderNumber: "CD-TEST-001", grossAmountCents: 199000 } as PaymentTransaction,
+      transaction: { id: "tx_1", orderNumber: "CD-TEST-001", grossAmountCents: 199000, currency: "TWD" } as PaymentTransaction,
       vendor: { id: "vendor-1" } as Vendor,
       description: "Ordinary checkout",
       appUrl: "https://staging.example.test",
@@ -221,6 +233,7 @@ describe("PayUni provider", () => {
       id: "tx_1",
       orderNumber: "CD-TEST-001",
       grossAmountCents: 199000,
+      currency: "TWD",
     } as PaymentTransaction;
     const product = { name: "Sandbox Product" } as Product;
     const vendor = { id: "vendor_1" } as Vendor;
@@ -249,6 +262,7 @@ describe("PayUni provider", () => {
       TradeAmt: "1990",
       Timestamp: expect.stringMatching(/^\d+$/),
       ProdDesc: "Sandbox Product",
+      Credit: "1",
       ReturnURL: "https://celebratedeal.carry-digital-nomad.in.net/api/webhooks/payments?provider=payuni&source=return",
       NotifyURL: "https://celebratedeal.carry-digital-nomad.in.net/api/webhooks/payments?provider=payuni&source=notify",
     });
@@ -267,6 +281,7 @@ describe("PayUni provider", () => {
       id: "tx_preview",
       orderNumber: "CD-TEST-006",
       grossAmountCents: 199000,
+      currency: "TWD",
     } as PaymentTransaction;
 
     const session = await payUniPaymentProvider.createCheckoutSession?.({
@@ -293,7 +308,7 @@ describe("PayUni provider", () => {
   it("separates the browser ReturnURL from the canonical NotifyURL", async () => {
     stubPayUniEnv();
     const session = await payUniPaymentProvider.createCheckoutSession?.({
-      transaction: { id: "tx_preview_return", orderNumber: "CD-TEST-007", grossAmountCents: 100 } as PaymentTransaction,
+      transaction: { id: "tx_preview_return", orderNumber: "CD-TEST-007", grossAmountCents: 100, currency: "TWD" } as PaymentTransaction,
       product: { name: "Sandbox Product" } as Product,
       vendor: { id: "vendor_1" } as Vendor,
       appUrl: "https://staging.example.test",
@@ -314,7 +329,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 199_000,
       requestId: "local-request-id",
     })).resolves.toEqual({ providerEventId: "refund-456" });
@@ -342,7 +357,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-direct", providerTradeNo: "trade-direct-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      transaction: { id: "tx-direct", providerTradeNo: "trade-direct-123", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 199_000,
       requestId: "local-request-id",
     })).resolves.toEqual({ providerEventId: "trade-direct-123" });
@@ -358,7 +373,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-bracket", providerTradeNo: "trade-bracket-123", grossAmountCents: 100 } as PaymentTransaction,
+      transaction: { id: "tx-bracket", providerTradeNo: "trade-bracket-123", grossAmountCents: 100, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 100,
       requestId: "local-request-id",
     })).resolves.toEqual({ providerEventId: "refund-bracket-456" });
@@ -425,6 +440,7 @@ describe("PayUni provider", () => {
         orderNumber: "CD-QUERY-001",
         providerTradeNo: "trade-query-123",
         grossAmountCents: 168_000,
+        currency: "TWD",
       } as PaymentTransaction,
     })).resolves.toEqual({
       providerTradeNo: "trade-query-123",
@@ -461,7 +477,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-002", providerTradeNo: "trade-query-234", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
@@ -479,7 +495,7 @@ describe("PayUni provider", () => {
     }), { status: 200 })));
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-STRICT", providerTradeNo: "trade-query-strict", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
   });
 
@@ -498,7 +514,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-003", providerTradeNo: "trade-query-345", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).resolves.toEqual({
       providerTradeNo: "trade-query-345",
       orderNumber: "CD-QUERY-003",
@@ -539,7 +555,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-004", providerTradeNo: "trade-query-346", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "payuni", orderNumber: "CD-QUERY-004", providerTradeNo: "trade-query-346", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
     expect(fetchMock).toHaveBeenCalledOnce();
   });
@@ -550,7 +566,7 @@ describe("PayUni provider", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(payUniPaymentProvider.queryPayment?.({
-      transaction: { id: "tx-query", providerName: "stripe", orderNumber: "CD-QUERY-005", providerTradeNo: "trade-query-347", grossAmountCents: 168_000 } as PaymentTransaction,
+      transaction: { id: "tx-query", providerName: "stripe", orderNumber: "CD-QUERY-005", providerTradeNo: "trade-query-347", grossAmountCents: 168_000, currency: "TWD" } as PaymentTransaction,
     })).rejects.toThrow("Payment provider query failed.");
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -563,10 +579,23 @@ describe("PayUni provider", () => {
     }).toString(), { status: 200 })));
 
     await expect(payUniPaymentProvider.refundPayment?.({
-      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000 } as PaymentTransaction,
+      transaction: { id: "tx-1", providerTradeNo: "trade-123", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
       refundAmountCents: 199_000,
       requestId: "local-request-id",
     })).rejects.toThrow("Payment provider refund failed.");
+  });
+
+  it("refuses a non-TWD refund as a request-contract failure before contacting PayUni (F-041)", async () => {
+    stubPayUniEnv();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.refundPayment?.({
+      transaction: { id: "tx-usd", providerTradeNo: "trade-usd", grossAmountCents: 5_000, currency: "USD" } as PaymentTransaction,
+      refundAmountCents: 5_000,
+      requestId: "local-request-id",
+    })).rejects.toMatchObject({ category: "request_contract" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -575,11 +604,12 @@ describe("PayUni provider", () => {
     ["fractional TWD", { orderNumber: "CD-TEST-002", grossAmountCents: 199050 }],
     ["credit amount below range", { orderNumber: "CD-TEST-003", grossAmountCents: 0 }],
     ["credit amount above range", { orderNumber: "CD-TEST-004", grossAmountCents: 20_000_000 }],
+    ["non-TWD currency (F-041)", { orderNumber: "CD-TEST-005", grossAmountCents: 199000, currency: "USD" }],
   ])("rejects invalid PayUni checkout contract: %s", async (_label, transactionInput) => {
     stubPayUniEnv();
 
     await expect(payUniPaymentProvider.createCheckoutSession?.({
-      transaction: { id: "tx_invalid", ...transactionInput } as PaymentTransaction,
+      transaction: { id: "tx_invalid", currency: "TWD", ...transactionInput } as PaymentTransaction,
       product: { name: "Sandbox Product" } as Product,
       vendor: { id: "vendor_1" } as Vendor,
       appUrl: "https://app.example.test",
@@ -606,8 +636,11 @@ describe("PayUni provider", () => {
     const duplicate = await payUniPaymentProvider.normalizePayload(duplicateBody);
 
     expect(normalized.payload.eventType).toBe("paid");
+    expect(normalized.payload.eventId).toBe("PAYUNI-SANDBOX-TRADE-001:1");
     expect(normalized.payload.orderNumber).toBe("CD-SANDBOX-PAID-001");
-    expect(normalized.payload.referralCode).toBe("DEMOREF");
+    // Real UPP callbacks never carry a referral code or net amount.
+    expect(normalized.payload).not.toHaveProperty("referralCode");
+    expect(normalized.payload.netAmountCents).toBeUndefined();
     expect(normalized.payload.metadata).toBeUndefined();
     expect(duplicate.payload.eventId).toBe(normalized.payload.eventId);
   });
@@ -619,13 +652,15 @@ describe("PayUni provider", () => {
     ["numeric prefix", "1990junk"],
   ])("rejects a signed paid callback with %s trade amount", async (_label, tradeAmount) => {
     stubPayUniEnv();
-    const body = payUniEnvelope({
+    const body = withOuterStatus(payUniEnvelope({
       MerID: "TESTMER",
-      EventId: "payuni-invalid-amount-001",
-      EventType: "paid",
+      Status: "SUCCESS",
+      TradeStatus: "1",
+      PaymentType: "1",
+      TradeNo: "PAYUNI-INVALID-AMOUNT-001",
       MerTradeNo: "CD-INVALID-AMOUNT-001",
       ...(tradeAmount === undefined ? {} : { TradeAmt: tradeAmount }),
-    });
+    }));
 
     await expect(payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body)).resolves.toBe(true);
     await expect(payUniPaymentProvider.normalizePayload(body)).rejects.toThrow("Invalid PayUni trade amount.");
@@ -633,13 +668,15 @@ describe("PayUni provider", () => {
 
   it.each([1990, "1990", "1990.00"])("keeps signed PayUni trade amount %s compatible", async (tradeAmount) => {
     stubPayUniEnv();
-    const body = payUniEnvelope({
+    const body = withOuterStatus(payUniEnvelope({
       MerID: "TESTMER",
-      EventId: "payuni-valid-amount-001",
-      EventType: "paid",
+      Status: "SUCCESS",
+      TradeStatus: "1",
+      PaymentType: "1",
+      TradeNo: "PAYUNI-VALID-AMOUNT-001",
       MerTradeNo: "CD-VALID-AMOUNT-001",
       TradeAmt: tradeAmount,
-    });
+    }));
 
     await expect(payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body)).resolves.toBe(true);
     const normalized = await payUniPaymentProvider.normalizePayload(body);
@@ -653,6 +690,7 @@ describe("PayUni provider", () => {
       EventId: "payuni-refund-no-trade-amount-001",
       EventType: "refunded",
       MerTradeNo: "CD-REFUND-NO-TRADE-001",
+      CloseNo: "CLOSE-NO-TRADE-AMOUNT-001",
       RefundAmount: "1990",
     });
 
@@ -665,24 +703,26 @@ describe("PayUni provider", () => {
   it("keeps decrypted callback fields out of durable transaction metadata", async () => {
     stubPayUniEnv();
     const privateEmail = "buyer-private@example.test";
-    const body = payUniEnvelope({
+    const body = withOuterStatus(payUniEnvelope({
       MerID: "TESTMER",
-      EventId: "payuni-private-fields-001",
-      EventType: "paid",
+      Status: "SUCCESS",
+      TradeStatus: "1",
+      PaymentType: "1",
       MerTradeNo: "CD-PRIVATE-001",
       TradeNo: "trade-private-001",
       TradeAmt: 1990,
       BuyerEmail: privateEmail,
       CardLastFour: "4242",
       Metadata: JSON.stringify({ formSubmissionId: "forged-submission" }),
-    });
+    }));
 
     const normalized = await payUniPaymentProvider.normalizePayload(body);
 
     expect(normalized.payload.metadata).toBeUndefined();
     expect(JSON.stringify(normalized.payload)).not.toContain(privateEmail);
     expect(normalized.rawPayload).toMatchObject({
-      EventId: "payuni-private-fields-001",
+      TradeStatus: "1",
+      PaymentType: "1",
       MerTradeNo: "CD-PRIVATE-001",
       TradeNo: "trade-private-001",
       omittedFieldCount: 3,
@@ -779,11 +819,191 @@ describe("PayUni provider", () => {
   );
 
   it.each([
-    [{ EventType: "paid", VendorId: "vendor_1", TradeAmt: 1990 }, "Missing PayUni order number."],
-    [{ EventType: "paid", VendorId: "vendor_1", TradeAmt: 1990, MerTradeNo: "" }, "Missing PayUni order number."],
+    [{ ...uppPaidFields, VendorId: "vendor_1", TradeAmt: 1990 }, "Missing PayUni order number."],
+    [{ ...uppPaidFields, VendorId: "vendor_1", TradeAmt: 1990, MerTradeNo: "" }, "Missing PayUni order number."],
+    [{ ...uppPaidFields, TradeNo: "", TradeAmt: 1990, MerTradeNo: "CD-NO-TRADE-NO" }, "Missing PayUni trade number."],
   ])("rejects a payload without stable transaction identity", async (payload, error) => {
     stubPayUniEnv();
 
     await expect(payUniPaymentProvider.normalizePayload(JSON.stringify(payload))).rejects.toThrow(error);
+  });
+});
+
+// F-037: PayUni UPP 2.0 Notify/Return use the documented fields only. The
+// outer Status is unsigned (it passes through the payer's browser on
+// ReturnURL); the decision fields live in the signed EncryptInfo. There is no
+// EventType, NetAmount, GatewayFee, ReferralCode, VendorId or EventId.
+describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
+  const realPaid = {
+    MerID: "TESTMER",
+    Status: "SUCCESS",
+    TradeStatus: "1",
+    PaymentType: "1",
+    TradeNo: "PAYUNI-REAL-TRADE-001",
+    MerTradeNo: "CD-REAL-001",
+    TradeAmt: "1990",
+  };
+
+  function realCallback(fields: Record<string, string>, outerStatus: string | null = fields.Status ?? null) {
+    const params = new URLSearchParams(payUniEnvelope(fields));
+    if (outerStatus !== null) params.set("Status", outerStatus);
+    return params.toString();
+  }
+
+  async function normalizeReal(fields: Record<string, string>, outerStatus?: string | null) {
+    stubPayUniEnv();
+    const body = realCallback(fields, outerStatus);
+    await expect(payUniPaymentProvider.verifySignature(new Request("https://app.example.test"), body)).resolves.toBe(true);
+    return payUniPaymentProvider.normalizePayload(body);
+  }
+
+  it("records a signed credit-card TradeStatus 1 as paid with one event ID per trade state", async () => {
+    const { payload } = await normalizeReal(realPaid);
+    expect(payload).toMatchObject({
+      provider: "payuni",
+      eventType: "paid",
+      eventId: "PAYUNI-REAL-TRADE-001:1",
+      orderNumber: "CD-REAL-001",
+      providerTradeNo: "PAYUNI-REAL-TRADE-001",
+      grossAmountCents: 199_000,
+    });
+    expect(payload.vendorId).toBeUndefined();
+    expect(payload).not.toHaveProperty("referralCode");
+  });
+
+  it("never reads tenant, referral or commission overrides from a signed callback (F-048)", async () => {
+    const { payload } = await normalizeReal({ ...realPaid, VendorId: "vendor-forged", VendorSlug: "forged-shop",
+      ReferralCode: "FORGED", CommissionRateBps: "9999" });
+    expect(payload.vendorId).toBeUndefined();
+    expect(payload.vendorSlug).toBeUndefined();
+    expect(payload).not.toHaveProperty("referralCode");
+    expect(payload).not.toHaveProperty("commissionRateBps");
+    expect(payload.orderNumber).toBe("CD-REAL-001");
+  });
+
+  it("leaves absent provider fee and net fields undefined instead of writing zero (F-040)", async () => {
+    const { payload } = await normalizeReal(realPaid);
+    expect(payload.netAmountCents).toBeUndefined();
+    // The schema default keeps the stored fee unless the provider sends one.
+    expect(payload.gatewayFeeCents).toBe(0);
+    const withFees = await normalizeReal({ ...realPaid, GatewayFee: "56", NetAmount: "1934" });
+    expect(withFees.payload).toMatchObject({ gatewayFeeCents: 5_600, netAmountCents: 193_400 });
+  });
+
+  it.each(["0", "8"])("never pays a pending TradeStatus %s and leaves the payment unchanged", async (tradeStatus) => {
+    await expect(normalizeReal({ ...realPaid, TradeStatus: tradeStatus })).rejects.toMatchObject({
+      name: "PaymentWebhookNotActionableError", reason: "trade_pending", requiresManualReconciliation: false,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus, paymentType: "1" },
+    });
+  });
+
+  it.each(["2", "3", "4", "9"])("records a terminal unpaid TradeStatus %s as failed, never paid", async (tradeStatus) => {
+    const { payload } = await normalizeReal({ ...realPaid, TradeStatus: tradeStatus });
+    expect(payload.eventType).toBe("failed");
+    expect(payload.eventId).toBe(`PAYUNI-REAL-TRADE-001:${tradeStatus}`);
+  });
+
+  it.each(["2", "3", "5", "6", "7", "9", "11", ""])("never pays a signed TradeStatus 1 with non-card PaymentType %j", async (paymentType) => {
+    const fields: Record<string, string> = { ...realPaid, PaymentType: paymentType };
+    if (!paymentType) delete fields.PaymentType;
+    await expect(normalizeReal(fields)).rejects.toMatchObject({
+      name: "PaymentWebhookNotActionableError", reason: "payment_type_not_allowed", requiresManualReconciliation: true,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "1",
+        ...(paymentType ? { paymentType } : {}) },
+      rawSnapshot: expect.objectContaining({ MerTradeNo: "CD-REAL-001", TradeStatus: "1", OuterStatus: "SUCCESS" }),
+    });
+  });
+
+  it.each([
+    ["inner UNKNOWN", { Status: "UNKNOWN" }, "UNKNOWN"],
+    ["inner UNAPPROVED", { Status: "UNAPPROVED" }, "UNAPPROVED"],
+    ["outer status missing", {}, null],
+    ["outer status disagrees", {}, "UNKNOWN"],
+  ] as const)("never pays TradeStatus 1 when %s", async (_label, override, outerStatus) => {
+    await expect(normalizeReal({ ...realPaid, ...override }, outerStatus)).rejects.toThrow();
+  });
+
+  it("separates an unsigned outer Status mismatch from a signed provider status (RR-01)", async () => {
+    await expect(normalizeReal(realPaid, null)).rejects.toMatchObject({
+      reason: "outer_status_mismatch", requiresManualReconciliation: true,
+      identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "1", paymentType: "1" },
+    });
+    await expect(normalizeReal(realPaid, "UNKNOWN")).rejects.toMatchObject({ reason: "outer_status_mismatch" });
+    await expect(normalizeReal({ ...realPaid, Status: "UNKNOWN" }, "SUCCESS")).rejects.toMatchObject({ reason: "provider_status_not_success" });
+  });
+
+  it.each(["12abc", "1e3", "-5", "35.5"])("rejects a non-strict provider fee %j (R448-08)", async (fee) => {
+    await expect(normalizeReal({ ...realPaid, GatewayFee: fee })).rejects.toThrow("Invalid PayUni amount field.");
+  });
+
+  it.each(["5", "10", "x", ""])("fails closed on an undocumented TradeStatus %j", async (tradeStatus) => {
+    await expect(normalizeReal({ ...realPaid, TradeStatus: tradeStatus })).rejects.toThrow();
+  });
+
+  it("does not accept a signed custom EventType=paid without the PayUni trade status", async () => {
+    stubPayUniEnv();
+    const body = payUniEnvelope({ MerID: "TESTMER", EventId: "legacy-paid", EventType: "paid", MerTradeNo: "CD-LEGACY-001",
+      TradeNo: "PAYUNI-LEGACY-001", TradeAmt: "1990" });
+    await expect(payUniPaymentProvider.normalizePayload(body)).rejects.toThrow();
+  });
+
+  it("ignores a signed EventId and keys Return and Notify of one trade state to the same event", async () => {
+    const notify = await normalizeReal({ ...realPaid, EventId: "attacker-chosen" });
+    const payerReturn = await normalizeReal(realPaid);
+    expect(notify.payload.eventId).toBe("PAYUNI-REAL-TRADE-001:1");
+    expect(payerReturn.payload.eventId).toBe(notify.payload.eventId);
+  });
+
+  describe("legacy refund and failure notices on the paid TradeNo (F-067, PR #454 A-1/A-2)", () => {
+    const legacy = (fields: Record<string, string>) => { stubPayUniEnv(); return payUniPaymentProvider.normalizePayload(payUniEnvelope({
+      MerID: "TESTMER", MerTradeNo: "CD-REAL-001", TradeNo: "PAYUNI-REAL-TRADE-001", ...fields })); };
+
+    it("keys a refund notice by its provider refund serial, the same value a local refund stores", async () => {
+      const paid = await normalizeReal(realPaid);
+      const closed = await legacy({ EventType: "partially_refunded", RefundAmount: "500", CloseNo: "CLOSE-001", RefundNo: "REFUND-001" });
+      const byRefundNo = await legacy({ EventType: "partially_refunded", RefundAmount: "500", RefundNo: "REFUND-002" });
+      const resent = await legacy({ EventType: "partially_refunded", RefundAmount: "500", CloseNo: "CLOSE-001", EventId: "ignored" });
+      const failed = await legacy({ EventType: "failed" });
+
+      expect([paid, closed, byRefundNo, failed].map((result) => result.payload.eventId)).toEqual([
+        "PAYUNI-REAL-TRADE-001:1", "CLOSE-001", "REFUND-002", "failed:PAYUNI-REAL-TRADE-001",
+      ]);
+      // A resent notice with the same serial converges on one event.
+      expect(resent.payload.eventId).toBe("CLOSE-001");
+    });
+
+    it.each([
+      ["a refund", { EventType: "refunded", RefundAmount: "1990" }],
+      ["a partial refund", { EventType: "partially_refunded", RefundAmount: "500" }],
+      ["a second partial refund of the same amount", { EventType: "partially_refunded", RefundAmount: "500" }],
+      ["a refund with only a synthetic EventId", { EventType: "partially_refunded", RefundAmount: "500", EventId: "synthetic-only" }],
+      ["a refund with a blank serial", { EventType: "refunded", RefundAmount: "1990", CloseNo: " ", RefundNo: "" }],
+    ])("never applies %s without a provider refund serial; it goes to manual reconciliation", async (_label, fields) => {
+      await expect(legacy(fields)).rejects.toMatchObject({
+        name: "PaymentWebhookNotActionableError", reason: "refund_reference_missing", requiresManualReconciliation: true,
+        identifiers: { orderNumber: "CD-REAL-001", providerTradeNo: "PAYUNI-REAL-TRADE-001", tradeStatus: "legacy_refund" },
+      });
+    });
+  });
+
+  it("keeps a failed attempt and a later paid result of one trade as separate events", async () => {
+    const failed = await normalizeReal({ ...realPaid, TradeStatus: "2" });
+    const paid = await normalizeReal(realPaid);
+    expect(failed.payload.eventId).not.toBe(paid.payload.eventId);
+  });
+
+  it("restricts buyer checkout to credit card payment on the UPP page", async () => {
+    stubPayUniEnv();
+    const session = await payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { id: "tx_credit", orderNumber: "CD-CREDIT-001", grossAmountCents: 199_000, currency: "TWD" } as PaymentTransaction,
+      product: { name: "Credit Only" } as Product,
+      vendor: { id: "vendor_1" } as Vendor,
+      appUrl: "https://celebratedeal.carry-digital-nomad.in.net",
+    });
+    const payload = decryptCheckoutPayload(session?.formPayload?.EncryptInfo ?? "");
+    expect(payload.Credit).toBe("1");
+    for (const method of ["ATM", "CVS", "ICash", "Aftee", "LinePay", "JKoPay", "CreditInst", "CreditUnionPay", "ApplePay", "GooglePay", "SamsungPay", "Ship", "ShipTag"]) {
+      expect(payload).not.toHaveProperty(method);
+    }
   });
 });

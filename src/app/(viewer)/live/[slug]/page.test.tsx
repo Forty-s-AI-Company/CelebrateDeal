@@ -330,7 +330,7 @@ describe("PublicLivePage", () => {
         source: "scheduled",
         triggerSec: 24,
         body: "歡迎",
-        actor: { name: "直播小編", avatarUrl: null, label: "官方角色", presentationRole: "official" },
+        actor: { name: "直播小編", avatarUrl: null, label: null, presentationRole: "official" },
       }],
       products: [{ id: "product-1", name: "主打課程", description: "完整課程", priceCents: 168000, compareAtCents: 198000, currency: "TWD", imageUrl: "/product.png", checkoutUrl: "/checkout/product-1", offerLabel: "直播優惠" }],
     });

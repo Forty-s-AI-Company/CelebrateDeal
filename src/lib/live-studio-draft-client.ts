@@ -89,7 +89,7 @@ export async function saveLiveStudioDraft({
   liveId: string;
   revision: number | null;
   payload: LiveStudioDraftPayload;
-}): Promise<LiveStudioDraftEnvelope> {
+}): Promise<LiveStudioDraftEnvelope & { slugTaken: boolean; slugCheckFailed: boolean }> {
   let response: Response;
   try {
     response = await fetch("/api/live-studio/drafts", {
@@ -121,5 +121,12 @@ export async function saveLiveStudioDraft({
   ) {
     throw new LiveStudioDraftClientError("invalid_response");
   }
-  return { id: record.id, revision: record.revision, updatedAt: record.updatedAt, payload: parsedPayload.data };
+  return {
+    id: record.id,
+    revision: record.revision,
+    updatedAt: record.updatedAt,
+    payload: parsedPayload.data,
+    slugTaken: record.slugTaken === true,
+    slugCheckFailed: record.slugCheckFailed === true,
+  };
 }

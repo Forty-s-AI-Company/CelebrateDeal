@@ -62,6 +62,20 @@ describe("ProductForm fulfillment classification", () => {
     }
   });
 
+  it("submits a fixed TWD currency with no free-text currency input (F-041)", async () => {
+    const html = renderToStaticMarkup(await ProductForm({ product: product(true) }));
+    expect(html).toMatch(/<input type="hidden" name="currency" value="TWD"\/>/u);
+    expect(html).not.toMatch(/name="currency"[^>]*type="text"|type="text"[^>]*name="currency"/u);
+    expect(html).not.toContain('name="confirmTwdCurrency"');
+  });
+
+  it("requires an explicit TWD confirmation before saving a legacy non-TWD product (F-041)", async () => {
+    const html = renderToStaticMarkup(await ProductForm({ product: { ...product(true), currency: "USD" } }));
+    expect(html).toContain("這個商品原本設定為 USD");
+    expect(html).toMatch(/<input type="checkbox" required=""[^>]*name="confirmTwdCurrency"\/>/u);
+    expect(html).toMatch(/<input type="hidden" name="currency" value="TWD"\/>/u);
+  });
+
   it("does not show the migration warning after a merchant confirms the delivery type", async () => {
     const html = renderToStaticMarkup(await ProductForm({ product: product(true) }));
     expect(html).not.toContain("交付方式尚未確認");

@@ -32,6 +32,8 @@ export type MerchantOnboardingStep = {
   done: boolean;
   deferred?: boolean;
   requirements: MerchantOnboardingRequirement[];
+  /** 選配的建議項目：會顯示，但不影響這一步或整體的完成度。 */
+  suggestions?: MerchantOnboardingRequirement[];
 };
 
 function step(input: Omit<MerchantOnboardingStep, "done">): MerchantOnboardingStep {
@@ -44,9 +46,12 @@ function step(input: Omit<MerchantOnboardingStep, "done">): MerchantOnboardingSt
 export function merchantOnboardingProgress(signals: MerchantOnboardingSignals) {
   const journeyRequirements = [
     { label: "啟用報名表單", done: signals.activeFormCount > 0, href: "/forms/new" },
-    { label: "啟用互動角色", done: signals.activeInteractionRoleCount > 0, href: "/interaction-roles/new" },
-    { label: "發布互動腳本", done: signals.publishedInteractionScriptCount > 0, href: "/interaction-scripts/new" },
     { label: "啟用報名確認 Email", done: signals.registrationEmailTemplateCount > 0, href: "/messages/templates/new" },
+  ];
+  // 互動角色與腳本是選配（建議），不列入必要步驟，也不影響完成度。
+  const interactionSuggestions = [
+    { label: "啟用互動角色", done: signals.activeInteractionRoleCount > 0, href: "/interaction-roles/new", actionLabel: "建立互動角色" },
+    { label: "發布互動腳本", done: signals.publishedInteractionScriptCount > 0, href: "/interaction-scripts/new", actionLabel: "建立互動腳本" },
   ];
   const nextJourneyRequirement = journeyRequirements.find((requirement) => !requirement.done);
   const salesReadiness = getLivePublishReadiness({
@@ -63,7 +68,7 @@ export function merchantOnboardingProgress(signals: MerchantOnboardingSignals) {
     products: { label: "建立可販售商品", href: "/products/new", actionLabel: "建立商品" },
     registration_form: { label: "準備有效報名表單", href: "/forms/new", actionLabel: "建立報名表單" },
     registration_email: { label: "啟用報名成功 Email", href: "/messages/templates/new", actionLabel: "建立 Email 模板" },
-    interaction_script: { label: "發布互動腳本", href: "/interaction-scripts/new", actionLabel: "建立互動腳本" },
+    interaction_script: { label: "發布互動腳本（建議）", href: "/interaction-scripts/new", actionLabel: "建立互動腳本" },
   };
   const launchRequirements: MerchantOnboardingRequirement[] = [
     ...salesReadiness.requirements.map((requirement) => ({
@@ -106,16 +111,17 @@ export function merchantOnboardingProgress(signals: MerchantOnboardingSignals) {
     }),
     step({
       key: "journey",
-      title: "完成報名與互動流程",
-      description: "把表單、互動角色、腳本與報名確認 Email 準備完整。",
+      title: "完成報名流程",
+      description: "把報名表單與報名確認 Email 準備好。互動角色與腳本是選配，想讓聊天室更熱絡時再建立即可。",
       href: nextJourneyRequirement?.href ?? "/forms",
       actionLabel: nextJourneyRequirement?.label ?? "檢查互動流程",
       requirements: journeyRequirements.map(({ label, done }) => ({ label, done })),
+      suggestions: interactionSuggestions,
     }),
     step({
       key: "launch",
       title: "準備第一場可販售直播",
-      description: "逐項確認商品、表單、Email、互動腳本與媒體；內容直播仍可依自己的發布規則建立，不會被銷售檢查誤擋。",
+      description: "逐項確認商品、表單、Email 與媒體；互動腳本是選配，不會擋住發布。內容直播仍可依自己的發布規則建立，不會被銷售檢查誤擋。",
       href: nextLaunchRequirement?.href ?? "/lives",
       actionLabel: nextLaunchRequirement?.actionLabel ?? "檢查直播",
       requirements: launchRequirements,

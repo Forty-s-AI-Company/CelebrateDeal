@@ -41,6 +41,8 @@ const SAFE_CONTEXT_KEYS = new Set([
   "providerMessageCode",
   "providerTradeStatus",
   "providerResCode",
+  "providerPaymentType",
+  "webhookEventId",
 ]);
 const SAFE_CONTEXT_VALUE = /^[A-Za-z0-9_.:@+-]{1,80}$/;
 

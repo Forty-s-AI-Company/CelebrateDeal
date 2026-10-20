@@ -36,6 +36,7 @@ import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
+import { resolveManualReconciliationForPaidTrade, withoutManualReconciliationHold } from "@/lib/payment-webhook-manual-reconciliation";
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import {
   isRefundEvent,
@@ -65,8 +66,8 @@ export const PaymentWebhookPayload = z.object({
   platformFeeRefundCents: z.number().int().nonnegative().default(0),
   refundReason: z.string().optional(),
   disputeCaseId: z.string().trim().min(1).optional(),
-  referralCode: z.string().optional(),
-  commissionRateBps: AffiliateCommissionRateBps.optional(),
+  // No referralCode/commissionRateBps: attribution and rates come only from the
+  // server-created checkout transaction and the stored affiliate (F-048).
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -228,6 +229,31 @@ async function findVendor(payload: PaymentWebhookPayloadInput) {
   throw new Error("付款 webhook 缺少商家識別（vendorId 或 vendorSlug）。");
 }
 
+/**
+ * Only the unsigned local `demo` harness (refused by the webhook route in
+ * production) may materialize a transaction for an unknown order. Every real
+ * provider must settle a server-created checkout transaction; an unknown order
+ * never becomes an authoritative payment or commission (F-048).
+ */
+export function providerRequiresExistingCheckout(provider: string) {
+  return provider !== "demo";
+}
+
+export class UnknownCheckoutTransactionError extends Error {
+  constructor() {
+    super("付款 webhook 找不到對應的既存結帳交易，拒絕建立權威付款。");
+    this.name = "UnknownCheckoutTransactionError";
+  }
+}
+
+/** Revalidated inside the serializable transaction when no checkout row exists. */
+function assertUnknownOrderMayCreateTransaction(payload: PaymentWebhookPayloadInput) {
+  if (providerRequiresExistingCheckout(payload.provider)) throw new UnknownCheckoutTransactionError();
+  if (payload.eventType === "paid" && payload.grossAmountCents <= 0) {
+    throw new Error("付款 webhook 缺少有效訂單金額。");
+  }
+}
+
 async function resolveWebhookScope(payload: PaymentWebhookPayloadInput) {
   const db = getDb();
 
@@ -268,6 +294,9 @@ async function resolveWebhookScope(payload: PaymentWebhookPayloadInput) {
     },
     include: { refunds: true },
   });
+  if (!existingTransaction && providerRequiresExistingCheckout(payload.provider)) {
+    throw new UnknownCheckoutTransactionError();
+  }
   return { vendor, existingTransaction };
 }
 
@@ -301,9 +330,7 @@ async function upsertAffiliateCommission(
 
   if (!affiliate) return null;
 
-  const commissionRateBps = AffiliateCommissionRateBps.parse(
-    payload.commissionRateBps ?? affiliate.commissionRateBps,
-  );
+  const commissionRateBps = AffiliateCommissionRateBps.parse(affiliate.commissionRateBps);
   const calculatedCommissionCents = commissionAmountCents(grossAmountCents, commissionRateBps);
   const sourceType = "webhook";
   const deduplicationKey = buildCommissionDeduplicationKey({
@@ -978,9 +1005,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       refundAmountCents: payload.refundAmountCents,
       currency: payload.currency,
     }, currentTransaction);
-    if (!currentTransaction && payload.eventType === "paid" && payload.grossAmountCents <= 0) {
-      throw new Error("付款 webhook 缺少有效訂單金額。");
-    }
+    if (!currentTransaction) assertUnknownOrderMayCreateTransaction(payload);
 
     const hasRefundedOrder = Boolean(currentTransaction && (
       currentTransaction.refundedAmountCents > 0
@@ -1009,7 +1034,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     // checkout; callbacks may advance state, but may not extend or replace it.
     const formSubmissionId = formSubmissionIdFromMetadata(existingMetadata);
     const transactionMetadata = {
-      ...existingMetadata,
+      // A verified paid event supersedes a manual-reconciliation hold (RR-01).
+      ...(payload.eventType === "paid" ? withoutManualReconciliationHold(existingMetadata) : existingMetadata),
       ...(checkoutReferralCode ? { referralCode: checkoutReferralCode } : {}),
       ...(formSubmissionId ? { formSubmissionId } : {}),
     } as Prisma.InputJsonObject;
@@ -1059,10 +1085,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           },
         });
 
-
-
     // Product identity is trusted only from the server-created checkout
     // transaction. Provider metadata must never choose another tenant's stock.
+    if (payload.eventType === "paid" && nextStatus === "paid") await resolveManualReconciliationForPaidTrade(tx, { provider: payload.provider,
+      orderNumber: payload.orderNumber, providerTradeNo: payload.providerTradeNo ?? currentTransaction?.providerTradeNo ?? undefined, resolvedByEventId: payload.eventId });
     const lifecycleEventType = payload.eventType;
     if (isPaymentLifecycleEvent(lifecycleEventType) && !ignoredIncomingState && !invariant.duplicateRefundEvent) {
 
@@ -1167,7 +1193,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       savedTransaction.netAmountCents,
       occurredAt,
       hasRefundedOrder,
-      currentTransaction ? checkoutReferralCode : payload.referralCode,
+      checkoutReferralCode, // trusted only from the server-created checkout (F-048)
     ));
 
     const platformReferralCommission = payload.eventType === "paid"

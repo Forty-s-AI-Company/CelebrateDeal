@@ -2,6 +2,7 @@ import type { CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 
 export type ProductActionError =
   | "invalid_product"
+  | "unsupported_currency"
   | "invalid_image_asset"
   | "invalid_course_policy"
   | "invalid_course_owner"

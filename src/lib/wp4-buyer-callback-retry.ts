@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient, type PaymentTransaction, type WebhookEvent } from "@prisma/client";
 import { PaymentWebhookPayload, type PaymentWebhookPayloadInput } from "./payment-webhooks";
 import { retryWebhookEvent } from "./webhook-retry";
+import { MANUAL_RECONCILIATION_STATUS } from "./payment-webhook-manual-reconciliation";
 import { wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE } from "./wp4-buyer-recovery";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 
@@ -88,8 +89,10 @@ async function retryFixedBuyerCallback(db: Pick<PrismaClient, "$transaction">, s
   if (reserved.status !== "RESERVED" || !reserved.eventId) return { status: reserved.status, retryAttempts: 0, failureCode: reserved.status === "ALREADY_PROCESSED" ? "NONE" : "UNKNOWN" };
   try {
     const outcome = await retryWebhookEvent(reserved.eventId, schemaRecovery ? "q1_sandbox_schema_recovery" : "wp4_sandbox_fixed_callback_retry", reserved.expectedVersion);
-    return outcome.status === "processed" ? { status: "PROCESSED", retryAttempts: 1, failureCode: "NONE" }
-      : { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "errorCode" in outcome ? outcome.errorCode ?? "processing_failed" : "processing_failed" };
+    if (outcome.status === "processed") return { status: "PROCESSED", retryAttempts: 1, failureCode: "NONE" };
+    // A legacy-format paid decision is held for manual reconciliation (R448-02, RR-04).
+    if (outcome.status === MANUAL_RECONCILIATION_STATUS) return { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "MANUAL_RECONCILIATION" };
+    return { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "errorCode" in outcome ? outcome.errorCode ?? "processing_failed" : "processing_failed" };
   } catch { return { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "processing_failed" }; }
 }
 

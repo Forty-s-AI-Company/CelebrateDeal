@@ -419,8 +419,11 @@ function invalidTotpCode(totpSeed: string) {
   throw new Error("Unable to select an invalid TOTP code.");
 }
 
+const MFA_SETUP_FOR_ADMIN = /\/mfa\/setup\?next=%2Fadmin%2Fbilling%2Fdashboard$/;
+
 async function enrollMfa(page: Page, user: MfaTestUser) {
-  await loginMfaAdmin(page, user, /\/admin\/billing\/dashboard$/);
+  // Without an enrolled factor the finance back office sends the admin to setup.
+  await loginMfaAdmin(page, user, MFA_SETUP_FOR_ADMIN);
   await page.goto("/mfa/setup");
   await expect(page).toHaveURL(/\/mfa\/setup$/);
   await page.getByRole("button", { name: "開始建立 TOTP" }).click();
@@ -1261,7 +1264,8 @@ for (const width of [1440, 390]) {
   mfaTest(`MFA enrollment preserves return navigation at ${width}px`, async ({ page, mfaUser }) => {
     await page.setViewportSize({ width, height: 900 });
     const destination = "/admin/billing/dashboard?from=mfa-return";
-    await loginMfaAdmin(page, mfaUser, /\/admin\/billing\/dashboard$/);
+    await loginMfaAdmin(page, mfaUser, MFA_SETUP_FOR_ADMIN);
+    await expect(page.getByRole("heading", { name: "財務總覽", exact: true })).toHaveCount(0);
     await page.goto(`/mfa/setup?next=${encodeURIComponent(destination)}`);
     await page.getByRole("button", { name: "開始建立 TOTP" }).click();
     await expect.poll(() => new URL(page.url()).searchParams.get("updated")).toBe("mfa_started");
@@ -1423,7 +1427,7 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
   await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
 
   await page.getByLabel("直播標題", { exact: true }).fill("E2E 建立流程驗收");
-  await page.getByLabel("Slug", { exact: true }).fill(`e2e-stepper-${stamp}`);
+  await page.getByLabel("直播網址").fill(`e2e-stepper-${stamp}`);
   await reviewStep.click();
 
   await expect(reviewStep).toHaveAttribute("aria-current", "step");
@@ -1448,7 +1452,7 @@ test("merchant can create and schedule a prerecorded content webinar from the ei
 
     await page.getByRole("button", { name: /內容／課程直播/ }).click();
     await page.getByLabel("直播標題").fill(title);
-    await page.getByLabel("Slug").fill(slug);
+    await page.getByLabel("直播網址").fill(slug);
     await page.getByRole("button", { name: "下一步" }).click();
 
     await page.getByLabel("影片 / Live Input").selectOption(seed.readyVideoId);

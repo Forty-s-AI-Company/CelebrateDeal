@@ -28,10 +28,14 @@ describe("runtime live publish readiness", () => {
     ["media", { video: null }],
     ["form", { form: { vendorId: "vendor-1", isActive: false, fields: validFields } }],
     ["email", { messageTemplate: { vendorId: "vendor-1", channel: "email", trigger: "registration_confirmed", isActive: false, subject: "報名", body: "內容" } }],
-    ["script", { interactionScript: { vendorId: "vendor-1", status: "draft" } }],
     ["product", { products: [{ vendorId: "vendor-1", product: { vendorId: "vendor-1", isActive: false, fulfillmentTypeConfirmed: true } }] }],
   ])("rejects stale %s resources", (_label, overrides) => {
     expect(getRuntimeLivePublishReadiness(candidate(overrides as Partial<RuntimeLivePublishCandidate>)).ready).toBe(false);
+  });
+
+  it("does not require an interaction script for a sales live", () => {
+    expect(getRuntimeLivePublishReadiness(candidate({ interactionScript: null })).ready).toBe(true);
+    expect(getRuntimeLivePublishReadiness(candidate({ interactionScript: { vendorId: "vendor-1", status: "draft" } })).ready).toBe(true);
   });
 
   it("keeps a same-vendor content live independent from sales-only resources", () => {

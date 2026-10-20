@@ -158,7 +158,8 @@ export function normalizeInteractionRoleDraft(input: InteractionRoleDraft): Inte
   }
 
   const roleType = input.roleType as InteractionRoleType;
-  const label = input.label?.trim() || interactionRoleTypeLabel(roleType);
+  // 顯示標籤選填：留白就不在直播聊天室顯示任何標籤。
+  const label = input.label?.trim() ?? "";
   if (label.length > 80) {
     return { success: false, error: "顯示標籤最多 80 字。" };
   }

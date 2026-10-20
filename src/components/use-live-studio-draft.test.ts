@@ -212,6 +212,31 @@ describe("LiveStudioDraftSaveQueue", () => {
     expect(queue.matches(firstPayload)).toBe(false);
   });
 
+  it("surfaces the server's slug-taken report from each save and clears it when the address is free again", async () => {
+    const takenPayload = { ...emptyLiveStudioDraft(), slug: "taken" };
+    const freePayload = { ...emptyLiveStudioDraft(), slug: "free" };
+    const save = vi.fn()
+      .mockResolvedValueOnce({ ...envelope("draft-1", 1, takenPayload), slugTaken: true })
+      .mockResolvedValueOnce({ ...envelope("draft-1", 2, freePayload), slugTaken: false });
+    const transitions: LiveStudioDraftSaveState[] = [];
+    const queue = new LiveStudioDraftSaveQueue({ liveId: "", save, onTransition: (state) => transitions.push(state) });
+
+    await queue.flush(takenPayload);
+    expect(transitions.at(-1)).toMatchObject({ status: "saved", slugTaken: true });
+
+    await queue.flush(freePayload);
+    expect(transitions.at(-1)).toMatchObject({ status: "saved", slugTaken: false, slugCheckFailed: false });
+  });
+
+  it("reports when the server could not check the address", async () => {
+    const payload = { ...emptyLiveStudioDraft(), slug: "x" };
+    const save = vi.fn().mockResolvedValue({ ...envelope("draft-1", 1, payload), slugTaken: false, slugCheckFailed: true });
+    const transitions: LiveStudioDraftSaveState[] = [];
+    const queue = new LiveStudioDraftSaveQueue({ liveId: "", save, onTransition: (state) => transitions.push(state) });
+    await queue.flush(payload);
+    expect(transitions.at(-1)).toMatchObject({ status: "saved", slugCheckFailed: true });
+  });
+
   it("keeps dirty when a newer local payload is scheduled before the debounce flush", async () => {
     let resolveFirst: ((value: LiveStudioDraftEnvelope) => void) | undefined;
     const firstSave = new Promise<LiveStudioDraftEnvelope>((resolve) => { resolveFirst = resolve; });

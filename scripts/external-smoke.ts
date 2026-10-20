@@ -298,9 +298,21 @@ async function runPayUniSmoke() {
   }
   const { merchantId, key: hashKey, iv: hashIv } = credentials;
 
-  const vendorId = process.env.SMOKE_VENDOR_ID;
-  const vendorSlug = process.env.SMOKE_VENDOR_SLUG;
-  const orderNumber = `PAYUNI-SMOKE-${Date.now()}`;
+  // PayUni callbacks only settle a server-created checkout transaction; an
+  // unknown order is refused and never becomes a payment or commission
+  // (F-048). Create a pending Sandbox checkout first (buyer checkout flow on
+  // the target deployment), then pass its order number and whole-TWD amount.
+  const orderNumber = process.env.SMOKE_PAYUNI_ORDER_NUMBER?.trim();
+  const tradeAmount = Number(process.env.SMOKE_PAYUNI_TRADE_AMOUNT);
+  if (!orderNumber || !/^[A-Za-z0-9_-]{1,30}$/.test(orderNumber) || !Number.isSafeInteger(tradeAmount) || tradeAmount <= 0) {
+    record({
+      name: "payuni sandbox webhook",
+      status: "skip",
+      detail: "Create a pending Sandbox checkout first, then set SMOKE_PAYUNI_ORDER_NUMBER and SMOKE_PAYUNI_TRADE_AMOUNT (whole TWD)",
+    });
+    return;
+  }
+  const tradeNo = `PAYUNI-SMOKE-${Date.now()}`;
   const fixtures = [
     { name: "payuni paid webhook", fixture: "paid" as const, eventId: `${orderNumber}-paid` },
     { name: "payuni duplicate webhook", fixture: "duplicate_paid" as const, eventId: `${orderNumber}-paid` },
@@ -315,9 +327,10 @@ async function runPayUniSmoke() {
         hashKey,
         hashIv,
         overrides: {
-          ...(vendorId ? { VendorId: vendorId } : {}),
-          ...(vendorSlug ? { VendorSlug: vendorSlug } : {}),
           MerTradeNo: orderNumber,
+          TradeNo: tradeNo,
+          TradeAmt: tradeAmount,
+          ...(item.fixture === "refunded" ? { RefundAmount: tradeAmount, CloseNo: `${tradeNo}-CLOSE` } : {}),
           EventId: item.eventId,
         },
       });

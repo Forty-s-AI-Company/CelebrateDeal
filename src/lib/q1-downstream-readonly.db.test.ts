@@ -60,9 +60,9 @@ describe("real PostgreSQL downstream readonly probe", () => {
   it("persists only the real failed stage and cause while rolling back payment", async () => {
     const payment = await seed();
     await db.commerceOrder.updateMany({ where: { vendorId: fixed.vendorId }, data: { buyerEncryptedEnvelope: "synthetic-invalid-envelope" } });
-    const event = await db.webhookEvent.create({ data: { vendorId: fixed.vendorId, provider: "payuni", eventId: "synthetic-q1-stage-paid",
+    const event = await db.webhookEvent.create({ data: { vendorId: fixed.vendorId, provider: "payuni", eventId: "synthetic-q1-stage:1",
       eventType: "paid", status: "failed", retryCount: 1, maxRetries: 5, payload: { normalized: { provider: "payuni",
-        eventId: "synthetic-q1-stage-paid", eventType: "paid", vendorId: fixed.vendorId, orderNumber: payment.orderNumber,
+        eventId: "synthetic-q1-stage:1", eventType: "paid", vendorId: fixed.vendorId, orderNumber: payment.orderNumber,
         grossAmountCents: 100, netAmountCents: 100, currency: "TWD" } } } });
     expect(await retryWebhookEvent(event.id, "synthetic-stage-probe")).toMatchObject({ status: "failed", errorCode: "processing_failed" });
     const audit = await db.auditLog.findFirstOrThrow({ where: { vendorId: fixed.vendorId, targetId: event.id, actorLabel: "synthetic-stage-probe" } });
