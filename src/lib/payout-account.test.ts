@@ -40,6 +40,7 @@ describe("payout account eligibility", () => {
     ["missing account name", { ...activePlatformLegacyAccount, bankAccountLegacyName: "" }],
     ["missing bank code", { ...activePlatformLegacyAccount, bankCodeLegacy: null }],
     ["missing account number", { ...activePlatformLegacyAccount, bankAccountLegacyNumber: " " }],
+    ["masked legacy account without an envelope", { ...activePlatformLegacyAccount, bankAccountLegacyNumber: "****6789" }],
   ])("rejects an ineligible %s", (_label, account) => {
     expect(isEligiblePayoutAccount(account)).toBe(false);
     expect(() => selectPayoutAccount([account])).toThrow(PayoutAccountSelectionError);

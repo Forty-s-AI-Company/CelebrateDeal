@@ -22,10 +22,14 @@ export function isEligiblePayoutAccount(account: PayoutAccountCandidate) {
   if (account.mode !== "platform" || account.status !== "active") return false;
 
   const hasEncryptedAccount = hasText(account.bankAccountEncrypted);
+  // Legacy columns are only usable before the encryption backfill. Once a row
+  // holds the masked display value ("****1234", enforced for new writes by
+  // PaymentAccount_bankAccountNumber_masked_check), it cannot pay anyone.
   const hasCompleteLegacyAccount =
     hasText(account.bankAccountLegacyName)
     && hasText(account.bankCodeLegacy)
-    && hasText(account.bankAccountLegacyNumber);
+    && hasText(account.bankAccountLegacyNumber)
+    && !account.bankAccountLegacyNumber!.trim().startsWith("****");
 
   return hasEncryptedAccount || hasCompleteLegacyAccount;
 }

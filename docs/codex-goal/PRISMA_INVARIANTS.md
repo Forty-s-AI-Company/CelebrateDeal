@@ -365,3 +365,11 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 覆核門檻改為 `|新調整值| > 門檻` 或 `|新值 − 現值| > 門檻` 任一成立即需第二人（n-2）；金額輸入上限改為 NT$21,474,836，確保分值不超過 PostgreSQL `integer`（n-3）。
 - 目前 150 models、114 forward migrations；既有 SQL／checksum 不變。
 
+
+## 2026-10-21 F-073／B04-20 商家撥款帳號只存加密 envelope
+
+- `20261021130000_payment_account_masked_legacy_number`：forward-only，不改欄位或資料。先以 `DO` 區塊統計 `PaymentAccount."bankAccountNumber"` 非 NULL 且不以 `****` 開頭的列數，有就 `RAISE EXCEPTION`（只列數量），提示先跑 `scripts/backfill-bank-account-encryption.ts`；再以 `NOT VALID` 加 CHECK `PaymentAccount_bankAccountNumber_masked_check`（`"bankAccountNumber" IS NULL OR "bankAccountNumber" LIKE '****%'`），接著 `VALIDATE CONSTRAINT`（只取 SHARE UPDATE EXCLUSIVE）。交易層級 `lock_timeout = 5s`。Prisma 6 不比對 CHECK，drift 檢查維持不變、無新 allowlist 項目。部署前置查詢見 `docs/operations/prisma-migration-guards-runbook.md` §6。
+- 程式：`src/lib/vendor-payout-account.ts`（唯一寫入商家撥款帳號的 app 路徑）、`src/app/(app)/billing/payouts/actions.ts`（`assertServerActionSecurity` → `requireVendorOwnerFinance` → 須已啟用 MFA；vendorId 只取自 session，表單上的 vendorId／accountId 一律忽略）。完整帳號只寫進以 vendor 為 AAD 的 envelope，legacy 欄位只存 `maskBankAccount` 結果；同一交易寫 `vendor_payout_account_saved` audit（只含銀行代碼與末四碼）。商家不能解除平台設定的非 `pending／verified／active` 狀態；同一商家有多筆 platform 帳號時拒絕修改。`isEligiblePayoutAccount` 不再接受「沒有 envelope 且 legacy 帳號已遮罩」的帳號。
+- backfill 改為逐批（預設 100 列，`--batch-size` 1–500）獨立提交的 Serializable 交易（`timeout` 60 秒、`maxWait` 10 秒），以 cursor 唯讀掃描產生計畫；遮罩後沒有 envelope 的 PaymentAccount 列為 `unrecoverableMaskedAccounts`，拒絕執行。
+- 測試：`src/app/(app)/billing/payouts/actions.db.test.ts`（envelope／遮罩、就地更新、兩租戶否定、停權不可解除、多帳號拒絕、MFA／輸入驗證、CSRF、CHECK）、`scripts/backfill-bank-account-encryption.db.test.ts`、`src/app/(app)/billing/payouts/page.test.tsx`、`src/lib/payout-account.test.ts`。
+- 目前 150 models、115 forward migrations；既有 SQL／checksum 不變。已在 loopback 全新 `celebratedeal_dev`（5433）套用，並以交易內測試確認 preflight 遇明文列會中止。
