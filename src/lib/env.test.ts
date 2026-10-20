@@ -314,6 +314,20 @@ describe("getEnvCheckReport", () => {
     }
   });
 
+  it.each(["demo", "ecpay-like", "platform-ecpay"])("refuses PAYMENT_PROVIDER=%s on the production deployment (F-003)", (provider) => {
+    const env = configuredEnv();
+    env[envKey("PAYMENT", "PROVIDER")] = provider;
+    env.VERCEL_ENV = "production";
+
+    const report = getEnvCheckReport(env);
+
+    expect(report.ok).toBe(false);
+    expect(check(report, envKey("PAYMENT", "PROVIDER"), "fail")?.message).toContain("Production 只允許 PAYMENT_PROVIDER=payuni");
+    // Local production builds and Preview may still run the demo provider.
+    expect(check(getEnvCheckReport({ ...env, VERCEL_ENV: "preview" }), envKey("PAYMENT", "PROVIDER"), "fail")).toBeUndefined();
+    expect(check(getEnvCheckReport({ ...env, VERCEL_ENV: undefined }), envKey("PAYMENT", "PROVIDER"), "fail")).toBeUndefined();
+  });
+
   it.each(["ecpay-like", "platform-ecpay"])("requires the ECPay webhook verification value for %s", (provider) => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = provider;

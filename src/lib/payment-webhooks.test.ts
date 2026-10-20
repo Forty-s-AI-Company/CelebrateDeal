@@ -803,6 +803,21 @@ describe("payment webhook processing", () => {
     })).resolves.toMatchObject({ status: "paid", primaryPaymentTransactionId: transaction.id });
   });
 
+  it("refuses a non-PayUni event on the production deployment, including stored retries (F-003)", async () => {
+    const suffix = `${Date.now()}-production-demo`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 1000 });
+    vi.stubEnv("VERCEL_ENV", "production");
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo", eventId: `evt-${suffix}`, eventType: "paid", vendorId: vendor.id, orderNumber, grossAmountCents: 1000,
+    }))).rejects.toThrow("Payment provider is not allowed in production");
+
+    await expect(db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } }))
+      .resolves.toMatchObject({ status: "pending" });
+  });
+
   it("processes a webhook identified by vendorId", async () => {
     const suffix = `${Date.now()}-vendor-id`;
     const { db, vendor } = await createFixture(suffix);

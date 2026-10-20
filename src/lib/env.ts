@@ -4,6 +4,7 @@ import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
 import { payUniStagingPlanTestScope } from "@/lib/payuni-staging-plan-test";
 import { isStagingPayUniPreviewCandidate } from "@/lib/database-identity";
 import { payUniCredentialKeys } from "@/lib/payuni-credentials";
+import { isProductionDeployment, PRODUCTION_PAYMENT_PROVIDER } from "@/lib/payment-providers/runtime-policy";
 import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
 import {
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
@@ -177,6 +178,16 @@ function payUniEnvironmentDeploymentCheck(
   };
 }
 
+/** F-003: only PayUni refunds reach a provider; production accepts nothing else. */
+function productionPaymentProviderChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
+  if (!isProductionDeployment(env) || env.PAYMENT_PROVIDER === PRODUCTION_PAYMENT_PROVIDER) return [];
+  return [{
+    key: "PAYMENT_PROVIDER",
+    status: "fail",
+    message: "Production 只允許 PAYMENT_PROVIDER=payuni；demo 與其他 provider 只能用於本機、CI 與 Preview",
+  }];
+}
+
 const requiredKeys = [
   "DATABASE_URL",
   "DIRECT_URL",
@@ -290,6 +301,8 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       message: `${env.PAYMENT_PROVIDER} provider 必須設定 ECPAY_WEBHOOK_SECRET`,
     });
   }
+
+  checks.push(...productionPaymentProviderChecks(env));
 
   if (env.DATABASE_URL?.startsWith("file:")) {
     checks.push({

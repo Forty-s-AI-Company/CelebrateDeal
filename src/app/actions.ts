@@ -90,6 +90,7 @@ import {
   submitSettlementAdjustment,
 } from "@/lib/settlement-adjustment";
 import { assertSettlementInputsUnchanged, refundSettlementMonthKey, SettlementInputsChangedError } from "@/lib/settlement-period";
+import { paymentProviderAllowedInRuntime } from "@/lib/payment-providers/runtime-policy";
 import {
   deleteInteractionRoleAction as deleteInteractionRoleActionImpl,
   deleteInteractionScriptAction as deleteInteractionScriptActionImpl,
@@ -2211,6 +2212,12 @@ export async function refundPaymentTransactionAction(formData: FormData) {
       redirect("/admin/billing/dashboard?error=refund_reconciliation_required");
     }
     redirect("/admin/billing/dashboard?error=refund");
+  }
+
+  // F-003: below this point a refund is only booked locally, no provider is
+  // called. Production fails closed; PayUni refunds all returned above.
+  if (!paymentProviderAllowedInRuntime(providerTransaction?.providerName)) {
+    redirect("/admin/billing/dashboard?error=refund_provider_unsupported");
   }
 
   const { transaction, updated, postRefund } = await (async () => {

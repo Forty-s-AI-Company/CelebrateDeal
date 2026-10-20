@@ -41,6 +41,7 @@ import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, type PostRefundCommerceOrderRefund } from "@/lib/payment-post-refund";
 import { resolveWebhookPaymentAmounts } from "@/lib/payment-gateway-fee";
 import { refundSettlementMonthKey } from "@/lib/settlement-period";
+import { PaymentProviderNotAllowedError, paymentProviderAllowedInRuntime } from "@/lib/payment-providers/runtime-policy";
 import {
   isRefundEvent,
   isDisputeEvent,
@@ -1341,6 +1342,9 @@ function isRetryableCommissionWriteConflict(error: unknown) {
  * then returns the existing commission instead of creating another row.
  */
 export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
+  // F-003: stored events replayed by the retry worker or reconciliation never
+  // pass the route's provider check, so production refuses them here too.
+  if (!paymentProviderAllowedInRuntime(payload.provider)) throw new PaymentProviderNotAllowedError();
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {

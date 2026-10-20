@@ -5517,6 +5517,19 @@ describe("refundPaymentTransactionAction", () => {
     });
   });
 
+  it.each([undefined, "demo", "platform-ecpay"])("never books a local-only refund for provider %j on the production deployment (F-003)", async (providerName) => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    mocks.findUnique.mockResolvedValue({ ...transaction, providerName });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund_provider_unsupported",
+    );
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+  });
+
   it.each(["1e3", "12abc", "40.5", "-5", "0", ""])("rejects a malformed refund amount %j before reading or reserving anything (F-049)", async (amount) => {
     await expect(refundPaymentTransactionAction(refundFormData(amount))).rejects.toThrow(
       "redirect:/admin/billing/dashboard?error=refund",
