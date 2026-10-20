@@ -5,6 +5,7 @@ import {
   invoiceNumber,
   StreamUsageReconciliationRequiredError,
 } from "@/lib/billing";
+import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
 import { upsertUsageSnapshot } from "@/lib/usage-estimation";
 
@@ -28,6 +29,7 @@ export type BillingCycleErrorCode =
   | "negative_payout"
   | "conflict"
   | "stream_reconciliation_required"
+  | "unsupported_currency"
   | "terminal_invoice_amount_conflict";
 
 /**
@@ -123,6 +125,7 @@ export async function generateSettlementForVendor(vendorId: string, monthKey: st
     if (error instanceof StreamUsageReconciliationRequiredError) {
       throw new BillingCycleError("stream_reconciliation_required");
     }
+    if (error instanceof UnsupportedCurrencyError) throw new BillingCycleError("unsupported_currency");
     throw error;
   }
   const adjustmentAmountCents = existingSettlement?.adjustmentAmountCents ?? 0;

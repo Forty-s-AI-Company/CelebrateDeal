@@ -69,12 +69,13 @@ docker run --name celebratedeal-postgres `
   -d postgres:16-alpine
 ```
 
-`.env` 建議改成：
+Migration 指令不讀 `.env*`，目標資料庫必須在 shell 內注入（F-065）。`prisma.config.ts` 會自動載入
+`.env.local`，而 `vercel env pull` 預設就寫到那裡；wrapper 會把驗證過的 `DATABASE_URL` 與 `DIRECT_URL`
+固定傳給 Prisma，避免 dotenv 事後補上遠端目標：
 
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public"
-DIRECT_URL="postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
+```powershell
+$env:DATABASE_URL="postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public"
+$env:DIRECT_URL=$env:DATABASE_URL
 ```
 
 第一次建立：
@@ -84,6 +85,22 @@ npm run db:generate
 npm run db:migrate:deploy
 npm run db:seed
 ```
+
+Migration 指令的目標防護（`scripts/db-migrate-guard.ts`）：
+
+| 指令 | 實際執行 | 允許的目標 |
+| --- | --- | --- |
+| `npm run db:migrate` | `scripts/db-migrate-dev.ts` → `prisma migrate dev` | 只限 loopback（`localhost`／`127.0.0.1`／`::1`）上的 `celebratedeal_dev`／`_test`／`_e2e`／`_ci`／`_wp17_ci`／`_wp18_ci`；`DATABASE_URL` 與 `DIRECT_URL` 都必須通過 `assertLocalTestDatabase`。`migrate dev` 可能提示重設資料庫，因此沒有任何遠端例外。 |
+| `npm run db:migrate:deploy` | `scripts/db-migrate-deploy.ts` → `prisma migrate deploy` | loopback disposable 資料庫；或同時設定 `ALLOW_REMOTE_MIGRATE_DEPLOY=1` 與已登記的 workflow 專用變數 `MIGRATE_DEPLOY_WORKFLOW`，且在該 workflow 的平台上執行。目前唯一登記的是 `vercel-staging-build`（須 `VERCEL=1`，由 `vercel.staging.json` 設定）。通用的 `GITHUB_ACTIONS`／`VERCEL` 標記本身不足以放行。 |
+
+額外的 CLI 參數只接受白名單：`migrate dev` 只收 `--name`／`-n`、`--create-only`、`--skip-seed`、`--skip-generate`；
+`migrate deploy` 不收任何參數，避免 `--schema`、`--config` 改寫已驗證的目標。
+
+被拒絕時只輸出 `category=`（`missing`、`non-loopback`、`unsafe-database`、`remote-not-allowed`、
+`remote-outside-workflow`、`argument-not-allowed`），不會印出 URL、主機、帳號或資料庫名稱。
+
+**這是防誤用，不是權限控制。** 任何持有資料庫憑證的人都能直接執行 Prisma 繞過 wrapper；
+真正的邊界是憑證只存在受保護的環境（GitHub Environment、Vercel 專案）裡。
 
 若只想建立 production-safe 預設方案，不建立 demo vendor：
 
@@ -104,7 +121,10 @@ npm run db:seed
 4. 先在 staging Supabase project 跑完整 migration。
 5. staging 通過 smoke test 後，再對 production 執行 migration。
 
-Production migration 指令：
+Production migration 目前**沒有**登記的 workflow，wrapper 會拒絕任何 production 目標，不要在 shell
+自行設定 `MIGRATE_DEPLOY_WORKFLOW` 繞過。正式套用前需 owner 另外授權，並以 PR 新增一個受 GitHub Environment
+保護、手動觸發的 production migrate workflow，再把它的名稱登記到 `scripts/db-migrate-guard.ts` 的
+`APPROVED_REMOTE_MIGRATE_WORKFLOWS`（需 review）。在該 workflow 內執行的指令：
 
 ```powershell
 npm run db:generate
@@ -112,9 +132,15 @@ npm run db:migrate:status
 npm run db:migrate:deploy
 ```
 
+Staging 由 `vercel.staging.json` 的 buildCommand 執行
+`DIRECT_URL="${STAGING_DATABASE_URL:?...}" ALLOW_REMOTE_MIGRATE_DEPLOY=1 MIGRATE_DEPLOY_WORKFLOW=vercel-staging-build npm run db:migrate:deploy`：
+`STAGING_DATABASE_URL` 未設定或為空時 build 直接失敗，不會退回 `DATABASE_URL`。
+`.github/workflows/staging-migrate.yml` 仍走 `scripts/staging-migrate.mjs` 自己的 staging 守門。
+
 Production 禁止：
 
 - 禁止使用 `prisma db push`。
+- 禁止對遠端資料庫執行 `npm run db:migrate`（`prisma migrate dev`）；wrapper 會拒絕，也不得改用 `npx prisma migrate dev` 繞過。
 - 禁止直接修改 production DB schema。
 - 禁止在 production 執行 demo seed。
 - 禁止直接刪除欄位或資料表，除非先完成備份、相容部署與 rollback 計畫。
@@ -221,6 +247,51 @@ npm run db:seed
 - [ ] Backup restore drill 完成
 - [ ] 備份形式與 organization plan 相符，且 backup / restore evidence 不含 secret 或 customer data
 - [ ] Webhook retry / reconciliation 沒有異常
+
+### 9.1 非 TWD 商品與交易盤點（唯讀，F-041）
+
+平台的結帳、PayUni 交易、退款與月結只支援新台幣（TWD）。程式現在會拒絕非 TWD：
+商品表單只送出 `TWD`、checkout 回 `422 UNSUPPORTED_CURRENCY`、PayUni 金額轉換拒絕非 TWD、
+月結遇到非 TWD 交易會停止並回報 `unsupported_currency`。既有資料不用 migration 改寫，
+上線前先在 staging／production 以唯讀連線執行下列查詢（需 owner 授權連線），結果為空才算通過：
+
+```sql
+-- 只讀：非 TWD 商品（含停用），供人工決定改價或下架
+SELECT "vendorId", "id", "currency", "priceCents", "compareAtCents", "isActive"
+FROM "Product"
+WHERE "currency" <> 'TWD'
+ORDER BY "vendorId", "id";
+
+-- 只讀：非 TWD 付款交易（會讓該商家月結停止）
+SELECT "vendorId", "currency", "status", COUNT(*) AS transactions, SUM("grossAmountCents") AS gross_cents
+FROM "PaymentTransaction"
+WHERE "currency" <> 'TWD'
+GROUP BY "vendorId", "currency", "status"
+ORDER BY "vendorId", "currency", "status";
+```
+
+若有結果：非 TWD 商品由商家在後台重新以新台幣填價並勾選確認後儲存（表單會要求確認，不會自動換匯）；
+非 TWD 交易需人工對帳後再產生月結，不可直接以 SQL 改幣別。月結也會在當月出現屬於非 TWD 交易的退款時停止。
+
+### 9.2 PayUni 退款事件 ID 變更前檢查（唯讀，PR #454 A-1）
+
+舊式（非 UPP）退款通知現在以 provider 退款序號（`CloseNo`，其次 `RefundNo`）作為事件 ID；沒有序號的
+退款通知不會自動入帳，而是建立 `needs_manual_reconciliation` 事件並告警。部署前確認沒有以舊 ID 卡住、
+之後可能被 retry 重放的 PayUni 退款事件，結果為空才部署：
+
+```sql
+-- 只讀：仍可能被 webhook retry 重放的 PayUni 退款類事件
+SELECT "id", "eventId", "eventType", "status", "retryCount", "createdAt"
+FROM "WebhookEvent"
+WHERE "provider" = 'payuni'
+  AND "eventType" IN ('refunded', 'partially_refunded')
+  AND "status" IN ('received', 'retrying', 'failed')
+ORDER BY "createdAt";
+```
+
+若有結果，先人工對帳（比對 PayUni 後台退款紀錄與 `RefundRecord.providerEventId`）再決定是否處理，
+不要直接 retry。部署後若退款通知與只帶 TradeNo 的既有退款無法區分，webhook 會以 `order_ambiguous` 失敗，
+同樣交由財務人工對帳。
 
 ## 10. 參考資料
 

@@ -41,6 +41,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/usage-estimation", () => ({ upsertUsageSnapshot: mocks.upsertUsageSnapshot }));
 
 import { BillingCycleError, generateSettlementForVendor } from "./billing-cycle";
+import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
 
 const calculation = {
   subscription: { billingCycleDay: 5 },
@@ -175,6 +176,16 @@ describe("generateSettlementForVendor", () => {
 
     await expect(generateSettlementForVendor("vendor-1", "2026-07"))
       .rejects.toMatchObject({ name: "BillingCycleError", code: "stream_reconciliation_required" });
+
+    expect(mocks.settlementCreate).not.toHaveBeenCalled();
+    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+  });
+
+  it("maps a non-TWD settlement refusal to a bounded billing error without writes (F-041)", async () => {
+    mocks.calculateSettlement.mockRejectedValueOnce(new UnsupportedCurrencyError("Monthly settlement"));
+
+    await expect(generateSettlementForVendor("vendor-1", "2026-07"))
+      .rejects.toMatchObject({ name: "BillingCycleError", code: "unsupported_currency" });
 
     expect(mocks.settlementCreate).not.toHaveBeenCalled();
     expect(mocks.invoiceUpsert).not.toHaveBeenCalled();

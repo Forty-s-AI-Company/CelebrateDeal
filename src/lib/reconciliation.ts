@@ -38,6 +38,13 @@ function expectedInvoiceStatus(transactionStatus: string) {
   return null;
 }
 
+/** Attribution is trusted only from the server-created checkout metadata (F-048). */
+function checkoutReferralCodeFromMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const referralCode = (metadata as Record<string, unknown>).referralCode;
+  return typeof referralCode === "string" && referralCode.trim() ? referralCode.trim().toUpperCase() : null;
+}
+
 export async function reconcileWebhookEvent(event: WebhookEvent): Promise<ReconciliationCheck[]> {
   const parsed = payloadFromEvent(event);
   if (!parsed.success) {
@@ -145,20 +152,21 @@ export async function reconcileWebhookEvent(event: WebhookEvent): Promise<Reconc
     actual: String(refundTotal),
   });
 
-  if (payload.referralCode && payload.eventType === "paid") {
+  const checkoutReferralCode = checkoutReferralCodeFromMetadata(transaction.metadata);
+  if (checkoutReferralCode && payload.eventType === "paid") {
     const commission = await db.affiliateCommission.findFirst({
       where: {
         vendorId: event.vendorId,
         sourceType: "webhook",
         sourceId: transaction.id,
-        referralCode: payload.referralCode.toUpperCase(),
+        referralCode: checkoutReferralCode,
       },
     });
     checks.push({
       key: "affiliate_commission",
       label: "Referral code -> affiliate commission",
       status: commission ? "pass" : "fail",
-      expected: payload.referralCode.toUpperCase(),
+      expected: checkoutReferralCode,
       actual: commission?.referralCode ?? "missing",
     });
   }

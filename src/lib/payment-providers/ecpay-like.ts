@@ -61,7 +61,6 @@ export const ecpayLikePaymentProvider: PaymentProviderAdapter = {
       gatewayFeeRefundCents: cents(rawPayload.GatewayFeeRefund),
       platformFeeRefundCents: cents(rawPayload.PlatformFeeRefund),
       refundReason: rawPayload.RefundReason ? String(rawPayload.RefundReason) : undefined,
-      referralCode: rawPayload.ReferralCode ? String(rawPayload.ReferralCode) : undefined,
       occurredAt: rawPayload.OccurredAt ? new Date(String(rawPayload.OccurredAt)).toISOString() : undefined,
       metadata: rawPayload,
     };

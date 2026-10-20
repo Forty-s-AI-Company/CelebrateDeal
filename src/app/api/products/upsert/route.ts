@@ -8,6 +8,7 @@ import { initialProductActionState, type ProductActionError } from "@/lib/produc
 const MANAGER_ROLES = new Set(["owner", "admin"]);
 const ERROR_STATUS: Record<ProductActionError, number> = {
   invalid_product: 422,
+  unsupported_currency: 422,
   invalid_image_asset: 422,
   invalid_course_policy: 422,
   invalid_course_owner: 422,

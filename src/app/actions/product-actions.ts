@@ -21,6 +21,7 @@ import {
   safeParseCustomCheckoutFields,
 } from "@/lib/commerce-custom-checkout";
 import type { ProductActionError, ProductActionState, ProductFormDraft } from "@/lib/product-action-state";
+import { isSupportedCheckoutCurrency, SUPPORTED_CHECKOUT_CURRENCY } from "@/lib/checkout-currency";
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -64,7 +65,7 @@ function draftFrom(formData: FormData): ProductFormDraft {
     description: boundedDraftText(formData, "description", 10_000),
     price: boundedDraftText(formData, "price", 32),
     compareAt: boundedDraftText(formData, "compareAt", 32),
-    currency: boundedDraftText(formData, "currency", 3).toUpperCase() || "TWD",
+    currency: boundedDraftText(formData, "currency", 3).toUpperCase() || SUPPORTED_CHECKOUT_CURRENCY,
     inventory: boundedDraftText(formData, "inventory", 16),
     fulfillmentType: boundedDraftText(formData, "fulfillmentType", 32) || "physical",
     courseContentOwnerMembershipId: boundedDraftText(formData, "courseContentOwnerMembershipId", 160),
@@ -133,6 +134,11 @@ function parseCoursePolicy(formData: FormData, commerceDomain: "merchant" | "cou
   return { success: true as const, courseContentOwnerMembershipId, coursePromoterShareBps: share.data };
 }
 
+/** An omitted or blank currency means TWD; any other value is refused, never coerced. */
+function productCurrency(formData: FormData) {
+  return text(formData, "currency").toUpperCase() || SUPPORTED_CHECKOUT_CURRENCY;
+}
+
 function parseProductInput(formData: FormData) {
   const name = text(formData, "name");
   const slug = toSlug(text(formData, "slug"));
@@ -150,7 +156,7 @@ function parseProductInput(formData: FormData) {
       ? nonNegativeInteger(compareAtRaw)
       : currencyAmountToCents(compareAtRaw);
   const inventory = nonNegativeInteger(text(formData, "inventory"));
-  const currency = text(formData, "currency", "TWD").toUpperCase();
+  const currency = productCurrency(formData);
   const imageUrlRaw = optionalText(formData, "imageUrl");
   const imageUrl = imageUrlRaw ? parseSafeExternalHttpUrl(imageUrlRaw) : null;
   const checkoutUrlRaw = optionalText(formData, "checkoutUrl");
@@ -162,7 +168,9 @@ function parseProductInput(formData: FormData) {
   if (isActive && priceCents === 0) return null;
   if (compareAtRaw !== null && (compareAtCents === null || compareAtCents === 0)) return null;
   if (compareAtCents !== null && priceCents !== null && compareAtCents < priceCents) return null;
-  if (!/^[A-Z]{3}$/u.test(currency)) return null;
+  if (!isSupportedCheckoutCurrency(currency)) return null;
+  // PayUni charges whole TWD units only; a fractional selling price can never be paid.
+  if (priceCents % 100 !== 0) return null;
   if ((imageUrlRaw !== null && imageUrl === null) || (checkoutUrlRaw !== null && checkoutUrl === null)) return null;
 
   return { name, slug, isActive, priceCents, compareAtCents, inventory, currency, imageUrl, checkoutUrl, description };
@@ -176,6 +184,9 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
   if (!commercePolicy.success) return { success: false as const, state: productFailure(previousState, formData, commercePolicy.error) };
   const coursePolicy = parseCoursePolicy(formData, commercePolicy.commerceDomain);
   if (!coursePolicy.success) return { success: false as const, state: productFailure(previousState, formData, "invalid_course_policy") };
+  if (!isSupportedCheckoutCurrency(productCurrency(formData))) {
+    return { success: false as const, state: productFailure(previousState, formData, "unsupported_currency") };
+  }
   const productInput = parseProductInput(formData);
   if (!productInput) return { success: false as const, state: productFailure(previousState, formData, "invalid_product") };
   let customCheckoutFields;
@@ -431,6 +442,13 @@ export async function mutateProduct(
   const dependencies = await loadProductDependencies(db, vendorId, request);
   if (!dependencies.success) return { ok: false, state: productFailure(previousState, formData, dependencies.error) };
   const { existingProduct, imageAsset } = dependencies;
+  // A legacy non-TWD product is only rewritten to TWD when the merchant has
+  // explicitly confirmed the price now means New Taiwan Dollars; otherwise a
+  // USD 50.00 price would silently become NT$50.
+  if (existingProduct && !isSupportedCheckoutCurrency(existingProduct.currency)
+    && formData.get("confirmTwdCurrency") !== "on") {
+    return { ok: false, state: productFailure(previousState, formData, "unsupported_currency") };
+  }
   const policyChanged = request.commerceDomain === "course" && existingProduct !== null
     && (
       existingProduct.commerceDomain !== request.commerceDomain

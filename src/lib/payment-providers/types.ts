@@ -208,7 +208,9 @@ export class PaymentMethodSetupMalformedPayloadError extends Error {
  */
 export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_not_allowed" | "provider_status_not_success"
   /** Signed result is a paid card trade; only the unsigned outer Status disagrees. */
-  | "outer_status_mismatch";
+  | "outer_status_mismatch"
+  /** Signed refund notice without a provider refund serial (CloseNo/RefundNo); never applied automatically. */
+  | "refund_reference_missing";
 
 /** Bounded provider identifiers only (order/trade numbers and status codes), never PII or card data. */
 export type PaymentWebhookCallbackIdentifiers = {

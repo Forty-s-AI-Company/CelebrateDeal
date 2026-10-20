@@ -14,8 +14,25 @@ export type ExistingPaymentSnapshot = {
   grossAmountCents: number;
   refundedAmountCents: number;
   currency: string;
+  providerName?: string;
+  providerTradeNo?: string | null;
   refunds: RefundSnapshot[];
 };
+
+/**
+ * PayUni refunds started here store `CloseNo ?? RefundNo ?? TradeNo` as the
+ * refund's provider event. A refund identified only by the trade number cannot
+ * be told apart from another refund of the same trade, so a non-duplicate PayUni
+ * refund is refused (manual reconciliation) whenever either side carries only the
+ * trade number and another processed refund exists (PR #454 A-1).
+ */
+function hasAmbiguousPayUniRefundIdentity(input: PaymentWebhookInvariantInput, existing: ExistingPaymentSnapshot) {
+  const tradeNo = existing.providerTradeNo;
+  if (existing.providerName !== "payuni" || !tradeNo) return false;
+  const processed = existing.refunds.filter((refund) => refund.status === undefined || refund.status === "processed");
+  return processed.some((refund) => refund.providerEventId === tradeNo)
+    || (input.eventId === tradeNo && processed.length > 0);
+}
 
 type PaymentWebhookInvariantInput = {
   eventId: string;
@@ -87,6 +104,9 @@ export function validatePaymentWebhookInvariants(
     return { duplicateRefundEvent: true, remainingRefundableCents };
   }
 
+  if (hasAmbiguousPayUniRefundIdentity(input, existing)) {
+    throw new Error("退款 webhook 無法與只帶交易編號的既有退款區分，需人工對帳。");
+  }
   if (!REFUNDABLE_STATUSES.has(existing.status)) {
     throw new Error("退款 webhook 的付款交易狀態不可退款。");
   }

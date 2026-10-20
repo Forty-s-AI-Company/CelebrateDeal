@@ -600,6 +600,15 @@ describe("successful checkout response", () => {
     expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 
+  it("refuses a non-TWD product before reserving stock or contacting the provider (F-041)", async () => {
+    db.product.findFirst.mockResolvedValueOnce({ ...(await db.product.findFirst()), currency: "USD", priceCents: 5000 });
+    const response = await POST(checkoutRequest());
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({ error: "Product currency is not supported", code: "UNSUPPORTED_CURRENCY" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("fails before stock reservation when a non-physical product has no active delivery config", async () => {
     db.product.findFirst.mockResolvedValueOnce({
       ...(await db.product.findFirst()),
