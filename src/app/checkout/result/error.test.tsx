@@ -7,7 +7,7 @@ describe("payment result error UI", () => {
   it("provides an accessible retry without exposing server error details", () => {
     const html = renderToStaticMarkup(createElement(PaymentResultError, {
       error: new Error("private provider response detail"),
-      reset: vi.fn(),
+      retry: vi.fn(),
     }));
 
     expect(html).toContain('role="alert"');
