@@ -87,8 +87,24 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
+      # F-063 / B04-09: new migration names must sort after origin/master's
+      # newest migration, and existing migrations may not be deleted or renamed.
+      - name: Migration name order
+        run: node scripts/migration-order-check.mjs
+
       - name: Apply database migrations
         run: npm run db:migrate:deploy
+
+      # B04-04: schema.prisma vs migration-built database. Only the drift in
+      # scripts/prisma-drift-allowlist.json may remain; Prisma wipes the
+      # dedicated shadow database, never celebratedeal_ci.
+      - name: Prisma schema drift against migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          shadow_base_url="${DATABASE_URL%\?schema=public}"
+          psql "$shadow_base_url" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE celebratedeal_shadow_ci'
+          PRISMA_DRIFT_SHADOW_DATABASE_URL="${shadow_base_url%/*}/celebratedeal_shadow_ci?schema=public" node scripts/prisma-drift-check.mjs
 
       - name: Lint
         run: npm run lint

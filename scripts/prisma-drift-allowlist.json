@@ -1,0 +1,528 @@
+{
+  "schemaVersion": "celebratedeal-prisma-drift-allowlist/v1",
+  "description": "Known differences between prisma/schema.prisma and the database built by prisma/migrations (B04-04). Each statement is what `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --script` prints today, i.e. what `prisma migrate dev` would generate. Never commit those statements as a migration. scripts/prisma-drift-check.mjs fails on any statement not listed here and on any listed statement that no longer appears.",
+  "baseline": {
+    "prisma": "6.19.3",
+    "migrations": "through 20261020090000_enable_rls_all_tables",
+    "counts": {
+      "trgm_gin_index": 3,
+      "index_missing_in_schema": 3,
+      "foreign_key_missing_in_schema": 11,
+      "foreign_key_shape_mismatch": 3,
+      "column_default_mismatch": 1,
+      "foreign_key_name_mismatch": 54,
+      "index_name_mismatch": 25
+    }
+  },
+  "notComparedByPrismaDiff": {
+    "reason": "Prisma 6 does not diff partial indexes, so these never appear in migrate diff output. src/lib/prisma-unmanaged-indexes.db.test.ts asserts they exist after migrate deploy.",
+    "partialUniqueIndexes": [
+      "ConsultationBooking_active_slot_key",
+      "LiveQuestion_one_spotlight_per_live_key",
+      "PostPurchaseCredit_vendorId_sourceOrderId_active_key",
+      "TeamMembershipRelationship_one_active_upline"
+    ]
+  },
+  "entries": [
+    {
+      "category": "trgm_gin_index",
+      "statement": "DROP INDEX \"FormSubmission_email_trgm_idx\";",
+      "reason": "pg_trgm GIN index (20260810051000_g7_54_form_submission_search_indexes); Prisma 6 cannot express gin_trgm_ops. Must never be dropped."
+    },
+    {
+      "category": "trgm_gin_index",
+      "statement": "DROP INDEX \"FormSubmission_name_trgm_idx\";",
+      "reason": "pg_trgm GIN index (20260810051000_g7_54_form_submission_search_indexes); Prisma 6 cannot express gin_trgm_ops. Must never be dropped."
+    },
+    {
+      "category": "trgm_gin_index",
+      "statement": "DROP INDEX \"FormSubmission_phone_trgm_idx\";",
+      "reason": "pg_trgm GIN index (20260810051000_g7_54_form_submission_search_indexes); Prisma 6 cannot express gin_trgm_ops. Must never be dropped."
+    },
+    {
+      "category": "index_missing_in_schema",
+      "statement": "DROP INDEX \"CommerceOrder_vendorId_automationCustomerKeyHash_status_idx\";",
+      "reason": "Index created by a hand-written migration but not declared in schema.prisma. Fix by adding @@index(..., map: \"<name>\") to the model, then remove this entry."
+    },
+    {
+      "category": "index_missing_in_schema",
+      "statement": "DROP INDEX \"ConsultationBooking_vendorId_customerKeyHash_startTime_idx\";",
+      "reason": "Index created by a hand-written migration but not declared in schema.prisma. Fix by adding @@index(..., map: \"<name>\") to the model, then remove this entry."
+    },
+    {
+      "category": "index_missing_in_schema",
+      "statement": "DROP INDEX \"Live_vendorId_liveReminderTemplateId_idx\";",
+      "reason": "Index created by a hand-written migration but not declared in schema.prisma. Fix by adding @@index(..., map: \"<name>\") to the model, then remove this entry."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"Live\" DROP CONSTRAINT \"Live_vendorId_formId_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"Live\" DROP CONSTRAINT \"Live_vendorId_messageTemplateId_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"Live\" DROP CONSTRAINT \"Live_vendorId_videoId_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"LiveInteractionResponse\" DROP CONSTRAINT \"LiveInteractionResponse_formSubmissionId_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"LiveInteractionResponse\" DROP CONSTRAINT \"LiveInteractionResponse_vendorId_runId_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" DROP CONSTRAINT \"PostPurchaseCredit_grant_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" DROP CONSTRAINT \"PostPurchaseCredit_source_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" DROP CONSTRAINT \"PostPurchaseCredit_source_product_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" DROP CONSTRAINT \"PostPurchaseCredit_target_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" DROP CONSTRAINT \"PostPurchaseCredit_target_product_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_missing_in_schema",
+      "statement": "ALTER TABLE \"SupportCaseEvent\" DROP CONSTRAINT \"SupportCaseEvent_buyer_case_order_fkey\";",
+      "reason": "Tenant-binding or composite foreign key created by a hand-written migration and not declared as a relation in schema.prisma. Must never be dropped; declare it in the schema or keep it allowlisted."
+    },
+    {
+      "category": "foreign_key_shape_mismatch",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" ADD CONSTRAINT \"PostPurchaseCredit_vendorId_sourceOrderId_buyerGrantId_fkey\" FOREIGN KEY (\"vendorId\", \"sourceOrderId\", \"buyerGrantId\") REFERENCES \"BuyerSupportOrderGrant\"(\"vendorId\", \"orderId\", \"id\") ON DELETE RESTRICT ON UPDATE CASCADE;",
+      "reason": "schema.prisma declares this relation with a different name or column set than the migration-built constraint (PostPurchaseCredit uses hand-named composite FKs). Align the relation map/fields before removing."
+    },
+    {
+      "category": "foreign_key_shape_mismatch",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" ADD CONSTRAINT \"PostPurchaseCredit_vendorId_sourceOrderId_fkey\" FOREIGN KEY (\"vendorId\", \"sourceOrderId\") REFERENCES \"CommerceOrder\"(\"vendorId\", \"id\") ON DELETE RESTRICT ON UPDATE CASCADE;",
+      "reason": "schema.prisma declares this relation with a different name or column set than the migration-built constraint (PostPurchaseCredit uses hand-named composite FKs). Align the relation map/fields before removing."
+    },
+    {
+      "category": "foreign_key_shape_mismatch",
+      "statement": "ALTER TABLE \"PostPurchaseCredit\" ADD CONSTRAINT \"PostPurchaseCredit_vendorId_targetOrderId_fkey\" FOREIGN KEY (\"vendorId\", \"targetOrderId\") REFERENCES \"CommerceOrder\"(\"vendorId\", \"id\") ON DELETE RESTRICT ON UPDATE CASCADE;",
+      "reason": "schema.prisma declares this relation with a different name or column set than the migration-built constraint (PostPurchaseCredit uses hand-named composite FKs). Align the relation map/fields before removing."
+    },
+    {
+      "category": "column_default_mismatch",
+      "statement": "ALTER TABLE \"VendorMember\" ALTER COLUMN \"updatedAt\" DROP DEFAULT;",
+      "reason": "Migration keeps a database default that schema.prisma does not declare (@updatedAt is set by Prisma Client, not the database)."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"AffiliateCommissionLedgerEntry\" RENAME CONSTRAINT \"AffiliateCommissionLedgerEntry_vendorId_affiliateCommissionId_f\" TO \"AffiliateCommissionLedgerEntry_vendorId_affiliateCommissio_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"AffiliatePayeeProfile\" RENAME CONSTRAINT \"AffiliatePayeeProfile_affiliate_fkey\" TO \"AffiliatePayeeProfile_vendorId_affiliateId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"AffiliatePayout\" RENAME CONSTRAINT \"AffiliatePayout_paid_remuneration_fkey\" TO \"AffiliatePayout_vendorId_affiliateId_id_remunerationSnapsh_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"AffiliateRemunerationExport\" RENAME CONSTRAINT \"AffiliateRemunerationExport_snapshot_fkey\" TO \"AffiliateRemunerationExport_vendorId_affiliateId_snapshotI_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"AffiliateRemunerationSnapshot\" RENAME CONSTRAINT \"AffiliateRemunerationSnapshot_payout_fkey\" TO \"AffiliateRemunerationSnapshot_vendorId_affiliateId_payoutI_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"BuyerSupportOrderGrant\" RENAME CONSTRAINT \"BuyerSupportOrderGrant_order_tenant_fkey\" TO \"BuyerSupportOrderGrant_vendorId_orderId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"BuyerSupportOrderGrant\" RENAME CONSTRAINT \"BuyerSupportOrderGrant_vendor_fkey\" TO \"BuyerSupportOrderGrant_vendorId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceEntitlement\" RENAME CONSTRAINT \"CommerceEntitlement_orderItem_tenant_fkey\" TO \"CommerceEntitlement_vendorId_orderItemId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrder\" RENAME CONSTRAINT \"CommerceOrder_primaryPayment_tenant_fkey\" TO \"CommerceOrder_vendorId_primaryPaymentTransactionId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrderEvent\" RENAME CONSTRAINT \"CommerceOrderEvent_order_tenant_fkey\" TO \"CommerceOrderEvent_vendorId_orderId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrderItem\" RENAME CONSTRAINT \"CommerceOrderItem_order_tenant_fkey\" TO \"CommerceOrderItem_vendorId_orderId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrderItem\" RENAME CONSTRAINT \"CommerceOrderItem_product_tenant_fkey\" TO \"CommerceOrderItem_vendorId_productId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrderItemDeliverySnapshot\" RENAME CONSTRAINT \"CommerceOrderItemDeliverySnapshot_vendor_order_item_fkey\" TO \"CommerceOrderItemDeliverySnapshot_vendorId_orderId_orderIt_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrderRefund\" RENAME CONSTRAINT \"CommerceOrderRefund_order_tenant_fkey\" TO \"CommerceOrderRefund_vendorId_orderId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrderRefund\" RENAME CONSTRAINT \"CommerceOrderRefund_payment_tenant_fkey\" TO \"CommerceOrderRefund_vendorId_paymentTransactionId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CommerceOrderRefund\" RENAME CONSTRAINT \"CommerceOrderRefund_refundRecord_tenant_fkey\" TO \"CommerceOrderRefund_vendorId_refundRecordId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CourseCommissionAllocation\" RENAME CONSTRAINT \"CourseCommissionAllocation_vendorId_teamConversionAttributionId\" TO \"CourseCommissionAllocation_vendorId_teamConversionAttribut_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"CourseCommissionLedgerEntry\" RENAME CONSTRAINT \"CourseCommissionLedgerEntry_vendorId_courseCommissionAllocation\" TO \"CourseCommissionLedgerEntry_vendorId_courseCommissionAlloc_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LandingPage\" RENAME CONSTRAINT \"LandingPage_publishedVersionId_fkey\" TO \"LandingPage_vendorId_id_publishedVersionId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LearnerNotificationSourceEvent\" RENAME CONSTRAINT \"LearnerNotificationSourceEvent_product_fkey\" TO \"LearnerNotificationSourceEvent_vendorId_productId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LearnerNotificationSourceEvent\" RENAME CONSTRAINT \"LearnerNotificationSourceEvent_vendor_fkey\" TO \"LearnerNotificationSourceEvent_vendorId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"Live\" RENAME CONSTRAINT \"Live_heroImageAssetId_fkey\" TO \"Live_vendorId_heroImageAssetId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LiveMediaSession\" RENAME CONSTRAINT \"LiveMediaSession_live_fkey\" TO \"LiveMediaSession_vendorId_liveId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LivePrivateChatMessage\" RENAME CONSTRAINT \"LivePrivateChatMessage_author_fkey\" TO \"LivePrivateChatMessage_vendorId_authorMemberId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LivePrivateChatMessage\" RENAME CONSTRAINT \"LivePrivateChatMessage_live_fkey\" TO \"LivePrivateChatMessage_vendorId_liveId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LivePrivateChatMessage\" RENAME CONSTRAINT \"LivePrivateChatMessage_submission_fkey\" TO \"LivePrivateChatMessage_liveId_formSubmissionId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"LivePrivateChatMessage\" RENAME CONSTRAINT \"LivePrivateChatMessage_vendor_fkey\" TO \"LivePrivateChatMessage_vendorId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"MerchantAffiliatePayoutPolicy\" RENAME CONSTRAINT \"MerchantAffiliatePayoutPolicy_vendor_fkey\" TO \"MerchantAffiliatePayoutPolicy_vendorId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"PlatformReferralCommissionLedgerEntry\" RENAME CONSTRAINT \"PlatformReferralCommissionLedgerEntry_commissionId_fkey\" TO \"PlatformReferralCommissionLedgerEntry_platformReferralComm_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"Product\" RENAME CONSTRAINT \"Product_imageAssetId_fkey\" TO \"Product_vendorId_imageAssetId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"ServiceFulfillment\" RENAME CONSTRAINT \"ServiceFulfillment_orderItem_tenant_fkey\" TO \"ServiceFulfillment_vendorId_orderItemId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"ShippingFulfillment\" RENAME CONSTRAINT \"ShippingFulfillment_orderItem_tenant_fkey\" TO \"ShippingFulfillment_vendorId_orderItemId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"StreamOperationsAlert\" RENAME CONSTRAINT \"StreamOperationsAlert_reconciliation_tenant_fkey\" TO \"StreamOperationsAlert_vendorId_reconciliationId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"StreamOperationsAlert\" RENAME CONSTRAINT \"StreamOperationsAlert_vendor_fkey\" TO \"StreamOperationsAlert_vendorId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"StreamUsageAllocationEntry\" RENAME CONSTRAINT \"StreamUsageAllocationEntry_vendorId_recipientTeamId_recipientMe\" TO \"StreamUsageAllocationEntry_vendorId_recipientTeamId_recipi_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"StreamUsageLedgerEntry\" RENAME CONSTRAINT \"StreamUsageLedgerEntry_liveId_fkey\" TO \"StreamUsageLedgerEntry_vendorId_liveId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"StreamUsageReconciliation\" RENAME CONSTRAINT \"StreamUsageReconciliation_vendor_fkey\" TO \"StreamUsageReconciliation_vendorId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCase\" RENAME CONSTRAINT \"SupportCase_assignee_tenant_fkey\" TO \"SupportCase_vendorId_assignedMemberId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCase\" RENAME CONSTRAINT \"SupportCase_buyer_creator_fkey\" TO \"SupportCase_vendorId_orderId_createdByBuyerGrantId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCase\" RENAME CONSTRAINT \"SupportCase_createdBy_tenant_fkey\" TO \"SupportCase_vendorId_createdByMemberId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCase\" RENAME CONSTRAINT \"SupportCase_order_tenant_fkey\" TO \"SupportCase_vendorId_orderId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCaseEvent\" RENAME CONSTRAINT \"SupportCaseEvent_actor_tenant_fkey\" TO \"SupportCaseEvent_vendorId_actorMemberId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCaseEvent\" RENAME CONSTRAINT \"SupportCaseEvent_buyer_actor_fkey\" TO \"SupportCaseEvent_vendorId_actorBuyerOrderId_actorBuyerGran_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCaseEvent\" RENAME CONSTRAINT \"SupportCaseEvent_case_tenant_fkey\" TO \"SupportCaseEvent_vendorId_supportCaseId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportCaseEvent\" RENAME CONSTRAINT \"SupportCaseEvent_platform_actor_fkey\" TO \"SupportCaseEvent_actorUserId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoff\" RENAME CONSTRAINT \"SupportRefundHandoff_case_tenant_fkey\" TO \"SupportRefundHandoff_vendorId_supportCaseId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoff\" RENAME CONSTRAINT \"SupportRefundHandoff_completedRefund_order_tenant_fkey\" TO \"SupportRefundHandoff_vendorId_orderId_completedRefundId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoff\" RENAME CONSTRAINT \"SupportRefundHandoff_order_tenant_fkey\" TO \"SupportRefundHandoff_vendorId_orderId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoff\" RENAME CONSTRAINT \"SupportRefundHandoff_payment_tenant_fkey\" TO \"SupportRefundHandoff_vendorId_paymentTransactionId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoff\" RENAME CONSTRAINT \"SupportRefundHandoff_requestedBy_tenant_fkey\" TO \"SupportRefundHandoff_vendorId_requestedByMemberId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoff\" RENAME CONSTRAINT \"SupportRefundHandoff_reviewedBy_fkey\" TO \"SupportRefundHandoff_reviewedByActorId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoffRefund\" RENAME CONSTRAINT \"SupportRefundHandoffRefund_handoff_tenant_fkey\" TO \"SupportRefundHandoffRefund_vendorId_handoffId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"SupportRefundHandoffRefund\" RENAME CONSTRAINT \"SupportRefundHandoffRefund_refund_order_tenant_fkey\" TO \"SupportRefundHandoffRefund_vendorId_orderId_refundId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "foreign_key_name_mismatch",
+      "statement": "ALTER TABLE \"Video\" RENAME CONSTRAINT \"Video_thumbnailAssetId_fkey\" TO \"Video_vendorId_thumbnailAssetId_fkey\";",
+      "reason": "Constraint name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the relation, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"AffiliateRemunerationSnapshot_vendorId_affiliateId_payoutId_id_\" RENAME TO \"AffiliateRemunerationSnapshot_vendorId_affiliateId_payoutId_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"CommerceOrderItemDeliverySnapshot_vendorId_orderId_createdAt_id\" RENAME TO \"CommerceOrderItemDeliverySnapshot_vendorId_orderId_createdA_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"CommerceOrderItemDeliverySnapshot_vendorId_orderId_orderItemId_\" RENAME TO \"CommerceOrderItemDeliverySnapshot_vendorId_orderId_orderIte_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"CourseCommissionAllocation_vendorId_paymentTransactionId_recipi\" RENAME TO \"CourseCommissionAllocation_vendorId_paymentTransactionId_re_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"CourseCommissionAllocation_vendorId_recipientMembershipId_creat\" RENAME TO \"CourseCommissionAllocation_vendorId_recipientMembershipId_c_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"CourseCommunityPost_vendorId_productId_hiddenAt_createdAt_id_id\" RENAME TO \"CourseCommunityPost_vendorId_productId_hiddenAt_createdAt_i_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"ElectronicInvoice_vendorId_status_nextAttemptAt_processingStart\" RENAME TO \"ElectronicInvoice_vendorId_status_nextAttemptAt_processingS_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"ElectronicInvoiceAllowance_vendorId_electronicInvoiceId_issuedA\" RENAME TO \"ElectronicInvoiceAllowance_vendorId_electronicInvoiceId_iss_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"LiveMediaSession_scope_key\" RENAME TO \"LiveMediaSession_vendorId_liveId_principal_direction_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"LiveNotificationRule_vendorId_liveId_trigger_offsetMinutes_sort\" RENAME TO \"LiveNotificationRule_vendorId_liveId_trigger_offsetMinutes__key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"LiveReminderReconciliationJob_vendorId_liveId_lifecycle_created\" RENAME TO \"LiveReminderReconciliationJob_vendorId_liveId_lifecycle_cre_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"PartnerFunnelPageShareSetting_accessMode_isEnabled_expiresAt_id\" RENAME TO \"PartnerFunnelPageShareSetting_accessMode_isEnabled_expiresA_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"PaymentMethodReference_vendorId_providerName_providerPaymentMet\" RENAME TO \"PaymentMethodReference_vendorId_providerName_providerPaymen_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"PlatformReferralCommissionLedgerEntry_commissionId_createdAt_id\" RENAME TO \"prc_ledger_comm_created_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"PlatformReferralCommissionLedgerEntry_commissionId_dedup_key\" RENAME TO \"PlatformReferralCommissionLedgerEntry_platformReferralCommi_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"StreamUsageAllocationEntry_vendorId_ledgerEntryId_recipientKey_\" RENAME TO \"StreamUsageAllocationEntry_vendorId_ledgerEntryId_recipient_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"SupportCase_buyer_creator_createdAt_idx\" RENAME TO \"SupportCase_createdByBuyerGrantId_createdAt_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"SupportCaseEvent_buyer_actor_occurredAt_idx\" RENAME TO \"SupportCaseEvent_actorBuyerGrantId_occurredAt_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"TeamClickAttribution_teamId_promoterMembershipId_attributedAt_i\" RENAME TO \"TeamClickAttribution_teamId_promoterMembershipId_attributed_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"TeamConversionAttribution_teamId_leaderMembershipId_attributedA\" RENAME TO \"TeamConversionAttribution_teamId_leaderMembershipId_attribu_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"TeamConversionAttribution_teamId_promoterMembershipId_attribute\" RENAME TO \"TeamConversionAttribution_teamId_promoterMembershipId_attri_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"TeamFunnelTemplateProductSlot_templateVersionId_displayOrder_ke\" RENAME TO \"TeamFunnelTemplateProductSlot_templateVersionId_displayOrde_key\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"TeamLeadAttribution_teamId_promoterMembershipId_attributedAt_id\" RENAME TO \"TeamLeadAttribution_teamId_promoterMembershipId_attributedA_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"TeamMembershipRelationship_teamId_downlineMembershipId_endedAt_\" RENAME TO \"TeamMembershipRelationship_teamId_downlineMembershipId_ende_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    },
+    {
+      "category": "index_name_mismatch",
+      "statement": "ALTER INDEX \"TeamMembershipRelationship_teamId_uplineMembershipId_endedAt_id\" RENAME TO \"TeamMembershipRelationship_teamId_uplineMembershipId_endedA_idx\";",
+      "reason": "Index name differs from Prisma's generated name (hand-chosen name or 63-byte PostgreSQL truncation). Fix with map: on the index, then remove this entry."
+    }
+  ]
+}
