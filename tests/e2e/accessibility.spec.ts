@@ -409,6 +409,86 @@ test("dynamic owner and public commerce routes have no blocking axe violations",
   expect(failures, "dynamic owner/public commerce routes 必須回 200 且沒有 axe critical/serious").toEqual([]);
 });
 
+test("registration, policy and support public routes have no blocking axe violations (F-126)", async ({ page }) => {
+  test.setTimeout(90_000);
+  const routes = [
+    "/register",
+    "/policies",
+    "/policies/terms",
+    "/policies/privacy",
+    "/policies/refunds",
+    "/support",
+    "/support/requests",
+    "/support/orders",
+    "/verify-registration?status=invalid",
+    "/registration-error",
+  ];
+  const failures: Array<{ route: string; status: number | null; violations: Awaited<ReturnType<typeof blockingAxeViolations>> }> = [];
+  for (const route of routes) {
+    const response = await page.goto(route, { waitUntil: "load" });
+    await expect(page.locator("main").first()).toBeVisible();
+    const violations = await blockingAxeViolations(page);
+    if (response?.status() !== 200 || violations.length > 0) failures.push({ route, status: response?.status() ?? null, violations });
+  }
+  expect(failures, "公開註冊、政策與客服路由必須回 200 且沒有 axe critical/serious").toEqual([]);
+});
+
+test("onboarding and welcome routes have no blocking axe violations (F-126)", async ({ page }) => {
+  test.setTimeout(90_000);
+  await loginOwner(page);
+  const failures: Array<{ route: string; status: number | null; violations: Awaited<ReturnType<typeof blockingAxeViolations>> }> = [];
+  for (const route of ["/onboarding", "/welcome"]) {
+    const response = await page.goto(route, { waitUntil: "load" });
+    await expect(page.locator("main").first()).toBeVisible();
+    const violations = await blockingAxeViolations(page);
+    if (violations.length > 0 || (response?.status() ?? 0) >= 400) failures.push({ route, status: response?.status() ?? null, violations });
+  }
+  expect(failures, "onboarding／welcome 不可出現 axe critical/serious").toEqual([]);
+});
+
+test("live stepper has no blocking axe violations on any of the eight steps or on the validation error state (F-126)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await loginOwner(page);
+  await gotoStableRoute(page, "/lives/new");
+
+  // 錯誤狀態：未填必填欄位就按「下一步」，驗證訊息與焦點狀態都要可被掃描。
+  await page.getByRole("button", { name: "下一步" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
+  expect(await blockingAxeViolations(page), "stepper 驗證錯誤狀態").toEqual([]);
+
+  await page.getByLabel("直播標題", { exact: true }).fill("A11y 步驟掃描");
+  await page.getByLabel("直播網址").fill(`a11y-stepper-${runId}`);
+
+  const scanned: number[] = [];
+  const scanStep = async (step: number) => {
+    await expect(page.locator(`[data-step-index="${step}"]`)).toBeVisible();
+    const violations = await blockingAxeViolations(page);
+    expect(violations, `stepper 第 ${step + 1} 步`).toEqual([]);
+    scanned.push(step + 1);
+  };
+  await scanStep(0);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await page.getByLabel("影片 / Live Input").selectOption(fixture.videoId);
+  await scanStep(1);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await scanStep(2);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await page.getByLabel("報名頁").selectOption(fixture.formId);
+  await scanStep(3);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await page.getByLabel(/開播時間/).fill("2026-12-20T20:00");
+  await scanStep(4);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await scanStep(5);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await scanStep(6);
+  await page.getByRole("button", { name: "下一步" }).click();
+  await scanStep(7);
+  expect(scanned).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  // F-118：切換步驟後焦點在新步驟的標題。
+  await expect(page.locator(`[data-step-index="7"] h2, [data-step-index="7"] h3`).first()).toBeFocused();
+});
+
 test("platform-admin MFA and static operations routes have no blocking axe violations", async ({ page }) => {
   test.setTimeout(120_000);
   await gotoStableRoute(page, "/login");
