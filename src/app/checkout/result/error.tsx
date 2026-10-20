@@ -3,7 +3,7 @@
 import { LoaderCircle, RotateCcw } from "lucide-react";
 import { useTransition } from "react";
 
-export default function PaymentResultError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function PaymentResultError({ retry }: { error: Error & { digest?: string }; retry: () => void }) {
   const [pending, startTransition] = useTransition();
 
   return (
@@ -17,7 +17,7 @@ export default function PaymentResultError({ reset }: { error: Error & { digest?
         disabled={pending}
         aria-disabled={pending}
         aria-busy={pending}
-        onClick={() => startTransition(() => reset())}
+        onClick={() => startTransition(() => retry())}
         className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-orange-900 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? <LoaderCircle className="animate-spin" size={16} aria-hidden="true" /> : <RotateCcw size={16} aria-hidden="true" />}

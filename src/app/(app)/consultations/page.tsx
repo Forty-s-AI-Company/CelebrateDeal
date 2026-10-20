@@ -6,6 +6,7 @@ import { SalesScopeNotice } from "@/components/sales-scope-notice";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getSalesProjectScope } from "@/lib/sales-project-scope";
+import { statusLabel } from "@/lib/status-labels";
 
 type PageSearchParams = { updated?: string; error?: string };
 
@@ -168,7 +169,7 @@ export default async function ConsultationsPage({ searchParams }: { searchParams
                       </p>
                     </td>
                     <td className="p-2">
-                      <Badge tone={statusTone(booking.status)}>{booking.status}</Badge>
+                      <Badge tone={statusTone(booking.status)}>{statusLabel("consultationBooking", booking.status)}</Badge>
                     </td>
                     <td className="p-2">
                       {booking.status === "scheduled" && !scope.isAggregate ? (

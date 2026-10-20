@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
+import { statusLabel } from "../../src/lib/status-labels";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
 
 const db = new PrismaClient();
@@ -26,7 +27,7 @@ test("admin cannot open another vendor live preview through direct URL navigatio
     await page.goto("/login"); await page.getByLabel("Email").fill(user.email); await page.getByLabel("密碼").fill(password); await page.getByRole("button", { name: "登入" }).click(); await expect(page).toHaveURL(/\/dashboard$/);
     const requests: string[] = []; page.on("request", (request) => requests.push(request.url()));
     const ownPath = `/lives/${ownLive.id}/preview`; const ownResponse = await page.goto(ownPath); expect(ownResponse?.status()).toBe(200); await expect(page).toHaveURL(new RegExp(`${ownPath}$`));
-    await expect(page.getByRole("heading", { name: "直播預覽" })).toBeVisible(); await expect(page.getByText(ownLive.title, { exact: true })).toBeVisible(); await expect(page.getByText(ownLive.description ?? "", { exact: true })).toBeVisible(); await expect(page.getByText(`/live/${ownLive.slug}`, { exact: true })).toBeVisible(); await expect(page.getByText(`串流模式：${ownLive.streamMode}`, { exact: true })).toBeVisible(); await expect(page.getByText(`Cloudflare Live Input：${ownLive.cloudflareLiveInputUid}`, { exact: true })).toBeVisible(); await expect(page.getByRole("link", { name: "開啟公開頁" })).toHaveAttribute("href", `/live/${ownLive.slug}`);
+    await expect(page.getByRole("heading", { name: "直播預覽" })).toBeVisible(); await expect(page.getByText(ownLive.title, { exact: true })).toBeVisible(); await expect(page.getByText(ownLive.description ?? "", { exact: true })).toBeVisible(); await expect(page.getByText(`/live/${ownLive.slug}`, { exact: true })).toBeVisible(); await expect(page.getByText(`串流模式：${statusLabel("streamMode", ownLive.streamMode)}`, { exact: true })).toBeVisible(); await expect(page.getByText(`Cloudflare Live Input：${ownLive.cloudflareLiveInputUid}`, { exact: true })).toBeVisible(); await expect(page.getByRole("link", { name: "開啟公開頁" })).toHaveAttribute("href", `/live/${ownLive.slug}`);
     const foreignPath = `/lives/${foreignLive.id}/preview`;
     const foreignCanaries = [foreignLive.title, foreignLive.description ?? "", foreignLive.slug, foreignLive.cloudflareLiveInputUid ?? ""];
     const { finalResponse: foreignResponse } = await navigateAndAssertDirectUrlGuard({

@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { formatCurrency } from "@/lib/format";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const probe = vi.hoisted(() => ({ active: 0, peak: 0, completed: 0, empty: false }));
@@ -20,7 +21,10 @@ vi.mock("@/lib/db", () => ({
     liveChatMessage: { count: () => count(3) },
     interactionEvent: { count: () => count(4) },
     $queryRaw: () => count([{ eventType: "page_view", uniqueVisitors: 5 }]),
-    commerceOrder: { count: () => count(6) },
+    commerceOrder: { groupBy: () => count([
+      { status: "paid", currency: "TWD", _count: { _all: 2 }, _sum: { totalAmountCents: 358000 } },
+      { status: "pending_payment", currency: "TWD", _count: { _all: 4 }, _sum: { totalAmountCents: 100000 } },
+    ]) },
     emailDelivery: { groupBy: () => count([{ status: "sent", _count: { _all: 7 } }]) },
   }),
 }));
@@ -38,6 +42,10 @@ describe("Dashboard KPI read model", () => {
     expect(probe.peak).toBe(3);
     expect(html).toContain('data-dashboard-read-operation-count="6"');
     expect(html).toContain("近 7 天播放 session");
+    expect(html).toContain("近 7 天建立、完成付款且未退款的訂單");
+    expect(html).toContain("近 7 天建立、完成付款且未退款的金額（TWD）");
+    expect(html).toContain(formatCurrency(358000, "TWD"));
+    expect(html).toContain("近 7 天訂單建立");
     expect(html).not.toContain("Dashboard KPI 暫時無法載入");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-export default function BillingUsageError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function BillingUsageError({ retry }: { error: Error & { digest?: string }; retry: () => void }) {
   return (
     <main className="mx-auto max-w-xl rounded-xl border border-orange-200 bg-orange-50 p-6" role="alert">
       <h1 className="text-xl font-bold text-orange-950">暫時無法載入用量資料</h1>
@@ -9,7 +9,7 @@ export default function BillingUsageError({ reset }: { error: Error & { digest?:
       </p>
       <button
         type="button"
-        onClick={reset}
+        onClick={() => retry()}
         className="mt-5 min-h-11 rounded-md bg-orange-900 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-800"
       >
         重新載入

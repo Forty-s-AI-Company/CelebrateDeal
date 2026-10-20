@@ -35,6 +35,9 @@ export function EvergreenWebinarSettings({
           <h2 className="text-lg font-semibold text-slate-950">常青 Webinar 設定</h2>
           <p className="mt-1 text-sm text-slate-600">沿用這場直播目前的來源影片；公開觀看永遠鎖定正常倍速。</p>
         </div>
+        <p role="note" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <strong>尚未啟用：</strong>常青排程目前只能儲存設定與在預覽頁試看，公開觀看頁還不會依這些設定自動開場或湊場；正式對外開放前請勿依賴此功能。
+        </p>
         {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{evergreenError(error)}</p> : null}
         {notice === "evergreen_saved" ? <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">常青 Webinar 設定已儲存。</p> : null}
         <label className="flex items-start gap-3 rounded-md border border-border p-3 text-sm text-slate-700">
