@@ -4,7 +4,24 @@ import { getDb } from "@/lib/db";
 import { InventoryUnavailableError } from "@/lib/inventory-reservations";
 import { captureOperationalError } from "@/lib/monitoring";
 import { classifyPaymentWebhookErrorClass, classifyPaymentWebhookFailure, paymentWebhookErrorStage, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
+import { MANUAL_RECONCILIATION_STATUS } from "@/lib/payment-webhook-manual-reconciliation";
 import { PaymentWebhookPayload, processPaymentWebhook, type PaymentWebhookExpectedScope } from "@/lib/payment-webhooks";
+
+// Current PayUni payment events are keyed TradeNo:TradeStatus (F-037).
+const PAYUNI_TRADE_STATE_EVENT_ID = /^.+:[0-9]{1,2}$/;
+
+/**
+ * A PayUni paid decision stored before F-037 came from a normalizer that
+ * ignored TradeStatus and PaymentType, and its stored snapshot never kept
+ * them (nor the unsigned outer Status). The current contract cannot re-prove
+ * such a decision, so it is never replayed automatically (R448-02).
+ */
+export function isUnprovableLegacyPayUniPaidEvent(event: { provider: string; eventId: string; eventType: string; payload: unknown }) {
+  if (event.provider !== "payuni" || PAYUNI_TRADE_STATE_EVENT_ID.test(event.eventId)) return false;
+  const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+    ? event.payload as { normalized?: { eventType?: unknown } } : {};
+  return event.eventType === "paid" || payload.normalized?.eventType === "paid";
+}
 
 const WEBHOOK_RETRY_LEASE_MS = 1000 * 60 * 10;
 
@@ -113,6 +130,30 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
   // A scheduler or callback that changed it must win rather than being retried here.
   if (expectedVersion && (event.retryCount !== expectedVersion.retryCount
     || event.updatedAt.getTime() !== expectedVersion.updatedAt.getTime())) return { status: "claimed_elsewhere" as const, event };
+  if (isUnprovableLegacyPayUniPaidEvent(event)) {
+    const held = await db.webhookEvent.updateMany({
+      where: { id: event.id, status: "failed", retryCount: event.retryCount, updatedAt: event.updatedAt },
+      data: {
+        status: MANUAL_RECONCILIATION_STATUS,
+        nextRetryAt: null,
+        errorMessage: "Legacy PayUni paid decision cannot be re-proven; manual reconciliation required",
+      },
+    });
+    if (held.count !== 1) return { status: "claimed_elsewhere" as const, event };
+    captureOperationalError(new Error("Legacy PayUni payment event requires manual reconciliation"), {
+      source: "webhook_retry", operation: "manual_reconciliation", provider: event.provider,
+      status: MANUAL_RECONCILIATION_STATUS, webhookEventId: event.id,
+    }, { level: "error", fingerprint: ["webhook-retry-legacy-payuni-paid"] });
+    await writeAuditLog({
+      vendorId: event.vendorId,
+      actorLabel,
+      action: "webhook_retry_manual_reconciliation",
+      targetType: "WebhookEvent",
+      targetId: event.id,
+      after: auditSnapshot({ errorCode: "legacy_payuni_paid_unprovable", status: MANUAL_RECONCILIATION_STATUS }),
+    });
+    return { status: MANUAL_RECONCILIATION_STATUS, event };
+  }
   if (event.retryCount >= event.maxRetries) {
     const exhausted = await db.webhookEvent.updateMany({
       where: { id: event.id, status: "failed", retryCount: event.retryCount, updatedAt: event.updatedAt },

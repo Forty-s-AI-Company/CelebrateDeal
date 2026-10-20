@@ -70,6 +70,36 @@ afterEach(() => {
 });
 
 describe("webhook retry worker", () => {
+  it("never replays a legacy PayUni paid decision; it is held for manual reconciliation (R448-02)", async () => {
+    const legacy = event({ provider: "payuni", eventId: "PAYUNI-LEGACY-TRADE", payload: { normalized: { provider: "payuni", eventId: "PAYUNI-LEGACY-TRADE", eventType: "paid" } } });
+    dependencies.db.webhookEvent.findUnique.mockResolvedValue(legacy);
+    dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(retryWebhookEvent(legacy.id, "platform_admin")).resolves.toMatchObject({ status: "needs_manual_reconciliation" });
+    expect(dependencies.processPaymentWebhook).not.toHaveBeenCalled();
+    expect(dependencies.db.webhookEvent.updateMany).toHaveBeenCalledExactlyOnceWith({
+      where: { id: legacy.id, status: "failed", retryCount: 0, updatedAt: legacy.updatedAt },
+      data: expect.objectContaining({ status: "needs_manual_reconciliation", nextRetryAt: null }),
+    });
+    expect(dependencies.captureOperationalError).toHaveBeenCalledWith(expect.any(Error),
+      expect.objectContaining({ operation: "manual_reconciliation", webhookEventId: legacy.id }), expect.objectContaining({ level: "error" }));
+    expect(dependencies.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "webhook_retry_manual_reconciliation", targetId: legacy.id }));
+  });
+
+  it("retries a current-format PayUni trade-state event and legacy non-paid events normally", async () => {
+    for (const stored of [
+      event({ provider: "payuni", eventId: "PAYUNI-TRADE:1", payload: { normalized: { provider: "payuni", eventId: "PAYUNI-TRADE:1", eventType: "paid" } } }),
+      event({ provider: "payuni", eventId: "legacy-refund", eventType: "refunded", payload: { normalized: { provider: "payuni", eventId: "legacy-refund", eventType: "refunded" } } }),
+    ]) {
+      vi.clearAllMocks();
+      dependencies.db.webhookEvent.findUnique.mockResolvedValue(stored);
+      dependencies.db.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
+      dependencies.processPaymentWebhook.mockResolvedValue({ vendor: { id: "vendor-1" }, transaction: { id: "tx-1" } });
+      await expect(retryWebhookEvent(stored.id)).resolves.toMatchObject({ status: "processed" });
+      expect(dependencies.processPaymentWebhook).toHaveBeenCalledOnce();
+    }
+  });
+
   it("allows only one worker to claim a retry attempt", async () => {
     const storedEvent = event();
     dependencies.db.webhookEvent.findUnique.mockResolvedValue(storedEvent);

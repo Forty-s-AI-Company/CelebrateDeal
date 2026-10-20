@@ -129,7 +129,7 @@ jobs:
           PAYUNI_SANDBOX_HASH_IV: ${{ secrets.PAYUNI_SANDBOX_HASH_IV }}
           PAYUNI_QA_FINANCE_EMAIL: ${{ secrets.PAYUNI_QA_FINANCE_EMAIL }}
           PAYUNI_QA_FINANCE_PASSWORD: ${{ secrets.PAYUNI_QA_FINANCE_PASSWORD }}
-          PAYUNI_QA_FINANCE_OTP: ${{ secrets.PAYUNI_QA_FINANCE_OTP }}
+          PAYUNI_QA_FINANCE_TOTP_SECRET: ${{ secrets.PAYUNI_QA_FINANCE_TOTP_SECRET }}
         shell: bash
         run: |
           set -euo pipefail

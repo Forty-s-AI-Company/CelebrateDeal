@@ -7,20 +7,23 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { MANUAL_RECONCILIATION_STATUS } from "@/lib/payment-webhook-manual-reconciliation";
 
 function statusTone(status: string) {
   if (status === "processed") return "green" as const;
   if (status === "failed") return "orange" as const;
   if (status === "received") return "blue" as const;
+  if (status === MANUAL_RECONCILIATION_STATUS) return "red" as const;
   return "gray" as const;
 }
 
 export default async function AdminBillingWebhooksPage() {
   await requireFinanceAdmin();
-  const [events, failedCount, queuedCount] = await Promise.all([
+  const [events, failedCount, queuedCount, reconciliationCount] = await Promise.all([
     getDb().webhookEvent.findMany({ include: { vendor: true }, orderBy: { createdAt: "desc" }, take: 50 }),
     getDb().webhookEvent.count({ where: { status: "failed" } }),
     getDb().webhookEvent.count({ where: { nextRetryAt: { not: null } } }),
+    getDb().webhookEvent.count({ where: { status: MANUAL_RECONCILIATION_STATUS } }),
   ]);
 
   return (
@@ -31,7 +34,7 @@ export default async function AdminBillingWebhooksPage() {
         action={<Link href="/admin/billing/dashboard" className="text-sm font-semibold text-primary hover:underline">回財務總覽</Link>}
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
+      <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Card>
           <p className="text-sm text-slate-500">最近事件</p>
           <p className="mt-2 text-3xl font-bold text-slate-950">{events.length}</p>
@@ -43,6 +46,11 @@ export default async function AdminBillingWebhooksPage() {
         <Card>
           <p className="text-sm text-slate-500">Retry Queue</p>
           <p className="mt-2 text-3xl font-bold text-slate-950">{queuedCount}</p>
+        </Card>
+        <Card className="bg-gradient-to-br from-white to-red-50">
+          <p className="text-sm text-slate-500">待人工對帳</p>
+          <p className="mt-2 text-3xl font-bold text-red-700">{reconciliationCount}</p>
+          <p className="mt-1 text-xs text-slate-500">付款服務回報已收款、但系統不自動入帳的通知</p>
         </Card>
       </div>
 
