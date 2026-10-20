@@ -197,6 +197,8 @@
 3. DB-I03、DB-I04、DB-I05、DB-I06、DB-I07 已完成本機候選 migration 與 isolated DB negative regression；DB-I08a 的 stream allocation migration 只在 FUNC-28 disposable scope 驗證，外部 aggregate preflight 仍未執行；下一順位仍是授權外部只讀 aggregate preflight，再處理 DB-I01／DB-I02 idempotency 與 DB-I08～DB-I10 的既有產品/模型 gaps。
 4. 所有候選 migration 禁止 `DROP TABLE`、資料刪除、欄位 rename 或 down migration；先在 loopback-only PostgreSQL 套用與負向驗證。
 5. Prisma service role 的 server-side 流程必須保持正常；anon/authenticated Data API policy 不作為 server-side FK 的替代品。
+6. 新 migration 一律手寫或逐句人工檢查，禁止直接提交 `prisma migrate dev` 的輸出（會產生 `DROP INDEX`／`DROP CONSTRAINT`，見 `scripts/prisma-drift-allowlist.json`）。CI 以 `scripts/migration-order-check.mjs` 要求 `prisma/migrations/` 下每個新目錄都符合 `<YYYYMMDDHHMMSS>_<snake_case>` 且晚於 master 最新者、既有 migration 不得刪除／改名／修改，以 `scripts/prisma-drift-check.mjs` 要求 drift 與 allowlist 完全一致。
+7. 新增 public 表必須維持 RLS 啟用且不對 anon／authenticated／PUBLIC 授權；`src/lib/rls-catalog.db.test.ts` 會檢查全部表。
 
 ## 驗收判定
 
@@ -329,3 +331,11 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 
 - `20261019120000_user_policy_consent`：forward-only、純新增，不改既有 table、欄位或資料。新增 `UserPolicyConsent`：使用者同意的服務條款與隱私權政策版本（append-only）。欄位 `userId`、`vendorId`（可空）、`context`（CHECK 只允許 `merchant_registration`）、`termsVersion`／`privacyVersion`（CHECK `^[0-9A-Za-z._-]{1,32}$`）、`acceptedAt`。版本一律由伺服器從 `src/lib/public-policy-content.ts` 的已發布 metadata 取得，表單只回傳顯示的版本供比對，不接受 client 指定版本。`(userId, context, termsVersion, privacyVersion)` 唯一（`UserPolicyConsent_user_context_versions_key`）；索引 `(vendorId, acceptedAt)`。`userId` FK ON DELETE CASCADE；`vendorId` FK ON DELETE SET NULL（工作空間刪除後同意紀錄仍隨使用者保留）。與註冊的 User／Vendor／VendorMember／audit 在同一交易建立，任一失敗整筆 rollback。啟用 RLS（與近期 migration 相同，不新增 policy）。
 - 目前 149 models、109 forward migrations；既有 SQL／checksum 不變。已套用至 loopback disposable `celebratedeal_test`／`celebratedeal_ci`（PostgreSQL 17.10），`prisma migrate diff` 對此 model 無 drift。
+
+## 2026-10-20 F-026／F-063／B04-04 RLS 與 migration 防護
+
+- `20261020090000_enable_rls_all_tables`：forward-only，不改 table、欄位或資料。用 `DO` 迴圈對 Prisma migration schema（`current_schema()`，Supabase 為 `public`，CI 併發庫為 `wp17_ci`／`wp18_ci`；該 schema 沒有 `Vendor` 表即中止）中 `relkind in ('r','p')` 且 `relrowsecurity = false` 的表（含 `_prisma_migrations`）執行 `ENABLE ROW LEVEL SECURITY`。改動前先檢查 migration 角色對每張待處理表都有 owner 權限（`pg_has_role(current_user, owner, 'USAGE')`），不符就 `RAISE EXCEPTION` 列出全部表名，不會部分成功。不建立 policy、不用 `FORCE`，Prisma 以 table owner 連線，不受影響。預設權限沿用 `20260724150000_harden_supabase_data_api`，不重做。只處理尚未啟用的表，因此可重跑。交易層級 `lock_timeout = 2s`，依表名排序；ACCESS EXCLUSIVE 鎖持有到 commit，應在低流量時段部署；失敗時整個回滾，用 `prisma migrate resolve --rolled-back` 後重試。部署前置查詢見 `docs/operations/prisma-migration-guards-runbook.md`。
+- `src/lib/rls-catalog.db.test.ts`：所有 public 表 `relrowsecurity = true`；`anon`／`authenticated` 與 PUBLIC 沒有任何表權限、沒有開放給它們的 policy、新表不會因預設權限開放。`scripts/run-combined-coverage.mjs` 在 migrate 之前建立 `anon`／`authenticated`／`service_role` 與 Supabase 預設的 `GRANT ALL` default privileges，讓斷言驗證到真實的 Data API 角色。
+- `src/lib/prisma-unmanaged-indexes.db.test.ts`：Prisma 無法表達且 `migrate diff` 不比對的 4 個 partial unique 與 3 個 trgm GIN，比對完整 `pg_get_indexdef`。
+- `scripts/prisma-drift-allowlist.json`：2026-10-20 `migrate diff` 基準 100 句（trgm 3、schema 未宣告索引 3、未宣告 FK 11、FK 形狀不符 3、default 1、FK 名稱 54、索引名稱 25）。
+- 目前 149 models、110 forward migrations；既有 SQL／checksum 不變。已在 loopback PostgreSQL 17.10 全新 `celebratedeal_wp18_ci` 完整套用 110 條，150 張 public 表全數 `relrowsecurity = true`；已驗證部分啟用時重跑、`lock_timeout` 中止與 drift 檢查的正反案例。
