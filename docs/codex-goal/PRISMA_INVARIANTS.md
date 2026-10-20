@@ -373,3 +373,10 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - backfill 改為逐批（預設 100 列，`--batch-size` 1–500）獨立提交的 Serializable 交易（`timeout` 60 秒、`maxWait` 10 秒），以 cursor 唯讀掃描產生計畫；遮罩後沒有 envelope 的 PaymentAccount 列為 `unrecoverableMaskedAccounts`，拒絕執行。
 - 測試：`src/app/(app)/billing/payouts/actions.db.test.ts`（envelope／遮罩、就地更新、兩租戶否定、停權不可解除、多帳號拒絕、MFA／輸入驗證、CSRF、CHECK）、`scripts/backfill-bank-account-encryption.db.test.ts`、`src/app/(app)/billing/payouts/page.test.tsx`、`src/lib/payout-account.test.ts`。
 - 目前 150 models、115 forward migrations；既有 SQL／checksum 不變。已在 loopback 全新 `celebratedeal_dev`（5433）套用，並以交易內測試確認 preflight 遇明文列會中止。
+
+## 2026-10-21 F-072／B04-19 Funnel 封存取代刪除
+
+- `20261021130100_landing_page_archive_restrict_funnel`：forward-only。`LandingPage` 新增 `archivedAt`（可為 NULL）與 CHECK `LandingPage_archived_unpublished_check`（`archivedAt` 有值時 `status <> 'published'` 且 `publishedVersionId IS NULL`）。`FunnelVisit_vendorId_pageId_fkey`、`FunnelSubmission_vendorId_pageId_fkey` 由 `ON DELETE CASCADE` 改為 `ON DELETE RESTRICT`（同名重建，先 `NOT VALID` 再 `VALIDATE`；交易層級 `lock_timeout = 5s`），schema 同步為 `onDelete: Restrict`，drift 檢查不變。Vendor 刪除仍經兩表各自的 `vendorId` FK 串聯（`src/lib/landing-page-archive.db.test.ts` 的清理即驗證）；`SalesProject` 刪除若串到有流量的頁面會被擋下（目前沒有刪除專案的 app 路徑）。
+- 程式：`deleteLandingPage` 在 Serializable 交易內重讀頁面，曾發布（`publishedAt`、`status = published` 或已有 `LandingPageVersion`）或已有 `FunnelVisit`／`FunnelSubmission` 時改為封存（`archivedAt`、`status = draft`、`publishedVersionId = null`，已發布者補 `unpublishedAt`），只有從未發布且無流量的草稿才真正刪除。編輯器查詢（`requireScopedPage`、清單、編輯器載入、公開狀態診斷、營運與自動化設定）一律加 `archivedAt: null`；公開查詢（`publicLandingPageCandidateWhere`、funnel runtime、funnel checkout、報名 marketing hint）同樣排除封存頁，`/lp/[slug]` 因此回全站繁中 404。封存頁的 slug 仍佔用（全域唯一），舊連結維持 404。
+- 測試：`src/lib/landing-page-archive.db.test.ts`（刪除／封存分流、保留造訪與版本、跨租戶否定、Restrict、CHECK、Vendor 串聯）、`src/lib/landing-page-service.test.ts`、`src/app/actions/landing-page-actions.test.ts`。
+- 目前 150 models、116 forward migrations；既有 SQL／checksum 不變。已在 loopback 全新 `celebratedeal_dev`（5433）完整套用。

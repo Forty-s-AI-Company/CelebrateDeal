@@ -321,8 +321,9 @@ async function validateBindings(
 async function requireScopedPage(database: LandingPageDb, scope: { vendorId: string; projectId: string }, pageId: string) {
   const id = identifier(pageId);
   if (!id) throw new LandingPageNotFoundError();
+  // Archived pages (F-072) are history only: every editor mutation treats them as missing.
   const page = await database.landingPage.findFirst({
-    where: { id, vendorId: scope.vendorId, projectId: scope.projectId },
+    where: { id, vendorId: scope.vendorId, projectId: scope.projectId, archivedAt: null },
     select: { id: true, vendorId: true, projectId: true, name: true, slug: true, operations: true, draftContent: true, draftFormId: true, draftLiveId: true, status: true, publishedVersionId: true, revision: true, publishedAt: true, updatedAt: true },
   });
   if (!page) throw new LandingPageNotFoundError();
@@ -333,7 +334,7 @@ export async function listLandingPages(): Promise<LandingPageList> {
   const { auth, vendor } = await requireVendorManagerContext();
   const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const pages = await db().landingPage.findMany({
-    where: { vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
+    where: { vendorId: vendor.id, archivedAt: null, ...(scope.projectId ? { projectId: scope.projectId } : {}) },
     select: { id: true, name: true, slug: true, status: true, revision: true, publishedAt: true, updatedAt: true },
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
   });
@@ -391,7 +392,7 @@ export async function listFunnelWebinarResources(): Promise<FunnelWebinarResourc
 export async function getLandingPageForEditor(pageId: string): Promise<LandingPageEditorData> {
   const scope = await editorProject();
   const page = await db().landingPage.findFirst({
-    where: { id: identifier(pageId) ?? "", vendorId: scope.vendorId, projectId: scope.projectId },
+    where: { id: identifier(pageId) ?? "", vendorId: scope.vendorId, projectId: scope.projectId, archivedAt: null },
     select: {
       id: true, name: true, slug: true, status: true, revision: true, publishedAt: true, updatedAt: true,
       draftContent: true, draftFormId: true, draftLiveId: true,
@@ -531,11 +532,19 @@ export async function saveLandingPageStepMetadata(input: { id: string; revision:
 }
 
 /**
- * Permanently removes a scoped Funnel and its append-only versions.
- * The published pointer must be detached first because Prisma intentionally
- * protects the referenced version with a restrictive foreign key.
+ * F-072 / B04-19: a Funnel that was ever published (it has a publish time or
+ * an immutable version) or that has any FunnelVisit / FunnelSubmission is
+ * archived instead of deleted, so visit and lead-source attribution history
+ * survives for ad reporting and commission audits. Archiving unpublishes the
+ * page (the public URL returns 404) and hides it from the editor.
+ *
+ * Only a never-published page without traffic is permanently removed with
+ * its versions; the funnel foreign keys are RESTRICT, so the database refuses
+ * the delete if traffic appeared concurrently. The published pointer is
+ * detached first because Prisma protects the referenced version with a
+ * restrictive foreign key.
  */
-export async function deleteLandingPage(pageId: string, expectedRevision: number) {
+export async function deleteLandingPage(pageId: string, expectedRevision: number): Promise<{ id: string; archived: boolean }> {
   const scope = await editorProject();
   const id = identifier(pageId);
   const revision = positiveRevision(expectedRevision);
@@ -544,18 +553,43 @@ export async function deleteLandingPage(pageId: string, expectedRevision: number
   const database = db();
   await requireScopedPage(database, scope, id);
   return database.$transaction(async (transaction) => {
+    const page = await requireScopedPage(transaction, scope, id);
+    if (page.revision !== revision) throw new LandingPageConflictError();
+    const owned = { vendorId: scope.vendorId, pageId: id };
+    const [versions, visits, submissions] = await Promise.all([
+      transaction.landingPageVersion.count({ where: owned }),
+      transaction.funnelVisit.count({ where: owned }),
+      transaction.funnelSubmission.count({ where: owned }),
+    ]);
+
+    if (page.publishedAt || page.status === "published" || versions > 0 || visits > 0 || submissions > 0) {
+      const now = new Date();
+      const archived = await transaction.landingPage.updateMany({
+        where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision, archivedAt: null },
+        data: {
+          archivedAt: now,
+          status: "draft",
+          publishedVersionId: null,
+          ...(page.status === "published" ? { unpublishedAt: now } : {}),
+          revision: { increment: 1 },
+        },
+      });
+      if (archived.count !== 1) throw new LandingPageConflictError();
+      return { id, archived: true };
+    }
+
     const detached = await transaction.landingPage.updateMany({
-      where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
+      where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision, archivedAt: null },
       data: { publishedVersionId: null, revision: { increment: 1 } },
     });
     if (detached.count !== 1) throw new LandingPageConflictError();
 
     const deleted = await transaction.landingPage.deleteMany({
-      where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision: revision + 1 },
+      where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision: revision + 1, archivedAt: null },
     });
     if (deleted.count !== 1) throw new LandingPageConflictError();
-    return { id };
-  });
+    return { id, archived: false };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 export async function rollbackLandingPage(pageId: string, version: number, expectedRevision: number) {
@@ -713,7 +747,7 @@ export async function getLandingPagePublicationStatus(pageId: string): Promise<L
   const id = identifier(pageId);
   if (!id) throw new LandingPageNotFoundError();
   const page = await db().landingPage.findFirst({
-    where: { id, vendorId: scope.vendorId, projectId: scope.projectId },
+    where: { id, vendorId: scope.vendorId, projectId: scope.projectId, archivedAt: null },
     select: { id: true, slug: true, status: true, operations: true },
   });
   if (!page) throw new LandingPageNotFoundError();

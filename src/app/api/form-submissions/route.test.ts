@@ -140,7 +140,7 @@ describe("team lead attribution", () => {
     const response = await POST(jsonRequest({ formId: "form-1", liveId: "live-a", landingPageId: "page-1", payload: { name: "Lead", email: "lead@example.test" } }));
     expect(response.status).toBe(200);
     expect(db.landingPage.findFirst).toHaveBeenCalledWith({
-      where: { id: "page-1", vendorId: "vendor-1", status: "published", publishedAt: { not: null }, publishedVersionId: { not: null } },
+      where: { id: "page-1", vendorId: "vendor-1", status: "published", publishedAt: { not: null }, publishedVersionId: { not: null }, archivedAt: null },
       select: { id: true },
     });
     const data = db.formSubmission.create.mock.calls[0]?.[0]?.data;
