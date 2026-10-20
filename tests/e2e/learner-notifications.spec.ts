@@ -15,8 +15,15 @@ test("actual portal worker receives a synthetic device message and keeps authent
  if(!baseURL)throw new Error("Owned loopback browser origin required");
  await context.grantPermissions(["notifications"],{origin:baseURL});
  const session=await context.newCDPSession(page);let registrationId:string|undefined;
+ // A push event is only dispatched to a worker whose version reached "activated".
+ // clients.claim() makes the page controlled while the version is still
+ // "activating", so a controller or registration id alone is not proof of readiness.
+ let activatedRegistrationId:string|undefined;
  session.on("ServiceWorker.workerRegistrationUpdated",({registrations})=>{
   for(const registration of registrations)if(registration.scopeURL===`${baseURL}/portal/`&&!registration.isDeleted)registrationId=registration.registrationId;
+ });
+ session.on("ServiceWorker.workerVersionUpdated",({versions})=>{
+  for(const version of versions)if(version.scriptURL===`${baseURL}/portal/sw.js`&&version.status==="activated")activatedRegistrationId=version.registrationId;
  });
  await session.send("ServiceWorker.enable");
  // Observe the application's own registration call without initiating one or
@@ -41,6 +48,7 @@ test("actual portal worker receives a synthetic device message and keeps authent
   for(const asset of ["/portal/offline.html","/portal/manifest.webmanifest","/portal/icon-192.png","/portal/icon-512.png"])expect((await page.request.get(`${baseURL}${asset}`)).status()).toBe(200);
   await expect.poll(()=>page.evaluate(()=>navigator.serviceWorker.controller?.scriptURL??null)).toBe(`${baseURL}/portal/sw.js`);
   await expect.poll(()=>registrationId).toBeTruthy();
+  await expect.poll(()=>activatedRegistrationId).toBe(registrationId);
   const manifest=await page.locator('link[rel="manifest"]').getAttribute("href");expect(manifest).toBe("/portal/manifest.webmanifest");
   const manifestData=await (await page.request.get(`${baseURL}${manifest}`)).json();
   expect(manifestData.scope).toBe("/portal/");expect(manifestData.start_url).toBe("/portal/start.html");

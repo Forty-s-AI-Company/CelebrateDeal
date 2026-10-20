@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { notFound } from "next/navigation";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -19,7 +20,7 @@ export default async function AffiliatePayoutPolicyPage({ searchParams }: { sear
       <input type="hidden" name="expectedRevision" value={current?.revision ?? 0} />
       <label className="block">每筆轉帳費用（分，100 分＝NT$1）<input className="mt-2 block min-h-11 w-full rounded border px-3" type="number" name="bankFeeCents" min={0} max={2_147_483_647} step={1} required defaultValue={current?.bankFeeCents ?? ""} /></label>
       <label className="flex min-h-11 items-center gap-3"><input type="checkbox" name="enabled" defaultChecked={current?.enabled ?? false} />啟用提領報價與匯出</label>
-      <button className="min-h-11 rounded bg-blue-700 px-4 text-white">儲存提領政策</button>
+      <FormSubmitButton pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-11 rounded bg-blue-700 px-4 text-white">儲存提領政策</FormSubmitButton>
     </form><Link className="mt-6 inline-block min-h-11 underline" href="/affiliates/policy">查看聯盟佣金政策</Link>
   </>;
 }

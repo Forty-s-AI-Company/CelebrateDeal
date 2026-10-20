@@ -31,7 +31,7 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     await page.getByLabel("影片秒數").fill("100");
     await page.getByLabel("發布，讓有權益的學員可以學習").check();
     await page.getByRole("button", { name: "新增單元", exact: true }).click();
-    await expect(page.getByRole("status")).toHaveText("課程單元已儲存。");
+    await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("課程單元已儲存。");
     const lesson = await db.courseLesson.findFirstOrThrow({ where: { vendorId: vendor.id, productId: product.id } });
     expect(lesson.publishedAt).not.toBeNull();
 

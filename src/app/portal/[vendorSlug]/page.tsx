@@ -1,4 +1,5 @@
 import { portalText } from "@/lib/student-portal-translations";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { resolveStudentPortalLocale } from "@/lib/student-portal-locale";
 import type { CSSProperties } from "react";
 import Image from "next/image";
@@ -67,7 +68,7 @@ export default async function StudentPortalPage({
           <a href={`/portal/${encodeURIComponent(vendorSlug)}/notifications`} className="min-h-11 shrink-0 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800">{t("通知設定")}</a>
           <form action={logoutStudentPortalAction}>
             <CsrfField /><input type="hidden" name="vendorSlug" value={vendorSlug} />
-            <button className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50">{t("\u5B89\u5168\u767B\u51FA")}</button>
+            <FormSubmitButton pendingChildren={t("\u767B\u51FA\u4E2D\u2026")} pendingMessage={t("\u6B63\u5728\u767B\u51FA\uFF0C\u8ACB\u52FF\u91CD\u8907\u9001\u51FA\u3002")} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-800 transition hover:bg-slate-50">{t("\u5B89\u5168\u767B\u51FA")}</FormSubmitButton>
           </form>
         </div>
       </header>
@@ -104,7 +105,7 @@ export default async function StudentPortalPage({
         </section>
 
         <section id="vouchers" className="scroll-mt-6 pt-12" aria-labelledby="vouchers-title"><h2 id="vouchers-title" className="text-2xl font-bold">{t("\u5C08\u5C6C\u512A\u60E0\u5238")}</h2><p className="mt-1 text-sm text-slate-600">{t("\u53EA\u986F\u793A\u5C1A\u672A\u4F7F\u7528\u4E14\u4ECD\u5728\u6709\u6548\u671F\u5167\u7684\u512A\u60E0")}</p>
-          {dashboard.vouchers.length ? <div className="mt-5 flex flex-wrap gap-4">{dashboard.vouchers.map(voucher => <article key={voucher.id} className="min-w-[280px] flex-1 rounded-2xl bg-slate-950 p-6 text-white"><p className="text-sm font-semibold text-slate-300">{voucher.product.name}</p><p className="mt-3 text-3xl font-black tracking-[-0.03em]">{voucher.discountType === 'percentage' ? `${voucher.discountValue}% OFF` : amount(voucher.discountValue, voucher.currency, locale)}</p><p className="mt-3 text-sm text-slate-300">{t("\u6709\u6548\u81F3")}{dateTime(voucher.expiresAt, locale)}</p><form method="post" action={`/portal/${encodeURIComponent(vendorSlug)}/vouchers/${encodeURIComponent(voucher.id)}/use`}><CsrfField /><button type="submit" className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-white px-4 text-sm font-bold text-slate-950">{t("\u7ACB\u5373\u4F7F\u7528")}</button></form></article>)}</div> : <EmptyCopy title={t("\u76EE\u524D\u6C92\u6709\u53EF\u7528\u512A\u60E0\u5238")} body={t("\u76F4\u64AD\u6216\u5C08\u5C6C\u6D3B\u52D5\u6D3E\u767C\u7684\u512A\u60E0\uFF0C\u6703\u5728\u6709\u6548\u671F\u9593\u986F\u793A\u65BC\u6B64\u3002")} />}
+          {dashboard.vouchers.length ? <div className="mt-5 flex flex-wrap gap-4">{dashboard.vouchers.map(voucher => <article key={voucher.id} className="min-w-[280px] flex-1 rounded-2xl bg-slate-950 p-6 text-white"><p className="text-sm font-semibold text-slate-300">{voucher.product.name}</p><p className="mt-3 text-3xl font-black tracking-[-0.03em]">{voucher.discountType === 'percentage' ? `${voucher.discountValue}% OFF` : amount(voucher.discountValue, voucher.currency, locale)}</p><p className="mt-3 text-sm text-slate-300">{t("\u6709\u6548\u81F3")}{dateTime(voucher.expiresAt, locale)}</p><form method="post" action={`/portal/${encodeURIComponent(vendorSlug)}/vouchers/${encodeURIComponent(voucher.id)}/use`}><CsrfField /><FormSubmitButton pendingChildren={t("\u8655\u7406\u4E2D\u2026")} pendingMessage={t("\u6B63\u5728\u8655\u7406\uFF0C\u8ACB\u52FF\u91CD\u8907\u9001\u51FA\u3002")} className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-white px-4 text-sm font-bold text-slate-950">{t("\u7ACB\u5373\u4F7F\u7528")}</FormSubmitButton></form></article>)}</div> : <EmptyCopy title={t("\u76EE\u524D\u6C92\u6709\u53EF\u7528\u512A\u60E0\u5238")} body={t("\u76F4\u64AD\u6216\u5C08\u5C6C\u6D3B\u52D5\u6D3E\u767C\u7684\u512A\u60E0\uFF0C\u6703\u5728\u6709\u6548\u671F\u9593\u986F\u793A\u65BC\u6B64\u3002")} />}
         </section>
 
         <section id="orders" className="scroll-mt-6 pt-12" aria-labelledby="orders-title"><h2 id="orders-title" className="text-2xl font-bold">{t("\u8A02\u55AE\u8207\u767C\u7968")}</h2><p className="mt-1 text-sm text-slate-600">{t("\u8CFC\u8CB7\u91D1\u984D\u3001\u4ED8\u6B3E\u65B9\u5F0F\u8207\u53F0\u7063 B2C \u96FB\u5B50\u767C\u7968")}</p>
