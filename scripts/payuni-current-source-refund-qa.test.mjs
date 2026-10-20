@@ -10,6 +10,8 @@ const order = "CD-SYNTHETIC-Q1";
 const transaction = "wp4-synthetic-q1";
 const trade = "synthetic-provider-q1";
 const clock = () => new Date("2026-10-09T02:00:00Z");
+// RFC 6238 appendix B public test seed; never a staging value.
+const SYNTHETIC_TOTP_SEED = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 it.each([
   [true, true, 200, "VERIFIED", true],
   [true, true, 404, "FIXTURE_UNAVAILABLE", true],
@@ -39,7 +41,8 @@ it.each([
         PAYUNI_SANDBOX_ONETIME_CARD_NO: input.cardNumber, PAYUNI_TEST_EXPIRY: input.cardExpiry,
         PAYUNI_TEST_CVV: input.cardCvv, PAYUNI_SANDBOX_MERCHANT_ID: "synthetic-merchant",
         PAYUNI_SANDBOX_HASH_KEY: "synthetic-key", PAYUNI_SANDBOX_HASH_IV: "synthetic-iv",
-        PAYUNI_QA_FINANCE_EMAIL: "synthetic-finance@invalid.example", PAYUNI_QA_FINANCE_PASSWORD: "synthetic-private" })) {
+        PAYUNI_QA_FINANCE_EMAIL: "synthetic-finance@invalid.example", PAYUNI_QA_FINANCE_PASSWORD: "synthetic-private",
+        PAYUNI_QA_FINANCE_TOTP_SECRET: SYNTHETIC_TOTP_SEED })) {
         vi.stubEnv(name, value);
       }
       await executeCurrentSourceRefundQa({ verifyLineage: vi.fn(async () => lineage), diagnosticRequest, preflightFetch });
@@ -63,6 +66,33 @@ it.each([
       output.mockRestore(); vi.unstubAllEnvs();
     }
   });
+it("fails a finance run without the TOTP seed before preflight, payment or login", async () => {
+  const input = setup().options.input;
+  const previousArgv = process.argv, previousExit = process.exitCode;
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+  const explanation = vi.spyOn(console, "error").mockImplementation(() => {});
+  const preflightFetch = vi.fn();
+  try {
+    process.argv = [process.execPath, "fixed-qa-entry.mjs"];
+    process.exitCode = undefined;
+    for (const [name, value] of Object.entries({ GITHUB_ACTIONS: "true", PAYUNI_ENV: "sandbox",
+      PAYUNI_SANDBOX_QA_ENABLED: "true", PAYUNI_SANDBOX_REFUND_ENABLED: "true", Q1_EXISTING_STATE_DIAGNOSTIC: "false",
+      CELEBRATEDEAL_SOURCE_SHA: source, CELEBRATEDEAL_DEPLOYMENT_HOST: input.previewHost, JOB_SECRET: input.jobSecret,
+      PAYUNI_SANDBOX_ONETIME_CARD_NO: input.cardNumber, PAYUNI_TEST_EXPIRY: input.cardExpiry, PAYUNI_TEST_CVV: input.cardCvv,
+      PAYUNI_SANDBOX_MERCHANT_ID: "synthetic-merchant", PAYUNI_SANDBOX_HASH_KEY: "synthetic-key", PAYUNI_SANDBOX_HASH_IV: "synthetic-iv",
+      PAYUNI_QA_FINANCE_EMAIL: "synthetic-finance@invalid.example", PAYUNI_QA_FINANCE_PASSWORD: "synthetic-private",
+      PAYUNI_QA_FINANCE_TOTP_SECRET: "" })) vi.stubEnv(name, value);
+    await executeCurrentSourceRefundQa({ verifyLineage: vi.fn(async () => true), preflightFetch });
+    expect(preflightFetch).not.toHaveBeenCalled();
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ status: "BLOCKED_OR_FAILED",
+      stage: "platform-mfa-configuration", mfaFailure: "SEED_MISSING" });
+    expect(explanation.mock.calls.flat().join(" ")).toContain("PAYUNI_QA_FINANCE_TOTP_SECRET");
+    expect(process.exitCode).toBe(1);
+  } finally {
+    process.argv = previousArgv; process.exitCode = previousExit;
+    output.mockRestore(); explanation.mockRestore(); vi.unstubAllEnvs();
+  }
+});
 it.each([undefined, null, {}, { paymentReceipt: null }, { paymentReceipt: {} },
   { paymentReceipt: { result: "PASS", private: "synthetic-private" } }])(
   "always emits closed failure evidence for an absent or malformed receipt %j", error => {
@@ -132,6 +162,8 @@ it.each([false, true])("waits for a same-origin login redirect DOM with MFA=%s",
     expect(predicate(new URL(`https://${host}/admin/billing/dashboard`))).toBe(true);
     expect(predicate(new URL("https://attacker.example/admin/billing/dashboard"))).toBe(false);
     expect(predicate(new URL(`https://${host}${afterMfa ? "/mfa/verify" : "/login"}`))).toBe(false);
+    // A rejected TOTP settles on the verify page so it is classified, not timed out.
+    expect(predicate(new URL(`https://${host}/mfa/verify?error=invalid`))).toBe(true);
   }) };
   await expect(waitFinanceLoginRedirect(page, afterMfa)).resolves.toBeUndefined();
   expect(page.waitForURL).toHaveBeenCalledTimes(1);
@@ -273,7 +305,7 @@ it("rejects an injected request to another host before transmitting any header o
 });
 it("launches the refund browser with an explicit minimal environment and no CI credentials", async () => {
   const names = ["JOB_SECRET", "GITHUB_TOKEN", "PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV",
-    "PAYUNI_QA_FINANCE_EMAIL", "PAYUNI_QA_FINANCE_PASSWORD", "PAYUNI_QA_FINANCE_OTP"];
+    "PAYUNI_QA_FINANCE_EMAIL", "PAYUNI_QA_FINANCE_PASSWORD", "PAYUNI_QA_FINANCE_TOTP_SECRET"];
   try {
     for (const name of names) vi.stubEnv(name, "synthetic-secret-sentinel");
     const chromium = { launch: vi.fn(async (options) => {

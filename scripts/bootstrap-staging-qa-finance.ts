@@ -7,7 +7,7 @@ import { isStagingDatabaseUrl } from "../src/lib/database-identity";
 const APP_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 
 /** Persist the same closed result, never provider errors or injected values. */
-async function report(result: { status?: string; stage?: string; email?: string; outcome?: string; failureCategory?: string }) {
+async function report(result: { status?: string; stage?: string; email?: string; outcome?: string; mfa?: string; failureCategory?: string }) {
   const receipt = { schemaVersion: "celebratedeal-staging-qa-finance-bootstrap/v1", ...result,
     productionOperations: false, providerOperations: false };
   if (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REF === "refs/heads/master"
@@ -49,7 +49,9 @@ async function main() {
     stage = "fixed-synthetic-account";
     db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const result = await ensureStagingQaFinance(db, { databaseUrl, sourceSha: env.CELEBRATEDEAL_SOURCE_SHA!,
-      password: env.PAYUNI_QA_FINANCE_PASSWORD, runtimeReady: true, payuniEnv: env.PAYUNI_ENV });
+      password: env.PAYUNI_QA_FINANCE_PASSWORD, runtimeReady: true, payuniEnv: env.PAYUNI_ENV,
+      // Optional: enrolls the shared TOTP seed so finance QA runners pass WP-10 MFA.
+      totpSeed: env.PAYUNI_QA_FINANCE_TOTP_SECRET });
     await report(result);
   } catch (error) {
     await report({ status: "BLOCKED_OR_FAILED", stage,

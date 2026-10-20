@@ -2,20 +2,26 @@ import { createCipheriv, createHash } from "node:crypto";
 
 export type PayUniSandboxFixtureName = "paid" | "refunded" | "duplicate_paid";
 
+/**
+ * `paid` and `duplicate_paid` use only documented PayUni UPP 2.0 Notify/Return
+ * fields (Status, TradeStatus, PaymentType, TradeNo, MerTradeNo, TradeAmt); there
+ * is no EventType, EventId, NetAmount, GatewayFee, ReferralCode or VendorId
+ * (F-037). Replace them with a de-identified Sandbox sample when one exists.
+ * `refunded` is a synthetic refund notice for the internal webhook pipeline,
+ * not a PayUni callback format; PayUni refunds are confirmed through the
+ * refund and query APIs.
+ */
+const payUniUppPaidCallback = {
+  Status: "SUCCESS",
+  TradeStatus: "1",
+  PaymentType: "1",
+  MerTradeNo: "CD-SANDBOX-PAID-001",
+  TradeNo: "PAYUNI-SANDBOX-TRADE-001",
+  TradeAmt: 1990,
+};
+
 export const payUniSandboxPlainFixtures: Record<PayUniSandboxFixtureName, Record<string, string | number>> = {
-  paid: {
-    EventId: "payuni-sandbox-paid-001",
-    EventType: "paid",
-    MerTradeNo: "CD-SANDBOX-PAID-001",
-    TradeNo: "PAYUNI-SANDBOX-TRADE-001",
-    TradeAmt: 1990,
-    GatewayFee: 35,
-    PlatformFee: 0,
-    NetAmount: 1955,
-    PayStatus: "paid",
-    ReferralCode: "DEMOREF",
-    OccurredAt: "2026-07-09T10:00:00.000Z",
-  },
+  paid: { ...payUniUppPaidCallback },
   refunded: {
     EventId: "payuni-sandbox-refunded-001",
     EventType: "refunded",
@@ -29,19 +35,8 @@ export const payUniSandboxPlainFixtures: Record<PayUniSandboxFixtureName, Record
     PayStatus: "refunded",
     OccurredAt: "2026-07-09T10:10:00.000Z",
   },
-  duplicate_paid: {
-    EventId: "payuni-sandbox-paid-001",
-    EventType: "paid",
-    MerTradeNo: "CD-SANDBOX-PAID-001",
-    TradeNo: "PAYUNI-SANDBOX-TRADE-001",
-    TradeAmt: 1990,
-    GatewayFee: 35,
-    PlatformFee: 0,
-    NetAmount: 1955,
-    PayStatus: "paid",
-    ReferralCode: "DEMOREF",
-    OccurredAt: "2026-07-09T10:00:00.000Z",
-  },
+  // PayUni delivers the same signed result to both ReturnURL and NotifyURL.
+  duplicate_paid: { ...payUniUppPaidCallback },
 };
 
 function encryptPayUniInfo(payload: Record<string, string | number>, hashKey: string, hashIv: string) {
@@ -66,16 +61,19 @@ export function buildPayUniSandboxWebhookFixture({
   hashIv: string;
   overrides?: Record<string, string | number>;
 }) {
-  const payload = {
+  const payload: Record<string, string | number> = {
     MerID: merchantId,
     ...payUniSandboxPlainFixtures[fixture],
     ...(overrides ?? {}),
   };
   const encryptInfo = encryptPayUniInfo(payload, hashKey, hashIv);
   const hashInfo = createHash("sha256").update(`${hashKey}${encryptInfo}${hashIv}`).digest("hex").toUpperCase();
+  // PayUni repeats the result Status outside EncryptInfo (unsigned).
+  const outerStatus: Record<string, string> = typeof payload.Status === "string" ? { Status: payload.Status } : {};
   return new URLSearchParams({
     MerID: merchantId,
     Version: "2.0",
+    ...outerStatus,
     EncryptInfo: encryptInfo,
     HashInfo: hashInfo,
   }).toString();

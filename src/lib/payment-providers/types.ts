@@ -144,7 +144,8 @@ export class RefundProviderError extends Error {
   }
 }
 
-export type PaymentQueryFailureCategory = "authentication" | "request_contract" | "provider_response" | "network" | "unknown";
+/** `manual_reconciliation`: the provider reports a completed collection by a payment method this system does not apply automatically. */
+export type PaymentQueryFailureCategory = "authentication" | "request_contract" | "provider_response" | "network" | "unknown" | "manual_reconciliation";
 
 export class PaymentQueryProviderError extends Error {
   constructor(public readonly category: PaymentQueryFailureCategory) {
@@ -196,6 +197,60 @@ export class PaymentMethodSetupMalformedPayloadError extends Error {
   constructor(public readonly resultKey: string) {
     super("Payment method setup payload is malformed.");
     this.name = "PaymentMethodSetupMalformedPayloadError";
+  }
+}
+
+/**
+ * An authenticated payment callback that must not change payment state
+ * automatically: a pending provider state (for example a number issued but not
+ * yet paid), a payment method outside the allowlist, or a provider status that
+ * is not a final success.
+ */
+export type PaymentWebhookNotActionableReason = "trade_pending" | "payment_type_not_allowed" | "provider_status_not_success"
+  /** Signed result is a paid card trade; only the unsigned outer Status disagrees. */
+  | "outer_status_mismatch";
+
+/** Bounded provider identifiers only (order/trade numbers and status codes), never PII or card data. */
+export type PaymentWebhookCallbackIdentifiers = {
+  orderNumber?: string;
+  providerTradeNo?: string;
+  tradeStatus?: string;
+  paymentType?: string;
+};
+
+const PAYMENT_WEBHOOK_IDENTIFIER = /^[A-Za-z0-9_-]{1,64}$/;
+
+function boundedIdentifier(value: string | undefined) {
+  // Same card-number guard as the provider diagnostics: never keep a 12-19 digit run.
+  return value !== undefined && PAYMENT_WEBHOOK_IDENTIFIER.test(value) && !/[0-9]{12,19}/.test(value) ? value : undefined;
+}
+
+export class PaymentWebhookNotActionableError extends Error {
+  readonly identifiers: PaymentWebhookCallbackIdentifiers;
+
+  constructor(
+    public readonly reason: PaymentWebhookNotActionableReason,
+    identifiers: PaymentWebhookCallbackIdentifiers = {},
+    /** Allowlisted, size-bounded provider snapshot for the reconciliation record. */
+    public readonly rawSnapshot?: Record<string, string | number | boolean>,
+  ) {
+    super("Payment webhook is not actionable.");
+    this.name = "PaymentWebhookNotActionableError";
+    this.identifiers = Object.fromEntries(Object.entries({
+      orderNumber: boundedIdentifier(identifiers.orderNumber),
+      providerTradeNo: boundedIdentifier(identifiers.providerTradeNo),
+      tradeStatus: boundedIdentifier(identifiers.tradeStatus),
+      paymentType: boundedIdentifier(identifiers.paymentType),
+    }).filter(([, value]) => value !== undefined)) as PaymentWebhookCallbackIdentifiers;
+  }
+
+  /**
+   * The provider reported a completed collection (paid trade status) that this
+   * system refuses to apply automatically. The money may already be captured,
+   * so it must be recorded for manual reconciliation, never silently dropped.
+   */
+  get requiresManualReconciliation() {
+    return this.reason !== "trade_pending";
   }
 }
 

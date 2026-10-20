@@ -24,7 +24,8 @@ async function callback(page: Page, body: string) {
 
 test("browser recovers the exact historical buyer callback once and proves full refund without provider contact", async ({ page, baseURL }) => {
  const db = new PrismaClient(), suffix = randomUUID();
- const paidEvent = `q2-buyer-paid-${suffix}`, refundedEvent = `q2-buyer-refunded-${suffix}`;
+ // A real UPP paid callback is keyed by TradeNo:TradeStatus (F-037).
+ const paidEvent = `q2-trade-${suffix}:1`, refundedEvent = `q2-buyer-refunded-${suffix}`;
  let externalRequests = 0;
  await page.route("**/*", async route => {
   if (new URL(route.request().url()).origin === baseURL) return route.continue();

@@ -95,6 +95,7 @@ model Vendor {
   customerCrmRecords               CustomerCrmRecord[]
   salesProjects                    SalesProject[]
   onboardingPreferences            UserOnboardingPreference[]
+  policyConsents                   UserPolicyConsent[]
   onboardingTaskStates             OnboardingTaskState[]
   salesProjectProducts             SalesProjectProduct[]
   salesProjectCustomers            SalesProjectCustomer[]
@@ -226,6 +227,25 @@ model User {
   platformReferralCommissions  PlatformReferralCommission[]
   platformReferralPayouts      PlatformReferralPayout[]
   onboardingPreferences        UserOnboardingPreference[]
+  policyConsents               UserPolicyConsent[]
+}
+
+/// Append-only record of the policy versions a user accepted (F-114). Versions
+/// come from src/lib/public-policy-content.ts on the server, never the client.
+model UserPolicyConsent {
+  id             String   @id @default(cuid())
+  userId         String
+  vendorId       String?
+  context        String
+  termsVersion   String
+  privacyVersion String
+  acceptedAt     DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendor Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, context, termsVersion, privacyVersion], map: "UserPolicyConsent_user_context_versions_key")
+  @@index([vendorId, acceptedAt])
 }
 
 model UserSession {

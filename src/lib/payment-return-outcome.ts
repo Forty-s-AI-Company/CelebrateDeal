@@ -1,4 +1,4 @@
-export type PaymentReturnOutcome = "updated" | "pending" | "unverified" | "unknown";
+export type PaymentReturnOutcome = "updated" | "pending" | "unverified" | "review" | "unknown";
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -6,7 +6,7 @@ function firstValue(value: string | string[] | undefined) {
 
 export function paymentReturnOutcome(value: string | string[] | undefined): PaymentReturnOutcome {
   const normalized = firstValue(value);
-  return normalized === "updated" || normalized === "pending" || normalized === "unverified"
+  return normalized === "updated" || normalized === "pending" || normalized === "unverified" || normalized === "review"
     ? normalized
     : "unknown";
 }
