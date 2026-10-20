@@ -133,6 +133,26 @@ export default async function OnboardingPage() {
                     </li>
                   ))}
                 </ul>
+                {step.suggestions?.length ? (
+                  <div className="mt-3 rounded-lg border border-dashed border-slate-200 p-3">
+                    <p className="text-xs font-semibold text-slate-500">建議（選配，不影響完成度）</p>
+                    <ul className="mt-2 grid gap-1.5 text-sm">
+                      {step.suggestions.map((suggestion) => (
+                        <li key={suggestion.label} className="flex flex-wrap items-center justify-between gap-2 text-slate-600">
+                          <span>
+                            <span aria-hidden="true">{suggestion.done ? "✓" : "○"}</span> {suggestion.label}
+                            <span className="sr-only">：{suggestion.done ? "已完成" : "尚未設定，可稍後再做"}</span>
+                          </span>
+                          {!suggestion.done && suggestion.href ? (
+                            <Link href={suggestion.href} className="min-h-10 content-center font-semibold text-primary underline underline-offset-2 hover:text-primary-dark">
+                              {suggestion.actionLabel ?? "前往設定"}
+                            </Link>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
               {step.key === "launch" && !step.done ? null : (
                 <ButtonLink href={step.href} tone={step.done || step.deferred ? "secondary" : "cta"}>

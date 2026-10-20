@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildLiveChatExportRows, liveChatRowsToCsv, realViewerMessageWhere, scheduledMessageEventWhere } from "./live-chat-analytics";
@@ -68,5 +70,57 @@ describe("live chat analytics isolation", () => {
       scheduledMessages: [],
     });
     expect(liveChatRowsToCsv(rows)).toContain(`"${expected.replaceAll('"', '""')}"`);
+  });
+
+  it("keeps virtual users out of real-viewer statistics: every liveChatMessage count/aggregate/groupBy call site uses realViewerMessageWhere", () => {
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (/\.(ts|tsx)$/u.test(name) && !/\.(test|spec)\./u.test(name)) files.push(path);
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const match of source.matchAll(/liveChatMessage\s*\.\s*(count|aggregate|groupBy)\s*\(/gu)) {
+        // 逐一檢查每個呼叫點自己的參數區塊（約 400 字元內）是否使用了統一的查詢條件。
+        const callBody = source.slice(match.index ?? 0, (match.index ?? 0) + 400);
+        if (!callBody.includes("realViewerMessageWhere")) offenders.push(`${file}:${match[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("counts only the real viewer message when a virtual-user message sits beside it (behavioral)", () => {
+    type Row = { id: string; vendorId: string; liveId: string; source: string; isSimulated: boolean; status: string; formSubmissionId: string | null; roleId: string | null; createdAt: Date };
+    const base: Omit<Row, "id"> = { vendorId: "vendor-1", liveId: "live-1", source: "viewer", isSimulated: false, status: "visible", formSubmissionId: "submission-1", roleId: null, createdAt: new Date("2026-08-17T10:00:00.000Z") };
+    const rows: Row[] = [
+      { ...base, id: "real" },
+      { ...base, id: "virtual-role", source: "scheduled", isSimulated: true, formSubmissionId: null, roleId: "role-1" },
+      { ...base, id: "role-backed-but-flagged-real", roleId: "role-1" },
+      { ...base, id: "simulated-viewer-shaped", isSimulated: true },
+      { ...base, id: "hidden", status: "hidden" },
+      { ...base, id: "other-tenant", vendorId: "vendor-2" },
+    ];
+    const matches = (row: Row, where: Record<string, unknown>) => Object.entries(where).every(([key, expected]) => {
+      const actual = row[key as keyof Row];
+      if (expected && typeof expected === "object" && "not" in expected) return actual !== (expected as { not: unknown }).not;
+      if (expected && typeof expected === "object" && "gte" in expected) return (actual as Date) >= (expected as { gte: Date }).gte;
+      return actual === expected;
+    });
+
+    const counted = rows.filter((row) => matches(row, realViewerMessageWhere({ vendorId: "vendor-1", liveId: "live-1" })));
+    expect(counted.map((row) => row.id)).toEqual(["real"]);
+  });
+
+  it("never treats a role-backed, simulated or scheduled message as a real viewer message", () => {
+    const where = realViewerMessageWhere({ vendorId: "vendor-1" });
+    expect(where.roleId).toBeNull();
+    expect(where.isSimulated).toBe(false);
+    expect(where.source).toBe("viewer");
+    expect(where.formSubmissionId).toEqual({ not: null });
   });
 });

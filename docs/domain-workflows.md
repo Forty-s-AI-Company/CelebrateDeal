@@ -76,3 +76,7 @@ UI 隱藏不能充當權限。每個新增敏感 read／mutation／export／rela
 PR 合併前 CI 必須通過；security／payment／DB 變更另需一次獨立審查（`.claude/agents/reviewer.md`），不得自行核准。Production、正式 DB／付款／退款／寄信仍需要另外明確授權。
 
 交付回報包含 scope、已通過與失敗的 gate、證據、外部相依、forward migration 與可恢復方式、必要 review、實際下一步與 owner；不要把未驗證配置或 requested/resolved model 當成 observed。
+
+## 已接受的殘餘風險
+
+- 直播網址（`Live.slug`）全站唯一。草稿自動存檔與送出時的「直播網址已被使用」提示，會讓任何商家成員得知某個網址是否已被任何租戶使用（只回布林值，不回 id）。這與送出時資料庫唯一鍵衝突本來就能得到的訊號相同；若日後要改成租戶命名空間，另開議題。

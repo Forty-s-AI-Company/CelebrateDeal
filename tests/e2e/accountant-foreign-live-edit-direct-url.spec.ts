@@ -61,7 +61,7 @@ test("active accountant is denied a foreign live editor before tenant and asset 
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "編輯直播間" })).toHaveCount(0);
-    for (const label of ["直播標題", "Slug", "開播時間", "串流模式", "狀態", "影片", "表單", "通知模板", "互動腳本", "直播說明", "Hero 圖片 URL", "促銷短句"]) await expect(page.getByLabel(label)).toHaveCount(0);
+    for (const label of ["直播標題", "直播網址", "開播時間", "串流模式", "狀態", "影片", "表單", "通知模板", "互動腳本", "直播說明", "Hero 圖片 URL", "促銷短句"]) await expect(page.getByLabel(label)).toHaveCount(0);
     // Dashboard may legitimately list the accountant's own Live title; the
     // foreign row remains inaccessible, while neither editor description canary
     // may be serialized into this rejected navigation.

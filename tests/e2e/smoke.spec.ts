@@ -1427,7 +1427,7 @@ test("live creation stepper blocks incomplete forward jumps and explains the nex
   await expect(page.getByRole("status").filter({ hasText: "請先完成本步驟的必填欄位" })).toBeVisible();
 
   await page.getByLabel("直播標題", { exact: true }).fill("E2E 建立流程驗收");
-  await page.getByLabel("Slug", { exact: true }).fill(`e2e-stepper-${stamp}`);
+  await page.getByLabel("直播網址").fill(`e2e-stepper-${stamp}`);
   await reviewStep.click();
 
   await expect(reviewStep).toHaveAttribute("aria-current", "step");
@@ -1452,7 +1452,7 @@ test("merchant can create and schedule a prerecorded content webinar from the ei
 
     await page.getByRole("button", { name: /內容／課程直播/ }).click();
     await page.getByLabel("直播標題").fill(title);
-    await page.getByLabel("Slug").fill(slug);
+    await page.getByLabel("直播網址").fill(slug);
     await page.getByRole("button", { name: "下一步" }).click();
 
     await page.getByLabel("影片 / Live Input").selectOption(seed.readyVideoId);

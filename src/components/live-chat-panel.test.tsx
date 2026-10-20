@@ -16,7 +16,7 @@ const scheduled = (id: string, triggerSec: number): ScheduledRuntimeMessage => (
   source: "scheduled",
   triggerSec,
   body: id,
-  actor: { name: "官方助理", avatarUrl: null, label: "官方角色", presentationRole: "official" },
+  actor: { name: "官方助理", avatarUrl: null, label: null, presentationRole: "official" },
 });
 
 const audienceScheduled = (id: string, triggerSec: number): ScheduledRuntimeMessage => ({
@@ -24,7 +24,7 @@ const audienceScheduled = (id: string, triggerSec: number): ScheduledRuntimeMess
   source: "scheduled",
   triggerSec,
   body: id,
-  actor: { name: "小安", avatarUrl: null, label: "一般觀眾", presentationRole: "audience" },
+  actor: { name: "小安", avatarUrl: null, label: null, presentationRole: "audience" },
 });
 
 describe("LiveChatPanel message contracts", () => {
@@ -81,7 +81,7 @@ describe("LiveChatPanel message contracts", () => {
     })).toBeNull();
   });
 
-  it("renders scheduled audience messages as audience while keeping official presentation distinct", () => {
+  it("renders scripted messages as plain chat without official, audience or script badges", () => {
     const html = renderToStaticMarkup(
       <LiveChatPanel
         enabled={false}
@@ -94,8 +94,11 @@ describe("LiveChatPanel message contracts", () => {
 
     expect(html).toContain('role="log"');
     expect(html).toContain('aria-live="polite"');
-    expect(html).toContain("官方");
-    expect(html).toContain("一般觀眾");
+    expect(html).toContain("官方助理");
+    expect(html).toContain("小安");
+    expect(html).not.toContain(">官方<");
+    expect(html).not.toContain("一般觀眾");
+    expect(html).not.toContain("amber-300");
     expect(html).not.toContain("預設腳本");
     expect(html).not.toContain("<textarea");
   });
@@ -115,5 +118,13 @@ describe("LiveChatPanel message contracts", () => {
     expect(html).toContain("<textarea");
     expect(html).toContain("disabled");
     expect(html).toContain("min-h-11");
+  });
+
+  it("shows a merchant-written label but never invents one", () => {
+    const labelled: ScheduledRuntimeMessage = { ...scheduled("labelled", 0), actor: { name: "小編", avatarUrl: null, label: "品牌顧問", presentationRole: "official" } };
+    const html = renderToStaticMarkup(
+      <LiveChatPanel enabled={false} admissionStatus="admitted" vendorId="vendor-1" liveId="live-1" scheduledMessages={[labelled]} />,
+    );
+    expect(html).toContain("品牌顧問");
   });
 });

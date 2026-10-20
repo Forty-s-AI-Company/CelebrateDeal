@@ -31,6 +31,7 @@ import {
 } from "@/lib/payment-refund-accounting";
 import { executePayUniRefund } from "@/lib/payuni-refund-execution";
 import { toSlug } from "@/lib/format";
+import { isLiveSlugRace, liveSlugTakenPath, resolveLiveSlugConflict } from "@/lib/live-slug";
 import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
@@ -837,13 +838,27 @@ async function commitLiveDraft(input: {
   });
 }
 
-async function commitLiveDraftOrRedirect(input: Parameters<typeof commitLiveDraft>[0], invalidReferencePath: string) {
+async function commitLiveDraftOrRedirect(
+  input: Parameters<typeof commitLiveDraft>[0],
+  invalidReferencePath: string,
+  slugTakenPath: string,
+) {
   try {
     return await commitLiveDraft(input);
   } catch (error) {
     if (error instanceof SalesProjectBindingError) redirect(invalidReferencePath);
+    if (await isLiveSlugRace(input.db, error, input.data.slug, input.liveId)) redirect(slugTakenPath);
     throw error;
   }
+}
+
+/** 直播網址全站唯一：送出前先檢查（順序見 resolveLiveSlugConflict），撞名時回到欄位錯誤並保留草稿。 */
+async function requireLiveSlugAvailable(
+  db: PrismaClient,
+  input: Parameters<typeof resolveLiveSlugConflict>[1] & { draftClaim: { conflictPath: string }; slugTakenPath: string },
+) {
+  const conflict = await resolveLiveSlugConflict(db, input);
+  if (conflict) redirect(conflict === "draft_conflict" ? input.draftClaim.conflictPath : input.slugTakenPath);
 }
 
 function parseSubmittedLiveDraft(
@@ -1216,6 +1231,7 @@ export async function upsertLiveAction(formData: FormData) {
     redirect(invalidReferencePath);
   }
   const db = getDb();
+  const slugTakenPath = liveSlugTakenPath(id, createDraftSuffix);
   const quotaMembershipIds = [
     ...quotaPolicy.customAllocations.map((allocation) => allocation.membershipId),
     ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
@@ -1251,6 +1267,8 @@ export async function upsertLiveAction(formData: FormData) {
     quotaPages,
   } = references;
   void ignoredSubmittedReminderTemplate;
+  // 排除條件只用已驗證屬於目前 vendor 的 live，避免用別人的 live id 探測 slug 歸屬。
+  await requireLiveSlugAvailable(db, { vendorId: vendor.id, slug: parsedSubmission.slug, existingLive, draftClaim, slugTakenPath });
   const authoritativeReminder = await resolveAuthoritativeLegacyReminder({
     db,
     vendorId: vendor.id,
@@ -1378,7 +1396,7 @@ export async function upsertLiveAction(formData: FormData) {
       templateId: existingLive.liveReminderTemplateId,
       offsetMinutes: existingLive.liveReminderOffsetMinutes,
     } : null,
-  }, invalidReferencePath);
+  }, invalidReferencePath, slugTakenPath);
   if (!committed) redirect(draftClaim.conflictPath);
   await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
   try {

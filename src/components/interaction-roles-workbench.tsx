@@ -21,7 +21,6 @@ import {
   isCanonicalInteractionRolePresetUrl,
   interactionRoleAvatarGender,
   interactionRoleAvatarUrl,
-  interactionRoleLabelAfterTypeChange,
   interactionRoleTypeLabel,
   normalizePresentationRole,
   type InteractionRoleAvatarMode,
@@ -29,6 +28,7 @@ import {
   type InteractionAvatarGender,
 } from "@/lib/interaction-role";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { publicRoleLabel } from "@/lib/live-chat-contract";
 import type { InteractionRoleUsage } from "@/lib/interaction-role-usage";
 
 const DEFAULT_INTERACTION_AVATAR_SEED = "host-blue";
@@ -81,7 +81,6 @@ function InteractionRolePreview({
   label,
   tone,
   isActive,
-  presentationRole,
   isScheduled,
 }: {
   avatarUrl: string;
@@ -89,7 +88,6 @@ function InteractionRolePreview({
   label: string;
   tone: string;
   isActive: boolean;
-  presentationRole: InteractionRoleType;
   isScheduled: boolean;
 }) {
   return (
@@ -109,11 +107,9 @@ function InteractionRolePreview({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-bold">{name}</p>
-              <span className="rounded-full bg-blue-400/20 px-2 py-0.5 text-xs font-semibold text-blue-100">{label}</span>
-              <span className="rounded-full border border-white/20 px-2 py-0.5 text-xs text-white/75">
-                {presentationRole === "official" ? "官方外觀" : "一般觀眾外觀"}
-              </span>
-              {isScheduled ? <span className="rounded-full bg-violet-400/20 px-2 py-0.5 text-xs font-semibold text-violet-100">排程角色</span> : null}
+              {label ? <span className="rounded-full bg-blue-400/20 px-2 py-0.5 text-xs font-semibold text-blue-100">{label}</span> : null}
+              {label && publicRoleLabel(label) === null ? <span className="text-xs text-amber-200">這是系統預設字樣，直播間不會顯示標籤</span> : null}
+              {isScheduled ? <span className="rounded-full bg-violet-400/20 px-2 py-0.5 text-xs font-semibold text-violet-100">可用於腳本</span> : null}
             </div>
             <p className="mt-2 text-sm leading-6 text-white/90">歡迎來到直播！實際訊息內容會在互動腳本的時間軸中設定。</p>
           </div>
@@ -153,7 +149,7 @@ function InteractionRoleUsageImpact({
       {!isActive && affectedPublicMessages > 0 ? (
         <p role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-900">
           <AlertTriangle className="mt-0.5 shrink-0" size={17} aria-hidden="true" />
-          停用後，下列腳本中 {affectedPublicMessages} 個官方留言／提醒事件不會出現在公開直播。商品聚焦與 CTA 仍依各自腳本規則執行。
+          停用後，下列腳本中 {affectedPublicMessages} 個留言／提醒事件不會出現在公開直播。商品聚焦與 CTA 仍依各自腳本規則執行。
         </p>
       ) : null}
 
@@ -220,11 +216,12 @@ export function InteractionRolesWorkbench({
       name: selectedRole?.name ?? "",
       avatarUrl: selectedRole?.avatarUrl ?? "",
       avatarMode: selectedAvatarMode,
-      label: selectedRole?.label ?? (selectedPresentationRole ? interactionRoleTypeLabel(selectedPresentationRole) : ""),
+      label: selectedRole?.label ?? "",
       roleType: initialSelectedRoleType,
       tone: selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
       isActive: selectedRole?.isActive ?? true,
-      isScheduled: selectedRole?.isScheduled ?? false,
+      // 新角色預設可用於腳本，建立後不需再回頭勾選。
+      isScheduled: selectedRole?.isScheduled ?? true,
     },
   };
   const [actionState, formAction, pending] = useActionState(upsertInteractionRoleActionState, initialState);
@@ -266,14 +263,14 @@ export function InteractionRolesWorkbench({
   );
   const [roleType, setRoleType] = useState<string>(actionStateValues?.roleType ?? initialSelectedRoleType);
   const [label, setLabel] = useState(
-    actionStateValues?.label ?? selectedRole?.label ?? (selectedPresentationRole ? interactionRoleTypeLabel(selectedPresentationRole) : ""),
+    actionStateValues?.label ?? selectedRole?.label ?? "",
   );
   const [name, setName] = useState(actionStateValues?.name ?? selectedRole?.name ?? "");
   const [tone, setTone] = useState(
     actionStateValues?.tone ?? selectedRole?.tone ?? "溫和、清楚、像品牌官方小幫手，提醒優惠但不過度催促。",
   );
   const [isActive, setIsActive] = useState(actionStateValues?.isActive ?? selectedRole?.isActive ?? true);
-  const [isScheduled, setIsScheduled] = useState(actionStateValues?.isScheduled ?? selectedRole?.isScheduled ?? false);
+  const [isScheduled, setIsScheduled] = useState(actionStateValues?.isScheduled ?? selectedRole?.isScheduled ?? true);
   const initialAvatarMode: InteractionRoleAvatarMode = actionStateValues?.avatarMode === "preset" || actionStateValues?.avatarMode === "custom"
     ? actionStateValues.avatarMode
     : selectedAvatarMode;
@@ -306,7 +303,7 @@ export function InteractionRolesWorkbench({
     ? displayedSafeCustomAvatarUrl || interactionRoleAvatarUrl(DEFAULT_INTERACTION_AVATAR_SEED)
     : displayedSelectedAvatar;
   const previewName = displayedName.trim() || "未命名角色";
-  const previewLabel = displayedLabel.trim() || (displayedRoleType ? interactionRoleTypeLabel(displayedRoleType) : "");
+  const previewLabel = displayedLabel.trim();
 
   function shiftAvatar(direction: -1 | 1) {
     setActionStateEdited(true);
@@ -339,7 +336,6 @@ export function InteractionRolesWorkbench({
 
   function switchRoleType(nextType: string) {
     setActionStateEdited(true);
-    setLabel((currentLabel) => interactionRoleLabelAfterTypeChange(currentLabel, roleType, nextType));
     setRoleType(nextType);
   }
 
@@ -412,8 +408,8 @@ export function InteractionRolesWorkbench({
                 className="h-10 rounded-md border border-border bg-white px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-blue-100"
               >
                 <option value="all">全部角色</option>
-                <option value="official">官方角色</option>
-                <option value="audience">一般觀眾</option>
+                <option value="official">標準角色</option>
+                <option value="audience">觀眾型角色</option>
               </select>
             </label>
             <label htmlFor="interaction-role-scheduled" className="grid gap-1 text-xs font-semibold text-slate-700">
@@ -485,7 +481,7 @@ export function InteractionRolesWorkbench({
                   {role.avatarUrl ? <Image src={role.avatarUrl} alt="" width={44} height={44} unoptimized className="h-11 w-11 rounded-full bg-slate-100 object-cover" /> : <span className="h-11 w-11 rounded-full bg-slate-100" />}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-slate-950">{role.name}</span>
-                    <span className="block truncate text-xs text-slate-600">{role.label} · {role.isActive ? "啟用" : "停用"}</span>
+                    <span className="block truncate text-xs text-slate-600">{publicRoleLabel(role.label) ? `${role.label} · ` : ""}{role.isActive ? "啟用" : "停用"}</span>
                   </span>
                 </Link>
               ))}
@@ -547,7 +543,7 @@ export function InteractionRolesWorkbench({
           ) : null}
 
           <p className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            互動角色會以商家預先設定的腳本出現在直播中；前台會明確標示。它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。
+            互動角色會依你預先設定的腳本，以角色暱稱在直播聊天室發言。它們的發言與互動不會計入後台統計，也不計入觀眾端在線人數。它不代表真人、即時留言、觀看人數、報名、訂單、付款、評論或成效。
           </p>
 
           {selectedRole && !filteredRoles.some((role) => role.id === selectedRole.id) ? (
@@ -676,13 +672,13 @@ export function InteractionRolesWorkbench({
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                   角色類型
                   <select name="roleType" value={displayedRoleType} onChange={(event) => switchRoleType(event.target.value)} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100">
-                    <option value="official">官方角色</option>
-                    <option value="audience">一般觀眾</option>
+                    <option value="official">標準角色</option>
+                    <option value="audience">觀眾型角色</option>
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-                  顯示標籤
-                  <input name="label" required maxLength={80} value={displayedLabel} onChange={(event) => { setActionStateEdited(true); setLabel(event.target.value); }} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
+                  顯示標籤（選填）
+                  <input name="label" maxLength={80} value={displayedLabel} placeholder="留白就不顯示標籤" onChange={(event) => { setActionStateEdited(true); setLabel(event.target.value); }} className="h-11 rounded-md border border-border px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" />
                 </label>
               </div>
               <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
@@ -696,8 +692,8 @@ export function InteractionRolesWorkbench({
               <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
                 <input name="isScheduled" type="checkbox" value="true" checked={visibleActionStateValues?.isScheduled ?? isScheduled} onChange={(event) => { setActionStateEdited(true); setIsScheduled(event.target.checked); }} className="mt-0.5 h-4 w-4 accent-violet-600" />
                 <span>
-                  <span className="block">排程角色</span>
-                  <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">標記此角色供直播排程與後續分析辨識；前台呈現與數據排除將在直播互動流程完成後生效。</span>
+                  <span className="block">排程角色（可用於互動腳本）</span>
+                  <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">勾選後，這個角色才會出現在互動腳本的角色選單。取消勾選則只保留在角色清單，不會在直播中發言。</span>
                 </span>
               </label>
             </div>
@@ -709,7 +705,6 @@ export function InteractionRolesWorkbench({
             label={previewLabel}
             tone={displayedTone.trim()}
             isActive={displayedIsActive}
-            presentationRole={displayedRoleType}
             isScheduled={visibleActionStateValues?.isScheduled ?? isScheduled}
           />
 

@@ -33,7 +33,7 @@ function event(overrides: Partial<{ id: string; eventType: string; triggerSec: n
 }
 
 describe("live chat runtime contract", () => {
-  it("builds an official scheduled DTO without exposing database identity", () => {
+  it("builds a scheduled DTO without exposing database identity or default labels", () => {
     const dto = normalizeScheduledRuntimeMessage({
       vendorId: "vendor-1",
       event: event(),
@@ -48,7 +48,7 @@ describe("live chat runtime contract", () => {
       actor: {
         name: "直播小編",
         avatarUrl: "https://cdn.example.test/avatar.png",
-        label: "官方角色",
+        label: null,
         presentationRole: "official",
       },
     });
@@ -59,7 +59,16 @@ describe("live chat runtime contract", () => {
     expect(dto).not.toHaveProperty("roleType");
   });
 
-  it("keeps an audience role visually distinct while fixing source to scheduled", () => {
+  it("never outputs a system default label such as 一般觀眾 or 官方角色, but keeps a merchant-written one", () => {
+    for (const label of ["", "   ", "官方角色", "一般觀眾", "客服助手"]) {
+      const dto = normalizeScheduledRuntimeMessage({ vendorId: "vendor-1", event: event(), role: role({ label, roleType: "audience" }) });
+      expect(dto?.actor.label, JSON.stringify(label)).toBeNull();
+    }
+    const written = normalizeScheduledRuntimeMessage({ vendorId: "vendor-1", event: event(), role: role({ label: " 品牌顧問 " }) });
+    expect(written?.actor.label).toBe("品牌顧問");
+  });
+
+  it("fixes source to scheduled for an audience role", () => {
     const dto = normalizeScheduledRuntimeMessage({
       vendorId: "vendor-1",
       event: event({ eventType: "reminder" }),
@@ -68,7 +77,7 @@ describe("live chat runtime contract", () => {
 
     expect(dto?.source).toBe("scheduled");
     expect(dto?.actor).toEqual(expect.objectContaining({
-      label: "一般觀眾",
+      label: null,
       presentationRole: "audience",
     }));
   });
