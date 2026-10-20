@@ -39,7 +39,7 @@ describe("finance route loading and error states", () => {
   ])("renders a safe recoverable %s error", (_scope, Component, retryLabel) => {
     const html = renderToStaticMarkup(<Component
       error={new Error("provider-secret-must-not-render")}
-      unstable_retry={vi.fn()}
+      retry={vi.fn()}
     />);
 
     expect(html).toContain('role="alert"');
@@ -55,7 +55,7 @@ describe("finance route loading and error states", () => {
     transition.pending = true;
     const html = renderToStaticMarkup(<Component
       error={new Error("hidden")}
-      unstable_retry={vi.fn()}
+      retry={vi.fn()}
     />);
 
     expect(html).toContain("disabled");

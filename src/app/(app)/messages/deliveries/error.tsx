@@ -1,10 +1,10 @@
 "use client";
 
 export default function MessageDeliveriesError({
-  unstable_retry,
+  retry,
 }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   return (
     <main className="mx-auto max-w-xl rounded-xl border border-orange-200 bg-orange-50 p-6" role="alert">
@@ -14,7 +14,7 @@ export default function MessageDeliveriesError({
       </p>
       <button
         type="button"
-        onClick={unstable_retry}
+        onClick={() => retry()}
         className="mt-5 min-h-11 rounded-md bg-orange-900 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-800"
       >
         重新載入
