@@ -66,6 +66,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 ## 每日摘要
 
 - 10-19：Goal 啟動。三條工作線完成實作並開 PR #447／#448／#449；每個 PR 經 reviewer 一到三輪（A 兩個 MAJOR＋一個 MAJOR、B 兩個 MAJOR、C 一個 BLOCKER 皆已修）；#447 合併。CI 擋下的問題：secret scan 誤判測試 URL／假金鑰、API contract registry 未登記、strict-index typecheck、backup blob 白名單、slug 預檢順序，全部修正。工作線 A 曾因 Opus 額度中斷一次，10-20 重跑完成。
+- 10-21 上午：#451 文件 PR 合併。第四批三個 PR 都已通過 reviewer（A #458 三輪、B #457 兩輪、C #459 兩輪），CI 修正（gate 固定數 89／68、funnel 封存 e2e、手機導覽 smoke 契約）已推上，等 CI 綠燈合併。子代理曾於 06:50 前撞到額度限制，重置後重派。
 - 10-21（續）：#456 合併；第三批全部進 master。第四批開工：A（F-038、F-039 月結 BLOCKER、F-047、F-003、F-055、F-146）、B（F-073 撥款帳號、F-072 頁面封存、F-070 個資處理、F-064 正式 migrate workflow）、C（F-142 readiness、F-120、F-128／127／121、F-118、F-126、F-133、F-122／123）。
 - 10-21：#455（第三批 A：訂單號唯一、退款共用後處理、不明退款人工釋放、大額調整覆核、手續費依費率）合併並套用 staging migration；#456（第三批 C）審查通過等 CI；#451 文件 PR 等 CI。owner 啟動每 30 分鐘的 /loop 自動推進。
 - 10-20：#446、#448、#449 合併。三條工作線全部進 master（`bd85be87`）。**staging 尚未更新**：固定網址仍指向 10-18 的舊部署 `celebrate-deal-staging-iczhm0bi7`；staging 專案的 production 部署自 8 月起失敗，master 合併不會自動部署；主對話切 alias 被權限擋下，改列 O-18（目標部署 `2opyiacfr`，tree 已驗證等於 master）。B2 排程證據：GitHub Actions 已自動執行 4 次，`email-deliveries`、`webhook-retry` 回 200，`line-notifications` 回 405（舊部署沒有 GET 入口，切 alias 後應轉綠）。另推了 `codex/staging-release-20261020b`（= master）讓 Vercel 建一個乾淨 preview 備用。下一步：staging 自動部署後確認 GitHub Actions 排程實際呼叫端點（B2 證據）、owner 待辦 O-1～O-17、L0 可繞過項（§3.3）與 L1 排程。
