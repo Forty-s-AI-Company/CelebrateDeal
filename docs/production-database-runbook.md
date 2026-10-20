@@ -69,12 +69,13 @@ docker run --name celebratedeal-postgres `
   -d postgres:16-alpine
 ```
 
-`.env` 建議改成：
+Migration 指令不讀 `.env*`，目標資料庫必須在 shell 內注入（F-065）。`prisma.config.ts` 會自動載入
+`.env.local`，而 `vercel env pull` 預設就寫到那裡；wrapper 會把驗證過的 `DATABASE_URL` 與 `DIRECT_URL`
+固定傳給 Prisma，避免 dotenv 事後補上遠端目標：
 
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public"
-DIRECT_URL="postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
+```powershell
+$env:DATABASE_URL="postgresql://postgres:postgres@localhost:54329/celebratedeal_dev?schema=public"
+$env:DIRECT_URL=$env:DATABASE_URL
 ```
 
 第一次建立：
@@ -84,6 +85,16 @@ npm run db:generate
 npm run db:migrate:deploy
 npm run db:seed
 ```
+
+Migration 指令的目標防護（`scripts/db-migrate-guard.ts`）：
+
+| 指令 | 實際執行 | 允許的目標 |
+| --- | --- | --- |
+| `npm run db:migrate` | `scripts/db-migrate-dev.ts` → `prisma migrate dev` | 只限 loopback（`localhost`／`127.0.0.1`／`::1`）上的 `celebratedeal_dev`／`_test`／`_e2e`／`_ci`／`_wp17_ci`／`_wp18_ci`；`DATABASE_URL` 與 `DIRECT_URL` 都必須通過 `assertLocalTestDatabase`。`migrate dev` 可能提示重設資料庫，因此沒有任何遠端例外。 |
+| `npm run db:migrate:deploy` | `scripts/db-migrate-deploy.ts` → `prisma migrate deploy` | loopback disposable 資料庫；或在 GitHub Actions（`GITHUB_ACTIONS=true`）／Vercel build（`VERCEL=1`）內明確設定 `ALLOW_REMOTE_MIGRATE_DEPLOY=1`。開發者 shell 即使設定此旗標也會被拒絕。 |
+
+被拒絕時只輸出 `category=`（`missing`、`non-loopback`、`unsafe-database`、`remote-not-allowed`、
+`remote-outside-workflow`），不會印出 URL、主機、帳號或資料庫名稱。
 
 若只想建立 production-safe 預設方案，不建立 demo vendor：
 
@@ -104,7 +115,8 @@ npm run db:seed
 4. 先在 staging Supabase project 跑完整 migration。
 5. staging 通過 smoke test 後，再對 production 執行 migration。
 
-Production migration 指令：
+Production migration 指令（只在核准的 workflow 內執行；`db:migrate:deploy` 對遠端目標需要
+`ALLOW_REMOTE_MIGRATE_DEPLOY=1` 且位於 GitHub Actions 或 Vercel build，開發者 shell 一律拒絕）：
 
 ```powershell
 npm run db:generate
@@ -112,9 +124,15 @@ npm run db:migrate:status
 npm run db:migrate:deploy
 ```
 
+Staging 由 `vercel.staging.json` 的 buildCommand 執行
+`DIRECT_URL="${STAGING_DATABASE_URL:?...}" ALLOW_REMOTE_MIGRATE_DEPLOY=1 npm run db:migrate:deploy`：
+`STAGING_DATABASE_URL` 未設定或為空時 build 直接失敗，不會退回 `DATABASE_URL`。
+`.github/workflows/staging-migrate.yml` 仍走 `scripts/staging-migrate.mjs` 自己的 staging 守門。
+
 Production 禁止：
 
 - 禁止使用 `prisma db push`。
+- 禁止對遠端資料庫執行 `npm run db:migrate`（`prisma migrate dev`）；wrapper 會拒絕，也不得改用 `npx prisma migrate dev` 繞過。
 - 禁止直接修改 production DB schema。
 - 禁止在 production 執行 demo seed。
 - 禁止直接刪除欄位或資料表，除非先完成備份、相容部署與 rollback 計畫。
