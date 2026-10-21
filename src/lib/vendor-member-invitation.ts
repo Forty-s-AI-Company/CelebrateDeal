@@ -18,6 +18,14 @@ export const VENDOR_MEMBER_INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+const ROLE_RANK: Record<VendorMemberRole, number> = { owner: 3, admin: 2, accountant: 1, support: 1 };
+
+/** Roles an owner may assign directly: strictly fewer privileges than `current`. */
+export function downgradeRolesFor(current: string): VendorMemberRole[] {
+  if (!isVendorMemberRole(current)) return [];
+  return VENDOR_MEMBER_ROLES.filter((role) => ROLE_RANK[role] < ROLE_RANK[current]);
+}
+
 export function isVendorMemberRole(value: string): value is VendorMemberRole {
   return (VENDOR_MEMBER_ROLES as readonly string[]).includes(value);
 }
@@ -85,6 +93,15 @@ export async function findPendingVendorMemberInvitation(db: Db, token: string, n
     where: { tokenHash: hashVendorMemberInvitationToken(token), acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
     select: { id: true, vendorId: true, email: true, name: true, role: true, expiresAt: true, vendor: { select: { name: true } } },
   });
+}
+
+/** Whether any pending, unexpired invitation is addressed to this e-mail. */
+export async function hasPendingVendorMemberInvitation(db: Db, email: string, now = new Date()) {
+  const invitation = await db.vendorMemberInvitation.findFirst({
+    where: { email: normalizeInvitationEmail(email), acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
+    select: { id: true },
+  });
+  return Boolean(invitation);
 }
 
 export async function revokeVendorMemberInvitation(db: Db, input: { vendorId: string; invitationId: string; now?: Date }) {

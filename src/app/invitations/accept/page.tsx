@@ -2,7 +2,7 @@ import Link from "next/link";
 import { acceptVendorMemberInvitationAction } from "@/app/actions/vendor-member-invitation-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
-import { getCurrentAuth } from "@/lib/auth";
+import { getCurrentAuth, requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
@@ -46,6 +46,12 @@ export default async function AcceptVendorInvitationPage({
   const params = await searchParams;
   const token = typeof params.token === "string" ? params.token : "";
   const error = params.error ? <p role="alert" className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "無法接受邀請。"}</p> : null;
+  // No vendor context is required: an invitee may have no active membership
+  // yet (#462 M1). A session whose factor is not verified finishes MFA first
+  // and comes back here.
+  const session = await getCurrentAuth({ allowUnverifiedMfa: true });
+  const returnPath = token ? `/invitations/accept?token=${encodeURIComponent(token)}` : "/invitations/accept";
+  const auth = session ? await requireAuth({ nextPath: returnPath }) : null;
   const invitation = token ? await findPendingVendorMemberInvitation(getDb(), token) : null;
   const invitee = invitation
     ? await getDb().user.findUnique({ where: { email: invitation.email }, select: { id: true, status: true, platformRole: true } })
@@ -55,14 +61,14 @@ export default async function AcceptVendorInvitationPage({
   if (!invitation || (invitee && (invitee.status !== "active" || invitee.platformRole !== "none"))) {
     return (
       <Shell>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-950">邀請已失效</h1>
-        <p className="mt-2 text-sm text-slate-600">{errorMessages.invalid}</p>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-950">{!token && auth ? "接受商家邀請" : "邀請已失效"}</h1>
+        <p className="mt-2 text-sm text-slate-600">{!token && auth ? "你已登入。請開啟邀請信中的連結以檢視並接受邀請。" : errorMessages.invalid}</p>
         <p className="mt-6 text-sm"><Link href="/login" className="font-semibold text-primary hover:underline">前往登入</Link></p>
       </Shell>
     );
   }
 
-  const auth = await getCurrentAuth();
+  const loginHref = `/login?next=${encodeURIComponent(returnPath)}`;
   const summary = (
     <>
       <h1 className="mt-2 text-2xl font-semibold text-slate-950">加入 {invitation.vendor.name}</h1>
@@ -92,9 +98,9 @@ export default async function AcceptVendorInvitationPage({
       <Shell>
         {summary}
         <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          {auth ? errorMessages.wrong_account : "請先以受邀的 Email 登入（若已啟用雙重驗證也需完成驗證），再重新開啟邀請信中的連結。"}
+          {auth ? errorMessages.wrong_account : "請先以受邀的 Email 登入（若已啟用雙重驗證也需完成驗證），登入後會回到這個邀請。"}
         </p>
-        <p className="mt-6 text-sm"><Link href="/login" className="font-semibold text-primary hover:underline">前往登入</Link></p>
+        {auth ? null : <p className="mt-6 text-sm"><Link href={loginHref} className="font-semibold text-primary hover:underline">登入並接受邀請</Link></p>}
       </Shell>
     );
   }

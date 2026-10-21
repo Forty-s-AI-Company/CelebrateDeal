@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({ token: "", deferred: [] as Array<() => Promise
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({
     get: (name: string) => (name === "celebrate_session" && state.token ? { value: state.token } : undefined),
-    set: vi.fn(),
+    set: (name: string, value: string) => { if (name === "celebrate_session") state.token = value; },
     delete: vi.fn(),
   })),
   headers: vi.fn(async () => new Headers({ "user-agent": "synthetic-agent" })),
@@ -26,10 +26,15 @@ vi.mock("next/server", async (importOriginal) => ({
   after: (callback: () => Promise<void> | void) => { state.deferred.push(callback); },
 }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(async () => undefined) }));
-vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
+vi.mock("@/lib/app-url", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/app-url")>()),
+  getCanonicalAppUrl: () => "https://app.example.test",
+}));
 vi.mock("@/lib/email", () => ({ sendVendorMemberInvitationEmail: vi.fn(async () => ({ id: "synthetic-email" })) }));
 
-import { createVendorMemberAction, revokeVendorMemberInvitationAction } from "@/app/actions/vendor-member-actions";
+import { changeVendorMemberRoleAction, createVendorMemberAction, deactivateVendorMemberAction, revokeVendorMemberInvitationAction } from "@/app/actions/vendor-member-actions";
+import { loginAction } from "@/app/actions/auth-security-actions";
+import { hashPassword } from "@/lib/password";
 import { acceptVendorMemberInvitationAction } from "@/app/actions/vendor-member-invitation-actions";
 import { sendVendorMemberInvitationEmail } from "@/lib/email";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
@@ -157,6 +162,94 @@ describe("member invitation request (PostgreSQL)", () => {
     form.set("invitationId", second.invitationId);
     await expect(revokeVendorMemberInvitationAction(form)).rejects.toThrow("error=member_invitation_not_found");
     expect((await getDb().vendorMemberInvitation.findUniqueOrThrow({ where: { id: second.invitationId } })).revokedAt).toBeNull();
+  });
+});
+
+describe("deactivate, invite again and reactivate (#462 M1, PostgreSQL)", () => {
+  it("lets a deactivated member sign in only to accept the new invitation and become active again", async () => {
+    const { vendor, owner } = await createVendor("reactivate");
+    const password = "synthetic-member-password-123";
+    const member = await getDb().user.create({
+      data: { name: "Returning member", email: `returning-${randomUUID()}@example.test`, passwordHash: hashPassword(password) },
+    });
+    created.userIds.push(member.id);
+    const membershipRow = await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: member.id, role: "accountant" } });
+
+    await signIn(owner.id, vendor.id);
+    const deactivate = new FormData();
+    deactivate.set("id", membershipRow.id);
+    deactivate.set("confirmation", member.email);
+    await expect(deactivateVendorMemberAction(deactivate)).rejects.toThrow("updated=member_deactivated");
+    expect(await membership(vendor.id, member.id)).toMatchObject({ status: "inactive" });
+
+    const login = (next?: string) => {
+      const form = new FormData();
+      form.set("email", member.email);
+      form.set("password", password);
+      if (next) form.set("next", next);
+      return form;
+    };
+    // Without a pending invitation the account still has no workspace.
+    state.token = "";
+    await expect(loginAction(login())).rejects.toThrow("redirect:/login?error=no_vendor");
+    expect(state.token).toBe("");
+
+    await signIn(owner.id, vendor.id);
+    await expect(createVendorMemberAction(inviteForm(member.email, "support"))).rejects.toThrow("updated=member_invited");
+    for (const work of state.deferred) await work();
+    const acceptUrl = new URL(vi.mocked(sendVendorMemberInvitationEmail).mock.calls[0]![0].acceptUrl);
+    const acceptPath = `${acceptUrl.pathname}${acceptUrl.search}`;
+    expect(await membership(vendor.id, member.id)).toMatchObject({ status: "inactive" });
+
+    state.token = "";
+    await expect(loginAction(login(acceptPath))).rejects.toThrow(`redirect:${acceptPath}`);
+    expect(state.token).not.toBe("");
+    const session = await getDb().userSession.findFirstOrThrow({ where: { userId: member.id, revokedAt: null } });
+    expect(session.vendorId).toBeNull();
+
+    const accept = new FormData();
+    accept.set("token", acceptUrl.searchParams.get("token")!);
+    await expect(acceptVendorMemberInvitationAction(accept)).rejects.toThrow("redirect:/dashboard");
+    expect(await membership(vendor.id, member.id)).toMatchObject({ status: "active", role: "support", deactivatedAt: null });
+  });
+});
+
+describe("owner role downgrade (#462 m7, PostgreSQL)", () => {
+  function roleForm(id: string, role: string) {
+    const form = new FormData();
+    form.set("id", id);
+    form.set("role", role);
+    return form;
+  }
+
+  it("lowers a role at once but never raises one, changes the owner, or reaches another tenant", async () => {
+    const { vendor, owner } = await createVendor("downgrade");
+    const other = await createVendor("downgrade-other");
+    const admin = await createUser("admin");
+    const adminMember = await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: admin.id, role: "admin" } });
+    const support = await createUser("support");
+    const supportMember = await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: support.id, role: "support" } });
+    const coOwner = await createUser("co-owner");
+    const coOwnerMember = await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: coOwner.id, role: "owner" } });
+    const foreign = await createUser("foreign-admin");
+    const foreignMember = await getDb().vendorMember.create({ data: { vendorId: other.vendor.id, userId: foreign.id, role: "admin" } });
+    const ownMembership = await getDb().vendorMember.findFirstOrThrow({ where: { vendorId: vendor.id, userId: owner.id } });
+    await signIn(owner.id, vendor.id);
+
+    await expect(changeVendorMemberRoleAction(roleForm(adminMember.id, "support"))).rejects.toThrow("updated=member_role_downgraded");
+    expect(await membership(vendor.id, admin.id)).toMatchObject({ role: "support", status: "active" });
+
+    await expect(changeVendorMemberRoleAction(roleForm(supportMember.id, "admin"))).rejects.toThrow("error=member_role_upgrade");
+    await expect(changeVendorMemberRoleAction(roleForm(supportMember.id, "accountant"))).rejects.toThrow("error=member_role_upgrade");
+    expect(await membership(vendor.id, support.id)).toMatchObject({ role: "support" });
+
+    await expect(changeVendorMemberRoleAction(roleForm(ownMembership.id, "admin"))).rejects.toThrow("error=self_role");
+    await expect(changeVendorMemberRoleAction(roleForm(foreignMember.id, "support"))).rejects.toThrow("error=member_not_found");
+    expect(await membership(other.vendor.id, foreign.id)).toMatchObject({ role: "admin" });
+
+    // Another owner may be demoted while the acting owner remains.
+    await expect(changeVendorMemberRoleAction(roleForm(coOwnerMember.id, "admin"))).rejects.toThrow("updated=member_role_downgraded");
+    expect(await getDb().auditLog.count({ where: { vendorId: vendor.id, action: "downgrade_vendor_member_role" } })).toBe(2);
   });
 });
 

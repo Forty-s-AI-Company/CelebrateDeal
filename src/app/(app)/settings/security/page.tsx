@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import Image from "next/image";
 import QRCode from "qrcode";
 import {
+  changeVendorMemberRoleAction,
   createVendorMemberAction,
   deactivateVendorMemberAction,
   logoutAction,
@@ -20,6 +21,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
 import { VendorMemberDeactivationConfirmation } from "@/components/vendor-member-deactivation-confirmation";
+import { VendorMemberRoleDowngradeForm } from "@/components/vendor-member-role-downgrade-form";
 import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
@@ -41,6 +43,8 @@ const errorMessages: Record<string, string> = {
   member_invitation_unavailable: "邀請頻率檢查暫時無法使用；未建立邀請，請稍候再試。",
   member_invitation_not_found: "找不到可撤銷的待接受邀請。",
   self_invite: "不能邀請自己的 Email。",
+  member_role_invalid: "請選擇有效的角色。",
+  member_role_upgrade: "調高角色需寄送邀請並由對方接受。",
   member_invitation_resend_invalid: "找不到可重寄邀請的 active 商家成員。",
   member_invitation_resend_failed: "設定密碼邀請信寄送失敗，請稍後再試。",
   self_role: "不能把自己的 owner 權限降級。",
@@ -62,6 +66,7 @@ const updatedMessages: Record<string, string> = {
   "1": "密碼已更新。",
   member_invited: "已建立邀請。若這個 Email 可以加入，對方會收到邀請信；對方接受後才會成為成員。",
   member_invitation_revoked: "邀請已撤銷，原連結不能再使用。",
+  member_role_downgraded: "成員角色已調降。",
   member_invitation_resent: "已重新寄出設定密碼邀請信。",
   member_deactivated: "商家成員已停用，相關 session 已撤銷。",
   sessions_revoked: "其他裝置 session 已撤銷。",
@@ -280,7 +285,7 @@ export default async function SecuritySettingsPage({
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">商家成員</h2>
-              <p className="mt-1 text-sm text-slate-500">Owner 以 Email 寄出邀請，對方開啟邀請信並接受後才會加入；也可用來變更既有成員角色或重新啟用成員。</p>
+              <p className="mt-1 text-sm text-slate-500">Owner 以 Email 寄出邀請，對方開啟邀請信並接受後才會加入；調高角色或重新啟用已停用成員也用邀請。調降角色可直接在名單中執行。</p>
             </div>
             <Badge tone="green">owner</Badge>
           </div>
@@ -329,7 +334,7 @@ export default async function SecuritySettingsPage({
                     </td>
                     <td className="px-4 py-3 text-right">
                       {member.status === "active" && member.userId !== auth.user.id ? (
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <form action={resendVendorMemberInvitationAction}>
                             <CsrfField />
                             <input type="hidden" name="id" value={member.id} />
@@ -341,6 +346,7 @@ export default async function SecuritySettingsPage({
                               重寄設定密碼邀請
                             </FormSubmitButton>
                           </form>
+                          <VendorMemberRoleDowngradeForm action={changeVendorMemberRoleAction} csrfField={<CsrfField />} member={member} />
                           <VendorMemberDeactivationConfirmation
                             action={deactivateVendorMemberAction}
                             currentUserId={auth.user.id}

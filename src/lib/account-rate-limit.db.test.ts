@@ -2,8 +2,11 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import {
+  ACCOUNT_LOCKS,
   ACCOUNT_RATE_LIMITS,
+  accountLockRemainingSeconds,
   accountRateLimitKeyHash,
+  lockAccount,
   checkAccountRateLimit,
   consumeAccountRateLimit,
 } from "@/lib/account-rate-limit";
@@ -18,7 +21,7 @@ function subject(label: string) {
   return value;
 }
 
-function track(scope: keyof typeof ACCOUNT_RATE_LIMITS, value: string) {
+function track(scope: keyof typeof ACCOUNT_RATE_LIMITS | keyof typeof ACCOUNT_LOCKS, value: string) {
   keys.push(accountRateLimitKeyHash(scope, value));
   return value;
 }
@@ -110,6 +113,34 @@ describe("account rate limit (PostgreSQL)", () => {
     await consumeAccountRateLimit("password_reset_request", track("password_reset_request", subject("fresh")));
 
     expect(await getDb().accountRateLimitBucket.count({ where: { keyHash: accountRateLimitKeyHash("password_reset_request", stale) } })).toBe(0);
+  });
+
+  it("caps login attempts per address at 10 per 15 minutes (#462 m4)", async () => {
+    const email = track("login_account", `${subject("login")}@example.test`);
+    const decisions = [];
+    for (let attempt = 0; attempt < 11; attempt += 1) decisions.push(await consumeAccountRateLimit("login_account", email));
+    expect(decisions.filter((decision) => decision.allowed)).toHaveLength(10);
+    expect(decisions.at(-1)?.allowed).toBe(false);
+  });
+
+  it("allows 50 failed MFA verifications a day, then a lock holds for one hour (#462 m3)", async () => {
+    const user = track("mfa_verification_failures", subject("totp"));
+    track("mfa_verification_lock", user);
+    for (let attempt = 0; attempt < 50; attempt += 1) expect((await consumeAccountRateLimit("mfa_verification_failures", user)).allowed).toBe(true);
+    expect((await consumeAccountRateLimit("mfa_verification_failures", user)).allowed).toBe(false);
+
+    expect(await accountLockRemainingSeconds("mfa_verification_lock", user)).toBe(0);
+    await lockAccount("mfa_verification_lock", user);
+    const remaining = await accountLockRemainingSeconds("mfa_verification_lock", user);
+    expect(remaining).toBeGreaterThan(3590);
+    expect(remaining).toBeLessThanOrEqual(3600);
+
+    // An expired lock no longer applies.
+    await getDb().accountRateLimitBucket.update({
+      where: { keyHash: accountRateLimitKeyHash("mfa_verification_lock", user) },
+      data: { windowStartedAt: new Date(Date.now() - ACCOUNT_LOCKS.mfa_verification_lock.durationMs - 1_000) },
+    });
+    expect(await accountLockRemainingSeconds("mfa_verification_lock", user)).toBe(0);
   });
 
   it("fails closed with 503 when the counter cannot be written", async () => {

@@ -7,6 +7,7 @@ import { requireAuth } from "@/lib/auth";
 const errorMessages: Record<string, string> = {
   invalid: "驗證碼不正確，請重新輸入。",
   rate_limited: "驗證嘗試次數過多，請稍後再試。",
+  locked: "驗證失敗次數過多，已暫停 1 小時。若不是你本人操作，請盡快變更密碼。",
   temporarily_unavailable: "驗證服務暫時無法使用，請稍後再試。",
 };
 

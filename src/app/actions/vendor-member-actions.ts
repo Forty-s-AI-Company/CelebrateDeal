@@ -17,6 +17,7 @@ import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { requireRecentMfa } from "@/lib/recent-mfa";
 import {
   createVendorMemberInvitation,
+  downgradeRolesFor,
   isVendorMemberRole,
   normalizeInvitationEmail,
   revokeVendorMemberInvitation,
@@ -24,6 +25,8 @@ import {
 } from "@/lib/vendor-member-invitation";
 
 const SECURITY_PATH = "/settings/security";
+
+class LastOwnerInvariantError extends Error {}
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -148,13 +151,15 @@ async function deliverVendorMemberInvitation(input: {
     await sendVendorMemberInvitationEmail({ to: input.email, vendorName: input.vendor.name, role: input.role, acceptUrl });
   } catch {
     try {
+      // Platform-scoped like the suppression note: only deliverable
+      // addresses can fail, so a tenant-visible row would reveal which.
       await writeAuditLog({
-        vendorId: input.vendor.id,
         actorId: input.actorId,
         actorLabel: "system",
         action: "vendor_member_invitation_email_failed",
         targetType: "VendorMemberInvitation",
         targetId: invitation.invitationId,
+        after: auditSnapshot({ vendorId: input.vendor.id }),
       });
     } catch {
       // Deferred work has no caller to report to; the invitation stays pending.
@@ -223,6 +228,62 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
     redirect("/settings/security?updated=member_invitation_resent");
   }
   redirect("/settings/security?error=member_invitation_resend_failed");
+}
+
+/**
+ * #462 m7: an owner may lower another member's role directly (fewer
+ * privileges take effect at once). Raising a role still goes through an
+ * invitation the member must accept.
+ */
+export async function changeVendorMemberRoleAction(formData: FormData) {
+  await assertServerActionSecurity(formData);
+  const auth = await requireVendorOwner();
+  requireRecentMfa(auth, { nextPath: SECURITY_PATH });
+  const id = text(formData, "id");
+  const role = text(formData, "role");
+  if (!id || !isVendorMemberRole(role)) redirect(`${SECURITY_PATH}?error=member_role_invalid`);
+  const db = getDb();
+  const member = await db.vendorMember.findFirst({
+    where: { id, vendorId: auth.vendor.id, status: "active" },
+    select: { id: true, userId: true, role: true },
+  });
+  if (!member) redirect(`${SECURITY_PATH}?error=member_not_found`);
+  if (member.userId === auth.user.id) redirect(`${SECURITY_PATH}?error=self_role`);
+  if (!downgradeRolesFor(member.role).includes(role)) redirect(`${SECURITY_PATH}?error=member_role_upgrade`);
+
+  let updated;
+  try {
+    updated = await db.$transaction(async (tx) => {
+      if (member.role === "owner") {
+        const otherOwners = await tx.vendorMember.count({
+          where: { vendorId: auth.vendor.id, role: "owner", status: "active", id: { not: member.id } },
+        });
+        if (otherOwners < 1) throw new LastOwnerInvariantError();
+      }
+      // The role predicate makes a concurrent change fail instead of being overwritten.
+      return tx.vendorMember.update({
+        where: { id: member.id, vendorId: auth.vendor.id, status: "active", role: member.role },
+        data: { role },
+        select: { id: true, role: true },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof LastOwnerInvariantError || isSerializationConflict(error)) redirect(`${SECURITY_PATH}?error=last_owner`);
+    if (isDatabaseTransactionConflict(error)) redirect(`${SECURITY_PATH}?error=member_not_found`);
+    throw error;
+  }
+  await writeAuditLog({
+    vendorId: auth.vendor.id,
+    actorId: auth.user.id,
+    actorLabel: auth.member.role,
+    action: "downgrade_vendor_member_role",
+    targetType: "VendorMember",
+    targetId: member.id,
+    before: auditSnapshot({ role: member.role }),
+    after: auditSnapshot({ role: updated.role }),
+  });
+  revalidatePath(SECURITY_PATH);
+  redirect(`${SECURITY_PATH}?updated=member_role_downgraded`);
 }
 
 export async function deactivateVendorMemberAction(formData: FormData) {

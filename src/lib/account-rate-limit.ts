@@ -26,9 +26,20 @@ export const ACCOUNT_RATE_LIMITS = {
   vendor_member_invitation_vendor: { limit: 5, windowMs: 60_000 },
   vendor_member_invitation_recipient: { limit: 3, windowMs: 60 * 60_000 },
   password_reset_request: { limit: 3, windowMs: 15 * 60_000 },
+  login_account: { limit: 10, windowMs: 15 * 60_000 },
+  // Failed TOTP/recovery-code verifications per account per day; beyond the
+  // limit each further failure locks verification for an hour (#462 m3).
+  mfa_verification_failures: { limit: 50, windowMs: 24 * 60 * 60_000 },
 } as const satisfies Record<string, { limit: number; windowMs: number }>;
 
 export type AccountRateLimitScope = keyof typeof ACCOUNT_RATE_LIMITS;
+
+/** Time-boxed locks set after a limit is exceeded (same table, own scope). */
+export const ACCOUNT_LOCKS = {
+  mfa_verification_lock: { durationMs: 60 * 60_000 },
+} as const satisfies Record<string, { durationMs: number }>;
+
+export type AccountLockScope = keyof typeof ACCOUNT_LOCKS;
 
 // Buckets idle for a day are deleted a few at a time whenever a new bucket is
 // created, so the table cannot grow without bound from random subjects.
@@ -39,7 +50,7 @@ export type AccountRateLimitDecision = { allowed: boolean; count: number; retryA
 
 type RawClient = Pick<Prisma.TransactionClient, "$queryRaw" | "$executeRaw">;
 
-export function accountRateLimitKeyHash(scope: AccountRateLimitScope, subject: string) {
+export function accountRateLimitKeyHash(scope: AccountRateLimitScope | AccountLockScope, subject: string) {
   return createHash("sha256").update(`celebratedeal:account-rate-limit:v1\u0000${scope}\u0000${subject}`).digest("hex");
 }
 
@@ -97,6 +108,30 @@ export async function consumeAccountRateLimit(
     count,
     retryAfterSeconds: Math.max(1, Math.ceil(Number(row.retryAfterSeconds))),
   };
+}
+
+/** Starts (or restarts) a lock for `subject`; it expires on its own. */
+export async function lockAccount(scope: AccountLockScope, subject: string, db: RawClient = getDb()) {
+  if (!subject) throw new Error("account lock subject is required");
+  const keyHash = accountRateLimitKeyHash(scope, subject);
+  await db.$executeRaw`
+    INSERT INTO "AccountRateLimitBucket" ("keyHash", "scope", "windowStartedAt", "count", "updatedAt")
+    VALUES (${keyHash}, ${scope}, (now() AT TIME ZONE 'UTC'), 1, (now() AT TIME ZONE 'UTC'))
+    ON CONFLICT ("keyHash") DO UPDATE SET
+      "windowStartedAt" = EXCLUDED."windowStartedAt",
+      "count" = 1,
+      "updatedAt" = EXCLUDED."updatedAt"`;
+}
+
+/** Seconds left on an active lock, or 0. */
+export async function accountLockRemainingSeconds(scope: AccountLockScope, subject: string, db: RawClient = getDb()) {
+  const { durationMs } = ACCOUNT_LOCKS[scope];
+  const rows = await db.$queryRaw<Array<{ remaining: number }>>`
+    SELECT EXTRACT(EPOCH FROM ("windowStartedAt" + (${durationMs}::double precision * interval '1 millisecond') - (now() AT TIME ZONE 'UTC')))::double precision AS "remaining"
+      FROM "AccountRateLimitBucket"
+     WHERE "keyHash" = ${accountRateLimitKeyHash(scope, subject)}`;
+  const remaining = Number(rows[0]?.remaining ?? 0);
+  return remaining > 0 ? Math.ceil(remaining) : 0;
 }
 
 /**

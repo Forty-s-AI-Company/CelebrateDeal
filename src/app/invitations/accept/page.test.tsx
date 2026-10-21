@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ findInvitation: vi.fn(), findUser: vi.fn(), getCurrentAuth: vi.fn() }));
+const mocks = vi.hoisted(() => ({ findInvitation: vi.fn(), findUser: vi.fn(), getCurrentAuth: vi.fn(), requireAuth: vi.fn() }));
 
 vi.mock("@/lib/vendor-member-invitation", () => ({ findPendingVendorMemberInvitation: mocks.findInvitation }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ user: { findUnique: mocks.findUser } }) }));
-vi.mock("@/lib/auth", () => ({ getCurrentAuth: mocks.getCurrentAuth }));
+vi.mock("@/lib/auth", () => ({ getCurrentAuth: mocks.getCurrentAuth, requireAuth: mocks.requireAuth }));
 vi.mock("@/app/actions/vendor-member-invitation-actions", () => ({ acceptVendorMemberInvitationAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="csrf" value="synthetic" /> }));
 
@@ -30,6 +30,8 @@ beforeEach(() => {
   mocks.findInvitation.mockResolvedValue(invitation);
   mocks.findUser.mockResolvedValue(null);
   mocks.getCurrentAuth.mockResolvedValue(null);
+  // requireAuth returns the verified session; MFA redirects are covered in auth.test.ts.
+  mocks.requireAuth.mockImplementation(async () => mocks.getCurrentAuth());
 });
 
 describe("/invitations/accept", () => {
@@ -63,6 +65,7 @@ describe("/invitations/accept", () => {
     mocks.findUser.mockResolvedValue({ id: "invitee", status: "active", platformRole: "none" });
     const html = await render();
     expect(html).toContain("請先以受邀的 Email 登入");
+    expect(html).toContain('href="/login?next=%2Finvitations%2Faccept%3Ftoken%3Dsynthetic-token"');
     expect(html).not.toContain('name="password"');
     expect(html).not.toContain("接受邀請</button>");
   });
@@ -76,6 +79,19 @@ describe("/invitations/accept", () => {
     const html = await render();
     expect(html).toContain("目前登入的帳號不是受邀的 Email");
     expect(html).not.toContain("建立帳號並接受邀請");
+  });
+
+  it("does not require vendor context and routes an unverified MFA session through verification", async () => {
+    mocks.getCurrentAuth.mockResolvedValue({ user: { id: "invitee" }, vendor: null });
+    mocks.requireAuth.mockRejectedValueOnce(new Error("redirect:/mfa/verify"));
+    await expect(render()).rejects.toThrow("redirect:/mfa/verify");
+    expect(mocks.getCurrentAuth).toHaveBeenCalledWith({ allowUnverifiedMfa: true });
+    expect(mocks.requireAuth).toHaveBeenCalledWith({ nextPath: "/invitations/accept?token=synthetic-token" });
+  });
+
+  it("tells a signed-in user without a token to open the e-mailed link", async () => {
+    mocks.getCurrentAuth.mockResolvedValue({ user: { id: "invitee" }, vendor: null });
+    expect(await render({})).toContain("請開啟邀請信中的連結");
   });
 
   it("renders fixed copy for result codes and ignores unknown ones", async () => {

@@ -3,6 +3,7 @@ import { loginAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { PublicResourceLinks } from "@/components/public-policy";
+import { safeInternalPath } from "@/lib/safe-internal-path";
 
 const errorMessages: Record<string, string> = {
   "1": "帳號或密碼不正確。",
@@ -15,10 +16,13 @@ const errorMessages: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; revoked?: string; reset?: string; password_changed?: string; registered?: string; invited?: string }>;
+  searchParams: Promise<{ error?: string; revoked?: string; reset?: string; password_changed?: string; registered?: string; invited?: string; next?: string }>;
 }) {
   const params = await searchParams;
   const showDemoHint = process.env.NODE_ENV !== "production";
+  // Only an invitation acceptance link may ride through sign-in (#462 M1).
+  const safeNext = safeInternalPath(params.next);
+  const invitationNext = safeNext?.startsWith("/invitations/accept") ? safeNext : undefined;
 
   return (
     <main className="grid min-h-screen place-items-center bg-background px-4">
@@ -38,6 +42,7 @@ export default async function LoginPage({
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "登入失敗，請稍後再試。"}</p> : null}
         <form action={loginAction} className="grid gap-4">
           <CsrfField />
+          {invitationNext ? <input type="hidden" name="next" value={invitationNext} /> : null}
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             Email
             <input name="email" type="email" autoComplete="email" spellCheck={false} required defaultValue={showDemoHint ? "demo@celebratedeal.local" : ""} className="h-11 rounded-md border border-border px-3" />

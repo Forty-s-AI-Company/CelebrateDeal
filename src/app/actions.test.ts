@@ -113,6 +113,10 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   checkRateLimit: vi.fn(),
   checkAccountRateLimit: vi.fn(),
+  consumeAccountRateLimit: vi.fn(),
+  accountLockRemainingSeconds: vi.fn(),
+  lockAccount: vi.fn(),
+  invitationFindFirst: vi.fn(),
   createVendorMemberInvitation: vi.fn(),
   revokeVendorMemberInvitation: vi.fn(),
   sendVendorMemberInvitationEmail: vi.fn(),
@@ -256,7 +260,12 @@ vi.mock("@/lib/vendor-member-invitation", async (importOriginal) => ({
   revokeVendorMemberInvitation: mocks.revokeVendorMemberInvitation,
 }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
-vi.mock("@/lib/account-rate-limit", () => ({ checkAccountRateLimit: mocks.checkAccountRateLimit }));
+vi.mock("@/lib/account-rate-limit", () => ({
+  checkAccountRateLimit: mocks.checkAccountRateLimit,
+  consumeAccountRateLimit: mocks.consumeAccountRateLimit,
+  accountLockRemainingSeconds: mocks.accountLockRemainingSeconds,
+  lockAccount: mocks.lockAccount,
+}));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
   generateRecoveryCodes: mocks.generateRecoveryCodes,
@@ -348,7 +357,7 @@ vi.mock("@/lib/db", () => ({
       updateMany: mocks.userRecoveryCodeUpdateMany,
     },
     vendor: { findUnique: mocks.vendorFindUnique, update: mocks.vendorUpdate },
-    vendorMemberInvitation: { findMany: vi.fn(async () => []) },
+    vendorMemberInvitation: { findMany: vi.fn(async () => []), findFirst: mocks.invitationFindFirst },
     vendorMember: {
       count: mocks.vendorMemberCount,
       findFirst: mocks.vendorMemberFindFirst,
@@ -710,6 +719,10 @@ beforeEach(() => {
   mocks.createUserSession.mockResolvedValue({ token: "test-fixture-session-token", expiresAt: new Date("2026-07-18T00:00:00.000Z") });
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.checkAccountRateLimit.mockResolvedValue(null);
+  mocks.consumeAccountRateLimit.mockResolvedValue({ allowed: true, count: 1, retryAfterSeconds: 60 });
+  mocks.accountLockRemainingSeconds.mockResolvedValue(0);
+  mocks.lockAccount.mockResolvedValue(undefined);
+  mocks.invitationFindFirst.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
   mocks.requireVendorFinance.mockResolvedValue({
     vendor: { id: "vendor-1" },
@@ -5829,6 +5842,99 @@ describe("refundPaymentTransactionAction", () => {
     expect(committedPaymentTransactions).toHaveLength(1);
     expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
     expect(events).toEqual(["committed", "audit"]);
+  });
+});
+
+describe("login for accounts without an active membership (#462 M1)", () => {
+  const memberWithoutVendor = {
+    user: { id: "user-2", email: "member@example.com", platformRole: "none", mfaFactor: null },
+    vendor: null,
+    member: null,
+    isPlatformAdmin: false,
+  };
+
+  function loginWithNext(next: string) {
+    const formData = loginFormData("member@example.com", "test-fixture-password");
+    formData.set("next", next);
+    return formData;
+  }
+
+  it("still refuses a session when no invitation is pending", async () => {
+    mocks.authenticateUser.mockResolvedValue(memberWithoutVendor);
+    await expect(loginAction(loginWithNext("/invitations/accept?token=abc"))).rejects.toThrow("redirect:/login?error=no_vendor");
+    expect(mocks.createUserSession).not.toHaveBeenCalled();
+  });
+
+  it("signs in to accept a pending invitation and returns to the invitation link", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(memberWithoutVendor);
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(loginWithNext("/invitations/accept?token=abc"))).rejects.toThrow("redirect:/invitations/accept?token=abc");
+    expect(mocks.invitationFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ email: "member@example.com", acceptedAt: null, revokedAt: null }),
+    }));
+    expect(mocks.createUserSession).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-2", vendorId: null }));
+  });
+
+  it.each(["/dashboard", "/\t/evil.example", "//evil.example"])("ignores a non-invitation next %j for such a session", async (next) => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(memberWithoutVendor);
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(loginWithNext(next))).rejects.toThrow(/^redirect:\/invitations\/accept$/u);
+  });
+
+  it("sends an enrolled account through MFA before the invitation", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue({ ...memberWithoutVendor, user: { ...memberWithoutVendor.user, mfaFactor: { id: "factor" } } });
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(loginWithNext("/invitations/accept?token=abc"))).rejects.toThrow(
+      "redirect:/mfa/verify?next=%2Finvitations%2Faccept%3Ftoken%3Dabc",
+    );
+  });
+
+  it.each([[429, "rate_limited"], [503, "temporarily_unavailable"]])(
+    "applies the per-address account limit (%s) before checking the password (#462 m4)",
+    async (status, error) => {
+      mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status }));
+      await expect(loginAction(loginFormData())).rejects.toThrow(`redirect:/login?error=${error}`);
+      expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("login_account", "member@example.com");
+      expect(mocks.authenticateUser).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("MFA verification lock (#462 m3)", () => {
+  it("rejects every attempt while the account is locked, without checking the code", async () => {
+    mocks.accountLockRemainingSeconds.mockResolvedValueOnce(1800);
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow("redirect:/mfa/verify?error=locked&next=");
+    expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+    expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the lock cannot be read", async () => {
+    mocks.accountLockRemainingSeconds.mockRejectedValueOnce(new Error("synthetic outage"));
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow("redirect:/mfa/verify?error=temporarily_unavailable");
+    expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+  });
+
+  it("locks for an hour once the daily failure limit is exceeded", async () => {
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+    mocks.consumeAccountRateLimit.mockResolvedValueOnce({ allowed: false, count: 51, retryAfterSeconds: 3600 });
+
+    await expect(verifyMfaAction(mfaVerifyFormData("000000"))).rejects.toThrow("redirect:/mfa/verify?error=locked");
+    expect(mocks.consumeAccountRateLimit).toHaveBeenCalledWith("mfa_verification_failures", "admin-1");
+    expect(mocks.lockAccount).toHaveBeenCalledWith("mfa_verification_lock", "admin-1");
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "mfa_verification_locked" }));
+  });
+
+  it("counts a failure without locking below the daily limit", async () => {
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+    await expect(verifyMfaAction(mfaVerifyFormData("000000"))).rejects.toThrow("redirect:/mfa/verify?error=invalid");
+    expect(mocks.consumeAccountRateLimit).toHaveBeenCalledWith("mfa_verification_failures", "admin-1");
+    expect(mocks.lockAccount).not.toHaveBeenCalled();
   });
 });
 

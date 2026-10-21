@@ -9,7 +9,7 @@ import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { acceptVendorMemberInvitation } from "@/lib/vendor-member-invitation";
+import { acceptVendorMemberInvitation, findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -40,6 +40,9 @@ export async function acceptVendorMemberInvitationAction(formData: FormData) {
   }
   const limited = await checkRateLimit(new Request(getCanonicalAppUrl(), { headers: forwarded }), "vendor-member-invitation-accept", 10, 15 * 60 * 1000);
   if (limited) redirect(acceptPath(token, limited.status === 429 ? "rate_limited" : "temporarily_unavailable"));
+
+  // Reject unknown tokens before any password hashing work (#462 n11).
+  if (!await findPendingVendorMemberInvitation(getDb(), token)) redirect(acceptPath(token, "invalid"));
 
   // getCurrentAuth returns null for a session whose enrolled factor is not yet verified.
   const auth = await getCurrentAuth();

@@ -243,8 +243,8 @@ function accountRateLimitCheck(rateLimitProvider: string): EnvCheck {
     key: "ACCOUNT_RATE_LIMIT",
     status: "pass",
     message: rateLimitProvider === "cloudflare_waf"
-      ? "cloudflare_waf 只負責 IP 層限流；帳號層限流（MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數"
-      : "帳號層限流（MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數，不受 RATE_LIMIT_PROVIDER 影響",
+      ? "cloudflare_waf 只負責 IP 層限流；帳號層限流（登入、MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數"
+      : "帳號層限流（登入、MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數，不受 RATE_LIMIT_PROVIDER 影響",
   };
 }
 
