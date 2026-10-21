@@ -8,9 +8,11 @@ const dependencies = vi.hoisted(() => ({
     streamUsageLedgerEntry: { findMany: vi.fn() },
     streamUsageAllocationEntry: { findMany: vi.fn() },
     streamUsageReconciliation: { findFirst: vi.fn() },
-    paymentTransaction: { findMany: vi.fn() },
+    paymentTransaction: { findMany: vi.fn(), count: vi.fn() },
     refundRecord: { aggregate: vi.fn(), count: vi.fn() },
+    // count() is called for non-TWD refunds and for unclassified refunds (M-3).
     affiliateCommissionLedgerEntry: { aggregate: vi.fn() },
+    settlementAdjustmentLedgerEntry: { aggregate: vi.fn() },
   },
 }));
 
@@ -71,11 +73,13 @@ beforeEach(() => {
   dependencies.db.streamUsageAllocationEntry.findMany.mockResolvedValue([]);
   dependencies.db.streamUsageReconciliation.findFirst.mockResolvedValue(null);
   dependencies.db.paymentTransaction.findMany.mockResolvedValue(transactions);
+  dependencies.db.paymentTransaction.count.mockResolvedValue(0);
   dependencies.db.refundRecord.aggregate.mockResolvedValue(processedRefund(0));
   dependencies.db.refundRecord.count.mockResolvedValue(0);
   dependencies.db.affiliateCommissionLedgerEntry.aggregate.mockResolvedValue({
     _sum: { amountCents: 0 },
   });
+  dependencies.db.settlementAdjustmentLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountCents: null } });
 });
 
 describe("monthRange", () => {
@@ -158,7 +162,17 @@ describe("calculateSettlement transaction service fee", () => {
 
     expect(settlement.transactionServiceFeeCents).toBe(600);
     expect(dependencies.db.refundRecord.aggregate).toHaveBeenCalledWith({
-      where: { vendorId: "vendor-1", monthKey: "2026-07", status: "processed" },
+      where: {
+        vendorId: "vendor-1",
+        monthKey: "2026-07",
+        status: "processed",
+        paymentTransaction: {
+          OR: [
+            { purpose: "buyer_order" },
+            { purpose: "unclassified", primaryCommerceOrder: { isNot: null } },
+          ],
+        },
+      },
       _sum: {
         refundAmountCents: true,
         gatewayFeeRefundCents: true,
@@ -173,6 +187,67 @@ describe("calculateSettlement transaction service fee", () => {
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
     expect(settlement.transactionServiceFeeCents).toBe(0);
+  });
+});
+
+describe("F-038 settlement counts only buyer orders", () => {
+  it("selects buyer-order transactions and refunds only, never platform plan or invoice payments", async () => {
+    await calculateSettlement("vendor-1", "2026-07");
+
+    const buyerOrderScope = {
+      OR: [
+        { purpose: "buyer_order" },
+        { purpose: "unclassified", primaryCommerceOrder: { isNot: null } },
+      ],
+    };
+    expect(dependencies.db.paymentTransaction.findMany).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        status: { in: ["paid", "partially_refunded", "refunded"] },
+        occurredAt: { gte: new Date("2026-07-01T00:00:00.000Z"), lt: new Date("2026-08-01T00:00:00.000Z") },
+        ...buyerOrderScope,
+      },
+    });
+    expect(dependencies.db.refundRecord.aggregate).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ paymentTransaction: buyerOrderScope }),
+    }));
+  });
+
+  it("fails closed when a refund of the month belongs to a payment with no known purpose (review M-3)", async () => {
+    dependencies.db.refundRecord.count.mockImplementation(async ({ where }: { where: { paymentTransaction?: { purpose?: string } } }) =>
+      where.paymentTransaction?.purpose === "unclassified" ? 1 : 0);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({ code: "unclassified_payment_purpose" });
+    expect(dependencies.db.refundRecord.count).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        monthKey: "2026-07",
+        status: "processed",
+        paymentTransaction: { purpose: "unclassified", primaryCommerceOrder: { is: null } },
+      },
+    });
+  });
+
+  it("does not block a merchant-collected (byo) month that pays out nothing (review m-3)", async () => {
+    dependencies.db.vendorSubscription.findFirst.mockResolvedValueOnce({ ...subscription, paymentMode: "byo" });
+    dependencies.db.paymentTransaction.count.mockResolvedValueOnce(1);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).resolves.toMatchObject({ payoutableAmountCents: 0 });
+  });
+
+  it("fails closed when a paid transaction of the month has no known purpose", async () => {
+    dependencies.db.paymentTransaction.count.mockResolvedValueOnce(1);
+
+    await expect(calculateSettlement("vendor-1", "2026-07")).rejects.toMatchObject({ code: "unclassified_payment_purpose" });
+    expect(dependencies.db.paymentTransaction.count).toHaveBeenCalledWith({
+      where: {
+        vendorId: "vendor-1",
+        status: { in: ["paid", "partially_refunded", "refunded"] },
+        occurredAt: { gte: new Date("2026-07-01T00:00:00.000Z"), lt: new Date("2026-08-01T00:00:00.000Z") },
+        purpose: "unclassified",
+        primaryCommerceOrder: { is: null },
+      },
+    });
   });
 });
 
@@ -242,7 +317,7 @@ describe("FIN-01 settlement boundary coverage", () => {
     expect(settlement.finalPayoutAmountCents).toBe(0);
   });
 
-  it("clamps gross revenue and gateway fees after processed refunds", async () => {
+  it("keeps a refund above revenue negative instead of truncating it (F-039)", async () => {
     dependencies.db.paymentTransaction.findMany.mockResolvedValueOnce([
       { grossAmountCents: 1_000, gatewayFeeCents: 300, platformFeeCents: 100, currency: "TWD" },
     ]);
@@ -256,9 +331,26 @@ describe("FIN-01 settlement boundary coverage", () => {
 
     const settlement = await calculateSettlement("vendor-1", "2026-07");
 
-    expect(settlement.grossRevenueCents).toBe(0);
+    expect(settlement.grossRevenueCents).toBe(-500);
     expect(settlement.paymentGatewayFeeCents).toBe(0);
     expect(settlement.transactionServiceFeeCents).toBe(50);
+    // Review M-2: the 150 of gateway fee refunded beyond this month's fee is
+    // returned to the merchant, not truncated: -500 - (300 - 450) - 50.
+    expect(settlement.payoutableAmountCents).toBe(-400);
+    expect(settlement.finalPayoutAmountCents).toBe(0);
+  });
+
+  it("deducts a negative balance carried in from an earlier month (F-039, D-32)", async () => {
+    dependencies.db.settlementAdjustmentLedgerEntry.aggregate.mockResolvedValueOnce({ _sum: { amountCents: -2_000 } });
+
+    const settlement = await calculateSettlement("vendor-1", "2026-07");
+
+    expect(dependencies.db.settlementAdjustmentLedgerEntry.aggregate).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", targetMonthKey: "2026-07" },
+      _sum: { amountCents: true },
+    });
+    // 15,000 gross - 450 gateway - 600 platform fee - 2,000 carried in.
+    expect(settlement).toMatchObject({ carriedInCents: -2_000, payoutableAmountCents: 11_950, finalPayoutAmountCents: 11_950 });
   });
 
   it("uses the highest observed usage totals and charges only positive overflow", async () => {

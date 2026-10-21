@@ -38,6 +38,9 @@ const settlementErrorMessages: Record<string, string> = {
   same_approver: "大額調整必須由另一位平台管理員覆核，申請人不能自行核准。",
   not_pending: "這筆調整申請已處理或已被新的申請取代，請重新整理。",
   unsupported_currency: "這個月份有非新台幣（TWD）的交易，月結不會混加不同幣別；請先人工核對該商家的交易。",
+  stale_settlement: "月結計算後又有新的退款或上期結轉，請先重新產生月結再鎖定。",
+  carry_forward_target_locked: "這個月份的負餘額結轉已由下一期月結扣抵，而下一期已經鎖定，因此不能再重新計算或調整。資料未變更。請在下一個未鎖定的月份以人工調整補差額。",
+  unclassified_payment_purpose: "這個月份有無法判定用途的付款（不是買家訂單、方案費或帳單款），月結不會猜測是否計入商家營收；請先由工程人員核對並更新交易用途後再產生月結。",
 };
 
 const settlementStatusMessages: Record<string, string> = {
@@ -172,6 +175,15 @@ export default async function AdminBillingSettlementsPage({
               <Metric label="金流手續費" value={settlement.paymentGatewayFeeCents} />
               <Metric label="調整" value={settlement.adjustmentAmountCents} />
             </div>
+
+            {settlement.carriedInCents !== 0 || settlement.carriedOutCents !== 0 ? (
+              <div className="grid gap-1 rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950" role="note">
+                {settlement.carriedInCents !== 0 ? <p>上期負餘額扣抵：{formatCurrency(settlement.carriedInCents)}</p> : null}
+                {settlement.carriedOutCents !== 0 ? (
+                  <p>本期退款高於營收，待扣款 {formatCurrency(-settlement.carriedOutCents)} 結轉至下一期扣抵，本期不撥款。</p>
+                ) : null}
+              </div>
+            ) : null}
 
             {settlement.adjustmentRequests.map((request) => request.status === "pending" ? (
               <PendingAdjustment

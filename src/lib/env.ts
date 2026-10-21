@@ -4,6 +4,7 @@ import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
 import { payUniStagingPlanTestScope } from "@/lib/payuni-staging-plan-test";
 import { isStagingPayUniPreviewCandidate } from "@/lib/database-identity";
 import { payUniCredentialKeys } from "@/lib/payuni-credentials";
+import { isVercelProductionDeployment, PRODUCTION_PAYMENT_PROVIDER } from "@/lib/payment-providers/runtime-policy";
 import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
 import {
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
@@ -177,6 +178,45 @@ function payUniEnvironmentDeploymentCheck(
   };
 }
 
+/** F-003: only PayUni refunds reach a provider; production accepts nothing else. */
+function productionPaymentProviderChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
+  // The runtime policy also covers non-Vercel production servers (review m-5);
+  // the build preflight keeps to the deployment truth so controlled CI builds
+  // with the demo provider still run.
+  if (!isVercelProductionDeployment(env) || env.PAYMENT_PROVIDER === PRODUCTION_PAYMENT_PROVIDER) return [];
+  return [{
+    key: "PAYMENT_PROVIDER",
+    status: "fail",
+    message: "Production 只允許 PAYMENT_PROVIDER=payuni；demo 與其他 provider 只能用於本機、CI 與 Preview",
+  }];
+}
+
+/**
+ * F-055 / B04-14: the deployed runtime reaches PostgreSQL through a
+ * transaction pooler. Without pgbouncer=true Prisma's prepared statements
+ * break, and without connection_limit each serverless instance opens a pool
+ * sized for a server, which turns Serializable retries into pool timeouts.
+ * Warning only; the message never echoes the URL.
+ */
+function databasePoolChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
+  if (env.VERCEL_ENV !== "preview" && env.VERCEL_ENV !== "production") return [];
+  let params: URLSearchParams;
+  try {
+    params = new URL(env.DATABASE_URL ?? "").searchParams;
+  } catch {
+    return [];
+  }
+  const missing = [
+    ...(params.get("pgbouncer") === "true" ? [] : ["pgbouncer=true"]),
+    ...(/^[1-9][0-9]{0,2}$/.test(params.get("connection_limit") ?? "") ? [] : ["connection_limit"]),
+  ];
+  return missing.length === 0 ? [] : [{
+    key: "DATABASE_URL",
+    status: "warning",
+    message: `Preview／Production 的 DATABASE_URL 缺少 ${missing.join("、")}；交易連線池與 Serializable 重試需要這些設定`,
+  }];
+}
+
 const requiredKeys = [
   "DATABASE_URL",
   "DIRECT_URL",
@@ -290,6 +330,9 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       message: `${env.PAYMENT_PROVIDER} provider 必須設定 ECPAY_WEBHOOK_SECRET`,
     });
   }
+
+  checks.push(...productionPaymentProviderChecks(env));
+  checks.push(...databasePoolChecks(env));
 
   if (env.DATABASE_URL?.startsWith("file:")) {
     checks.push({

@@ -47,7 +47,9 @@ vi.mock("@/lib/audit", () => ({
   requestAuditMeta: vi.fn(async () => ({ ipAddress: null, userAgent: null })),
   writeAuditLog: mocks.writeAuditLog,
 }));
-vi.mock("@/lib/billing", () => ({
+vi.mock("@/lib/billing", async (importOriginal) => ({
+  // F-039: the real lock re-checks refunds against the buyer-order scope.
+  SETTLEMENT_REVENUE_TRANSACTION_WHERE: (await importOriginal<typeof import("@/lib/billing")>()).SETTLEMENT_REVENUE_TRANSACTION_WHERE,
   calculateSettlement: vi.fn(),
   invoiceNumber: vi.fn(),
   monthRange: (monthKey: string) => {

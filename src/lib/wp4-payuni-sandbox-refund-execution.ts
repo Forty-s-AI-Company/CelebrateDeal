@@ -38,10 +38,6 @@ export type Wp4PayUniSandboxRefundExecutionResult = {
 
 type RefundExecutionDb = Pick<PrismaClient, "paymentTransaction">;
 
-function monthKey(now: Date) {
-  return now.toISOString().slice(0, 7);
-}
-
 function matchesPurpose(candidate: Candidate, sourceCommit: string, purpose: Wp4PayUniPurpose) {
   return isWp4PayUniSandboxTransactionForSource(candidate, sourceCommit)
     && wp4PayUniPurposeFromMetadata(candidate.metadata) === purpose;
@@ -56,7 +52,6 @@ function matchesPurpose(candidate: Candidate, sourceCommit: string, purpose: Wp4
 export async function executeNextWp4PayUniSandboxRefund(
   db: RefundExecutionDb,
   sourceCommit: string,
-  now = new Date(),
   fixedPurpose?: Wp4PayUniPurpose,
 ): Promise<Wp4PayUniSandboxRefundExecutionResult> {
   const rows = await db.paymentTransaction.findMany({
@@ -102,7 +97,6 @@ export async function executeNextWp4PayUniSandboxRefund(
       gatewayFeeRefundCents: fixed.gatewayFeeRefundCents,
       platformFeeRefundCents: fixed.platformFeeRefundCents,
       reason: "wp4_sandbox_fixed_refund",
-      monthKey: monthKey(now),
       actor: { id: WP4_SANDBOX_FIXTURE.userId, label: "wp4_sandbox_runner" },
     });
     if (result.disposition === "completed") {

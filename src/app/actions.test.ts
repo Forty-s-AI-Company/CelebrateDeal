@@ -129,6 +129,9 @@ const mocks = vi.hoisted(() => ({
   teamMembershipRelationshipFindMany: vi.fn(),
   projectFindFirst: vi.fn(),
   transaction: vi.fn(),
+  refundSettlementMonthKey: vi.fn(),
+  assertSettlementInputsUnchanged: vi.fn(),
+  SettlementInputsChangedError: class SettlementInputsChangedError extends Error {},
   userCreate: vi.fn(),
   userFindUnique: vi.fn(),
   userMfaFactorUpdate: vi.fn(),
@@ -175,6 +178,13 @@ vi.mock("@/lib/settlement-adjustment", async (importOriginal) => ({
   submitSettlementAdjustment: mocks.submitSettlementAdjustment,
   approveSettlementAdjustment: mocks.approveSettlementAdjustment,
   rejectSettlementAdjustment: mocks.rejectSettlementAdjustment,
+}));
+vi.mock("@/lib/settlement-period", () => ({
+  // F-039: the settlement month of a refund comes from the server, not the form.
+  refundSettlementMonthKey: mocks.refundSettlementMonthKey,
+  settlementMonthKeyOf: (date: Date) => date.toISOString().slice(0, 7),
+  assertSettlementInputsUnchanged: mocks.assertSettlementInputsUnchanged,
+  SettlementInputsChangedError: mocks.SettlementInputsChangedError,
 }));
 vi.mock("@/lib/audit", () => ({
   auditSnapshot: (value: unknown) => value,
@@ -678,6 +688,8 @@ beforeEach(() => {
   // transaction fixtures, so retaining an unconsumed mockResolvedValueOnce
   // would leak one case's database shape into the next case.
   vi.resetAllMocks();
+  mocks.refundSettlementMonthKey.mockResolvedValue("2026-10");
+  mocks.assertSettlementInputsUnchanged.mockResolvedValue(undefined);
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.authenticateUser.mockResolvedValue(null);
   mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
@@ -5341,8 +5353,10 @@ describe("refundPaymentTransactionAction", () => {
         status: "pending",
         providerEventId: expect.stringMatching(/^request:[a-f0-9]{32}$/),
       },
-      data: { status: "processed", providerEventId: "refund-456" },
+      data: { status: "processed", providerEventId: "refund-456", monthKey: "2026-10", processedAt: expect.any(Date) },
     });
+    // F-039: the month is resolved from the completion time inside the completion transaction.
+    expect(mocks.refundSettlementMonthKey).toHaveBeenCalledWith(expect.any(Object), transaction.vendorId, expect.any(Date));
     expect(mocks.paymentTransactionUpdate).toHaveBeenCalledWith({
       where: { id: transaction.id },
       data: expect.objectContaining({ status: "refunded", refundedAmountCents: 10_000 }),
@@ -5492,25 +5506,28 @@ describe("refundPaymentTransactionAction", () => {
     expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
   });
 
-  it("rejects an invalid settlement month without creating a refund, updating the transaction, or writing an audit log", async () => {
-    await expect(refundPaymentTransactionAction(refundFormData("1", "0", "0", "2026-13"))).rejects.toThrow(
-      "redirect:/admin/billing/dashboard?error=refund",
+  it.each(["2026-13", "2026-07", "2026-12"])("ignores a posted settlement month %j and books the server completion month (F-039)", async (postedMonthKey) => {
+    await expect(refundPaymentTransactionAction(refundFormData("1", "0", "0", postedMonthKey))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard",
+    );
+
+    expect(mocks.refundSettlementMonthKey).toHaveBeenCalledWith(expect.any(Object), transaction.vendorId, expect.any(Date));
+    expect(mocks.refundRecordCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ monthKey: "2026-10", processedAt: expect.any(Date) }),
+    });
+  });
+
+  it.each([undefined, "demo", "platform-ecpay"])("never books a local-only refund for provider %j on the production deployment (F-003)", async (providerName) => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    mocks.findUnique.mockResolvedValue({ ...transaction, providerName });
+
+    await expect(refundPaymentTransactionAction(refundFormData("40"))).rejects.toThrow(
+      "redirect:/admin/billing/dashboard?error=refund_provider_unsupported",
     );
 
     expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.refundRecordCreate).not.toHaveBeenCalled();
     expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
-    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
-  });
-
-  it("writes a valid settlement month to the RefundRecord", async () => {
-    await expect(refundPaymentTransactionAction(refundFormData("1", "0", "0", "2026-12"))).rejects.toThrow(
-      "redirect:/admin/billing/dashboard",
-    );
-
-    expect(mocks.refundRecordCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({ monthKey: "2026-12" }),
-    });
   });
 
   it.each(["1e3", "12abc", "40.5", "-5", "0", ""])("rejects a malformed refund amount %j before reading or reserving anything (F-049)", async (amount) => {
@@ -5561,7 +5578,8 @@ describe("refundPaymentTransactionAction", () => {
       data: {
         vendorId: transaction.vendorId,
         paymentTransactionId: transaction.id,
-        monthKey: "2026-07",
+        monthKey: "2026-10",
+        processedAt: expect.any(Date),
         refundAmountCents: 4_000,
         gatewayFeeRefundCents: 0,
         platformFeeRefundCents: 0,
@@ -6031,6 +6049,15 @@ describe("FIN-02 settlement mutation invariants", () => {
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
+  it.each(["unclassified_payment_purpose", "carry_forward_target_locked"] as const)("redirects %s to its own message instead of missing", async (code) => {
+    mocks.generateSettlementForVendor.mockRejectedValueOnce(new BillingCycleError(code));
+
+    await expect(generateSettlementAction(settlementFormData("2026-08"))).rejects.toThrow(
+      `redirect:/admin/billing/settlements?error=${code}`,
+    );
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
   it("fails a settlement regeneration when its optimistic conditional write loses", async () => {
     mocks.generateSettlementForVendor.mockRejectedValueOnce(new BillingCycleError("conflict"));
 
@@ -6226,6 +6253,25 @@ describe("FIN-02 settlement mutation invariants", () => {
     expect(mocks.settlementAdjustmentRequestFindMany).toHaveBeenCalledWith({
       where: { vendorId: settlement.vendorId, settlementId: settlement.id, status: "pending" },
     });
+    // F-039: the lock re-checks refunds and carries in a Serializable transaction.
+    expect(mocks.assertSettlementInputsUnchanged).toHaveBeenCalledWith(expect.any(Object), lockedSettlement);
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+  });
+
+  it("refuses to lock a settlement whose refunds or carries changed after it was calculated (F-039)", async () => {
+    mocks.settlementFindUnique.mockResolvedValueOnce(settlement).mockResolvedValueOnce({ ...settlement, status: "locked" });
+    mocks.assertSettlementInputsUnchanged.mockRejectedValueOnce(new mocks.SettlementInputsChangedError());
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      settlement: { findUnique: mocks.settlementFindUnique, updateMany: mocks.settlementUpdateMany },
+      affiliateCommission: { findMany: mocks.affiliateCommissionFindMany, updateMany: mocks.affiliateCommissionUpdateMany },
+    }));
+
+    await expect(lockSettlementAction(lockFormData())).rejects.toThrow(
+      "redirect:/admin/billing/settlements?error=stale_settlement",
+    );
+
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 
   it("closes a pending large adjustment as rejected_by_lock with an audit row (review m-4)", async () => {
