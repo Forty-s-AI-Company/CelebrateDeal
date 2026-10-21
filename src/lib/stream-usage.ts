@@ -1,12 +1,19 @@
+import { randomInt } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { StreamQuotaExceededError } from "@/lib/stream-quota";
 import { getDb } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
 import { resolveTeamFunnelAttribution } from "@/lib/team-funnel-attribution";
 import { buildStreamUsageAllocations } from "@/lib/stream-usage-attribution";
-import { assertStreamQuotaAvailable, assertStreamScopedQuotasAvailable } from "@/lib/stream-quota";
+import { assertStreamScopedQuotasAvailable } from "@/lib/stream-quota";
+import { reserveVendorStreamSeconds } from "@/lib/stream-usage-counter";
 
 export const STREAM_USAGE_MAX_HEARTBEAT_SECONDS = 60;
+/** Attempts for a transaction aborted by a deadlock or write conflict (P2034). */
+export const STREAM_USAGE_MAX_ATTEMPTS = 3;
+const STREAM_USAGE_RETRY_BASE_MS = 15;
+const STREAM_USAGE_RETRY_JITTER_MS = 25;
 const STREAM_USAGE_EVENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOURCE_PAGE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i;
 
@@ -16,7 +23,8 @@ export type StreamUsageErrorCode =
   | "live_not_found"
   | "source_page_not_found"
   | "event_conflict"
-  | "stream_minutes_exhausted";
+  | "stream_minutes_exhausted"
+  | "usage_busy";
 
 export class StreamUsageValidationError extends Error {
   constructor(public readonly code: StreamUsageErrorCode) {
@@ -71,12 +79,23 @@ function isUniqueConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
 
+const RETRYABLE_POSTGRES_CODES = new Set(["40001", "40P01"]);
+
+/** P2034, or a raw-query failure (P2010) carrying a serialization/deadlock SQLSTATE. */
 function isSerializationConflict(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  if (error.code === "P2034") return true;
+  if (error.code !== "P2010" || !("meta" in error)) return false;
+  const meta = error.meta;
+  return typeof meta === "object" && meta !== null && "code" in meta
+    && typeof meta.code === "string" && RETRYABLE_POSTGRES_CODES.has(meta.code);
 }
 
-function throwForSerializationConflict(error: unknown) {
-  if (isSerializationConflict(error)) throw new StreamUsageValidationError("stream_minutes_exhausted");
+/** Bounded backoff between transaction attempts; never longer than ~65 ms. */
+export function streamUsageRetryDelayMs(attempt: number, jitter: number) {
+  const boundedAttempt = Math.max(1, Math.min(STREAM_USAGE_MAX_ATTEMPTS - 1, Math.trunc(attempt) || 1));
+  const boundedJitter = Math.max(0, Math.min(STREAM_USAGE_RETRY_JITTER_MS, Math.trunc(jitter) || 0));
+  return STREAM_USAGE_RETRY_BASE_MS * boundedAttempt + boundedJitter;
 }
 
 type BuiltStreamUsageAllocations = ReturnType<typeof buildStreamUsageAllocations>;
@@ -131,7 +150,13 @@ async function assertConfiguredStreamQuotasAvailable(input: {
   });
 }
 
-async function assertVendorStreamQuotaAvailable(input: {
+/**
+ * Reserves the heartbeat against the vendor's monthly quota with one atomic,
+ * conditional increment of the vendor-month counter. The reservation locks
+ * that row until the transaction ends; a real exhaustion is the only path to
+ * StreamQuotaExceededError (never a concurrency conflict).
+ */
+async function reserveVendorStreamQuota(input: {
   tx: Prisma.TransactionClient;
   vendorId: string;
   monthKey: string;
@@ -143,24 +168,22 @@ async function assertVendorStreamQuotaAvailable(input: {
     select: { entitlementStatus: true, streamMinutesLimit: true, streamMinutesUsed: true, resetAt: true },
   });
   if (usageLimit?.entitlementStatus === "revoked") throw new StreamQuotaExceededError();
-  const streamMinutesLimit = usageLimit?.streamMinutesLimit ?? 0;
-  if (streamMinutesLimit <= 0) return null;
-  const ledgerUsage = await input.tx.streamUsageLedgerEntry.aggregate({
-    where: { vendorId: input.vendorId, monthKey: input.monthKey },
-    _sum: { watchSeconds: true },
-  });
-  const ledgerSeconds = ledgerUsage._sum.watchSeconds ?? 0;
+  const streamMinutesLimit = Math.max(0, usageLimit?.streamMinutesLimit ?? 0);
   const legacySeconds = usageLimit?.resetAt && usageLimit.resetAt > input.capturedAt
-    ? (usageLimit.streamMinutesUsed ?? 0) * 60
+    ? Math.max(0, usageLimit.streamMinutesUsed ?? 0) * 60
     : 0;
-  assertStreamQuotaAvailable({
-    includedMinutes: streamMinutesLimit,
-    usedSeconds: Math.max(ledgerSeconds, legacySeconds),
-    requestedSeconds: input.requestedWatchSeconds,
+  const reservation = await reserveVendorStreamSeconds(input.tx, {
+    vendorId: input.vendorId,
+    monthKey: input.monthKey,
+    seconds: input.requestedWatchSeconds,
+    limitSeconds: streamMinutesLimit > 0 ? streamMinutesLimit * 60 : null,
+    floorSeconds: legacySeconds,
   });
+  if (!reservation.admitted) throw new StreamQuotaExceededError();
+  if (streamMinutesLimit <= 0) return null;
   return {
     streamMinutesLimit,
-    usedSeconds: Math.max(ledgerSeconds, legacySeconds),
+    usedSeconds: Math.max(reservation.previousSeconds, legacySeconds),
   };
 }
 
@@ -327,68 +350,19 @@ export async function recordStreamUsageLedgerEntry(input: {
     attributionMode: policy.usageAttributionMode,
   } as const;
 
+  const recordWithinTransaction = (tx: Prisma.TransactionClient) => recordInTransaction(tx, {
+    input,
+    expected,
+    currentMonthKey,
+    capturedAt,
+    sourcePageId,
+    policy,
+    allocations,
+  });
+
   try {
-    return await db.$transaction(async (tx) => {
-      const existing = await tx.streamUsageLedgerEntry.findUnique({ where: { eventId: input.eventId } }) as ExistingEntry | null;
-      if (existing) {
-        if (!matchesExisting(existing, expected)) throw new StreamUsageValidationError("event_conflict");
-        return { duplicate: true, entryId: existing.id, source: existing.source };
-      }
-
-      const vendorQuota = await assertVendorStreamQuotaAvailable({
-        tx,
-        vendorId: input.vendorId,
-        monthKey: currentMonthKey,
-        capturedAt,
-        requestedWatchSeconds: input.watchSeconds,
-      });
-
-      await assertConfiguredStreamQuotasAvailable({
-        tx,
-        vendorId: input.vendorId,
-        liveId: input.liveId,
-        monthKey: currentMonthKey,
-        sourcePageId,
-        policy,
-        requestedWatchSeconds: input.watchSeconds,
-        allocations,
-      });
-
-      const entry = await tx.streamUsageLedgerEntry.create({
-        data: {
-          ...expected,
-          capturedAt,
-          allocations: {
-            create: allocations.map((allocation) => ({
-              vendorId: input.vendorId,
-              liveId: input.liveId,
-              monthKey: currentMonthKey,
-              recipientKey: allocation.recipientKey,
-              recipientType: allocation.recipientType,
-              recipientTeamId: allocation.recipientTeamId,
-              recipientMembershipId: allocation.recipientMembershipId,
-              allocationBps: allocation.allocationBps,
-              allocatedWatchSeconds: allocation.allocatedWatchSeconds,
-              policyVersion: policy.version,
-              attributionMode: policy.usageAttributionMode,
-            })),
-          },
-        },
-        select: { id: true, source: true },
-      });
-      if (vendorQuota) {
-        await upsertVendorQuotaAlert({
-          tx,
-          vendorId: input.vendorId,
-          monthKey: currentMonthKey,
-          streamMinutesLimit: vendorQuota.streamMinutesLimit,
-          usedSeconds: vendorQuota.usedSeconds + input.watchSeconds,
-        });
-      }
-      return { duplicate: false, entryId: entry.id, source: entry.source };
-    }, { isolationLevel: "Serializable" });
+    return await runUsageTransaction(db, recordWithinTransaction);
   } catch (error) {
-    throwForSerializationConflict(error);
     if (!isUniqueConflict(error)) throw error;
     const concurrent = await db.streamUsageLedgerEntry.findUnique({ where: { eventId: input.eventId } }) as ExistingEntry | null;
     if (concurrent && matchesExisting(concurrent, expected)) {
@@ -396,4 +370,99 @@ export async function recordStreamUsageLedgerEntry(input: {
     }
     throw new StreamUsageValidationError("event_conflict");
   }
+}
+
+/**
+ * READ COMMITTED: the vendor-month counter row lock taken by the quota
+ * reservation serializes one vendor's heartbeats; no Serializable predicate
+ * read is left to abort concurrent viewers. A deadlock or write conflict is
+ * retried and finally reported as retryable `usage_busy`, never as quota
+ * exhaustion (F-092).
+ */
+async function runUsageTransaction<T>(
+  db: ReturnType<typeof getDb>,
+  work: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 1; attempt <= STREAM_USAGE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await db.$transaction(work);
+    } catch (error) {
+      if (!isSerializationConflict(error)) throw error;
+      if (attempt === STREAM_USAGE_MAX_ATTEMPTS) break;
+      await sleep(streamUsageRetryDelayMs(attempt, randomInt(0, STREAM_USAGE_RETRY_JITTER_MS + 1)));
+    }
+  }
+  throw new StreamUsageValidationError("usage_busy");
+}
+
+type ExpectedEntry = Omit<ExistingEntry, "id">;
+
+async function recordInTransaction(tx: Prisma.TransactionClient, context: {
+  input: { vendorId: string; liveId: string; eventId: string; watchSeconds: number };
+  expected: ExpectedEntry;
+  currentMonthKey: string;
+  capturedAt: Date;
+  sourcePageId: string | null;
+  policy: ReturnType<typeof parseLiveQuotaPolicy>;
+  allocations: BuiltStreamUsageAllocations;
+}) {
+  const { input, expected, currentMonthKey, capturedAt, sourcePageId, policy, allocations } = context;
+  const existing = await tx.streamUsageLedgerEntry.findUnique({ where: { eventId: input.eventId } }) as ExistingEntry | null;
+  if (existing) {
+    if (!matchesExisting(existing, expected)) throw new StreamUsageValidationError("event_conflict");
+    return { duplicate: true, entryId: existing.id, source: existing.source };
+  }
+
+  const vendorQuota = await reserveVendorStreamQuota({
+    tx,
+    vendorId: input.vendorId,
+    monthKey: currentMonthKey,
+    capturedAt,
+    requestedWatchSeconds: input.watchSeconds,
+  });
+
+  await assertConfiguredStreamQuotasAvailable({
+    tx,
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    monthKey: currentMonthKey,
+    sourcePageId,
+    policy,
+    requestedWatchSeconds: input.watchSeconds,
+    allocations,
+  });
+
+  const entry = await tx.streamUsageLedgerEntry.create({
+    data: {
+      ...expected,
+      capturedAt,
+      allocations: {
+        // vendorId is implied by the parent ledger row (composite FK); Prisma
+        // rejects it here, which used to fail every real heartbeat write.
+        create: allocations.map((allocation) => ({
+          liveId: input.liveId,
+          monthKey: currentMonthKey,
+          recipientKey: allocation.recipientKey,
+          recipientType: allocation.recipientType,
+          recipientTeamId: allocation.recipientTeamId,
+          recipientMembershipId: allocation.recipientMembershipId,
+          allocationBps: allocation.allocationBps,
+          allocatedWatchSeconds: allocation.allocatedWatchSeconds,
+          policyVersion: policy.version,
+          attributionMode: policy.usageAttributionMode,
+        })),
+      },
+    },
+    select: { id: true, source: true },
+  });
+  if (vendorQuota) {
+    await upsertVendorQuotaAlert({
+      tx,
+      vendorId: input.vendorId,
+      monthKey: currentMonthKey,
+      streamMinutesLimit: vendorQuota.streamMinutesLimit,
+      usedSeconds: vendorQuota.usedSeconds + input.watchSeconds,
+    });
+  }
+  return { duplicate: false, entryId: entry.id, source: entry.source };
 }

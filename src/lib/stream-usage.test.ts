@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   alertUpdateMany: vi.fn(),
   transaction: vi.fn(),
   resolveTeamFunnelAttribution: vi.fn(),
+  reserveVendorStreamSeconds: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -31,9 +32,15 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/team-funnel-attribution", () => ({
   resolveTeamFunnelAttribution: mocks.resolveTeamFunnelAttribution,
 }));
+vi.mock("@/lib/stream-usage-counter", () => ({
+  reserveVendorStreamSeconds: mocks.reserveVendorStreamSeconds,
+}));
+vi.mock("node:timers/promises", () => ({ setTimeout: vi.fn(async () => undefined) }));
 
 import {
   recordStreamUsageLedgerEntry,
+  streamUsageRetryDelayMs,
+  STREAM_USAGE_MAX_ATTEMPTS,
   StreamUsageValidationError,
 } from "@/lib/stream-usage";
 
@@ -68,6 +75,11 @@ beforeEach(() => {
     streamOperationsAlert: { upsert: mocks.alertUpsert, updateMany: mocks.alertUpdateMany },
   }));
   mocks.resolveTeamFunnelAttribution.mockResolvedValue(null);
+  mocks.reserveVendorStreamSeconds.mockImplementation(async (_tx: unknown, input: { seconds: number }) => ({
+    admitted: true,
+    previousSeconds: 0,
+    totalSeconds: input.seconds,
+  }));
 });
 
 describe("recordStreamUsageLedgerEntry", () => {
@@ -92,12 +104,40 @@ describe("recordStreamUsageLedgerEntry", () => {
       streamMinutesUsed: 0,
       resetAt: new Date("2026-08-01T00:00:00.000Z"),
     });
-    mocks.ledgerAggregate.mockResolvedValueOnce({ _sum: { watchSeconds: 30 } });
+    mocks.reserveVendorStreamSeconds.mockResolvedValueOnce({ admitted: false });
 
     await expect(recordStreamUsageLedgerEntry({ ...directInput, watchSeconds: 45 }))
-      .rejects.toMatchObject({ code: "stream_minutes_exhausted" });
+      .rejects.toMatchObject({ code: "stream_minutes_exhausted", name: "StreamQuotaExceededError" });
 
+    expect(mocks.reserveVendorStreamSeconds).toHaveBeenCalledWith(expect.anything(), {
+      vendorId: "vendor-1",
+      monthKey: "2026-07",
+      seconds: 45,
+      limitSeconds: 60,
+      floorSeconds: 0,
+    });
     expect(mocks.entryCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unexpired legacy minute counter as the reservation floor and counts unlimited vendors", async () => {
+    mocks.usageLimitFindUnique.mockResolvedValueOnce({
+      streamMinutesLimit: 10,
+      streamMinutesUsed: 3,
+      resetAt: new Date("2026-08-01T00:00:00.000Z"),
+    });
+    await recordStreamUsageLedgerEntry(directInput);
+    expect(mocks.reserveVendorStreamSeconds).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      limitSeconds: 600,
+      floorSeconds: 180,
+    }));
+
+    mocks.usageLimitFindUnique.mockResolvedValueOnce(null);
+    await recordStreamUsageLedgerEntry({ ...directInput, eventId: "00000000-0000-4000-8000-000000000002" });
+    expect(mocks.reserveVendorStreamSeconds).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      limitSeconds: null,
+      floorSeconds: 0,
+    }));
+    expect(mocks.alertUpsert).not.toHaveBeenCalled();
   });
 
   it("opens one persistent warning after a successful heartbeat reaches 80% of a finite vendor quota", async () => {
@@ -106,7 +146,7 @@ describe("recordStreamUsageLedgerEntry", () => {
       streamMinutesUsed: 0,
       resetAt: new Date("2026-08-01T00:00:00.000Z"),
     });
-    mocks.ledgerAggregate.mockResolvedValueOnce({ _sum: { watchSeconds: 435 } });
+    mocks.reserveVendorStreamSeconds.mockResolvedValueOnce({ admitted: true, previousSeconds: 435, totalSeconds: 480 });
 
     await recordStreamUsageLedgerEntry(directInput);
 
@@ -128,7 +168,7 @@ describe("recordStreamUsageLedgerEntry", () => {
       streamMinutesUsed: 0,
       resetAt: new Date("2026-08-01T00:00:00.000Z"),
     });
-    mocks.ledgerAggregate.mockResolvedValueOnce({ _sum: { watchSeconds: 75 } });
+    mocks.reserveVendorStreamSeconds.mockResolvedValueOnce({ admitted: true, previousSeconds: 75, totalSeconds: 120 });
 
     await recordStreamUsageLedgerEntry(directInput);
 
@@ -224,7 +264,6 @@ describe("recordStreamUsageLedgerEntry", () => {
         capturedAt,
         allocations: {
           create: [{
-            vendorId: "vendor-1",
             liveId: "live-1",
             monthKey: "2026-07",
             recipientKey: "UNATTRIBUTED",
@@ -395,13 +434,46 @@ describe("recordStreamUsageLedgerEntry", () => {
     });
   });
 
-  it("fails closed when serializable quota admission detects a concurrent write", async () => {
-    mocks.transaction.mockRejectedValueOnce({ code: "P2034" });
+  it("runs in READ COMMITTED: no Serializable isolation option is passed", async () => {
+    await recordStreamUsageLedgerEntry(directInput);
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.transaction.mock.calls[0]).toHaveLength(1);
+  });
 
-    await expect(recordStreamUsageLedgerEntry(directInput)).rejects.toMatchObject({
-      code: "stream_minutes_exhausted",
+  it("retries a write conflict or deadlock instead of reporting quota exhaustion", async () => {
+    mocks.transaction
+      .mockRejectedValueOnce({ code: "P2034" })
+      .mockRejectedValueOnce({ code: "P2010", meta: { code: "40P01" } });
+
+    await expect(recordStreamUsageLedgerEntry(directInput)).resolves.toEqual({
+      duplicate: false,
+      entryId: "usage-1",
+      source: "DIRECT_PLAYBACK",
     });
+    expect(mocks.transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports a persistent conflict as retryable usage_busy, never stream_minutes_exhausted", async () => {
+    mocks.transaction.mockRejectedValue({ code: "P2034" });
+
+    const error = await recordStreamUsageLedgerEntry(directInput).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(StreamUsageValidationError);
+    expect(error).toMatchObject({ code: "usage_busy" });
+    expect(mocks.transaction).toHaveBeenCalledTimes(STREAM_USAGE_MAX_ATTEMPTS);
     expect(mocks.entryCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not retry an unrelated raw-query failure", async () => {
+    mocks.transaction.mockRejectedValueOnce({ code: "P2010", meta: { code: "23514" } });
+    await expect(recordStreamUsageLedgerEntry(directInput)).rejects.toMatchObject({ code: "P2010" });
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds the conflict retry backoff", () => {
+    expect(streamUsageRetryDelayMs(1, 0)).toBe(15);
+    expect(streamUsageRetryDelayMs(2, 25)).toBe(55);
+    expect(streamUsageRetryDelayMs(99, 999)).toBe(55);
+    expect(streamUsageRetryDelayMs(Number.NaN, -1)).toBe(15);
   });
 
   it("rejects a concurrent unique insert when the winning payload drifted", async () => {

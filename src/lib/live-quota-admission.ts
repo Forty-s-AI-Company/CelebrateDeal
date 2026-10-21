@@ -7,6 +7,7 @@ import { reconcileLiveRuntimeState, resolveLiveRuntime } from "@/lib/live-runtim
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import { assertStreamQuotaAvailable } from "@/lib/stream-quota";
+import { readVendorStreamUsageSeconds } from "@/lib/stream-usage-counter";
 
 export const LIVE_VIEWER_SESSION_COOKIE = "celebratedeal_live_viewer";
 export const LIVE_VIEWER_SESSION_TTL_MS = 90_000;
@@ -196,11 +197,9 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
   assertCreditsAvailable(usageLimit, policy.stopWhenCreditsBelow);
   const streamMinutesLimit = usageLimit?.streamMinutesLimit ?? 0;
   if (streamMinutesLimit > 0) {
-    const ledgerUsage = await tx.streamUsageLedgerEntry.aggregate({
-      where: { vendorId: input.vendorId, monthKey: monthKey(now) },
-      _sum: { watchSeconds: true },
-    });
-    const ledgerSeconds = ledgerUsage._sum.watchSeconds ?? 0;
+    // One-row read of the vendor-month total (F-092) instead of a month-long
+    // ledger scan inside this Serializable admission transaction.
+    const ledgerSeconds = await readVendorStreamUsageSeconds(tx, { vendorId: input.vendorId, monthKey: monthKey(now) });
     const legacySeconds = usageLimit?.resetAt && usageLimit.resetAt > now
       ? (usageLimit.streamMinutesUsed ?? 0) * 60
       : 0;

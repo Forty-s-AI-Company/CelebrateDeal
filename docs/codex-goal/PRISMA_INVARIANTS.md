@@ -399,3 +399,12 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - backfill 改為逐批（預設 100 列，`--batch-size` 1–500）獨立提交的 Serializable 交易（`timeout` 60 秒、`maxWait` 10 秒），以 cursor 唯讀掃描產生計畫；遮罩後沒有 envelope 的 PaymentAccount 列為 `unrecoverableMaskedAccounts`，拒絕執行。
 - 測試：`src/app/(app)/billing/payouts/actions.db.test.ts`（envelope／遮罩、24 小時冷卻與 `selectPayoutAccount`、被偷 session 沒有 TOTP 無法改帳號、step-up 次數限制、active／verified 改回 pending、兩租戶否定、通知信、停權不可解除、多帳號拒絕、CSRF、CHECK）、`scripts/backfill-bank-account-encryption.db.test.ts`、`src/app/(app)/billing/payouts/page.test.tsx`、`src/lib/payout-account.test.ts`。
 - 目前 151 models、120 forward migrations；既有 SQL／checksum 不變。已在 loopback 全新 `celebratedeal_dev`（5433）完整套用，並以交易內測試確認明文列會被遮罩並寫入 AuditLog、之後 VALIDATE 成功。
+
+## 2026-10-21 F-092／B06-06 串流用量月計數列（心跳不再於 Serializable 交易掃整月帳本）
+
+- `20261021150000_stream_usage_monthly_counter`：forward-only、純新增。新增 `StreamUsageMonthlyCounter`（主鍵 `(vendorId, monthKey)`、`watchSeconds` 預設 0、`createdAt`、`updatedAt`）：CHECK `monthKey` 為 `YYYY-MM`、`watchSeconds >= 0`；`vendorId` FK ON DELETE CASCADE；啟用 RLS（不新增 policy）。不回填：每個商家月份的第一個心跳以 `INSERT ... SELECT SUM(ledger) ... ON CONFLICT DO UPDATE` 從帳本播種一次，之後只做單列遞增。
+- 不變量：`StreamUsageLedgerEntry` 仍是不可變的唯一事實來源；計數列是可重算的衍生總和。`recordStreamUsageLedgerEntry` 改為 READ COMMITTED：先以條件式 `UPDATE ... SET "watchSeconds" = "watchSeconds" + n WHERE GREATEST("watchSeconds", legacy) + n <= limit` 預留額度（無上限時照樣累加），預留成功即持有該列鎖直到交易結束，所以同商家的成員／頁面額度檢查、帳本與分配寫入依序執行；額度不足才拋 `StreamQuotaExceededError`（route 回 429 `stream_minutes_exhausted`）。交易失敗回滾時遞增一併回滾。P2034 或原生查詢的 `40001`／`40P01`（P2010）最多重試 3 次，仍失敗回 `usage_busy`（route 回 503、可重試），**不再轉成額度用完**。觀眾入場（`admitLiveViewer`，仍為 Serializable）改讀計數列（無列時退回帳本加總）。
+- 同批修正：帳本 `create` 的巢狀 `allocations.create` 原本帶 `vendorId`，Prisma 對複合 FK 的 nested input 不接受此欄位，真實資料庫上每次心跳寫入都會失敗（單元測試以 mock 掩蓋）；已移除，`vendorId` 由父列帶入。另外真正的額度用完原本拋出未對應的 `StreamQuotaExceededError` 而回 500，現在回 429。
+- 已知限制：滾動部署期間仍在跑舊版程式的實例只寫帳本、不更新計數列，計數列可能比帳本少記該段時間；以 `StreamUsageReconciliation` 對帳時以帳本為準。
+- 測試：`src/lib/stream-usage-counter.db.test.ts`（20 個併發心跳在有限額度下全數入帳、計數＝帳本＝1,200 秒；10 分鐘額度下 20 個併發心跳恰好 10 個成功、其餘只會是 `StreamQuotaExceededError`；既有帳本播種；同 eventId 併發只計一次；跨租戶；CHECK 與 vendor 串聯刪除）。同一個 20 併發案例在舊版 Serializable 邏輯下會出現多筆 `stream_minutes_exhausted`。
+- 目前 152 models、121 forward migrations；既有 SQL／checksum 不變。

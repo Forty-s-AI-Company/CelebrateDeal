@@ -162,6 +162,7 @@ model Vendor {
   teamLeadAttributions             TeamLeadAttribution[]
   teamConversionAttributions       TeamConversionAttribution[]
   streamUsageLedgerEntries         StreamUsageLedgerEntry[]
+  streamUsageMonthlyCounters       StreamUsageMonthlyCounter[]
   streamUsageAllocations           StreamUsageAllocationEntry[]
   streamUsageReconciliations       StreamUsageReconciliation[]
   streamOperationsAlerts           StreamOperationsAlert[]
@@ -3275,6 +3276,22 @@ model StreamUsageReconciliation {
   @@unique([vendorId, id])
   @@index([vendorId, monthKey, status])
   @@index([vendorId, provider, monthKey])
+}
+
+/// Per-vendor monthly running total of StreamUsageLedgerEntry.watchSeconds.
+/// Quota admission increments this single row atomically instead of summing the
+/// month's ledger inside a Serializable transaction (F-092). The ledger stays
+/// the immutable source of truth; this row is a derived, reconcilable total.
+model StreamUsageMonthlyCounter {
+  vendorId     String
+  monthKey     String
+  watchSeconds Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@id([vendorId, monthKey])
 }
 
 /// Persistent operational alerts. Deduplication keys contain only server-owned
