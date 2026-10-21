@@ -164,7 +164,7 @@ export class LandingPageScopeError extends Error {
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
 type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
 
-type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent">;
+type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent" | "vendor">;
 
 function db() {
   return getDb();
@@ -237,7 +237,7 @@ async function publicConsultationEvents(database: LandingPageDb, scope: { vendor
   const referencedIds = [...consultationEventIdsInContent(content)];
   if (referencedIds.length === 0) return [];
   // A closed consultation_booking module publishes no bookable events (F-001).
-  if (!await isVendorFeatureEnabled(getDb(), scope.vendorId, "consultation_booking")) return [];
+  if (!await isVendorFeatureEnabled(database, scope.vendorId, "consultation_booking")) return [];
   const events = await database.consultationEvent.findMany({
     where: {
       id: { in: referencedIds },

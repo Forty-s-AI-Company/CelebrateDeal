@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDb } from "@/lib/db";
-import { isCardBindingRequiredForVendor, isVendorFeatureEnabled } from "@/lib/feature-gates";
+import { isCardBindingRequiredForVendor, isProductPurchasable, isVendorFeatureEnabled, purchasableProductWhere } from "@/lib/feature-gates";
 
 // F-001 / F-002: closed-beta grants live on Vendor.betaFeatureGrants
 // (migration 20261021171100_vendor_beta_feature_grants).
@@ -46,5 +46,33 @@ describe("Vendor.betaFeatureGrants", () => {
     const created = await vendor();
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["billing", "everything"] } })).rejects.toThrow();
     await expect(db.vendor.update({ where: { id: created.id }, data: { betaFeatureGrants: ["courses", "danmaku"] } })).resolves.toMatchObject({ betaFeatureGrants: ["courses", "danmaku"] });
+  });
+});
+
+describe("course products while the courses module is closed (F-001, review M-1)", () => {
+  async function products(vendorId: string) {
+    const base = { vendorId, priceCents: 1000, isActive: true, fulfillmentTypeConfirmed: true };
+    await db.product.create({ data: { ...base, name: "實體商品", slug: `physical-${randomUUID()}`, fulfillmentType: "physical" } });
+    await db.product.create({ data: { ...base, name: "課程商品", slug: `course-${randomUUID()}`, fulfillmentType: "course", commerceDomain: "course" } });
+  }
+
+  it("drops course products from buyer-facing queries only for a vendor without the grant", async () => {
+    const closed = await vendor();
+    const open = await vendor({ betaFeatureGrants: ["courses"] });
+    await products(closed.id);
+    await products(open.id);
+
+    const visible = async (vendorId: string) => (await db.product.findMany({
+      where: { vendorId, ...await purchasableProductWhere(db, vendorId) }, select: { fulfillmentType: true },
+    })).map((row) => String(row.fulfillmentType)).sort();
+    await expect(visible(closed.id)).resolves.toEqual(["physical"]);
+    await expect(visible(open.id)).resolves.toEqual(["course", "physical"]);
+  });
+
+  it("treats a course product as unsellable unless the vendor holds the grant", () => {
+    expect(isProductPurchasable({ betaFeatureGrants: [] }, { fulfillmentType: "course" })).toBe(false);
+    expect(isProductPurchasable({ betaFeatureGrants: [] }, { commerceDomain: "course", fulfillmentType: "digital" })).toBe(false);
+    expect(isProductPurchasable({ betaFeatureGrants: [] }, { commerceDomain: "merchant", fulfillmentType: "physical" })).toBe(true);
+    expect(isProductPurchasable({ betaFeatureGrants: ["courses"] }, { fulfillmentType: "course" })).toBe(true);
   });
 });

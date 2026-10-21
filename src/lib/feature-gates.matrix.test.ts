@@ -243,7 +243,12 @@ const STATIC_MATRIX: Array<{ feature: string; file: string; gate: RegExp; count?
   { feature: "consultation_booking", file: "src/app/actions/consultation-actions.ts", gate: /requireFeature\(vendor, "consultation_booking"\)|isVendorFeatureEnabled\(getDb\(\), [a-zA-Z.]+, "consultation_booking"\)/gu, count: 3 },
   { feature: "consultation_booking", file: "src/app/actions/mobile-consultation-actions.ts", gate: /requireFeature\(vendor, "consultation_booking"\)/u },
   { feature: "consultation_booking", file: "src/app/portal/[vendorSlug]/calendar/[bookingId]/route.ts", gate: /isVendorFeatureEnabled\(getDb\(\), session\.vendorId, "consultation_booking"\)/u },
-  { feature: "consultation_booking", file: "src/lib/landing-page-service.ts", gate: /isVendorFeatureEnabled\(getDb\(\), scope\.vendorId, "consultation_booking"\)/u },
+  { feature: "consultation_booking", file: "src/lib/landing-page-service.ts", gate: /isVendorFeatureEnabled\(database, scope\.vendorId, "consultation_booking"\)/u },
+  // courses: a course product is never sold while the module is closed (review M-1)
+  { feature: "courses", file: "src/app/checkout/[vendorId]/[productId]/page.tsx", gate: /if \(!isProductPurchasable\(product\.vendor, product\)\) notFound\(\)/u },
+  { feature: "courses", file: "src/app/api/payments/checkout/route.ts", gate: /isProductPurchasable\(product\.vendor, (?:product|orderBumpProduct)\)/gu, count: 2 },
+  { feature: "courses", file: "src/lib/funnel-commerce-service.ts", gate: /purchasableProductWhere\(database, scope\.vendorId\)/u },
+  { feature: "courses", file: "src/app/(viewer)/live/[slug]/page.tsx", gate: /isProductPurchasable\(live\.vendor, item\.product\)/u },
   // courses
   { feature: "courses", file: "src/app/(app)/products/[id]/lessons/page.tsx", gate: /requireFeatureOrNotFound\(vendor, "courses"\)/u },
   { feature: "courses", file: "src/app/(app)/products/[id]/community/page.tsx", gate: /requireFeatureOrNotFound\(vendor, "courses"\)/u },

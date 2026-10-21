@@ -78,6 +78,7 @@ import {
   normalizeReferralCode,
   visitorIdFromRequest,
 } from "@/lib/team-funnel-attribution";
+import { featureDisabledResponse, isProductPurchasable } from "@/lib/feature-gates";
 
 const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
   // Kept only for backward-compatible request parsing. Attribution remains
@@ -780,6 +781,8 @@ export async function POST(request: Request) {
   if (!product) {
     return NextResponse.json({ error: "Product not available" }, { status: 404 });
   }
+  // A course cannot be sold while the courses module is closed (F-001).
+  if (!isProductPurchasable(product.vendor, product)) return featureDisabledResponse();
   const unavailableProductResponse = unavailableCheckoutProductResponse(product);
   if (unavailableProductResponse) return unavailableProductResponse;
   // PayUni charges whole TWD units. Never reinterpret another currency's cents
@@ -790,6 +793,9 @@ export async function POST(request: Request) {
   const orderBumpResult = await resolveCheckoutOrderBump(db, parsed.data, product, funnel?.projectId);
   if (!orderBumpResult.ok) return orderBumpResult.response;
   const { orderBumpProduct } = orderBumpResult;
+  if (orderBumpProduct && !isProductPurchasable(product.vendor, orderBumpProduct)) {
+    return NextResponse.json({ error: "Order bump not available", code: "FEATURE_DISABLED" }, { status: 409 });
+  }
 
   // Use the database definition, never a definition supplied by the browser.
   const customCheckout = validateCustomCheckoutAnswersForProduct(product.customCheckoutFields, parsed.data.customCheckoutAnswers);

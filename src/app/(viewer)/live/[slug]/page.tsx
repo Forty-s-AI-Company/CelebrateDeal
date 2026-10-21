@@ -10,6 +10,7 @@ import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { buildShareMetadata, shareDescription, unavailableShareMetadata } from "@/lib/public-share-metadata";
 import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
+import { isProductPurchasable } from "@/lib/feature-gates";
 
 const loadPublicLive = cache(async (slug: string) => {
   const serverNow = new Date();
@@ -87,7 +88,9 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
   const sameVendorActiveForm = Boolean(live.form?.vendorId === live.vendorId && live.form.isActive);
   const parsedFormFields = sameVendorActiveForm ? parseRegistrationFormFields(live.form?.fields) : null;
   const formConfigurationUnavailable = Boolean(sameVendorActiveForm && parsedFormFields && !parsedFormFields.success);
-  const liveProductIds = new Set(live.products.map((item) => item.product.id));
+  // Course products are not offered while the courses module is closed (F-001).
+  const liveProducts = live.products.filter((item) => isProductPurchasable(live.vendor, item.product));
+  const liveProductIds = new Set(liveProducts.map((item) => item.product.id));
   const publishedEvents = live.interactionScript?.vendorId === live.vendorId
     && live.interactionScript.status === "published"
     ? live.interactionScript.events
@@ -175,7 +178,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         ...(formConfigurationUnavailable ? { formConfigurationUnavailable: true } : {}),
         interactionEvents,
         scheduledMessages,
-        products: live.products.map((item) => ({
+        products: liveProducts.map((item) => ({
           id: item.product.id,
           name: item.product.name,
           description: item.product.description,

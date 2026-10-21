@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import type { PrismaClient } from "@prisma/client";
+import { NextResponse } from "next/server";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   isFeatureEnabled,
   type FeatureGateVendor,
@@ -42,15 +43,15 @@ export function requireFeatureOrNotFound(vendor: FeatureGateVendor | null | unde
 }
 
 /** Route handlers: a closed module answers 404 without revealing anything else. */
-export function featureDisabledResponse(): Response {
-  return Response.json(
+export function featureDisabledResponse(): NextResponse {
+  return NextResponse.json(
     { error: FEATURE_DISABLED_MESSAGE, code: FEATURE_DISABLED_CODE },
     { status: 404, headers: { "Cache-Control": "private, no-store" } },
   );
 }
 
 /** Route handlers: returns the 404 response when closed, otherwise null. */
-export function featureGateResponse(vendor: FeatureGateVendor | null | undefined, feature: GatedFeature): Response | null {
+export function featureGateResponse(vendor: FeatureGateVendor | null | undefined, feature: GatedFeature): NextResponse | null {
   return isFeatureEnabled(vendor, feature) ? null : featureDisabledResponse();
 }
 
@@ -75,6 +76,26 @@ export async function isVendorFeatureEnabled(db: VendorFeatureReader, vendorId: 
 /** Server components that only know the vendor id (learner and viewer pages). */
 export async function requireVendorFeatureOrNotFound(db: VendorFeatureReader, vendorId: string, feature: GatedFeature): Promise<void> {
   if (!await isVendorFeatureEnabled(db, vendorId, feature)) notFound();
+}
+
+type CourseShape = { commerceDomain?: string | null; fulfillmentType?: string | null };
+
+export function isCourseProduct(product: CourseShape): boolean {
+  return product.commerceDomain === "course" || product.fulfillmentType === "course";
+}
+
+/**
+ * A course product can only be bought while the vendor's courses module is
+ * open; otherwise the buyer would pay for a learner portal that answers 404.
+ */
+export function isProductPurchasable(vendor: FeatureGateVendor | null | undefined, product: CourseShape): boolean {
+  return !isCourseProduct(product) || isFeatureEnabled(vendor, "courses");
+}
+
+/** Prisma filter that drops course products from buyer-facing lists while courses is closed. */
+export async function purchasableProductWhere(db: VendorFeatureReader, vendorId: string): Promise<Prisma.ProductWhereInput> {
+  if (await isVendorFeatureEnabled(db, vendorId, "courses")) return {};
+  return { NOT: [{ commerceDomain: "course" }, { fulfillmentType: "course" }] };
 }
 
 /**

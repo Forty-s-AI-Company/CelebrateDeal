@@ -426,9 +426,18 @@ export type ProductMutationResult =
  * request security/authentication, while this service owns validation and the
  * tenant-scoped transaction.
  */
-/** Course products belong to the closed-beta courses module (F-001). */
-async function courseModuleClosed(db: ReturnType<typeof getDb>, vendorId: string, commerceDomain: string) {
-  return commerceDomain === "course" && !await isVendorFeatureEnabled(db, vendorId, "courses");
+/**
+ * Course products belong to the closed-beta courses module (F-001). While it is
+ * closed a merchant may still edit and unlist an existing course product, but
+ * cannot create one or put one on sale (it could not be delivered).
+ */
+async function courseModuleClosed(
+  db: ReturnType<typeof getDb>,
+  vendorId: string,
+  request: { commerceDomain: string; id: string | null; productInput: { isActive: boolean } },
+) {
+  if (request.commerceDomain !== "course" || (request.id && !request.productInput.isActive)) return false;
+  return !await isVendorFeatureEnabled(db, vendorId, "courses");
 }
 
 export async function mutateProduct(
@@ -439,7 +448,7 @@ export async function mutateProduct(
   const request = parseProductRequest(previousState, formData);
   if (!request.success) return { ok: false, state: request.state };
   const db = getDb();
-  if (await courseModuleClosed(db, vendorId, request.commerceDomain)) {
+  if (await courseModuleClosed(db, vendorId, request)) {
     return { ok: false, state: productFailure(previousState, formData, "course_feature_disabled") };
   }
   let postPurchasePolicy;
