@@ -66,6 +66,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 ## 每日摘要
 
 - 10-19：Goal 啟動。三條工作線完成實作並開 PR #447／#448／#449；每個 PR 經 reviewer 一到三輪（A 兩個 MAJOR＋一個 MAJOR、B 兩個 MAJOR、C 一個 BLOCKER 皆已修）；#447 合併。CI 擋下的問題：secret scan 誤判測試 URL／假金鑰、API contract registry 未登記、strict-index typecheck、backup blob 白名單、slug 預檢順序，全部修正。工作線 A 曾因 Opus 額度中斷一次，10-20 重跑完成。
+- 10-21 下午：#459（第四批 C）合併，第四批全部進 master（累計 14 個 PR）。第五批 B 開 PR #461（用量心跳計數列、輪詢可見性與簽章 pass、/lp proxy、Stream 簽章評估）審查中，與 master 有衝突待審後解；第五批 C 開工（metadata、工程詞彙表、互動台收合、T6 剩餘、onboarding 單一來源）。
 - 10-21 中午：#458（第四批 A，月結兩個 BLOCKER）合併並套用 staging migration；#457（第四批 B）解衝突後合併並套用 staging migration；#459 同步中。第五批開工：A（F-027 高風險操作 MFA step-up、F-028 帳號層限流）、B（F-091 入場可見性閘門與簽章 token、F-015 /lp 併發量測、F-093 Stream 簽章網址評估）。
 - 10-21 上午：#451 文件 PR 合併。第四批三個 PR 都已通過 reviewer（A #458 三輪、B #457 兩輪、C #459 兩輪），CI 修正（gate 固定數 89／68、funnel 封存 e2e、手機導覽 smoke 契約）已推上，等 CI 綠燈合併。子代理曾於 06:50 前撞到額度限制，重置後重派。
 - 10-21（續）：#456 合併；第三批全部進 master。第四批開工：A（F-038、F-039 月結 BLOCKER、F-047、F-003、F-055、F-146）、B（F-073 撥款帳號、F-072 頁面封存、F-070 個資處理、F-064 正式 migrate workflow）、C（F-142 readiness、F-120、F-128／127／121、F-118、F-126、F-133、F-122／123）。
