@@ -13,7 +13,9 @@ product
 
 ## Product Purpose
 
-CelebrateDeal 是 Cloudflare-first 的直播導購 SaaS，讓商家用直覺、可中斷續作的流程，把內容、商品、互動與交易組合成可實際販售的直播體驗。產品需清楚呈現每個動作的處理狀態、公開邊界與商業結果，降低設定錯誤並提升首次上線與後續營運成功率。
+CelebrateDeal 是直播導購 SaaS，讓商家用直覺、可中斷續作的流程，把內容、商品、互動與交易組合成可實際販售的直播體驗。產品需清楚呈現每個動作的處理狀態、公開邊界與商業結果，降低設定錯誤並提升首次上線與後續營運成功率。
+
+實際架構：應用程式部署在 Vercel（Next.js），資料庫是 Supabase PostgreSQL（Prisma），Cloudflare 負責影音（Stream）與物件儲存（R2）。正式網域是否全程經 Cloudflare 代理（橘雲、無其他直連入口）是需驗證的上線前置條件（O-7），在確認前不得宣稱產品以 Cloudflare 的 DNS、WAF 或 Turnstile 防護；程式中目前沒有 Turnstile 與 Workers 的使用。
 
 ## Brand Personality
 

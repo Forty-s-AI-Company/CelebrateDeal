@@ -33,7 +33,15 @@ export function LiveSlugField({
   const [edited, setEdited] = useState(false);
   const [autoFillCount, setAutoFillCount] = useState(0);
   const suffixRef = useRef("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const valueRef = useRef(initialValue);
+
+  useEffect(() => {
+    // F-117: 送出因撞名被擋下時，把焦點帶回網址欄位。
+    if (serverTaken) inputRef.current?.focus();
+    // 只在載入帶有伺服器錯誤的頁面時執行一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (touched) return;
@@ -68,6 +76,7 @@ export function LiveSlugField({
         <span aria-hidden="true" className="shrink-0 bg-slate-50 px-3 py-2.5 text-xs font-normal text-slate-500">/live/</span>
         <input
           id="live-slug"
+          ref={inputRef}
           name="slug"
           required
           autoComplete="off"

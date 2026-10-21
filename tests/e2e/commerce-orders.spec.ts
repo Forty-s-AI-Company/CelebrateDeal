@@ -905,7 +905,11 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await page.getByLabel("我確認這是商家授權的公開 HTTPS 交付網域").check();
     await page.getByRole("checkbox", { name: /上架商品/u }).check();
     await page.getByRole("button", { name: "儲存", exact: true }).click();
-    await expect(page.locator('form [role="alert"]')).toHaveText("交付設定不完整或網址不安全。上架前請填妥標題、必要的 HTTPS 入口或服務說明，並確認交付網域。");
+    await expect(page.locator('form [role="alert"]')).toContainText("交付設定不完整或網址不安全。上架前請填妥標題、必要的 HTTPS 入口或服務說明，並確認交付網域。");
+    // F-117: the summary names the field and focus moves to it.
+    await expect(page.locator('form [role="alert"]')).toContainText("交付入口須為公開的 HTTPS 網址");
+    await expect(page.getByLabel("付款後入口 URL", { exact: true })).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByLabel("付款後入口 URL", { exact: true })).toBeFocused();
     await expect(page.getByLabel("付款後入口 URL", { exact: true })).toHaveValue(`${firstDestination}?token=forbidden`);
     expect(await db.product.count({ where: { vendorId: fixture.vendorIds[0], slug: productSlug } })).toBe(0);
 

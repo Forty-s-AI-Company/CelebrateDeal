@@ -234,3 +234,22 @@ describe("POST /api/live-studio/drafts", () => {
     expect(mocks.create).toHaveBeenCalled();
   });
 });
+
+describe("POST /api/live-studio/drafts overwrite (B07-20)", () => {
+  it("skips only the revision comparison and keeps tenant, live and liveness bounds", async () => {
+    mocks.readJsonBody.mockResolvedValue({ draftId: "draft-1", revision: 1, overwrite: true, payload });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    const where = mocks.updateManyAndReturn.mock.calls[0]?.[0].where;
+    expect(where).toMatchObject({ id: "draft-1", vendorId: "vendor-1", consumedAt: null, expiresAt: { gt: expect.any(Date) } });
+    expect(where).not.toHaveProperty("revision");
+  });
+
+  it("still compares revisions when overwrite is not requested", async () => {
+    mocks.readJsonBody.mockResolvedValue({ draftId: "draft-1", revision: 1, payload });
+    await POST(request());
+    expect(mocks.updateManyAndReturn.mock.calls[0]?.[0].where).toHaveProperty("revision", 1);
+  });
+});

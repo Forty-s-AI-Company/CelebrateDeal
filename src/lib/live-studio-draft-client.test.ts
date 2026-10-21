@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyLiveStudioDraft } from "./live-studio-draft";
-import { LiveStudioDraftClientError, liveStudioDraftFromFormData, saveLiveStudioDraft } from "./live-studio-draft-client";
+import { LiveStudioDraftClientError, liveInvalidFieldName, liveStudioDraftFromFormData, saveLiveStudioDraft } from "./live-studio-draft-client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -165,3 +165,19 @@ function formData(entries: Array<[string, string]>) {
   for (const [name, value] of entries) form.append(name, value);
   return form;
 }
+
+describe("liveInvalidFieldName (F-117)", () => {
+  it("returns the first failing control name from a zod error", () => {
+    const form = new FormData();
+    form.set("title", "x".repeat(500));
+    let caught: unknown;
+    try { liveStudioDraftFromFormData(form, 7); } catch (error) { caught = error; }
+    expect(caught).toBeDefined();
+    expect(liveInvalidFieldName(caught)).toMatch(/^[A-Za-z][A-Za-z0-9]*$/u);
+  });
+  it("ignores non-zod errors and unsafe names", () => {
+    expect(liveInvalidFieldName(new Error("boom"))).toBeNull();
+    expect(liveInvalidFieldName({ issues: [{ path: ["a&b=1"] }] })).toBeNull();
+    expect(liveInvalidFieldName({ issues: [{ path: ["slug", 0] }] })).toBe("slug");
+  });
+});
