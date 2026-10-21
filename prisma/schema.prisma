@@ -1731,6 +1731,10 @@ model PaymentAccount {
   bankCodeLegacy          String?  @map("bankCode")
   bankAccountLegacyNumber String?  @map("bankAccountNumber")
   bankAccountEncrypted    String?
+  /// F-073: last merchant self-service change of the payout bank account.
+  bankAccountChangedAt    DateTime?
+  /// F-073: a `pending_verification` account may receive payouts only from this time on.
+  payoutEligibleAt        DateTime?
   riskHoldEnabled         Boolean  @default(false)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
@@ -3907,6 +3911,8 @@ model LandingPage {
   operations         Json?
   publishedAt        DateTime?
   unpublishedAt      DateTime?
+  /// F-072: set instead of deleting a page that was published or has funnel traffic.
+  archivedAt         DateTime?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -3938,7 +3944,7 @@ model FunnelVisit {
   createdAt    DateTime @default(now())
 
   vendor      Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  page        LandingPage        @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  page        LandingPage        @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Restrict)
   submissions FunnelSubmission[]
 
   @@unique([vendorId, id])
@@ -3957,7 +3963,7 @@ model FunnelSubmission {
   createdAt    DateTime @default(now())
 
   vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  page       LandingPage    @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)
+  page       LandingPage    @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Restrict)
   submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
   visit      FunnelVisit?   @relation(fields: [vendorId, pageId, visitId], references: [vendorId, pageId, id], onDelete: Restrict)
 

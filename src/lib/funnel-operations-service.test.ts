@@ -13,7 +13,7 @@ beforeEach(()=>{vi.resetAllMocks();mocks.auth.mockResolvedValue({auth:{user:{id:
 describe("Funnel operations tenant/CAS boundary",()=>{
  it("derives tenant/project from server context",async()=>{
   await loadFunnelOperations("page1");
-  expect(mocks.find).toHaveBeenCalledWith(expect.objectContaining({where:{id:"page1",vendorId:"vendor1",projectId:"project1"}}));
+  expect(mocks.find).toHaveBeenCalledWith(expect.objectContaining({where:{id:"page1",vendorId:"vendor1",projectId:"project1",archivedAt:null}}));
  });
  it("rejects inaccessible page and never writes",async()=>{
   mocks.find.mockResolvedValue(null);

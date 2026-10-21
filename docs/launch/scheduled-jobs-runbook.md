@@ -16,6 +16,7 @@
 | `/api/cron/live-media` | 需開啟 | 每 5 分鐘 | POST＋`JOB_SECRET`（新增）／GET＋`CRON_SECRET` | 只在 `vars.SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` 時排程。瀏覽器直播封測隱藏（D-09），未設定 `CELEBRATEDEAL_MEDIA_ORIGIN` 時固定回 503，預設排程會讓每次執行都標紅 |
 | `/api/jobs/billing-cycle` | **需開啟** | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | 只在 `vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true` 時排程，`all` 也一樣；單選 `billing-cycle` 的手動 dispatch 才會直接執行。這個 job 會重算未鎖定月份的 draft 結算，並替每個 active 訂閱 upsert `issued` 月費帳單；因為帳單在 `dueAt <= now` 才產生，同一次執行結尾就會被標成 `overdue`（既有問題，另案處理）。封測期間 billing 隱藏（D-02、D-16），所以預設關閉。不會扣款（`automaticCharges: 0`） |
 | `/api/jobs/electronic-invoices` | 是 | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET`（新增） | fiscal adapter 未接時回 202，視為成功 |
+| `/api/cron/data-retention` | **需開啟** | 每日 01:22（台灣） | POST＋`JOB_SECRET`／GET＋`CRON_SECRET` | F-070 保存期限清理：WebhookEvent 原始 payload、AnalyticsEvent、AuditLog IP。只在 `vars.SCHEDULED_JOBS_ENABLE_DATA_RETENTION=true` 時排程，`all` 也一樣；部署環境另須設定 `DATA_RETENTION_ENABLED=true`，否則 endpoint 只回 `skipped`、不寫資料。保存天數由 `DATA_RETENTION_*_DAYS` 決定（預設 180／365／365，待 owner 依律師建議訂定），設定不合法時回 503 不清理。回應 `remaining=true` 代表當次達批次上限，隔天會接續 |
 | `/api/jobs/tracking-deliveries` | 否 | — | POST＋`JOB_SECRET` | 需要 body 帶 `vendorId`，且預設 `tracking_executor_disabled`。要排程得先做「列出待派送商家」的批次入口（後續工作） |
 | `/api/jobs/payuni-live-probe` | 否 | — | 專屬密鑰 | 一次性正式環境探針，刻意不排程 |
 | `/api/cron/line-notifications/runtime-binding` | 否 | — | GET＋`CRON_SECRET` | staging 驗證探針，不是工作 |
@@ -65,6 +66,7 @@
 | repo variable `SCHEDULED_JOBS_PAUSED=true` | job 被 `if` 跳過，run 顯示 skipped | 最快、可留痕；事故處理首選 |
 | Actions 頁面 Disable workflow | 不再觸發 | 長時間停用 |
 | repo variable `SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true` | 開始排程 live-media 清理 | browser_live 部署好再開 |
+| repo variable `SCHEDULED_JOBS_ENABLE_DATA_RETENTION=true` | 開始每日執行 data-retention 清理 | owner 依律師建議訂定保存期限、在部署環境設定 `DATA_RETENTION_*_DAYS` 與 `DATA_RETENTION_ENABLED=true` 後再開 |
 | repo variable `SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true` | 開始每日執行 billing-cycle（開立帳單、標記逾期） | billing 對商家開放、owner 同意後再開；先修「開立當下就逾期」 |
 
 恢復：刪除 `SCHEDULED_JOBS_PAUSED` 或改成 `false`，再用 `workflow_dispatch` 手動跑一次 `all` 確認全部 `ok`。`all` 不會執行 billing-cycle（除非已設 `SCHEDULED_JOBS_ENABLE_BILLING_CYCLE=true`），也不會執行 live-media（除非已設 `SCHEDULED_JOBS_ENABLE_LIVE_MEDIA=true`）。要單獨驗證 billing-cycle，先確認 owner 同意在 staging 開立帳單，再單選 `billing-cycle` dispatch。

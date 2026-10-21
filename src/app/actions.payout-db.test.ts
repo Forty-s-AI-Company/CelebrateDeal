@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { encryptBankAccount } from "@/lib/bank-account";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -184,9 +185,15 @@ describe("createPayoutBatchAction PostgreSQL conditional settlement claim", () =
         providerName: "synthetic",
         accountLabel: "WP18 Synthetic Platform Account",
         status: "active",
-        bankAccountLegacyName: "Synthetic Merchant",
+        // Full details only in the vendor-bound envelope; legacy columns are
+        // masked (PaymentAccount_bankAccountNumber_masked_check).
+        bankAccountEncrypted: encryptBankAccount(
+          { accountName: "Synthetic Merchant", bankCode: "000", accountNumber: "1234567890" },
+          vendor.id,
+        ),
+        bankAccountLegacyName: "S＊＊＊＊",
         bankCodeLegacy: "000",
-        bankAccountLegacyNumber: "1234567890",
+        bankAccountLegacyNumber: "****7890",
       },
     });
     const settlement = await database.settlement.create({

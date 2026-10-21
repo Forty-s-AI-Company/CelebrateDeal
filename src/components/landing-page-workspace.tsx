@@ -223,7 +223,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
         <button disabled={blocked || dirty} onClick={() => run("publish")} className={secondaryButtonClass}>發布已儲存草稿</button>
         <button disabled={pending || stepPending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
         <button disabled={pending || stepPending || dirty} onClick={() => {
-          if (window.confirm("確定要永久刪除這個 Funnel、草稿與所有發布歷史嗎？此操作無法復原。")) run("delete");
+          if (window.confirm("確定要移除這個 Funnel 嗎？曾發布或已有造訪紀錄的 Funnel 會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) run("delete");
         }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除 Funnel</button>
         {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || stepPending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
         {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || stepPending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}

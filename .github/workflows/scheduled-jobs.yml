@@ -4,7 +4,8 @@ name: Scheduled background jobs (staging)
 # Runbook: docs/launch/scheduled-jobs-runbook.md
 # - "*/5 * * * *": email/live/learner/LINE delivery, webhook retry + inventory release,
 #   LINE outbox, and (opt-in) live media cleanup.
-# - "22 17 * * *" (01:22 Asia/Taipei): electronic invoices, and (opt-in) billing cycle.
+# - "22 17 * * *" (01:22 Asia/Taipei): electronic invoices, and (opt-in) billing cycle
+#   and data retention (vars.SCHEDULED_JOBS_ENABLE_DATA_RETENTION, F-070).
 #   The billing cycle issues monthly invoices and marks them overdue, so it only runs
 #   when vars.SCHEDULED_JOBS_ENABLE_BILLING_CYCLE == 'true' or when dispatched alone.
 # Pause without a code change: set the repository variable SCHEDULED_JOBS_PAUSED=true,
@@ -28,6 +29,7 @@ on:
           - live-media
           - billing-cycle
           - electronic-invoices
+          - data-retention
 
 permissions:
   contents: read
@@ -105,6 +107,14 @@ jobs:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
         run: node scripts/scheduled-jobs-runner.mjs electronic-invoices
 
+      - name: data-retention
+        id: data-retention
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '22 17 * * *' && vars.SCHEDULED_JOBS_ENABLE_DATA_RETENTION == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.job == 'data-retention' || (inputs.job == 'all' && vars.SCHEDULED_JOBS_ENABLE_DATA_RETENTION == 'true'))) }}
+        continue-on-error: true
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        run: node scripts/scheduled-jobs-runner.mjs data-retention
+
       - name: Record step outcomes
         if: ${{ always() }}
         env:
@@ -114,6 +124,7 @@ jobs:
           OUTCOME_LIVE_MEDIA: ${{ steps.live-media.outcome }}
           OUTCOME_BILLING_CYCLE: ${{ steps.billing-cycle.outcome }}
           OUTCOME_ELECTRONIC_INVOICES: ${{ steps.electronic-invoices.outcome }}
+          OUTCOME_DATA_RETENTION: ${{ steps.data-retention.outcome }}
         run: |
           {
             echo "| job | outcome |"
@@ -124,10 +135,11 @@ jobs:
             echo "| live-media | ${OUTCOME_LIVE_MEDIA} |"
             echo "| billing-cycle | ${OUTCOME_BILLING_CYCLE} |"
             echo "| electronic-invoices | ${OUTCOME_ELECTRONIC_INVOICES} |"
+            echo "| data-retention | ${OUTCOME_DATA_RETENTION} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail the run when any called job failed
-        if: ${{ always() && (steps.email-deliveries.outcome == 'failure' || steps.line-notifications.outcome == 'failure' || steps.webhook-retry.outcome == 'failure' || steps.live-media.outcome == 'failure' || steps.billing-cycle.outcome == 'failure' || steps.electronic-invoices.outcome == 'failure') }}
+        if: ${{ always() && (steps.email-deliveries.outcome == 'failure' || steps.line-notifications.outcome == 'failure' || steps.webhook-retry.outcome == 'failure' || steps.live-media.outcome == 'failure' || steps.billing-cycle.outcome == 'failure' || steps.electronic-invoices.outcome == 'failure' || steps.data-retention.outcome == 'failure') }}
         run: |
           echo "::error::At least one scheduled job did not return 2xx. See the scheduled-job lines above."
           exit 1

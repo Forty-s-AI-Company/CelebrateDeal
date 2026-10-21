@@ -365,7 +365,6 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 覆核門檻改為 `|新調整值| > 門檻` 或 `|新值 − 現值| > 門檻` 任一成立即需第二人（n-2）；金額輸入上限改為 NT$21,474,836，確保分值不超過 PostgreSQL `integer`（n-3）。
 - 目前 150 models、114 forward migrations；既有 SQL／checksum 不變。
 
-
 ## 2026-10-21 F-038／B03-02 交易用途（月結只計買家訂單）
 
 - `20261021130100_payment_transaction_purpose`：forward-only。新增 enum `PaymentTransactionPurpose`（`buyer_order／platform_subscription／invoice_payment／demo／unclassified`）與 `PaymentTransaction.purpose`（NOT NULL，預設 `unclassified`）。回填只依伺服器寫入的資料：`providerName = 'demo'` 一律為 `demo`（PR #458 審查 m-3，月結排除且不擋）；其次 `metadata.billingPurpose` 為 `platform_subscription_checkout`／`invoice_payment`／`buyer_order` 分別對應三種用途；沒有 `billingPurpose` 但有 `CommerceOrder.primaryPaymentTransactionId` 指向它（同 vendor）的列為 `buyer_order`；明確的方案費／帳單款標記優先於 CommerceOrder 連結；其餘維持 `unclassified`。交易層級 `lock_timeout = 5s`。
@@ -384,3 +383,19 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 既有未鎖定月結的 `refundAmountCents` 為 0；若該月已有已處理退款，鎖定前必須重新產生月結。
 - 測試：`src/lib/settlement-carry-forward.db.test.ts`（鎖定月份順延、webhook 退款不採用 provider 時間、精確金額的負餘額結轉與扣抵、來源月重算、鎖定前輸入變動、目標月已鎖、正負調整、DB CHECK）。
 - 目前 151 models、116 forward migrations；既有 SQL／checksum 不變。
+
+## 2026-10-21 F-072／B04-19 Funnel 封存取代刪除
+
+- `20261021140000_landing_page_archive_restrict_funnel`：forward-only。`LandingPage` 新增 `archivedAt`（可為 NULL）與 CHECK `LandingPage_archived_unpublished_check`（`archivedAt` 有值時 `status <> 'published'` 且 `publishedVersionId IS NULL`）。`FunnelVisit_vendorId_pageId_fkey`、`FunnelSubmission_vendorId_pageId_fkey` 由 `ON DELETE CASCADE` 改為 `ON DELETE RESTRICT`（同名重建，`NOT VALID`；交易層級 `lock_timeout = 5s`；本檔不掃表），schema 同步為 `onDelete: Restrict`，drift 檢查不變。Vendor 刪除仍經兩表各自的 `vendorId` FK 串聯（`src/lib/landing-page-archive.db.test.ts` 的清理即驗證）；`SalesProject` 刪除若串到有流量的頁面會被擋下（目前沒有刪除專案的 app 路徑）。
+- `20261021140100_landing_page_funnel_fk_validate`：只有兩句 `VALIDATE CONSTRAINT`。Prisma 把每個 migration 檔當成一個隱含交易，所以必須另開 migration，掃表時才只持有 SHARE UPDATE EXCLUSIVE（LandingPage 為 ROW SHARE），不擋 `/lp` 讀取與造訪寫入。
+- 程式：`deleteLandingPage` 在 Serializable 交易內重讀頁面，曾發布（`publishedAt`、`status = published` 或已有 `LandingPageVersion`）或已有 `FunnelVisit`／`FunnelSubmission` 時改為封存（`archivedAt`、`status = draft`、`publishedVersionId = null`，已發布者補 `unpublishedAt`），只有從未發布且無流量的草稿才真正刪除。編輯器查詢（`requireScopedPage`、清單、編輯器載入、公開狀態診斷、營運與自動化設定）一律加 `archivedAt: null`；公開查詢（`publicLandingPageCandidateWhere`、funnel runtime、funnel checkout、報名 marketing hint）同樣排除封存頁，`/lp/[slug]` 因此回全站繁中 404。封存頁的 slug 仍佔用（全域唯一），並繼續以 Restrict 參照 form、live 與版本；目前沒有查看或還原封存頁的 UI（產品決策，留待 owner）。
+- 測試：`src/lib/landing-page-archive.db.test.ts`（刪除／封存分流、保留造訪與版本、跨租戶否定、Restrict、CHECK、Vendor 串聯）、`src/lib/landing-page-service.test.ts`、`src/app/actions/landing-page-actions.test.ts`。
+
+## 2026-10-21 F-073／B04-20 商家撥款帳號只存加密 envelope，變更後 24 小時才可撥款
+
+- `20261021140200_payment_account_payout_verification`：forward-only，排在 archive migration 之後。`PaymentAccount` 新增 `bankAccountChangedAt`、`payoutEligibleAt`（可為 NULL、無 default）。部署當下仍為明文的 legacy 帳號（`bankAccountNumber` 非 NULL 且不以 `****` 開頭）**不會卡住部署**：同一交易先為每筆寫一列 `AuditLog`（`payment_account_legacy_plaintext_masked`，只記 `hasEncryptedAccount`、`requiresMerchantReentry`，不含帳號），再把帳號改為 `****` 加末四碼、戶名改為首字加 `＊`；沒有 envelope 的列因此不再符合撥款條件，需商家在 `/billing/payouts` 重新填寫。要保留可撥款狀態，部署前先跑 `scripts/backfill-bank-account-encryption.ts`。最後以 `NOT VALID` 加 CHECK `PaymentAccount_bankAccountNumber_masked_check`（`"bankAccountNumber" IS NULL OR "bankAccountNumber" LIKE '****%'`）。交易層級 `lock_timeout = 5s`。
+- `20261021140300_payment_account_masked_check_validate`：只有 `VALIDATE CONSTRAINT`，獨立交易、SHARE UPDATE EXCLUSIVE。Prisma 6 不比對 CHECK，drift 檢查不變、無新 allowlist 項目。部署前置查詢見 `docs/operations/prisma-migration-guards-runbook.md` §6。
+- 程式：`src/lib/vendor-payout-account.ts`（唯一寫入商家撥款帳號的 app 路徑）、`src/app/(app)/billing/payouts/actions.ts`：`assertServerActionSecurity` → `requireVendorOwnerFinance` → 須已啟用 MFA → **當下重新輸入 TOTP**（與 `/mfa/verify` 相同的 `verifyTotpCode`，不接受 recovery code；每人 15 分鐘 5 次）→ 寫入。vendorId 只取自 session。完整帳號只寫進以 vendor 為 AAD 的 envelope，legacy 欄位只存 `maskBankAccount` 結果；每次儲存都把帳號設為 `pending_verification`、`payoutEligibleAt = now + 24h`（平台設定的其他狀態如 `suspended` 不變），同一交易寫 `vendor_payout_account_saved` audit（只含銀行代碼、末四碼與生效時間），交易後寄信給所有 active owner（`src/lib/vendor-payout-account-notification.ts`；寄送失敗仍保留變更，回報 `saved_notification_failed`）。`selectPayoutAccount` 把 `active` 與 `pending_verification` 都算進「唯一一個 platform 帳號」，後者在 `payoutEligibleAt` 之前不可撥款，也不會退回改用舊帳號；`verified` 不再自動升為可撥款。`isEligiblePayoutAccount` 不接受「沒有 envelope 且 legacy 帳號已遮罩」的帳號。
+- backfill 改為逐批（預設 100 列，`--batch-size` 1–500）獨立提交的 Serializable 交易（`timeout` 60 秒、`maxWait` 10 秒），以 cursor 唯讀掃描產生計畫；遮罩後沒有 envelope 的 PaymentAccount 列為 `unrecoverableMaskedAccounts`，拒絕執行。
+- 測試：`src/app/(app)/billing/payouts/actions.db.test.ts`（envelope／遮罩、24 小時冷卻與 `selectPayoutAccount`、被偷 session 沒有 TOTP 無法改帳號、step-up 次數限制、active／verified 改回 pending、兩租戶否定、通知信、停權不可解除、多帳號拒絕、CSRF、CHECK）、`scripts/backfill-bank-account-encryption.db.test.ts`、`src/app/(app)/billing/payouts/page.test.tsx`、`src/lib/payout-account.test.ts`。
+- 目前 151 models、120 forward migrations；既有 SQL／checksum 不變。已在 loopback 全新 `celebratedeal_dev`（5433）完整套用，並以交易內測試確認明文列會被遮罩並寫入 AuditLog、之後 VALIDATE 成功。
