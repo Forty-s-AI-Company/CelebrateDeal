@@ -1,8 +1,17 @@
 name: CI
 
 on:
+  # F-147 / B09-08: a PR branch push used to run CI twice (push and
+  # pull_request). Only master pushes run here; every PR runs pull_request.
   push:
+    branches: [master]
   pull_request:
+
+# A newer run for the same ref supersedes an in-flight one, except on master
+# where every merged commit keeps its own full run.
+concurrency:
+  group: ci-${{ github.ref }}${{ github.ref == 'refs/heads/master' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   quality:
