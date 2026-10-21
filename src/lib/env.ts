@@ -238,6 +238,16 @@ const recommendedKeys = [
   "SENTRY_AUTH_TOKEN",
 ] as const;
 
+function accountRateLimitCheck(rateLimitProvider: string): EnvCheck {
+  return {
+    key: "ACCOUNT_RATE_LIMIT",
+    status: "pass",
+    message: rateLimitProvider === "cloudflare_waf"
+      ? "cloudflare_waf 只負責 IP 層限流；帳號層限流（MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數"
+      : "帳號層限流（MFA、復原碼、magic link、成員邀請、密碼重設）固定使用資料庫計數，不受 RATE_LIMIT_PROVIDER 影響",
+  };
+}
+
 export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
   const parsed = ProductionEnvSchema.safeParse(env);
   const checks: EnvCheck[] = [];
@@ -374,7 +384,7 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
     checks.push({
       key: "RATE_LIMIT_PROVIDER",
       status: "fail",
-      message: "production 必須使用 Cloudflare WAF 或 Upstash Redis；in-memory 無法跨部署節點持久控流",
+      message: "production 的 IP 層限流必須使用 Cloudflare WAF 或 Upstash Redis；in-memory 無法跨部署節點持久控流",
     });
   } else if (!env.RATE_LIMIT_PROVIDER) {
     checks.push({
@@ -383,6 +393,13 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       message: "未設定時預設 memory；正式部署前必須明確設定 cloudflare_waf 或 upstash_redis",
     });
   }
+
+  // F-028 / B02-05: RATE_LIMIT_PROVIDER only selects the IP layer. A WAF counts
+  // per source IP and cannot stand in for per-account limits, so those
+  // (MFA, recovery codes, magic links, member invitations, password reset)
+  // always count in PostgreSQL. Report that explicitly instead of letting a
+  // WAF selection read as full rate-limit coverage.
+  checks.push(accountRateLimitCheck(rateLimitProvider));
 
   if (env.RATE_LIMIT_PROVIDER === "upstash_redis") {
     for (const key of ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]) {

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { after } from "next/server";
+import { consumeAccountRateLimit } from "@/lib/account-rate-limit";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { sendPasswordResetEmail } from "@/lib/email";
@@ -118,6 +119,12 @@ export function schedulePasswordResetLink(
   // difference from anonymous reset requests.
   after(async () => {
     try {
+      // Account layer (F-028): a recipient gets at most a few reset mails per
+      // window whatever the source IP or RATE_LIMIT_PROVIDER. Over the limit,
+      // or if the counter is unavailable, nothing is sent; the anonymous
+      // response is already generic, so this reveals nothing.
+      const decision = await consumeAccountRateLimit("password_reset_request", input.email.trim().toLowerCase());
+      if (!decision.allowed) return;
       await sendPasswordResetLink(input);
     } catch {
       // sendPasswordResetLink revokes a token that was not delivered and writes

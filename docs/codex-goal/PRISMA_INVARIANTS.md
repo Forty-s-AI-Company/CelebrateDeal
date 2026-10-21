@@ -399,3 +399,11 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - backfill 改為逐批（預設 100 列，`--batch-size` 1–500）獨立提交的 Serializable 交易（`timeout` 60 秒、`maxWait` 10 秒），以 cursor 唯讀掃描產生計畫；遮罩後沒有 envelope 的 PaymentAccount 列為 `unrecoverableMaskedAccounts`，拒絕執行。
 - 測試：`src/app/(app)/billing/payouts/actions.db.test.ts`（envelope／遮罩、24 小時冷卻與 `selectPayoutAccount`、被偷 session 沒有 TOTP 無法改帳號、step-up 次數限制、active／verified 改回 pending、兩租戶否定、通知信、停權不可解除、多帳號拒絕、CSRF、CHECK）、`scripts/backfill-bank-account-encryption.db.test.ts`、`src/app/(app)/billing/payouts/page.test.tsx`、`src/lib/payout-account.test.ts`。
 - 目前 151 models、120 forward migrations；既有 SQL／checksum 不變。已在 loopback 全新 `celebratedeal_dev`（5433）完整套用，並以交易內測試確認明文列會被遮罩並寫入 AuditLog、之後 VALIDATE 成功。
+
+## 2026-10-21 F-028／B02-05 帳號層限流改用資料庫計數
+
+- `20261021150000_account_rate_limit_bucket`：forward-only、純新增。新增 `AccountRateLimitBucket`（`keyHash` PK、`scope`、`windowStartedAt`、`count`、`updatedAt`，`updatedAt` 索引）。CHECK `keyHash` 必須是 64 字元小寫 hex、`count ≥ 1`。無 FK、無 tenant key（計數主體是帳號或收件人，不屬於單一商家）；啟用 RLS（不新增 policy）。交易層級 `lock_timeout = 5s`。Prisma 6 不比對 CHECK，drift 檢查不變、無新 allowlist 項目。
+- `keyHash = SHA-256("celebratedeal:account-rate-limit:v1" ‖ scope ‖ subject)`，Email 不以明文落表。唯一寫入點 `src/lib/account-rate-limit.ts`：單一 `INSERT … ON CONFLICT DO UPDATE` 以資料庫時鐘（UTC）做固定視窗計數，原子遞增；新建 bucket 時順手刪除最多 50 筆閒置超過 24 小時的列，避免以隨機 Email 灌表。DB 錯誤一律回 503（fail closed）。
+- 不受 `RATE_LIMIT_PROVIDER` 影響；`checkRateLimit`（`@/lib/rate-limit`）只負責 IP 層，`cloudflare_waf` 時只放行 IP 層。帳號層：MFA 驗證（每帳號 5 次／分）、復原碼重產（3 次／15 分）、撥款帳號 step-up（5 次／15 分）、學員 magic link（每商家＋學員 3 次／15 分）、成員邀請（每商家 5 次／分）、密碼重設信（每收件人 3 次／15 分，超過時不寄、回應不變）。preflight 新增 `ACCOUNT_RATE_LIMIT` 說明，不再把 WAF 當成帳號層的替代。
+- 測試：`src/lib/account-rate-limit.db.test.ts`（上限、WAF 下仍擋、視窗重置、scope／subject 獨立、併發原子、只存 hash、閒置清理、503、CHECK）、`src/lib/password-reset.test.ts`（收件人上限）、`src/app/actions.test.ts`、`src/app/actions/student-portal-actions.test.ts`、`src/lib/env.test.ts`。
+- 目前 152 models、121 forward migrations；既有 SQL／checksum 不變。

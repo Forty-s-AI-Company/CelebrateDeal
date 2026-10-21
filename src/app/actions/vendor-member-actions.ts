@@ -13,6 +13,7 @@ import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { requireRecentMfa } from "@/lib/recent-mfa";
 
 const MEMBER_ROLES = new Set(["owner", "admin", "accountant", "support"]);
@@ -37,6 +38,17 @@ function isSerializationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
 
+/** IP layer (provider-dependent) first, then the per-vendor database limit (F-028). */
+async function invitationRateLimited(headerStore: Awaited<ReturnType<typeof headers>>, appUrl: string, vendorId: string) {
+  const rateLimitHeaders = new Headers();
+  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
+    const value = headerStore.get(headerName);
+    if (value) rateLimitHeaders.set(headerName, value);
+  }
+  return await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000)
+    ?? await checkAccountRateLimit("vendor_member_invitation_vendor", vendorId);
+}
+
 export async function createVendorMemberAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
@@ -49,12 +61,7 @@ export async function createVendorMemberAction(formData: FormData) {
 
   const headerStore = await headers();
   const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000);
+  const rateLimited = await invitationRateLimited(headerStore, appUrl, auth.vendor.id);
   if (rateLimited) redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
 
   const db = getDb();
@@ -157,12 +164,7 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
 
   const headerStore = await headers();
   const appUrl = getCanonicalAppUrl();
-  const rateLimitHeaders = new Headers();
-  for (const headerName of ["cf-connecting-ip", "x-forwarded-for"]) {
-    const value = headerStore.get(headerName);
-    if (value) rateLimitHeaders.set(headerName, value);
-  }
-  const rateLimited = await checkRateLimit(new Request(appUrl, { headers: rateLimitHeaders }), "vendor-member-invitation", 5, 60_000);
+  const rateLimited = await invitationRateLimited(headerStore, appUrl, auth.vendor.id);
   if (rateLimited) redirect(`/settings/security?error=${rateLimited.status === 429 ? "member_invitation_rate_limited" : "member_invitation_unavailable"}`);
 
   let invitationSent = false;

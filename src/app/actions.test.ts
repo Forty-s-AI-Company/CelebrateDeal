@@ -112,6 +112,7 @@ const mocks = vi.hoisted(() => ({
   requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
   checkRateLimit: vi.fn(),
+  checkAccountRateLimit: vi.fn(),
   sendPasswordResetLink: vi.fn(),
   schedulePasswordResetLink: vi.fn(),
   settlementFindUnique: vi.fn(),
@@ -245,6 +246,7 @@ vi.mock("@/lib/password-reset", () => ({
 }));
 vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/account-rate-limit", () => ({ checkAccountRateLimit: mocks.checkAccountRateLimit }));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
   generateRecoveryCodes: mocks.generateRecoveryCodes,
@@ -695,6 +697,7 @@ beforeEach(() => {
   mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
   mocks.createUserSession.mockResolvedValue({ token: "test-fixture-session-token", expiresAt: new Date("2026-07-18T00:00:00.000Z") });
   mocks.checkRateLimit.mockResolvedValue(null);
+  mocks.checkAccountRateLimit.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
   mocks.requireVendorFinance.mockResolvedValue({
     vendor: { id: "vendor-1" },
@@ -3197,6 +3200,20 @@ describe("verifyMfaAction", () => {
     expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
   });
 
+  it.each([[429, "rate_limited"], [503, "temporarily_unavailable"]])(
+    "applies the database account limit even when the IP layer passes (cloudflare_waf) — %s (F-028)",
+    async (status, error) => {
+      mocks.checkRateLimit.mockResolvedValueOnce(null);
+      mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status }));
+
+      await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow(`redirect:/mfa/verify?error=${error}&next=`);
+
+      expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("mfa_verification", "admin-1");
+      expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+      expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+    },
+  );
+
   it("limits a verified user's MFA attempts by both user ID and forwarded source IP before validating the code", async () => {
     const formData = mfaVerifyFormData();
 
@@ -3330,6 +3347,19 @@ describe("regenerateRecoveryCodesAction", () => {
       3,
       15 * 60 * 1000,
     );
+    expect(mocks.decryptMfaSecret).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("applies the per-account database limit to recovery-code regeneration (F-028)", async () => {
+    authenticatedMfaUser();
+    mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    await expect(regenerateRecoveryCodesAction(recoveryRegenerationFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=recovery_rate_limited",
+    );
+
+    expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("mfa_recovery_regeneration", "user-1");
     expect(mocks.decryptMfaSecret).not.toHaveBeenCalled();
     expect(mocks.userRecoveryCodeDeleteMany).not.toHaveBeenCalled();
   });

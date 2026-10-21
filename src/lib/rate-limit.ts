@@ -149,7 +149,10 @@ export async function checkRateLimit(request: Request, key: string, limit: numbe
   const provider = getRateLimitProviderId();
 
   if (provider === "cloudflare_waf") {
-    // Cloudflare WAF is enforced before the request reaches Next.js.
+    // IP layer only: Cloudflare WAF counts per source IP before the request
+    // reaches Next.js. Per-account limits must not rely on this function; they
+    // use checkAccountRateLimit (@/lib/account-rate-limit), which counts in
+    // PostgreSQL under every provider (F-028).
     return null;
   }
 

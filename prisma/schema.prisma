@@ -300,6 +300,22 @@ model UserRecoveryCode {
   @@index([userId, usedAt])
 }
 
+/// Account-level rate limit counter (F-028 / B02-05). Independent of
+/// RATE_LIMIT_PROVIDER: a WAF only counts per source IP, so per-account limits
+/// (TOTP guessing, recovery-code regeneration, magic links, member invitations,
+/// password reset mail) are counted here. `keyHash` is SHA-256 of scope and
+/// subject, so e-mail addresses are never stored in clear. Written only by
+/// src/lib/account-rate-limit.ts with raw SQL on the database clock (UTC).
+model AccountRateLimitBucket {
+  keyHash         String   @id
+  scope           String
+  windowStartedAt DateTime
+  count           Int
+  updatedAt       DateTime
+
+  @@index([updatedAt])
+}
+
 model PasswordResetToken {
   id        String    @id @default(cuid())
   userId    String

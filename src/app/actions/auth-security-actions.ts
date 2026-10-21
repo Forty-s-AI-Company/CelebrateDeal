@@ -29,6 +29,7 @@ import {
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "@/lib/mfa-enrollment";
 import { regenerateMfaRecoveryCodes } from "@/lib/mfa-recovery-regeneration";
 
@@ -235,7 +236,9 @@ export async function verifyMfaAction(formData: FormData) {
     `mfa-verification:${auth.user.id}`,
     5,
     60_000,
-  );
+  ) ?? await checkAccountRateLimit("mfa_verification", auth.user.id);
+  // The first check is the IP layer (skipped under cloudflare_waf); the second
+  // caps attempts per account in PostgreSQL regardless of provider (F-028).
   if (rateLimited) redirect(`/mfa/verify?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}&next=${encodeURIComponent(next)}`);
 
   const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
