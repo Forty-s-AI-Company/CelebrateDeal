@@ -310,6 +310,9 @@ export default async function EditLivePage({
         select: { id: true, title: true, _count: { select: { responses: true } } },
       })
     : [];
+  const scheduledInteractionCount = await db.liveInteractionRun.count({
+    where: { vendorId: vendor.id, liveId: live.id, status: "active", startsAt: { gt: new Date() } },
+  });
   const claimableDrawRuns = live.status === "live"
     ? await db.liveInteractionRun.findMany({
         where: { vendorId: vendor.id, liveId: live.id, eventType: "lucky_draw", winnerResponseId: { not: null } },
@@ -374,6 +377,7 @@ export default async function EditLivePage({
         initialClaimRuns={claimableDrawRuns
           .filter((run) => run.winnerResponseId && unclaimedWinnerIds.has(run.winnerResponseId))
           .map((run) => ({ id: run.id, title: run.title }))}
+        hasScheduledInteractions={scheduledInteractionCount > 0}
         initialQuestions={liveQuestions.map((question) => ({ ...question, createdAt: question.createdAt.toISOString() }))}
       />
       <LiveStepperForm

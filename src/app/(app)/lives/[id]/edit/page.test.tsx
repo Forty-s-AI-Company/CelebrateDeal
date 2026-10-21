@@ -39,6 +39,7 @@ vi.mock("@/lib/db", () => ({
     teamMembership: { findMany: mocks.teamMembershipFindMany },
     partnerFunnelPage: { findMany: mocks.partnerFunnelPageFindMany },
     liveStudioDraft: { findFirst: mocks.draftFindFirst },
+    liveInteractionRun: { count: async () => 0 },
   }),
 }));
 vi.mock("@/lib/live-quota-policy", () => ({

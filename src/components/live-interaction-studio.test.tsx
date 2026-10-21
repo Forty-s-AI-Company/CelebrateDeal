@@ -24,6 +24,15 @@ describe("LiveInteractionStudio", () => {
     expect(html).toContain("需要時再展開");
   });
 
+  it("opens by default when something is pending", () => {
+    const open = (props: object) => renderToStaticMarkup(
+      <LiveInteractionStudio liveId="live-1" csrfToken="csrf" products={[]} initialDrawRuns={[]} initialPollRuns={[]} initialClaimRuns={[]} initialQuestions={[]} {...props} />,
+    );
+    expect(open({ hasScheduledInteractions: true })).toMatch(/<details[^>]*\sopen/);
+    expect(open({ initialDrawRuns: [{ id: "r", title: "抽獎", responseCount: 0 }] })).toMatch(/<details[^>]*\sopen/);
+    expect(html).toContain("<h2");
+  });
+
   it("keeps every interaction control available inside the collapsed panel", () => {
     for (const text of ["幸運大抽獎", "即時投票", "限時快閃搶購", "空投限時紅包", "觀眾問答審核"]) expect(html).toContain(text);
   });
