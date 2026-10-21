@@ -4,6 +4,7 @@ import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { hasActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { StreamQuotaExceededError } from "@/lib/stream-quota";
 import {
   recordStreamUsageLedgerEntry,
   StreamUsageValidationError,
@@ -19,6 +20,13 @@ const StreamUsagePayload = z.object({
   watchSeconds: z.number().int().min(1).max(STREAM_USAGE_MAX_HEARTBEAT_SECONDS),
 }).strict();
 
+function quotaExhaustedResponse() {
+  return NextResponse.json(
+    { error: "Stream quota exhausted", code: "stream_minutes_exhausted" },
+    { status: 429, headers: { "Cache-Control": "private, no-store" } },
+  );
+}
+
 function errorResponse(error: StreamUsageValidationError) {
   if (error.code === "live_not_found" || error.code === "source_page_not_found") {
     return NextResponse.json({ error: "Playback source not found" }, { status: 404 });
@@ -26,10 +34,12 @@ function errorResponse(error: StreamUsageValidationError) {
   if (error.code === "event_conflict") {
     return NextResponse.json({ error: "Usage event conflict" }, { status: 409 });
   }
-  if (error.code === "stream_minutes_exhausted") {
+  if (error.code === "stream_minutes_exhausted") return quotaExhaustedResponse();
+  if (error.code === "usage_busy") {
+    // Retryable: the browser keeps the same eventId and retries with backoff.
     return NextResponse.json(
-      { error: "Stream quota exhausted", code: "stream_minutes_exhausted" },
-      { status: 429, headers: { "Cache-Control": "private, no-store" } },
+      { error: "Usage temporarily unavailable" },
+      { status: 503, headers: { "Cache-Control": "private, no-store", "Retry-After": "1" } },
     );
   }
   return NextResponse.json({ error: "Invalid usage event" }, { status: 400 });
@@ -67,6 +77,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, duplicate: result.duplicate });
   } catch (error) {
     if (error instanceof StreamUsageValidationError) return errorResponse(error);
+    // A real quota exhaustion (or revoked entitlement) is the only 429 path.
+    if (error instanceof StreamQuotaExceededError) return quotaExhaustedResponse();
     return NextResponse.json({ error: "Unable to record usage" }, { status: 500 });
   }
 }

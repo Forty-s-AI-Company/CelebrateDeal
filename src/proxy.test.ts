@@ -62,7 +62,7 @@ describe("public Funnel HTTP pre-stream status", () => {
     expect(body).toContain("<h1>404</h1>");
     expect(body).toContain("找不到此頁面");
     expect(body).not.toContain("missing-page");
-    expect(statusCheck).toHaveBeenCalledWith("/lp/missing-page", expect.any(String));
+    expect(statusCheck).toHaveBeenCalledWith("/lp/missing-page");
   });
 
   it("returns an empty HEAD 404", async () => {
@@ -75,7 +75,7 @@ describe("public Funnel HTTP pre-stream status", () => {
   it("checks a step path the same way", async () => {
     statusCheck.mockResolvedValue(404);
     expect((await proxy(request("/lp/example/thank-you"))).status).toBe(404);
-    expect(statusCheck).toHaveBeenCalledWith("/lp/example/thank-you", expect.any(String));
+    expect(statusCheck).toHaveBeenCalledWith("/lp/example/thank-you");
   });
 
   it("answers 503 for a read failure without exposing its reason", async () => {
@@ -117,7 +117,7 @@ describe("public Funnel HTTP pre-stream status", () => {
       expect((await proxy(request("/lp/example?_rsc=abc", "GET", headers))).status).toBe(404);
     }
     expect(statusCheck).toHaveBeenCalledTimes(3);
-    expect(statusCheck).toHaveBeenCalledWith("/lp/example", expect.any(String));
+    expect(statusCheck).toHaveBeenCalledWith("/lp/example");
   });
 
   it.each(["/lp/example/offer/checkout", "/lp/example/watch/play"])("keeps the nested route contract for %s", async (path) => {
@@ -130,22 +130,23 @@ describe("public Funnel HTTP pre-stream status", () => {
     expect(statusCheck).not.toHaveBeenCalled();
   });
 
-  it("keeps visitor initialization for an available page and checks with that same visitor", async () => {
+  it("keeps visitor initialization for an available page with the same visitor for SSR and the browser", async () => {
     const response = await proxy(request("/lp/example"));
     expect(response.status).toBe(200);
     const cookie = response.headers.get("set-cookie") ?? "";
-    expect(cookie).toContain("celebratedeal_funnel_visitor=");
-    expect(response.headers.get("x-middleware-request-cookie")).toContain("celebratedeal_funnel_visitor=");
-    const [, visitorId] = statusCheck.mock.calls[0] as [string, string];
-    expect(cookie).toContain(`celebratedeal_funnel_visitor=${visitorId}`);
+    const visitorId = /celebratedeal_funnel_visitor=([^;]+)/u.exec(cookie)?.[1];
+    expect(visitorId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(response.headers.get("x-middleware-request-cookie")).toContain(`celebratedeal_funnel_visitor=${visitorId}`);
+    // The pre-stream check is content-free and no longer takes a visitor (F-015).
+    expect(statusCheck).toHaveBeenCalledWith("/lp/example");
   });
 
-  it("checks availability with an existing visitor identifier and does not reissue it", async () => {
+  it("checks availability for a returning visitor and does not reissue the identifier", async () => {
     const available = await proxy(request("/lp/example", "GET", { cookie: `celebratedeal_funnel_visitor=${VISITOR}` }));
     expect(available.status).toBe(200);
     expect(available.headers.get("set-cookie")).toBeNull();
     statusCheck.mockResolvedValue(404);
     expect((await proxy(request("/lp/example", "GET", { cookie: `celebratedeal_funnel_visitor=${VISITOR}` }))).status).toBe(404);
-    expect(statusCheck).toHaveBeenCalledWith("/lp/example", VISITOR);
+    expect(statusCheck).toHaveBeenCalledWith("/lp/example");
   });
 });

@@ -14,6 +14,7 @@ const tx = {
   paymentMethodReference: { findFirst: vi.fn(), findMany: vi.fn() },
   vendorUsageLimit: { findUnique: vi.fn() },
   streamUsageLedgerEntry: { aggregate: vi.fn() },
+  streamUsageMonthlyCounter: { findUnique: vi.fn() },
   liveViewerSession: { findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
 };
 const deleteMany = vi.fn();
@@ -75,6 +76,7 @@ beforeEach(() => {
   tx.paymentMethodReference.findMany.mockResolvedValue([]);
   tx.vendorUsageLimit.findUnique.mockResolvedValue({ creditsLimit: 1000, creditsUsed: 100 });
   tx.streamUsageLedgerEntry.aggregate.mockResolvedValue({ _sum: { watchSeconds: 0 } });
+  tx.streamUsageMonthlyCounter.findUnique.mockResolvedValue(null);
   tx.liveViewerSession.findUnique.mockResolvedValue(null);
   tx.liveViewerSession.count.mockResolvedValue(0);
   tx.liveViewerSession.create.mockResolvedValue({ id: "session-1" });
@@ -149,6 +151,26 @@ describe("live quota admission", () => {
 
     await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now }))
       .rejects.toMatchObject({ code: "stream_minutes_exhausted" });
+    expect(tx.liveViewerSession.count).not.toHaveBeenCalled();
+  });
+
+  it("reads the vendor-month counter row instead of scanning the ledger once it exists", async () => {
+    tx.vendorUsageLimit.findUnique.mockResolvedValue({
+      creditsLimit: 1000,
+      creditsUsed: 100,
+      streamMinutesLimit: 60,
+      streamMinutesUsed: 0,
+      resetAt: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    tx.streamUsageMonthlyCounter.findUnique.mockResolvedValue({ watchSeconds: 3600 });
+
+    await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now }))
+      .rejects.toMatchObject({ code: "stream_minutes_exhausted" });
+    expect(tx.streamUsageMonthlyCounter.findUnique).toHaveBeenCalledWith({
+      where: { vendorId_monthKey: { vendorId: "vendor-1", monthKey: "2026-08" } },
+      select: { watchSeconds: true },
+    });
+    expect(tx.streamUsageLedgerEntry.aggregate).not.toHaveBeenCalled();
     expect(tx.liveViewerSession.count).not.toHaveBeenCalled();
   });
 

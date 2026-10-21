@@ -50,9 +50,25 @@ vi.mock("@/lib/form-submission-chat-session", () => ({
   FORM_SUBMISSION_CHAT_SESSION_COOKIE: "celebratedeal_form_submission_chat_session",
   verifyFormSubmissionChatSessionToken: mocks.verifyRegistrationSession,
 }));
-vi.mock("@/lib/sensitive-data", () => ({ decryptSensitiveValue: vi.fn(() => "CD-WIN-ABCD-1234") }));
+vi.mock("@/lib/sensitive-data", async (original) => ({
+  ...await original<typeof import("@/lib/sensitive-data")>(),
+  decryptSensitiveValue: vi.fn(() => "CD-WIN-ABCD-1234"),
+}));
 
 import { GET, POST } from "./route";
+import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE } from "@/lib/live-viewer-pass";
+
+function passCookie(overrides: Partial<Parameters<typeof createLiveViewerPass>[0]> = {}) {
+  const pass = createLiveViewerPass({
+    vendorId: "vendor-1",
+    liveId: "live-1",
+    viewerSessionId: "session-1",
+    admissionToken: "A".repeat(43),
+    sessionExpiresAt: new Date(Date.now() + 90_000),
+    ...overrides,
+  });
+  return `${LIVE_VIEWER_PASS_COOKIE}=${encodeURIComponent(pass)}`;
+}
 
 function request(body: unknown) {
   return new Request("https://app.example.test/api/live-interactions", {
@@ -321,6 +337,46 @@ describe("live interaction public contract", () => {
     mocks.countQuestions.mockResolvedValueOnce(3);
     const response = await POST(request({ action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "第四題" }));
     expect(response.status).toBe(429);
+    expect(mocks.createQuestion).not.toHaveBeenCalled();
+  });
+
+  it("lets the 2-second state poll verify a signed pass instead of reading the viewer session", async () => {
+    vi.stubEnv("CSRF_SECRET", "live-interactions-test-secret-longer-than-32-bytes");
+    mocks.findManualRuns.mockResolvedValue([]);
+    const response = await GET(new Request("https://app.example.test/api/live-interactions?vendorId=vendor-1&liveId=live-1", {
+      headers: { cookie: passCookie() },
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.activeViewer).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["another live", { liveId: "live-2" }],
+    ["another tenant", { vendorId: "vendor-2" }],
+    ["another admission cookie", { admissionToken: "B".repeat(43) }],
+  ])("falls back to the session row for a pass bound to %s", async (_label, overrides) => {
+    vi.stubEnv("CSRF_SECRET", "live-interactions-test-secret-longer-than-32-bytes");
+    mocks.activeViewer.mockResolvedValueOnce(false);
+    const response = await GET(new Request("https://app.example.test/api/live-interactions?vendorId=vendor-1&liveId=live-1", {
+      headers: { cookie: passCookie(overrides) },
+    }));
+    expect(response.status).toBe(401);
+    expect(mocks.activeViewer).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the database session check for responses and questions even with a valid pass", async () => {
+    vi.stubEnv("CSRF_SECRET", "live-interactions-test-secret-longer-than-32-bytes");
+    mocks.activeViewer.mockResolvedValue(false);
+    const withPass = (body: unknown) => new Request("https://app.example.test/api/live-interactions", {
+      method: "POST",
+      headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", cookie: passCookie() },
+      body: JSON.stringify(body),
+    });
+
+    expect((await POST(withPass({ action: "respond", vendorId: "vendor-1", liveId: "live-1", runId: "run-1", value: "option-1" }))).status).toBe(401);
+    expect((await POST(withPass({ action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "問題" }))).status).toBe(401);
+    expect(mocks.activeViewer).toHaveBeenCalledTimes(2);
+    expect(mocks.createResponse).not.toHaveBeenCalled();
     expect(mocks.createQuestion).not.toHaveBeenCalled();
   });
 
