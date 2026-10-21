@@ -38,6 +38,9 @@ const settlementErrorMessages: Record<string, string> = {
   same_approver: "大額調整必須由另一位平台管理員覆核，申請人不能自行核准。",
   not_pending: "這筆調整申請已處理或已被新的申請取代，請重新整理。",
   unsupported_currency: "這個月份有非新台幣（TWD）的交易，月結不會混加不同幣別；請先人工核對該商家的交易。",
+  stale_settlement: "月結計算後又有新的退款或上期結轉，請先重新產生月結再鎖定。",
+  carry_forward_target_locked: "這個月份的負餘額結轉已由下一期月結扣抵，而下一期已經鎖定，因此不能再重新計算或調整。資料未變更。請在下一個未鎖定的月份以人工調整補差額。",
+  unclassified_payment_purpose: "這個月份有無法判定用途的付款（不是買家訂單、方案費或帳單款），月結不會猜測是否計入商家營收；請先由工程人員核對並更新交易用途後再產生月結。",
 };
 
 const settlementStatusMessages: Record<string, string> = {
@@ -123,7 +126,7 @@ export default async function AdminBillingSettlementsPage({
           <CsrfField />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             商家
-            <select name="vendorId" className="h-10 rounded-md border border-border bg-white px-3 text-sm">
+            <select name="vendorId" className="h-10 rounded-md border border-border-control bg-white px-3 text-sm">
               {vendors.map((vendor) => (
                 <option key={vendor.id} value={vendor.id}>
                   {vendor.name} · {vendor.subscriptions[0]?.plan.name ?? "未設定方案"}
@@ -133,7 +136,7 @@ export default async function AdminBillingSettlementsPage({
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             月份
-            <input name="monthKey" type="month" defaultValue={currentMonthKey()} className="h-10 rounded-md border border-border bg-white px-3 text-sm" />
+            <input name="monthKey" type="month" defaultValue={currentMonthKey()} className="h-10 rounded-md border border-border-control bg-white px-3 text-sm" />
           </label>
           <SubmitButton pendingChildren="產生中…" pendingMessage="正在產生月結，請勿重複送出。">
             <RefreshCw size={16} />
@@ -172,6 +175,15 @@ export default async function AdminBillingSettlementsPage({
               <Metric label="金流手續費" value={settlement.paymentGatewayFeeCents} />
               <Metric label="調整" value={settlement.adjustmentAmountCents} />
             </div>
+
+            {settlement.carriedInCents !== 0 || settlement.carriedOutCents !== 0 ? (
+              <div className="grid gap-1 rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950" role="note">
+                {settlement.carriedInCents !== 0 ? <p>上期負餘額扣抵：{formatCurrency(settlement.carriedInCents)}</p> : null}
+                {settlement.carriedOutCents !== 0 ? (
+                  <p>本期退款高於營收，待扣款 {formatCurrency(-settlement.carriedOutCents)} 結轉至下一期扣抵，本期不撥款。</p>
+                ) : null}
+              </div>
+            ) : null}
 
             {settlement.adjustmentRequests.map((request) => request.status === "pending" ? (
               <PendingAdjustment
@@ -226,7 +238,7 @@ export default async function AdminBillingSettlementsPage({
                   disabled={Boolean(settlement.lockedAt)}
                   pendingChildren="儲存中…"
                   pendingMessage="正在儲存月結調整，請勿重複送出。"
-                  className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                 >
                   儲存調整
                 </FormSubmitButton>

@@ -121,21 +121,78 @@ npm run db:seed
 4. 先在 staging Supabase project 跑完整 migration。
 5. staging 通過 smoke test 後，再對 production 執行 migration。
 
-Production migration 目前**沒有**登記的 workflow，wrapper 會拒絕任何 production 目標，不要在 shell
-自行設定 `MIGRATE_DEPLOY_WORKFLOW` 繞過。正式套用前需 owner 另外授權，並以 PR 新增一個受 GitHub Environment
-保護、手動觸發的 production migrate workflow，再把它的名稱登記到 `scripts/db-migrate-guard.ts` 的
-`APPROVED_REMOTE_MIGRATE_WORKFLOWS`（需 review）。在該 workflow 內執行的指令：
-
-```powershell
-npm run db:generate
-npm run db:migrate:status
-npm run db:migrate:deploy
-```
+Production migration 只能經 `.github/workflows/production-migrate.yml`（§5.1）執行。`npm run db:migrate:deploy`
+的 wrapper 仍會拒絕任何 production 目標，不要在 shell 自行設定 `MIGRATE_DEPLOY_WORKFLOW` 繞過；
+production workflow 使用自己的守門腳本 `scripts/production-migrate.mjs`，不經過該 wrapper。
 
 Staging 由 `vercel.staging.json` 的 buildCommand 執行
 `DIRECT_URL="${STAGING_DATABASE_URL:?...}" ALLOW_REMOTE_MIGRATE_DEPLOY=1 MIGRATE_DEPLOY_WORKFLOW=vercel-staging-build npm run db:migrate:deploy`：
 `STAGING_DATABASE_URL` 未設定或為空時 build 直接失敗，不會退回 `DATABASE_URL`。
 `.github/workflows/staging-migrate.yml` 仍走 `scripts/staging-migrate.mjs` 自己的 staging 守門。
+
+### 5.1 Production migrate workflow（F-064，D-41）
+
+owner 決策 D-41：Production migration 由 owner 核准、經 workflow 執行，並且先備份。
+
+**一次性設定（owner）**
+
+1. GitHub → Settings → Environments 建立 `production`：設定 required reviewers（owner），並勾選只允許 protected branch（`master`）。
+2. 在 `production` environment 設定 secret `PRODUCTION_DATABASE_URL`：Supabase pooler 的 session 連線（`postgres.awigitueyqdqaqwbjdgu@aws-N-<region>.pooler.supabase.com`；6543 會自動改用 5432）。腳本只接受固定的 Production project ref，遇到 staging ref 會拒絕。
+3. 建立 Production 備份 workflow：路徑固定為 `.github/workflows/production-backup.yml`（寫在 `scripts/production-migrate.mjs` 的 `PRODUCTION_BACKUP_WORKFLOW`，改動需經 PR 審查），只能備份固定的 Production 專案（不得有 target 之類的 input），成功時上傳名為 `production-database-backup-<run id>` 的 artifact。**目前 repo 還沒有這個 workflow**，所以 `deploy` 一律回 `BACKUP_RUN_WRONG_WORKFLOW` 或 `BACKUP_ARTIFACT_MISSING`，不會連線資料庫。若 owner 改用 Supabase dashboard／PITR 備份，仍需由該 workflow 產生上述 artifact（例如記錄 restore point 的 receipt）。
+
+**每次部署**
+
+1. 先在 staging 跑同一批 migration（`Staging migrate`），並依 `docs/operations/prisma-migration-guards-runbook.md` 完成各 migration 的唯讀前置查詢（例如 §4 重複訂單號、§6 撥款帳號明文列）。
+2. 執行 Production 備份 workflow，記下成功的 run ID。備份必須在 24 小時內完成，否則 `BACKUP_RUN_TOO_OLD`。
+3. Actions → `Production migrate` → Run workflow（branch `master`）→ `mode=status`，`backup_run_id` 填上一步的 run ID。由 environment reviewer 核准。確認輸出只列出預期的 pending migration。
+4. 同樣方式執行 `mode=deploy`。腳本會依序：驗證 URL 與 project ref → 以 GitHub API 確認備份 run（固定的 Production 備份 workflow、同一 repository、`master` 上的 dispatch 或排程、`completed`／`conclusion=success`、24 小時內、有未過期的 `production-database-backup-<run id>` artifact）→ `prisma migrate status` → 歷史一致才 `prisma migrate deploy`。連線固定 `lock_timeout=5s`、`statement_timeout=60s`、`sslmode=require`。
+5. 部署後再跑一次 `mode=status`，應為 `Database schema is up to date!`。
+
+輸出只有固定代碼與 Prisma 摘要行（migration 名稱、`PRISMA_ERROR Pxxxx`、SQLSTATE），不含主機、帳號或資料值。
+
+**常見代碼**
+
+| 代碼 | 意義 | 處理 |
+|---|---|---|
+| `BACKUP_RUN_ID_INVALID`／`BACKUP_RUN_NOT_FOUND`／`BACKUP_RUN_WRONG_WORKFLOW`／`BACKUP_RUN_WRONG_REPOSITORY`／`BACKUP_RUN_NOT_MASTER`／`BACKUP_RUN_NOT_SUCCESSFUL`／`BACKUP_RUN_TOO_OLD` | 備份 run 不是 24 小時內成功的 Production 備份 | 重新備份後用新的 run ID |
+| `BACKUP_ARTIFACT_MISSING` | 該 run 沒有 `production-database-backup-<run id>` artifact，或已過期 | 確認備份 workflow 有上傳 artifact（見一次性設定第 3 點） |
+| `PRODUCTION_PROJECT_MISMATCH`／`PRODUCTION_DATABASE_IS_STAGING` | secret 指向錯誤的專案 | 修正 environment secret |
+| `PRODUCTION_HISTORY_DIVERGED` | 有失敗的 migration（P3009）或資料庫有本地不存在的 migration | 依下方 P3009 SOP |
+| `PRODUCTION_STATUS_FAILED`／`PRODUCTION_DEPLOY_FAILED` | 連線或 migration 執行失敗 | 看 `PRISMA_ERROR`／SQLSTATE；`55P03` 是 `lock_timeout`、`57014` 是 `statement_timeout` |
+
+### 5.2 Migration 失敗（P3009）與 `prisma migrate resolve` SOP
+
+Prisma 把整份 `migration.sql` 以單一多語句查詢送出，PostgreSQL 會把它當成一個隱含交易：失敗時該 migration 的 DDL 會整個回滾，但 `_prisma_migrations` 會留下一筆 `finished_at IS NULL` 的失敗紀錄，之後每次 `deploy` 都回 **P3009**，直到人工標記。
+
+1. **停止**：不要重跑 deploy、不要改 migration 檔（checksum 會不符，且 `migration-order-check` 禁止修改已合併的 migration）。
+2. **判斷失敗原因**（唯讀）：從 workflow 輸出取得 `MIGRATION_FAILED <name>` 與 SQLSTATE／Prisma code；必要時由 owner 以唯讀連線查：
+
+   ```sql
+   SELECT migration_name, started_at, finished_at, rolled_back_at, applied_steps_count
+     FROM "_prisma_migrations"
+    WHERE finished_at IS NULL AND rolled_back_at IS NULL;
+   ```
+
+   常見原因：migration 內的 preflight `RAISE EXCEPTION`（資料不符合前提，例如重複訂單號、明文撥款帳號）、`lock_timeout`（55P03，熱表有長交易）、`statement_timeout`（57014，大表掃描）。
+3. **確認資料庫狀態**：由於整個 migration 在交易內，失敗時物件應不存在。用唯讀查詢確認該 migration 建立的欄位／索引／constraint 確實不存在（例如 `SELECT conname FROM pg_constraint WHERE conname = '<名稱>'`）。若 migration 內有 `CREATE INDEX CONCURRENTLY` 等不能在交易內執行的語句（目前沒有），要逐一確認並清除殘留的 INVALID 索引。
+4. **修正原因**：處理資料（依該 migration 的 runbook 段落，需 owner 授權）、或在低流量時段重試以避開鎖。
+5. **標記為已回滾**（owner 在受控環境執行，指向 Production 的 `DIRECT_URL`）：
+
+   ```bash
+   npx prisma migrate resolve --rolled-back <migration_name>
+   ```
+
+   只在第 3 步確認物件**不存在**時使用。若確認 migration 的變更其實已完整套用（例如人工補做過），改用 `npx prisma migrate resolve --applied <migration_name>`，並在 PR 留下證據。不要直接 `UPDATE`／`DELETE` `_prisma_migrations`。
+6. **重新部署**：重新備份 → `mode=status`（應只剩 pending，沒有 failed）→ `mode=deploy`。
+7. 若是 migration SQL 本身有錯（不是資料或鎖的問題），由 owner 與 reviewer 一起決定，不得修改已合併的 migration 檔：做法是由 owner 以受控方式手動套用等效且正確的變更，再 `migrate resolve --applied <migration_name>`，差異以新的 forward migration 補齊。每批 migration 先在 staging 跑過，就是為了避免走到這一步。
+
+### 5.3 大表變更規則
+
+- 新增 CHECK／FK 一律先 `NOT VALID`，`VALIDATE CONSTRAINT` 放在**時間戳較晚的另一個 migration**。Prisma 把每個 migration 檔當成一個隱含交易，`ADD CONSTRAINT`、`DROP CONSTRAINT`、`ADD COLUMN` 取得的 ACCESS EXCLUSIVE 會持有到該檔 commit；同一個檔案裡的 VALIDATE 仍會在 ACCESS EXCLUSIVE 下掃整張表。獨立 migration 的 VALIDATE 只取 SHARE UPDATE EXCLUSIVE，不擋讀寫。
+- 依資料內容可能失敗的 migration（例如 preflight `RAISE`）不要排在新程式必須用到的欄位之前；能在 migration 內安全修正資料的，改為修正並留下稽核紀錄，不要卡住整批部署。
+- 先 `migrate deploy` 成功，才 promote 依賴新欄位的 app。
+- 熱表（`CommerceOrder`、`FormSubmission`、`PaymentTransaction` 等）的索引改用 `CREATE INDEX CONCURRENTLY`，並放在**只含這一句**的獨立 migration（多語句的 migration 是隱含交易，`CONCURRENTLY` 不能在交易內執行；需先在 staging 演練）。
+- migration 內設定交易層級 `lock_timeout`（`SELECT pg_catalog.set_config('lock_timeout', '5s', true)`），並附唯讀 preflight 查詢與失敗時的 `migrate resolve` 指引。
 
 Production 禁止：
 

@@ -121,7 +121,7 @@ export function BlacklistSearchList({
                   <Badge tone="blue">{identifierTypeLabels[entry.identifierType] ?? entry.identifierType}</Badge>
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{entry.reason}</p>
-                <p className="mt-1 text-xs text-slate-400">建立：{formatDateTime(new Date(entry.createdAt))}</p>
+                <p className="mt-1 text-xs text-slate-500">建立：{formatDateTime(new Date(entry.createdAt))}</p>
               </div>
               {entry.isActive ? (
                 <form action={unblockBlacklistAction}>

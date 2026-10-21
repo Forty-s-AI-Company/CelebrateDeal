@@ -174,7 +174,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     if (leavingUnsaved && !window.confirm("這個頁面還有尚未儲存的變更。確定要離開並捨棄變更嗎？")) return;
     router.push(returnHref ?? "/landing-pages");
   }
-  const inputClass = "mt-1 min-h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
+  const inputClass = "mt-1 min-h-10 w-full min-w-0 rounded-lg border border-slate-500 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
   const secondaryButtonClass = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-40";
   const selectedLive = lives.find((live) => live.id === liveId);
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
@@ -203,7 +203,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">頁面名稱<input disabled={pending} aria-label="頁面名稱" className={inputClass} value={name} maxLength={160} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></label>
-        <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700"><span>公開網址 <span className="font-normal text-slate-400">/lp/</span></span><input disabled={pending} aria-label="公開網址 slug" className={inputClass} value={slug} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="webinar-intro" maxLength={100} onChange={(e) => { setSlug(e.target.value); setDirty(true); }} /></label>
+        <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700"><span>公開網址 <span className="font-normal text-slate-500">/lp/</span></span><input disabled={pending} aria-label="公開網址 slug" className={inputClass} value={slug} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="webinar-intro" maxLength={100} onChange={(e) => { setSlug(e.target.value); setDirty(true); }} /></label>
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">預設報名表<select disabled={pending} aria-label="預設報名表" className={inputClass} value={formId} onChange={(e) => { setFormId(e.target.value); setDirty(true); }}><option value="">不指定</option>{forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}</select></label>
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">活動場次<select disabled={pending} aria-label="活動場次" className={inputClass} value={liveId} onChange={(e) => { setLiveId(e.target.value); setDirty(true); }}><option value="">由報名表提供場次選擇</option>{lives.map((live) => <option key={live.id} value={live.id}>{live.title}</option>)}</select></label>
       </div>
@@ -223,7 +223,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
         <button disabled={blocked || dirty} onClick={() => run("publish")} className={secondaryButtonClass}>發布已儲存草稿</button>
         <button disabled={pending || stepPending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
         <button disabled={pending || stepPending || dirty} onClick={() => {
-          if (window.confirm("確定要永久刪除這個 Funnel、草稿與所有發布歷史嗎？此操作無法復原。")) run("delete");
+          if (window.confirm("確定要移除這個 Funnel 嗎？曾發布或已有造訪紀錄的 Funnel 會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) run("delete");
         }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除 Funnel</button>
         {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || stepPending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
         {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || stepPending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}

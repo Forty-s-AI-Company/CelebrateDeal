@@ -73,7 +73,7 @@ vi.mock("@/components/stream-allocation-editor", () => ({
   ),
 }));
 
-import { LiveStepperForm } from "./live-stepper-form";
+import { LiveStepPicker, LiveStepperForm } from "./live-stepper-form";
 import { LiveSlugField } from "./live-slug-field";
 
 type ElementNode = {
@@ -483,6 +483,31 @@ describe("LiveStepperForm", () => {
     labels.forEach((label, index) => {
       expect(stepButton(form, label)?.props["aria-controls"]).toBe(`live-step-panel-${index}`);
     });
+  });
+
+  it("renders the mobile step position and, once compact, a 44px step picker (F-118)", () => {
+    const html = renderToStaticMarkup(renderForm() as ReactElement);
+    expect(html).toContain("第 1 步／共 8 步");
+    expect(html).toMatch(/class="[^"]*hidden[^"]*md:grid[^"]*"/);
+    expect(html).not.toContain("切換步驟");
+
+    const labels = ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
+    const onSelect = vi.fn();
+    const picker = renderToStaticMarkup(
+      <LiveStepPicker activeStep={2} steps={labels.map((label, index) => ({ key: String(index), label }))} completion={labels.map((_, index) => index < 2)} compact onSelect={onSelect} />,
+    );
+    expect(picker).toContain("第 3 步／共 8 步");
+    expect(picker).toContain('aria-label="切換步驟"');
+    expect(picker).toContain("min-h-11");
+    expect(picker.match(/<option/g)).toHaveLength(8);
+    expect(picker).toContain("第 8 步：桌機／手機預覽發布（待完成）");
+    expect(picker).toContain("第 1 步：用途與基本資料（已完成）");
+
+    const form = renderForm();
+    for (const label of ["上一步", "下一步"]) {
+      const button = findElement(form, (candidate) => candidate.type === "button" && textContent(candidate.props.children) === label);
+      expect(String(button?.props.className)).toContain("min-h-11");
+    }
   });
 
   it("reports a taken live address as a message that tells the user the draft is kept", () => {

@@ -56,7 +56,7 @@ beforeEach(() => {
   mocks.csrf.mockResolvedValue(undefined);
   mocks.publication.mockResolvedValue({ available: false, message: "專案尚未發布，公開網址目前無法開啟。", projectHref: "/projects/project-1", missing: [{ label: "尚無有效且已驗證的商家付款方式", href: "/billing/payment-methods" }] });
   mocks.create.mockResolvedValue({ id: "page-1", revision: 1 });
-  mocks.delete.mockResolvedValue({ id: "page-1" });
+  mocks.delete.mockResolvedValue({ id: "page-1", archived: false });
   mocks.save.mockResolvedValue({ id: "page-1", revision: 2 });
   mocks.saveSteps.mockResolvedValue({ id: "page-1", revision: 3 });
   mocks.publish.mockResolvedValue({ id: "page-1", revision: 3, version: 1 });
@@ -125,6 +125,13 @@ describe("landingPageAction", () => {
     const result = await landingPageAction(idle, form({ operation: "delete", id: "page-1", revision: "2" }));
     expect(mocks.delete).toHaveBeenCalledWith("page-1", 2);
     expect(result).toMatchObject({ status: "success", id: "page-1", message: expect.stringContaining("已刪除") });
+  });
+
+  it("曾發布或有流量時回報已封存，而不是已刪除", async () => {
+    mocks.delete.mockResolvedValueOnce({ id: "page-1", archived: true });
+    const result = await landingPageAction(idle, form({ operation: "delete", id: "page-1", revision: "2" }));
+    expect(result).toMatchObject({ status: "success", id: "page-1", message: expect.stringContaining("已改為封存") });
+    expect(result.message).not.toContain("已刪除");
   });
 });
 

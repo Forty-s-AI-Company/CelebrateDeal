@@ -4,7 +4,7 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
 import { getSalesProjectScope } from "@/lib/sales-project-scope";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatTwd } from "@/lib/format";
 import { realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
 import {
   conversionRate,
@@ -18,10 +18,6 @@ function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
-}
-
-function formatTwd(cents: number) {
-  return `NT$${new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 }).format(cents / 100)}`;
 }
 
 async function loadAnalytics(db: ReturnType<typeof getDb>, live: { id: string; endedAt: Date | null }, vendorId: string, validScriptId: string | null, trackedEventTypes: string[]) {

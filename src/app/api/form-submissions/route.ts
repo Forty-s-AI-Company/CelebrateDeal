@@ -258,7 +258,7 @@ async function resolveTrustedFunnelSource(input: {
 async function resolveMarketingPageHint(pageId: string | undefined, vendorId: string, source: TrustedFunnelSource | null) {
   if (source || !pageId) return {};
   const page = await getDb().landingPage.findFirst({
-    where: { id: pageId, vendorId, status: "published", publishedAt: { not: null }, publishedVersionId: { not: null } },
+    where: { id: pageId, vendorId, status: "published", publishedAt: { not: null }, publishedVersionId: { not: null }, archivedAt: null },
     select: { id: true },
   });
   return page ? { attribution: { landingPageId: page.id, evidence: "client_reported" } } : {};

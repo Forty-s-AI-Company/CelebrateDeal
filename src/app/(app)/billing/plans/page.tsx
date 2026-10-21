@@ -14,9 +14,8 @@ import { ExternalPaymentForm } from "@/components/external-payment-form";
 import { BillingPlanCheckoutForm } from "@/components/billing-plan-checkout-form";
 import { payUniStagingPlanRetryPermit, payUniStagingPlanTestAllowed, payUniStagingPlanTestAvailability, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
 
-// Keep existing rounding and prices; disambiguate the dollar symbol for merchants.
 function formatPlanCurrency(cents: number) {
-  return `TWD ${formatCurrency(cents)}`;
+  return formatCurrency(cents);
 }
 
 type BillingPlansSearchParams = { status?: string | string[]; error?: string | string[]; transactionId?: string | string[]; referral?: string | string[] };

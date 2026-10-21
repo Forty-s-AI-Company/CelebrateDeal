@@ -456,9 +456,12 @@ async function main() {
         accountLabel: "平台統一金流代收",
         status: "verified",
         merchantIdRef: "vault:ecpay:demo-merchant",
-        bankAccountLegacyName: "五合選品有限公司",
+        // Legacy columns hold masked display values only
+        // (PaymentAccount_bankAccountNumber_masked_check). The demo vendor has
+        // no real payout account; set one through /billing/payouts instead.
+        bankAccountLegacyName: "五＊＊＊＊",
         bankCodeLegacy: "013",
-        bankAccountLegacyNumber: "vault:bank:wuhe-main",
+        bankAccountLegacyNumber: "****0001",
       },
       {
         vendorId: vendor.id,
@@ -474,6 +477,7 @@ async function main() {
   const firstTransaction = await prisma.paymentTransaction.create({
     data: {
         vendorId: vendor.id,
+        purpose: "buyer_order",
         providerName: "platform-ecpay",
         providerTradeNo: "PAY20260701001",
         orderNumber: "ORDER-1001",
@@ -489,6 +493,7 @@ async function main() {
   const secondTransaction = await prisma.paymentTransaction.create({
     data: {
         vendorId: vendor.id,
+        purpose: "buyer_order",
         providerName: "platform-ecpay",
         providerTradeNo: "PAY20260701002",
         orderNumber: "ORDER-1002",

@@ -31,15 +31,15 @@ export function FunnelList({ pages, readOnly = false }: { pages: LandingPageSumm
   return <section aria-label="一頁式網站 清單" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
     <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 bg-slate-50/70 p-4">
       <label className="min-w-56 flex-1 text-sm font-semibold text-slate-700">搜尋
-        <input value={query} onChange={(event) => resetFilters({ query: event.target.value })} placeholder="搜尋名稱或網址" className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+        <input value={query} onChange={(event) => resetFilters({ query: event.target.value })} placeholder="搜尋名稱或網址" className="mt-1 min-h-10 w-full rounded-lg border border-slate-500 bg-white px-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
       </label>
       <label className="text-sm font-semibold text-slate-700">狀態
-        <select value={status} onChange={(event) => resetFilters({ status: event.target.value as StatusFilter })} className="mt-1 block min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm">
+        <select value={status} onChange={(event) => resetFilters({ status: event.target.value as StatusFilter })} className="mt-1 block min-h-10 rounded-lg border border-slate-500 bg-white px-3 text-sm">
           <option value="active">已發布</option><option value="draft">草稿</option><option value="all">全部</option>
         </select>
       </label>
       <label className="text-sm font-semibold text-slate-700">每頁
-        <select value={pageSize} onChange={(event) => resetFilters({ size: Number(event.target.value) })} className="mt-1 block min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm">
+        <select value={pageSize} onChange={(event) => resetFilters({ size: Number(event.target.value) })} className="mt-1 block min-h-10 rounded-lg border border-slate-500 bg-white px-3 text-sm">
           <option value={10}>10</option><option value={25}>25</option><option value={50}>50</option>
         </select>
       </label>
@@ -51,7 +51,7 @@ export function FunnelList({ pages, readOnly = false }: { pages: LandingPageSumm
           <td className="px-5 py-4"><p className="font-semibold text-slate-950">{page.name}</p><p className="mt-1 font-mono text-xs text-slate-500">/lp/{page.slug}</p></td>
           <td className="px-5 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${page.status === "published" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{page.status === "published" ? "✓ 已發布" : "草稿"}</span></td>
           <td className="px-5 py-4 text-slate-600"><time dateTime={page.updatedAt.toISOString()}>{new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short" }).format(page.updatedAt)}</time></td>
-          <td className="px-5 py-4 text-right">{readOnly ? <span className="text-xs text-slate-400">唯讀</span> : <Link href={`/landing-pages/${page.id}/operations`} className="font-semibold text-blue-700 hover:text-blue-900">開啟 一頁式網站 →</Link>}</td>
+          <td className="px-5 py-4 text-right">{readOnly ? <span className="text-xs text-slate-500">唯讀</span> : <Link href={`/landing-pages/${page.id}/operations`} className="font-semibold text-blue-700 hover:text-blue-900">開啟 一頁式網站 →</Link>}</td>
         </tr>)}</tbody>
       </table>
     </div>

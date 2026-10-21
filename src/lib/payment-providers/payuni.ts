@@ -121,6 +121,92 @@ function payUniUppEventType(envelope: Record<string, unknown>, payload: Record<s
   return "paid";
 }
 
+const LEGACY_NOTICE_STATUS_WORDS = new Set([
+  "partially_refunded", "partial_refund", "partially-refunded", "refunded", "refund",
+  "failed", "fail", "failure", "cancelled", "canceled", "cancel",
+  "paid", "success", "succeeded", "completed",
+]);
+
+type PayUniPaymentProviderResult = {
+  status?: string;
+  messageCode?: string;
+  tradeStatus?: string;
+  resCode?: string;
+  outerStatusMismatch?: true;
+};
+
+/**
+ * F-047: bounded signed provider codes kept with a failed payment callback,
+ * the same reduction as the card-binding path (payUniSetupProviderResult).
+ * Message is free text, so it is kept only when it is itself a code.
+ */
+function payUniPaymentProviderResult(envelope: Record<string, unknown>, decrypted: Record<string, unknown>) {
+  const status = optionalPayloadText(decrypted.Status);
+  const message = optionalPayloadText(decrypted.Message);
+  const outerStatus = optionalPayloadText(envelope.Status);
+  const result: PayUniPaymentProviderResult = {
+    status: payUniDiagnosticCode(status, PAYUNI_STATUS_CODE),
+    messageCode: message && PAYUNI_MESSAGE_CODE.test(message) && !/\d{12,19}/.test(message) ? message : undefined,
+    tradeStatus: payUniDiagnosticCode(decrypted.TradeStatus, /^[0-9]{1,2}$/),
+    resCode: payUniDiagnosticCode(decrypted.ResCode, /^[A-Za-z0-9]{1,8}$/),
+    ...(outerStatus !== undefined && outerStatus !== status ? { outerStatusMismatch: true as const } : {}),
+  };
+  for (const key of Object.keys(result) as (keyof PayUniPaymentProviderResult)[]) {
+    if (result[key] === undefined) delete result[key];
+  }
+  return result;
+}
+
+/**
+ * F-047: a signed (HashInfo-verified) result without a TradeStatus whose
+ * signed Status is a PayUni error code is a provider rejection of the
+ * payment: a failed event, not an invalid payload. UNKNOWN/UNAPPROVED are not
+ * a decision and change nothing. Legacy synthetic notices keep their path.
+ */
+function payUniSignedPaymentRejection(envelope: Record<string, unknown>, decrypted: Record<string, unknown>) {
+  if (!envelope.EncryptInfo || decrypted.EventType !== undefined || decrypted.PayStatus !== undefined) return null;
+  const status = optionalPayloadText(decrypted.Status);
+  if (status === undefined || LEGACY_NOTICE_STATUS_WORDS.has(status.toLowerCase())) return null;
+  if (PAYUNI_PENDING_STATUSES.has(status.toUpperCase())) {
+    throw new PaymentWebhookNotActionableError("trade_pending", {
+      orderNumber: optionalPayloadText(decrypted.MerTradeNo),
+      providerTradeNo: optionalPayloadText(decrypted.TradeNo),
+    }, payUniWebhookAuditSnapshot({ ...decrypted, OuterStatus: envelope.Status }));
+  }
+  return payUniPaymentProviderResult(envelope, decrypted);
+}
+
+/**
+ * A signed TradeStatus marks the documented UPP 2.0 callback. Without it,
+ * only a signed provider rejection (F-047) or the legacy synthetic
+ * refund/failure notices remain; they can never produce a paid event (F-037).
+ */
+function classifyPayUniCallback(envelope: Record<string, unknown>, decrypted: Record<string, unknown>) {
+  const isUppCallback = Object.hasOwn(decrypted, "TradeStatus");
+  const signedRejection = isUppCallback ? null : payUniSignedPaymentRejection(envelope, decrypted);
+  const eventType = isUppCallback
+    ? payUniUppEventType(envelope, decrypted)
+    : signedRejection ? "failed" : normalizeEventType(decrypted.EventType ?? decrypted.Status ?? decrypted.PayStatus);
+  if (!isUppCallback && eventType === "paid") {
+    throw new Error("Unsupported PayUni payment status.");
+  }
+  return { isUppCallback, signedRejection, eventType };
+}
+
+/**
+ * F-047: a failed payment keeps the bounded signed provider codes on its
+ * WebhookEvent so declines can be analysed; never card data or free text.
+ */
+function failedPaymentProviderResult(
+  envelope: Record<string, unknown>,
+  decrypted: Record<string, unknown>,
+  callback: ReturnType<typeof classifyPayUniCallback>,
+) {
+  if (callback.eventType !== "failed") return null;
+  if (callback.signedRejection) return callback.signedRejection;
+  return callback.isUppCallback ? payUniPaymentProviderResult(envelope, decrypted) : null;
+}
+
 function normalizeEventType(value: unknown) {
   const raw = String(value ?? "").trim().toLowerCase();
   if (["partially_refunded", "partial_refund", "partially-refunded"].includes(raw)) {
@@ -1061,16 +1147,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   async normalizePayload(rawBody) {
     const outerPayload = parseRawPayload(rawBody);
     const rawPayload = outerPayload.EncryptInfo ? decryptInfo(String(outerPayload.EncryptInfo)) : outerPayload;
-    // A signed TradeStatus marks the documented UPP 2.0 callback. Without it,
-    // only the legacy synthetic refund/failure notices remain; they can never
-    // produce a paid event (F-037).
-    const isUppCallback = Object.hasOwn(rawPayload, "TradeStatus");
-    const eventType = isUppCallback
-      ? payUniUppEventType(outerPayload, rawPayload)
-      : normalizeEventType(rawPayload.EventType ?? rawPayload.Status ?? rawPayload.PayStatus);
-    if (!isUppCallback && eventType === "paid") {
-      throw new Error("Unsupported PayUni payment status.");
-    }
+    const { isUppCallback, signedRejection, eventType } = classifyPayUniCallback(outerPayload, rawPayload);
     const tradeAmount = rawPayload.Amount ?? rawPayload.TradeAmt;
     const parsedTradeAmountCents = queryAmountCents(tradeAmount);
     // Paid callbacks require signed proof of the full order amount. Refund
@@ -1090,7 +1167,10 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       ? `${eventType === "paid"
         ? requiredPayloadText(rawPayload.TradeNo, "trade number")
         : optionalPayloadText(rawPayload.TradeNo) ?? normalizedOrderNumber}:${requiredPayloadText(rawPayload.TradeStatus, "trade status")}`
-      : legacyNoticeEventId(rawPayload, eventType, normalizedOrderNumber);
+      : signedRejection
+        ? `${optionalPayloadText(rawPayload.TradeNo) ?? normalizedOrderNumber}:result:${signedRejection.status ?? "unrecognized"}`
+        : legacyNoticeEventId(rawPayload, eventType, normalizedOrderNumber);
+    const providerResult = failedPaymentProviderResult(outerPayload, rawPayload, { isUppCallback, signedRejection, eventType });
     const normalized = {
       provider: "payuni",
       eventId: normalizedEventId,
@@ -1109,6 +1189,7 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       platformFeeRefundCents: optionalCents(rawPayload.PlatformFeeRefund),
       refundReason: rawPayload.RefundReason ? String(rawPayload.RefundReason) : undefined,
       occurredAt: rawPayload.OccurredAt ? new Date(String(rawPayload.OccurredAt)).toISOString() : undefined,
+      ...(providerResult ? { metadata: { providerResult } } : {}),
     };
 
     return {

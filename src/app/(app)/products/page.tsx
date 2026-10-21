@@ -48,10 +48,10 @@ export default async function ProductsPage({ searchParams }: {
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
           <label className="grid gap-1 text-sm font-medium text-slate-700">商品名稱或 Slug
-            <input name="q" defaultValue={search} maxLength={128} className="min-h-11 rounded-md border border-slate-300 px-3" placeholder="搜尋商品" />
+            <input name="q" defaultValue={search} maxLength={128} className="min-h-11 rounded-md border border-slate-500 px-3" placeholder="搜尋商品" />
           </label>
           <label className="grid gap-1 text-sm font-medium text-slate-700">販售狀態
-            <select name="status" defaultValue={status ?? ""} className="min-h-11 rounded-md border border-slate-300 bg-white px-3">
+            <select name="status" defaultValue={status ?? ""} className="min-h-11 rounded-md border border-slate-500 bg-white px-3">
               <option value="">全部狀態</option>
               <option value="active">上架且有庫存</option>
               <option value="draft">草稿／未上架</option>

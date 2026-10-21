@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   try {
     const state = await readWp4ExistingBuyerState(getDb());
     if (state.status !== "VERIFIED" || state.paymentStatus !== "PAID") return NextResponse.json({ status: "REFUND_NOT_ELIGIBLE", providerWriteAttempted: false }, { status: 409, headers: { "Cache-Control": "no-store" } });
-    const result = await executeNextWp4PayUniSandboxRefund(getDb(), WP4_BUYER_CONTINUATION_SOURCE, new Date(), "buyer_order");
+    const result = await executeNextWp4PayUniSandboxRefund(getDb(), WP4_BUYER_CONTINUATION_SOURCE, "buyer_order");
     return NextResponse.json({ status: result.status, providerWriteAttempted: result.providerWriteAttempted }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch { return wp4Unavailable(503); }
 }

@@ -255,15 +255,18 @@ async function claimWebhookEvent(db: ReturnType<typeof getDb>, event: WebhookEve
 
 export async function POST(request: Request) {
   const requestUrl = new URL(request.url);
-  let adapter: PaymentProviderAdapter;
-  try {
-    adapter = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
-  } catch {
-    return webhookResponse(requestUrl, 500, { error: "Invalid payment provider configuration" });
+  const configuredProviderId = process.env.PAYMENT_PROVIDER ?? "demo";
+  // Checked before resolving the adapter, which itself refuses non-PayUni
+  // providers on a production deployment (F-003).
+  if (process.env.NODE_ENV === "production" && configuredProviderId === "demo") {
+    return webhookResponse(requestUrl, 403, { error: "Demo payment webhooks are not allowed in production" });
   }
 
-  if (process.env.NODE_ENV === "production" && adapter.id === "demo") {
-    return webhookResponse(requestUrl, 403, { error: "Demo payment webhooks are not allowed in production" });
+  let adapter: PaymentProviderAdapter;
+  try {
+    adapter = getPaymentProvider(configuredProviderId);
+  } catch {
+    return webhookResponse(requestUrl, 500, { error: "Invalid payment provider configuration" });
   }
 
   const providerIds = [

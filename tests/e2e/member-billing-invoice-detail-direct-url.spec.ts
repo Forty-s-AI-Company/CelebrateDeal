@@ -305,7 +305,7 @@ test("active member is denied a billing invoice detail before params, tenant que
       (value): value is string =>
         typeof value === "string" &&
         value.length > 0 &&
-        value !== "$0",
+        value !== "NT$0",
     );
     // Next.js serializes the client-supplied dynamic route parameter into the
     // RSC routing envelope even when the page guard redirects before awaiting

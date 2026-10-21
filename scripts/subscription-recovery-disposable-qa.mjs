@@ -56,12 +56,17 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
     "treats an unconfirmed callback after a verified payment as already processed, without a reconciliation record (RR-02)",
    ];
    const uppCallbackCases = result.testResults.flatMap(suite => suite.assertionResults).filter(test => uppCallbackTitles.includes(test.title));
+   // PR #458 (F-003): production refuses non-PayUni events, including stored retries.
+   const productionProviderCase = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
+    test.title === "refuses a non-PayUni event on the production deployment, including stored retries (F-003)");
    // Keep all 67 prior cases, the original once-only case, both remaining-budget
    // boundaries, and the nine UPP callback cases (71 + 9), plus four F-048
    // unknown-order / override cases in payment-webhooks.test.ts (80 + 4), and
    // the F-067 refund-notice cases in wp4-buyer-ops.db.test.ts (+2) and the
-   // two PR #454 A-1 ambiguous-refund cases in payment-webhooks.test.ts (+2).
-   if (child.status !== 0 || !result.success || tests.total !== 88 || tests.passed !== 88 || tests.skipped !== 0
+   // two PR #454 A-1 ambiguous-refund cases in payment-webhooks.test.ts (+2),
+   // and the PR #458 F-003 production provider case in payment-webhooks.test.ts (+1).
+   if (child.status !== 0 || !result.success || tests.total !== 89 || tests.passed !== 89 || tests.skipped !== 0
+    || productionProviderCase.length !== 1 || productionProviderCase[0].status !== "passed"
     || uppCallbackCases.length !== uppCallbackTitles.length || new Set(uppCallbackCases.map(test => test.title)).size !== uppCallbackTitles.length
     || uppCallbackCases.some(test => test.status !== "passed")
     || originalCallbackCase.length !== 1 || originalCallbackCase[0].status !== "passed"

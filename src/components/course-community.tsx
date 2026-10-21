@@ -5,7 +5,7 @@ import type { StudentPortalLocale } from "@/lib/student-portal-locale";
 import type { CommunityMutationInput, getCourseCommunity, getCourseCommunityReplies } from "@/lib/course-community";
 type Feed = NonNullable<Awaited<ReturnType<typeof getCourseCommunity>>>;
 type Thread = NonNullable<Awaited<ReturnType<typeof getCourseCommunityReplies>>>;
-const field = "min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2";
+const field = "min-h-11 w-full rounded-xl border border-slate-500 bg-white px-3 py-2";
 const button = "min-h-11 rounded-xl bg-blue-700 px-4 py-2 font-bold text-white disabled:opacity-50";
 function DiscussionForm({ postId, submit, locale }: {
     postId?: string;

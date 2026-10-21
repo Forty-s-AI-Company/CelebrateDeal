@@ -10,7 +10,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { Badge, Card } from "@/components/ui";
 import { FORM_SUBMISSION_QUERY_MAX_LENGTH } from "@/lib/form-submission-search";
 
-const controlClass = "h-11 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
+const controlClass = "h-11 rounded-md border border-border-control bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 const primaryButtonClass = "inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark";
 const secondaryButtonClass = "inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50";
 

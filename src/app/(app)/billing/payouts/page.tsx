@@ -4,6 +4,8 @@ import { requireVendorFinance } from "@/lib/auth";
 import { maskBankAccount } from "@/lib/bank-account";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { VENDOR_PAYOUT_ACCOUNT_MODE } from "@/lib/vendor-payout-account";
+import { PayoutAccountCard } from "./payout-account-card";
 
 function statusTone(status: string) {
   if (status === "executed" || status === "paid") return "green" as const;
@@ -12,8 +14,26 @@ function statusTone(status: string) {
   return "gray" as const;
 }
 
-export default async function BillingPayoutsPage() {
-  const { vendor } = await requireVendorFinance("/billing/payouts");
+type BillingPayoutsSearchParams = { payoutAccount?: string | string[] };
+type BillingPayoutsPageProps = { searchParams?: Promise<BillingPayoutsSearchParams> };
+
+export default async function BillingPayoutsPage({ searchParams }: BillingPayoutsPageProps) {
+  const { vendor, member } = await requireVendorFinance("/billing/payouts");
+  const query = (await searchParams) ?? {};
+  const payoutAccountResult = typeof query.payoutAccount === "string" ? query.payoutAccount : undefined;
+  const payoutAccounts = await getDb().paymentAccount.findMany({
+    where: { vendorId: vendor.id, mode: VENDOR_PAYOUT_ACCOUNT_MODE },
+    select: {
+      status: true,
+      bankAccountEncrypted: true,
+      bankAccountLegacyName: true,
+      bankCodeLegacy: true,
+      bankAccountLegacyNumber: true,
+      payoutEligibleAt: true,
+    },
+    orderBy: { createdAt: "asc" },
+    take: 2,
+  });
   const batches = await getDb().payoutBatch.findMany({
     where: { items: { some: { vendorId: vendor.id } } },
     orderBy: { batchDate: "desc" },
@@ -33,6 +53,12 @@ export default async function BillingPayoutsPage() {
       <PageHeader
         title="批次出款"
         description="每月固定日產生待出款清單，支援人工覆核、鎖單、匯出銀行批次轉帳檔與失敗重送紀錄。"
+      />
+
+      <PayoutAccountCard
+        account={payoutAccounts.length === 1 ? payoutAccounts[0]! : null}
+        canEdit={member.role === "owner"}
+        result={payoutAccountResult ?? (payoutAccounts.length > 1 ? "multiple_accounts" : undefined)}
       />
 
       <div className="mb-6 grid gap-4 md:grid-cols-3">
@@ -91,7 +117,7 @@ export default async function BillingPayoutsPage() {
                       <tr key={item.id} className="hover:bg-slate-50/70">
                         <td className="px-5 py-4 font-semibold text-slate-950">{item.vendor.name}</td>
                         <td className="px-5 py-4">
-                          <Landmark className="mr-2 inline text-slate-400" size={16} />
+                          <Landmark className="mr-2 inline text-slate-500" size={16} />
                           {bankAccount.bankCode} / {bankAccount.accountNumber}
                         </td>
                         <td className="px-5 py-4">{bankAccount.accountName}</td>

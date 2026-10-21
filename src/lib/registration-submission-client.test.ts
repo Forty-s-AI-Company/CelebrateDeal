@@ -38,6 +38,8 @@ describe("public registration client contract", () => {
   it("distinguishes security rejection from validation, rate and availability failures", () => {
     expect(formSubmissionErrorMessage(400)).toContain("資料格式");
     expect(formSubmissionErrorMessage(403)).toContain("安全檢查");
+    expect(formSubmissionErrorMessage(403)).not.toContain("重新整理");
+    expect(formSubmissionErrorMessage(403)).toContain("重新開啟活動頁");
     expect(formSubmissionErrorMessage(429)).toContain("一分鐘");
     expect(formSubmissionErrorMessage(404)).toContain("無法接收");
     expect(formSubmissionErrorMessage(503)).toContain("無法接收");

@@ -5,7 +5,7 @@ import { requiresSecondApproval, submitSettlementAdjustment } from "@/lib/settle
 
 const updatedAt = new Date("2026-08-05T08:00:00.000Z");
 const settlement = {
-  id: "settlement-1", vendorId: "vendor-1", lockedAt: null, updatedAt,
+  id: "settlement-1", vendorId: "vendor-1", monthKey: "2026-07", lockedAt: null, updatedAt,
   payoutableAmountCents: 10_000, adjustmentAmountCents: 0,
 };
 const actor = { id: "admin-a", label: "platform_admin" };
@@ -15,7 +15,10 @@ function fakeDb(overrides: { updateCount?: number; transactionError?: unknown } 
     settlement: {
       findUnique: vi.fn(async () => settlement),
       updateMany: vi.fn(async () => ({ count: overrides.updateCount ?? 1 })),
+      findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async () => null),
     },
+    settlementAdjustmentLedgerEntry: { findUnique: vi.fn(async () => null), create: vi.fn(), update: vi.fn() },
     settlementAdjustmentRequest: { updateMany: vi.fn(async () => ({ count: 0 })), create: vi.fn() },
     auditLog: { create: vi.fn() },
   };
@@ -43,8 +46,10 @@ describe("settlement adjustment write guards (F-049, review m-5)", () => {
       .rejects.toMatchObject({ code: "conflict" });
     expect(tx.settlement.updateMany).toHaveBeenCalledWith({
       where: { id: settlement.id, vendorId: settlement.vendorId, lockedAt: null, updatedAt },
-      data: { adjustmentAmountCents: 500, adjustmentReason: "synthetic", reviewedBy: actor.id, finalPayoutAmountCents: 10_500 },
+      data: { adjustmentAmountCents: 500, adjustmentReason: "synthetic", reviewedBy: actor.id, finalPayoutAmountCents: 10_500, carriedOutCents: 0 },
     });
+    // No carry exists and none is needed, so the carry ledger is untouched.
+    expect(tx.settlementAdjustmentLedgerEntry.create).not.toHaveBeenCalled();
     expect(tx.auditLog.create).not.toHaveBeenCalled();
   });
 

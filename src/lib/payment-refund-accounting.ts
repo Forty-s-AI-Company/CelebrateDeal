@@ -51,7 +51,14 @@ export type PaymentRefundAccountingInput = {
   isFullRefund: boolean;
   transactionOccurredAt: Date;
   occurredAt: Date;
+  /**
+   * F-039 (review M-1): the RefundRecord's settlement month. The commission
+   * reversal is settled in that same (never locked) month.
+   */
+  settlementMonthKey?: string | null;
 };
+
+type AffiliateRefundInput = PaymentRefundAccountingInput;
 
 function monthBounds(date: Date) {
   const year = date.getUTCFullYear();
@@ -65,7 +72,7 @@ function monthBounds(date: Date) {
 
 async function applyRefundToAffiliateCommission(
   db: PaymentRefundAccountingDb,
-  input: PaymentRefundAccountingInput,
+  input: AffiliateRefundInput,
 ) {
   const commission = await db.affiliateCommission.findFirst({
     where: {
@@ -99,7 +106,7 @@ async function applyRefundToAffiliateCommission(
   return applyRefundToOneAffiliateCommission(db, input, commission, commissionAmountCents(input.refundAmountCents, commission.commissionRateBps));
 }
 
-async function applyRefundToOneAffiliateCommission(db: PaymentRefundAccountingDb, input: PaymentRefundAccountingInput, commission: AffiliateCommission, calculatedRefund: number) {
+async function applyRefundToOneAffiliateCommission(db: PaymentRefundAccountingDb, input: AffiliateRefundInput, commission: AffiliateCommission, calculatedRefund: number) {
   const netReferenceUpdated = await db.affiliateCommission.updateMany({
     where: { id: commission.id, vendorId: input.vendorId },
     data: { netReferenceAmountCents: input.netReferenceAmountCents },
@@ -119,6 +126,7 @@ async function applyRefundToOneAffiliateCommission(db: PaymentRefundAccountingDb
       eventIdentity: input.eventIdentity,
       amountCents: -refundAmount,
       occurredAt: input.occurredAt,
+      settlementMonthKey: input.settlementMonthKey ?? null,
     });
   }
 

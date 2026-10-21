@@ -63,6 +63,7 @@ export function publicLandingPageCandidateWhere(slug: string): Prisma.LandingPag
     slug,
     status: "published",
     publishedVersionId: { not: null },
+    archivedAt: null,
     project: { is: { status: "published", publishedAt: { not: null } } },
   };
 }

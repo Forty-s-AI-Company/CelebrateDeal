@@ -6,10 +6,13 @@ import {
 } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
+import { runSerializable as runSharedSerializable } from "@/lib/serializable-retry";
 
 export const INVENTORY_RESERVATION_TTL_MS = 30 * 60 * 1000;
 
-const MAX_SERIALIZABLE_ATTEMPTS = 3;
+// F-055: a hot product in a flash sale aborts many Serializable attempts;
+// retry more often, with exponential backoff and full jitter.
+const MAX_SERIALIZABLE_ATTEMPTS = 5;
 
 export class InventoryUnavailableError extends Error {
   constructor() {
@@ -149,32 +152,21 @@ export function snapshotReservationItems(reservation: Pick<ReservationRecord, "i
   return items;
 }
 
-function isSerializableConflict(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
-}
-
 function isUniqueConstraintConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) {
-  const db = getDb();
-  for (let attempt = 1; attempt <= MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
-    try {
-      return await db.$transaction(operation, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        // Production intentionally runs with a small serverless connection
-        // pool. Concurrent checkout attempts should queue long enough to
-        // resolve through the inventory invariant, not fail at pool admission.
-        maxWait: 5_000,
-        timeout: 10_000,
-      });
-    } catch (error) {
-      if (!isSerializableConflict(error) || attempt === MAX_SERIALIZABLE_ATTEMPTS) throw error;
-    }
-  }
-
-  throw new Error("Serializable inventory transaction attempts exhausted.");
+function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) {
+  return runSharedSerializable(getDb(), operation, {
+    attempts: MAX_SERIALIZABLE_ATTEMPTS,
+    baseDelayMs: 25,
+    maxDelayMs: 400,
+    // Production intentionally runs with a small serverless connection
+    // pool. Concurrent checkout attempts should queue long enough to
+    // resolve through the inventory invariant, not fail at pool admission.
+    maxWait: 5_000,
+    timeout: 10_000,
+  });
 }
 
 /** 成功以 expected revision 保留庫存後，供同交易訂單 callback 驗證的版本證據。 */

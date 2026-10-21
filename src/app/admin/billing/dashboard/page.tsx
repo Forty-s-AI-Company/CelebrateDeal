@@ -170,7 +170,7 @@ export default async function AdminBillingDashboardPage() {
                   <form data-testid={`billing-refund-${transaction.id}`} action={refundPaymentTransactionAction} className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3">
                     <CsrfField />
                     <input type="hidden" name="id" value={transaction.id} />
-                    <input aria-label="退款月份" name="monthKey" type="month" defaultValue={new Date(transaction.occurredAt).toISOString().slice(0, 7)} className="h-9 rounded-md border border-border px-2 text-xs" />
+                    <p className="text-xs text-slate-500">退款計入完成當月的月結；該月已鎖定時自動計入下一期。</p>
                     <div className="grid grid-cols-3 gap-2">
                       <input aria-label="退款金額" name="refundAmount" type="number" step="1" placeholder="退款" className="h-9 rounded-md border border-border px-2 text-xs" />
                       <input aria-label="退金流費" name="gatewayFeeRefund" type="number" step="1" placeholder="退金流費" className="h-9 rounded-md border border-border px-2 text-xs" />
@@ -288,7 +288,7 @@ export default async function AdminBillingDashboardPage() {
                         <FormSubmitButton pendingChildren="重送中…" pendingMessage="正在重新處理 webhook，請勿重複送出。" className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Retry</FormSubmitButton>
                       </form>
                     ) : (
-                      <span className="text-xs text-slate-400">-</span>
+                      <span className="text-xs text-slate-500">-</span>
                     )}
                   </td>
                 </tr>

@@ -177,10 +177,10 @@ function CustomCheckoutFieldEditor({
         <div key={field.key} className="grid gap-3 rounded-md border border-violet-200 bg-white p-3">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
             <label className="grid gap-1 text-sm font-medium text-slate-800">欄位標題
-              <input value={field.label} maxLength={100} onChange={(event) => update(index, { label: event.target.value })} className="rounded-md border border-slate-300 px-3 py-2" />
+              <input value={field.label} maxLength={100} onChange={(event) => update(index, { label: event.target.value })} className="rounded-md border border-slate-500 px-3 py-2" />
             </label>
             <label className="grid gap-1 text-sm font-medium text-slate-800">輸入類型
-              <select value={field.type} onChange={(event) => changeType(index, event.target.value as CustomCheckoutField["type"])} className="rounded-md border border-slate-300 px-3 py-2">
+              <select value={field.type} onChange={(event) => changeType(index, event.target.value as CustomCheckoutField["type"])} className="rounded-md border border-slate-500 px-3 py-2">
                 <option value="text">短文字</option><option value="textarea">長文字</option><option value="select">下拉選單</option><option value="checkbox">確認勾選</option>
               </select>
             </label>
@@ -201,7 +201,7 @@ function CustomCheckoutFieldEditor({
               <p className="text-sm font-medium text-slate-800">選項（2–20 個，不可重複）</p>
               {field.options.map((value, optionIndex) => (
                 <div key={`${field.key}-${optionIndex}`} className="flex gap-2">
-                  <input value={value} maxLength={100} onChange={(event) => update(index, { options: field.options.map((option, currentIndex) => currentIndex === optionIndex ? event.target.value : option) })} className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2" />
+                  <input value={value} maxLength={100} onChange={(event) => update(index, { options: field.options.map((option, currentIndex) => currentIndex === optionIndex ? event.target.value : option) })} className="min-w-0 flex-1 rounded-md border border-slate-500 px-3 py-2" />
                   <button type="button" disabled={field.options.length <= 2} onClick={() => update(index, { options: field.options.filter((_, currentIndex) => currentIndex !== optionIndex) })} className="rounded-md border px-2 text-sm disabled:opacity-40">移除</button>
                 </div>
               ))}

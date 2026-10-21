@@ -118,6 +118,7 @@
 | 76 | `GET /(app)/billing/electronic-invoices/export` | authenticated vendor finance context | 無 body | export query 固定目前 vendor；不存在與拒絕存取不洩漏資料 | 只讀 CSV；公式字元 neutralization、`private, no-store` 與 attachment headers | CSV attachment 或安全授權錯誤 | 同路徑 route unit |
 | 77 | `POST /api/jobs/electronic-invoices` | timing-safe `JOB_SECRET` Bearer token | 無 body | job 只處理 server-owned tenant invoice queue；不接受 caller identity | bounded invoice issue／allowance／void reconciliation；adapter unavailable 保留 queued，錯誤回 sanitized monitoring | 401、202 queued 或 200 bounded counts；失敗 503 safe code | 同路徑 route/job unit |
 | 83 | `GET /api/admin/ops/provider-runtime` | timing-safe `JOB_SECRET`，僅 `VERCEL_ENV=preview`；唯讀探測另需部署 source SHA 相符 | 可選 `probe=read-only` 與 `x-celebratedeal-source-sha` | 預設只讀 runtime 設定存在性與 HMAC 資源摘要；探測時各執行一次 R2 HeadBucket 與 Stream list `limit=1` | 無 DB 或 provider 寫入；探測結果僅固定 enum，不能證明 token scope／非正式資源身分 | 200 bounded presence／digest／probe enum，401／403 泛化錯誤；`no-store` | 同路徑 route unit＋合成 provider probe unit；實際非正式資源 scope 仍待外部證據 |
+| 94 | `GET /api/readiness` | timing-safe `CRON_SECRET` Bearer；`JOB_SECRET` 不接受 | 無 body／query | 只讀 aggregate（email、LINE、webhook retry、learner notification、tracking outbox 的 最近成功時間、已到期筆數與最舊到期時間、處理中與逾 lease 筆數；條件與各 worker 的候選查詢一致，成功時間快取 60 秒）；不選取 tenant、recipient、payload 或 provider 欄位 | 無寫入 | 200 `{ ok, checkedAt, jobs }`；401；失敗 503 泛用錯誤；`no-store` | 同路徑 route unit |
 
 ## 已確認的 contract 缺口
 
@@ -260,3 +261,10 @@
 | `GET /api/jobs/electronic-invoices` | timing-safe `CRON_SECRET` Bearer | 無 body；server-owned tenant invoice queue | 與 `POST` 相同；adapter 未接時保留 queued | 401、202 queued 或 200 bounded counts；失敗 503 safe code | 同路徑 route unit |
 | `POST /api/cron/line-notifications` | timing-safe `JOB_SECRET` Bearer | 無 body | 與 `GET` 相同：materialize 後以 atomic lease 派送 LINE due queue | 401 或 sanitized aggregate；錯誤 503，不回 recipient／provider detail | 同路徑 route unit |
 | `POST /api/cron/live-media` | timing-safe `JOB_SECRET` Bearer | 無外部 payload | 與 `GET` 相同的 bounded session cleanup；staging 排程預設關閉，需 `SCHEDULED_JOBS_ENABLE_LIVE_MEDIA` | 401／503 或 sanitized `{ scanned, stopped }` | 同路徑 route unit（真實 api-security） |
+
+## 2026-10-21 F-070 資料保存期限清理
+
+| API | 授權 | 輸入與範圍 | 行為與安全契約 | 回應 | 驗證 |
+| --- | --- | --- | --- | --- | --- |
+| `GET /api/cron/data-retention` | timing-safe `CRON_SECRET` Bearer | 無 body；保存天數只來自 server 環境變數 `DATA_RETENTION_WEBHOOK_PAYLOAD_DAYS`／`DATA_RETENTION_ANALYTICS_EVENT_DAYS`／`DATA_RETENTION_AUDIT_LOG_IP_DAYS`（預設 180／365／365，限 30–3650 天，待 owner 依律師建議訂定） | 與 `POST` 共用 handler。伺服器端開關 `DATA_RETENTION_ENABLED` 不是 `true` 時回 200 `{ skipped: "disabled" }`，不寫任何資料（密鑰驗證照常）。逾期且非 `received`／`retrying`／`failed`／`needs_manual_reconciliation` 的 `WebhookEvent` 只移除 payload 的 `raw`、`diagnostics`（保留列、`(provider,eventId)` 冪等鍵與已遮罩的 `normalized`）；刪除逾期 `AnalyticsEvent`（`TrackingDelivery` 串聯）；清空逾期 `AuditLog.ipAddress`（保留稽核列）。每類每次最多 20 批 × 1000 列 | 401；設定不合法 503 `Retention configuration invalid`（不清理）；200 只回 `{ webhookPayloadsPurged, analyticsEventsDeleted, auditLogIpsCleared, remaining }`；DB 錯誤 503，不回細節 | 同路徑 route unit（密鑰互斥、預設與覆寫、非法設定）＋ `src/lib/data-retention.db.test.ts`（交易內回滾的 PostgreSQL 驗證） |
+| `POST /api/cron/data-retention` | timing-safe `JOB_SECRET` Bearer | 同 `GET` | 與 `GET` 相同；staging 排程預設關閉，需 `SCHEDULED_JOBS_ENABLE_DATA_RETENTION` | 同 `GET` | 同路徑 route unit |

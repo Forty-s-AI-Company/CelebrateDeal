@@ -986,6 +986,47 @@ describe("PayUni UPP 2.0 payment callback contract (F-037)", () => {
     });
   });
 
+  describe("signed non-SUCCESS results without a TradeStatus (F-047)", () => {
+    const rejected = { MerID: "TESTMER", Status: "UPP02005", Message: "UPP02005", MerTradeNo: "CD-REAL-001", TradeAmt: "1990" };
+
+    it("records a signed provider rejection as a failed event with bounded codes instead of an invalid payload", async () => {
+      const { payload } = await normalizeReal({ ...rejected, ResCode: "R12" }, "UPP02005");
+      expect(payload).toMatchObject({
+        provider: "payuni",
+        eventType: "failed",
+        eventId: "CD-REAL-001:result:UPP02005",
+        orderNumber: "CD-REAL-001",
+        metadata: { providerResult: { status: "UPP02005", messageCode: "UPP02005", resCode: "R12" } },
+      });
+      expect(payload.metadata?.providerResult).not.toHaveProperty("outerStatusMismatch");
+    });
+
+    it("keys the event by the trade number when present and flags an outer Status mismatch", async () => {
+      const { payload } = await normalizeReal({ ...rejected, TradeNo: "PAYUNI-REAL-TRADE-009" }, "SUCCESS");
+      expect(payload.eventId).toBe("PAYUNI-REAL-TRADE-009:result:UPP02005");
+      expect(payload.metadata).toEqual({ providerResult: { status: "UPP02005", messageCode: "UPP02005", outerStatusMismatch: true } });
+    });
+
+    it("never records free text or card-like digits from the signed message or status", async () => {
+      const { payload } = await normalizeReal({ ...rejected, Status: "ERR 4111111111111111", Message: "card 4111111111111111 declined" }, "ERR");
+      expect(payload.eventType).toBe("failed");
+      expect(payload.eventId).toBe("CD-REAL-001:result:unrecognized");
+      expect(JSON.stringify(payload)).not.toContain("4111111111111111");
+      expect(payload.metadata).toEqual({ providerResult: { status: "unrecognized", outerStatusMismatch: true } });
+    });
+
+    it.each(["UNKNOWN", "UNAPPROVED"])("treats a signed %s result as pending and changes nothing", async (status) => {
+      await expect(normalizeReal({ ...rejected, Status: status }, status)).rejects.toMatchObject({
+        name: "PaymentWebhookNotActionableError", reason: "trade_pending", identifiers: { orderNumber: "CD-REAL-001" },
+      });
+    });
+
+    it("keeps the bounded codes on a terminal UPP failure too", async () => {
+      const { payload } = await normalizeReal({ ...realPaid, Status: "SUCCESS", TradeStatus: "2", Message: "CARD01" });
+      expect(payload.metadata).toEqual({ providerResult: { status: "SUCCESS", messageCode: "CARD01", tradeStatus: "2" } });
+    });
+  });
+
   it("keeps a failed attempt and a later paid result of one trade as separate events", async () => {
     const failed = await normalizeReal({ ...realPaid, TradeStatus: "2" });
     const paid = await normalizeReal(realPaid);
