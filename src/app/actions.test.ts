@@ -3226,6 +3226,14 @@ describe("verifyMfaAction", () => {
     },
   );
 
+  it.each(["/\t/evil.example", "//evil.example", "/\\evil.example", "javascript:alert(1)", "/\n/evil.example"])(
+    "never redirects a verified user off-site through next=%j",
+    async (next) => {
+      await expect(verifyMfaAction(mfaVerifyFormData("123456", next))).rejects.toThrow(/^redirect:\/admin\/billing\/dashboard$/u);
+      expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+    },
+  );
+
   it("limits a verified user's MFA attempts by both user ID and forwarded source IP before validating the code", async () => {
     const formData = mfaVerifyFormData();
 

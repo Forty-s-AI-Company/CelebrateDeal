@@ -1,3 +1,4 @@
+import { safeInternalPathOr } from "@/lib/safe-internal-path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { getCanonicalAppUrl } from "@/lib/app-url";
@@ -37,9 +38,7 @@ export interface LineLoginProvider {
 }
 
 function safeRedirectPath(value: string) {
-  return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") && value.length <= 1_024
-    ? value
-    : "/dashboard";
+  return value.length <= 1_024 ? safeInternalPathOr(value, "/dashboard") : "/dashboard";
 }
 
 function sha256Base64Url(value: string) {

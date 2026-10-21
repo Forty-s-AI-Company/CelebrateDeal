@@ -1,3 +1,4 @@
+import { safeInternalPathOr } from "@/lib/safe-internal-path";
 import { verifyMfaAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
@@ -9,8 +10,8 @@ const errorMessages: Record<string, string> = {
   temporarily_unavailable: "驗證服務暫時無法使用，請稍後再試。",
 };
 
-function safeInternalPath(value: string | undefined) {
-  return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/admin/billing/dashboard";
+function safeNextPath(value: string | undefined) {
+  return safeInternalPathOr(value, "/admin/billing/dashboard");
 }
 
 export default async function MfaVerifyPage({
@@ -33,7 +34,7 @@ export default async function MfaVerifyPage({
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "驗證失敗。"}</p> : null}
         <form action={verifyMfaAction} className="grid gap-4">
           <CsrfField />
-          <input type="hidden" name="next" value={safeInternalPath(params.next)} />
+          <input type="hidden" name="next" value={safeNextPath(params.next)} />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             驗證碼
             <input name="code" autoComplete="one-time-code" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456 或 ABCDE-12345" />

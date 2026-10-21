@@ -1,4 +1,5 @@
 "use server";
+import { safeInternalPathOr } from "@/lib/safe-internal-path";
 import { withMfaReturnPath } from "@/lib/mfa-return-path";
 
 import { cookies, headers } from "next/headers";
@@ -46,10 +47,7 @@ function normalizedEmail(value: string) {
 }
 
 function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") {
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
-    return fallback;
-  }
-  return value;
+  return safeInternalPathOr(value, fallback);
 }
 
 function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {

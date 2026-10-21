@@ -1,3 +1,4 @@
+import { safeInternalPathOr } from "@/lib/safe-internal-path";
 import { isWp4BoundNonProductionRuntime } from "./wp4-runtime-boundary";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 import { createHash, randomBytes } from "node:crypto";
@@ -63,9 +64,7 @@ function isFinanceRole(role?: string | null) {
 }
 
 function safeMfaNextPath(value: string, fallback = "/billing/usage") {
-  return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
-    ? value
-    : fallback;
+  return safeInternalPathOr(value, fallback);
 }
 
 function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null) {
