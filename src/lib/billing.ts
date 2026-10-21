@@ -251,6 +251,10 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     // F-039 (review M-1): a refund reversal is settled in its refund's month;
     // every other entry in its commission's month. A commission voided by a
     // full refund still counts, because its reversal now counts as well.
+    // F-044 / D-31 A: this total is reported only. Merchants pay their
+    // affiliates themselves and record the outcome; the platform never
+    // withholds it from the merchant payout (see
+    // docs/operations/affiliate-commission-settlement-runbook.md).
     db.affiliateCommissionLedgerEntry.aggregate({
       where: {
         vendorId,
@@ -384,8 +388,11 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   const paymentServiceFeeCents = paymentMode === "platform" ? plan.paymentServiceFeeCents : 0;
   const affiliateManagementFeeCents = plan.affiliateManagementFeeCents;
   const monthlyFeeCents = plan.monthlyPriceCents;
+  // F-044 / D-31 A: affiliate commissions are merchant-paid, so they are not
+  // deducted here; the platform has no path that pays an affiliate.
+  const affiliateCommissionCents = commissionTotal._sum.amountCents ?? 0;
   const payoutableAmountCents = (paymentMode === "platform"
-    ? grossRevenueCents - netGatewayFeeCents - netPlatformFeeCents - (commissionTotal._sum.amountCents ?? 0)
+    ? grossRevenueCents - netGatewayFeeCents - netPlatformFeeCents
     : 0) + carriedInCents;
 
   return {
@@ -411,6 +418,8 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     gatewayFeeRefundCents,
     platformFeeRefundCents,
     carriedInCents,
+    /** Merchant-paid affiliate commission for the month; informational, never deducted (D-31 A). */
+    affiliateCommissionCents,
     payoutableAmountCents,
     // Before any manual adjustment; a negative payable carries forward.
     finalPayoutAmountCents: Math.max(0, payoutableAmountCents),

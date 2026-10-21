@@ -276,7 +276,8 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
     });
 
     const september = await generateSettlementForVendor(vendor.id, "2026-09");
-    expect(september.settlement).toMatchObject({ grossRevenueCents: 10_000, payoutableAmountCents: 9_000, finalPayoutAmountCents: 9_000 });
+    // F-044 / D-31 A: the merchant pays the affiliate; the payout is not reduced.
+    expect(september.settlement).toMatchObject({ grossRevenueCents: 10_000, payoutableAmountCents: 10_000, finalPayoutAmountCents: 10_000 });
     await lockMonth(vendor.id, "2026-09");
 
     // October: the full refund is booked into October; so is its commission reversal.
@@ -294,13 +295,14 @@ describe("F-039 negative settlement balance carries forward (D-32)", () => {
 
     const october = await generateSettlementForVendor(vendor.id, "2026-10");
 
-    // -10,000 refunded to the buyer, +1,000 commission no longer owed: -9,000 carried.
+    // -10,000 refunded to the buyer is carried. The -1,000 commission reversal
+    // is the merchant's to reclaim from its affiliate (F-044 / D-31 A).
     expect(october.settlement).toMatchObject({
       grossRevenueCents: -10_000,
       refundAmountCents: 10_000,
-      payoutableAmountCents: -9_000,
+      payoutableAmountCents: -10_000,
       finalPayoutAmountCents: 0,
-      carriedOutCents: -9_000,
+      carriedOutCents: -10_000,
     });
   });
 
