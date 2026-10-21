@@ -74,6 +74,10 @@ test("fixed owner selects a private sandbox plan, reloads real entitlement/refun
   const foreign = await foreignContext.newPage(); await foreign.goto(`${baseURL}/login`);
   await foreign.getByLabel("Email").fill(foreignUser.email); await foreign.getByLabel("密碼").fill(password);
   await foreign.getByRole("button", { name: "登入", exact: true }).click(); await expect(foreign).toHaveURL(/\/dashboard$/);
+  // F-027 / PR #462: give the foreign owner a fresh step-up so the forged
+  // selection below is refused by plan scope, not merely by missing MFA.
+  await db.userMfaFactor.create({ data: { userId: foreignUser.id, secretEncrypted: "synthetic-not-decrypted" } });
+  await db.userSession.updateMany({ where: { userId: foreignUser.id, revokedAt: null }, data: { mfaVerifiedAt: new Date() } });
   await foreign.goto(`${baseURL}/billing/plans`); await expect(foreign.getByRole("heading", { name: "WP4 Synthetic Sandbox Plan" })).toHaveCount(0);
   const csrf = await foreign.locator('input[name="_csrf"]').first().inputValue();
   await foreign.evaluate(async ({ csrf, planId }) => {

@@ -27,6 +27,14 @@ async function login(page: Page, email: string, destination: "dashboard" | "supp
   await page.goto("/login"); await page.getByLabel("Email").fill(email); await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入", exact: true }).click(); await expect(page).toHaveURL(new RegExp(`/${destination}$`));
 }
+// F-027 / PR #462: saving Meta credentials needs an enrolled factor verified
+// within 15 minutes. Synthetic managers sign in with a password only, then get
+// a synthetic factor and a fresh stamp on their own live sessions; the
+// production step-up guard itself is unchanged.
+async function grantRecentMfa(db: PrismaClient, userId: string) {
+  await db.userMfaFactor.upsert({ where: { userId }, create: { userId, secretEncrypted: "synthetic-not-decrypted" }, update: {} });
+  await db.userSession.updateMany({ where: { userId, revokedAt: null }, data: { mfaVerifiedAt: new Date() } });
+}
 async function user(db: PrismaClient, vendorId: string, role: string) {
   return db.user.create({ data: { email: `tracking-${randomUUID()}@example.test`, name: "合成追蹤管理員", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId, role, status: "active" } } } });
 }
@@ -40,7 +48,7 @@ test("manager saves encrypted credentials, rejects stale and CSRF writes, reload
   const otherContext = await browser.newContext({ baseURL }); const stale = await page.context().newPage();
   await page.route("**/*", route => new URL(route.request().url()).origin === baseURL ? route.continue() : route.abort());
   try {
-    await login(page, manager.email); await page.goto("/settings/tracking");
+    await login(page, manager.email); await grantRecentMfa(db, manager.id); await page.goto("/settings/tracking");
     await stale.goto(`${baseURL}/settings/tracking`);
     await expect(credentialForm(stale).locator('input[name="credentialRevision"]')).toHaveValue("0");
     await page.getByLabel("Meta CAPI Access Token").fill(syntheticToken);
@@ -109,7 +117,7 @@ test("support member cannot render or forge the manager credential action", asyn
   const db = new PrismaClient(), shop = await vendor(db), manager = await user(db, shop.id, "owner"), support = await user(db, shop.id, "support");
   const supportContext = await browser.newContext({ baseURL });
   try {
-    await login(page, manager.email); await page.goto("/settings/tracking");
+    await login(page, manager.email); await grantRecentMfa(db, manager.id); await page.goto("/settings/tracking");
     const actionFields = await credentialForm(page).evaluate(form => [...new FormData(form as HTMLFormElement).entries()].filter(([key]) => key.startsWith("$ACTION_")).map(([key, value]) => [key, String(value)]));
     expect(actionFields.length).toBeGreaterThan(0);
     const member = await supportContext.newPage(); await login(member, support.email, "support-cases");
@@ -144,7 +152,7 @@ test("public email verification queues one encrypted Lead, rejects invalid proof
   const buyerContext = await browser.newContext({ baseURL }), foreignContext = await browser.newContext({ baseURL });
   await buyerContext.route("**/*", route => new URL(route.request().url()).origin === baseURL ? route.continue() : route.abort());
   try {
-    await login(page, manager.email); await page.goto("/settings/tracking");
+    await login(page, manager.email); await grantRecentMfa(db, manager.id); await page.goto("/settings/tracking");
     await page.getByLabel("Meta CAPI Access Token").fill(syntheticToken);
     await page.getByLabel("Meta Test Event Code").fill("TEST_PUBLIC_LEAD");
     await saveCredentials(page); await expect(savedStatus(page)).toBeVisible();
@@ -186,7 +194,7 @@ test("public published calendar books an actual slot and queues tenant-bound Sch
   const buyerContext = await browser.newContext({ baseURL, timezoneId: "UTC" });
   await buyerContext.route("**/*", route => new URL(route.request().url()).origin === baseURL ? route.continue() : route.abort());
   try {
-    await login(page, manager.email); await page.goto("/settings/tracking");
+    await login(page, manager.email); await grantRecentMfa(db, manager.id); await page.goto("/settings/tracking");
     await page.getByLabel("Meta CAPI Access Token").fill(syntheticToken);
     await page.getByLabel("Meta Test Event Code").fill("TEST_PUBLIC_SCHEDULE");
     await saveCredentials(page); await expect(savedStatus(page)).toBeVisible();
@@ -241,7 +249,7 @@ test("real public live admission emits ViewContent once per admitted page and re
   const manager = await user(db, shop.id, "owner"), buyerContext = await browser.newContext({ baseURL });
   await buyerContext.route("**/*", route => new URL(route.request().url()).origin === baseURL ? route.continue() : route.abort());
   try {
-    await login(page, manager.email); await page.goto("/settings/tracking");
+    await login(page, manager.email); await grantRecentMfa(db, manager.id); await page.goto("/settings/tracking");
     await page.getByLabel("Meta CAPI Access Token").fill(syntheticToken);
     await page.getByLabel("Meta Test Event Code").fill("TEST_PUBLIC_VIEW");
     await saveCredentials(page); await expect(savedStatus(page)).toBeVisible();
