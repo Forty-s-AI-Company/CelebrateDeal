@@ -11,7 +11,7 @@ import {
 } from "@/app/actions/support-case-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/components/ui";
-import { requireVendorSupportMfa } from "@/lib/auth";
+import { requireVendorSupportMember } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 import { revealSupportCaseContent, type SupportCaseContentKind } from "@/lib/support-case-pii";
@@ -35,7 +35,7 @@ const eventLabels: Record<string, string> = {
   refund_requested: "送出退款交接",
   refund_review_started: "平台財務開始檢視",
   refund_declined: "平台財務退回退款請求",
-  refund_completed: "退款已由 canonical ledger 確認",
+  refund_completed: "退款已由帳目確認",
 };
 
 const nextStatuses: Record<string, readonly string[]> = {
@@ -214,7 +214,7 @@ export default async function SupportCaseDetailPage({ params, searchParams }: {
   searchParams?: Promise<{ error?: string | string[]; updated?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { vendor, member } = await requireVendorSupportMfa(`/support-cases/${encodeURIComponent(id)}`);
+  const { vendor, member } = await requireVendorSupportMember(`/support-cases/${encodeURIComponent(id)}`);
   const canManageOrders = member.role === "owner" || member.role === "admin";
   const detail = await loadSupportCaseDetail(id, vendor.id, canManageOrders);
   if (!detail) notFound();
@@ -237,7 +237,7 @@ export default async function SupportCaseDetailPage({ params, searchParams }: {
 
   return (
     <>
-      <PageHeader title={`客服案件 ${supportCase.caseNumber}`} description="內容加密、事件 append-only；退款請求只建立平台財務 handoff，不代表 provider 已退款。" />
+      <PageHeader title={`客服案件 ${supportCase.caseNumber}`} description="內容加密、事件只增不改；退款請求只會交給平台財務處理，不代表付款服務已退款。" />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Link href="/support-cases" className="text-sm font-semibold text-primary hover:underline">← 返回客服佇列</Link>
         <div className="flex gap-2">
@@ -352,7 +352,7 @@ export default async function SupportCaseDetailPage({ params, searchParams }: {
                 <p><b>申請金額：</b>{formatCurrency(managerFinance.refundHandoff.requestedAmountCents, supportCase.order.currency)}</p>
                 {refundReason ? <p className="mt-2 whitespace-pre-wrap rounded-md bg-slate-50 p-3">{refundReason}</p> : null}
                 {refundReasonUnavailable ? <p role="alert" className="mt-2 text-red-700">退款原因目前無法解密。</p> : null}
-                <p className="mt-3 text-xs">只有平台財務完成 provider 操作並產生 canonical CommerceOrderRefund 後，案件才會顯示 completed。</p>
+                <p className="mt-3 text-xs">只有平台財務完成付款服務端的退款並產生正式退款紀錄後，案件才會顯示為已完成。</p>
               </div>
             ) : canRequestRefund ? (
               <form action={requestSupportRefundHandoffAction} className="mt-4 grid gap-3">

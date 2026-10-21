@@ -1,11 +1,14 @@
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 import { buildLiveChatExportRows, liveChatRowsToCsv, realViewerMessageWhere, scheduledMessageEventWhere } from "@/lib/live-chat-analytics";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { auth, vendor } = await requireVendorManagerContext();
   const { id } = await params;
+  // Viewer names and messages are personal data (F-027 step-up).
+  requireRecentMfa(auth, { nextPath: `/lives/${encodeURIComponent(id)}/analytics` });
   const db = getDb();
   const live = await db.live.findFirst({
     where: { id, vendorId: vendor.id },

@@ -62,7 +62,7 @@ test("admin cannot open another vendor video edit route through direct URL navig
     await expect(page.getByLabel("長度秒數")).toHaveValue(String(ownVideo.durationSec));
     await expect(page.getByLabel("估算用量分鐘")).toHaveValue(String(ownVideo.estimatedMinutes));
     await expect(page.getByLabel("狀態")).toHaveValue(ownVideo.status);
-    await expect(page.getByText("尚未建立 Live Input", { exact: true })).toBeVisible();
+    await expect(page.getByText("尚未建立即時直播", { exact: true })).toBeVisible();
 
     const foreignPath = `/videos/${foreignVideo.id}/edit`;
     const foreignDataCanaries = [foreignVideo.title, foreignVideo.description ?? "", foreignVideoUrl, foreignThumbnailUrl];

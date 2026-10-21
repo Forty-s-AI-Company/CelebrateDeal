@@ -15,7 +15,7 @@ import {
 } from "@/lib/message-template";
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 
-const liveStudioStepLabels = ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"] as const;
+const liveStudioStepLabels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"] as const;
 
 type ResumableLiveDraft = {
   id: string;

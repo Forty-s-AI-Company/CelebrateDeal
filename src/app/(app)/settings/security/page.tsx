@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import Image from "next/image";
 import QRCode from "qrcode";
 import {
+  changeVendorMemberRoleAction,
   createVendorMemberAction,
   deactivateVendorMemberAction,
   logoutAction,
@@ -12,6 +13,7 @@ import {
   revokeAllSessionsAction,
   revokeOtherSessionsAction,
   resendVendorMemberInvitationAction,
+  revokeVendorMemberInvitationAction,
   sendPasswordResetSmokeAction,
   updatePasswordAction,
 } from "@/app/actions";
@@ -19,11 +21,15 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
 import { VendorMemberDeactivationConfirmation } from "@/components/vendor-member-deactivation-confirmation";
+import { VendorMemberRoleDowngradeForm } from "@/components/vendor-member-role-downgrade-form";
 import { Badge, ButtonLink, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { loadPendingVendorInvitations, PendingVendorInvitations } from "@/components/pending-vendor-invitations";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { statusLabel } from "@/lib/status-labels";
 
 const errorMessages: Record<string, string> = {
@@ -33,13 +39,14 @@ const errorMessages: Record<string, string> = {
   password_reuse: "新密碼不能與目前密碼相同。",
   owner_required: "只有商家 owner 可以管理成員。",
   member_invalid: "請確認成員姓名、Email 與角色都已填寫。",
-  member_invitation: "成員已更新，但邀請信寄送失敗，請稍後重新邀請。",
-  member_invitation_rate_limited: "邀請寄送次數過多，請稍候再試；商家成員尚未變更。",
-  member_invitation_unavailable: "邀請頻率檢查暫時無法使用；商家成員尚未變更，請稍候再試。",
+  member_invitation_rate_limited: "邀請次數過多，請稍候再試；未建立邀請。",
+  member_invitation_unavailable: "邀請頻率檢查暫時無法使用；未建立邀請，請稍候再試。",
+  member_invitation_not_found: "找不到可撤銷的待接受邀請。",
+  self_invite: "不能邀請自己的 Email。",
+  member_role_invalid: "請選擇有效的角色。",
+  member_role_upgrade: "調高角色需寄送邀請並由對方接受。",
   member_invitation_resend_invalid: "找不到可重寄邀請的 active 商家成員。",
   member_invitation_resend_failed: "設定密碼邀請信寄送失敗，請稍後再試。",
-  platform_user: "平台管理員帳號不能加入商家成員清單。",
-  inactive_user: "此帳號已由平台停用，商家管理員不能自行重新啟用。",
   self_role: "不能把自己的 owner 權限降級。",
   self_deactivate: "不能停用自己的帳號。",
   last_owner: "至少要保留一位 active owner。",
@@ -57,10 +64,12 @@ const errorMessages: Record<string, string> = {
 
 const updatedMessages: Record<string, string> = {
   "1": "密碼已更新。",
-  member: "商家成員已更新，並已寄出設定密碼邀請信。",
+  member_invited: "已建立邀請。若這個 Email 可以加入，對方會收到邀請信；對方接受後才會成為成員。",
+  member_invitation_revoked: "邀請已撤銷，原連結不能再使用。",
+  member_role_downgraded: "成員角色已調降。",
   member_invitation_resent: "已重新寄出設定密碼邀請信。",
-  member_deactivated: "商家成員已停用，相關 session 已撤銷。",
-  sessions_revoked: "其他裝置 session 已撤銷。",
+  member_deactivated: "商家成員已停用，相關登入狀態已結束。",
+  sessions_revoked: "其他裝置的登入狀態已結束。",
   mfa_started: "請用驗證器 App 掃描或手動輸入密鑰，然後輸入 6 位數驗證碼完成啟用。",
   mfa_enabled: "MFA 已啟用，請妥善保存 recovery codes。",
   mfa_exists: "這個帳號已經啟用 MFA。",
@@ -105,6 +114,7 @@ export default async function SecuritySettingsPage({
         orderBy: [{ status: "asc" }, { createdAt: "asc" }],
       })
     : [];
+  const pendingInvitations = await loadPendingVendorInvitations(isOwner, vendorId);
   const sessions = await db.userSession.findMany({
     where: {
       userId: auth.user.id,
@@ -116,7 +126,7 @@ export default async function SecuritySettingsPage({
 
   return (
     <>
-      <PageHeader title="安全性" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">前往團隊管理</ButtonLink> : undefined} />
+      <PageHeader title="安全性" description={isOwner ? "管理登入密碼、登入狀態、商家成員與最小權限控管。" : "管理自己的登入密碼、登入狀態與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">前往團隊管理</ButtonLink> : undefined} />
       {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
       <div className="grid gap-5 lg:grid-cols-2">
@@ -133,7 +143,7 @@ export default async function SecuritySettingsPage({
         </Card>
         <Card>
           <h2 className="mb-2 text-lg font-semibold text-slate-950">登出此裝置</h2>
-          <p className="mb-4 text-sm text-slate-500">目前使用資料庫 session 搭配 httpOnly cookie；登出會撤銷目前 session 並清除瀏覽器 cookie。</p>
+          <p className="mb-4 text-sm text-slate-500">登入狀態儲存在伺服器並以安全 Cookie 識別；登出會結束目前登入並清除瀏覽器 Cookie。</p>
           <form action={logoutAction}>
             <CsrfField />
             <DangerButton>登出</DangerButton>
@@ -157,7 +167,7 @@ export default async function SecuritySettingsPage({
               <p className="mt-1 text-sm text-emerald-800">
                 上次使用：{auth.user.mfaFactor.lastUsedAt ? auth.user.mfaFactor.lastUsedAt.toLocaleString("zh-TW") : "尚未記錄"}
               </p>
-              <p className="mt-1 text-sm text-emerald-800">目前 session：{auth.isMfaVerified ? "已完成 MFA 驗證" : "尚未完成 MFA 驗證"}</p>
+              <p className="mt-1 text-sm text-emerald-800">目前登入狀態：{auth.isMfaVerified ? "已完成 MFA 驗證" : "尚未完成 MFA 驗證"}</p>
               <p className="mt-1 text-sm text-emerald-800">可用 recovery codes：{activeRecoveryCodeCount}</p>
             </div>
           ) : pendingMfa ? (
@@ -242,8 +252,8 @@ export default async function SecuritySettingsPage({
         <Card>
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-slate-950">目前 session</h2>
-              <p className="mt-1 text-sm text-slate-500">可撤銷其他裝置，或一次撤銷所有 session 重新登入。</p>
+              <h2 className="text-lg font-semibold text-slate-950">目前登入狀態</h2>
+              <p className="mt-1 text-sm text-slate-500">可撤銷其他裝置，或一次結束所有登入狀態並重新登入。</p>
             </div>
             <Badge tone="blue">{sessions.filter((session) => !session.revokedAt).length} active</Badge>
           </div>
@@ -275,11 +285,12 @@ export default async function SecuritySettingsPage({
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">商家成員</h2>
-              <p className="mt-1 text-sm text-slate-500">Owner 可用 Email 邀請或重新啟用成員；平台管理員帳號不會出現在商家端管理名單。</p>
+              <p className="mt-1 text-sm text-slate-500">Owner 以 Email 寄出邀請，對方開啟邀請信並接受後才會加入；調高角色或重新啟用已停用成員也用邀請。調降角色可直接在名單中執行。</p>
             </div>
             <Badge tone="green">owner</Badge>
           </div>
 
+          <div className="mb-4"><StepUpMfaNotice status={recentMfaStatus(auth)} nextPath="/settings/security" operation="邀請、重寄或停用商家成員" /></div>
           {isOwner ? (
             <form action={createVendorMemberAction} className="mb-5 grid gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 md:grid-cols-2">
               <CsrfField />
@@ -292,11 +303,13 @@ export default async function SecuritySettingsPage({
                 <option value="support">Support</option>
               </SelectField>
               <div className="md:col-span-2">
-                <p className="mb-3 text-sm text-blue-800">系統會寄送一次性的設定密碼連結，不會顯示或傳送初始密碼。</p>
-                <SubmitButton>寄送邀請 / 重新啟用成員</SubmitButton>
+                <p className="mb-3 text-sm text-blue-800">系統會寄送 72 小時內有效的一次性邀請連結；對方接受前不會建立或變更任何成員資格。</p>
+                <SubmitButton>寄送邀請</SubmitButton>
               </div>
             </form>
           ) : null}
+
+          <PendingVendorInvitations invitations={pendingInvitations} action={revokeVendorMemberInvitationAction} csrfField={<CsrfField />} />
 
           <div className="overflow-hidden rounded-lg border border-border">
             <table className="w-full text-left text-sm">
@@ -321,7 +334,7 @@ export default async function SecuritySettingsPage({
                     </td>
                     <td className="px-4 py-3 text-right">
                       {member.status === "active" && member.userId !== auth.user.id ? (
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <form action={resendVendorMemberInvitationAction}>
                             <CsrfField />
                             <input type="hidden" name="id" value={member.id} />
@@ -333,6 +346,7 @@ export default async function SecuritySettingsPage({
                               重寄設定密碼邀請
                             </FormSubmitButton>
                           </form>
+                          <VendorMemberRoleDowngradeForm action={changeVendorMemberRoleAction} csrfField={<CsrfField />} member={member} />
                           <VendorMemberDeactivationConfirmation
                             action={deactivateVendorMemberAction}
                             currentUserId={auth.user.id}

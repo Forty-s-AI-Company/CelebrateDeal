@@ -52,7 +52,7 @@ test("member A cannot publish a template bound to member B's webinar through DOM
     await page.goto("/team-templates/new");
     await expect(page.getByRole("heading", { name: "建立團隊原始頁" })).toBeVisible();
     await page.getByLabel("模板名稱").fill(`${TEAM_FUNNEL_TEST_ONLY.templateName} WP25`);
-    await page.getByLabel("原始頁網址（slug）").fill(`wp25-a-source-${runKey}`.toLowerCase());
+    await page.getByLabel("原始頁網址").fill(`wp25-a-source-${runKey}`.toLowerCase());
     await page.getByLabel("綁定 webinar").selectOption(fixture.seminar.id);
     await page.getByRole("textbox", { name: "主標題" }).fill("TEST ONLY WP25 A 主標題");
     await page.getByRole("textbox", { name: "CTA 按鈕文字" }).fill("TEST ONLY WP25 CTA");

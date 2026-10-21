@@ -239,7 +239,7 @@ function SupportCasesPanel({ order }: { order: CommerceOrderDetailRecord }) {
           <option value="p2">P2 — 一般詢問</option>
         </SelectField>
         <div className="md:col-span-2">
-          <TextArea label="案件摘要" name="summary" required maxLength={4_000} rows={4} placeholder="記錄買家反映內容與已確認事實；不要貼卡號、CVV、Token、Cookie 或原始 provider payload。" />
+          <TextArea label="案件摘要" name="summary" required maxLength={4_000} rows={4} placeholder="記錄買家反映內容與已確認事實；不要貼卡號、CVV、登入憑證、Cookie 或付款服務的原始資料。" />
         </div>
         <div className="md:col-span-2"><SubmitButton pendingChildren="建立中…" pendingMessage="正在建立客服案件，請勿重複送出。">建立客服案件</SubmitButton></div>
       </form>

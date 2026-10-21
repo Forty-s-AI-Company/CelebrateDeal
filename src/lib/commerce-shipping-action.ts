@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireVendorManagerMfa } from "@/lib/auth";
+import { requireVendorManagerMember } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { transitionShippingFulfillment } from "@/lib/commerce-order-fulfillment";
@@ -48,7 +48,7 @@ function refreshOrder(orderId: string) {
 export async function completeShippingFulfillment(formData: FormData) {
   await assertServerActionSecurity(formData);
   const orderId = text(formData, "orderId");
-  const context = await requireVendorManagerMfa(orderPath(orderId));
+  const context = await requireVendorManagerMember(orderPath(orderId));
   const fulfillmentId = text(formData, "fulfillmentId");
   const revision = positiveRevision(formData);
   const nextStatus = ShippingActionStatus.safeParse(text(formData, "nextStatus"));

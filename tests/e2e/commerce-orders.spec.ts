@@ -715,7 +715,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect((await page.goto("/products/new"))?.status()).toBe(200);
 
     await page.getByLabel("商品名稱", { exact: true }).fill(productName);
-    await page.getByLabel("Slug", { exact: true }).fill(fixture.productSlug);
+    await page.getByLabel("商品網址", { exact: true }).fill(fixture.productSlug);
     await page.getByLabel("售價（元）", { exact: true }).fill("1680");
     await page.getByLabel("可售庫存", { exact: true }).fill("3");
     await page.getByLabel("商品描述", { exact: true }).fill("G7-15 合成商品，驗證草稿、錯誤復原、預覽與上架流程。");
@@ -737,7 +737,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(await db.product.count({
       where: { vendorId: fixture.vendorIds[0], slug: fixture.productSlug },
     })).toBe(1);
-    await expect(page.getByLabel("Slug", { exact: true })).toHaveValue(fixture.productSlug);
+    await expect(page.getByLabel("商品網址", { exact: true })).toHaveValue(fixture.productSlug);
     const duplicateResponse = page.waitForResponse((candidate) => {
       const request = candidate.request();
       return request.method() === "POST" && new URL(candidate.url()).pathname === "/api/products/upsert";
@@ -751,12 +751,12 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await expect(page).toHaveURL(/\/products\/new$/u);
     const productFormAlert = page.locator('form [role="alert"]');
     await expect(productFormAlert).toHaveCount(1);
-    await expect(productFormAlert).toHaveText("這個 Slug 已被目前商家的另一個商品使用，請更換後再儲存。");
+    await expect(productFormAlert).toHaveText("這個網址已被目前商家的另一個商品使用，請更換後再儲存。");
     await expect(page.getByLabel("商品名稱", { exact: true })).toHaveValue(productName);
     await expect(page.getByLabel("售價（元）", { exact: true })).toHaveValue("1680");
     await expect(page.getByLabel("可售庫存", { exact: true })).toHaveValue("3");
 
-    await page.getByLabel("Slug", { exact: true }).fill(productSlug);
+    await page.getByLabel("商品網址", { exact: true }).fill(productSlug);
     await page.getByRole("button", { name: "儲存", exact: true }).click();
     await expect(page).toHaveURL(/\/products\?updated=created$/u);
     await expect(page.getByText("商品已建立為草稿。", { exact: true })).toBeVisible();
@@ -892,7 +892,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
 
     expect((await page.goto("/products/new"))?.status()).toBe(200);
     await page.getByLabel("商品名稱", { exact: true }).fill(productName);
-    await page.getByLabel("Slug", { exact: true }).fill(productSlug);
+    await page.getByLabel("商品網址", { exact: true }).fill(productSlug);
     await page.getByLabel("售價（元）", { exact: true }).fill("880");
     await page.getByLabel("可售庫存", { exact: true }).fill("5");
     const fulfillmentTypeSelect = page.locator('select[name="fulfillmentType"]');
@@ -1141,6 +1141,9 @@ test("desktop merchant can recover upload and validation errors, then publish an
   test("owner plan checkout activates limits only after trusted callback and reconciles failure refund and invoice", async ({ page }) => {
     test.setTimeout(90_000);
     await installOwnerSession(page);
+    // F-027 / PR #462: selecting a paid plan needs MFA verified within 15
+    // minutes; the shared fixture session carries an older stamp.
+    await db.userSession.updateMany({ where: { tokenHash: sessionTokenHash }, data: { mfaVerifiedAt: new Date() } });
     expect((await page.goto("/billing/plans"))?.status()).toBe(200);
 
     const firstPlan = await db.billingPlan.findUniqueOrThrow({ where: { id: fixture.billingPlanIds[0] } });
@@ -2093,7 +2096,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await expect(postLiveFollowupOption).not.toHaveAttribute("disabled");
     await expect(trigger.locator('option[value="cart_followup"]')).toHaveAttribute("disabled", "");
     await expect(page.locator("p").filter({ hasText: "{{live_start_at}}" })).toHaveText("{{name}} · {{live_title}} · {{live_url}} · {{live_start_at}} · {{vendor_name}} · {{unsubscribe_url}}");
-    await expect(page.getByText("報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或 provider 完成前保持停用。", { exact: true })).toBeVisible();
+    await expect(page.getByText("報名成功、開播提醒與課後通知會自動附上退訂連結；購買追蹤、SMS、LINE 在事件來源或串接服務完成前保持停用。", { exact: true })).toBeVisible();
     await expect(page.getByText(/購買追蹤已接通/u)).toHaveCount(0);
 
     await channel.focus();
@@ -2288,7 +2291,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
       .locator("li")
       .filter({ hasText: label })
       .getByRole("link", { name: action, exact: true });
-    await expect(requirementLink("準備可播放媒體", "新增影片或 Live Input")).toHaveAttribute("href", "/videos/new");
+    await expect(requirementLink("準備可播放媒體", "新增影片或即時直播")).toHaveAttribute("href", "/videos/new");
     await expect(requirementLink("準備有效報名表單", "建立報名表單")).toHaveAttribute("href", "/forms/new");
     const journeyStep = page.locator("li").filter({ has: page.getByRole("heading", { name: "Step 4. 完成報名流程", exact: true }) });
     await expect(journeyStep).toContainText("建議（選配，不影響完成度）");
@@ -2296,7 +2299,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await expect(requirementLink("完成直播綁定並進入可販售狀態", "建立或繼續直播")).toHaveAttribute("href", "/lives/new");
     await expect(page.getByText("內容直播仍可依自己的發布規則建立，不會被銷售檢查誤擋。", { exact: false })).toBeVisible();
 
-    const firstRecoveryLink = requirementLink("準備可播放媒體", "新增影片或 Live Input");
+    const firstRecoveryLink = requirementLink("準備可播放媒體", "新增影片或即時直播");
     await firstRecoveryLink.focus();
     await expect(firstRecoveryLink).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);

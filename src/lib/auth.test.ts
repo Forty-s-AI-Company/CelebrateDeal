@@ -35,10 +35,10 @@ import {
   requireVendorFinance,
   requireVendorManager,
   requireVendorManagerContext,
-  requireVendorManagerMfa,
+  requireVendorManagerMember,
   requireVendorOwnerFinance,
   requireVendorSupportContext,
-  requireVendorSupportMfa,
+  requireVendorSupportMember,
 } from "@/lib/auth";
 
 function sessionFor({
@@ -274,13 +274,13 @@ describe("requireVendorManager", () => {
   });
 });
 
-describe("requireVendorManagerMfa", () => {
+describe("requireVendorManagerMember", () => {
   it.each(["owner", "admin"])(
     "allows an MFA-verified vendor %s to cross the order PII boundary",
     async (memberRole) => {
       mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole }));
 
-      await expect(requireVendorManagerMfa("/orders/order-1")).resolves.toMatchObject({
+      await expect(requireVendorManagerMember("/orders/order-1")).resolves.toMatchObject({
         user: { id: "user-1" },
         vendor: { id: "vendor-1" },
         member: { id: "member-1", role: memberRole },
@@ -292,7 +292,7 @@ describe("requireVendorManagerMfa", () => {
   it("keeps accountants outside the operational order boundary", async () => {
     mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "accountant" }));
 
-    await expect(requireVendorManagerMfa()).rejects.toThrow(
+    await expect(requireVendorManagerMember()).rejects.toThrow(
       "redirect:/dashboard?error=insufficient_role",
     );
   });
@@ -300,7 +300,7 @@ describe("requireVendorManagerMfa", () => {
   it("keeps support outside the operational order boundary", async () => {
     mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "support" }));
 
-    await expect(requireVendorManagerMfa()).rejects.toThrow(
+    await expect(requireVendorManagerMember()).rejects.toThrow(
       "redirect:/dashboard?error=insufficient_role",
     );
   });
@@ -308,7 +308,7 @@ describe("requireVendorManagerMfa", () => {
   it("does not let a path value turn support into a manager", async () => {
     mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "support" }));
 
-    await expect(requireVendorManagerMfa("/support-cases/case-1")).rejects.toThrow(
+    await expect(requireVendorManagerMember("/support-cases/case-1")).rejects.toThrow(
       "redirect:/dashboard?error=insufficient_role",
     );
   });
@@ -318,7 +318,7 @@ describe("requireVendorManagerMfa", () => {
       sessionFor({ platformRole: "none", memberRole: "owner", mfaFactor: null, mfaVerifiedAt: null }),
     );
 
-    await expect(requireVendorManagerMfa()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
+    await expect(requireVendorManagerMember()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
   });
 
   it("requires current-session MFA and rejects an external next path", async () => {
@@ -326,22 +326,22 @@ describe("requireVendorManagerMfa", () => {
       sessionFor({ platformRole: "none", memberRole: "admin", mfaVerifiedAt: null }),
     );
 
-    await expect(requireVendorManagerMfa("/orders/order-1")).rejects.toThrow(
+    await expect(requireVendorManagerMember("/orders/order-1")).rejects.toThrow(
       "redirect:/mfa/verify?next=%2Forders%2Forder-1",
     );
-    await expect(requireVendorManagerMfa("//attacker.example")).rejects.toThrow(
+    await expect(requireVendorManagerMember("//attacker.example")).rejects.toThrow(
       "redirect:/mfa/verify?next=%2Forders",
     );
   });
 });
 
-describe("requireVendorSupportMfa", () => {
+describe("requireVendorSupportMember", () => {
   it.each(["owner", "admin", "support"])(
     "allows an MFA-verified active vendor %s into support operations",
     async (memberRole) => {
       mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole }));
 
-      await expect(requireVendorSupportMfa("/support-cases/case-1")).resolves.toMatchObject({
+      await expect(requireVendorSupportMember("/support-cases/case-1")).resolves.toMatchObject({
         vendor: { id: "vendor-1" },
         member: { role: memberRole },
       });
@@ -360,12 +360,12 @@ describe("requireVendorSupportMfa", () => {
     mocks.findSession.mockResolvedValue(
       sessionFor({ platformRole: "none", memberRole: "support", mfaFactor: null, mfaVerifiedAt: null }),
     );
-    await expect(requireVendorSupportMfa()).resolves.toMatchObject({ member: { role: "support" } });
+    await expect(requireVendorSupportMember()).resolves.toMatchObject({ member: { role: "support" } });
 
     mocks.findSession.mockResolvedValue(
       sessionFor({ platformRole: "none", memberRole: "support", mfaVerifiedAt: null }),
     );
-    await expect(requireVendorSupportMfa("//attacker.example")).rejects.toThrow(
+    await expect(requireVendorSupportMember("//attacker.example")).rejects.toThrow(
       "redirect:/mfa/verify?next=%2Fsupport-cases",
     );
   });

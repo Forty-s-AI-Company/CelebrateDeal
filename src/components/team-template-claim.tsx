@@ -68,7 +68,7 @@ export function TeamTemplateClaim({ template, csrfToken, action }: { template: T
           </div>
         </fieldset>
 
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">你的公開網址（slug）
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">你的公開網址
           <input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="my-webinar-page" className="h-10 rounded-md border border-border px-3 text-sm" />
         </label>
         <label className="flex items-start gap-2 text-sm text-slate-700"><input name="confirmed" value="yes" type="checkbox" required className="mt-0.5 h-4 w-4 accent-blue-600" />我已確認建立自己的夥伴頁；內容可否編輯會依 A 的鎖定範圍決定。</label>

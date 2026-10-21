@@ -1,3 +1,4 @@
+import { safeInternalPathOr } from "@/lib/safe-internal-path";
 import { isWp4BoundNonProductionRuntime } from "./wp4-runtime-boundary";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 import { createHash, randomBytes } from "node:crypto";
@@ -63,9 +64,7 @@ function isFinanceRole(role?: string | null) {
 }
 
 function safeMfaNextPath(value: string, fallback = "/billing/usage") {
-  return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
-    ? value
-    : fallback;
+  return safeInternalPathOr(value, fallback);
 }
 
 function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null) {
@@ -295,7 +294,12 @@ export async function requireVendorSupportContext(nextPath?: string) {
   return { auth, vendor };
 }
 
-export async function requireVendorSupportMfa(nextPath = "/support-cases") {
+/**
+ * Support-role guard that also hands back the active membership. It does not
+ * demand MFA; high-risk mutations call `requireRecentMfa` from
+ * `@/lib/recent-mfa` explicitly (F-027).
+ */
+export async function requireVendorSupportMember(nextPath = "/support-cases") {
   const { auth, vendor } = await requireVendorSupportContext(nextPath);
 
   return {
@@ -306,7 +310,8 @@ export async function requireVendorSupportMfa(nextPath = "/support-cases") {
   };
 }
 
-export async function requireVendorManagerMfa(nextPath = "/orders") {
+/** Manager-role guard returning the active membership; see requireVendorSupportMember. */
+export async function requireVendorManagerMember(nextPath = "/orders") {
   const { auth, vendor } = await requireVendorManagerContext(nextPath);
 
   return {
@@ -356,6 +361,7 @@ export async function requireVendorFinance(nextPath = "/billing/usage") {
 
   return {
     user: auth.user,
+    session: auth.session,
     vendor,
     member,
   };
@@ -379,6 +385,7 @@ export async function requireVendorOwner() {
 
   return {
     user: auth.user,
+    session: auth.session,
     vendor: auth.vendor,
     member: auth.member,
   };

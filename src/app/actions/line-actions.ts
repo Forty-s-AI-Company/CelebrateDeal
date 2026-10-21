@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorOwner } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 import { getDb } from "@/lib/db";
 import {
   parseLineOfficialAccountCredentials,
@@ -78,6 +79,8 @@ export async function saveLineOfficialAccountAction(
 ): Promise<LineOfficialAccountActionState> {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
+  // Replacing LINE credentials redirects every customer message (F-027 step-up).
+  requireRecentMfa(auth, { nextPath: LINE_SETTINGS_PATH });
   const parsed = parseLineOfficialAccountCredentials({
     messagingChannelId: optionalFormText(formData, "messagingChannelId"),
     messagingChannelSecret: optionalFormText(formData, "messagingChannelSecret"),

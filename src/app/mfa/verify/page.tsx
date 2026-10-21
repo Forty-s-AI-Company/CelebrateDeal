@@ -1,3 +1,4 @@
+import { safeInternalPathOr } from "@/lib/safe-internal-path";
 import { verifyMfaAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
@@ -6,17 +7,18 @@ import { requireAuth } from "@/lib/auth";
 const errorMessages: Record<string, string> = {
   invalid: "驗證碼不正確，請重新輸入。",
   rate_limited: "驗證嘗試次數過多，請稍後再試。",
+  locked: "驗證失敗次數過多，已暫停 1 小時。若不是你本人操作，請盡快變更密碼。",
   temporarily_unavailable: "驗證服務暫時無法使用，請稍後再試。",
 };
 
-function safeInternalPath(value: string | undefined) {
-  return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/admin/billing/dashboard";
+function safeNextPath(value: string | undefined) {
+  return safeInternalPathOr(value, "/admin/billing/dashboard");
 }
 
 export default async function MfaVerifyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   await requireAuth({ allowUnverifiedMfa: true });
@@ -29,10 +31,11 @@ export default async function MfaVerifyPage({
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">多因子驗證</h1>
           <p className="mt-2 text-sm text-slate-600">輸入 TOTP 驗證碼，或使用尚未用過的 recovery code。</p>
         </div>
+        {params.reason === "step_up" ? <p role="status" className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">這項操作屬於高風險操作，需要在 15 分鐘內完成雙重驗證。驗證後會回到原頁面，請再送出一次。</p> : null}
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "驗證失敗。"}</p> : null}
         <form action={verifyMfaAction} className="grid gap-4">
           <CsrfField />
-          <input type="hidden" name="next" value={safeInternalPath(params.next)} />
+          <input type="hidden" name="next" value={safeNextPath(params.next)} />
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             驗證碼
             <input name="code" autoComplete="one-time-code" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456 或 ABCDE-12345" />

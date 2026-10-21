@@ -38,7 +38,7 @@ import {
 
 const steps = [
   { key: "purpose", label: "用途與基本資料", icon: Calendar },
-  { key: "media", label: "媒體與 Live Input", icon: PlaySquare },
+  { key: "media", label: "影片與即時直播", icon: PlaySquare },
   { key: "products", label: "商品優惠", icon: Package },
   { key: "registration", label: "報名頁", icon: Calendar },
   { key: "schedule", label: "時間、回放與品牌", icon: Calendar },
@@ -197,7 +197,7 @@ function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone:
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       開播時間（{formatTimeZoneLabel(timeZone)}）
-      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-10 rounded-md border border-border px-3" />
+      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-11 rounded-md border border-border px-3" />
       <span className="text-xs font-normal text-slate-500">請依商家時區輸入，提醒與公開頁會使用同一時間。</span>
     </label>
   );
@@ -272,7 +272,7 @@ function liveStatusAction(status: string) {
 }
 
 const readinessCopy: Record<LivePublishRequirementCodeWithReminder, { label: string; step: number; action: string }> = {
-  media: { label: "可播放的影片或 Live Input", step: 1, action: "前往媒體" },
+  media: { label: "可播放的影片或即時直播", step: 1, action: "前往媒體" },
   products: { label: "啟用且已確認履約類型的商品", step: 2, action: "前往商品優惠" },
   registration_form: { label: "有效的報名表單", step: 3, action: "前往報名頁" },
   registration_email: { label: "可寄送的報名成功 Email", step: 5, action: "前往 Email" },
@@ -333,7 +333,7 @@ function LiveReviewPanel({
           </span>
           <div>
             <h2 className="text-base font-semibold text-slate-950">確認直播間設定</h2>
-            <p className="mt-1 text-sm text-slate-500">直播頁會支援 VOD / Live Input、商品浮出、官方角色訊息、CTA 切換、聯盟來源追蹤與用量規則。</p>
+            <p className="mt-1 text-sm text-slate-500">直播頁會支援預錄影片或即時直播、商品浮出、官方角色訊息、按鈕切換、推薦來源追蹤與用量規則。</p>
           </div>
         </div>
 
@@ -555,31 +555,31 @@ function LiveRulesFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           允許聯盟來源
-          <select name="affiliateMode" defaultValue={initialValues.affiliateMode} className="h-10 rounded-md border border-border px-3">
-            <option value="enabled">啟用 ref 追蹤</option>
+          <select name="affiliateMode" defaultValue={initialValues.affiliateMode} className="h-11 rounded-md border border-border px-3">
+            <option value="enabled">啟用推薦連結來源追蹤</option>
             <option value="disabled">停用</option>
           </select>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           預設推廣碼
-          <select name="defaultAffiliateCode" defaultValue={initialValues.defaultAffiliateCode} className="h-10 rounded-md border border-border px-3">
+          <select name="defaultAffiliateCode" defaultValue={initialValues.defaultAffiliateCode} className="h-11 rounded-md border border-border px-3">
             <option value="">不指定</option>
             {affiliates.map((affiliate) => <option key={affiliate.id} value={affiliate.code}>{affiliate.name} · {affiliate.code}</option>)}
           </select>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           觀看人數上限
-          <input name="maxConcurrentViewers" type="number" inputMode="numeric" min={1} defaultValue={initialValues.maxConcurrentViewers} className="h-10 rounded-md border border-border px-3" />
+          <input name="maxConcurrentViewers" type="number" inputMode="numeric" min={1} defaultValue={initialValues.maxConcurrentViewers} className="h-11 rounded-md border border-border px-3" />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           點數低於多少時停止推播
-          <input name="stopWhenCreditsBelow" type="number" inputMode="numeric" min={0} defaultValue={initialValues.stopWhenCreditsBelow} className="h-10 rounded-md border border-border px-3" />
+          <input name="stopWhenCreditsBelow" type="number" inputMode="numeric" min={0} defaultValue={initialValues.stopWhenCreditsBelow} className="h-11 rounded-md border border-border px-3" />
         </label>
       </div>
       <StreamAllocationEditor initialValues={initialValues} members={streamMembers} pages={streamPages} />
       <p className="flex items-start gap-2 rounded-md bg-orange-50 p-3 text-sm text-orange-700">
         <Ban size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-        成員／推廣頁額度會在 immutable usage ledger 寫入前 fail closed；額度用完會拒絕後續 heartbeat，不會自動扣款。
+        成員／推廣頁的額度用完時會暫停播放，不會自動扣款。
       </p>
     </>
   );
@@ -589,7 +589,7 @@ function liveFormError(error?: string) {
   const messages: Record<string, string> = {
     invalid_reference: "直播關聯資料無效，請重新選擇目前商店的影片、表單、模板、腳本與商品。",
     invalid_policy: "用量或聯盟來源規則無效，請確認模式、推廣碼與數值範圍。",
-    payment_method_required: "啟用成員／推廣頁 Stream 額度前，必須先由 payment provider 驗證付款方式 reference；目前不會自動扣款。",
+    payment_method_required: "啟用成員／推廣頁的影片額度前，必須先由付款服務驗證付款方式；目前不會自動扣款。",
     draft_conflict: "這份直播草稿已有較新的版本；系統沒有覆蓋它。請確認目前載入內容後再繼續。",
     invalid_status: "直播狀態轉換無效，內容尚未發布。",
     invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
@@ -746,7 +746,7 @@ function NotificationRulesEditor({
           <h3 id="notification-rules-title" className="font-semibold text-slate-950">選配通知規則</h3>
           <p className="mt-1 text-sm text-slate-600">開播前與直播中通知已接通排程；課後通知維持既有排程。</p>
         </div>
-        <button type="button" onClick={applySuggestions} disabled={!hasSuggestionTemplates} className="min-h-10 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={applySuggestions} disabled={!hasSuggestionTemplates} className="min-h-11 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50">
           套用建議設定
         </button>
       </div>
@@ -766,7 +766,7 @@ function NotificationRulesEditor({
             {group.length === 0 ? <p className="text-sm text-slate-500">尚未設定通知。</p> : null}
             {group.map((rule, index) => (
               <div key={rule.id} className="grid gap-3 rounded-md bg-slate-50 p-3 lg:grid-cols-[auto_minmax(0,1fr)_150px_auto] lg:items-end">
-                <label className="flex min-h-10 items-center gap-2 text-sm font-medium text-slate-700">
+                <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
                     checked={rule.isActive}
@@ -782,7 +782,7 @@ function NotificationRulesEditor({
                     value={rule.messageTemplateId}
                     aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則 Email 模板`}
                     onChange={(event) => replaceRule(rule.id, { messageTemplateId: event.target.value })}
-                    className="h-10 min-w-0 rounded-md border border-border px-3"
+                    className="h-11 min-w-0 rounded-md border border-border px-3"
                   >
                     <option value="">請選擇模板</option>
                     {availableTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
@@ -798,18 +798,18 @@ function NotificationRulesEditor({
                     value={rule.offsetMinutes}
                     aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則寄送分鐘`}
                     onChange={(event) => replaceRule(rule.id, { offsetMinutes: Number(event.target.value) })}
-                    className="h-10 rounded-md border border-border px-3"
+                    className="h-11 rounded-md border border-border px-3"
                   />
                 </label>
                 <div className="flex flex-wrap gap-2" aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則排序控制`}>
-                  <button type="button" disabled={index === 0} aria-label={`上移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, -1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">上移</button>
-                  <button type="button" disabled={index === group.length - 1} aria-label={`下移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, 1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">下移</button>
-                  <button type="button" aria-label={`刪除${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => onChange(rules.filter((candidate) => candidate.id !== rule.id))} className="min-h-10 rounded-md border border-red-200 bg-white px-3 text-sm text-red-700">刪除</button>
+                  <button type="button" disabled={index === 0} aria-label={`上移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, -1)} className="min-h-11 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">上移</button>
+                  <button type="button" disabled={index === group.length - 1} aria-label={`下移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, 1)} className="min-h-11 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">下移</button>
+                  <button type="button" aria-label={`刪除${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => onChange(rules.filter((candidate) => candidate.id !== rule.id))} className="min-h-11 rounded-md border border-red-200 bg-white px-3 text-sm text-red-700">刪除</button>
                 </div>
               </div>
             ))}
             <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
-              <button type="button" aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-10 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-11 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
                 新增{notificationRuleGroupCopy[trigger].title}通知
               </button>
               {availableTemplates.length === 0 ? <span id={addButtonDescriptionId} className="text-xs text-amber-800">{missingTemplateReason}</span> : null}
@@ -850,26 +850,26 @@ function renderLiveStudioStepPanels({
     <>
       <StepPanel active={activeStep === 1} index={1}>
         <div>
-          <h2 className="text-base font-semibold text-slate-950">媒體與 Live Input</h2>
-          <p className="mt-1 text-sm text-slate-500">選擇既有 Stream 影片或 Live Input；來源識別碼由受保護流程管理。</p>
+          <h2 className="text-base font-semibold text-slate-950">影片與即時直播</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇既有影片或即時直播；來源識別碼由系統保護管理。</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             串流模式
-            <select name="streamMode" defaultValue={initialValues.streamMode} className="h-10 rounded-md border border-border px-3">
-              <option value="vod">Cloudflare Stream VOD</option>
+            <select name="streamMode" defaultValue={initialValues.streamMode} className="h-11 rounded-md border border-border px-3">
+              <option value="vod">Cloudflare Stream 預錄影片</option>
               <option value="live">Cloudflare Stream Live</option>
             </select>
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            影片 / Live Input
-            <select name="videoId" defaultValue={selectedVideoId} onChange={(event) => onVideoChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            影片／即時直播
+            <select name="videoId" defaultValue={selectedVideoId} onChange={(event) => onVideoChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
               <option value="">不綁定影片</option>
               {videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
             </select>
           </label>
         </div>
-        {videos.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用媒體。<Link href="/videos/new" className="ml-1 font-semibold text-primary underline">新增影片或 Live Input</Link></p> : null}
+        {videos.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用媒體。<Link href="/videos/new" className="ml-1 font-semibold text-primary underline">新增影片或即時直播</Link></p> : null}
       </StepPanel>
 
       <StepPanel active={activeStep === 2} index={2}>
@@ -886,7 +886,7 @@ function renderLiveStudioStepPanels({
         </div>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           促銷短句
-          <input name="accentCopy" autoComplete="off" defaultValue={initialValues.accentCopy} onChange={(event) => onAccentCopyChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
+          <input name="accentCopy" autoComplete="off" defaultValue={initialValues.accentCopy} onChange={(event) => onAccentCopyChange(event.target.value)} className="h-11 rounded-md border border-border px-3" placeholder="直播限定優惠" />
         </label>
       </StepPanel>
 
@@ -897,7 +897,7 @@ function renderLiveStudioStepPanels({
         </div>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           報名頁
-          <select name="formId" defaultValue={initialValues.formId} onChange={(event) => onFormChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+          <select name="formId" defaultValue={initialValues.formId} onChange={(event) => onFormChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
             <option value="">不綁定表單</option>
             {forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}
           </select>
@@ -913,7 +913,7 @@ function renderLiveStudioStepPanels({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             報名成功 Email
-            <select name="messageTemplateId" defaultValue={selectedTemplateId} onChange={(event) => onTemplateChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            <select name="messageTemplateId" defaultValue={selectedTemplateId} onChange={(event) => onTemplateChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
               <option value="">不綁定模板</option>
               {registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
             </select>
@@ -933,7 +933,7 @@ function renderLiveStudioStepPanels({
         </div>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           互動腳本
-          <select name="interactionScriptId" defaultValue={selectedScriptId} onChange={(event) => onScriptChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+          <select name="interactionScriptId" defaultValue={selectedScriptId} onChange={(event) => onScriptChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
             <option value="">不綁定腳本</option>
             {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
           </select>
@@ -972,7 +972,7 @@ function renderLiveStudioBasicsStep(input: {
       {input.purposeStarter}
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         直播標題
-        <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
+        <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-11 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
       </label>
       <LiveSlugField
         title={input.title}
@@ -1020,7 +1020,7 @@ function renderLiveStudioScheduleStep(input: {
       <input type="hidden" name="replayAvailableUntil" value="" disabled={input.replayEnabled} readOnly />
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         回放觀看期限（{formatTimeZoneLabel(input.timeZone)}，選填）
-        <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
+        <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-11 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
         <span className="text-xs font-normal text-slate-500">依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。</span>
       </label>
       <MediaUploadField

@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   security: vi.fn(), headers: vi.fn(), rateLimit: vi.fn(), vendor: vi.fn(), orderCount: vi.fn(), bookingCount: vi.fn(), voucherCount: vi.fn(),
-  createToken: vi.fn(), emailCreate: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn(), hash: vi.fn(() => "customer-hash"), protect: vi.fn(() => ({ payloadEncryptedEnvelope: "encrypted", recipientHash: "hash", recipientMaskedEmail: "s***@example.test" })),
+  createToken: vi.fn(), accountRateLimit: vi.fn(async (): Promise<Response | null> => null), emailCreate: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn(), hash: vi.fn(() => "customer-hash"), protect: vi.fn(() => ({ payloadEncryptedEnvelope: "encrypted", recipientHash: "hash", recipientMaskedEmail: "s***@example.test" })),
 }));
 vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.rateLimit }));
+vi.mock("@/lib/account-rate-limit", () => ({ checkAccountRateLimit: mocks.accountRateLimit }));
 vi.mock("@/lib/automation-workflow", () => ({ automationCustomerKeyHash: mocks.hash }));
 vi.mock("@/lib/email-delivery-pii", () => ({ protectEmailDeliveryPayload: mocks.protect }));
 vi.mock("@/lib/student-portal-auth", () => ({ createStudentPortalAccessToken: mocks.createToken, clearStudentPortalSessionCookie: mocks.clearCookie }));
@@ -48,16 +49,20 @@ describe("student portal actions", () => {
     expect(mocks.createToken).not.toHaveBeenCalled();
   });
 
-  it("applies an IP-independent tenant and recipient cooldown before issuing a token", async () => {
-    mocks.rateLimit.mockResolvedValueOnce(null).mockResolvedValueOnce(new Response(null, { status: 429 }));
+  it("applies an IP- and provider-independent tenant and recipient cooldown before issuing a token (F-028)", async () => {
+    mocks.rateLimit.mockResolvedValue(null);
+    mocks.accountRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
     const result = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "student@example.test", vendorSlug: "teacher" }));
     expect(result.status).toBe("rate_limited");
-    expect(mocks.rateLimit).toHaveBeenLastCalledWith(
-      expect.objectContaining({ headers: expect.any(Headers) }),
-      "student-portal-magic-link-recipient:vendor-1:customer-hash",
-      3,
-      15 * 60 * 1000,
-    );
+    expect(mocks.accountRateLimit).toHaveBeenCalledWith("student_portal_magic_link", "vendor-1:customer-hash");
+    expect(mocks.createToken).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the account-level counter is unavailable", async () => {
+    mocks.rateLimit.mockResolvedValue(null);
+    mocks.accountRateLimit.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    const result = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "student@example.test", vendorSlug: "teacher" }));
+    expect(result.status).toBe("rate_limited");
     expect(mocks.createToken).not.toHaveBeenCalled();
   });
 

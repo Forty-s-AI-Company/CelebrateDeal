@@ -84,6 +84,7 @@ model Vendor {
   updatedAt    DateTime @updatedAt
 
   members                          VendorMember[]
+  memberInvitations                VendorMemberInvitation[]
   tracking                         TrackingSetting?
   trackingDeliveries               TrackingDelivery[]
   videos                           Video[]
@@ -162,6 +163,7 @@ model Vendor {
   teamLeadAttributions             TeamLeadAttribution[]
   teamConversionAttributions       TeamConversionAttribution[]
   streamUsageLedgerEntries         StreamUsageLedgerEntry[]
+  streamUsageMonthlyCounters       StreamUsageMonthlyCounter[]
   streamUsageAllocations           StreamUsageAllocationEntry[]
   streamUsageReconciliations       StreamUsageReconciliation[]
   streamOperationsAlerts           StreamOperationsAlert[]
@@ -221,6 +223,8 @@ model User {
 
   memberships                  VendorMember[]
   sessions                     UserSession[]
+  sentMemberInvitations        VendorMemberInvitation[] @relation("VendorMemberInvitationInvitedBy")
+  acceptedMemberInvitations    VendorMemberInvitation[] @relation("VendorMemberInvitationAcceptedBy")
   passwordResetTokens          PasswordResetToken[]
   mfaFactor                    UserMfaFactor?
   recoveryCodes                UserRecoveryCode[]
@@ -300,6 +304,22 @@ model UserRecoveryCode {
   @@index([userId, usedAt])
 }
 
+/// Account-level rate limit counter (F-028 / B02-05). Independent of
+/// RATE_LIMIT_PROVIDER: a WAF only counts per source IP, so per-account limits
+/// (TOTP guessing, recovery-code regeneration, magic links, member invitations,
+/// password reset mail) are counted here. `keyHash` is SHA-256 of scope and
+/// subject, so e-mail addresses are never stored in clear. Written only by
+/// src/lib/account-rate-limit.ts with raw SQL on the database clock (UTC).
+model AccountRateLimitBucket {
+  keyHash         String   @id
+  scope           String
+  windowStartedAt DateTime
+  count           Int
+  updatedAt       DateTime
+
+  @@index([updatedAt])
+}
+
 model PasswordResetToken {
   id        String    @id @default(cuid())
   userId    String
@@ -344,6 +364,33 @@ model VendorMember {
   @@unique([vendorId, userId])
   @@unique([vendorId, id])
   @@index([vendorId, status])
+}
+
+/// Pending invitation to join a vendor (F-029 / B02-06). The owner's request
+/// never creates or changes a membership: the invitee must open the e-mailed
+/// link and accept while signed in as the invited address (or set a password
+/// for a new account). Only the SHA-256 of the token is stored.
+model VendorMemberInvitation {
+  id              String    @id @default(cuid())
+  vendorId        String
+  email           String
+  name            String
+  role            String
+  tokenHash       String    @unique
+  invitedByUserId String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  acceptedUserId  String?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vendor       Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  invitedBy    User?  @relation("VendorMemberInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  acceptedUser User?  @relation("VendorMemberInvitationAcceptedBy", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId, email])
+  @@index([expiresAt])
 }
 
 model TrackingSetting {
@@ -3275,6 +3322,22 @@ model StreamUsageReconciliation {
   @@unique([vendorId, id])
   @@index([vendorId, monthKey, status])
   @@index([vendorId, provider, monthKey])
+}
+
+/// Per-vendor monthly running total of StreamUsageLedgerEntry.watchSeconds.
+/// Quota admission increments this single row atomically instead of summing the
+/// month's ledger inside a Serializable transaction (F-092). The ledger stays
+/// the immutable source of truth; this row is a derived, reconcilable total.
+model StreamUsageMonthlyCounter {
+  vendorId     String
+  monthKey     String
+  watchSeconds Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@id([vendorId, monthKey])
 }
 
 /// Persistent operational alerts. Deduplication keys contain only server-owned

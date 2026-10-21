@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { CommerceOrderDetail } from "@/components/commerce-order-detail";
 import { PageHeader } from "@/components/ui";
-import { requireVendorManagerMfa } from "@/lib/auth";
+import { requireVendorManagerMember } from "@/lib/auth";
 import { revealCommerceOrderPii, type CommerceOrderPii } from "@/lib/commerce-order-pii";
 import {
   revealCustomCheckoutAnswers,
@@ -17,7 +17,7 @@ export default async function OrderDetailPage({ params, searchParams }: {
   searchParams?: Promise<{ error?: string | string[]; updated?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { vendor } = await requireVendorManagerMfa(`/orders/${encodeURIComponent(id)}`);
+  const { vendor } = await requireVendorManagerMember(`/orders/${encodeURIComponent(id)}`);
   const order = await getDb().commerceOrder.findFirst({
     where: { id, vendorId: vendor.id },
     include: commerceOrderDetailInclude,

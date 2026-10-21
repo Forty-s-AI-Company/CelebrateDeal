@@ -13,6 +13,7 @@ import {
   verifyTotpCode,
 } from "@/lib/mfa";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 
 function formText(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -55,7 +56,7 @@ export async function regenerateMfaRecoveryCodes(
     `mfa-recovery-regeneration:${auth.user.id}`,
     3,
     15 * 60 * 1000,
-  );
+  ) ?? await checkAccountRateLimit("mfa_recovery_regeneration", auth.user.id);
   if (rateLimited) {
     return {
       ok: false,

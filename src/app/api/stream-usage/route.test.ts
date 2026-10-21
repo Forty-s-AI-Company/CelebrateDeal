@@ -28,6 +28,7 @@ vi.mock("@/lib/stream-usage", () => ({
   STREAM_USAGE_MAX_HEARTBEAT_SECONDS: 60,
 }));
 
+import { StreamQuotaExceededError } from "@/lib/stream-quota";
 import { POST } from "./route";
 
 const payload = {
@@ -109,6 +110,7 @@ describe("POST /api/stream-usage", () => {
     ["invalid_duration", 400],
     ["invalid_event", 400],
     ["stream_minutes_exhausted", 429],
+    ["usage_busy", 503],
   ] as const)("maps %s without exposing internal details", async (code, status) => {
     mocks.recordStreamUsageLedgerEntry.mockRejectedValueOnce(new mocks.StreamUsageValidationError(code));
 
@@ -127,6 +129,29 @@ describe("POST /api/stream-usage", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({ error: "Unable to record usage" });
+  });
+
+  it("maps a real vendor quota exhaustion to the stable 429 code instead of a 500", async () => {
+    mocks.recordStreamUsageLedgerEntry.mockRejectedValueOnce(new StreamQuotaExceededError());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toEqual({
+      error: "Stream quota exhausted",
+      code: "stream_minutes_exhausted",
+    });
+  });
+
+  it("keeps a busy ledger retryable: 503 without the exhausted code", async () => {
+    mocks.recordStreamUsageLedgerEntry.mockRejectedValueOnce(new mocks.StreamUsageValidationError("usage_busy"));
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("1");
+    const body = await response.json();
+    expect(body).not.toHaveProperty("code");
   });
 
   it("returns the stable public code needed to stop exhausted browser playback", async () => {

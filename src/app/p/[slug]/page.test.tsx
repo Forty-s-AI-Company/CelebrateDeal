@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/team-funnel-public-page", () => ({ getPublicTeamFunnelPage: mocks.getPublicTeamFunnelPage }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 
-import PublicPartnerFunnelPage from "./page";
+import PublicPartnerFunnelPage, { generateMetadata } from "./page";
 
 describe("/p/[slug] route", () => {
   it("server-resolves the slug and passes the safe view to the reusable renderer", async () => {
@@ -26,5 +26,16 @@ describe("/p/[slug] route", () => {
     mocks.getPublicTeamFunnelPage.mockResolvedValueOnce({ state: "not_found" });
     await expect(PublicPartnerFunnelPage({ params: Promise.resolve({ slug: "absent" }) })).rejects.toThrow("not found");
     expect(mocks.notFound).toHaveBeenCalledOnce();
+  });
+
+  it("builds share metadata only for ready funnel pages", async () => {
+    mocks.getPublicTeamFunnelPage.mockResolvedValueOnce({ state: "ready", page: { headline: "免費講座", subheadline: "週三晚上開講", webinar: { title: "內部場次名稱" }, partner: { name: "夥伴 A" } } });
+    expect(await generateMetadata({ params: Promise.resolve({ slug: "partner-a" }) })).toMatchObject({
+      title: "免費講座", description: "週三晚上開講", openGraph: { siteName: "夥伴 A" },
+    });
+    for (const state of ["unpublished", "disabled", "not_found", "missing_webinar"]) {
+      mocks.getPublicTeamFunnelPage.mockResolvedValueOnce({ state });
+      expect(await generateMetadata({ params: Promise.resolve({ slug: "x" }) })).toEqual({ title: "頁面不存在", robots: { index: false, follow: false } });
+    }
   });
 });

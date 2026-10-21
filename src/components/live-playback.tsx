@@ -593,6 +593,22 @@ function useStreamUsageTracker({
     }, delay);
   }
 
+  const flushStreamUsageRef = useRef(flushStreamUsage);
+  useEffect(() => {
+    flushStreamUsageRef.current = flushStreamUsage;
+  });
+
+  useEffect(() => {
+    // Usage heartbeats are NOT gated on page visibility (R461-01): a
+    // background tab still plays, consumes Stream minutes and must keep
+    // hitting the quota check. Only on pagehide is the sub-minute remainder
+    // sent once with a keepalive request so closing the tab does not drop it.
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+    const onPageHide = () => void flushStreamUsageRef.current(true, true);
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, []);
+
   useEffect(() => {
     disposedRef.current = false;
     return () => {
@@ -603,7 +619,7 @@ function useStreamUsageTracker({
     };
   }, []);
 
-  async function flushStreamUsage(force = false) {
+  async function flushStreamUsage(force = false, keepalive = false) {
     if (
       disposedRef.current
       || quotaExhaustedRef.current
@@ -632,7 +648,10 @@ function useStreamUsageTracker({
     usageFlushInFlightRef.current = true;
     const requestController = new AbortController();
     heartbeatAbortControllerRef.current = requestController;
-    const outcome = await postStreamUsageHeartbeat(pendingHeartbeat, fetch, { signal: requestController.signal });
+    const outcome = await postStreamUsageHeartbeat(pendingHeartbeat, fetch, {
+      signal: requestController.signal,
+      ...(keepalive ? { keepalive: true } : {}),
+    });
     if (heartbeatAbortControllerRef.current === requestController) {
       heartbeatAbortControllerRef.current = null;
     }

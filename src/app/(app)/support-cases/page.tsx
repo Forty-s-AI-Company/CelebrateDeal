@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { SupportCasePriority, SupportCaseStatus } from "@prisma/client";
 
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { requireVendorSupportMfa } from "@/lib/auth";
+import { requireVendorSupportMember } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   SUPPORT_CASE_PRIORITIES,
@@ -25,7 +25,7 @@ function one(value: string | string[] | undefined) {
 export default async function SupportCasesPage({ searchParams }: {
   searchParams?: Promise<{ status?: string | string[]; priority?: string | string[]; q?: string | string[] }>;
 }) {
-  const { vendor } = await requireVendorSupportMfa("/support-cases");
+  const { vendor } = await requireVendorSupportMember("/support-cases");
   const query = await searchParams;
   const statusCandidate = one(query?.status);
   const priorityCandidate = one(query?.priority);

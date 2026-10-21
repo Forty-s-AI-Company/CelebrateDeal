@@ -2,11 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendorSupportMfa: vi.fn(),
+  requireVendorSupportMember: vi.fn(),
   findMany: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendorSupportMfa: mocks.requireVendorSupportMfa }));
+vi.mock("@/lib/auth", () => ({ requireVendorSupportMember: mocks.requireVendorSupportMember }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({ supportCase: { findMany: mocks.findMany } }),
 }));
@@ -15,7 +15,7 @@ import SupportCasesPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorSupportMfa.mockResolvedValue({ vendor: { id: "vendor-1" } });
+  mocks.requireVendorSupportMember.mockResolvedValue({ vendor: { id: "vendor-1" } });
   mocks.findMany.mockResolvedValue([]);
 });
 
@@ -25,7 +25,7 @@ describe("/support-cases route", () => {
       searchParams: Promise.resolve({ status: "open", priority: "p1", q: "  CD-100  " }),
     }));
 
-    expect(mocks.requireVendorSupportMfa).toHaveBeenCalledWith("/support-cases");
+    expect(mocks.requireVendorSupportMember).toHaveBeenCalledWith("/support-cases");
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         vendorId: "vendor-1",

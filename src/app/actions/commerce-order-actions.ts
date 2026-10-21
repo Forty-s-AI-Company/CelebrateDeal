@@ -9,7 +9,7 @@ import {
   transitionServiceFulfillment,
 } from "@/lib/commerce-order-fulfillment";
 import { completeShippingFulfillment } from "@/lib/commerce-shipping-action";
-import { requireVendorManagerMfa } from "@/lib/auth";
+import { requireVendorManagerMember } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 
@@ -56,7 +56,7 @@ export async function transitionShippingFulfillmentAction(formData: FormData) {
 export async function grantCommerceEntitlementAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const orderId = text(formData, "orderId");
-  const context = await requireVendorManagerMfa(orderPath(orderId));
+  const context = await requireVendorManagerMember(orderPath(orderId));
   const entitlementId = text(formData, "entitlementId");
   const revision = positiveRevision(formData);
   if (!orderId || !entitlementId || revision === null) {
@@ -82,7 +82,7 @@ export async function grantCommerceEntitlementAction(formData: FormData) {
 export async function transitionServiceFulfillmentAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const orderId = text(formData, "orderId");
-  const context = await requireVendorManagerMfa(orderPath(orderId));
+  const context = await requireVendorManagerMember(orderPath(orderId));
   const fulfillmentId = text(formData, "fulfillmentId");
   const revision = positiveRevision(formData);
   const nextStatus = ServiceActionStatus.safeParse(text(formData, "nextStatus"));

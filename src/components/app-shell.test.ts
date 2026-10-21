@@ -196,7 +196,7 @@ describe("AppShell role navigation", () => {
     expect((html.match(/aria-busy="true"/g) ?? [])).toHaveLength(1);
     expect((html.match(/aria-busy="false"/g) ?? [])).toHaveLength(1);
     expect((html.match(/data-loading-indicator="true"/g) ?? [])).toHaveLength(1);
-    expect((html.match(/正在撤銷目前 session 並登出/g) ?? [])).toHaveLength(1);
+    expect((html.match(/正在結束目前登入並登出/g) ?? [])).toHaveLength(1);
     expect((html.match(/ disabled=""/g) ?? [])).toHaveLength(1);
   });
 

@@ -42,7 +42,7 @@ function isOrdersReturn(value: string | undefined) {
 export default async function MfaSetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ updated?: string; error?: string; next?: string }>;
+  searchParams: Promise<{ updated?: string; error?: string; next?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   const nextPath = safeMfaReturnPath(params.next);
@@ -80,6 +80,12 @@ export default async function MfaSetupPage({
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">保護你的管理工作區</h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">啟用 TOTP 可加強登入保護；敏感管理操作會要求雙重驗證。請準備驗證器 App，並妥善保存備援碼。</p>
         </div>
+        {params.reason === "step_up" && !returningToOrders ? (
+          <Card className="mb-6 border-amber-200 bg-amber-50/70 p-4 shadow-none">
+            <p className="font-semibold text-slate-950">需要驗證</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">綁卡、選擇付費方案、成員管理、收款資料核准、LINE／Meta 憑證與個資匯出都需要雙重驗證。登入時不強制，但執行這些操作前請先完成設定；完成後會回到原頁面。</p>
+          </Card>
+        ) : null}
         {returningToOrders ? (
           <Card className="mb-6 border-blue-200 bg-blue-50/70 p-4 shadow-none">
             <p className="font-semibold text-slate-950">為什麼現在需要設定？</p>
@@ -105,7 +111,7 @@ export default async function MfaSetupPage({
 
             {auth.user.mfaFactor ? (
               <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
-                <div className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>MFA 已啟用，目前 session {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。</span></div>
+                <div className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>MFA 已啟用，目前登入狀態 {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。</span></div>
                 <br />
                 可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href={withMfaReturnPath("/mfa/verify", nextPath)} className="font-semibold underline">二次驗證頁</Link>。
               </div>
@@ -209,7 +215,7 @@ export default async function MfaSetupPage({
         {showPasswordResetSmoke ? <Card className="mt-6 rounded-2xl border-slate-200 bg-white/80 p-6 shadow-sm">
           <div className="flex items-center gap-2"><ChevronRight className="size-4 text-slate-500" aria-hidden="true" /><h2 className="text-base font-semibold text-slate-950">Password reset email smoke</h2></div>
           <p className="mt-1 text-sm text-slate-600">
-            僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
+            僅寄送到環境設定的測試收件人，驗證寄信、重設連結、連結有效期限與登入狀態結束流程。
           </p>
           <form action={sendPasswordResetSmokeAction} className="mt-4">
             <CsrfField />

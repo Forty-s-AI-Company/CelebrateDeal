@@ -95,7 +95,7 @@ function initialDraft(product?: ProductFormProduct): ProductFormDraft {
 }
 
 function errorMessage(error: ProductActionError | undefined) {
-  if (error === "invalid_product") return "商品名稱、Slug、售價、庫存或網址格式不正確（售價須為整數新台幣元），請修正後再儲存。";
+  if (error === "invalid_product") return "商品名稱、網址、售價、庫存或網址格式不正確（售價須為整數新台幣元），請修正後再儲存。";
   if (error === "unsupported_currency") return "平台目前只支援新台幣（TWD）。既有的非新台幣商品，請確認售價已改以新台幣填寫並勾選確認後再儲存。";
   if (error === "invalid_image_asset") return "商品圖片不是目前商家的已完成資產，請重新上傳或移除。";
   if (error === "invalid_course_policy") return "課程商品需要有效的內容所有人與推廣者分潤比例。";
@@ -104,7 +104,7 @@ function errorMessage(error: ProductActionError | undefined) {
   if (error === "invalid_delivery") return "交付設定不完整或網址不安全。上架前請填妥標題、必要的 HTTPS 入口或服務說明，並確認交付網域。";
   if (error === "invalid_custom_checkout_fields") return "自訂結帳欄位格式不正確；請確認欄位 key、標題與選項後再儲存。";
   if (error === "media_upload_incomplete") return "圖片尚未完成上傳，請先完成、重試或移除檔案。";
-  if (error === "duplicate_slug") return "這個 Slug 已被目前商家的另一個商品使用，請更換後再儲存。";
+  if (error === "duplicate_slug") return "這個網址已被目前商家的另一個商品使用，請更換後再儲存。";
   if (error === "conflict") return "商品在你編輯期間已被更新（可能包含新訂單扣庫存）。請重新整理確認最新資料後再修改。";
   if (error === "not_found") return "找不到這個商品，或你沒有權限修改。";
   if (error === "unavailable") return "商品暫時無法儲存，請稍後再試一次。";
@@ -220,6 +220,25 @@ function CustomCheckoutFieldEditor({
   );
 }
 
+function CourseSplitFields({ visible, draft, memberships }: {
+  visible: boolean;
+  draft: { courseContentOwnerMembershipId: string; coursePromoterShareBps: string };
+  memberships: CourseMembershipOption[];
+}) {
+  // 課程分潤欄位只在選擇「課程」時出現，一般商品不需要看到。
+  if (!visible) return null;
+  return (
+    <>
+      <SelectField label="課程內容所有人" name="courseContentOwnerMembershipId" defaultValue={draft.courseContentOwnerMembershipId}>
+        <option value="">一般商品／直購不指定</option>
+        {memberships.map((membership) => <option key={membership.id} value={membership.id}>{membership.memberName} · {membership.teamName}</option>)}
+      </SelectField>
+      <Field label="課程推廣者分潤比例（萬分比）" name="coursePromoterShareBps" type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
+      <p className="self-end text-xs leading-5 text-slate-600">付款成功會鎖定分潤比例與收款人；沒有推廣者歸因時，款項全數給課程內容所有人。</p>
+    </>
+  );
+}
+
 export function ProductFormClient({
   csrfToken,
   projectId,
@@ -315,7 +334,7 @@ export function ProductFormClient({
       {!product ? <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">新商品會先儲存為草稿；確認預覽、價格、庫存與交付方式後，再勾選上架。</p> : null}
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="商品名稱" name="name" required maxLength={200} defaultValue={draft.name} />
-        <Field label="Slug" name="slug" required maxLength={200} defaultValue={draft.slug} />
+        <Field label="商品網址" name="slug" required maxLength={200} defaultValue={draft.slug} />
         <Field label="售價（元）" name="price" type="number" min={0} step={1} required defaultValue={draft.price} />
         <Field label="原價（元）" name="compareAt" type="number" min={0.01} step={0.01} defaultValue={draft.compareAt} />
         <div className="grid gap-1 text-sm font-medium text-slate-700">
@@ -336,14 +355,9 @@ export function ProductFormClient({
           <option value="physical">實體商品（需要收件地址與出貨）</option>
           <option value="digital">數位內容（付款後建立授權）</option>
           <option value="service">服務（付款後安排時間）</option>
-          <option value="course">課程（付款後授權並啟用 F/G 分潤）</option>
+          <option value="course">課程（付款後授權並啟用課程分潤）</option>
         </SelectField>
-        <SelectField label="課程內容所有人 F" name="courseContentOwnerMembershipId" defaultValue={draft.courseContentOwnerMembershipId}>
-          <option value="">一般商品／直購不指定</option>
-          {memberships.map((membership) => <option key={membership.id} value={membership.id}>{membership.memberName} · {membership.teamName}</option>)}
-        </SelectField>
-        <Field label="課程推廣者 G 比例（basis points）" name="coursePromoterShareBps" type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
-        <p className="self-end text-xs leading-5 text-slate-600">只有「課程」需要設定 F/G。付款成功會鎖定比例與收款人；沒有實際 G 歸因時，款項 100% 給 F，且不會沿上線關係展開 H。</p>
+        <CourseSplitFields visible={selectedFulfillmentType === "course"} draft={draft} memberships={memberships} />
       </div>
       {selectedFulfillmentType !== "physical" ? (
         <fieldset className="grid gap-4 rounded-md border border-emerald-200 bg-emerald-50/50 p-4">
