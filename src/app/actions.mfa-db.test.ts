@@ -77,6 +77,11 @@ vi.mock("@/lib/db", () => ({
       },
       updateMany: database.userRecoveryCode.updateMany.bind(database.userRecoveryCode),
     },
+    // The account-level limiter and MFA lock (F-028, PR #462) run raw SQL on
+    // the same disposable schema. Without these delegates the limiter fails
+    // closed (503) and both readers stop before the conditional claim.
+    $queryRaw: (...args: Parameters<PrismaClient["$queryRaw"]>) => database.$queryRaw(...args),
+    $executeRaw: (...args: Parameters<PrismaClient["$executeRaw"]>) => database.$executeRaw(...args),
   }),
 }));
 
