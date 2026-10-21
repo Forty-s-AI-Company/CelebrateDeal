@@ -3,7 +3,7 @@ import { mutateProduct } from "@/app/actions/product-actions";
 import { readFormDataBody } from "@/lib/api-security";
 import { getCurrentAuth } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { initialProductActionState, type ProductActionError } from "@/lib/product-action-state";
+import { initialProductActionState, type ProductActionError, type ProductFieldErrors } from "@/lib/product-action-state";
 
 const MANAGER_ROLES = new Set(["owner", "admin"]);
 const ERROR_STATUS: Record<ProductActionError, number> = {
@@ -22,8 +22,8 @@ const ERROR_STATUS: Record<ProductActionError, number> = {
   unavailable: 500,
 };
 
-function safeJson(error: ProductActionError, status = ERROR_STATUS[error]) {
-  return NextResponse.json({ error }, {
+function safeJson(error: ProductActionError, status = ERROR_STATUS[error], fieldErrors?: ProductFieldErrors) {
+  return NextResponse.json({ error, ...(fieldErrors ? { fieldErrors } : {}) }, {
     status,
     headers: { "Cache-Control": "private, no-store" },
   });
@@ -52,7 +52,10 @@ export async function POST(request: Request) {
 
   try {
     const result = await mutateProduct(auth.vendor.id, initialProductActionState, formData);
-    if (!result.ok) return safeJson(result.state.error ?? "unavailable");
+    if (!result.ok) {
+      const error = result.state.error ?? "unavailable";
+      return safeJson(error, ERROR_STATUS[error], result.state.fieldErrors);
+    }
     return NextResponse.redirect(new URL(result.destination, request.url), 303);
   } catch {
     return safeJson("unavailable");
