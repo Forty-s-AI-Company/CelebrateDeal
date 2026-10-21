@@ -83,12 +83,14 @@ export async function saveLiveStudioDraft({
   liveId,
   revision,
   payload,
+  overwrite = false,
 }: {
   csrfToken: string;
   draftId: string;
   liveId: string;
   revision: number | null;
   payload: LiveStudioDraftPayload;
+  overwrite?: boolean;
 }): Promise<LiveStudioDraftEnvelope & { slugTaken: boolean; slugCheckFailed: boolean }> {
   let response: Response;
   try {
@@ -100,7 +102,7 @@ export async function saveLiveStudioDraft({
         "x-celebratedeal-client": "web",
         "x-csrf-token": csrfToken,
       },
-      body: JSON.stringify({ draftId, liveId, revision, payload }),
+      body: JSON.stringify({ draftId, liveId, revision, payload, ...(overwrite ? { overwrite: true } : {}) }),
     });
   } catch {
     throw new LiveStudioDraftClientError("network_error");

@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       where: {
         id: parsed.data.draftId,
         vendorId: authorization.actor.vendorId,
-        revision,
+        ...(parsed.data.overwrite ? {} : { revision }),
         liveId,
         consumedAt: null,
         expiresAt: { gt: now },

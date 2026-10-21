@@ -1237,6 +1237,12 @@ export function LiveStepperForm({
         >
           {draft.message}
         </p>
+        {draft.status === "conflict" ? (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => draft.reloadLatest()} className="min-h-11 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-primary">載入最新</button>
+            <button type="button" onClick={() => void draft.keepMine()} className="min-h-11 rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-700">以我的覆蓋</button>
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={() => void draft.saveNow()}
