@@ -66,7 +66,7 @@ async function scopedPage(database: FunnelAutomationDb, input: { pageId: unknown
   const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
   if (!scope.projectId) throw new FunnelAutomationScopeError();
   const page = await database.landingPage.findFirst({
-    where: { id: pageId, vendorId: vendor.id, projectId: scope.projectId },
+    where: { id: pageId, vendorId: vendor.id, projectId: scope.projectId, archivedAt: null },
     select: { id: true },
   });
   if (!page) throw new FunnelAutomationNotFoundError();

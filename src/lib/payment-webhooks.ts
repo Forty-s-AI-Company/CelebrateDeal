@@ -1,3 +1,4 @@
+import { paymentTransactionPurposeFor } from "@/lib/payment-transaction-purpose";
 import { reconcileAffiliatePendingPayout } from "@/lib/affiliate-payout-accounting";
 import { accrueMerchantAffiliatePlan } from "@/lib/merchant-affiliate-policy-service";
 import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
@@ -40,6 +41,9 @@ import { resolveManualReconciliationForPaidTrade, withoutManualReconciliationHol
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import { applyPostRefundAfterCommit, applyPostRefundInTransaction, type PostRefundCommerceOrderRefund } from "@/lib/payment-post-refund";
 import { resolveWebhookPaymentAmounts } from "@/lib/payment-gateway-fee";
+import { refundSettlementMonthKey } from "@/lib/settlement-period";
+import { withSerializableRetry } from "@/lib/serializable-retry";
+import { PaymentProviderNotAllowedError, paymentProviderAllowedInRuntime } from "@/lib/payment-providers/runtime-policy";
 import {
   isRefundEvent,
   isDisputeEvent,
@@ -792,12 +796,15 @@ async function applyPaymentRefundsInWebhook(
     return { refundCommission: null, platformReferralRefund: null, courseRefundAllocations: [], commerceOrderRefund: null };
   }
 
+  // F-039: the server's processing month (past any locked month), never
+  // the provider-reported event time.
+  const settlementMonthKey = await refundSettlementMonthKey(db, input.vendorId, new Date());
   const refundRecord = await db.refundRecord.create({
     data: {
       vendorId: input.vendorId,
       paymentTransactionId: input.transaction.id,
       providerEventId: input.payload.eventId,
-      monthKey: monthKeyFromDate(input.occurredAt),
+      monthKey: settlementMonthKey,
       refundAmountCents: input.payload.refundAmountCents,
       gatewayFeeRefundCents: input.payload.gatewayFeeRefundCents,
       platformFeeRefundCents: input.payload.platformFeeRefundCents,
@@ -833,6 +840,7 @@ async function applyPaymentRefundsInWebhook(
     isFullRefund: input.payload.eventType === "refunded",
     transactionOccurredAt: input.transaction.occurredAt,
     occurredAt: new Date(input.payload.occurredAt ?? new Date().toISOString()),
+    settlementMonthKey,
   });
 
   return {
@@ -1105,6 +1113,9 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       : await tx.paymentTransaction.create({
           data: {
             vendorId: vendor.id,
+            // Only the demo provider may create a transaction from a callback
+            // (providerRequiresExistingCheckout); it never moves money.
+            purpose: paymentTransactionPurposeFor(payload.provider, "buyer_order"),
             providerName: payload.provider,
             providerTradeNo: payload.providerTradeNo,
             orderNumber: payload.orderNumber,
@@ -1323,6 +1334,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
   return { vendor, transaction, commission, refundCommission, platformReferralCommission, platformReferralRefund, platformReferralDispute, platformSubscription, invoicePayment, disputeEntry, courseAllocations, courseRefundAllocations, courseDisputeEntries, commerceOrderRefund };
 }
 
+const PAYMENT_WEBHOOK_MAX_ATTEMPTS = 3;
+
 function isRetryableCommissionWriteConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError
     && (error.code === "P2034" || error.code === "P2002");
@@ -1332,16 +1345,16 @@ function isRetryableCommissionWriteConflict(error: unknown) {
  * A serializable abort is expected when two callbacks race for the same
  * business identity. Retry a bounded number of times; the second read/upsert
  * then returns the existing commission instead of creating another row.
+ * F-055: retries use the shared backoff with full jitter.
  */
 export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await processPaymentWebhookOnce(payload, event, expectedScope);
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableCommissionWriteConflict(error) || attempt === 1) break;
-    }
-  }
-  throw lastError;
+  // F-003: stored events replayed by the retry worker or reconciliation never
+  // pass the route's provider check, so production refuses them here too.
+  if (!paymentProviderAllowedInRuntime(payload.provider)) throw new PaymentProviderNotAllowedError();
+  return withSerializableRetry(() => processPaymentWebhookOnce(payload, event, expectedScope), {
+    attempts: PAYMENT_WEBHOOK_MAX_ATTEMPTS,
+    baseDelayMs: 50,
+    maxDelayMs: 500,
+    retryOn: isRetryableCommissionWriteConflict,
+  });
 }

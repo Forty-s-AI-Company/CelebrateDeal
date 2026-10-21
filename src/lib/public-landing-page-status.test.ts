@@ -43,7 +43,7 @@ describe("public pre-stream status", () => {
     expect(await publicLandingPageStatus("/lp/Fall-Launch", visitor, database)).toBe(200);
     expect(findMany).toHaveBeenCalledTimes(1);
     const query = findMany.mock.calls[0]?.[0];
-    expect(query.where).toEqual({ slug: "fall-launch", status: "published", publishedVersionId: { not: null }, project: { is: { status: "published", publishedAt: { not: null } } } });
+    expect(query.where).toEqual({ slug: "fall-launch", status: "published", publishedVersionId: { not: null }, archivedAt: null, project: { is: { status: "published", publishedAt: { not: null } } } });
     expect(query.take).toBe(2);
     expect(Object.keys(query.select.publishedVersion.select).sort()).toEqual(["content", "formId", "live", "liveId", "pageId", "vendorId"]);
     expect(Object.keys(query.select.publishedVersion.select.live.select).sort()).toEqual(["formId", "projectId", "status", "vendorId"]);

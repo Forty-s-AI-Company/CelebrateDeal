@@ -1,0 +1,76 @@
+name: Production migrate
+
+# F-064 / B04-10 (owner decision D-41): applies the protected master migration
+# chain to the fixed Production Supabase project. Never runs on its own.
+#
+# - Manual only (workflow_dispatch) and only from protected master.
+# - Runs in the `production` GitHub environment. The owner configures that
+#   environment's required reviewers and the PRODUCTION_DATABASE_URL secret;
+#   until then every run waits for approval or fails closed.
+# - "status" is read-only. "deploy" first verifies, through the GitHub API, that
+#   `backup_run_id` is a run of the fixed Production backup workflow
+#   (.github/workflows/production-backup.yml, pinned in scripts/production-migrate.mjs)
+#   on master with conclusion=success, finished within the last 24 hours and
+#   holding the production-database-backup-<run id> artifact, then runs `prisma migrate status`
+#   and only deploys when history is clean (a failed migration / P3009 stops it).
+# - The migration session uses lock_timeout=5s and statement_timeout=60s, TLS is
+#   required, and only allowlisted Prisma summary lines and fixed codes are
+#   printed (the repository is public).
+# Runbook: docs/production-database-runbook.md §5.1.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: status (read-only) or deploy
+        required: true
+        type: choice
+        options:
+          - status
+          - deploy
+      backup_run_id:
+        description: Run ID of the successful Production backup taken right before this migration
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Checkout protected master
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked tooling without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Preload Prisma schema engine before Production credentials
+        run: node node_modules/@prisma/engines/scripts/postinstall.js
+
+      - name: Verify migrate guard contract
+        run: node --test scripts/staging-migrate.test.mjs scripts/production-migrate.test.mjs
+
+      - name: Run prisma migrate on the fixed Production project
+        env:
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          MIGRATE_MODE: ${{ inputs.mode }}
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/production-migrate.mjs "$MIGRATE_MODE"

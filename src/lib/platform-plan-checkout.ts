@@ -1,3 +1,4 @@
+import { paymentTransactionPurposeFor } from "@/lib/payment-transaction-purpose";
 import { wp4PlanSelectionAllowed, wp4FinanceUserId, wp4PlanScopeAllowed } from "./wp4-runtime-boundary";
 import { Prisma, type BillingPlan, type PaymentTransaction } from "@prisma/client";
 import { cookies } from "next/headers";
@@ -408,6 +409,8 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
           ? await tx.paymentTransaction.create({
               data: {
                 vendorId: vendor.id,
+                // F-038: the merchant pays the platform; never merchant revenue.
+                purpose: paymentTransactionPurposeFor(provider.id, "platform_subscription"),
                 providerName: provider.id,
                 orderNumber: order,
                 paymentMode: DEFAULT_BILLING_PAYMENT_MODE,

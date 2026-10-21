@@ -7,6 +7,8 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    # F-146 / B09-07: the default 360 minutes lets a hung run hold a runner.
+    timeout-minutes: 60
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/celebratedeal_ci?schema=public
@@ -20,6 +22,9 @@ jobs:
       CLOUDFLARE_STREAM_TOKEN: ci-cloudflare-token
       CLOUDFLARE_STREAM_WEBHOOK_SECRET: ci-cloudflare-webhook-secret
       PAYMENT_PROVIDER: demo
+      # F-003 (PR #458 review m-5): CI production-mode servers run the demo
+      # provider; never set this on a real deployment.
+      ALLOW_NON_PAYUNI_PROVIDERS: "1"
       RESEND_API_KEY: ci-resend-key
       EMAIL_FROM: CelebrateDeal CI <ci@celebratedeal.invalid>
       SENTRY_DSN: https://ci@sentry.invalid/1

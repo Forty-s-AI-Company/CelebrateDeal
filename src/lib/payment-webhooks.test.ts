@@ -41,6 +41,8 @@ async function createCheckoutTransaction(input: {
   return getDb().paymentTransaction.create({
     data: {
       vendorId: input.vendorId,
+      // The checkout route marks buyer sales (F-038); settlement counts only these.
+      purpose: "buyer_order",
       providerName: input.provider ?? "demo",
       orderNumber: input.orderNumber,
       paymentMode: "platform",
@@ -799,6 +801,21 @@ describe("payment webhook processing", () => {
     await expect(db.commerceOrder.findUniqueOrThrow({
       where: { vendorId_checkoutIdempotencyKey: { vendorId: vendor.id, checkoutIdempotencyKey } },
     })).resolves.toMatchObject({ status: "paid", primaryPaymentTransactionId: transaction.id });
+  });
+
+  it("refuses a non-PayUni event on the production deployment, including stored retries (F-003)", async () => {
+    const suffix = `${Date.now()}-production-demo`;
+    const { db, vendor } = await createFixture(suffix);
+    const orderNumber = `ORDER-${suffix}`;
+    await createCheckoutTransaction({ vendorId: vendor.id, orderNumber, grossAmountCents: 1000 });
+    vi.stubEnv("VERCEL_ENV", "production");
+
+    await expect(processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo", eventId: `evt-${suffix}`, eventType: "paid", vendorId: vendor.id, orderNumber, grossAmountCents: 1000,
+    }))).rejects.toThrow("Payment provider is not allowed in production");
+
+    await expect(db.paymentTransaction.findFirstOrThrow({ where: { vendorId: vendor.id, orderNumber } }))
+      .resolves.toMatchObject({ status: "pending" });
   });
 
   it("processes a webhook identified by vendorId", async () => {

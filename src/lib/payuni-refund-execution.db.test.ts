@@ -68,7 +68,6 @@ describe("PayUni refund accounting identity on disposable PostgreSQL", () => {
       gatewayFeeRefundCents: 0,
       platformFeeRefundCents: 0,
       reason: "synthetic",
-      monthKey: "2026-09",
       actor: { id: "synthetic-actor", label: "synthetic" },
     };
 

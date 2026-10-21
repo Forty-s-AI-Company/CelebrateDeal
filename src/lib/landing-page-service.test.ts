@@ -5,11 +5,14 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(),
   versionCreate: vi.fn(), versionCount: vi.fn(), versionFindFirst: vi.fn(), formFindMany: vi.fn(), liveFindFirst: vi.fn(),
   transaction: vi.fn(), validateCommerce: vi.fn(), listCommerce: vi.fn(), publicCommerce: vi.fn(),
+  visitCount: vi.fn(), submissionCount: vi.fn(),
 }));
 
 const database = {
   landingPage: { create: mocks.create, findFirst: mocks.findFirst, findMany: mocks.findMany, updateMany: mocks.updateMany, deleteMany: mocks.deleteMany },
   landingPageVersion: { create: mocks.versionCreate, count: mocks.versionCount, findFirst: mocks.versionFindFirst },
+  funnelVisit: { count: mocks.visitCount },
+  funnelSubmission: { count: mocks.submissionCount },
   registrationForm: { findMany: mocks.formFindMany, count: vi.fn() },
   live: { findFirst: mocks.liveFindFirst, findMany: vi.fn(), count: vi.fn() },
   consultationEvent: { findMany: vi.fn() },
@@ -53,6 +56,7 @@ beforeEach(() => {
   mocks.formFindMany.mockResolvedValue([]); mocks.liveFindFirst.mockResolvedValue(null); database.live.findMany.mockResolvedValue([]);
   mocks.findFirst.mockResolvedValue(page()); mocks.findMany.mockResolvedValue([]); mocks.updateMany.mockResolvedValue({ count: 1 });
   mocks.create.mockResolvedValue(page({ id: "page-new" })); mocks.deleteMany.mockResolvedValue({ count: 1 });
+  mocks.visitCount.mockResolvedValue(0); mocks.submissionCount.mockResolvedValue(0);
   mocks.versionCount.mockResolvedValue(0); mocks.versionCreate.mockResolvedValue({ id: "version-1", version: 1, content: document, formId: null, liveId: null, createdAt: now });
   mocks.versionFindFirst.mockResolvedValue(null); mocks.validateCommerce.mockResolvedValue(undefined); mocks.listCommerce.mockResolvedValue([]); mocks.publicCommerce.mockResolvedValue([]);
   mocks.transaction.mockImplementation(async (callback: (value: typeof database) => Promise<unknown>) => callback(database));
@@ -84,10 +88,41 @@ describe("landing page scoped mutations", () => {
     expect(mocks.versionFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { pageId: "page-1", vendorId: "vendor-1", version: 1, page: { is: { projectId: "project-1" } } } }));
   });
 
-  it("刪除先 detach published pointer，再以 revision CAS 刪除", async () => {
-    await expect(deleteLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1" });
-    expect(mocks.updateMany).toHaveBeenCalledWith({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 }, data: { publishedVersionId: null, revision: { increment: 1 } } });
-    expect(mocks.deleteMany).toHaveBeenCalledWith({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 3 } });
+  it("從未發布且無流量的草稿：先 detach published pointer，再以 revision CAS 刪除", async () => {
+    await expect(deleteLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1", archived: false });
+    expect(mocks.visitCount).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", pageId: "page-1" } });
+    expect(mocks.submissionCount).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", pageId: "page-1" } });
+    expect(mocks.updateMany).toHaveBeenCalledWith({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2, archivedAt: null }, data: { publishedVersionId: null, revision: { increment: 1 } } });
+    expect(mocks.deleteMany).toHaveBeenCalledWith({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 3, archivedAt: null } });
+  });
+
+  it.each([
+    ["曾發布（有 publishedAt）", () => mocks.findFirst.mockResolvedValue(page({ publishedAt: now }))],
+    ["有歷史版本", () => mocks.versionCount.mockResolvedValue(1)],
+    ["有造訪紀錄", () => mocks.visitCount.mockResolvedValue(3)],
+    ["有名單來源紀錄", () => mocks.submissionCount.mockResolvedValue(1)],
+  ])("%s的 Funnel 改為封存，不刪除", async (_label, arrange) => {
+    arrange();
+    await expect(deleteLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1", archived: true });
+    expect(mocks.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2, archivedAt: null },
+      data: expect.objectContaining({ archivedAt: expect.any(Date), status: "draft", publishedVersionId: null, revision: { increment: 1 } }),
+    });
+  });
+
+  it("已發布頁面封存時一併下架", async () => {
+    mocks.findFirst.mockResolvedValue(page({ status: "published", publishedVersionId: "version-1", publishedAt: now }));
+    await expect(deleteLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1", archived: true });
+    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "draft", publishedVersionId: null, unpublishedAt: expect.any(Date) }),
+    }));
+  });
+
+  it("刪除時 revision 不符即視為衝突", async () => {
+    await expect(deleteLandingPage("page-1", 5)).rejects.toBeInstanceOf(LandingPageConflictError);
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    expect(mocks.deleteMany).not.toHaveBeenCalled();
   });
 
   it("Step metadata 只套用 bounded mutation，拒絕畫布替換", async () => {
@@ -119,7 +154,7 @@ describe("landing page scoped mutations", () => {
     expect(result.forms).toEqual([{ id: "form-1", slug: "signup", name: "報名表" }]);
     expect(result.lives[0]).toMatchObject({ id: "live-1", formId: "form-1", status: "scheduled" });
     expect(result.commerceProducts).toHaveLength(1);
-    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1" } }));
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", archivedAt: null } }));
     expect(database.live.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }) }));
   });
 
@@ -201,7 +236,7 @@ describe("merchant publication diagnosis", () => {
       vendorId: "vendor-1", scopeType: "VENDOR", membershipId: null, status: "verified",
       verifiedAt: { not: null, lte: expect.any(Date) }, OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
     } });
-    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1" } }));
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", archivedAt: null } }));
     expect(database.salesProject.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "project-1", vendorId: "vendor-1" } }));
   });
 

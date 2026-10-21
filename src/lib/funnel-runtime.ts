@@ -110,6 +110,7 @@ export async function resolvePublicFunnelRuntime(input: {
       id: input.pageId,
       status: "published",
       publishedVersionId: { not: null },
+      archivedAt: null,
       project: { is: { status: "published", publishedAt: { not: null } } },
     },
     select: {

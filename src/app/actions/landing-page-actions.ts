@@ -173,7 +173,13 @@ export async function landingPageAction(
     if (command === "delete") {
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再刪除。" };
-      return success("Funnel、草稿與所有發布歷史已刪除。", await deleteLandingPage(id, expectedRevision));
+      const result = await deleteLandingPage(id, expectedRevision);
+      return success(
+        result.archived
+          ? "這個 Funnel 已發布過或已有造訪紀錄，已改為封存：公開網址不再開啟，造訪與名單來源紀錄會保留。"
+          : "Funnel 與草稿已刪除。",
+        result,
+      );
     }
 
     const expectedRevision = revision(formData);

@@ -176,6 +176,7 @@ export async function resolvePublishedFunnelCheckout(reference: unknown, databas
       slug: parsedReference.data.slug,
       status: "published",
       publishedVersionId: { not: null },
+      archivedAt: null,
       project: { is: { status: "published", publishedAt: { not: null } } },
     },
     take: 2,

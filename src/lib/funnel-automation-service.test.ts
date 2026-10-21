@@ -54,7 +54,7 @@ describe("funnel automation service", () => {
       { id: "rule-1", name: "已報名", tag: "講座已報名", isActive: true, version: 2, updatedAt: "2026-09-17T00:00:00.000Z" },
     ]);
     expect(runtime.db.landingPage.findFirst).toHaveBeenCalledWith({
-      where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1" },
+      where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", archivedAt: null },
       select: { id: true },
     });
     expect(runtime.db.automationRule.findMany).toHaveBeenCalledWith(expect.objectContaining({

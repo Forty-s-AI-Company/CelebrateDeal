@@ -1,4 +1,4 @@
-import type { BillingPlan, PaymentTransaction, UsageRecord, VendorSubscription } from "@prisma/client";
+import type { BillingPlan, PaymentTransaction, Prisma, UsageRecord, VendorSubscription } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { isSupportedCheckoutCurrency, SUPPORTED_CHECKOUT_CURRENCY, UnsupportedCurrencyError } from "@/lib/checkout-currency";
 import { getDb } from "@/lib/db";
@@ -12,6 +12,30 @@ export class StreamUsageReconciliationRequiredError extends Error {
   constructor() {
     super("stream_reconciliation_required");
     this.name = "StreamUsageReconciliationRequiredError";
+  }
+}
+
+/**
+ * F-038: a monthly settlement counts only buyer orders as merchant revenue.
+ * Platform plan and invoice payments are money the merchant paid the
+ * platform. A legacy unclassified row counts only when a CommerceOrder names
+ * it as its primary payment (the buyer checkout writes both together).
+ */
+export const SETTLEMENT_REVENUE_TRANSACTION_WHERE = {
+  OR: [
+    { purpose: "buyer_order" },
+    { purpose: "unclassified", primaryCommerceOrder: { isNot: null } },
+  ],
+} satisfies Prisma.PaymentTransactionWhereInput;
+
+const SETTLED_PAYMENT_STATUSES = ["paid", "partially_refunded", "refunded"];
+
+export class UnclassifiedPaymentPurposeError extends Error {
+  readonly code = "unclassified_payment_purpose" as const;
+
+  constructor() {
+    super("unclassified_payment_purpose");
+    this.name = "UnclassifiedPaymentPurposeError";
   }
 }
 
@@ -182,7 +206,7 @@ async function readStreamUsageBillingDecision(
 export async function calculateSettlement(vendorId: string, monthKey: string) {
   const db = getDb();
   const { start, end } = monthRange(monthKey);
-  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount] = await Promise.all([
+  const [subscription, usageRecords, measuredUsage, streamUsageLedgerEntries, streamUsageAllocationResult, streamUsageBillingDecision, transactions, refundTotal, commissionTotal, nonTwdRefundCount, unclassifiedTransactionCount, unclassifiedRefundCount, carriedIn] = await Promise.all([
     db.vendorSubscription.findFirst({
       where: {
         vendorId,
@@ -204,8 +228,9 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     db.paymentTransaction.findMany({
       where: {
         vendorId,
-        status: { in: ["paid", "partially_refunded", "refunded"] },
+        status: { in: SETTLED_PAYMENT_STATUSES },
         occurredAt: { gte: start, lt: end },
+        ...SETTLEMENT_REVENUE_TRANSACTION_WHERE,
       },
     }),
     db.refundRecord.aggregate({
@@ -213,6 +238,9 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
         vendorId,
         monthKey,
         status: "processed",
+        // A refund of a platform plan or invoice payment is the platform
+        // returning its own revenue; it never reduces the merchant payout.
+        paymentTransaction: SETTLEMENT_REVENUE_TRANSACTION_WHERE,
       },
       _sum: {
         refundAmountCents: true,
@@ -220,13 +248,16 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
         platformFeeRefundCents: true,
       },
     }),
+    // F-039 (review M-1): a refund reversal is settled in its refund's month;
+    // every other entry in its commission's month. A commission voided by a
+    // full refund still counts, because its reversal now counts as well.
     db.affiliateCommissionLedgerEntry.aggregate({
       where: {
         vendorId,
-        commission: {
-          monthKey,
-          status: { in: ["pending", "approved", "locked"] },
-        },
+        OR: [
+          { settlementMonthKey: monthKey },
+          { settlementMonthKey: null, commission: { monthKey, status: { in: ["pending", "approved", "locked", "void"] } } },
+        ],
       },
       _sum: { amountCents: true },
     }),
@@ -235,10 +266,40 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     db.refundRecord.count({
       where: { vendorId, monthKey, status: "processed", paymentTransaction: { currency: { not: SUPPORTED_CHECKOUT_CURRENCY } } },
     }),
+    // F-038: never guess whether an unclassified payment is merchant revenue.
+    db.paymentTransaction.count({
+      where: {
+        vendorId,
+        status: { in: SETTLED_PAYMENT_STATUSES },
+        occurredAt: { gte: start, lt: end },
+        purpose: "unclassified",
+        primaryCommerceOrder: { is: null },
+      },
+    }),
+    // Review M-3: a refund booked this month can belong to an older payment
+    // whose purpose is unknown; refuse instead of silently excluding it.
+    db.refundRecord.count({
+      where: {
+        vendorId,
+        monthKey,
+        status: "processed",
+        paymentTransaction: { purpose: "unclassified", primaryCommerceOrder: { is: null } },
+      },
+    }),
+    // F-039 (D-32): negative balances carried in from earlier months.
+    db.settlementAdjustmentLedgerEntry.aggregate({
+      where: { vendorId, targetMonthKey: monthKey },
+      _sum: { amountCents: true },
+    }),
   ]);
 
   if (!subscription) {
     throw new Error("找不到有效訂閱方案，無法產生月結。");
+  }
+  // Review m-3: only a platform-collected month pays out merchant revenue; a
+  // merchant-collected (byo) month pays 0 either way and is not blocked.
+  if (subscription.paymentMode === "platform" && (unclassifiedTransactionCount > 0 || unclassifiedRefundCount > 0)) {
+    throw new UnclassifiedPaymentPurposeError();
   }
   // Settlement sums cents across transactions; mixing currencies would pay out
   // a meaningless total. Refuse instead of adding non-TWD cents to TWD.
@@ -304,23 +365,28 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
   const gatewayFeeRefundCents = refundTotal._sum.gatewayFeeRefundCents ?? 0;
   const platformFeeRefundCents = refundTotal._sum.platformFeeRefundCents ?? 0;
   const grossRevenueBeforeRefundCents = transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.grossAmountCents, 0);
-  const grossRevenueCents = Math.max(0, grossRevenueBeforeRefundCents - refundAmountCents);
-  const paymentGatewayFeeCents = paymentMode === "platform"
-    ? Math.max(0, transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0) - gatewayFeeRefundCents)
-    : 0;
+  // F-039: a refund above this month's revenue is not truncated; the
+  // negative payable carries into the next open month (billing-cycle.ts).
+  const grossRevenueCents = grossRevenueBeforeRefundCents - refundAmountCents;
+  const carriedInCents = carriedIn._sum.amountCents ?? 0;
+  const recordedGatewayFeeCents = transactions.reduce((sum: number, transaction: PaymentTransaction) => sum + transaction.gatewayFeeCents, 0);
   const recordedPlatformFeeCents = transactions.reduce(
     (sum: number, transaction: PaymentTransaction) => sum + transaction.platformFeeCents,
     0,
   );
-  const transactionServiceFeeCents = paymentMode === "platform"
-    ? Math.max(0, recordedPlatformFeeCents - platformFeeRefundCents)
-    : 0;
+  // Review M-2 (D-32): a fee refund often lands in a month without the
+  // matching fee. The payout uses the untruncated net fee; only the stored
+  // fee fields and the invoice keep a non-negative amount.
+  const netGatewayFeeCents = recordedGatewayFeeCents - gatewayFeeRefundCents;
+  const netPlatformFeeCents = recordedPlatformFeeCents - platformFeeRefundCents;
+  const paymentGatewayFeeCents = paymentMode === "platform" ? Math.max(0, netGatewayFeeCents) : 0;
+  const transactionServiceFeeCents = paymentMode === "platform" ? Math.max(0, netPlatformFeeCents) : 0;
   const paymentServiceFeeCents = paymentMode === "platform" ? plan.paymentServiceFeeCents : 0;
   const affiliateManagementFeeCents = plan.affiliateManagementFeeCents;
   const monthlyFeeCents = plan.monthlyPriceCents;
-  const payoutableAmountCents = paymentMode === "platform"
-    ? grossRevenueCents - paymentGatewayFeeCents - transactionServiceFeeCents - (commissionTotal._sum.amountCents ?? 0)
-    : 0;
+  const payoutableAmountCents = (paymentMode === "platform"
+    ? grossRevenueCents - netGatewayFeeCents - netPlatformFeeCents - (commissionTotal._sum.amountCents ?? 0)
+    : 0) + carriedInCents;
 
   return {
     subscription,
@@ -344,8 +410,10 @@ export async function calculateSettlement(vendorId: string, monthKey: string) {
     refundAmountCents,
     gatewayFeeRefundCents,
     platformFeeRefundCents,
+    carriedInCents,
     payoutableAmountCents,
-    finalPayoutAmountCents: payoutableAmountCents,
+    // Before any manual adjustment; a negative payable carries forward.
+    finalPayoutAmountCents: Math.max(0, payoutableAmountCents),
   };
 }
 

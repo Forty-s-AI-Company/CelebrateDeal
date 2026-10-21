@@ -30,6 +30,9 @@ export const SCHEDULED_JOBS = Object.freeze([
   // so it never runs on a schedule unless the owner opts in (PR #447 review M1).
   Object.freeze({ name: "billing-cycle", path: "/api/jobs/billing-cycle", cadence: "daily", optInVariable: "SCHEDULED_JOBS_ENABLE_BILLING_CYCLE" }),
   Object.freeze({ name: "electronic-invoices", path: "/api/jobs/electronic-invoices", cadence: "daily" }),
+  // F-070: retention sweep (webhook raw payloads, analytics events, audit IPs). Off until
+  // the owner fixes the retention windows on legal advice.
+  Object.freeze({ name: "data-retention", path: "/api/cron/data-retention", cadence: "daily", optInVariable: "SCHEDULED_JOBS_ENABLE_DATA_RETENTION" }),
 ]);
 
 /** Endpoints under /api/cron and /api/jobs that are deliberately not scheduled. */

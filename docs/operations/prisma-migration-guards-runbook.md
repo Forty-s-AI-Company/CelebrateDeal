@@ -145,3 +145,27 @@ admin、webhook、對帳與非 PayUni 手動退款都在交易內呼叫 `applyPo
    - 為 allowlist 加上 CODEOWNERS，或規定必須經過 reviewer。
 2. **帳務與金額 CHECK 的定義守門**（MINOR-6、B04-07）：以 db test 斷言 `pg_get_constraintdef`，可與第 1 項一起處理。
 3. **CI workflow 頂層 `permissions: { contents: read }`**（NIT-3）：另開 PR 處理。
+
+## 6. 部署前檢查：商家撥款帳號 legacy 欄位（`20261021140200`／`20261021140300`，F-073）
+
+`20261021140200_payment_account_payout_verification` 不會因明文資料而失敗：部署當下仍是明文的 legacy 帳號會被改成遮罩值，並為每筆寫一列 `AuditLog`（`action = 'payment_account_legacy_plaintext_masked'`）。被遮罩、又沒有 envelope 的帳號之後不能撥款，必須請商家重新填寫。所以部署前仍要先查、先 backfill：
+
+```sql
+SELECT count(*) AS plaintext_rows
+  FROM "PaymentAccount"
+ WHERE "bankAccountNumber" IS NOT NULL
+   AND "bankAccountNumber" NOT LIKE '****%';
+```
+
+- `plaintext_rows = 0`：記錄後部署。
+- `plaintext_rows > 0`：先在同一環境跑 backfill（需 `BANK_ACCOUNT_KEYRING_JSON` 與 owner 授權），再查一次：
+  1. `npx tsx scripts/backfill-bank-account-encryption.ts`：只輸出計畫（各類列數），不改資料。`incompleteAccounts`、`unrecoverableMaskedAccounts`、`unrecoverableMaskedPayouts` 任一大於 0 時要人工處理（請商家在 `/billing/payouts` 重新填寫帳號），backfill 會拒絕執行。
+  2. `BANK_ACCOUNT_BACKFILL_CONFIRM=ENCRYPT_LEGACY_BANK_ACCOUNTS npx tsx scripts/backfill-bank-account-encryption.ts --execute [--batch-size 100]`：逐批加密並提交，中斷後重跑即可接續。
+- 部署後查 `SELECT "vendorId", "targetId" FROM "AuditLog" WHERE action = 'payment_account_legacy_plaintext_masked'`：有列就通知那些商家重新填寫撥款帳號。
+- 鎖：Prisma 把每個 migration 檔當成一個隱含交易，`ADD CONSTRAINT ... NOT VALID` 取得的 ACCESS EXCLUSIVE 會持有到該檔 commit；所以 `VALIDATE CONSTRAINT` 放在**另一個** migration（`20261021140300_payment_account_masked_check_validate`），在自己的交易內只取 SHARE UPDATE EXCLUSIVE，不擋讀寫。同一個檔案裡先 NOT VALID 再 VALIDATE 沒有效果。
+- 先 `migrate deploy` 成功，才 promote 新版 app：新版程式會讀 `archivedAt`、`payoutEligibleAt`，舊 schema 上會出現 column does not exist。
+
+| 環境 | 日期 | `plaintext_rows` | 執行者 | 備註 |
+|---|---|---|---|---|
+| staging | 待執行 | — | 主對話（唯讀） | |
+| production | 待執行 | — | owner | 部署前由 owner 查詢並補記 |
