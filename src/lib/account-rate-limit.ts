@@ -65,9 +65,12 @@ export async function consumeAccountRateLimit(
   const keyHash = accountRateLimitKeyHash(scope, subject);
   // Prisma maps DateTime to timestamp(3) holding UTC, so the database clock is
   // read in UTC. EXCLUDED carries the statement's "now" into the update arm.
+  // The clock is truncated to milliseconds: storing raw now() in timestamp(3)
+  // rounds to the nearest millisecond, which can place the stored start up to
+  // 0.5 ms in the future and stretch a window or lock past its duration.
   const rows = await db.$queryRaw<Array<{ count: number; retryAfterSeconds: number; created: boolean }>>`
     INSERT INTO "AccountRateLimitBucket" AS bucket ("keyHash", "scope", "windowStartedAt", "count", "updatedAt")
-    VALUES (${keyHash}, ${scope}, (now() AT TIME ZONE 'UTC'), 1, (now() AT TIME ZONE 'UTC'))
+    VALUES (${keyHash}, ${scope}, date_trunc('milliseconds', now() AT TIME ZONE 'UTC'), 1, date_trunc('milliseconds', now() AT TIME ZONE 'UTC'))
     ON CONFLICT ("keyHash") DO UPDATE SET
       "count" = CASE
         WHEN bucket."windowStartedAt" <= EXCLUDED."windowStartedAt" - (${windowMs}::double precision * interval '1 millisecond')
@@ -110,13 +113,17 @@ export async function consumeAccountRateLimit(
   };
 }
 
-/** Starts (or restarts) a lock for `subject`; it expires on its own. */
+/**
+ * Starts (or restarts) a lock for `subject`; it expires on its own. The start
+ * is truncated (never rounded up) to the column's millisecond precision, so
+ * the remaining time never exceeds the lock duration.
+ */
 export async function lockAccount(scope: AccountLockScope, subject: string, db: RawClient = getDb()) {
   if (!subject) throw new Error("account lock subject is required");
   const keyHash = accountRateLimitKeyHash(scope, subject);
   await db.$executeRaw`
     INSERT INTO "AccountRateLimitBucket" ("keyHash", "scope", "windowStartedAt", "count", "updatedAt")
-    VALUES (${keyHash}, ${scope}, (now() AT TIME ZONE 'UTC'), 1, (now() AT TIME ZONE 'UTC'))
+    VALUES (${keyHash}, ${scope}, date_trunc('milliseconds', now() AT TIME ZONE 'UTC'), 1, date_trunc('milliseconds', now() AT TIME ZONE 'UTC'))
     ON CONFLICT ("keyHash") DO UPDATE SET
       "windowStartedAt" = EXCLUDED."windowStartedAt",
       "count" = 1,
