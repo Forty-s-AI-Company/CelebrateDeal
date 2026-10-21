@@ -55,6 +55,7 @@ type SaveDraft = (input: {
   liveId: string;
   revision: number | null;
   payload: LiveStudioDraftPayload;
+  overwrite?: boolean;
 }) => Promise<LiveStudioDraftEnvelope & { slugTaken?: boolean; slugCheckFailed?: boolean }>;
 
 /**
@@ -66,6 +67,7 @@ export class LiveStudioDraftSaveQueue {
   private pendingPayload: LiveStudioDraftPayload | null = null;
   private activeSave: Promise<boolean> | null = null;
   private conflictLocked = false;
+  private overwriteNext = false;
   private draftId: string;
   private revision: number | null;
   private updatedAt: string;
@@ -111,6 +113,20 @@ export class LiveStudioDraftSaveQueue {
     return this.ensureDrain();
   }
 
+  /**
+   * B07-20: after a conflict the user explicitly keeps their own version. The
+   * next save skips the revision comparison once; nothing is overwritten
+   * unless this is called.
+   */
+  keepMine(payload: LiveStudioDraftPayload) {
+    if (!this.conflictLocked) return Promise.resolve(false);
+    this.conflictLocked = false;
+    this.overwriteNext = true;
+    this.latestLocalPayload = payload;
+    this.pendingPayload = payload;
+    return this.ensureDrain();
+  }
+
   matches(payload: LiveStudioDraftPayload) {
     return this.latestLocalPayload !== null
       && this.lastSavedPayload !== null
@@ -138,12 +154,15 @@ export class LiveStudioDraftSaveQueue {
       const payload = this.pendingPayload;
       this.pendingPayload = null;
       this.transition("saving");
+      const overwrite = this.overwriteNext;
+      this.overwriteNext = false;
       try {
         const saved = await this.options.save({
           draftId: this.draftId,
           liveId: this.options.liveId,
           revision: this.revision,
           payload,
+          ...(overwrite ? { overwrite: true } : {}),
         });
         this.draftId = saved.id;
         this.revision = saved.revision;
@@ -210,7 +229,7 @@ function draftStatusMessage(state: LiveStudioDraftSaveState) {
     case "dirty": return "尚有變更，稍後會自動儲存。";
     case "saving": return "正在安全儲存草稿…";
     case "saved": return state.updatedAt ? "草稿已儲存，可安全離開後再繼續。" : "草稿已儲存。";
-    case "conflict": return "另一個分頁已有較新的版本。為避免覆蓋，請重新整理後再繼續。";
+    case "conflict": return "其他人已更新這份草稿。系統沒有覆蓋它；請選擇「載入最新」放棄這裡的修改，或「以我的覆蓋」保留你目前的內容。";
     case "error": return "草稿尚未儲存，請檢查連線後按「立即儲存」。";
     default: return "開始輸入後會自動建立可復原草稿。";
   }
@@ -294,6 +313,16 @@ export function useLiveStudioDraft({
 
   const getCurrentClaim = useCallback(() => queue.currentClaim(), [queue]);
 
+  const keepMine = useCallback(async () => {
+    const payload = payloadForStep(activeStep);
+    if (!payload) return;
+    await queue.keepMine(payload);
+  }, [activeStep, payloadForStep, queue]);
+
+  const reloadLatest = useCallback(() => {
+    if (typeof window !== "undefined") window.location.reload();
+  }, []);
+
   const isCurrentFormSaved = useCallback((step = activeStep) => {
     const payload = payloadForStep(step);
     return Boolean(payload && queue.matches(payload));
@@ -323,6 +352,8 @@ export function useLiveStudioDraft({
     canSubmit: Boolean(state.draftId && state.revision && state.status === "saved"),
     message: draftStatusMessage(state),
     getCurrentClaim,
+    keepMine,
+    reloadLatest,
     isCurrentFormSaved,
     saveNow,
     scheduleSave,

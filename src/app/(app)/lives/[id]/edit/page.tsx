@@ -145,13 +145,13 @@ export default async function EditLivePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; notice?: string }>;
+  searchParams: Promise<{ error?: string; field?: string; notice?: string }>;
 }) {
   const { auth, vendor } = await requireVendorManagerContext();
   const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const resourceScope = selectedProjectResources(scope.projectId);
   const { id } = await params;
-  const { error, notice } = await searchParams;
+  const { error, field: invalidField, notice } = await searchParams;
   const db = getDb();
   const [live, videos, products, formCandidates, templateCandidates, scripts, affiliates, streamMemberships, streamQuotaPages, csrfToken, savedDraft] = await Promise.all([
     db.live.findFirst({
@@ -397,6 +397,7 @@ export default async function EditLivePage({
         streamPages={streamQuotaPages.map((page) => ({ id: page.id, label: `${page.headline || "未命名推廣頁"} · /${page.slug}` }))}
         csrfToken={csrfToken}
         error={error}
+        invalidField={invalidField}
         initialDraft={initialDraft}
         initialValues={basePayload}
         liveId={live.id}

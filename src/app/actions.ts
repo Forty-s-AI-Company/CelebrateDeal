@@ -30,7 +30,7 @@ import { executePayUniRefund } from "@/lib/payuni-refund-execution";
 import { toSlug } from "@/lib/format";
 import { isLiveSlugRace, liveSlugTakenPath, resolveLiveSlugConflict } from "@/lib/live-slug";
 import { parseLiveQuotaPolicyForm, LiveQuotaPolicyValidationError, type LiveQuotaPolicy } from "@/lib/live-quota-policy";
-import { liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
+import { liveInvalidFieldName, liveStudioDraftFromFormData } from "@/lib/live-studio-draft-client";
 import type { LiveStudioDraftPayload } from "@/lib/live-studio-draft";
 import {
   expectedTemplateTrigger,
@@ -894,8 +894,9 @@ function parseSubmittedLiveDraft(
   let payload: LiveStudioDraftPayload;
   try {
     payload = liveStudioDraftFromFormData(formData, 7);
-  } catch {
-    redirect(invalidDraftPath);
+  } catch (error) {
+    const field = liveInvalidFieldName(error);
+    redirect(field ? `${invalidDraftPath}&field=${encodeURIComponent(field)}` : invalidDraftPath);
   }
   // Project context is create-only; edits cannot move an existing live.
   if (liveId && payload.projectId) redirect(invalidDraftPath);

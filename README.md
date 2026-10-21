@@ -1,6 +1,6 @@
 # CelebrateDeal
 
-CelebrateDeal 是以 Cloudflare 為優先整合方向的直播導購 SaaS，專案以既有的 Next.js 應用程式與 Prisma 資料層支援本機開發、測試與正式環境作業。
+CelebrateDeal 是直播導購 SaaS：Next.js 應用程式部署在 Vercel，資料庫為 Supabase PostgreSQL（Prisma），Cloudflare 提供影音（Stream）與物件儲存（R2）。專案支援本機開發、測試與正式環境作業。
 
 ## 技術棧
 

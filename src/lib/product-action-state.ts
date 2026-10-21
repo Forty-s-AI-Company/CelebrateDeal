@@ -41,9 +41,18 @@ export type ProductFormDraft = {
   upsellDiscount?: string;
 };
 
+/** Server-detected invalid fields, keyed by the form control `name` (F-117). */
+export type ProductFieldErrors = Partial<Record<
+  | "name" | "slug" | "price" | "compareAt" | "inventory" | "description"
+  | "imageUrl" | "checkoutUrl" | "courseContentOwnerMembershipId" | "coursePromoterShareBps"
+  | "deliveryTitle" | "deliveryUrl" | "deliveryInstructions" | "deliveryHostConfirmed",
+  string
+>>;
+
 export type ProductActionState = {
   version: number;
   error?: ProductActionError;
+  fieldErrors?: ProductFieldErrors;
   draft?: ProductFormDraft;
 };
 

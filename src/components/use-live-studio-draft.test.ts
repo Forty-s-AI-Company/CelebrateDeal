@@ -397,3 +397,30 @@ describe("Live Studio draft hook beforeunload lifecycle", () => {
     hook.unmount();
   });
 });
+
+describe("LiveStudioDraftSaveQueue keepMine (B07-20)", () => {
+  it("stays locked until the user keeps their version, then overwrites exactly once", async () => {
+    const save = vi.fn()
+      .mockRejectedValueOnce(new LiveStudioDraftClientError("draft_conflict"))
+      .mockResolvedValue(envelope("draft-1", 5));
+    const queue = new LiveStudioDraftSaveQueue({ liveId: "live-1", initialDraft: envelope("draft-1", 3), save, onTransition: vi.fn() });
+    const mine = { ...emptyLiveStudioDraft(), title: "我的版本" };
+
+    await expect(queue.flush(mine)).resolves.toBe(false);
+    await expect(queue.flush(mine)).resolves.toBe(false);
+    expect(save).toHaveBeenCalledOnce();
+
+    await expect(queue.keepMine(mine)).resolves.toBe(true);
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ revision: 3, overwrite: true, payload: mine }));
+
+    await expect(queue.flush({ ...mine, title: "之後" })).resolves.toBe(true);
+    expect(save.mock.calls.at(-1)?.[0]).not.toHaveProperty("overwrite");
+  });
+
+  it("does nothing when there is no conflict", async () => {
+    const save = vi.fn();
+    const queue = new LiveStudioDraftSaveQueue({ liveId: "", save, onTransition: vi.fn() });
+    await expect(queue.keepMine(emptyLiveStudioDraft())).resolves.toBe(false);
+    expect(save).not.toHaveBeenCalled();
+  });
+});

@@ -21,7 +21,7 @@ import {
   parseCustomCheckoutFields,
   safeParseCustomCheckoutFields,
 } from "@/lib/commerce-custom-checkout";
-import type { ProductActionError, ProductActionState, ProductFormDraft } from "@/lib/product-action-state";
+import type { ProductActionError, ProductActionState, ProductFieldErrors, ProductFormDraft } from "@/lib/product-action-state";
 import { isSupportedCheckoutCurrency, SUPPORTED_CHECKOUT_CURRENCY } from "@/lib/checkout-currency";
 
 function text(formData: FormData, key: string, fallback = "") {
@@ -105,8 +105,14 @@ function productFailure(
   previousState: ProductActionState,
   formData: FormData,
   error: ProductActionError,
+  fieldErrors?: ProductFieldErrors,
 ): ProductActionState {
-  return { version: previousState.version + 1, error, draft: draftFrom(formData) };
+  return {
+    version: previousState.version + 1,
+    error,
+    ...(fieldErrors && Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
+    draft: draftFrom(formData),
+  };
 }
 
 function parseProductCommercePolicy(formData: FormData) {
@@ -131,13 +137,41 @@ function parseCoursePolicy(formData: FormData, commerceDomain: "merchant" | "cou
     return { success: true as const, courseContentOwnerMembershipId: null, coursePromoterShareBps: null };
   }
   const share = z.coerce.number().int().min(1).max(9_999).safeParse(optionalText(formData, "coursePromoterShareBps"));
-  if (!courseContentOwnerMembershipId || !share.success) return { success: false as const };
+  if (!courseContentOwnerMembershipId || !share.success) {
+    const fieldErrors: ProductFieldErrors = {};
+    if (!courseContentOwnerMembershipId) fieldErrors.courseContentOwnerMembershipId = "請選擇課程內容所有人。";
+    if (!share.success) fieldErrors.coursePromoterShareBps = "分潤比例須為 1 到 9999 的整數（萬分比）。";
+    return { success: false as const, fieldErrors };
+  }
   return { success: true as const, courseContentOwnerMembershipId, coursePromoterShareBps: share.data };
 }
 
 /** An omitted or blank currency means TWD; any other value is refused, never coerced. */
 function productCurrency(formData: FormData) {
   return text(formData, "currency").toUpperCase() || SUPPORTED_CHECKOUT_CURRENCY;
+}
+
+function productFieldErrors(input: {
+  name: string; slug: string; isActive: boolean; priceCents: number | null;
+  compareAtRaw: string | null; compareAtCents: number | null; inventory: number | null;
+  description: string | null; imageUrlRaw: string | null; imageUrl: string | null;
+  checkoutUrlRaw: string | null; checkoutUrl: string | null;
+}): ProductFieldErrors {
+  const { name, slug, isActive, priceCents, compareAtRaw, compareAtCents, inventory, description } = input;
+  const fieldErrors: ProductFieldErrors = {};
+  if (!name) fieldErrors.name = "請填寫商品名稱。";
+  else if (name.length > MAX_PRODUCT_NAME_LENGTH) fieldErrors.name = `商品名稱最多 ${MAX_PRODUCT_NAME_LENGTH} 字。`;
+  if (!slug) fieldErrors.slug = "請填寫商品網址（可用英數字與連字號）。";
+  if (priceCents === null) fieldErrors.price = "請填寫售價（整數新台幣元，不可為負數）。";
+  else if (priceCents % 100 !== 0) fieldErrors.price = "售價須為整數新台幣元。";
+  else if (isActive && priceCents === 0) fieldErrors.price = "上架商品的售價必須大於 0。";
+  if (inventory === null) fieldErrors.inventory = "可售庫存須為 0 以上的整數。";
+  if (description && description.length > 10_000) fieldErrors.description = "商品描述最多 10,000 字。";
+  if (compareAtRaw !== null && (compareAtCents === null || compareAtCents === 0)) fieldErrors.compareAt = "原價須大於 0。";
+  else if (compareAtCents !== null && priceCents !== null && compareAtCents < priceCents) fieldErrors.compareAt = "原價不可低於售價。";
+  if (input.imageUrlRaw !== null && input.imageUrl === null) fieldErrors.imageUrl = "圖片網址格式不正確。";
+  if (input.checkoutUrlRaw !== null && input.checkoutUrl === null) fieldErrors.checkoutUrl = "外部結帳網址須為有效的 http(s) 網址。";
+  return fieldErrors;
 }
 
 function parseProductInput(formData: FormData) {
@@ -164,17 +198,23 @@ function parseProductInput(formData: FormData) {
   const checkoutUrl = checkoutUrlRaw ? parseSafeExternalHttpUrl(checkoutUrlRaw) : null;
 
   const description = optionalText(formData, "description");
-  if (!name || name.length > MAX_PRODUCT_NAME_LENGTH || !slug || priceCents === null || inventory === null) return null;
-  if (description && description.length > 10_000) return null;
-  if (isActive && priceCents === 0) return null;
-  if (compareAtRaw !== null && (compareAtCents === null || compareAtCents === 0)) return null;
-  if (compareAtCents !== null && priceCents !== null && compareAtCents < priceCents) return null;
-  if (!isSupportedCheckoutCurrency(currency)) return null;
-  // PayUni charges whole TWD units only; a fractional selling price can never be paid.
-  if (priceCents % 100 !== 0) return null;
-  if ((imageUrlRaw !== null && imageUrl === null) || (checkoutUrlRaw !== null && checkoutUrl === null)) return null;
+  const fieldErrors = productFieldErrors({
+    name, slug, isActive, priceCents, compareAtRaw, compareAtCents, inventory, description,
+    imageUrlRaw, imageUrl, checkoutUrlRaw, checkoutUrl,
+  });
+  if (Object.keys(fieldErrors).length > 0 || priceCents === null || inventory === null) return { fieldErrors };
+  if (!isSupportedCheckoutCurrency(currency)) return { fieldErrors };
 
   return { name, slug, isActive, priceCents, compareAtCents, inventory, currency, imageUrl, checkoutUrl, description };
+}
+
+function deliveryFieldErrors(error: ProductDeliveryValidationError): ProductFieldErrors {
+  const message = error.message;
+  if (/title/iu.test(message)) return { deliveryTitle: "請填寫買家看到的交付標題。" };
+  if (/instructions/iu.test(message)) return { deliveryInstructions: "服務商品上架前需要填寫服務安排說明。" };
+  if (/host confirmation/iu.test(message)) return { deliveryHostConfirmed: "請勾選確認這是商家授權的公開 HTTPS 交付網域。" };
+  if (/url/iu.test(message)) return { deliveryUrl: "交付入口須為公開的 HTTPS 網址，且不含帳密、query 或 fragment。" };
+  return { deliveryTitle: "交付設定不完整，請檢查標題、入口網址與說明。" };
 }
 
 function parseProductRequest(previousState: ProductActionState, formData: FormData) {
@@ -184,12 +224,17 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
   const commercePolicy = parseProductCommercePolicy(formData);
   if (!commercePolicy.success) return { success: false as const, state: productFailure(previousState, formData, commercePolicy.error) };
   const coursePolicy = parseCoursePolicy(formData, commercePolicy.commerceDomain);
-  if (!coursePolicy.success) return { success: false as const, state: productFailure(previousState, formData, "invalid_course_policy") };
+  if (!coursePolicy.success) {
+    return { success: false as const, state: productFailure(previousState, formData, "invalid_course_policy", coursePolicy.fieldErrors) };
+  }
   if (!isSupportedCheckoutCurrency(productCurrency(formData))) {
     return { success: false as const, state: productFailure(previousState, formData, "unsupported_currency") };
   }
-  const productInput = parseProductInput(formData);
-  if (!productInput) return { success: false as const, state: productFailure(previousState, formData, "invalid_product") };
+  const parsedInput = parseProductInput(formData);
+  if ("fieldErrors" in parsedInput) {
+    return { success: false as const, state: productFailure(previousState, formData, "invalid_product", parsedInput.fieldErrors) };
+  }
+  const productInput = parsedInput;
   let customCheckoutFields;
   try {
     customCheckoutFields = parseCustomCheckoutFieldsFromForm(formData);
@@ -211,7 +256,7 @@ function parseProductRequest(previousState: ProductActionState, formData: FormDa
     });
   } catch (error) {
     if (error instanceof ProductDeliveryValidationError) {
-      return { success: false as const, state: productFailure(previousState, formData, "invalid_delivery") };
+      return { success: false as const, state: productFailure(previousState, formData, "invalid_delivery", deliveryFieldErrors(error)) };
     }
     throw error;
   }
