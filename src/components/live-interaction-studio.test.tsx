@@ -9,7 +9,7 @@ vi.mock("@/app/actions/interaction-actions", () => ({
   verifyLuckyDrawWinnerClaimAction: vi.fn(),
 }));
 vi.mock("@/components/instructor-interaction-cards", () => ({ InstructorInteractionCards: () => null }));
-vi.mock("@/components/live-danmaku", () => ({ InstructorDanmakuSwitch: () => null }));
+vi.mock("@/components/live-danmaku", () => ({ InstructorDanmakuSwitch: () => <p data-testid="danmaku-switch">彈幕開關</p> }));
 
 import { LiveInteractionStudio } from "./live-interaction-studio";
 
@@ -35,6 +35,13 @@ describe("LiveInteractionStudio", () => {
 
   it("keeps every interaction control available inside the collapsed panel", () => {
     for (const text of ["幸運大抽獎", "即時投票", "限時快閃搶購", "空投限時紅包", "觀眾問答審核"]) expect(html).toContain(text);
+  });
+
+  it("renders the danmaku switch only when the server opened the danmaku module (F-001)", () => {
+    expect(html).not.toContain("danmaku-switch");
+    expect(renderToStaticMarkup(
+      <LiveInteractionStudio liveId="live-1" csrfToken="csrf" products={[]} initialDrawRuns={[]} initialPollRuns={[]} initialClaimRuns={[]} initialQuestions={[]} danmakuEnabled />,
+    )).toContain("danmaku-switch");
   });
 
   it("no longer uses the purple-to-red gradient or a prize brand example", () => {

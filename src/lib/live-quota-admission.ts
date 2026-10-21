@@ -7,6 +7,7 @@ import { reconcileLiveRuntimeState, resolveLiveRuntime } from "@/lib/live-runtim
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import { assertStreamQuotaAvailable } from "@/lib/stream-quota";
+import { isCardBindingRequiredForVendor } from "@/lib/feature-gates";
 import { readVendorStreamUsageSeconds } from "@/lib/stream-usage-counter";
 
 export const LIVE_VIEWER_SESSION_COOKIE = "celebratedeal_live_viewer";
@@ -173,7 +174,9 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     ...policy.customAllocations.map((allocation) => allocation.membershipId),
     ...policy.memberQuotas.map((quota) => quota.membershipId),
   ];
-  if (quotaMemberIds.length > 0 || policy.pageQuotas.length > 0) {
+  // While funnel_binding is closed no card can be bound, so quota admission
+  // does not demand one; every other quota limit below still applies (F-002).
+  if ((quotaMemberIds.length > 0 || policy.pageQuotas.length > 0) && await isCardBindingRequiredForVendor(tx, input.vendorId)) {
     try {
       await assertPaymentMethodReferenceForQuota(tx, {
         vendorId: input.vendorId,

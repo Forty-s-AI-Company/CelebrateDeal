@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
 import { requestLearnerContactVerification, LearnerContactEnrollmentInput } from "@/lib/learner-notification-verification";
 import { getLearnerNotificationCapabilities } from "@/lib/learner-notification-capabilities";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
@@ -21,6 +22,7 @@ export async function POST(request: Request, { params }: Context) {
  const {vendorSlug,courseId}=await params;
  if(!courseIdentifier.test(courseId))return NextResponse.json({error:"not_found"},{status:404,headers});
  const {session}=await requireStudentPortalSession(vendorSlug);
+ if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
  if(!getLearnerNotificationCapabilities(session.vendorId).availableChannels.includes(input.data.channel))
   return NextResponse.json({error:"channel_unavailable"},{status:503,headers});
  try{

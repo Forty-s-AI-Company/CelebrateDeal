@@ -8,7 +8,7 @@ const runtime = vi.hoisted(() => ({ vendorId: "", projectId: null as string | nu
 vi.mock("@/lib/auth", () => ({
   requireVendorManagerContext: async () => ({
     auth: { user: { id: "synthetic-user" }, member: { id: "synthetic-member", role: "owner" } },
-    vendor: { id: runtime.vendorId, name: "Synthetic tenant" },
+    vendor: { id: runtime.vendorId, name: "Synthetic tenant", betaFeatureGrants: ["consultation_booking"] },
   }),
 }));
 vi.mock("@/lib/sales-project-scope", async (importOriginal) => ({

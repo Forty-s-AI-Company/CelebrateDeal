@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { CardError } from "@/lib/interaction-card";
 import { ScriptedCommandSchema } from "@/lib/scripted-roles-contract";
 import { commandWarmup, instructorWarmup } from "@/lib/scripted-roles";
+import { featureGateResponse } from "@/lib/feature-gates";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 async function handle(request: Request, writing: boolean) {
@@ -13,6 +14,8 @@ async function handle(request: Request, writing: boolean) {
   try {
     const auth = await getCurrentAuth();
     if (!auth?.vendor || !auth.member || auth.member.status !== "active" || !["owner", "admin"].includes(auth.member.role)) return json({ error: "無權操作暖場腳本" }, 403);
+    const closed = featureGateResponse(auth.vendor, "danmaku");
+    if (closed) return closed;
     const params = new URL(request.url).searchParams;
     if (writing) {
       if (params.size) return json({ error: "不合法參數" }, 400);

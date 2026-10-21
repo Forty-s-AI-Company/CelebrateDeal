@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const m = vi.hoisted(() => ({ auth: vi.fn(), origin: vi.fn(), limit: vi.fn(), sameOrigin: vi.fn(), admission: vi.fn(), token: vi.fn(), hash: vi.fn(), readiness: vi.fn(), start: vi.fn(), stop: vi.fn(), live: vi.fn(), liveUpdate: vi.fn(), find: vi.fn(), expired: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), cleanup: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentAuth: m.auth }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ live: { findFirst: m.live, updateMany: m.liveUpdate }, liveMediaSession: { findFirst: m.find, findMany: m.expired, create: m.create, updateMany: m.update, deleteMany: m.remove } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) }, live: { findFirst: m.live, updateMany: m.liveUpdate }, liveMediaSession: { findFirst: m.find, findMany: m.expired, create: m.create, updateMany: m.update, deleteMany: m.remove } }) }));
 vi.mock("@/lib/api-security", async (original) => ({ ...await original<typeof import("@/lib/api-security")>(), requireSameOriginRequest: m.sameOrigin }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: m.limit }));
 vi.mock("@/lib/live-quota-admission", () => ({ hasActiveLiveViewerSession: m.admission, liveViewerTokenFromRequest: m.token, hashLiveViewerToken: m.hash }));
@@ -17,7 +17,7 @@ function request(body: unknown) { return new Request("https://app.example.test/a
 
 beforeEach(() => {
   vi.resetAllMocks();
-  m.auth.mockResolvedValue({ vendor: { id: "vendor-1" }, member: { id: "member-1", status: "active", role: "owner" } });
+  m.auth.mockResolvedValue({ vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { id: "member-1", status: "active", role: "owner" } });
   m.origin.mockReturnValue("https://media.example.test"); m.sameOrigin.mockReturnValue(null); m.limit.mockResolvedValue(null);
   m.token.mockReturnValue("viewer-token-A"); m.hash.mockImplementation((token: string) => `hash-${token}`); m.admission.mockResolvedValue(true);
   m.live.mockResolvedValue(live); m.readiness.mockReturnValue({ ready: true }); m.expired.mockResolvedValue([]);
@@ -28,13 +28,13 @@ beforeEach(() => {
 
 describe("live media authorization and session scope", () => {
   it.each(["owner", "admin"])("allows active %s to publish without exposing upstream paths", async role => {
-    m.auth.mockResolvedValue({ vendor: { id: "vendor-1" }, member: { id: "member-1", status: "active", role } });
+    m.auth.mockResolvedValue({ vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { id: "member-1", status: "active", role } });
     const result = await POST(request(offer));
     expect(result.status).toBe(200); expect(await result.json()).toEqual({ answer: "v=0\r\nanswer", sessionId: "session-1" });
     expect(m.start).toHaveBeenCalledWith("https://media.example.test", "vendor-1/live-1", "publish", offer.sdp);
     expect(m.create).toHaveBeenCalledWith({ data: expect.objectContaining({ vendorId: "vendor-1", principal: "instructor:member-1", direction: "publish" }) });
   });
-  it.each([null, { vendor: { id: "vendor-1" }, member: { status: "inactive", role: "owner" } }, { vendor: { id: "vendor-1" }, member: { status: "active", role: "viewer" } }])("denies non-managers and inactive members", async auth => {
+  it.each([null, { vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { status: "inactive", role: "owner" } }, { vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { status: "active", role: "viewer" } }])("denies non-managers and inactive members", async auth => {
     m.auth.mockResolvedValue(auth); expect((await POST(request(offer))).status).toBe(403); expect(m.start).not.toHaveBeenCalled();
   });
   it("denies a mismatched tenant before reading live data", async () => {

@@ -13,6 +13,10 @@ import { InstructorDanmakuSwitch } from "@/components/live-danmaku";
 
 const initialState = { status: "idle" as const, message: "" };
 
+function DanmakuSwitchSlot({ liveId, enabled }: { liveId: string; enabled: boolean }) {
+  return enabled ? <InstructorDanmakuSwitch liveId={liveId} /> : null;
+}
+
 export function LiveInteractionStudio({
   liveId,
   csrfToken,
@@ -22,6 +26,7 @@ export function LiveInteractionStudio({
   initialClaimRuns,
   initialQuestions,
   hasScheduledInteractions = false,
+  danmakuEnabled,
 }: {
   liveId: string;
   csrfToken: string;
@@ -30,6 +35,8 @@ export function LiveInteractionStudio({
   initialPollRuns: Array<{ id: string; title: string; responseCount: number; pollResults?: Array<{ id: string; label: string; votes: number; percentage: number }> }>;
   initialClaimRuns: Array<{ id: string; title: string }>;
   hasScheduledInteractions?: boolean;
+  /** Server-resolved `danmaku` module gate; the switch is not rendered while the module is closed. */
+  danmakuEnabled?: boolean;
   initialQuestions: Array<{ id: string; body: string; displayName: string | null; status: "pending" | "spotlight" | "answered" | "hidden"; createdAt: string }>;
 }) {
   // 有進行中的抽獎／投票、待領獎項或排程互動時預設展開，避免講師漏掉。
@@ -267,7 +274,7 @@ export function LiveInteractionStudio({
 
       {renderPrizeControls()}
 
-      <InstructorDanmakuSwitch key={liveId} liveId={liveId} />
+      <DanmakuSwitchSlot key={liveId} liveId={liveId} enabled={danmakuEnabled === true} />
       <InstructorInteractionCards liveId={liveId} />
       <section className="mt-6 border-t border-violet-100 pt-5" aria-labelledby="live-question-moderation-title">
         <h3 id="live-question-moderation-title" className="text-lg font-black text-slate-900">觀眾問答審核</h3>

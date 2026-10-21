@@ -16,6 +16,7 @@ export async function createLandingPageFixture(db: PrismaClient, runKey: string)
 
   const vendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],
       name: "TEST ONLY Landing Page 商家",
       slug: `${key}-vendor`,
       email: `${key}@landing-page.test`,

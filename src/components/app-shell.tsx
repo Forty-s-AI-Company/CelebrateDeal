@@ -9,7 +9,7 @@ import { AppShellAccountMenu } from "@/components/app-shell-account-menu";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { FeatureAccessBoundary } from "@/components/feature-access-boundary";
-import { hasVendorFeature, type VendorFeatureModule } from "@/lib/vendor-feature-toggles";
+import { hasVendorFeature, type GatedFeature } from "@/lib/vendor-feature-toggles";
 import { WorkspaceProjectSwitcher, type ProjectSwitcherItem } from "@/components/workspace-project-switcher";
 import { SystemStatusIndicator } from "@/components/system-status-indicator";
 import { OnboardingTaskPanel, type SidebarOnboardingTask } from "@/components/onboarding-task-panel";
@@ -63,12 +63,12 @@ const navGroups = [
   {
     label: "設定",
     items: [
-      { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true },
-      { href: "/billing/payment-methods", label: "平台服務付款方式", icon: CreditCard, financeOnly: true },
-      { href: "/billing/plans", label: "方案", icon: Tags, financeOnly: true },
-      { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true },
+      { href: "/billing/usage", label: "用量與扣點", icon: CreditCard, financeOnly: true, feature: "billing" },
+      { href: "/billing/payment-methods", label: "平台服務付款方式", icon: CreditCard, financeOnly: true, feature: "funnel_binding" },
+      { href: "/billing/plans", label: "方案", icon: Tags, financeOnly: true, feature: "billing" },
+      { href: "/billing/invoices", label: "帳單", icon: ReceiptText, financeOnly: true, feature: "billing" },
       { href: "/billing/electronic-invoices", label: "電子發票", icon: ReceiptText, financeOnly: true },
-      { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true },
+      { href: "/billing/settlements", label: "月結", icon: WalletCards, financeOnly: true, feature: "billing" },
       { href: "/billing/payouts", label: "批次出款", icon: Banknote, financeOnly: true, feature: "tax_remuneration" },
       { href: "/affiliates/commissions", label: "佣金結算", icon: Handshake, financeOnly: true, feature: "affiliate_program" },
       { href: "/billing/course-payouts", label: "課程分潤", icon: WalletCards, financeOnly: true, feature: "tax_remuneration" },
@@ -89,6 +89,7 @@ const navGroups = [
       { href: "/admin/billing/stream-reconciliation", label: "Stream 用量對帳", icon: GitCompareArrows, adminOnly: true },
       { href: "/admin/billing/webhooks", label: "系統通知對帳", icon: ReceiptText, adminOnly: true },
       { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
+      { href: "/admin/vendor-features", label: "商家封測模組", icon: Settings2, adminOnly: true },
       { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
       { href: "/mfa/setup", label: "MFA 安全設定", icon: Lock, adminOnly: true },
     ],
@@ -97,7 +98,7 @@ const navGroups = [
 
 const accountMenuGroupLabels = new Set(["設定"]);
 
-export function navigationForRole(memberRole: string | null, isPlatformAdmin = false, enabledModules?: readonly VendorFeatureModule[]) {
+export function navigationForRole(memberRole: string | null, isPlatformAdmin = false, enabledModules?: readonly GatedFeature[]) {
   if (isPlatformAdmin) {
     return navGroups
       .map((group) => ({
@@ -132,7 +133,7 @@ export function navigationForRole(memberRole: string | null, isPlatformAdmin = f
         if ("ownerOnly" in item && item.ownerOnly && memberRole !== "owner") return false;
         if ("financeOnly" in item && item.financeOnly && !isFinance) return false;
         if ("managerOnly" in item && item.managerOnly && !isManager) return false;
-        return !("feature" in item && item.feature) || !enabledModules || hasVendorFeature(enabledModules, item.feature as VendorFeatureModule);
+        return !("feature" in item && item.feature) || !enabledModules || hasVendorFeature(enabledModules, item.feature as GatedFeature);
       }),
     }))
     .filter((group) => group.items.length > 0);
@@ -156,7 +157,7 @@ export function AppShell({
   vendorName: string;
   memberRole: string | null;
   isPlatformAdmin?: boolean;
-  enabledModules?: readonly VendorFeatureModule[];
+  enabledModules?: readonly GatedFeature[];
   planLabel?: string;
   projects?: ProjectSwitcherItem[];
   selectedProjectId?: string | null;

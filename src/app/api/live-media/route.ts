@@ -7,6 +7,7 @@ import { hasActiveLiveViewerSession, hashLiveViewerToken, liveViewerTokenFromReq
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
 import { mediaOrigin, mediaPath, startMediaSession, stopMediaSession } from "@/lib/live-media-provider";
 import { cleanupMediaSessions } from "@/lib/live-media-cleanup";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 const id = z.string().min(1).max(128);
 const schema = z.discriminatedUnion("action", [
@@ -42,6 +43,8 @@ export async function POST(request: Request) {
     const identity = await authorize(request, input, db);
     if (identity instanceof Response) return identity;
     const { vendorId, principal } = identity;
+    // Closing an existing session stays possible after browser_live is closed (F-001).
+    if (input.action !== "stop" && !await isVendorFeatureEnabled(db, vendorId, "browser_live")) return featureDisabledResponse();
     const scope = { vendorId, liveId: input.liveId, principal, direction: input.direction };
     // Stop remains possible after an event ends or its source is replaced.
     if (input.action === "stop") {

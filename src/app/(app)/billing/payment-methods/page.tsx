@@ -11,6 +11,7 @@ import { formatDateTime } from "@/lib/format";
 import { hasPaymentMethodSetupCapability } from "@/lib/payment-method-setup";
 import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
 import { revokePaymentMethodReferenceAction } from "@/app/actions/payment-method-actions";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 type PaymentMethodsSearchParams = {
   error?: string | string[];
@@ -135,6 +136,7 @@ function statusLabel(status: string) {
 
 export default async function PaymentMethodsPage({ searchParams }: PaymentMethodsPageProps) {
   const { user, session, vendor } = await requireVendorFinance("/billing/payment-methods");
+  requireFeatureOrNotFound(vendor, "funnel_binding");
   const stepUpStatus = recentMfaStatus({ user, session });
   const [references, memberships] = await Promise.all([
     getDb().paymentMethodReference.findMany({

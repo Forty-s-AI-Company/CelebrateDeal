@@ -1,6 +1,7 @@
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { featureGateResponse } from "@/lib/feature-gates";
 
 function csvCell(value: string | number | null | undefined) {
   const raw = String(value ?? "");
@@ -10,6 +11,8 @@ function csvCell(value: string | number | null | undefined) {
 
 export async function GET() {
   const { user, member, vendor } = await requireVendorFinance("/billing/invoices");
+  const closed = featureGateResponse(vendor, "billing");
+  if (closed) return closed;
   const invoices = await getDb().invoice.findMany({
     where: { vendorId: vendor.id },
     orderBy: [{ monthKey: "desc" }, { createdAt: "desc" }],

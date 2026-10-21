@@ -2,11 +2,13 @@ import { createCourseCertificate } from "@/lib/course-certificate";
 import { getDb } from "@/lib/db";
 import { studentCertificateDetails } from "@/lib/student-course-learning";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 /** Returns SVG rather than a user-controlled HTML document, with no-store PII-safe caching. */
 export async function GET(_request: Request, { params }: { params: Promise<{ vendorSlug: string; courseId: string }> }) {
   const { vendorSlug, courseId } = await params;
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   const details = await studentCertificateDetails(getDb(), session, courseId);
   if (!details) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   const certificate = createCourseCertificate({ ...details, customerKeyHash: session.customerKeyHash, courseId });

@@ -21,7 +21,7 @@ vi.mock("@/lib/db", () => ({
 import BillingInvoicesPage from "../page";
 import { GET } from "./route";
 
-const currentVendor = { id: "vendor-current" };
+const currentVendor = { id: "vendor-current", betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] };
 const currentInvoice = {
   id: "invoice-current",
   vendorId: "vendor-current",

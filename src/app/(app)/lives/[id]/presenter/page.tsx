@@ -4,9 +4,11 @@ import { getDb } from "@/lib/db";
 import { getSalesProjectScope } from "@/lib/sales-project-scope";
 import { PresenterStudio } from "@/components/presenter-studio";
 import { PageHeader } from "@/components/ui";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 export default async function PresenterPage({ params }: { params: Promise<{ id: string }> }) {
   const { auth, vendor } = await requireVendorManagerContext();
+  requireFeatureOrNotFound(vendor, "browser_live");
   const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const { id } = await params;
   const live = await getDb().live.findFirst({ where: { id, vendorId: vendor.id, ...(scope.projectId ? { projectId: scope.projectId } : {}) }, select: { id: true, title: true } });

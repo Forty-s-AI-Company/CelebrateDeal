@@ -80,7 +80,7 @@ beforeEach(() => {
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.getCsrfToken.mockResolvedValue("csrf-test-token");
   mocks.requireVendorFinance.mockResolvedValue({
-    vendor: { id: "vendor-current" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current" },
     member: { id: "member-owner", role: "owner", status: "active" },
   });
 });
@@ -116,7 +116,7 @@ describe("/billing/plans route", () => {
   it("explains the acknowledged one-order retry while preserving the duplicate payment warning", async () => {
     enableLiveStagingPlans();
     vi.stubEnv("PAYUNI_MERCHANT_ID", PAYUNI_STAGING_RETRY_MERCHANT_ID);
-    mocks.requireVendorFinance.mockResolvedValue({ vendor: { id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { role: "owner" } });
+    mocks.requireVendorFinance.mockResolvedValue({ vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { role: "owner" } });
     mocks.paymentTransactionCount.mockResolvedValue(1);
     const description = `staging-payuni-plan-v1:${JSON.stringify({
       deploymentHost: "staging-test.vercel.app", merchantId: PAYUNI_STAGING_RETRY_MERCHANT_ID, vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID,
@@ -146,7 +146,7 @@ describe("/billing/plans route", () => {
       vendorId: "vendor-current", providerName: "payuni", paymentMode: "platform", status: "pending",
     } });
     mocks.paymentTransactionCount.mockClear();
-    mocks.requireVendorFinance.mockResolvedValue({ vendor: { id: "vendor-current" }, member: { role: "finance" } });
+    mocks.requireVendorFinance.mockResolvedValue({ vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current" }, member: { role: "finance" } });
     expect(renderToStaticMarkup(await BillingPlansPage({}))).not.toContain("尚有待確認的 PAYUNi 付款紀錄");
     expect(mocks.paymentTransactionCount).not.toHaveBeenCalled();
   });
@@ -273,7 +273,7 @@ describe("/billing/plans route", () => {
 
   it("allows non-owners to view prices but not change the subscription", async () => {
     mocks.requireVendorFinance.mockResolvedValue({
-      vendor: { id: "vendor-current" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current" },
       member: { id: "member-accountant", role: "accountant", status: "active" },
     });
 

@@ -7,9 +7,11 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { listTodayConsultations, safeTelHref, type MobileConsultationDatabase } from "@/lib/mobile-consultation-cockpit";
 import { getSalesProjectScope } from "@/lib/sales-project-scope";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 export default async function MobileConsultationsPage() {
   const { auth, vendor } = await requireVendorManagerContext();
+  requireFeatureOrNotFound(vendor, "consultation_booking");
   const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const bookings = await listTodayConsultations(
     getDb() as unknown as MobileConsultationDatabase,

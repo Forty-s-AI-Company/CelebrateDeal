@@ -13,7 +13,7 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
   const db = new PrismaClient();
   const suffix = randomUUID();
   const password = "SyntheticCourseManagerPassword!";
-  const vendor = await db.vendor.create({ data: { name: "合成課程學院", slug: `native-course-${suffix}`, email: `${suffix}@example.test`, passwordHash: hashPassword(password), tracking: { create: {} } } });
+  const vendor = await db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"], name: "合成課程學院", slug: `native-course-${suffix}`, email: `${suffix}@example.test`, passwordHash: hashPassword(password), tracking: { create: {} } } });
   const user = await db.user.create({ data: { email: `manager-${suffix}@example.test`, name: "合成管理員", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId: vendor.id, role: "admin", status: "active" } } } });
   const product = await db.product.create({ data: { vendorId: vendor.id, name: "實際瀏覽器課程", slug: randomUUID(), priceCents: 10000, commerceDomain: "course", fulfillmentType: "course", isActive: true } });
   const learnerContext = await browser.newContext();

@@ -75,7 +75,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireVendorFinance.mockResolvedValue({
-    vendor: { id: "vendor-current", name: "測試商家" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current", name: "測試商家" },
     member: { id: "member-finance", role: "finance" },
   });
   mocks.invoiceFindFirst.mockResolvedValue(invoice);

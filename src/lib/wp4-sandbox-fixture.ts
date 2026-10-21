@@ -52,6 +52,13 @@ function assertIdentity(condition: boolean) {
   if (!condition) throw new Wp4SandboxFixtureConflictError();
 }
 
+/**
+ * The Sandbox evidence flow exercises platform plan checkout and card binding,
+ * which are closed-beta modules (F-001 / F-002). The fixture vendor carries
+ * exactly these grants; it only exists behind the WP4 preview/Sandbox boundary.
+ */
+export const WP4_SANDBOX_FIXTURE_FEATURE_GRANTS = ["billing", "funnel_binding"] as const;
+
 async function ensureVendor(db: FixtureDb) {
   const existing = await db.vendor.findFirst({
     where: {
@@ -61,7 +68,7 @@ async function ensureVendor(db: FixtureDb) {
         { email: WP4_SANDBOX_FIXTURE.vendorEmail },
       ],
     },
-    select: { id: true, slug: true, email: true },
+    select: { id: true, slug: true, email: true, betaFeatureGrants: true },
   });
   if (existing) {
     assertIdentity(
@@ -69,6 +76,11 @@ async function ensureVendor(db: FixtureDb) {
       && existing.slug === WP4_SANDBOX_FIXTURE.vendorSlug
       && existing.email === WP4_SANDBOX_FIXTURE.vendorEmail,
     );
+    const grants = existing.betaFeatureGrants ?? [];
+    const missing = WP4_SANDBOX_FIXTURE_FEATURE_GRANTS.filter((grant) => !grants.includes(grant));
+    if (missing.length > 0) {
+      await db.vendor.update({ where: { id: WP4_SANDBOX_FIXTURE.vendorId }, data: { betaFeatureGrants: [...grants, ...missing] } });
+    }
     return false;
   }
   await db.vendor.create({
@@ -78,6 +90,7 @@ async function ensureVendor(db: FixtureDb) {
       slug: WP4_SANDBOX_FIXTURE.vendorSlug,
       email: WP4_SANDBOX_FIXTURE.vendorEmail,
       passwordHash: "wp4-synthetic-login-disabled",
+      betaFeatureGrants: [...WP4_SANDBOX_FIXTURE_FEATURE_GRANTS],
     },
   });
   return true;

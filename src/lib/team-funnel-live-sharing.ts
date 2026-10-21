@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
+import { isCardBindingRequiredForVendor } from "@/lib/feature-gates";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import {
   TeamFunnelAccessDeniedError,
@@ -284,6 +285,8 @@ async function assertSharePaymentMethod(
     ...policy.memberQuotas.map((quota) => quota.membershipId),
   ];
   if (memberIds.length === 0 && policy.pageQuotas.length === 0) return;
+  // While funnel_binding is closed no card can be bound (F-002).
+  if (!await isCardBindingRequiredForVendor(db, vendorId)) return;
 
   try {
     await assertPaymentMethodReferenceForQuota(db, {

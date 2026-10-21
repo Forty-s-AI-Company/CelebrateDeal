@@ -6,6 +6,7 @@ import { requireStudentPortalSession } from "@/lib/student-portal-auth";
 import { listLearnerNotificationPreferences, saveLearnerNotificationConsent } from "@/lib/learner-notification-preferences";
 import { getLearnerNotificationCapabilities } from "@/lib/learner-notification-capabilities";
 import { LearnerNotificationConsentInput } from "@/lib/learner-notification-contract";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
@@ -19,6 +20,7 @@ export async function GET(request: Request, { params }: Context) {
   const { vendorSlug, courseId } = await params;
   if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   const preferences = await listLearnerNotificationPreferences(getDb(), session, courseId);
   if (!preferences) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   return NextResponse.json({ preferences, csrfToken: await getCsrfToken(), capabilities: getLearnerNotificationCapabilities(session.vendorId) }, { headers });
@@ -33,6 +35,7 @@ export async function POST(request: Request, { params }: Context) {
   const { vendorSlug, courseId } = await params;
   if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   try {
     const result = await saveLearnerNotificationConsent(getDb(), session, courseId, input.data);
     const status = { saved: 200, not_found: 404, conflict: 409, verification_required: 409 }[result.status];

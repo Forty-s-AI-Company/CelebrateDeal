@@ -4,7 +4,7 @@ vi.mock("@/lib/api-security", () => ({ requireSameOriginRequest: mocks.boundary,
 vi.mock("@/lib/csrf", () => ({ verifyCsrfToken: mocks.csrf, getCsrfToken: mocks.token }));
 vi.mock("@/lib/student-portal-auth", () => ({ requireStudentPortalSession: mocks.session }));
 vi.mock("@/lib/learner-notification-preferences", () => ({ listLearnerNotificationPreferences: mocks.list, saveLearnerNotificationConsent: mocks.save }));
-vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
+vi.mock("@/lib/db", () => ({ getDb: () => Object.assign(mocks.db, { vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) } }) }));
 import { GET, POST } from "./route";
 const identity = { vendorId: "vendor-1", customerKeyHash: "a".repeat(43) };
 const context = { params: Promise.resolve({ vendorSlug: "teacher", courseId: "course-1" }) };

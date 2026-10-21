@@ -10,7 +10,7 @@ import ProtectedLayout from "./layout";
 function context(role: string | null) {
   return {
     auth: { user: { id: "user-1" }, member: role ? { role } : null },
-    vendor: { id: "vendor-1", name: "Synthetic workspace", email: "owner@example.test", enabledFeatureModules: [], logoUrl: null, supportEmail: null },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1", name: "Synthetic workspace", email: "owner@example.test", enabledFeatureModules: [], logoUrl: null, supportEmail: null },
   };
 }
 

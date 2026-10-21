@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFunnelFlow } from "@/lib/funnel-flow";
 import { createFunnelStepPages } from "@/lib/funnel-step-pages";
 
-const mocks = vi.hoisted(() => ({ productFindMany: vi.fn(), landingPageFindMany: vi.fn() }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.productFindMany }, landingPage: { findMany: mocks.landingPageFindMany } }) }));
+const mocks = vi.hoisted(() => ({ productFindMany: vi.fn(), landingPageFindMany: vi.fn(), betaFeatureGrants: { value: ["courses"] as string[] } }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ product: { findMany: mocks.productFindMany }, landingPage: { findMany: mocks.landingPageFindMany }, vendor: { findUnique: async () => ({ betaFeatureGrants: mocks.betaFeatureGrants.value }) } }) }));
 
 import { listFunnelCommerceProducts, publicCommerceViewForDocument, publicFunnelCommerceViews, resolvePublishedFunnelCheckout, validateFunnelCommerceBindings } from "./funnel-commerce-service";
 
@@ -28,6 +28,16 @@ beforeEach(() => {
 });
 
 describe("funnel commerce catalog boundary", () => {
+  it("courses 關閉時不列出課程商品（F-001）", async () => {
+    mocks.betaFeatureGrants.value = [];
+    mocks.productFindMany.mockResolvedValue([]);
+    await listFunnelCommerceProducts(scope);
+    expect(mocks.productFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      NOT: [{ commerceDomain: "course" }, { fulfillmentType: "course" }],
+    }) }));
+    mocks.betaFeatureGrants.value = ["courses"];
+  });
+
   it("只列出目前可結帳且已連結目前銷售專案的安全商品欄位", async () => {
     mocks.productFindMany.mockResolvedValue([product(), product({ id: "not-ready", inventory: 0 })]);
     await expect(listFunnelCommerceProducts(scope)).resolves.toEqual([{

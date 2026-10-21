@@ -5,6 +5,7 @@ import {
   createPlatformPlanCheckout,
   platformPlanCheckoutPath,
 } from "@/lib/platform-plan-checkout";
+import { FeatureDisabledError, featureDisabledResponse } from "@/lib/feature-gates";
 
 const REDIRECT_PATHS = [
   "/billing/plans",
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
     }
     return nativeRedirect(platformPlanCheckoutPath(result));
   } catch (error) {
+    if (error instanceof FeatureDisabledError) return featureDisabledResponse();
     const destination = redirectPathFromError(error, request);
     if (destination) return nativeRedirect(destination);
     return safeErrorResponse(500);

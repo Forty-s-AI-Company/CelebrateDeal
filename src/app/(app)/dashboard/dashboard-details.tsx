@@ -7,6 +7,7 @@ import {
 } from "@/lib/dashboard-read-model";
 import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
+import { isCardBindingRequiredForVendor } from "@/lib/feature-gates";
 import { REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } from "@/lib/message-template";
 import { countSellableLiveReadinessCandidates, sellableLiveReadinessQuery } from "@/lib/sellable-live";
 
@@ -95,7 +96,8 @@ export async function loadDashboardDetails({
     ]);
     const [roles, verifiedPaymentMethodCount, formCount, registrationEmailTemplateCount] = await Promise.all([
       measurement.measure("active-role.count", () => db.interactionRole.count({ where: { vendorId, isActive: true } })),
-      measurement.measure("verified-payment-method.count", () => db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendorId, now) })),
+      // While funnel_binding is closed no card can be bound, so the step counts as satisfied (F-002).
+      measurement.measure("verified-payment-method.count", async () => (await isCardBindingRequiredForVendor(db, vendorId)) ? db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendorId, now) }) : 1),
       measurement.measure("active-form.count", () => db.registrationForm.count({ where: { vendorId, isActive: true } })),
       measurement.measure("registration-template.count", () => db.messageTemplate.count({ where: { vendorId, ...REGISTRATION_CONFIRMATION_EMAIL_TEMPLATE_WHERE } })),
     ]);

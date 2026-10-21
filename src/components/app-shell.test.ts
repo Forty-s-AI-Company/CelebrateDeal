@@ -153,6 +153,7 @@ describe("AppShell role navigation", () => {
       "/admin/billing/stream-reconciliation",
       "/admin/billing/webhooks",
       "/admin/support-cases",
+      "/admin/vendor-features",
       "/admin/cloudflare/videos",
       "/mfa/setup",
     ]);
