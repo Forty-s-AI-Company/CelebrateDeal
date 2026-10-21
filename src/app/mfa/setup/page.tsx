@@ -111,7 +111,7 @@ export default async function MfaSetupPage({
 
             {auth.user.mfaFactor ? (
               <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
-                <div className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>MFA 已啟用，目前 session {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。</span></div>
+                <div className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>MFA 已啟用，目前登入狀態 {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。</span></div>
                 <br />
                 可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href={withMfaReturnPath("/mfa/verify", nextPath)} className="font-semibold underline">二次驗證頁</Link>。
               </div>
@@ -215,7 +215,7 @@ export default async function MfaSetupPage({
         {showPasswordResetSmoke ? <Card className="mt-6 rounded-2xl border-slate-200 bg-white/80 p-6 shadow-sm">
           <div className="flex items-center gap-2"><ChevronRight className="size-4 text-slate-500" aria-hidden="true" /><h2 className="text-base font-semibold text-slate-950">Password reset email smoke</h2></div>
           <p className="mt-1 text-sm text-slate-600">
-            僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
+            僅寄送到環境設定的測試收件人，驗證寄信、重設連結、連結有效期限與登入狀態結束流程。
           </p>
           <form action={sendPasswordResetSmokeAction} className="mt-4">
             <CsrfField />

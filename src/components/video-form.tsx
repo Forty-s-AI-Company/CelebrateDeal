@@ -20,7 +20,7 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
         <MediaUploadField
           kind="video"
           label={video ? "替換影片檔案" : "影片檔案"}
-          description="檔案會直接送往 Cloudflare Stream；應用程式不會接觸 provider token 或 stream key。上傳完成後仍要按下儲存，才會套用名稱與縮圖。"
+          description="檔案會直接送往 Cloudflare Stream；應用程式不會接觸影片服務的金鑰。上傳完成後仍要按下儲存，才會套用名稱與縮圖。"
           defaultResourceId={video?.id}
           resourceIdInputName="id"
           titleInputName="title"
@@ -39,7 +39,7 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
           <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3 text-sm text-slate-700">
             <p className="font-semibold">Cloudflare 播放來源</p>
             <p className="mt-1 text-xs text-slate-500">
-              播放網址與 provider mapping 由受保護的 Cloudflare 整合流程管理，商店表單不會覆寫。
+              播放網址與影片服務的對應設定由受保護的 Cloudflare 整合流程管理，商店表單不會覆寫。
             </p>
           </div>
         )}
@@ -59,7 +59,7 @@ export function VideoForm({ video, error }: { video?: VideoWithImageAsset; error
           <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3">
             <p className="text-sm font-semibold text-slate-700">Stream Key</p>
             <p className="mt-1 text-xs text-slate-500">
-              {video?.liveStreamKey ? `已安全保存，streamKeyRef: ${video.id}` : "尚未建立 Live Input"}
+              {video?.liveStreamKey ? `已安全保存（編號 ${video.id}）` : "尚未建立即時直播"}
             </p>
           </div>
         </div>

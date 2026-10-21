@@ -97,7 +97,7 @@ function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
     ? Math.round((data.verifiedRegistrationCount / data.viewCount) * 1000) / 10
     : 0;
   const kpis = [
-    { label: "近 7 天播放 session", value: data.viewCount, tone: "blue" },
+    { label: "近 7 天觀看人次", value: data.viewCount, tone: "blue" },
     { label: "近 7 天報名", value: data.registrationCount, tone: "green" },
     { label: "完成 Email 驗證", value: data.verifiedRegistrationCount, tone: "green" },
     { label: "商品點擊", value: data.productClicks, tone: "orange" },
@@ -129,7 +129,7 @@ function DashboardKpiContent({ data }: { data: DashboardKpiData }) {
         <Card>
           <div className="mb-5">
             <h2 id="dashboard-conversion-funnel-title" className="text-lg font-semibold text-slate-950">近 7 天轉換漏斗</h2>
-            <p className="mt-1 text-sm text-slate-500">觀看與點擊只計入已通過直播 admission 的不重複播放 session；報名只計完成 Email 驗證的正式名單。</p>
+            <p className="mt-1 text-sm text-slate-500">觀看與點擊只計入已成功進入直播間的不重複觀看人次；報名只計完成 Email 驗證的正式名單。</p>
           </div>
           <ol className="grid gap-4 md:grid-cols-4">
             {data.funnel.map((step) => (

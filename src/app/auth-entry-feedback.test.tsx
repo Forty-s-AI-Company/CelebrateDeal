@@ -38,7 +38,7 @@ describe("auth entry pending feedback", () => {
     expect(request).toContain("申請中…");
     expect(request).toContain("正在申請密碼重設信，請勿重複送出。");
     expect(confirmation).toContain("更新中…");
-    expect(confirmation).toContain("正在更新密碼並撤銷舊 session，請勿重複送出。");
+    expect(confirmation).toContain("正在更新密碼並結束舊的登入狀態，請勿重複送出。");
     expect(confirmation).toContain('autoComplete="new-password"');
     expect(confirmation).toContain('minLength="12"');
   });

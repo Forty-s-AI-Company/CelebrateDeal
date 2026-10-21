@@ -64,7 +64,7 @@ export function merchantOnboardingProgress(signals: MerchantOnboardingSignals) {
     interactionScriptReady: signals.publishedInteractionScriptCount > 0,
   });
   const salesRequirementCopy: Record<LivePublishRequirementCode, Omit<MerchantOnboardingRequirement, "done">> = {
-    media: { label: "準備可播放媒體", href: "/videos/new", actionLabel: "新增影片或 Live Input" },
+    media: { label: "準備可播放媒體", href: "/videos/new", actionLabel: "新增影片或即時直播" },
     products: { label: "建立可販售商品", href: "/products/new", actionLabel: "建立商品" },
     registration_form: { label: "準備有效報名表單", href: "/forms/new", actionLabel: "建立報名表單" },
     registration_email: { label: "啟用報名成功 Email", href: "/messages/templates/new", actionLabel: "建立 Email 模板" },

@@ -197,7 +197,7 @@ test("active accountant is denied the products index before product data is quer
     }
     for (const label of [
       "商品名稱",
-      "Slug",
+      "商品網址",
       "售價（分）",
       "原價（分）",
       "幣別",

@@ -94,7 +94,7 @@ export default async function MessageTemplatesPage({
     <>
       <PageHeader
         title="訊息模板"
-        description="管理報名成功、開播提醒與課後通知 Email；購買追蹤、SMS、LINE 在事件來源或 provider 接通前保持停用。"
+        description="管理報名成功、開播提醒與課後通知 Email；購買追蹤、SMS、LINE 在事件來源或串接服務接通前保持停用。"
         action={(
           <div className="flex flex-wrap gap-2">
             <ButtonLink href="/messages/deliveries" tone="secondary">查看寄送紀錄</ButtonLink>
@@ -149,7 +149,7 @@ export default async function MessageTemplatesPage({
       {templates.length === 0 ? (
         <EmptyState
           title={hasFilters ? "找不到符合條件的訊息模板" : "還沒有訊息模板"}
-          description={hasFilters ? "請調整搜尋文字或篩選條件後再試。" : "先建立報名成功、開播提醒或課後通知 Email；其餘渠道會在事件來源或 provider 完成後才開放。"}
+          description={hasFilters ? "請調整搜尋文字或篩選條件後再試。" : "先建立報名成功、開播提醒或課後通知 Email；其餘渠道會在事件來源或串接服務完成後才開放。"}
           action={hasFilters ? <Link href="/messages/templates" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-slate-700">清除篩選</Link> : <ButtonLink href="/messages/templates/new">新增模板</ButtonLink>}
         />
       ) : (

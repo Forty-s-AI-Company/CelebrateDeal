@@ -68,14 +68,14 @@ export default async function LineSettingsPage() {
       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">推播紀錄</h2>
-          <p className="mt-1 text-sm text-muted-foreground">僅顯示此商家的最近 20 筆推播；收件者已遮罩，絕不解密或顯示 LINE userId。</p>
+          <p className="mt-1 text-sm text-slate-600">僅顯示此商家的最近 20 筆推播；收件者已遮罩，絕不解密或顯示 LINE userId。</p>
         </div>
         {deliveries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">目前尚無推播紀錄。</p>
+          <p className="text-sm text-slate-600">目前尚無推播紀錄。</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="border-b border-border text-xs text-muted-foreground">
+              <thead className="border-b border-border text-xs text-slate-600">
                 <tr>
                   <th className="px-2 py-2 font-medium">時間</th>
                   <th className="px-2 py-2 font-medium">觸發類型</th>

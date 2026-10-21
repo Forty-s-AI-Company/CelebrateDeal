@@ -11,8 +11,8 @@ import { requireVendorOwner } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 const errorMessages: Record<string, string> = {
-  team_invalid: "請確認團隊名稱與 slug，且團隊必須屬於目前商家。",
-  team_conflict: "團隊 slug 已存在，請換一個名稱。",
+  team_invalid: "請確認團隊名稱與網址，且團隊必須屬於目前商家。",
+  team_conflict: "團隊網址已存在，請換一個名稱。",
   member_invalid: "請選擇目前商家中的 active 成員。",
   member_exists: "這位成員已在團隊中。",
   member_conflict: "成員加入與其他操作衝突，請重新整理後再試。",
@@ -74,11 +74,11 @@ export default async function TeamSettingsPage({
 
       <Card className="mb-5">
         <h2 className="mb-1 text-lg font-semibold text-slate-950">建立團隊</h2>
-        <p className="mb-4 text-sm text-slate-600">建立後 owner 會自動加入，slug 只用於內部穩定識別。</p>
+        <p className="mb-4 text-sm text-slate-600">建立後 擁有者會自動加入，網址只用於內部識別。</p>
         <form action={createSalesTeamAction} className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <CsrfField />
           <Field label="團隊名稱" name="name" placeholder="例如：北區夥伴團隊" required maxLength={80} />
-          <Field label="Slug（可留白自動產生）" name="slug" placeholder="north-partners" maxLength={80} />
+          <Field label="網址（可留白自動產生）" name="slug" placeholder="north-partners" maxLength={80} />
           <SubmitButton>建立團隊</SubmitButton>
         </form>
       </Card>
@@ -91,7 +91,7 @@ export default async function TeamSettingsPage({
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">{team.name}</h2>
-                <p className="mt-1 text-xs text-slate-500">slug：{team.slug} · {team.memberships.length} 位 active 成員</p>
+                <p className="mt-1 text-xs text-slate-500">網址：{team.slug} · {team.memberships.length} 位 active 成員</p>
               </div>
               <Badge tone="green">owner 管理</Badge>
             </div>

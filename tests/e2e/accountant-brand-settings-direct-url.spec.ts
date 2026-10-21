@@ -39,7 +39,7 @@ test("active accountant is denied same-vendor brand settings through direct URL 
     expect(finalResponse?.status()).toBe(200);
     await expect(page).toHaveURL("/dashboard?error=insufficient_role");
     // Dashboard 合法顯示目前商家名稱；只把品牌設定頁專屬值當成資料洩漏 canary。
-    for (const value of canaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0); for (const label of ["品牌設定", "品牌名稱", "品牌 Slug", "Logo URL", "客服 Email"]) await expect(page.getByText(label, { exact: true })).toHaveCount(0);
+    for (const value of canaries) await expect(page.getByText(value, { exact: true })).toHaveCount(0); for (const label of ["品牌設定", "品牌名稱", "品牌網址", "Logo URL", "客服 Email"]) await expect(page.getByText(label, { exact: true })).toHaveCount(0);
     expect(posts).toEqual([]); expect(external).toEqual([]); await expect.poll(() => db.vendor.findUniqueOrThrow({ where: { id: vendor.id } })).toEqual(before); await expect.poll(() => db.vendor.count()).toBe(vendorCountBefore);
   } finally { await db.vendor.deleteMany({ where: { id: vendor.id } }); await db.user.deleteMany({ where: { id: user.id } }); await db.$disconnect(); }
 });

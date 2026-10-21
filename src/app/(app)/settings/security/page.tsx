@@ -68,8 +68,8 @@ const updatedMessages: Record<string, string> = {
   member_invitation_revoked: "邀請已撤銷，原連結不能再使用。",
   member_role_downgraded: "成員角色已調降。",
   member_invitation_resent: "已重新寄出設定密碼邀請信。",
-  member_deactivated: "商家成員已停用，相關 session 已撤銷。",
-  sessions_revoked: "其他裝置 session 已撤銷。",
+  member_deactivated: "商家成員已停用，相關登入狀態已結束。",
+  sessions_revoked: "其他裝置的登入狀態已結束。",
   mfa_started: "請用驗證器 App 掃描或手動輸入密鑰，然後輸入 6 位數驗證碼完成啟用。",
   mfa_enabled: "MFA 已啟用，請妥善保存 recovery codes。",
   mfa_exists: "這個帳號已經啟用 MFA。",
@@ -126,7 +126,7 @@ export default async function SecuritySettingsPage({
 
   return (
     <>
-      <PageHeader title="安全性" description={isOwner ? "管理登入密碼、session、商家成員與最小權限控管。" : "管理自己的登入密碼、session 與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">前往團隊管理</ButtonLink> : undefined} />
+      <PageHeader title="安全性" description={isOwner ? "管理登入密碼、登入狀態、商家成員與最小權限控管。" : "管理自己的登入密碼、登入狀態與多因子驗證。"} action={isOwner ? <ButtonLink href="/settings/team" tone="secondary">前往團隊管理</ButtonLink> : undefined} />
       {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
       {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "操作失敗，請確認權限與輸入內容。"}</p> : null}
       <div className="grid gap-5 lg:grid-cols-2">
@@ -143,7 +143,7 @@ export default async function SecuritySettingsPage({
         </Card>
         <Card>
           <h2 className="mb-2 text-lg font-semibold text-slate-950">登出此裝置</h2>
-          <p className="mb-4 text-sm text-slate-500">目前使用資料庫 session 搭配 httpOnly cookie；登出會撤銷目前 session 並清除瀏覽器 cookie。</p>
+          <p className="mb-4 text-sm text-slate-500">登入狀態儲存在伺服器並以安全 Cookie 識別；登出會結束目前登入並清除瀏覽器 Cookie。</p>
           <form action={logoutAction}>
             <CsrfField />
             <DangerButton>登出</DangerButton>
@@ -167,7 +167,7 @@ export default async function SecuritySettingsPage({
               <p className="mt-1 text-sm text-emerald-800">
                 上次使用：{auth.user.mfaFactor.lastUsedAt ? auth.user.mfaFactor.lastUsedAt.toLocaleString("zh-TW") : "尚未記錄"}
               </p>
-              <p className="mt-1 text-sm text-emerald-800">目前 session：{auth.isMfaVerified ? "已完成 MFA 驗證" : "尚未完成 MFA 驗證"}</p>
+              <p className="mt-1 text-sm text-emerald-800">目前登入狀態：{auth.isMfaVerified ? "已完成 MFA 驗證" : "尚未完成 MFA 驗證"}</p>
               <p className="mt-1 text-sm text-emerald-800">可用 recovery codes：{activeRecoveryCodeCount}</p>
             </div>
           ) : pendingMfa ? (
@@ -252,8 +252,8 @@ export default async function SecuritySettingsPage({
         <Card>
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-slate-950">目前 session</h2>
-              <p className="mt-1 text-sm text-slate-500">可撤銷其他裝置，或一次撤銷所有 session 重新登入。</p>
+              <h2 className="text-lg font-semibold text-slate-950">目前登入狀態</h2>
+              <p className="mt-1 text-sm text-slate-500">可撤銷其他裝置，或一次結束所有登入狀態並重新登入。</p>
             </div>
             <Badge tone="blue">{sessions.filter((session) => !session.revokedAt).length} active</Badge>
           </div>

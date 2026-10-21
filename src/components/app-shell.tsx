@@ -87,7 +87,7 @@ const navGroups = [
     items: [
       { href: "/admin/billing/dashboard", label: "平台財務管理", icon: Shield, adminOnly: true },
       { href: "/admin/billing/stream-reconciliation", label: "Stream 用量對帳", icon: GitCompareArrows, adminOnly: true },
-      { href: "/admin/billing/webhooks", label: "Webhook 對帳", icon: ReceiptText, adminOnly: true },
+      { href: "/admin/billing/webhooks", label: "系統通知對帳", icon: ReceiptText, adminOnly: true },
       { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
       { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
       { href: "/mfa/setup", label: "MFA 安全設定", icon: Lock, adminOnly: true },
@@ -268,7 +268,7 @@ export function AppShell({
                 <CsrfField />
                 <FormSubmitButton
                   pendingChildren="登出中…"
-                  pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
+                  pendingMessage="正在結束目前登入並登出，請勿重複送出。"
                   className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-700"
                 >
                   <LogOut className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />
@@ -290,7 +290,7 @@ export function AppShell({
             <CsrfField />
             <FormSubmitButton
               pendingChildren="登出中…"
-              pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
+              pendingMessage="正在結束目前登入並登出，請勿重複送出。"
               className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600"
             >
               <Lock className="mr-1 inline size-3.5" aria-hidden="true" />

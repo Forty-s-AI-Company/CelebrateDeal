@@ -260,12 +260,12 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
     <>
       <PageHeader
         title={`${live.title} 分析`}
-        description="觀看與點擊只計入已通過直播 admission 的不重複播放 session；真實留言與排程腳本分開統計。"
+        description="觀看與點擊只計入已成功進入直播間的不重複觀看人次；真實留言與排程腳本分開統計。"
         action={<ButtonLink href={`/lives/${live.id}/analytics/messages/export`} tone="secondary">匯出留言 CSV</ButtonLink>}
       />
       <div className="mb-4"><StepUpMfaNotice status={recentMfaStatus(auth)} nextPath={`/lives/${encodeURIComponent(live.id)}/analytics`} operation="匯出含觀眾留言的 CSV" /></div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Card><p className="text-sm text-slate-500">播放 session</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
+        <Card><p className="text-sm text-slate-500">觀看人次</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
         <Card><p className="text-sm text-slate-500">報名</p><p className="mt-2 text-3xl font-semibold">{registrationCount}</p></Card>
         <Card><p className="text-sm text-slate-500">Email 已驗證</p><p className="mt-2 text-3xl font-semibold">{verifiedSubmissionCount}</p></Card>
         <Card><p className="text-sm text-slate-500">商品點擊</p><p className="mt-2 text-3xl font-semibold">{productClicks}</p></Card>
@@ -355,7 +355,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
         <Card>
           <div className="mb-5">
             <h2 id="conversion-funnel-title" className="text-lg font-semibold text-slate-950">轉換漏斗</h2>
-            <p className="mt-1 text-sm text-slate-500">各階段相對於已 admission 播放 session 的比例；名單只計完成 Email 驗證的報名。</p>
+            <p className="mt-1 text-sm text-slate-500">各階段相對於已成功進入直播間的觀看人次的比例；名單只計完成 Email 驗證的報名。</p>
           </div>
           <ol className="grid gap-4 md:grid-cols-4">
             {funnel.map((step) => (

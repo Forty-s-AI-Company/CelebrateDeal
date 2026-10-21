@@ -61,7 +61,7 @@ export default async function BuyerSupportRequestsPage({ searchParams }: {
         {grants.length === 0 ? (
           <Card className="mt-6">
             <h2 className="font-semibold text-slate-950">找不到可用的訂單客服憑證</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">請使用完成結帳時的同一個瀏覽器與裝置開啟此頁。基於安全理由，我們不會在這裡要求完整卡號、密碼、Token 或 Cookie。</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">請使用完成結帳時的同一個瀏覽器與裝置開啟此頁。基於安全理由，我們不會在這裡要求完整卡號、密碼、登入憑證或 Cookie。</p>
             <Link href="/support" className="mt-4 inline-flex min-h-11 items-center font-semibold text-primary hover:underline">查看一般客服與安全受理方式 →</Link>
           </Card>
         ) : (
@@ -100,7 +100,7 @@ export default async function BuyerSupportRequestsPage({ searchParams }: {
                       <option value="access">內容／服務存取</option>
                       <option value="general">其他問題</option>
                     </SelectField>
-                    <TextArea label="問題說明" name="summary" required maxLength={4_000} rows={5} placeholder="請描述發生時間、畫面狀態與希望獲得的協助。請勿填完整卡號、CVV、密碼或 Token。" />
+                    <TextArea label="問題說明" name="summary" required maxLength={4_000} rows={5} placeholder="請描述發生時間、畫面狀態與希望獲得的協助。請勿填完整卡號、CVV、密碼或登入憑證。" />
                     <SubmitButton pendingChildren="建立中…" pendingMessage="正在安全建立客服案件，請勿重複送出。">建立客服案件</SubmitButton>
                   </form>
                 </Card>

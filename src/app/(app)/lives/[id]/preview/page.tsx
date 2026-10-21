@@ -39,7 +39,7 @@ export default async function LivePreviewPage({ params }: { params: Promise<{ id
             <ul className="mt-2 space-y-2 text-sm text-slate-600">
               <li>影片：{live.video?.title ?? "未綁定"}</li>
               <li>串流模式：{statusLabel("streamMode", live.streamMode)}</li>
-              <li>Cloudflare Live Input：{live.cloudflareLiveInputUid ?? live.video?.cloudflareLiveInputUid ?? "未設定"}</li>
+              <li>Cloudflare 即時直播：{live.cloudflareLiveInputUid ?? live.video?.cloudflareLiveInputUid ?? "未設定"}</li>
               <li>表單：{live.form?.name ?? "未綁定"}</li>
               <li>報名成功 Email：{live.messageTemplate?.name ?? "未綁定"}</li>
               <li>開播提醒 Email：{live.liveReminderTemplate?.name ?? "未綁定"}</li>

@@ -41,7 +41,7 @@ export function WorkspaceProjectSwitcher({
 
   return (
     <div className="relative mb-3 rounded-xl border border-slate-200 bg-slate-50/80 p-2" data-workspace-switcher>
-      <p className="flex items-center gap-2 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600"><Building2 size={13} aria-hidden="true" />商家 Workspace</p>
+      <p className="flex items-center gap-2 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600"><Building2 size={13} aria-hidden="true" />商家工作區</p>
       <p className="truncate px-2 pb-2 pt-1 text-sm font-semibold text-slate-800">{workspaceName}</p>
       <button type="button" disabled={pending} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:ring-4 focus-visible:ring-blue-100">
         <FolderKanban size={16} className="shrink-0 text-blue-600" aria-hidden="true" />

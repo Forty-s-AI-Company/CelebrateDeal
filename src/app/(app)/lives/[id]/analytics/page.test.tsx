@@ -137,7 +137,7 @@ describe("/lives/[id]/analytics route", () => {
     });
     expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(1, { where: { liveId: live.id, form: { vendorId: "vendor-current" } } });
     expect(mocks.formSubmissionCount).toHaveBeenNthCalledWith(2, { where: { liveId: live.id, verificationStatus: "VERIFIED", form: { vendorId: "vendor-current" } } });
-    expect(html).toMatch(/播放 session<\/p><p[^>]*>40<\/p>/);
+    expect(html).toMatch(/觀看人次<\/p><p[^>]*>40<\/p>/);
     expect(html).toMatch(/商品點擊<\/p><p[^>]*>8<\/p>/);
     expect(html).toMatch(/CTA 點擊<\/p><p[^>]*>6<\/p>/);
     expect(html).toMatch(/播放進度<\/p><p[^>]*>5<\/p>/);

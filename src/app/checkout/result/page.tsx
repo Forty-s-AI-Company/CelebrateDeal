@@ -110,7 +110,7 @@ export default async function PaymentResultPage({ searchParams }: {
           <Card className="mt-6">
             <h2 className="font-semibold text-slate-950">目前瀏覽器找不到可顯示的訂單</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              請使用開始結帳時的同一個瀏覽器與裝置重新開啟此頁。基於安全理由，這裡不會要求卡號、CVV、密碼、Token 或 Cookie。
+              請使用開始結帳時的同一個瀏覽器與裝置重新開啟此頁。基於安全理由，這裡不會要求卡號、CVV、密碼、登入憑證或 Cookie。
             </p>
             <Link href="/support" className="mt-4 inline-flex min-h-11 items-center font-semibold text-slate-950 underline underline-offset-2 hover:text-blue-800">查看一般客服與安全受理方式 →</Link>
           </Card>
