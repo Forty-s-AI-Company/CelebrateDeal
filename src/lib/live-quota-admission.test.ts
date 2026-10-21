@@ -12,6 +12,7 @@ import {
 const tx = {
   live: { findFirst: vi.fn(), updateMany: vi.fn() },
   paymentMethodReference: { findFirst: vi.fn(), findMany: vi.fn() },
+  vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) },
   vendorUsageLimit: { findUnique: vi.fn() },
   streamUsageLedgerEntry: { aggregate: vi.fn() },
   streamUsageMonthlyCounter: { findUnique: vi.fn() },

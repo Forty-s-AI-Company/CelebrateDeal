@@ -7,6 +7,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({
   interactionScript: { count: mocks.count }, interactionRole: { count: mocks.count },
   paymentMethodReference: { count: mocks.payment }, registrationForm: { count: mocks.count },
   messageTemplate: { count: mocks.count },
+  vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) },
 }) }));
 vi.mock("@/lib/dashboard-read-model", () => ({
   // 這個測試只驗證付款查詢契約；計時與其他統計不在本次範圍。

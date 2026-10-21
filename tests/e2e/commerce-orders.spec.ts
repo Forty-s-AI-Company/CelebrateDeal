@@ -400,6 +400,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
     const [vendor, foreignVendor] = await Promise.all([
       db.vendor.create({
         data: {
+          betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
           name: `G7-04 商家 ${runId}`,
           slug: `g7-04-owner-${runId}`,
           email: `g7-04-owner-${runId}@celebratedeal.local`,
@@ -409,6 +410,7 @@ test.describe.serial("G7-04 商家訂單 UI", () => {
       }),
       db.vendor.create({
         data: {
+          betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
           name: `G7-04 跨租戶商家 ${runId}`,
           slug: `g7-04-foreign-${runId}`,
           email: `g7-04-foreign-${runId}@celebratedeal.local`,

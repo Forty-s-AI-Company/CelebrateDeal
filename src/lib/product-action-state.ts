@@ -5,6 +5,7 @@ export type ProductActionError =
   | "unsupported_currency"
   | "invalid_image_asset"
   | "invalid_course_policy"
+  | "course_feature_disabled"
   | "invalid_course_owner"
   | "invalid_fulfillment"
   | "invalid_delivery"

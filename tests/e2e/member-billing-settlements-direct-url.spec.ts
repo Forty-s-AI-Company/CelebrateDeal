@@ -18,6 +18,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
 
   const vendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
       name: `WP81 Vendor ${suffix}`,
       slug: tag,
       email: `${tag}@celebratedeal.test`,

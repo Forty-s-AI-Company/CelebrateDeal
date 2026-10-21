@@ -4,6 +4,7 @@ import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
 import { LearnerConsultationReminderInput, confirmLearnerConsultationReminder, listLearnerConsultationReminders } from "@/lib/learner-consultation-reminders";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
@@ -18,6 +19,7 @@ export async function GET(request: Request, { params }: Context) {
   const { vendorSlug, courseId } = await params;
   if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   try {
     const result = await listLearnerConsultationReminders(getDb(), session, courseId, after);
     if (!result) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
@@ -34,6 +36,7 @@ export async function POST(request: Request, { params }: Context) {
   const { vendorSlug, courseId } = await params;
   if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   try {
     const result = await confirmLearnerConsultationReminder(getDb(), session, courseId, input.data);
     const status = { scheduled: 200, not_found: 404, verification_required: 409 }[result.status];

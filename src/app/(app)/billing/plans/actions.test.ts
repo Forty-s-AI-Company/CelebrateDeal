@@ -117,7 +117,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireVendorOwnerFinance.mockResolvedValue({
-    vendor: { id: "vendor-current" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current" },
     member: { id: "member-owner", role: "owner" },
     ...recentlyVerifiedOwner(),
   });
@@ -179,7 +179,7 @@ function enableAcknowledgedRetry(cents = 100) {
   enableStagingLivePlanTest();
   vi.stubEnv("PAYUNI_MERCHANT_ID", PAYUNI_STAGING_RETRY_MERCHANT_ID);
   mocks.requireVendorOwnerFinance.mockResolvedValue({
-    vendor: { id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { id: "member-owner", role: "owner" }, ...recentlyVerifiedOwner(),
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { id: "member-owner", role: "owner" }, ...recentlyVerifiedOwner(),
   });
   const permitData = {
     deploymentHost: "staging-test.vercel.app", merchantId: PAYUNI_STAGING_RETRY_MERCHANT_ID,
@@ -341,7 +341,7 @@ function enableStagingLivePlanTest() {
 describe("selectBillingPlanAction", () => {
   it("sends an owner without an enrolled factor to MFA setup before reading plans (F-027)", async () => {
     mocks.requireVendorOwnerFinance.mockResolvedValue({
-      vendor: { id: "vendor-current" }, member: { id: "member-owner", role: "owner" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current" }, member: { id: "member-owner", role: "owner" },
       user: { id: "user-owner", mfaFactor: null }, session: { mfaVerifiedAt: null },
     });
 
@@ -354,7 +354,7 @@ describe("selectBillingPlanAction", () => {
 
   it("requires re-verification when the last MFA check is older than 15 minutes (F-027)", async () => {
     mocks.requireVendorOwnerFinance.mockResolvedValue({
-      vendor: { id: "vendor-current" }, member: { id: "member-owner", role: "owner" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current" }, member: { id: "member-owner", role: "owner" },
       ...recentlyVerifiedOwner(new Date(Date.now() - 16 * 60_000)),
     });
 

@@ -64,8 +64,8 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   process.env.CSRF_SECRET = "synthetic-notification-database-encryption-secret-32-bytes";
   try {
     const suffix = randomUUID();
-    const vendor = await db.vendor.create({ data: { name: "Synthetic notification owner", slug: `notification-${suffix}`, email: `notification-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
-    const foreign = await db.vendor.create({ data: { name: "Synthetic foreign owner", slug: `notification-foreign-${suffix}`, email: `notification-foreign-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
+    const vendor = await db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], name: "Synthetic notification owner", slug: `notification-${suffix}`, email: `notification-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
+    const foreign = await db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], name: "Synthetic foreign owner", slug: `notification-foreign-${suffix}`, email: `notification-foreign-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
     const product = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic course", slug: `notification-product-${suffix}`, priceCents: 1000, commerceDomain: "course", fulfillmentType: "course" } });
     const foreignProduct = await db.product.create({ data: { vendorId: foreign.id, name: "Foreign course", slug: `notification-foreign-product-${suffix}`, priceCents: 1000, commerceDomain: "course", fulfillmentType: "course" } });
     const identity = { vendorId: vendor.id, productId: product.id, customerKeyHash: "a".repeat(43) };

@@ -91,7 +91,7 @@ for (const fulfillmentType of ["digital", "physical", "service"] as const) {
 test(`${fulfillmentType} purchaser discovers notifications before enrollment and can withdraw after refund`, async ({ page, baseURL }) => {
  test.setTimeout(120000);
  const db = new PrismaClient(), suffix = randomUUID();
- const vendor = await db.vendor.create({ data: { name: "Synthetic digital notifications", slug: `digital-notify-${suffix}`, email: `owner-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
+ const vendor = await db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], name: "Synthetic digital notifications", slug: `digital-notify-${suffix}`, email: `owner-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
  try {
   const product = await db.product.create({ data: { vendorId: vendor.id, name: "數位商品通知", slug: randomUUID(), priceCents: 1000, commerceDomain: "merchant", fulfillmentType } });
   const email = `digital-${suffix}@invalid.example`, customerKeyHash = automationCustomerKeyHash(vendor.id, email), orderId = randomUUID();
@@ -140,8 +140,8 @@ test(`${fulfillmentType} purchaser discovers notifications before enrollment and
 test("purchasing learner withdraws real notification consent and reloads; foreign course and CSRF are refused",async({page,baseURL})=>{
  test.setTimeout(120000);
  const db=new PrismaClient(),suffix=randomUUID();
- const vendor=await db.vendor.create({data:{name:"Synthetic notifications academy",slug:`notification-ui-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
- const foreign=await db.vendor.create({data:{name:"Synthetic foreign academy",slug:`notification-foreign-${suffix}`,email:`foreign-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
+ const vendor=await db.vendor.create({data:{ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],name:"Synthetic notifications academy",slug:`notification-ui-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
+ const foreign=await db.vendor.create({data:{ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],name:"Synthetic foreign academy",slug:`notification-foreign-${suffix}`,email:`foreign-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
  try{
   const product=await db.product.create({data:{vendorId:vendor.id,name:"通知設定瀏覽器課程",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course"}});
   const lesson=await db.courseLesson.create({data:{vendorId:vendor.id,productId:product.id,title:"保留講師原文",chapterTitle:"原文章節",position:1,durationSeconds:100,publishedAt:new Date()}});
@@ -252,7 +252,7 @@ test("real manager starts course-linked live, reloads and ends it without republ
  // Multiple cold owner navigations share a bounded journey budget; assertion limits stay unchanged.
  test.setTimeout(120000);
  const db=new PrismaClient(),suffix=randomUUID(),password="SyntheticLiveNotificationManager!";
- const vendor=await db.vendor.create({data:{name:"Synthetic live notifications",slug:`notify-live-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:hashPassword(password),tracking:{create:{}}}});
+ const vendor=await db.vendor.create({data:{ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],name:"Synthetic live notifications",slug:`notify-live-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:hashPassword(password),tracking:{create:{}}}});
  let userId:string|undefined;
  try{
   const user=await db.user.create({data:{email:`manager-${suffix}@invalid.example`,name:"Synthetic manager",passwordHash:hashPassword(password),status:"active",memberships:{create:{vendorId:vendor.id,role:"admin",status:"active"}}}});userId=user.id;
@@ -285,7 +285,7 @@ test("real manager starts course-linked live, reloads and ends it without republ
 test("two purchasing learners post and reply; notification opens exact thread and revoked access is refused",async({browser,baseURL})=>{
  test.setTimeout(120000);
  const db=new PrismaClient(),suffix=randomUUID();
- const vendor=await db.vendor.create({data:{name:"Synthetic discussion academy",slug:`notify-discuss-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
+ const vendor=await db.vendor.create({data:{ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],name:"Synthetic discussion academy",slug:`notify-discuss-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
  const authorContext=await browser.newContext(),replyContext=await browser.newContext();
  try{
   const product=await db.product.create({data:{vendorId:vendor.id,name:"合成討論通知課程",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course"}});

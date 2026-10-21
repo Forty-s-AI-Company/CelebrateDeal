@@ -80,6 +80,8 @@ model Vendor {
   contactUrl   String?
   /// 只控制商家後台可見模組；停用不會刪除既有業務資料。
   enabledFeatureModules String[] @default(["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced"])
+  /// 封測期間預設關閉、只能由平台管理員逐商家開啟的模組（F-001／F-002）；商家不能自行寫入。
+  betaFeatureGrants     String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -725,7 +725,7 @@ beforeEach(() => {
   mocks.invitationFindFirst.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
   mocks.requireVendorFinance.mockResolvedValue({
-    vendor: { id: "vendor-1" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
     member: { id: "merchant-finance-1", role: "owner" },
   });
   mocks.requireAuth.mockResolvedValue({
@@ -734,14 +734,14 @@ beforeEach(() => {
       platformRole: "platform_admin",
       mfaFactor: { secretEncrypted: "encrypted-totp-secret" },
     },
-    vendor: { id: "vendor-1" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
     member: { role: "platform_admin" },
   });
   mocks.requireVendorOwner.mockResolvedValue({
     user: { id: "owner-1", mfaFactor: { id: "factor-owner-1" } },
     session: { mfaVerifiedAt: new Date() },
     member: { role: "owner" },
-    vendor: { id: "vendor-1" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
   });
   mocks.requireVendor.mockResolvedValue({ id: "vendor-1" });
   mocks.requireVendorManagerContext.mockResolvedValue({
@@ -749,7 +749,7 @@ beforeEach(() => {
       user: { id: "manager-user-1" },
       member: { role: "admin" },
     },
-    vendor: { id: "vendor-1" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
   });
   mocks.headers.mockResolvedValue({
     get: (name: string) => ({
@@ -775,7 +775,7 @@ beforeEach(() => {
   });
   mocks.refundRecordCreate.mockResolvedValue({ id: "refund-1" });
   mocks.refundRecordUpdate.mockResolvedValue({ id: "refund-1", status: "processed" });
-  mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1", slug: "vendor" });
+  mocks.vendorFindUnique.mockResolvedValue({ id: "vendor-1", slug: "vendor", betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] });
   mocks.vendorMemberFindFirst.mockResolvedValue(null);
   mocks.vendorMemberFindMany.mockResolvedValue([]);
   mocks.settlementFindUnique.mockResolvedValue(null);
@@ -1075,7 +1075,7 @@ describe("updatePasswordAction", () => {
         platformRole: "user",
       },
       session: { id: "session-1" },
-      vendor: { id: "vendor-1" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
     });
   }
@@ -3143,7 +3143,7 @@ describe("sendPasswordResetSmokeAction", () => {
     vi.stubEnv("E2E_BASE_URL", "https://app.example.test");
     mocks.requireAuth.mockResolvedValue({
       user: { id: "user-1", email: "smoke@example.test", platformRole: isPlatformAdmin ? "admin" : "user" },
-      vendor: { id: "vendor-1" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin,
     });
@@ -3161,7 +3161,7 @@ describe("sendPasswordResetSmokeAction", () => {
   function authenticatedSmokeRecipient() {
     mocks.requireAuth.mockResolvedValue({
       user: { id: "user-1", email: "smoke@example.test", platformRole: "user" },
-      vendor: { id: "vendor-1" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin: false,
     });
@@ -3360,7 +3360,7 @@ describe("regenerateRecoveryCodesAction", () => {
         platformRole: "user",
         mfaFactor: { secretEncrypted: "encrypted-totp-secret" },
       },
-      vendor: { id: "vendor-1" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin: false,
     });
@@ -3451,7 +3451,7 @@ describe("vendor member management step-up (F-027)", () => {
     ["verified more than 15 minutes ago", { id: "factor-owner-1" }, new Date(Date.now() - 16 * 60_000), "redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity"],
   ])("blocks every member mutation for an owner %s before any lookup", async (_label, mfaFactor, mfaVerifiedAt, destination) => {
     mocks.requireVendorOwner.mockResolvedValue({
-      user: { id: "owner-1", mfaFactor }, session: { mfaVerifiedAt }, member: { role: "owner" }, vendor: { id: "vendor-1" },
+      user: { id: "owner-1", mfaFactor }, session: { mfaVerifiedAt }, member: { role: "owner" }, vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
     });
 
     await expect(createVendorMemberAction(vendorMemberFormData({ role: "owner" }))).rejects.toThrow(destination);
@@ -3478,7 +3478,7 @@ describe("createVendorMemberAction (F-029 invitation flow)", () => {
       user: { id: "owner-1", email: "owner@example.com", mfaFactor: { id: "factor-owner-1" } },
       session: { mfaVerifiedAt: new Date() },
       member: { role: "owner" },
-      vendor: { id: "vendor-1", name: "測試商家" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1", name: "測試商家" },
     });
     mocks.createVendorMemberInvitation.mockResolvedValue(created(true));
     mocks.sendVendorMemberInvitationEmail.mockResolvedValue({ id: "email-1" });
@@ -3874,7 +3874,7 @@ describe("/settings/security member invitation controls", () => {
     };
     mocks.requireAuth.mockResolvedValueOnce({
       user: { id: "owner-1", email: "owner@example.com", mfaFactor: { lastUsedAt: null }, recoveryCodes: [] },
-      vendor: { id: "vendor-1" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       session: { id: "session-1" },
       isMfaVerified: false,
@@ -4458,7 +4458,7 @@ describe("importSystemRolesAction", () => {
     const existingNames = ["開場 AI 主持人", "客服 Q&A 助手"];
     mocks.requireVendorManagerContext.mockResolvedValue({
       auth: { user: { id: "manager-9" }, member: { role: "admin" } },
-      vendor: { id: "vendor-9" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-9" },
     });
     mocks.interactionRoleFindMany.mockResolvedValue(existingNames.map((name) => ({ name })));
     mocks.interactionRoleCreateMany.mockResolvedValueOnce({ count: 8 });
@@ -5944,7 +5944,7 @@ describe("COV-04 login success attribution", () => {
     mocks.cookies.mockResolvedValue(cookieStore);
     mocks.authenticateUser.mockResolvedValue({
       user: { id: "user-1", email: "member@example.com", platformRole: "user", mfaFactor: null },
-      vendor: { id: "vendor-1" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin: false,
     });
@@ -6010,7 +6010,7 @@ describe("COV-04 login success attribution", () => {
   it("routes a vendor with enabled MFA to verification before the dashboard", async () => {
     mocks.authenticateUser.mockResolvedValue({
       user: { id: "owner-1", email: "owner@example.com", platformRole: "none", mfaFactor: { id: "factor-1" } },
-      vendor: { id: "vendor-1" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
       member: { role: "owner" },
       isPlatformAdmin: false,
     });

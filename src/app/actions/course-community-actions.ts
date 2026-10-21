@@ -5,10 +5,12 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { moderateCourseCommunity } from "@/lib/course-community";
+import { requireFeature } from "@/lib/feature-gates";
 
 export async function moderateCourseCommunityAction(form: FormData) {
   await assertServerActionSecurity(form);
   const { vendor, auth } = await requireVendorManagerContext();
+  requireFeature(vendor, "courses");
   const productId = form.get("productId");
   if (typeof productId !== "string" || !/^[A-Za-z0-9_-]{1,160}$/u.test(productId)) throw new Error("Invalid course");
   const result = await moderateCourseCommunity(getDb(), { vendorId: vendor.id, role: auth.member!.role }, {

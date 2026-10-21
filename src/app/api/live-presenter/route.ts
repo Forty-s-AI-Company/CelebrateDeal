@@ -6,6 +6,7 @@ import { DEFAULT_PRESENTER_LAYOUT, PresenterLayoutSchema, liveOrientation } from
 import { Prisma } from "@prisma/client";
 import { mediaOrigin } from "@/lib/live-media-provider";
 import { z } from "zod";
+import { featureGateResponse } from "@/lib/feature-gates";
 
 const command = z.object({ liveId: z.string().min(1).max(128), layout: PresenterLayoutSchema, enableBroadcast: z.boolean().optional() }).strict();
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "private, no-store" } });
@@ -16,6 +17,8 @@ async function handle(request: Request, writing: boolean) {
   if (limited) return limited;
   const auth = await getCurrentAuth();
   if (!auth?.vendor || auth.member?.status !== "active" || !["owner", "admin"].includes(auth.member.role)) return json({ error: "沒有講師管理權限。" }, 403);
+  const closed = featureGateResponse(auth.vendor, "browser_live");
+  if (closed) return closed;
   const data = writing ? command.safeParse(await readJsonBody(request, 4096)) : null;
   if (writing && !data?.success) return json({ error: "排版設定不正確。" }, 400);
   const liveId = data?.success ? data.data.liveId : new URL(request.url).searchParams.get("liveId");

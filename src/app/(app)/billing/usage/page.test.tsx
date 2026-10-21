@@ -36,7 +36,7 @@ vi.mock("@/lib/db", () => ({
 
 import BillingUsagePage from "./page";
 
-const currentVendor = { id: "vendor-current" };
+const currentVendor = { id: "vendor-current", betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] };
 const transactions = [
   { id: "paid-at-start", vendorId: "vendor-current", status: "paid", occurredAt: new Date("2026-07-01T00:00:00.000Z"), grossAmountCents: 10000, refundedAmountCents: 0, platformFeeCents: 500 },
   { id: "partially-refunded-before-end", vendorId: "vendor-current", status: "partially_refunded", occurredAt: new Date("2026-07-31T23:59:59.999Z"), grossAmountCents: 5400, refundedAmountCents: 1400, platformFeeCents: 300 },

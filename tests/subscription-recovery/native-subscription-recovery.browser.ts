@@ -16,7 +16,7 @@ test("fixed owner selects a private sandbox plan, reloads real entitlement/refun
  const db = new PrismaClient(), suffix = randomUUID();
  const foreignContext = await browser.newContext();
  const password = "SyntheticQ2ForeignOwnerPassword!";
- const foreignVendor = await db.vendor.create({ data: { name: "Foreign synthetic vendor", slug: `q2-foreign-${suffix}`, email: `vendor-${suffix}@invalid.example`, passwordHash: hashPassword(password), tracking: { create: {} } } });
+ const foreignVendor = await db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], name: "Foreign synthetic vendor", slug: `q2-foreign-${suffix}`, email: `vendor-${suffix}@invalid.example`, passwordHash: hashPassword(password), tracking: { create: {} } } });
  const foreignUser = await db.user.create({ data: { email: `owner-${suffix}@invalid.example`, name: "Foreign owner", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId: foreignVendor.id, role: "owner", status: "active" } } } });
  const ordinaryPlan = await db.billingPlan.create({ data: { name: "Ordinary synthetic plan", code: `q2-ordinary-${suffix}`, monthlyPriceCents: 0, isActive: true } });
  const blockedProviderRequests: { url: string; method: string }[] = [];

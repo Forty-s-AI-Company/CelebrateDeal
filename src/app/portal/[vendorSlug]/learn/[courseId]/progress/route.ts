@@ -5,6 +5,7 @@ import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { getStudentCourse, saveStudentLessonProgress } from "@/lib/student-course-learning";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 const ProgressInput = z.object({
   lessonId: z.string().trim().min(1).max(160),
@@ -18,6 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ vend
   if (boundary) return boundary;
   const { vendorSlug, courseId } = await params;
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   if (!await getStudentCourse(getDb(), session, courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
   return NextResponse.json({ csrfToken: await getCsrfToken() }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
 }
@@ -33,6 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ven
   if (!input.success) return NextResponse.json({ error: "invalid_progress" }, { status: 400 });
   const { vendorSlug, courseId } = await params;
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   try {
     const progress = await saveStudentLessonProgress(getDb(), session, { courseId, ...input.data });
     if (!progress) return NextResponse.json({ error: "not_found" }, { status: 404 });

@@ -25,7 +25,7 @@ vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 
 import BillingPlansPage from "./page";
 
-const vendor = { id: "vendor-current", name: "目前商家" };
+const vendor = { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current", name: "目前商家" };
 const activePlan = {
   id: "plan-active",
   code: "ACTIVE",

@@ -7,6 +7,7 @@ import { hasActiveLiveViewerSession, liveViewerTokenFromRequest } from "@/lib/li
 import { CardScopeSchema } from "@/lib/interaction-card-contract";
 import { CardError } from "@/lib/interaction-card";
 import { readDanmaku, setDanmaku } from "@/lib/live-danmaku";
+import { featureDisabledResponse, featureGateResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 const querySchema = CardScopeSchema.extend({ cursor: z.string().datetime().optional(), epoch: z.string().max(64).optional(), positionSeconds: z.coerce.number().finite().min(0).max(86400).optional() });
 const commandSchema = z.object({ liveId: z.string().min(1).max(128), enabled: z.boolean() }).strict();
@@ -20,6 +21,8 @@ async function handle(request: Request, writing: boolean) {
     if (params.get("mode") === "instructor") {
       const auth = await getCurrentAuth();
       if (!auth?.vendor || !auth.member || auth.member.status !== "active" || !["owner", "admin"].includes(auth.member.role)) return json({ error: "Forbidden" }, 403);
+      const closed = featureGateResponse(auth.vendor, "danmaku");
+      if (closed) return closed;
       if ([...params.keys()].some(k => !["mode", ...(writing ? [] : ["liveId"])].includes(k))) return json({ error: "Invalid request" }, 400);
       if (writing) {
         const parsed = commandSchema.safeParse(await readJsonBody(request, 1024));
@@ -34,6 +37,7 @@ async function handle(request: Request, writing: boolean) {
     const parsed = querySchema.safeParse(Object.fromEntries(params));
     if (!parsed.success) return json({ error: "Invalid request" }, 400);
     const { vendorId, liveId, cursor, epoch, positionSeconds } = parsed.data;
+    if (!await isVendorFeatureEnabled(getDb(), vendorId, "danmaku")) return featureDisabledResponse();
     const token = liveViewerTokenFromRequest(request);
     if (!token || !await hasActiveLiveViewerSession(getDb(), { vendorId, liveId, token })) return json({ error: "Viewer admission required" }, 401);
     return json(await readDanmaku(getDb(), { vendorId, liveId }, cursor, epoch, positionSeconds));

@@ -13,9 +13,9 @@ test.use({trace: "off", screenshot: "off", video: "off"});
 test.setTimeout(120000);
 test("purchased learner posts, replies, likes and reloads a course-isolated community; refunds revoke access", async ({page, browser, baseURL}) => {
   const db = new PrismaClient(); const suffix = randomUUID();
-  const vendor = await db.vendor.create({data: {name: "合成社群學院", slug: `community-${suffix}`, email: `${suffix}@example.test`, passwordHash: "synthetic-only"}});
+  const vendor = await db.vendor.create({data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],name: "合成社群學院", slug: `community-${suffix}`, email: `${suffix}@example.test`, passwordHash: "synthetic-only"}});
   const manager = await db.user.create({data:{email:`manager-${suffix}@example.test`,name:"合成管理員",passwordHash:hashPassword("SyntheticCommunityManager!"),status:"active",memberships:{create:{vendorId:vendor.id,role:"admin",status:"active"}}}});
-  const foreign = await db.vendor.create({data: {name: "合成其他學院", slug: `other-community-${suffix}`, email: `other-${suffix}@example.test`, passwordHash: "synthetic-only"}});
+  const foreign = await db.vendor.create({data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],name: "合成其他學院", slug: `other-community-${suffix}`, email: `other-${suffix}@example.test`, passwordHash: "synthetic-only"}});
   const product = await db.product.create({data: {vendorId: vendor.id, name: "社群測試課程", slug: randomUUID(), priceCents: 10000, commerceDomain: "course", fulfillmentType: "course", isActive: true}});
   await saveCourseLesson(db, vendor.id, { productId: product.id, revision: product.revision, chapterTitle: "第一章", title: "第一單元", videoUrl: "https://media.example.test/course.mp4", durationSeconds: 100, published: true });
   const orderId = randomUUID(); const email = `learner-${suffix}@example.test`;

@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ session: vi.fn(), details: vi.fn(), certificat
 vi.mock("@/lib/student-portal-auth", () => ({ requireStudentPortalSession: mocks.session }));
 vi.mock("@/lib/student-course-learning", () => ({ studentCertificateDetails: mocks.details }));
 vi.mock("@/lib/course-certificate", () => ({ createCourseCertificate: mocks.certificate }));
-vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
+vi.mock("@/lib/db", () => ({ getDb: () => Object.assign(mocks.db, { vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) } }) }));
 
 import { GET } from "./route";
 

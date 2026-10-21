@@ -16,6 +16,7 @@ const { actor, db } = vi.hoisted(() => ({
     partnerFunnelPage: { findFirst: vi.fn() },
     partnerLiveShare: { upsert: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn() },
     paymentMethodReference: { findFirst: vi.fn(), findMany: vi.fn() },
+    vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) },
     teamMembership: { findMany: vi.fn() },
     teamMembershipRelationship: { findMany: vi.fn() },
   },

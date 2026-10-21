@@ -5,6 +5,7 @@ import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { CommunityConflict, CommunityMutation, getCourseCommunity, getCourseCommunityReplies, mutateCourseCommunity } from "@/lib/course-community";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
@@ -20,6 +21,7 @@ export async function GET(request: Request, { params }: Context) {
   if (!input.success) return NextResponse.json({ error: "invalid_query" }, { status: 400, headers });
   const { vendorSlug, courseId } = await params;
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   const result = input.data.postId ? await getCourseCommunityReplies(getDb(), session, courseId, input.data.postId, input.data.cursor) : await getCourseCommunity(getDb(), session, courseId, input.data.cursor);
   if (!result) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
   return NextResponse.json({ ...result, csrfToken: await getCsrfToken() }, { headers });
@@ -34,6 +36,7 @@ export async function POST(request: Request, { params }: Context) {
   if (!input.success) return NextResponse.json({ error: "invalid_content" }, { status: 400, headers });
   const { vendorSlug, courseId } = await params;
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
   try {
     const result = await mutateCourseCommunity(getDb(), session, courseId, input.data);
     return result ? NextResponse.json(result, { headers }) : NextResponse.json({ error: "not_found" }, { status: 404, headers });

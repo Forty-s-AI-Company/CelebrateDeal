@@ -18,6 +18,7 @@ test("active member is denied billing invoice export before tenant query, CSV, a
 
   const vendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
       name: `WP83 Vendor ${suffix}`,
       slug: tag,
       email: `${tag}@celebratedeal.test`,

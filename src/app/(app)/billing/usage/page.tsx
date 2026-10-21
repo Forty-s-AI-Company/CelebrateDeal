@@ -5,6 +5,7 @@ import { calculateStreamUsageMinutes, monthRange } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { streamQuotaNotification } from "@/lib/stream-quota";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 function UsageBar({ label, used, limit, unit }: { label: string; used: number; limit: number; unit: string }) {
   const hasLimit = limit > 0;
@@ -119,6 +120,7 @@ function StreamOperationsAlertsCard({ alerts }: { alerts: StreamOperationsAlertS
 
 export default async function BillingUsagePage() {
   const { vendor } = await requireVendorFinance("/billing/usage");
+  requireFeatureOrNotFound(vendor, "billing");
   const monthKey = new Date().toISOString().slice(0, 7);
   const { start, end } = monthRange(monthKey);
   const [limit, records, currentMonthRecords, streamUsageRecords, streamUsageLedgerEntries, streamUsageAllocationGroups, streamUsagePageGroups, subscription, transactions, refundPlatformFeeTotal, latestStreamReconciliation, streamOperationsAlerts] = await Promise.all([

@@ -18,6 +18,7 @@ test("active member is denied billing invoices before tenant query or MFA", asyn
 
   const vendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
       name: `WP79 Vendor ${suffix}`,
       slug: tag,
       email: `${tag}@celebratedeal.test`,

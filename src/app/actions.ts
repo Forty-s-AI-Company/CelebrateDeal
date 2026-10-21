@@ -54,6 +54,7 @@ import { recordLearnerLiveStartedSources } from "@/lib/learner-live-notification
 import { replaceLiveProductBindings } from "@/lib/live-product-bindings";
 import { dispatchLiveStartedLineNotificationsSafely } from "@/lib/line-live-started";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
+import { isCardBindingRequiredForVendor } from "@/lib/feature-gates";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
 import {
   hasUsableMessageTemplateContent,
@@ -623,6 +624,7 @@ async function requireLiveQuotaPaymentMethod(
     ...quotaPolicy.memberQuotas.map((quota) => quota.membershipId),
   ];
   if (quotaMemberIds.length === 0 && quotaPolicy.pageQuotas.length === 0) return;
+  if (!await isCardBindingRequiredForVendor(db, vendorId)) return; // funnel_binding closed (F-002)
   try {
     await assertPaymentMethodReferenceForQuota(db, {
       vendorId,

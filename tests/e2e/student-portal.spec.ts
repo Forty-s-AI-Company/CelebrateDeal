@@ -15,7 +15,7 @@ const vendorIds: string[] = [];
 
 async function vendor() {
   const suffix = randomUUID();
-  const row = await db.vendor.create({ data: { name: "合成學員中心", slug: `portal-${suffix}`, email: `${suffix}@example.test`, passwordHash: "synthetic-only" } });
+  const row = await db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], name: "合成學員中心", slug: `portal-${suffix}`, email: `${suffix}@example.test`, passwordHash: "synthetic-only" } });
   vendorIds.push(row.id);
   return row;
 }

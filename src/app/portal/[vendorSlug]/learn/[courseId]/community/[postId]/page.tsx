@@ -6,6 +6,7 @@ import { getCourseCommunity, getCourseCommunityReplies } from "@/lib/course-comm
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
 import { resolveStudentPortalLocale } from "@/lib/student-portal-locale";
 import { portalText } from "@/lib/student-portal-translations";
+import { requireVendorFeatureOrNotFound } from "@/lib/feature-gates";
 export const dynamic = "force-dynamic";
 /** Open the notification's exact thread after checking current purchase rights. */
 export default async function DiscussionPage({ params }: {
@@ -17,6 +18,7 @@ export default async function DiscussionPage({ params }: {
 }) {
     const { vendorSlug, courseId, postId } = await params;
     const { session } = await requireStudentPortalSession(vendorSlug);
+    await requireVendorFeatureOrNotFound(getDb(), session.vendorId, "courses");
     const db = getDb();
     const [feed, thread] = await Promise.all([getCourseCommunity(db, session, courseId), getCourseCommunityReplies(db, session, courseId, postId)]);
     if (!feed || !thread)

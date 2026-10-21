@@ -123,6 +123,7 @@ async function installDashboardLifecycleObserver(page: Page) {
 test.beforeAll(async () => {
   const vendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
       name: "Performance Test Vendor",
       slug: fixture.slug,
       email: fixture.email,

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ session: vi.fn(), booking: vi.fn() }));
 vi.mock("@/lib/student-portal-auth", () => ({ requireStudentPortalSession: mocks.session }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ consultationBooking: { findFirst: mocks.booking } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ consultationBooking: { findFirst: mocks.booking }, vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) } }) }));
 import { GET } from "./route";
 
 beforeEach(() => { vi.clearAllMocks(); mocks.session.mockResolvedValue({ session: { vendorId: "vendor-1", customerKeyHash: "hash" } }); mocks.booking.mockResolvedValue({ id: "booking-1", startTime: new Date("2026-09-20T02:00:00Z"), endTime: new Date("2026-09-20T03:00:00Z"), meetingUrl: "https://meet.example.test/room", event: { title: "策略諮詢", description: "準備問題" } }); });

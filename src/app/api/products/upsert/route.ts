@@ -11,6 +11,7 @@ const ERROR_STATUS: Record<ProductActionError, number> = {
   unsupported_currency: 422,
   invalid_image_asset: 422,
   invalid_course_policy: 422,
+  course_feature_disabled: 404,
   invalid_course_owner: 422,
   invalid_fulfillment: 422,
   invalid_delivery: 422,

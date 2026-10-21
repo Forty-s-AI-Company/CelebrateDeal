@@ -6,6 +6,7 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
+import { requireFeature } from "@/lib/feature-gates";
 
 const BookingId = z.string().min(1).max(191);
 const QuickTag = z.enum(["預算足夠", "需再跟進"]);
@@ -19,6 +20,7 @@ function text(formData: FormData, key: string) {
 export async function saveMobileConsultationAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { auth, vendor } = await requireVendorManagerContext();
+  requireFeature(vendor, "consultation_booking");
   const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
   const bookingId = BookingId.parse(text(formData, "bookingId"));
   const note = z.string().max(4_000).parse(text(formData, "note"));

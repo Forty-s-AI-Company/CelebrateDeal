@@ -5,9 +5,11 @@ import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { invoiceStatusLabel, invoiceStatusTone } from "@/lib/invoice-presentation";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 export default async function BillingInvoicesPage() {
   const { vendor } = await requireVendorFinance("/billing/invoices");
+  requireFeatureOrNotFound(vendor, "billing");
   const invoices = await getDb().invoice.findMany({
     where: { vendorId: vendor.id },
     orderBy: [{ monthKey: "desc" }, { createdAt: "desc" }],

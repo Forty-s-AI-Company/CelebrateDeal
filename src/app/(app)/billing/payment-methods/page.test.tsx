@@ -25,7 +25,7 @@ import PaymentMethodsPage from "./page";
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("PAYUNI_ENV", "sandbox");
-  mocks.requireVendorFinance.mockResolvedValue({ vendor: { id: "vendor-current" } });
+  mocks.requireVendorFinance.mockResolvedValue({ vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current" } });
   mocks.referenceFindMany.mockResolvedValue([
     {
       id: "reference-1",

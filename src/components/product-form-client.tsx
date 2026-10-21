@@ -99,6 +99,7 @@ function errorMessage(error: ProductActionError | undefined) {
   if (error === "unsupported_currency") return "平台目前只支援新台幣（TWD）。既有的非新台幣商品，請確認售價已改以新台幣填寫並勾選確認後再儲存。";
   if (error === "invalid_image_asset") return "商品圖片不是目前商家的已完成資產，請重新上傳或移除。";
   if (error === "invalid_course_policy") return "課程商品需要有效的內容所有人與推廣者分潤比例。";
+  if (error === "course_feature_disabled") return "課程功能目前尚未開放，無法建立或修改課程商品。";
   if (error === "invalid_course_owner") return "課程內容所有人必須是目前商家內有效的團隊成員。";
   if (error === "invalid_fulfillment") return "商品交付方式與課程設定不一致，請重新選擇。";
   if (error === "invalid_delivery") return "交付設定不完整或網址不安全。上架前請填妥標題、必要的 HTTPS 入口或服務說明，並確認交付網域。";
@@ -112,7 +113,7 @@ function errorMessage(error: ProductActionError | undefined) {
 }
 
 const PRODUCT_ACTION_ERRORS = new Set<ProductActionError>([
-  "invalid_product", "unsupported_currency", "invalid_image_asset", "invalid_course_policy", "invalid_course_owner",
+  "invalid_product", "unsupported_currency", "invalid_image_asset", "invalid_course_policy", "course_feature_disabled", "invalid_course_owner",
   "invalid_fulfillment", "invalid_delivery", "invalid_custom_checkout_fields",
   "media_upload_incomplete", "duplicate_slug", "conflict", "not_found", "unavailable",
 ]);

@@ -5,12 +5,14 @@ import { getDb } from "@/lib/db";
 import { CsrfField } from "@/components/csrf-field";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { moderateCourseCommunityAction } from "@/app/actions/course-community-actions";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 /** This bounded management feed never returns learner identity hashes. */
 export default async function CourseCommunityManagement({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ cursor?: string; saved?: string; error?: string }>;
 }) {
   const vendor = await requireVendorManager();
+  requireFeatureOrNotFound(vendor, "courses");
   const { id } = await params; const query = await searchParams;
   const course = await getDb().product.findFirst({ where: { id, vendorId: vendor.id, fulfillmentType: "course" }, select: { name: true } });
   if (!course) notFound();

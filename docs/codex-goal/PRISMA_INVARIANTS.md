@@ -427,3 +427,11 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 移除 `platform_user`、`inactive_user` 回應碼。既有成員的「重寄設定密碼邀請」與「停用」不變（皆加上 F-027 step-up）。
 - 測試：`src/lib/vendor-member-invitation.db.test.ts`（四種 Email 回應一致且不建 membership、寄信對象、跨租戶撤銷否定、本人登入才可接受、新帳號與政策同意、平台管理員／停權不可接受、過期／撤銷／偽造 token、last owner、併發單次使用、CHECK）、`src/app/actions.test.ts`、`src/app/invitations/accept/page.test.tsx`。
 - 時間戳原為 `150100`，改為 `160100` 以排在 #461 之後。目前 154 models、123 forward migrations；既有 SQL／checksum 不變。
+
+## 2026-10-22 F-001／F-002（B01-01、B01-02）封測模組的伺服器端閘門
+
+- `20261021171100_vendor_beta_feature_grants`：forward-only、純新增。`Vendor` 新增 `betaFeatureGrants TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`，加上 CHECK `Vendor_betaFeatureGrants_check`（陣列只能包含 `courses`、`billing`、`funnel_binding`、`consultation_booking`、`browser_live`、`danmaku`）。常數預設值在 PostgreSQL 11+ 只改 metadata，不重寫表；交易層級 `lock_timeout = 5s`。不回填：既有與新商家一律從空陣列開始，也就是六個封測模組全部關閉（D-02）。Prisma 6 不比對 CHECK，drift 檢查不變、無新 allowlist 項目。
+- 不變量：只有平台管理員（`requireFinanceAdmin`）能透過 `updateVendorBetaFeatureGrantsAction`（`/admin/vendor-features`）寫入，寫入時以讀到的舊值做 compare-and-set 並寫 AuditLog；商家的 `updateVendorFeaturesAction` 只寫 `enabledFeatureModules`，`parseVendorFeatureModules` 不接受封測模組。判斷一律走 `isFeatureEnabled`（`src/lib/vendor-feature-toggles.ts`）：封測模組需要平台授權；`consultation_booking` 同時是商家自己的開關，兩者都開才算開。讀不到或格式不對的授權一律視為關閉。
+- 入口：Server Action 用 `requireFeature`（丟 `FeatureDisabledError`，訊息「此功能目前尚未開放。」）、頁面用 `requireFeatureOrNotFound`／`requireVendorFeatureOrNotFound`（繁中 404）、route handler 用 `featureGateResponse`／`featureDisabledResponse`（404 JSON `FEATURE_DISABLED`）；買家、學員、觀眾入口以所要求紀錄的 `vendorId` 讀旗標（`isVendorFeatureEnabled`）。`funnel_binding` 關閉時，發佈就緒、直播配額入場、團隊直播分享、onboarding、dashboard 與工作區導引都不再要求已驗證的平台服務付款方式（`isCardBindingRequired*`）；其他配額（觀看分鐘、點數、人數）照常檢查。
+- 測試：`src/lib/feature-gates.matrix.test.ts`（模組 × 入口，關閉被擋、開啟放行，另以靜態清單鎖定每個入口）、`src/lib/feature-gates.db.test.ts`（預設全關、只讀被要求的商家、CHECK）、`src/lib/vendor-feature-toggles.test.ts`、`src/app/actions/vendor-beta-feature-actions.test.ts`。
+- 目前 154 models、124 forward migrations；既有 SQL／checksum 不變。

@@ -35,7 +35,7 @@ vi.mock("@/lib/db", () => ({
       vendorDeliveryUrlAllowlist: { upsert: mocks.deliveryAllowlistUpsert },
       productDeliveryConfig: { create: mocks.deliveryConfigCreate, updateMany: mocks.deliveryConfigUpdateMany },
     };
-    return { ...delegates, $transaction: (callback: (tx: typeof delegates) => unknown) => mocks.transaction(callback, delegates) };
+    return { ...delegates, vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) }, $transaction: (callback: (tx: typeof delegates) => unknown) => mocks.transaction(callback, delegates) };
   },
 }));
 

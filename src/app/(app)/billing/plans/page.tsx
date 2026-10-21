@@ -15,6 +15,7 @@ import { DirectEntryAttributionReset } from "@/components/direct-entry-attributi
 import { ExternalPaymentForm } from "@/components/external-payment-form";
 import { BillingPlanCheckoutForm } from "@/components/billing-plan-checkout-form";
 import { payUniStagingPlanRetryPermit, payUniStagingPlanTestAllowed, payUniStagingPlanTestAvailability, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 function formatPlanCurrency(cents: number) {
   return formatCurrency(cents);
@@ -166,6 +167,7 @@ async function loadPendingPlanCheckout(vendorId: string, transactionId: string |
 export default async function BillingPlansPage({ searchParams }: BillingPlansPageProps) {
   const queryPromise = searchParams ?? Promise.resolve<BillingPlansSearchParams>({});
   const finance = await requireVendorFinance("/billing/plans");
+  requireFeatureOrNotFound(finance.vendor, "billing");
   const { vendor, member } = finance;
   const userId = wp4FinanceUserId(finance);
   const canManageBilling = member.role === "owner";

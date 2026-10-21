@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { requireVendorManagerContext } from "@/lib/auth";
+import { isVendorFeatureEnabled, requireFeature } from "@/lib/feature-gates";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { generateConsultationSlots, type ConsultationSlot } from "@/lib/consultation-slot-engine";
@@ -180,6 +181,7 @@ function redirectWithError(code: string): never {
 
 async function editableManagementScope() {
   const { auth, vendor } = await requireVendorManagerContext();
+  requireFeature(vendor, "consultation_booking");
   try {
     return { vendor, scope: await requireEditableSalesProjectScope(auth.user.id, vendor.id) };
   } catch (error) {
@@ -387,6 +389,7 @@ export async function getConsultationSlots(eventId: string, date: string) {
     select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, projectId: true, salesProject: { select: { status: true, publishedAt: true } } },
   });
   if (!event || (event.projectId && (event.salesProject?.status !== "published" || !event.salesProject.publishedAt))) return [];
+  if (!await isVendorFeatureEnabled(getDb(), event.vendorId, "consultation_booking")) return [];
   const ranges = eventDayRanges(date, event.timezone);
   if (!ranges) return [];
   const bookings = await bookingRecordsForDay(database, event, ranges.actual);
@@ -551,6 +554,9 @@ export async function createConsultationBookingAction(formData: FormData): Promi
   if (!parsed.success) return { status: "unavailable" };
   const limited = await checkRateLimit(await publicBookingRequest(), `consultation-booking:${parsed.data.eventId}`, 8, 15 * 60 * 1000);
   if (limited) return { status: "unavailable" };
+  // The event decides the vendor; a closed consultation_booking module takes no bookings (F-001).
+  const owner = await getDb().consultationEvent.findFirst({ where: { id: parsed.data.eventId }, select: { vendorId: true } });
+  if (!owner || !await isVendorFeatureEnabled(getDb(), owner.vendorId, "consultation_booking")) return { status: "unavailable" };
   const database = db();
   const result = await reserveConsultationBooking(database, parsed.data, automationCustomerKeyHash, captureTrackingBrowserContext(await headers()));
   if (result.status === "booked") {

@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { CourseCommerceDomain } from "@/lib/course-commission";
 import { getDb } from "@/lib/db";
+import { isVendorFeatureEnabled } from "@/lib/feature-gates";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { toSlug } from "@/lib/format";
 import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
@@ -425,6 +426,11 @@ export type ProductMutationResult =
  * request security/authentication, while this service owns validation and the
  * tenant-scoped transaction.
  */
+/** Course products belong to the closed-beta courses module (F-001). */
+async function courseModuleClosed(db: ReturnType<typeof getDb>, vendorId: string, commerceDomain: string) {
+  return commerceDomain === "course" && !await isVendorFeatureEnabled(db, vendorId, "courses");
+}
+
 export async function mutateProduct(
   vendorId: string,
   previousState: ProductActionState,
@@ -433,6 +439,9 @@ export async function mutateProduct(
   const request = parseProductRequest(previousState, formData);
   if (!request.success) return { ok: false, state: request.state };
   const db = getDb();
+  if (await courseModuleClosed(db, vendorId, request.commerceDomain)) {
+    return { ok: false, state: productFailure(previousState, formData, "course_feature_disabled") };
+  }
   let postPurchasePolicy;
   try { postPurchasePolicy = parsePostPurchaseProductPolicy(formData); }
   catch (error) {

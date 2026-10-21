@@ -31,6 +31,7 @@ export async function createTeamFunnelFixture(db: PrismaClient, runKey: string) 
 
   const leaderVendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
       name: "TEST ONLY A 公司",
       slug: `${key}-a`,
       email: `vendor-a-${suffix}@team-funnel.test`,
@@ -177,6 +178,7 @@ export async function createTeamFunnelFixture(db: PrismaClient, runKey: string) 
 
   const outsiderVendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
       name: "TEST ONLY 跨租戶公司",
       slug: `${key}-other`,
       email: `vendor-other-${suffix}@team-funnel.test`,

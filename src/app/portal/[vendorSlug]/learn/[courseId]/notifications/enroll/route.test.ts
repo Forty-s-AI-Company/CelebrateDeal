@@ -4,7 +4,7 @@ vi.mock("@/lib/api-security",()=>({requireSameOriginRequest:mocks.boundary,readJ
 vi.mock("@/lib/csrf",()=>({verifyCsrfToken:mocks.csrf}));
 vi.mock("@/lib/student-portal-auth",()=>({requireStudentPortalSession:mocks.session}));
 vi.mock("@/lib/app-url",()=>({getCanonicalAppUrl:mocks.origin}));
-vi.mock("@/lib/db",()=>({getDb:()=>mocks.db}));
+vi.mock("@/lib/db",()=>({getDb: () => Object.assign(mocks.db, { vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) } })}));
 vi.mock("@/lib/learner-notification-job",()=>({readLearnerNotificationProviderConfiguration:mocks.configuration}));
 vi.mock("@/lib/learner-notification-verification",async importOriginal=>({...await importOriginal<typeof import("@/lib/learner-notification-verification")>(),requestLearnerContactVerification:mocks.queue}));
 import { POST } from "./route";

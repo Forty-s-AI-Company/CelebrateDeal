@@ -13,7 +13,7 @@ vi.mock("@/lib/db", () => ({
 
 import BillingSettlementsPage from "./page";
 
-const currentVendor = { id: "vendor-current", name: "目前商家" };
+const currentVendor = { id: "vendor-current", name: "目前商家", betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] };
 const settlement = {
   id: "settlement-1",
   vendorId: currentVendor.id,

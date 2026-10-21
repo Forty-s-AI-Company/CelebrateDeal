@@ -3,6 +3,7 @@ import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 function statusTone(status: string) {
   if (status === "paid" || status === "locked") return "green" as const;
@@ -13,6 +14,7 @@ function statusTone(status: string) {
 
 export default async function BillingSettlementsPage() {
   const { vendor } = await requireVendorFinance("/billing/settlements");
+  requireFeatureOrNotFound(vendor, "billing");
   const settlements = await getDb().settlement.findMany({
     where: { vendorId: vendor.id },
     orderBy: [{ monthKey: "desc" }],
