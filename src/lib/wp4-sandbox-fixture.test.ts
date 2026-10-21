@@ -47,6 +47,7 @@ describe("ensureWp4SandboxFixture", () => {
         id: WP4_SANDBOX_FIXTURE.vendorId,
         slug: WP4_SANDBOX_FIXTURE.vendorSlug,
         email: WP4_SANDBOX_FIXTURE.vendorEmail,
+        betaFeatureGrants: ["billing", "funnel_binding"],
       }),
     }));
     expect(transactionDb.user.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -70,8 +71,10 @@ describe("ensureWp4SandboxFixture", () => {
           id: WP4_SANDBOX_FIXTURE.vendorId,
           slug: WP4_SANDBOX_FIXTURE.vendorSlug,
           email: WP4_SANDBOX_FIXTURE.vendorEmail,
+          betaFeatureGrants: ["billing", "funnel_binding"],
         }),
         create: vi.fn(),
+        update: vi.fn(),
       },
       user: {
         findFirst: vi.fn().mockResolvedValue({
@@ -120,6 +123,25 @@ describe("ensureWp4SandboxFixture", () => {
     expect(transactionDb.product.update).not.toHaveBeenCalled();
     expect(transactionDb.billingPlan.update).toHaveBeenCalledWith({ where: { id: WP4_SANDBOX_FIXTURE.planId }, data: { isActive: false } });
     expect(transactionDb.invoice.update).not.toHaveBeenCalled();
+  });
+
+  it("adds only the missing closed-beta grants to an existing fixture vendor (F-001)", async () => {
+    const update = vi.fn();
+    const { db } = fixtureDb({
+      vendor: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: WP4_SANDBOX_FIXTURE.vendorId,
+          slug: WP4_SANDBOX_FIXTURE.vendorSlug,
+          email: WP4_SANDBOX_FIXTURE.vendorEmail,
+          betaFeatureGrants: ["billing"],
+        }),
+        create: vi.fn(),
+        update,
+      },
+    });
+
+    await ensureWp4SandboxFixture(db);
+    expect(update).toHaveBeenCalledExactlyOnceWith({ where: { id: WP4_SANDBOX_FIXTURE.vendorId }, data: { betaFeatureGrants: ["billing", "funnel_binding"] } });
   });
 
   it("fails closed before writes when a deterministic identity collides", async () => {

@@ -27,7 +27,7 @@ describe.skipIf(process.env.RT01_D2_DISPOSABLE_DB !== "true" || !classifyLocalTe
     const f = await fixture();
     const layout = { ...DEFAULT_PRESENTER_LAYOUT, orientation: "portrait" as const };
     await f.db.live.update({ where: { id: f.live.id }, data: { presenterLayout: layout } });
-    boundary.auth.mockResolvedValue({ vendor: { id: f.vendor.id }, member: { status: "active", role: "owner" } });
+    boundary.auth.mockResolvedValue({ vendor: { id: f.vendor.id, betaFeatureGrants: ["browser_live"] }, member: { status: "active", role: "owner" } });
     const saved = { ...layout, cameraPercent: 35 };
     const response = await POST(new Request("https://example.test/api/live-presenter", { method: "POST", headers: { origin: "https://example.test", "x-celebratedeal-client": "web", "content-type": "application/json" }, body: JSON.stringify({ liveId: f.live.id, layout: saved }) }));
     expect(response.status).toBe(200);
@@ -35,7 +35,7 @@ describe.skipIf(process.env.RT01_D2_DISPOSABLE_DB !== "true" || !classifyLocalTe
   });
   it("rejects a stale layout save if activity orientation changed after reading", async () => {
     const f = await fixture();
-    boundary.auth.mockResolvedValue({ vendor: { id: f.vendor.id }, member: { status: "active", role: "owner" } });
+    boundary.auth.mockResolvedValue({ vendor: { id: f.vendor.id, betaFeatureGrants: ["browser_live"] }, member: { status: "active", role: "owner" } });
     const original = f.db.live.findFirst.bind(f.db.live);
     const layout = { ...DEFAULT_PRESENTER_LAYOUT, orientation: "portrait" as const };
     const spy = vi.spyOn(f.db.live, "findFirst").mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
@@ -109,7 +109,7 @@ describe.skipIf(process.env.RT01_D2_DISPOSABLE_DB !== "true" || !classifyLocalTe
     const f = await fixture();
     const old = await f.db.video.create({ data: { vendorId: f.vendor.id, title: "Original VOD", videoUrl: "https://example.test/original.mp4", sourceType: "upload", status: "ready" } });
     await f.db.live.update({ where: { id: f.live.id }, data: { videoId: old.id } });
-    boundary.auth.mockResolvedValue({ vendor: { id: f.vendor.id }, member: { status: "active", role: "owner" } });
+    boundary.auth.mockResolvedValue({ vendor: { id: f.vendor.id, betaFeatureGrants: ["browser_live"] }, member: { status: "active", role: "owner" } });
     const original = f.db.live.findFirst.bind(f.db.live);
     const spy = vi.spyOn(f.db.live, "findFirst").mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
       const snapshot = await original(args);
