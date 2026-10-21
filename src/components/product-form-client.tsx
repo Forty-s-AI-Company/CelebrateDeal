@@ -124,6 +124,33 @@ function safeProductError(value: unknown): ProductActionError {
     : "unavailable";
 }
 
+/** F-117: after a failed submit, move focus to the first invalid control. */
+function useFocusFirstInvalid(formRef: { current: HTMLFormElement | null }, errorToken: string) {
+  useEffect(() => {
+    if (errorToken === "0:0") return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errorToken, formRef]);
+}
+
+function ProductErrorSummary({ message, fieldErrors }: { message: string | null; fieldErrors: ProductFieldErrors }) {
+  if (!message) return null;
+  const entries = Object.entries(fieldErrors).filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return (
+    <div role="alert" className="grid gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+      <p>{message}</p>
+      {entries.length > 0 ? (
+        <ul className="list-disc pl-5 font-normal">
+          {entries.map(([name, text]) => <li key={name}>{text}</li>)}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function pickFieldErrors(nativeError: ProductActionError | undefined, nativeErrors: ProductFieldErrors | undefined, actionErrors: ProductFieldErrors | undefined): ProductFieldErrors {
+  return (nativeError ? nativeErrors : actionErrors) ?? {};
+}
+
 function safeFieldErrors(value: unknown): ProductFieldErrors {
   if (typeof value !== "object" || value === null) return {};
   const result: Record<string, string> = {};
@@ -282,15 +309,10 @@ export function ProductFormClient({
   const [selectedFulfillmentType, setSelectedFulfillmentType] = useState(draft.fulfillmentType);
   const [customCheckoutFields, setCustomCheckoutFields] = useState<CustomCheckoutFields>(draft.customCheckoutFields ?? []);
   const error = errorMessage(nativeError ?? state.error);
-  const fieldErrors: ProductFieldErrors = (nativeError ? nativeFieldErrors : state.fieldErrors) ?? {};
-  const fieldErrorEntries = Object.entries(fieldErrors).filter((entry): entry is [string, string] => Boolean(entry[1]));
+  const fieldErrors = pickFieldErrors(nativeError, nativeFieldErrors, state.fieldErrors);
   const errorToken = `${state.version}:${nativeErrorTick}`;
 
-  // F-117: after a failed submit, move focus to the first invalid control.
-  useEffect(() => {
-    if (errorToken === "0:0") return;
-    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [errorToken]);
+  useFocusFirstInvalid(formRef, errorToken);
 
   async function submitNatively(event: FormEvent<HTMLFormElement>) {
     if (!nativeAction) return;
@@ -345,16 +367,7 @@ export function ProductFormClient({
       {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       <input type="hidden" name="_csrf" value={csrfToken} />
       {product ? <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="revision" value={product.revision} /></> : null}
-      {error ? (
-        <div role="alert" className="grid gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
-          <p>{error}</p>
-          {fieldErrorEntries.length > 0 ? (
-            <ul className="list-disc pl-5 font-normal">
-              {fieldErrorEntries.map(([name, message]) => <li key={name}>{message}</li>)}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
+      <ProductErrorSummary message={error} fieldErrors={fieldErrors} />
       {product && !product.fulfillmentTypeConfirmed ? (
         <p role="status" className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900">
           這是既有商品，交付方式尚未確認。請選擇正確類型並儲存；確認前不會開放結帳或綁定新的販售流程。

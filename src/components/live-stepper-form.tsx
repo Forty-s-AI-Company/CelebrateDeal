@@ -1038,6 +1038,39 @@ function renderLiveStudioScheduleStep(input: {
   );
 }
 
+/** F-117: 伺服器指出第一個無效欄位時，切到該步驟、標示 aria-invalid 並把焦點移過去；回傳欄位名稱供彙總訊息使用。 */
+function useServerInvalidField(
+  formRef: { current: HTMLFormElement | null },
+  setActiveStep: (step: number) => void,
+  error?: string,
+  invalidField?: string,
+) {
+  const [label, setLabel] = useState("");
+  useEffect(() => {
+    if (error !== "invalid_draft" || !invalidField || !/^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(invalidField)) return;
+    const control = formRef.current?.elements.namedItem(invalidField);
+    if (!(control instanceof HTMLElement)) return;
+    const step = Number(control.closest<HTMLElement>("[data-step-index]")?.dataset.stepIndex);
+    if (Number.isInteger(step)) setActiveStep(step);
+    control.setAttribute("aria-invalid", "true");
+    control.setAttribute("aria-describedby", "live-form-error");
+    setLabel((control as HTMLInputElement).labels?.[0]?.textContent?.trim() ?? "");
+    requestAnimationFrame(() => control.focus());
+    // 只在載入帶有伺服器錯誤的頁面時執行一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return label;
+}
+
+function LiveDraftConflictActions({ draft }: { draft: { reloadLatest: () => void; keepMine: () => Promise<void> } }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button type="button" onClick={() => draft.reloadLatest()} className="min-h-11 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-primary">載入最新</button>
+      <button type="button" onClick={() => void draft.keepMine()} className="min-h-11 rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-700">以我的覆蓋</button>
+    </div>
+  );
+}
+
 export function LiveStepperForm({
   videos,
   products,
@@ -1091,22 +1124,7 @@ export function LiveStepperForm({
   const readinessFocusPendingRef = useRef<LivePublishRequirementCodeWithReminder | null>(null);
   const stepHeadingFocusPendingRef = useRef(false);
   const [compactStepper, setCompactStepper] = useState(false);
-  const [invalidFieldLabel, setInvalidFieldLabel] = useState("");
-  useEffect(() => {
-    // F-117: 伺服器指出第一個無效欄位時，切到該步驟、標示 aria-invalid 並把焦點移過去。
-    if (error !== "invalid_draft" || !invalidField || !/^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(invalidField)) return;
-    const control = formRef.current?.elements.namedItem(invalidField);
-    if (!(control instanceof HTMLElement)) return;
-    const step = Number(control.closest<HTMLElement>("[data-step-index]")?.dataset.stepIndex);
-    if (Number.isInteger(step)) setActiveStep(step);
-    control.setAttribute("aria-invalid", "true");
-    control.setAttribute("aria-describedby", "live-form-error");
-    const label = (control as HTMLInputElement).labels?.[0]?.textContent?.trim() ?? "";
-    setInvalidFieldLabel(label);
-    requestAnimationFrame(() => control.focus());
-    // 只在載入帶有伺服器錯誤的頁面時執行一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const invalidFieldLabel = useServerInvalidField(formRef, setActiveStep, error, invalidField);
   useEffect(() => {
     // F-118: 手機改用「第 N 步／共 8 步」與下拉；只在掛載後依視窗寬度切換，桌機 DOM 維持原樣。
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -1237,12 +1255,7 @@ export function LiveStepperForm({
         >
           {draft.message}
         </p>
-        {draft.status === "conflict" ? (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => draft.reloadLatest()} className="min-h-11 rounded-md border border-blue-200 bg-white px-4 text-sm font-semibold text-primary">載入最新</button>
-            <button type="button" onClick={() => void draft.keepMine()} className="min-h-11 rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-700">以我的覆蓋</button>
-          </div>
-        ) : null}
+        {draft.status === "conflict" ? <LiveDraftConflictActions draft={draft} /> : null}
         <button
           type="button"
           onClick={() => void draft.saveNow()}

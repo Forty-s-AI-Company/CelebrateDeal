@@ -150,6 +150,29 @@ function productCurrency(formData: FormData) {
   return text(formData, "currency").toUpperCase() || SUPPORTED_CHECKOUT_CURRENCY;
 }
 
+function productFieldErrors(input: {
+  name: string; slug: string; isActive: boolean; priceCents: number | null;
+  compareAtRaw: string | null; compareAtCents: number | null; inventory: number | null;
+  description: string | null; imageUrlRaw: string | null; imageUrl: string | null;
+  checkoutUrlRaw: string | null; checkoutUrl: string | null;
+}): ProductFieldErrors {
+  const { name, slug, isActive, priceCents, compareAtRaw, compareAtCents, inventory, description } = input;
+  const fieldErrors: ProductFieldErrors = {};
+  if (!name) fieldErrors.name = "請填寫商品名稱。";
+  else if (name.length > MAX_PRODUCT_NAME_LENGTH) fieldErrors.name = `商品名稱最多 ${MAX_PRODUCT_NAME_LENGTH} 字。`;
+  if (!slug) fieldErrors.slug = "請填寫商品網址（可用英數字與連字號）。";
+  if (priceCents === null) fieldErrors.price = "請填寫售價（整數新台幣元，不可為負數）。";
+  else if (priceCents % 100 !== 0) fieldErrors.price = "售價須為整數新台幣元。";
+  else if (isActive && priceCents === 0) fieldErrors.price = "上架商品的售價必須大於 0。";
+  if (inventory === null) fieldErrors.inventory = "可售庫存須為 0 以上的整數。";
+  if (description && description.length > 10_000) fieldErrors.description = "商品描述最多 10,000 字。";
+  if (compareAtRaw !== null && (compareAtCents === null || compareAtCents === 0)) fieldErrors.compareAt = "原價須大於 0。";
+  else if (compareAtCents !== null && priceCents !== null && compareAtCents < priceCents) fieldErrors.compareAt = "原價不可低於售價。";
+  if (input.imageUrlRaw !== null && input.imageUrl === null) fieldErrors.imageUrl = "圖片網址格式不正確。";
+  if (input.checkoutUrlRaw !== null && input.checkoutUrl === null) fieldErrors.checkoutUrl = "外部結帳網址須為有效的 http(s) 網址。";
+  return fieldErrors;
+}
+
 function parseProductInput(formData: FormData) {
   const name = text(formData, "name");
   const slug = toSlug(text(formData, "slug"));
@@ -174,19 +197,10 @@ function parseProductInput(formData: FormData) {
   const checkoutUrl = checkoutUrlRaw ? parseSafeExternalHttpUrl(checkoutUrlRaw) : null;
 
   const description = optionalText(formData, "description");
-  const fieldErrors: ProductFieldErrors = {};
-  if (!name) fieldErrors.name = "請填寫商品名稱。";
-  else if (name.length > MAX_PRODUCT_NAME_LENGTH) fieldErrors.name = `商品名稱最多 ${MAX_PRODUCT_NAME_LENGTH} 字。`;
-  if (!slug) fieldErrors.slug = "請填寫商品網址（可用英數字與連字號）。";
-  if (priceCents === null) fieldErrors.price = "請填寫售價（整數新台幣元，不可為負數）。";
-  else if (priceCents % 100 !== 0) fieldErrors.price = "售價須為整數新台幣元。";
-  else if (isActive && priceCents === 0) fieldErrors.price = "上架商品的售價必須大於 0。";
-  if (inventory === null) fieldErrors.inventory = "可售庫存須為 0 以上的整數。";
-  if (description && description.length > 10_000) fieldErrors.description = "商品描述最多 10,000 字。";
-  if (compareAtRaw !== null && (compareAtCents === null || compareAtCents === 0)) fieldErrors.compareAt = "原價須大於 0。";
-  else if (compareAtCents !== null && priceCents !== null && compareAtCents < priceCents) fieldErrors.compareAt = "原價不可低於售價。";
-  if (imageUrlRaw !== null && imageUrl === null) fieldErrors.imageUrl = "圖片網址格式不正確。";
-  if (checkoutUrlRaw !== null && checkoutUrl === null) fieldErrors.checkoutUrl = "外部結帳網址須為有效的 http(s) 網址。";
+  const fieldErrors = productFieldErrors({
+    name, slug, isActive, priceCents, compareAtRaw, compareAtCents, inventory, description,
+    imageUrlRaw, imageUrl, checkoutUrlRaw, checkoutUrl,
+  });
   if (Object.keys(fieldErrors).length > 0 || priceCents === null || inventory === null) return { fieldErrors };
   if (!isSupportedCheckoutCurrency(currency)) return { fieldErrors };
 
