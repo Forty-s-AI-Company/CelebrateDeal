@@ -285,7 +285,7 @@ test("active member is denied billing plans before finance queries or MFA", asyn
       String(usageLimit.streamMinutesUsed),
       String(usageLimit.storageMinutesUsed),
       ...planPriceAndQuotaCanaries,
-    ].filter((value): value is string => value.length > 0 && value !== "$0");
+    ].filter((value): value is string => value.length > 0 && value !== "NT$0");
     const deniedDashboardCanaries = rawSensitiveCanaries.filter(
       (value) => value !== plan.name,
     );

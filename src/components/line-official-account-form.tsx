@@ -47,7 +47,7 @@ export function LineOfficialAccountForm({
 }) {
   const [state, action, pending] = useActionState(saveLineOfficialAccountAction, initialState);
   const [connectionState, connectionAction, connectionPending] = useActionState(testLineOfficialAccountAction, initialConnectionState);
-  const inputClass = "min-h-11 rounded-md border border-border bg-white px-3 py-2 text-sm text-slate-950";
+  const inputClass = "min-h-11 rounded-md border border-border-control bg-white px-3 py-2 text-sm text-slate-950";
   return (
     <Card className="space-y-5 p-6">
       <div>

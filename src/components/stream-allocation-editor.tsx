@@ -308,13 +308,13 @@ export function StreamAllocationEditor({
             {memberQuotas.length === 0 ? <p className="text-sm text-slate-500">未設定個別成員額度。</p> : null}
             {memberQuotas.map((row) => (
               <div key={row.rowId} className="grid gap-2 rounded-md bg-slate-50 p-3">
-                <select aria-label="額度成員" required value={row.memberKey} onChange={(event) => setMemberQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, memberKey: event.target.value } : item))} className="h-11 rounded-md border border-border bg-white px-3 text-sm">
+                <select aria-label="額度成員" required value={row.memberKey} onChange={(event) => setMemberQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, memberKey: event.target.value } : item))} className="h-11 rounded-md border border-border-control bg-white px-3 text-sm">
                   <option value="">請選擇成員</option>
                   {!membersByKey.has(row.memberKey) && row.memberKey ? <option value={row.memberKey}>原設定已無法使用</option> : null}
                   {members.map((member) => <option key={memberKey(member)} value={memberKey(member)}>{member.label}</option>)}
                 </select>
                 <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <input aria-label="成員額度分鐘" type="number" inputMode="numeric" min={1} max={1_000_000} required value={row.minutes} onChange={(event) => setMemberQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, minutes: event.target.value } : item))} className="h-11 rounded-md border border-border bg-white px-3 text-sm" />
+                  <input aria-label="成員額度分鐘" type="number" inputMode="numeric" min={1} max={1_000_000} required value={row.minutes} onChange={(event) => setMemberQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, minutes: event.target.value } : item))} className="h-11 rounded-md border border-border-control bg-white px-3 text-sm" />
                   <button type="button" onClick={() => setMemberQuotas((rows) => rows.filter((item) => item.rowId !== row.rowId))} className="min-h-11 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-700">移除</button>
                 </div>
               </div>
@@ -328,13 +328,13 @@ export function StreamAllocationEditor({
             {pageQuotas.length === 0 ? <p className="text-sm text-slate-500">未設定個別推廣頁額度。</p> : null}
             {pageQuotas.map((row) => (
               <div key={row.rowId} className="grid gap-2 rounded-md bg-slate-50 p-3">
-                <select aria-label="額度推廣頁" required value={row.pageId} onChange={(event) => setPageQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, pageId: event.target.value } : item))} className="h-11 rounded-md border border-border bg-white px-3 text-sm">
+                <select aria-label="額度推廣頁" required value={row.pageId} onChange={(event) => setPageQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, pageId: event.target.value } : item))} className="h-11 rounded-md border border-border-control bg-white px-3 text-sm">
                   <option value="">請選擇推廣頁</option>
                   {!pagesById.has(row.pageId) && row.pageId ? <option value={row.pageId}>原設定已無法使用</option> : null}
                   {pages.map((page) => <option key={page.id} value={page.id}>{page.label}</option>)}
                 </select>
                 <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <input aria-label="推廣頁額度分鐘" type="number" inputMode="numeric" min={1} max={1_000_000} required value={row.minutes} onChange={(event) => setPageQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, minutes: event.target.value } : item))} className="h-11 rounded-md border border-border bg-white px-3 text-sm" />
+                  <input aria-label="推廣頁額度分鐘" type="number" inputMode="numeric" min={1} max={1_000_000} required value={row.minutes} onChange={(event) => setPageQuotas((rows) => rows.map((item) => item.rowId === row.rowId ? { ...item, minutes: event.target.value } : item))} className="h-11 rounded-md border border-border-control bg-white px-3 text-sm" />
                   <button type="button" onClick={() => setPageQuotas((rows) => rows.filter((item) => item.rowId !== row.rowId))} className="min-h-11 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-700">移除</button>
                 </div>
               </div>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
 import { PublicResourceLinks } from "@/components/public-policy";
 import { logoutAction } from "@/app/actions";
+import { AppShellMobileNav } from "@/components/app-shell-mobile-nav";
 import { AppShellNavLink } from "@/components/app-shell-nav-link";
 import { AppShellNavGroup } from "@/components/app-shell-nav-group";
 import { AppShellAccountMenu } from "@/components/app-shell-account-menu";
@@ -218,7 +219,7 @@ export function AppShell({
               const item = group.items[0];
               return (
                 <AppShellNavLink key={item.href} href={item.href}>
-                  <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
+                  <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
                   <span className="truncate">{item.label}</span>
                 </AppShellNavLink>
               );
@@ -228,7 +229,7 @@ export function AppShell({
               <AppShellNavGroup key={group.label} label={group.label} hrefs={group.items.map((item) => item.href)}>
                 {group.items.map((item) => (
                   <AppShellNavLink key={item.href} href={item.href}>
-                    <item.icon className="size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
+                    <item.icon className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-700 group-aria-[current=page]:text-blue-600" strokeWidth={1.8} aria-hidden="true" />
                     <span className="truncate">{item.label}</span>
                   </AppShellNavLink>
                 ))}
@@ -249,18 +250,18 @@ export function AppShell({
               if (items.length === 0) return null;
               return (
                 <div key={section.label} className="border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
-                  <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{section.label}</p>
+                  <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</p>
                   {items.map((item) => {
                     const Icon = item.icon;
-                    return <Link key={item.href} href={item.href} className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Icon className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />{item.label}</Link>;
+                    return <Link key={item.href} href={item.href} className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Icon className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />{item.label}</Link>;
                   })}
                 </div>
               );
             })}
             <div className="border-t border-slate-100 pt-2">
-              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">支援</p>
-              <Link href="/policies" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><ScrollText className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />說明與政策</Link>
-              <Link href="/support" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Headphones className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />聯絡客服</Link>
+              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">支援</p>
+              <Link href="/policies" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><ScrollText className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />說明與政策</Link>
+              <Link href="/support" className="flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"><Headphones className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />聯絡客服</Link>
             </div>
             <div className="border-t border-slate-100 pt-2">
               <form action={logoutAction}>
@@ -270,7 +271,7 @@ export function AppShell({
                   pendingMessage="正在撤銷目前 session 並登出，請勿重複送出。"
                   className="flex min-h-10 w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-700"
                 >
-                  <LogOut className="size-4 text-slate-400" strokeWidth={1.8} aria-hidden="true" />
+                  <LogOut className="size-4 text-slate-500" strokeWidth={1.8} aria-hidden="true" />
                   登出
                 </FormSubmitButton>
               </form>
@@ -298,16 +299,9 @@ export function AppShell({
           </form>
         </div>
         {!isPlatformAdmin && selectProject ? <details className="mt-2"><summary className="min-h-11 cursor-pointer rounded-lg border border-slate-200 px-3 py-3 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-blue-700">專案：{projects.find((project) => project.id === selectedProjectId)?.name ?? "全部專案總覽"}</summary><div className="mt-2"><WorkspaceProjectSwitcher workspaceName={vendorName} projects={projects} selectedProjectId={selectedProjectId} selectProject={selectProject} /></div></details> : null}
-        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="行動版主要導覽">
-          {visibleGroups.flatMap((group) => group.items).map((item) => (
-            <AppShellNavLink key={item.href} href={item.href} mobile>
-              {item.label}
-            </AppShellNavLink>
-          ))}
-        </nav>
       </header>
 
-      <main id="main-content" tabIndex={-1} className="px-4 py-6 lg:ml-72 lg:px-8 xl:px-10">
+      <main id="main-content" tabIndex={-1} className="px-4 pb-24 pt-6 lg:ml-72 lg:px-8 lg:pb-6 xl:px-10">
         {/* Place mobile guidance in normal document flow, outside the sticky header. */}
         <div className="lg:hidden">
         {!isPlatformAdmin && persistTaskPanelCollapsed ? <OnboardingTaskPanel title={selectedProjectId ? "專案上線任務" : "商家上線任務"} tasks={onboardingTasks} initiallyCollapsed={taskPanelCollapsed} persistCollapsed={persistTaskPanelCollapsed} /> : null}
@@ -318,6 +312,10 @@ export function AppShell({
           <PublicResourceLinks />
         </footer>
       </main>
+      <AppShellMobileNav
+        groups={visibleGroups.map((group) => ({ label: group.label, items: group.items.map((item) => ({ href: item.href, label: item.label })) }))}
+        supportLinks={[{ href: "/support", label: "客服與付款協助" }, { href: "/policies", label: "服務條款與政策" }]}
+      />
     </div>
   );
 }

@@ -62,7 +62,7 @@ export function LiveInteractionStudio({
             <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
             <label className="grid min-w-64 gap-1 text-sm font-semibold text-slate-700">
               待開獎場次
-              <select name="runId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+              <select name="runId" className="h-11 rounded-xl border border-slate-500 bg-white px-3">
                 {drawRunIds.map((run) => <option key={run.id} value={run.id}>{run.title}（{run.responseCount} 人）</option>)}
               </select>
             </label>
@@ -74,12 +74,12 @@ export function LiveInteractionStudio({
           {claimRunIds.length > 0 ? <form action={claimAction} className="flex flex-wrap items-end gap-3 border-t border-violet-100 pt-3">
             <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
             <label className="grid min-w-52 gap-1 text-sm font-semibold text-slate-700">得獎場次
-              <select name="runId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+              <select name="runId" className="h-11 rounded-xl border border-slate-500 bg-white px-3">
                 {claimRunIds.map((run) => <option key={run.id} value={run.id}>{run.title}</option>)}
               </select>
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">得獎核銷碼
-              <input name="claimCode" required pattern="CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}" maxLength={16} placeholder="CD-WIN-1234-5678" className="h-11 rounded-xl border border-slate-300 px-3 font-mono" />
+              <input name="claimCode" required pattern="CD-WIN-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}" maxLength={16} placeholder="CD-WIN-1234-5678" className="h-11 rounded-xl border border-slate-500 px-3 font-mono" />
             </label>
             <button type="submit" disabled={claiming} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-5 font-bold text-white disabled:opacity-50">{claiming ? "核銷中…" : "驗證並核銷"}</button>
             {claimState.message ? <p role={claimState.status === "error" ? "alert" : "status"} className="text-sm font-semibold text-slate-700">{claimState.message}</p> : null}
@@ -104,7 +104,7 @@ export function LiveInteractionStudio({
         <div className="grid gap-3 md:grid-cols-[180px_1fr_140px]">
           <label className="grid gap-1 text-sm font-semibold text-slate-700">
             互動類型
-            <select name="eventType" value={eventType} onChange={(event) => setEventType(event.target.value)} className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+            <select name="eventType" value={eventType} onChange={(event) => setEventType(event.target.value)} className="h-11 rounded-xl border border-slate-500 bg-white px-3">
               <option value="lucky_draw">幸運大抽獎</option>
               <option value="poll">即時投票</option>
               <option value="flash_sale">限時快閃搶購</option>
@@ -113,11 +113,11 @@ export function LiveInteractionStudio({
           </label>
           <label className="grid gap-1 text-sm font-semibold text-slate-700">
             標題
-            <input name="title" required maxLength={160} defaultValue="直播限定互動" className="h-11 rounded-xl border border-slate-300 px-3" />
+            <input name="title" required maxLength={160} defaultValue="直播限定互動" className="h-11 rounded-xl border border-slate-500 px-3" />
           </label>
           <label className="grid gap-1 text-sm font-semibold text-slate-700">
             開放秒數
-            <input name="durationSec" type="number" min={5} max={3600} defaultValue={eventType === "flash_sale" ? 300 : 60} required className="h-11 rounded-xl border border-slate-300 px-3" />
+            <input name="durationSec" type="number" min={5} max={3600} defaultValue={eventType === "flash_sale" ? 300 : 60} required className="h-11 rounded-xl border border-slate-500 px-3" />
           </label>
         </div>
 
@@ -125,11 +125,11 @@ export function LiveInteractionStudio({
           <div className="grid gap-3 md:grid-cols-2">
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               獎項名稱（選填）
-              <input name="prizeName" maxLength={100} placeholder="例如：iPhone 16、簽名書、一對一諮詢" className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="prizeName" maxLength={100} placeholder="例如：iPhone 16、簽名書、一對一諮詢" className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               抽獎資格
-              <select name="eligibility" value={eligibility} onChange={(e) => setEligibility(e.target.value)} className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+              <select name="eligibility" value={eligibility} onChange={(e) => setEligibility(e.target.value)} className="h-11 rounded-xl border border-slate-500 bg-white px-3">
                 <option value="slogan">全體留言口號參加</option>
                 <option value="purchased">限定已購課學員專屬</option>
                 <option value="all_viewers">在線觀眾全員一鍵登記</option>
@@ -138,7 +138,7 @@ export function LiveInteractionStudio({
             {eligibility === "slogan" ? (
               <label className="grid gap-1 text-sm font-semibold text-slate-700 md:col-span-2">
                 抽獎留言口號
-                <input name="slogan" required maxLength={80} defaultValue="週年快樂" className="h-11 rounded-xl border border-slate-300 px-3" />
+                <input name="slogan" required maxLength={80} defaultValue="週年快樂" className="h-11 rounded-xl border border-slate-500 px-3" />
               </label>
             ) : null}
             <div className="md:col-span-2 pt-1">
@@ -154,11 +154,11 @@ export function LiveInteractionStudio({
           <div className="grid gap-3 md:grid-cols-2">
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               投票問題
-              <input name="question" required maxLength={160} defaultValue="最喜歡哪一款？" className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="question" required maxLength={160} defaultValue="最喜歡哪一款？" className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               作答方式
-              <select name="selectionMode" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+              <select name="selectionMode" className="h-11 rounded-xl border border-slate-500 bg-white px-3">
                 <option value="single">單選</option>
                 <option value="multiple">多選（最多 2 項）</option>
               </select>
@@ -166,7 +166,7 @@ export function LiveInteractionStudio({
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               選項（每行一個）
-              <textarea name="options" required defaultValue={"選項一\n選項二"} rows={2} className="rounded-xl border border-slate-300 px-3 py-2" />
+              <textarea name="options" required defaultValue={"選項一\n選項二"} rows={2} className="rounded-xl border border-slate-500 px-3 py-2" />
             </label>
           </div>
         ) : null}
@@ -175,7 +175,7 @@ export function LiveInteractionStudio({
           <div className="grid gap-3 md:grid-cols-4">
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               促銷商品
-              <select name="productId" required className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+              <select name="productId" required className="h-11 rounded-xl border border-slate-500 bg-white px-3">
                 <option value="">請選擇商品</option>
                 {products.filter((product) => !product.checkoutUrl).map((product) => (
                   <option key={product.id} value={product.id}>{product.name}</option>
@@ -184,19 +184,19 @@ export function LiveInteractionStudio({
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               特惠促銷價（元）
-              <input name="salePriceCents" type="number" min={1} placeholder="例如：990" className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="salePriceCents" type="number" min={1} placeholder="例如：990" className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               原價參考（元）
-              <input name="originalPriceCents" type="number" min={1} placeholder="例如：2980" className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="originalPriceCents" type="number" min={1} placeholder="例如：2980" className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               限量席次
-              <input name="stockLimit" type="number" min={1} max={100000} placeholder="例如：30" className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="stockLimit" type="number" min={1} max={100000} placeholder="例如：30" className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700 md:col-span-4">
               快閃促銷標語
-              <input name="announcementText" maxLength={200} placeholder="例如：直播限定特惠！前 30 名現折 2,000 元！" className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="announcementText" maxLength={200} placeholder="例如：直播限定特惠！前 30 名現折 2,000 元！" className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
           </div>
         ) : null}
@@ -205,22 +205,22 @@ export function LiveInteractionStudio({
           <div className="grid gap-3 md:grid-cols-4">
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               折扣類型
-              <select name="discountType" defaultValue="percentage" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+              <select name="discountType" defaultValue="percentage" className="h-11 rounded-xl border border-slate-500 bg-white px-3">
                 <option value="percentage">百分比</option>
                 <option value="fixed">固定金額</option>
               </select>
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               折扣值（固定金額請填元）
-              <input name="discountValue" type="number" min={1} defaultValue={10} required className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="discountValue" type="number" min={1} defaultValue={10} required className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               份數
-              <input name="maxClaims" type="number" min={1} max={100000} defaultValue={100} required className="h-11 rounded-xl border border-slate-300 px-3" />
+              <input name="maxClaims" type="number" min={1} max={100000} defaultValue={100} required className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               適用商品
-              <select name="productId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+              <select name="productId" className="h-11 rounded-xl border border-slate-500 bg-white px-3">
                 <option value="">全部站內結帳商品</option>
                 {products.filter((product) => !product.checkoutUrl).map((product) => (
                   <option key={product.id} value={product.id}>{product.name}</option>
@@ -247,7 +247,7 @@ export function LiveInteractionStudio({
         <form action={endAction} className="mt-4 flex flex-wrap items-end gap-3 border-t border-violet-100 pt-4">
           <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
           <label className="grid min-w-64 gap-1 text-sm font-semibold text-slate-700">進行中的投票
-            <select name="runId" className="h-11 rounded-xl border border-slate-300 bg-white px-3">
+            <select name="runId" className="h-11 rounded-xl border border-slate-500 bg-white px-3">
               {pollRuns.map((run) => <option key={run.id} value={run.id}>{run.title}（{run.responseCount} 人）</option>)}
             </select>
           </label>

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronUp, MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 export function AppShellAccountMenu({
   vendorName,
@@ -17,10 +17,33 @@ export function AppShellAccountMenu({
   children: React.ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const menuId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // F-127: Escape（焦點回到按鈕）與點選選單外部都能關閉。
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setIsOpen(false);
+      buttonRef.current?.focus();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setIsOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [isOpen]);
 
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <div
+        id={menuId}
         hidden={!isOpen}
         className="absolute bottom-[calc(100%+0.75rem)] left-0 right-0 max-h-[min(34rem,calc(100vh-8rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10"
         aria-label="工作區選單"
@@ -28,8 +51,10 @@ export function AppShellAccountMenu({
         {children}
       </div>
       <button
+        ref={buttonRef}
         type="button"
         aria-expanded={isOpen}
+        aria-controls={menuId}
         aria-label="開啟工作區與帳號選單"
         onClick={() => setIsOpen((open) => !open)}
         className="flex min-h-14 w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-2.5 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
@@ -39,7 +64,7 @@ export function AppShellAccountMenu({
           <span className="flex min-w-0 items-center gap-1.5"><span className="truncate text-sm font-semibold text-slate-800">{vendorName}</span><span className="shrink-0 rounded border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-700">{planLabel}</span></span>
           <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-500">{roleLabel}</span>
         </span>
-        {isOpen ? <ChevronUp className="size-4 text-slate-400" aria-hidden="true" /> : <MoreHorizontal className="size-4 text-slate-400" aria-hidden="true" />}
+        {isOpen ? <ChevronUp className="size-4 text-slate-500" aria-hidden="true" /> : <MoreHorizontal className="size-4 text-slate-500" aria-hidden="true" />}
       </button>
     </div>
   );

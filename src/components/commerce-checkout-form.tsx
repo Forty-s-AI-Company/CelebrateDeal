@@ -26,6 +26,7 @@ import {
   readCheckoutIdempotencyKey,
   saveCheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
+import { formatCurrency } from "@/lib/format";
 
 type CheckoutPhase = "idle" | "submitting" | "redirecting" | "success" | "error";
 
@@ -55,7 +56,7 @@ export type CommerceCheckoutFormProps = {
 };
 
 function formatCheckoutPrice(priceCents: number, currency: string) {
-  return new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(priceCents / 100);
+  return formatCurrency(priceCents, currency);
 }
 
 function submitProviderForm(action: string, payload: Record<string, string>) {
@@ -77,7 +78,7 @@ function submitProviderForm(action: string, payload: Record<string, string>) {
 }
 
 function fieldClassName() {
-  return "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-950 shadow-sm placeholder:text-slate-400 focus:border-blue-500";
+  return "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-950 shadow-sm placeholder:text-slate-500 focus:border-blue-500";
 }
 
 function CheckoutCustomFields({ fields, disabled }: { fields: CustomCheckoutFields; disabled: boolean }) {

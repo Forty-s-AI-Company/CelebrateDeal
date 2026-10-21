@@ -410,7 +410,7 @@ function renderInteractionEventRow({
       </div>
 
       <div className="flex items-center justify-end gap-1">
-        <span className="grid h-11 w-6 cursor-grab place-items-center text-slate-400 active:cursor-grabbing" aria-hidden="true">
+        <span className="grid h-11 w-6 cursor-grab place-items-center text-slate-500 active:cursor-grabbing" aria-hidden="true">
           <GripVertical size={16} />
         </span>
         <button type="button" onClick={() => moveEvent(index, index - 1)} disabled={index === 0} aria-label={`將第 ${index + 1} 個事件上移`} className="grid h-11 w-9 place-items-center rounded-md border border-border text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">

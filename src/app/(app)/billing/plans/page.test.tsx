@@ -109,8 +109,8 @@ function enableLiveStagingPlans() {
 describe("/billing/plans route", () => {
   it("identifies plan amounts as TWD without changing their values", async () => {
     const html = renderToStaticMarkup(await BillingPlansPage({}));
-    expect(html).toContain("TWD $99");
-    expect(html).toContain("TWD $3");
+    expect(html).toContain("NT$99");
+    expect(html).toContain("NT$3");
   });
 
   it("explains the acknowledged one-order retry while preserving the duplicate payment warning", async () => {
@@ -170,14 +170,14 @@ describe("/billing/plans route", () => {
       { ...plans[0], id: "team", code: "staging-payuni-team-pro", name: "Team / Pro", monthlyPriceCents: 300, isActive: false, description },
     ]);
     const ready = renderToStaticMarkup(await BillingPlansPage({}));
-    expect(ready).toContain("$1");
-    expect(ready).toContain("$2");
-    expect(ready).toContain("$3");
+    expect(ready).toContain("NT$1");
+    expect(ready).toContain("NT$2");
+    expect(ready).toContain("NT$3");
     expect(ready).not.toContain("設定尚未通過檢查");
     mocks.findMany.mockResolvedValue([{ ...plans[0], code: "starter", monthlyPriceCents: 248000 }]);
     const blocked = renderToStaticMarkup(await BillingPlansPage({}));
     expect(blocked).toContain("設定尚未通過檢查");
-    expect(blocked).not.toContain("$2,480");
+    expect(blocked).not.toContain("NT$2,480");
   });
 
   it("hides an existing production payment form when the staging test switch is closed", async () => {
@@ -242,7 +242,7 @@ describe("/billing/plans route", () => {
 
     expect(html).toContain("可用方案");
     expect(html).toContain("仍可購買的方案");
-    expect(html).toContain("$99");
+    expect(html).toContain("NT$99");
     expect(html).toContain("100 小時 / 月");
     expect(html).toContain("10 場 / 月");
     expect(html).toContain("50 人");
@@ -255,7 +255,7 @@ describe("/billing/plans route", () => {
     expect(html).toContain("pending 交易");
     expect(html).toContain("Stream 包含額度用完後會暫停新播放");
     expect(html).toContain("未啟用自動超額扣款");
-    expect(html).toContain("儲存每 100 分鐘 TWD $3");
+    expect(html).toContain("儲存每 100 分鐘 NT$3");
   });
 
   it("marks the active subscription and does not render another purchase action", async () => {

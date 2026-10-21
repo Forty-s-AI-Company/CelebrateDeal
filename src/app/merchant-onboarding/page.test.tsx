@@ -13,6 +13,9 @@ describe("/merchant-onboarding route", () => {
       expect(html).toContain(step);
     }
     expect(html).toContain("平台方案目前不會自動扣款");
+    // F-123: the in-app checklist is the single source of truth for progress.
+    expect(html).toContain('href="/onboarding"');
+    expect(html).toContain("上線導引"); 
     for (const href of ["/settings/security", "/settings/team", "/settings/brand", "/settings/tracking", "/products", "/lives", "/billing/plans", "/billing/payment-methods", "/support-cases", "/policies/refunds", "/support", "/policies"]) {
       expect(html).toContain(`href="${href}"`);
     }

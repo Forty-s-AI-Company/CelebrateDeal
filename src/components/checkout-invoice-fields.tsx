@@ -17,7 +17,7 @@ export type CheckoutInvoiceFieldsValue = {
   donationCode?: string;
 };
 
-const inputClass = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-950 focus:border-blue-500";
+const inputClass = "mt-1 w-full rounded-lg border border-slate-500 bg-white px-3 py-2.5 text-base text-slate-950 focus:border-blue-500";
 
 export function invoiceFieldError(value: CheckoutInvoiceFieldsValue): string | null {
   if (value.type === "company") {

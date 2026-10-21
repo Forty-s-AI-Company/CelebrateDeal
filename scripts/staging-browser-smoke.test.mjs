@@ -492,7 +492,14 @@ test("desktop and mobile journeys target the visible app shell navigation", () =
   assert.equal(appNavigationSelectorForViewport("desktop"), 'nav[aria-label="主要導覽"]:visible');
   assert.equal(appNavigationSelectorForViewport("mobile"), 'nav[aria-label="行動版主要導覽"]:visible');
   assert.match(shell, /aria-label="主要導覽"/u);
-  assert.match(shell, /aria-label="行動版主要導覽"/u);
+  const mobileNav = readFileSync(new URL("../src/components/app-shell-mobile-nav.tsx", import.meta.url), "utf8");
+  assert.match(shell, /<AppShellMobileNav/u);
+  assert.match(mobileNav, /aria-label="行動版主要導覽"/u);
+  // 商品不在底部 4 項內，runner 必須經「更多」抽屜到達。
+  assert.match(mobileNav, /aria-haspopup="dialog"/u);
+  assert.match(mobileNav, /aria-label="更多功能"/u);
+  const runner = readFileSync(new URL("./staging-browser-smoke.mjs", import.meta.url), "utf8");
+  assert.match(runner, /\[role="dialog"\]\[aria-label="更多功能"\] a\[href="\/products"\]/u);
 });
 
 test("final URLs and blocked requests are reduced to fixed, non-sensitive categories", () => {

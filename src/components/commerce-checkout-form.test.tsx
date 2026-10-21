@@ -55,7 +55,7 @@ describe("CommerceCheckoutForm", () => {
     expect(html).toContain("加購推薦：成交腳本包");
     expect(html).toContain('name="orderBumpSelected"');
     expect(html).toContain("本次結帳總額");
-    expect(html).toContain("$120.00");
+    expect(html).toContain("NT$120");
   });
   it("renders physical shipping fields, payment boundaries, and accessible pending hooks", () => {
     const html = renderToStaticMarkup(

@@ -430,7 +430,7 @@ export function InteractionRolesWorkbench({
               <button
                 type="button"
                 onClick={clearRoleFilters}
-                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                className="h-10 rounded-md border border-slate-500 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               >
                 清除條件
               </button>

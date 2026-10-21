@@ -386,7 +386,7 @@ test("active member is denied billing settlements before tenant query or MFA", a
       ...payoutBatchCanaries,
     ].filter(
       (value): value is string =>
-        typeof value === "string" && value.length > 0 && value !== "$0",
+        typeof value === "string" && value.length > 0 && value !== "NT$0",
     );
 
     const posts: string[] = [];
