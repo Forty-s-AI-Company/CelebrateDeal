@@ -113,7 +113,7 @@ export default async function AdminBillingPayoutsPage({
                           <p className="mt-1 text-xs text-slate-500">{item.settlement?.monthKey ?? "未綁定月結"}</p>
                         </td>
                         <td className="px-5 py-4">
-                          <Landmark className="mr-2 inline text-slate-400" size={16} />
+                          <Landmark className="mr-2 inline text-slate-500" size={16} />
                           {bankAccount.bankCode} / {bankAccount.accountNumber}
                         </td>
                         <td className="px-5 py-4">{bankAccount.accountName}</td>

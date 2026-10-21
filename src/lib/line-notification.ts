@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { LineFetchClient, LineMessagingError, type LineFlexContents, type LineMessage, type LineMessagingClient } from "@/lib/line-client";
 import { unprotectLineOfficialAccountCredentials, unprotectLineProfileValue } from "@/lib/line-credentials";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
+import { formatTwd } from "@/lib/format";
 
 export const LINE_NOTIFICATION_TRIGGERS = [
   "live_reminder",
@@ -24,8 +25,6 @@ export type LineDeliveryProcessingScope = {
   deliveryIds?: readonly string[];
 };
 const DELIVERY_LEASE_MS = 5 * 60_000;
-
-const money = new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 });
 
 function textComponent(text: string, weight: "regular" | "bold" = "regular") {
   return { type: "text", text, wrap: true, weight, color: "#1f2937" };
@@ -71,7 +70,7 @@ export function buildOrderLineMessage(input: {
   orderUrl: string;
 }): LineMessage {
   const title = input.kind === "paid" ? "付款成功電子收據" : "訂單成立";
-  const amountText = input.currency === "TWD" ? money.format(input.amountCents / 100) : `${input.currency} ${(input.amountCents / 100).toFixed(2)}`;
+  const amountText = input.currency === "TWD" ? formatTwd(input.amountCents) : `${input.currency} ${(input.amountCents / 100).toFixed(2)}`;
   return {
     type: "flex",
     altText: `${title}｜${input.orderNumber}`.slice(0, 400),
@@ -84,7 +83,7 @@ export function buildCommissionLineMessage(input: {
   currency: string;
   orderNumber: string | null;
 }): LineMessage {
-  const amountText = input.currency === "TWD" ? money.format(input.amountCents / 100) : `${input.currency} ${(input.amountCents / 100).toFixed(2)}`;
+  const amountText = input.currency === "TWD" ? formatTwd(input.amountCents) : `${input.currency} ${(input.amountCents / 100).toFixed(2)}`;
   return {
     type: "text",
     text: [`佣金已入帳：${amountText}`, input.orderNumber ? `來源訂單：${input.orderNumber}` : null]

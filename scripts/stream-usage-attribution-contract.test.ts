@@ -23,7 +23,10 @@ describe("stream usage attribution contract", () => {
   it("snapshots policy mode and creates allocations in the parent transaction", () => {
     expect(schema).toContain('policyVersion            Int      @default(2)');
     expect(schema).toContain('attributionMode          String   @default("PROMOTER")');
-    expect(usageSource).toContain("db.$transaction(async (tx)");
+    // The ledger row and its nested allocations are one create inside the
+    // heartbeat transaction (READ COMMITTED since F-092, with conflict retry).
+    expect(usageSource).toContain("return await db.$transaction(work, STREAM_USAGE_TRANSACTION_OPTIONS);");
+    expect(usageSource).toContain("const entry = await tx.streamUsageLedgerEntry.create({");
     expect(usageSource).toContain("allocations: {");
     expect(usageSource).toContain("recipientKey: allocation.recipientKey");
   });

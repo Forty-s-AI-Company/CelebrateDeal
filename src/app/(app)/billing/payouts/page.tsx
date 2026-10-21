@@ -117,7 +117,7 @@ export default async function BillingPayoutsPage({ searchParams }: BillingPayout
                       <tr key={item.id} className="hover:bg-slate-50/70">
                         <td className="px-5 py-4 font-semibold text-slate-950">{item.vendor.name}</td>
                         <td className="px-5 py-4">
-                          <Landmark className="mr-2 inline text-slate-400" size={16} />
+                          <Landmark className="mr-2 inline text-slate-500" size={16} />
                           {bankAccount.bankCode} / {bankAccount.accountNumber}
                         </td>
                         <td className="px-5 py-4">{bankAccount.accountName}</td>

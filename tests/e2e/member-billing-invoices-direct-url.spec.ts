@@ -303,7 +303,7 @@ test("active member is denied billing invoices before tenant query or MFA", asyn
       (value): value is string =>
         typeof value === "string" &&
         value.length > 0 &&
-        value !== "$0",
+        value !== "NT$0",
     );
 
     const posts: string[] = [];

@@ -213,7 +213,7 @@ export default async function MfaSetupPage({
         </div>
 
         {showPasswordResetSmoke ? <Card className="mt-6 rounded-2xl border-slate-200 bg-white/80 p-6 shadow-sm">
-          <div className="flex items-center gap-2"><ChevronRight className="size-4 text-slate-400" aria-hidden="true" /><h2 className="text-base font-semibold text-slate-950">Password reset email smoke</h2></div>
+          <div className="flex items-center gap-2"><ChevronRight className="size-4 text-slate-500" aria-hidden="true" /><h2 className="text-base font-semibold text-slate-950">Password reset email smoke</h2></div>
           <p className="mt-1 text-sm text-slate-600">
             僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
           </p>

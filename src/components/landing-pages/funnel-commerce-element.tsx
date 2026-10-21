@@ -1,7 +1,8 @@
 import type { FunnelNodeType } from "@/lib/funnel-page-document";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
+import { formatCurrency } from "@/lib/format";
 
-const money = (priceCents: number, currency: string) => new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(priceCents / 100);
+const money = (priceCents: number, currency: string) => formatCurrency(priceCents, currency);
 const buttonClass = "inline-flex min-h-11 items-center rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white";
 
 /** Commerce never trusts node props, responsive overrides or arbitrary node actions. */

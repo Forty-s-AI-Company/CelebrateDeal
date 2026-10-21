@@ -19,7 +19,7 @@ export async function postRegistrationSubmission(body: Record<string, unknown>):
 
 export function formSubmissionErrorMessage(status?: number) {
   if (status === 400) return "請確認必填欄位與資料格式後再送出。";
-  if (status === 403) return "這次送出未通過安全檢查，請重新整理頁面後再試。";
+  if (status === 403) return "這次送出未通過安全檢查，請稍候再試；若仍失敗，請重新開啟活動頁。";
   if (status === 429) return "送出次數太頻繁，請稍候一分鐘再試。";
   if (status === 404 || status === 503) return "這張表單目前無法接收資料，請稍後再試。";
   // 已收到 HTTP 回應時，不把伺服器拒絕或故障誤指為網路問題。

@@ -113,7 +113,7 @@ export function TeamTemplateForm({
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">團隊
-            <select name="teamId" defaultValue={template?.teamId ?? teams[0]?.id} required className="h-10 rounded-md border border-border bg-white px-3 text-sm">
+            <select name="teamId" defaultValue={template?.teamId ?? teams[0]?.id} required className="h-10 rounded-md border border-border-control bg-white px-3 text-sm">
               {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
           </label>
@@ -124,7 +124,7 @@ export function TeamTemplateForm({
             <input name="slug" required defaultValue={template?.slug} className="h-10 rounded-md border border-border px-3 text-sm" placeholder="summer-webinar" />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">綁定 webinar
-            <select name="webinarId" defaultValue={template?.webinarId ?? ""} className="h-10 rounded-md border border-border bg-white px-3 text-sm">
+            <select name="webinarId" defaultValue={template?.webinarId ?? ""} className="h-10 rounded-md border border-border-control bg-white px-3 text-sm">
               <option value="">暫不綁定</option>
               {webinars.map((webinar) => <option key={webinar.id} value={webinar.id}>{webinar.title} · {webinar.scheduledAt}</option>)}
             </select>
@@ -175,7 +175,7 @@ export function TeamTemplateForm({
               const selected = template?.productSlots?.[key];
               return <div key={key} className="grid gap-2 rounded-md border border-slate-100 p-3">
                 <label className="grid gap-1 text-sm font-medium text-slate-700">{label}
-                  <select name={`product_${key}`} defaultValue={selected?.productId ?? ""} className="h-10 rounded-md border border-border bg-white px-3 text-sm"><option value="">不設定</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select>
+                  <select name={`product_${key}`} defaultValue={selected?.productId ?? ""} className="h-10 rounded-md border border-border-control bg-white px-3 text-sm"><option value="">不設定</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select>
                 </label>
                 <input name={`offerLabel_${key}`} defaultValue={selected?.offerLabel ?? ""} className="h-9 rounded-md border border-border px-3 text-sm" placeholder="商品顯示名稱（選填）" />
               </div>;

@@ -65,7 +65,7 @@ export default async function MobileConsultationsPage() {
                 <CsrfField />
                 <input type="hidden" name="bookingId" value={booking.id} />
                 <label className="grid gap-1 text-sm font-bold text-slate-800">快速備註
-                  <textarea name="note" maxLength={4_000} rows={2} className="rounded-xl border border-slate-300 p-3 font-normal" placeholder="記下需求與下一步…" />
+                  <textarea name="note" maxLength={4_000} rows={2} className="rounded-xl border border-slate-500 p-3 font-normal" placeholder="記下需求與下一步…" />
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <FormSubmitButton name="tag" value="預算足夠" pendingChildren="儲存中…" pendingMessage="正在儲存，請勿重複送出。" className="min-h-12 rounded-xl border border-emerald-300 bg-emerald-50 px-2 text-sm font-bold text-emerald-900">＋ 預算足夠</FormSubmitButton>

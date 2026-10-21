@@ -400,13 +400,23 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 測試：`src/app/(app)/billing/payouts/actions.db.test.ts`（envelope／遮罩、24 小時冷卻與 `selectPayoutAccount`、被偷 session 沒有 TOTP 無法改帳號、step-up 次數限制、active／verified 改回 pending、兩租戶否定、通知信、停權不可解除、多帳號拒絕、CSRF、CHECK）、`scripts/backfill-bank-account-encryption.db.test.ts`、`src/app/(app)/billing/payouts/page.test.tsx`、`src/lib/payout-account.test.ts`。
 - 目前 151 models、120 forward migrations；既有 SQL／checksum 不變。已在 loopback 全新 `celebratedeal_dev`（5433）完整套用，並以交易內測試確認明文列會被遮罩並寫入 AuditLog、之後 VALIDATE 成功。
 
+## 2026-10-21 F-092／B06-06 串流用量月計數列（心跳不再於 Serializable 交易掃整月帳本）
+
+- `20261021150000_stream_usage_monthly_counter`：forward-only、純新增。新增 `StreamUsageMonthlyCounter`（主鍵 `(vendorId, monthKey)`、`watchSeconds` 預設 0、`createdAt`、`updatedAt`）：CHECK `monthKey` 為 `YYYY-MM`、`watchSeconds >= 0`；`vendorId` FK ON DELETE CASCADE；啟用 RLS（不新增 policy）。不回填：每個商家月份的第一個心跳以 `INSERT ... SELECT SUM(ledger) ... ON CONFLICT DO UPDATE` 從帳本播種一次，之後只做單列遞增。
+- 不變量：`StreamUsageLedgerEntry` 仍是不可變的唯一事實來源；計數列是可重算的衍生總和。`recordStreamUsageLedgerEntry` 改為 READ COMMITTED：先以條件式 `UPDATE ... SET "watchSeconds" = "watchSeconds" + n WHERE GREATEST("watchSeconds", legacy) + n <= limit` 預留額度（無上限時照樣累加），預留成功即持有該列鎖直到交易結束，所以同商家的成員／頁面額度檢查、帳本與分配寫入依序執行；額度不足才拋 `StreamQuotaExceededError`（route 回 429 `stream_minutes_exhausted`）。交易失敗回滾時遞增一併回滾。P2034 或原生查詢的 `40001`／`40P01`（P2010）最多重試 3 次，仍失敗回 `usage_busy`（route 回 503、可重試），**不再轉成額度用完**。觀眾入場（`admitLiveViewer`，仍為 Serializable）改讀計數列（無列時退回帳本加總）。
+- 同批修正：帳本 `create` 的巢狀 `allocations.create` 原本帶 `vendorId`，Prisma 對複合 FK 的 nested input 不接受此欄位，真實資料庫上每次心跳寫入都會失敗（單元測試以 mock 掩蓋）；已移除，`vendorId` 由父列帶入。另外真正的額度用完原本拋出未對應的 `StreamQuotaExceededError` 而回 500，現在回 429。
+- 已知限制：滾動部署期間仍在跑舊版程式的實例只寫帳本、不更新計數列，計數列可能比帳本少記該段時間（開了 Skew Protection 會放大）；少記等於多放行額度。唯讀對帳查詢與只往上修的人工重新播種步驟見 `docs/operations/stream-usage-runbook.md`。部署順序必須先 `prisma migrate deploy` 再部署程式，否則有限額度商家的觀眾無法入場。
+- PR #461 審查修正：交易明確使用 `{ isolationLevel: ReadCommitted, maxWait: 5s, timeout: 10s }`，P2028（等連線或等鎖逾時）直接回 `usage_busy`（503 可重試）；額度提醒只在跨過 80%／100% 門檻時寫入。
+- 測試：`src/lib/stream-usage-counter.db.test.ts`（20 個併發心跳在有限額度下全數入帳、計數＝帳本＝1,200 秒；10 分鐘額度下 20 個併發心跳恰好 10 個成功、其餘只會是 `StreamQuotaExceededError`；既有帳本播種；同 eventId 併發只計一次；跨租戶；CHECK 與 vendor 串聯刪除）。同一個 20 併發案例在舊版 Serializable 邏輯下會出現多筆 `stream_minutes_exhausted`。
+- 目前 152 models、121 forward migrations；既有 SQL／checksum 不變。
+
 ## 2026-10-21 F-028／B02-05 帳號層限流改用資料庫計數
 
 - `20261021160000_account_rate_limit_bucket`：forward-only、純新增。新增 `AccountRateLimitBucket`（`keyHash` PK、`scope`、`windowStartedAt`、`count`、`updatedAt`，`updatedAt` 索引）。CHECK `keyHash` 必須是 64 字元小寫 hex、`count ≥ 1`。無 FK、無 tenant key（計數主體是帳號或收件人，不屬於單一商家）；啟用 RLS（不新增 policy）。交易層級 `lock_timeout = 5s`。Prisma 6 不比對 CHECK，drift 檢查不變、無新 allowlist 項目。
 - `keyHash = SHA-256("celebratedeal:account-rate-limit:v1" ‖ scope ‖ subject)`，Email 不以明文落表。唯一寫入點 `src/lib/account-rate-limit.ts`：單一 `INSERT … ON CONFLICT DO UPDATE` 以資料庫時鐘（UTC）做固定視窗計數，原子遞增；新建 bucket 時順手刪除最多 50 筆閒置超過 24 小時的列，避免以隨機 Email 灌表。DB 錯誤一律回 503（fail closed）。
 - 不受 `RATE_LIMIT_PROVIDER` 影響；`checkRateLimit`（`@/lib/rate-limit`）只負責 IP 層，`cloudflare_waf` 時只放行 IP 層。帳號層：MFA 驗證（每帳號 5 次／分）、復原碼重產（3 次／15 分）、撥款帳號 step-up（5 次／15 分）、學員 magic link（每商家＋學員 3 次／15 分）、成員邀請（每商家 5 次／分）、密碼重設信（每收件人 3 次／15 分，超過時不寄、回應不變）。#462 審查後補上：登入（每個提交的 Email 10 次／15 分，回 `rate_limited`，不透露帳號是否存在）、MFA 驗證失敗每帳號每日 50 次，超過後每次失敗鎖定 1 小時（`mfa_verification_lock`，同一張表，`windowStartedAt` 為鎖定起點；鎖定或讀取失敗時拒絕驗證）。preflight 新增 `ACCOUNT_RATE_LIMIT` 說明，不再把 WAF 當成帳號層的替代。
 - 測試：`src/lib/account-rate-limit.db.test.ts`（上限、WAF 下仍擋、視窗重置、scope／subject 獨立、併發原子、只存 hash、閒置清理、503、CHECK）、`src/lib/password-reset.test.ts`（收件人上限）、`src/app/actions.test.ts`、`src/app/actions/student-portal-actions.test.ts`、`src/lib/env.test.ts`。
-- 本分支（基底 #457）加上本 migration 後為 152 models、121 forward migrations；既有 SQL／checksum 不變。時間戳原為 `150000`，因與 #461 的 `20261021150000_stream_usage_monthly_counter` 相同而改為 `160000`（尚未套用到任何共用環境）。#461 先合併時，總數各加 1。
+- 時間戳原為 `150000`，因與 #461 的 `20261021150000_stream_usage_monthly_counter` 相同而改為 `160000`（尚未套用到任何共用環境），排在 #461 之後。合併 #461 後為 153 models、122 forward migrations；既有 SQL／checksum 不變。
 
 ## 2026-10-21 F-029／B02-06 商家成員改為邀請 token，需對方接受
 
@@ -416,4 +426,4 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - #462 審查 M1：沒有 active membership 的既有帳號（例如停用後再被邀請的成員）若有待接受且未過期的邀請，可以登入（session `vendorId` 為 NULL），登入後只會回到 `/invitations/accept`（登入表單的 `next` 只接受該路徑）；沒有邀請時仍回 `no_vendor`。接受頁不需要 vendor context，MFA 未驗證的 session 先到 `/mfa/verify` 再回來。m7：owner 可直接調降其他成員角色（`changeVendorMemberRoleAction`，step-up、只允許權限變小、Serializable 與 last-owner 檢查）；調高角色仍需邀請。
 - 移除 `platform_user`、`inactive_user` 回應碼。既有成員的「重寄設定密碼邀請」與「停用」不變（皆加上 F-027 step-up）。
 - 測試：`src/lib/vendor-member-invitation.db.test.ts`（四種 Email 回應一致且不建 membership、寄信對象、跨租戶撤銷否定、本人登入才可接受、新帳號與政策同意、平台管理員／停權不可接受、過期／撤銷／偽造 token、last owner、併發單次使用、CHECK）、`src/app/actions.test.ts`、`src/app/invitations/accept/page.test.tsx`。
-- 本分支加上本 migration 後為 153 models、122 forward migrations（#461 先合併時為 154、123）；既有 SQL／checksum 不變。時間戳原為 `150100`，改為 `160100` 以排在 #461 之後。
+- 時間戳原為 `150100`，改為 `160100` 以排在 #461 之後。目前 154 models、123 forward migrations；既有 SQL／checksum 不變。

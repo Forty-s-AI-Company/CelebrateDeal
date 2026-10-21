@@ -114,7 +114,7 @@ describe("/affiliates/commissions route", () => {
     expect(html).toContain("推廣夥伴");
     expect(html).toContain("Gross 分潤基礎");
     expect(html).toContain("Net reference");
-    expect(html).toContain("$86");
+    expect(html).toContain("NT$86");
     expect(html).toContain("標記已付款");
     expect(html).toContain("標記作廢");
     expect(html).toContain('name="id" value="affiliate-payout-pending"');
@@ -167,7 +167,7 @@ describe("/affiliates/commissions route", () => {
   it("shows dispute holds and refuses payment controls while the payout is held", async () => {
     mocks.payoutFindMany.mockResolvedValue([{ ...pendingPayout, heldAmountCents: 500 }]);
     const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
-    expect(html).toContain("爭議暫扣：$5");
+    expect(html).toContain("爭議暫扣：NT$5");
     expect(html).not.toContain("標記已付款");
     expect(html).not.toContain('name="status" value="paid"');
   });

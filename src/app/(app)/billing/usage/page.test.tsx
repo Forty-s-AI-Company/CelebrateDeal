@@ -176,7 +176,7 @@ describe("/billing/usage route", () => {
   it("deducts partial and full processed refund platform fees without including other vendors or months", async () => {
     const html = renderToStaticMarkup(await BillingUsagePage());
 
-    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>\$8<\/p>/);
+    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>NT\$8<\/p>/);
   });
 
   it("reconciles immutable stream ledger seconds instead of trusting a stale usage counter", async () => {
@@ -295,11 +295,11 @@ describe("/billing/usage route", () => {
 
     expect(html).toContain("本月成交額");
     expect(html).toContain("預估交易服務費");
-    expect(html).toMatch(/本月成交額<\/p><p[^>]*>\$140<\/p>/);
-    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>\$0<\/p>/);
-    expect(html).not.toContain("$154");
-    expect(html).not.toContain("$10,140");
-    expect(html).not.toContain("$510");
+    expect(html).toMatch(/本月成交額<\/p><p[^>]*>NT\$140<\/p>/);
+    expect(html).toMatch(/預估交易服務費<\/p><p[^>]*>NT\$0<\/p>/);
+    expect(html).not.toContain("NT$154");
+    expect(html).not.toContain("NT$10,140");
+    expect(html).not.toContain("NT$510");
     expect(html).not.toContain("-$");
   });
 

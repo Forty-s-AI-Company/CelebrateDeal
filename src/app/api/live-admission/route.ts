@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { admitLiveViewer, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
+import { admitLiveViewer, LIVE_VIEWER_SESSION_TTL_MS, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
 import { getDb } from "@/lib/db";
+import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE, liveViewerPassCookieOptions } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const LiveAdmissionPayload = z.object({
@@ -18,6 +19,12 @@ function errorResponse(error: LiveQuotaAdmissionError) {
     return NextResponse.json({ error: "Playback temporarily unavailable" }, { status: 503 });
   }
   return NextResponse.json({ error: "Playback temporarily unavailable" }, { status: 429 });
+}
+
+/** A refused or failed admission also ends read-poll access (R461-05). */
+function withoutViewerPass(request: Request, response: NextResponse) {
+  response.cookies.set(LIVE_VIEWER_PASS_COOKIE, "", liveViewerPassCookieOptions(request, 0));
+  return response;
 }
 
 async function readPayload(request: Request) {
@@ -42,10 +49,19 @@ export async function POST(request: Request) {
     });
     const response = NextResponse.json({ ok: true });
     response.cookies.set("celebratedeal_live_viewer", result.token, liveViewerCookieOptions(request));
+    // Renewed with every admission: read polls verify this signature instead
+    // of reading the viewer session row (F-091).
+    response.cookies.set(LIVE_VIEWER_PASS_COOKIE, createLiveViewerPass({
+      vendorId: payload.vendorId,
+      liveId: payload.liveId,
+      viewerSessionId: result.sessionId,
+      admissionToken: result.token,
+      sessionExpiresAt: result.expiresAt,
+    }), liveViewerPassCookieOptions(request, Math.ceil(LIVE_VIEWER_SESSION_TTL_MS / 1_000)));
     return response;
   } catch (error) {
-    if (error instanceof LiveQuotaAdmissionError) return errorResponse(error);
-    return NextResponse.json({ error: "Unable to admit playback" }, { status: 500 });
+    if (error instanceof LiveQuotaAdmissionError) return withoutViewerPass(request, errorResponse(error));
+    return withoutViewerPass(request, NextResponse.json({ error: "Unable to admit playback" }, { status: 500 }));
   }
 }
 
@@ -60,5 +76,7 @@ export async function DELETE(request: Request) {
     ...payload,
     token: liveViewerTokenFromRequest(request),
   });
-  return NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(LIVE_VIEWER_PASS_COOKIE, "", liveViewerPassCookieOptions(request, 0));
+  return response;
 }

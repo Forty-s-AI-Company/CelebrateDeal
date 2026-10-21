@@ -3,6 +3,8 @@
 import { BarChart3, Flame, Gift, MessageCircleQuestion, PartyPopper, Sparkles, Trophy, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdvancedInteractionMetadata } from "@/lib/interaction-event";
+import { formatCurrency } from "@/lib/format";
+import { usePageVisible } from "@/lib/use-page-visibility";
 
 type AdvancedEvent = {
   id: string;
@@ -121,6 +123,7 @@ function ActiveLiveAdvancedInteractions({
   onCheckout?: (productId: string, flashSaleRunId?: string) => void | Promise<void>;
 }) {
   const [admissionLost, setAdmissionLost] = useState(false);
+  const pageVisible = usePageVisible();
   const [run, setRun] = useState<PublicRun | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [displayName, setDisplayName] = useState("");
@@ -147,7 +150,8 @@ function ActiveLiveAdvancedInteractions({
   }, [run?.id, scriptedEvent?.id, admissionLost]);
 
   useEffect(() => {
-    if (!enabled || admissionLost) return;
+    // 分頁隱藏時暫停輪詢；回到前景時重新執行並立即讀取一次。
+    if (!enabled || admissionLost || !pageVisible) return;
     // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
     const controller = new AbortController();
     const { signal } = controller;
@@ -187,7 +191,7 @@ function ActiveLiveAdvancedInteractions({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [enabled, admissionLost, liveId, scriptedEvent, vendorId]);
+  }, [enabled, admissionLost, liveId, pageVisible, scriptedEvent, vendorId]);
 
   useEffect(() => {
     if (!run) return;
@@ -267,10 +271,10 @@ function ActiveLiveAdvancedInteractions({
             ) : null}
             <div className="mt-2 flex items-baseline justify-center gap-2">
               {run.sale ? (
-                <span className="text-3xl font-black text-white">{new Intl.NumberFormat("zh-TW", { style: "currency", currency: run.sale.currency }).format(run.sale.salePriceCents / 100)}</span>
+                <span className="text-3xl font-black text-white">{formatCurrency(run.sale.salePriceCents, run.sale.currency)}</span>
               ) : null}
               {run.sale ? (
-                <span className="text-sm line-through text-white/70">{new Intl.NumberFormat("zh-TW", { style: "currency", currency: run.sale.currency }).format(run.sale.priceCents / 100)}</span>
+                <span className="text-sm line-through text-white/70">{formatCurrency(run.sale.priceCents, run.sale.currency)}</span>
               ) : null}
             </div>
             {run.metadata.stockLimit ? (
@@ -317,7 +321,7 @@ function ActiveLiveAdvancedInteractions({
               onChange={(event) => setDisplayName(event.target.value)}
               maxLength={80}
               disabled={run.responded || closed}
-              className="h-11 rounded-xl border border-slate-300 px-3"
+              className="h-11 rounded-xl border border-slate-500 px-3"
               placeholder="你的顯示名稱"
             />
           ) : null}
@@ -365,7 +369,7 @@ function ActiveLiveAdvancedInteractions({
     <>
       {spotlight ? <aside className="fixed inset-x-4 top-20 z-[75] mx-auto max-w-2xl rounded-2xl border border-amber-300 bg-slate-950/95 p-4 text-white shadow-2xl" aria-live="polite" data-testid="live-question-spotlight"><p className="text-xs font-black uppercase tracking-widest text-amber-300">現場精選問答</p><blockquote className="mt-2 text-lg font-bold">「{spotlight.body}」</blockquote><p className="mt-2 text-sm text-slate-300">— {spotlight.displayName ?? "匿名觀眾"}</p></aside> : null}
       <button type="button" onClick={() => setShowQuestions((value) => !value)} aria-expanded={showQuestions} className="fixed bottom-24 right-5 z-[76] inline-flex min-h-12 items-center gap-2 rounded-full bg-cyan-700 px-4 font-bold text-white shadow-xl"><MessageCircleQuestion size={19} />提問</button>
-      {showQuestions ? <aside className="fixed bottom-20 right-4 z-[76] grid w-[min(24rem,calc(100vw-2rem))] gap-3 rounded-2xl border border-cyan-200 bg-white p-4 text-slate-900 shadow-2xl" aria-label="直播提問專區"><h2 className="font-black">想問講師什麼？</h2><input value={questionName} onChange={(event) => setQuestionName(event.target.value)} maxLength={80} placeholder="暱稱（留空即匿名）" className="h-10 rounded-lg border border-slate-300 px-3" /><textarea value={questionBody} onChange={(event) => setQuestionBody(event.target.value)} maxLength={500} rows={4} placeholder="輸入問題，最多 500 字" className="rounded-lg border border-slate-300 px-3 py-2" /><button type="button" disabled={isSubmitting || !questionBody.trim()} onClick={() => void askQuestion()} className="min-h-11 rounded-lg bg-cyan-700 px-4 font-bold text-white disabled:opacity-50">送出問題</button>{questionMessage ? <p role="status" className="text-sm font-semibold">{questionMessage}</p> : null}</aside> : null}
+      {showQuestions ? <aside className="fixed bottom-20 right-4 z-[76] grid w-[min(24rem,calc(100vw-2rem))] gap-3 rounded-2xl border border-cyan-200 bg-white p-4 text-slate-900 shadow-2xl" aria-label="直播提問專區"><h2 className="font-black">想問講師什麼？</h2><input value={questionName} onChange={(event) => setQuestionName(event.target.value)} maxLength={80} placeholder="暱稱（留空即匿名）" className="h-10 rounded-lg border border-slate-500 px-3" /><textarea value={questionBody} onChange={(event) => setQuestionBody(event.target.value)} maxLength={500} rows={4} placeholder="輸入問題，最多 500 字" className="rounded-lg border border-slate-500 px-3 py-2" /><button type="button" disabled={isSubmitting || !questionBody.trim()} onClick={() => void askQuestion()} className="min-h-11 rounded-lg bg-cyan-700 px-4 font-bold text-white disabled:opacity-50">送出問題</button>{questionMessage ? <p role="status" className="text-sm font-semibold">{questionMessage}</p> : null}</aside> : null}
       {run && dismissedRunId !== run.id ? <section className={`fixed inset-x-3 bottom-24 z-[70] mx-auto max-w-md overflow-hidden rounded-3xl border p-5 text-slate-950 shadow-2xl ${run.eventType === "flash_voucher" || run.eventType === "flash_sale" ? "border-red-200 bg-gradient-to-br from-red-50 via-white to-amber-50" : "border-white/50 bg-white/95 backdrop-blur-xl"}`} aria-live="polite" data-testid="live-advanced-interaction">
       <button type="button" onClick={() => setDismissedRunId(run.id)} aria-label="關閉互動視窗" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-600"><X size={17} /></button>
       <div className="flex items-center gap-3 pr-10">

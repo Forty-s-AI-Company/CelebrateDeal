@@ -17,6 +17,7 @@ import { postStreamUsageHeartbeat, type StreamUsageHeartbeat } from "@/lib/strea
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import type { LiveRuntimeState } from "@/lib/live-runtime-state";
+import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 const clientHeaders = {
   "Content-Type": "application/json",
@@ -592,6 +593,22 @@ function useStreamUsageTracker({
     }, delay);
   }
 
+  const flushStreamUsageRef = useRef(flushStreamUsage);
+  useEffect(() => {
+    flushStreamUsageRef.current = flushStreamUsage;
+  });
+
+  useEffect(() => {
+    // Usage heartbeats are NOT gated on page visibility (R461-01): a
+    // background tab still plays, consumes Stream minutes and must keep
+    // hitting the quota check. Only on pagehide is the sub-minute remainder
+    // sent once with a keepalive request so closing the tab does not drop it.
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+    const onPageHide = () => void flushStreamUsageRef.current(true, true);
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, []);
+
   useEffect(() => {
     disposedRef.current = false;
     return () => {
@@ -602,7 +619,7 @@ function useStreamUsageTracker({
     };
   }, []);
 
-  async function flushStreamUsage(force = false) {
+  async function flushStreamUsage(force = false, keepalive = false) {
     if (
       disposedRef.current
       || quotaExhaustedRef.current
@@ -631,7 +648,10 @@ function useStreamUsageTracker({
     usageFlushInFlightRef.current = true;
     const requestController = new AbortController();
     heartbeatAbortControllerRef.current = requestController;
-    const outcome = await postStreamUsageHeartbeat(pendingHeartbeat, fetch, { signal: requestController.signal });
+    const outcome = await postStreamUsageHeartbeat(pendingHeartbeat, fetch, {
+      signal: requestController.signal,
+      ...(keepalive ? { keepalive: true } : {}),
+    });
     if (heartbeatAbortControllerRef.current === requestController) {
       heartbeatAbortControllerRef.current = null;
     }
@@ -880,6 +900,7 @@ function ExternalNavigationConfirmDialog({
 }) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  useDialogBehavior(Boolean(intent));
   useEffect(() => {
     if (!intent || typeof document === "undefined") return;
     cancelButtonRef.current?.focus();
@@ -909,6 +930,7 @@ function ExternalNavigationConfirmDialog({
   const title = intent.kind === "product" ? "前往外部商品頁？" : "開啟外部連結？";
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true"
+      onClick={(event) => { if (event.target === event.currentTarget && !isConfirming) onCancel(); }}
       aria-labelledby="external-navigation-title" aria-describedby="external-navigation-description">
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-950 shadow-2xl">
         <h2 id="external-navigation-title" className="text-lg font-black">{title}</h2>

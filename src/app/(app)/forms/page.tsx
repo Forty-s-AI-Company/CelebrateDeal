@@ -131,7 +131,7 @@ export default async function FormsPage({
                   {form.isActive ? (
                     <a href={`/form/${encodeURIComponent(form.slug)}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-md border border-border bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">預覽報名頁</a>
                   ) : (
-                    <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-border bg-slate-50 px-3 text-sm font-semibold text-slate-400">公開預覽不可用</span>
+                    <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-border bg-slate-50 px-3 text-sm font-semibold text-slate-500">公開預覽不可用</span>
                   )}
                 </div>
               </div>

@@ -51,10 +51,10 @@ export default async function OrdersPage({ searchParams }: {
         <form method="get" className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
           {productId ? <input type="hidden" name="productId" value={productId} /> : null}
           <label className="grid gap-1 text-sm font-medium text-slate-700">訂單編號
-            <input name="q" defaultValue={search} maxLength={128} className="min-h-11 rounded-md border border-slate-300 px-3" placeholder="搜尋訂單編號" />
+            <input name="q" defaultValue={search} maxLength={128} className="min-h-11 rounded-md border border-slate-500 px-3" placeholder="搜尋訂單編號" />
           </label>
           <label className="grid gap-1 text-sm font-medium text-slate-700">狀態
-            <select name="status" defaultValue={status ?? ""} className="min-h-11 rounded-md border border-slate-300 bg-white px-3">
+            <select name="status" defaultValue={status ?? ""} className="min-h-11 rounded-md border border-slate-500 bg-white px-3">
               <option value="">全部狀態</option>
               {COMMERCE_ORDER_STATUSES.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}
             </select>

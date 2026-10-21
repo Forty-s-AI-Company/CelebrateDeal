@@ -7,6 +7,7 @@ import { PublicPolicyShell } from "@/components/public-policy";
 import { Badge, Card } from "@/components/ui";
 import { resolveBuyerOrderDetail } from "@/lib/buyer-support-access";
 import { getDb } from "@/lib/db";
+import { formatCurrency } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -48,7 +49,7 @@ const fulfillmentTypeLabels: Record<string, string> = {
 };
 
 function formatAmount(amountCents: number, currency: string) {
-  return new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(amountCents / 100);
+  return formatCurrency(amountCents, currency);
 }
 
 function localDate(value: Date | null) {
