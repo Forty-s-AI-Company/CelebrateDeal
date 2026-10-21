@@ -133,7 +133,6 @@ type Row = {
 
 const owner = (tenant: (f: Fix) => TenantData) => (f: Fix) => tenant(f).actors.owner;
 const a = (f: Fix) => f.a;
-const b = (f: Fix) => f.b;
 
 const payoutForm = (id: string) => formData({ id, status: "void", reason: "synthetic void" });
 const ruleForm = (pageId: string, ruleId: string, version = "1") => formData({ pageId, ruleId, version, name: "改名", tag: "新標籤" });
