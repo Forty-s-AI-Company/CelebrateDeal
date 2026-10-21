@@ -80,7 +80,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(95);
+  expect(sourceFiles).toHaveLength(96);
   expect(familyCounts).toEqual({
     vendorContext: 7,
     vendorManagerMember: 2,
@@ -89,11 +89,15 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     vendorManager: 56,
     vendorFinance: 12,
     authenticated: 1,
-    platformFinance: 12,
+    platformFinance: 13,
   });
   const courseCommunityPage=path.join(workspaceRoot,"src","app","(app)","products","[id]","community","page.tsx");
   expect(sourceFiles).toContain(courseCommunityPage);
   expect(guardFor(readFileSync(courseCommunityPage,"utf8"))).toBe("vendorManager");
+  // F-001: closed-beta grants are platform-admin only.
+  const vendorFeaturesPage = path.join(workspaceRoot, "src", "app", "admin", "vendor-features", "page.tsx");
+  expect(sourceFiles).toContain(vendorFeaturesPage);
+  expect(guardFor(readFileSync(vendorFeaturesPage, "utf8"))).toBe("platformFinance");
 
   const suffix = randomUUID().replace(/-/g, "");
   const vendor = await db.vendor.create({
