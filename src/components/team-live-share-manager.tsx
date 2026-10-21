@@ -112,7 +112,7 @@ export function TeamLiveShareManager({ csrfToken, pages }: { csrfToken: string; 
             </button>
           </div>
           {copyStatus === "error" ? <p role="alert" aria-live="assertive" className="mt-2 text-xs font-medium text-red-700">瀏覽器無法複製分享連結，請允許剪貼簿權限後重試。</p> : null}
-          <p className="mt-2 text-xs text-emerald-800">安全提醒：完整 token 只在這次畫面顯示；重新整理後只能重新產生連結。</p>
+          <p className="mt-2 text-xs text-emerald-800">安全提醒：完整連結碼只在這次畫面顯示；重新整理後只能重新產生連結。</p>
         </div>
       ) : null}
 

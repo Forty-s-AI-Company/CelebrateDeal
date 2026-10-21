@@ -195,10 +195,10 @@ test("active accountant is denied live creation before related assets are expose
     await expect(page.getByRole("heading", { name: "營運總覽" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "建立直播間" })).toHaveCount(0);
     await expect(page.locator('form:has(input[name="title"]):has(input[name="_csrf"])')).toHaveCount(0);
-    for (const step of ["基本資料", "影片 / Live Input", "商品", "報名頁", "通知", "互動腳本", "規則", "發布"]) {
+    for (const step of ["基本資料", "影片／即時直播", "商品", "報名頁", "通知", "互動腳本", "規則", "發布"]) {
       await expect(page.getByRole("button", { name: step, exact: true })).toHaveCount(0);
     }
-    for (const label of ["直播標題", "直播網址", "開播時間", "直播說明", "串流模式", "影片 / Live Input", "Hero 圖片 URL", "促銷短句", "報名頁", "通知模板", "互動腳本", "允許聯盟來源", "預設推廣碼", "觀看人數上限", "點數低於多少時停止推播"]) {
+    for (const label of ["直播標題", "直播網址", "開播時間", "直播說明", "串流模式", "影片／即時直播", "Hero 圖片 URL", "促銷短句", "報名頁", "通知模板", "互動腳本", "允許聯盟來源", "預設推廣碼", "觀看人數上限", "點數低於多少時停止推播"]) {
       await expect(page.getByLabel(label, { exact: true })).toHaveCount(0);
     }
     for (const canary of documentCanaries) {

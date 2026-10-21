@@ -52,7 +52,7 @@ export function LineOfficialAccountForm({
     <Card className="space-y-5 p-6">
       <div>
         <h2 className="text-lg font-semibold">LINE Official Account</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-slate-600">
           {connected ? "目前已綁定；更新時請重新填入完整憑證。" : "填入 LINE Developers Console 提供的通道憑證。"}
         </p>
       </div>
@@ -116,7 +116,7 @@ export function LineOfficialAccountForm({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="font-medium">連線診斷</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-slate-600">
               {lastValidatedAt ? `上次驗證：${lastValidatedAt}` : "尚未驗證。只會回傳官方帳號名稱與頭像，不會顯示憑證。"}
             </p>
           </div>

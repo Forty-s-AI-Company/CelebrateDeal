@@ -9,7 +9,7 @@ const fulfillmentLabels = {
   physical: "實體出貨",
   digital: "數位授權",
   service: "服務排程",
-  course: "課程授權／F/G 分潤",
+  course: "課程授權／課程分潤",
 } as const;
 
 export default async function ProductPreviewPage({ params }: { params: Promise<{ id: string }> }) {

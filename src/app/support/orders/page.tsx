@@ -45,7 +45,7 @@ export default async function BuyerOrdersPage() {
         {sorted.length === 0 ? (
           <Card className="mt-6">
             <h2 className="font-semibold text-slate-950">找不到可查看的訂單</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">請使用開始結帳時的同一個瀏覽器與裝置。請勿在任何表單貼上 Cookie、Token、完整卡號或 CVV。</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">請使用開始結帳時的同一個瀏覽器與裝置。請勿在任何表單貼上 Cookie、登入憑證、完整卡號或 CVV。</p>
             <Link href="/support" className="mt-4 inline-flex min-h-11 items-center font-semibold text-primary hover:underline">查看安全客服方式 →</Link>
           </Card>
         ) : (

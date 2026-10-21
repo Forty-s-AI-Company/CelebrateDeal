@@ -84,7 +84,7 @@ export default async function OnboardingPage() {
             <p className="text-sm font-medium text-slate-500">可販售準備進度</p>
             <p className="mt-2 text-3xl font-semibold text-slate-950">{progress.completedSteps} / {progress.totalSteps}</p>
             <p className="mt-2 text-sm text-slate-600">
-              {progress.complete ? "核心商店流程已準備完成；發布前仍需遵守外部與人工 release gate。" : "先完成下一個缺口，系統會以資料庫中的真實狀態更新進度。"}
+              {progress.complete ? "核心商店流程已準備完成；發布前仍需遵守外部與人工的上線前確認。" : "先完成下一個缺口，系統會以資料庫中的真實狀態更新進度。"}
             </p>
           </div>
           <Badge tone={progress.complete ? "green" : "orange"}>{progress.complete ? "核心流程完成" : `${progress.percentage}%`}</Badge>
@@ -178,7 +178,7 @@ export default async function OnboardingPage() {
         <Card>
           <h2 className="font-semibold text-slate-950">正式上線仍需真人確認</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            這個進度只代表產品資料已準備好，不取代法務、財務、客服 SLA、外部監控或 release owner 簽核。
+            這個進度只代表產品資料已準備好，不取代法務、財務、客服回覆時限、外部監控或上線負責人簽核。
           </p>
           <div className="mt-4 flex flex-wrap gap-4 text-sm">
             <Link href="/support" className="font-semibold text-primary hover:underline">客服與事件升級</Link>

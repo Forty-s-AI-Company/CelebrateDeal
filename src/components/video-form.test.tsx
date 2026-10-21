@@ -37,7 +37,7 @@ describe("VideoForm", () => {
     const markup = renderToStaticMarkup(<VideoForm video={video()} />);
 
     expect(markup).toContain("Cloudflare 播放來源");
-    expect(markup).toContain("Provider 狀態：processing");
+    expect(markup).toContain("影片服務狀態：processing");
     expect(markup).not.toContain('name="sourceType"');
     expect(markup).not.toContain('name="videoUrl"');
     expect(markup).not.toContain('name="cloudflareStreamUid"');

@@ -479,7 +479,7 @@ describe("LiveStepperForm", () => {
 
     expect(basicsButton?.props["aria-current"]).toBe("step");
     expect(basicsButton?.props["aria-controls"]).toBe("live-step-panel-0");
-    const labels = ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
+    const labels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
     labels.forEach((label, index) => {
       expect(stepButton(form, label)?.props["aria-controls"]).toBe(`live-step-panel-${index}`);
     });
@@ -491,7 +491,7 @@ describe("LiveStepperForm", () => {
     expect(html).toMatch(/class="[^"]*hidden[^"]*md:grid[^"]*"/);
     expect(html).not.toContain("切換步驟");
 
-    const labels = ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
+    const labels = ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"];
     const onSelect = vi.fn();
     const picker = renderToStaticMarkup(
       <LiveStepPicker activeStep={2} steps={labels.map((label, index) => ({ key: String(index), label }))} completion={labels.map((_, index) => index < 2)} compact onSelect={onSelect} />,
@@ -595,7 +595,7 @@ describe("LiveStepperForm", () => {
     (nextButton?.props.onClick as () => void)();
 
     const conversionForm = renderForm();
-    const conversionButton = stepButton(conversionForm, "媒體與 Live Input");
+    const conversionButton = stepButton(conversionForm, "影片與即時直播");
     expect(conversionButton?.props["aria-current"]).toBe("step");
     expect(conversionButton?.props["aria-controls"]).toBe("live-step-panel-1");
     const activePanel = findElement(conversionForm, (candidate) => candidate.props.active === true);
@@ -647,7 +647,7 @@ describe("LiveStepperForm", () => {
     expect(retryButton).toBeDefined();
     (retryButton?.props.onClick as () => void)();
     const advancedForm = renderForm();
-    const conversionButton = stepButton(advancedForm, "媒體與 Live Input");
+    const conversionButton = stepButton(advancedForm, "影片與即時直播");
     expect(conversionButton?.props["aria-current"]).toBe("step");
   });
 
@@ -888,7 +888,7 @@ describe("LiveStepperForm", () => {
       ] as FormOverrides["templates"],
     }) as ReactElement);
 
-    for (const label of ["用途與基本資料", "媒體與 Live Input", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"]) {
+    for (const label of ["用途與基本資料", "影片與即時直播", "商品優惠", "報名頁", "時間、回放與品牌", "Email", "留言、商品浮窗與 CTA", "桌機／手機預覽發布"]) {
       expect(textContent(stepButton(renderForm([], {
         initialValues,
         videos: [{ id: "video-1", title: "影片" }],
@@ -1082,7 +1082,7 @@ describe("LiveStepperForm", () => {
     const scheduleButton = submitAction(form, "排程發布");
 
     expect(markup).toContain("還有 1 項需要完成");
-    expect(markup).toContain("待完成 · 可播放的影片或 Live Input");
+    expect(markup).toContain("待完成 · 可播放的影片或即時直播");
     expect(markup).toContain("前往媒體");
     expect(scheduleButton?.props.disabled).toBe(true);
   });

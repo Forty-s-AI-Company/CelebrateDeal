@@ -95,7 +95,7 @@ describe("/onboarding route", () => {
     expect(html).toContain("5 / 5");
     expect(html).toContain("核心流程完成");
     expect(html).toContain('aria-valuenow="100"');
-    expect(html).toContain("不取代法務、財務、客服 SLA、外部監控或 release owner 簽核");
+    expect(html).toContain("不取代法務、財務、客服回覆時限、外部監控或上線負責人簽核");
   });
 
   it("does not claim launch readiness when the live has no playable media", async () => {

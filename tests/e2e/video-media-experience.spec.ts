@@ -339,7 +339,7 @@ test("provider polling updates processing video to ready and authoritative durat
   }));
   await loginOwner(page);
   await page.goto(`/videos/${fixture.processingVideoId}/edit`, { waitUntil: "load" });
-  await expect(page.getByText("Provider 狀態：ready")).toBeVisible();
+  await expect(page.getByText("影片服務狀態：ready")).toBeVisible();
   await expect(page.getByText("Cloudflare ready，影片可播放。")).toBeVisible();
   await expect(page.getByLabel("長度秒數")).toHaveValue("321");
   await expect(page.getByLabel("估算用量分鐘")).toHaveValue("6");

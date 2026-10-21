@@ -12,7 +12,7 @@ export default async function EditVideoPage({ params, searchParams }: { params: 
 
   return (
     <>
-      <PageHeader title="編輯影片" description="更新影片資訊、直接替換 Stream 檔案或上傳縮圖；provider mapping 仍由伺服器管理。" />
+      <PageHeader title="編輯影片" description="更新影片資訊、直接替換 Stream 檔案或上傳縮圖；影片服務的對應設定仍由伺服器管理。" />
       <VideoForm video={video} error={query.error} />
     </>
   );
