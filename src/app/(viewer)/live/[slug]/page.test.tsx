@@ -34,7 +34,7 @@ vi.mock("@/components/live-playback", () => ({
   LivePlayback: () => null,
 }));
 
-import PublicLivePage from "./page";
+import PublicLivePage, { generateMetadata } from "./page";
 
 const validFields = [
   { key: "name", label: "姓名", type: "text", required: true },
@@ -111,6 +111,37 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("PublicLivePage generateMetadata", () => {
+  const params = Promise.resolve({ slug: "public-live" });
+
+  it("uses the live title, copy and cover image for share previews", async () => {
+    mocks.findFirst.mockResolvedValue({ ...publicLive, accentCopy: "限時 <b>優惠</b>", heroImageUrl: "https://cdn.example.test/cover.png" });
+    expect(await generateMetadata({ params })).toMatchObject({
+      title: "公開直播",
+      description: "限時 <b>優惠</b>",
+      openGraph: { title: "公開直播", siteName: "測試商店", images: ["https://cdn.example.test/cover.png"] },
+      twitter: { card: "summary_large_image" },
+    });
+  });
+
+  it("drops non-http cover images and falls back to a generic description", async () => {
+    mocks.findFirst.mockResolvedValue({ ...publicLive, heroImageUrl: "javascript:alert(1)" });
+    const metadata = await generateMetadata({ params });
+    expect(metadata.description).toBe("測試商店 的直播");
+    expect(metadata.openGraph).not.toHaveProperty("images");
+  });
+
+  it("does not leak content for missing or not-ready lives", async () => {
+    mocks.findFirst.mockResolvedValue(null);
+    expect(await generateMetadata({ params })).toEqual({ title: "頁面不存在", robots: { index: false, follow: false } });
+    mocks.findFirst.mockResolvedValue(publicLive);
+    mocks.getRuntimeLivePublishReadiness.mockReturnValue({ ready: false, blockers: [] });
+    const metadata = await generateMetadata({ params });
+    expect(metadata).toEqual({ title: "頁面不存在", robots: { index: false, follow: false } });
+    expect(JSON.stringify(metadata)).not.toContain("公開直播");
+  });
 });
 
 describe("PublicLivePage", () => {

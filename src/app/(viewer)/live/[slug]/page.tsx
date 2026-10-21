@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { PersistentLivePlaybackRegistration } from "@/components/persistent-live-playback";
 import { getDb } from "@/lib/db";
 import { getRuntimeLivePublishReadiness } from "@/lib/live-runtime-readiness";
@@ -6,10 +8,10 @@ import { normalizeScheduledRuntimeMessage, type ScheduledRuntimeMessage } from "
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+import { buildShareMetadata, shareDescription, unavailableShareMetadata } from "@/lib/public-share-metadata";
 import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
 
-export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+const loadPublicLive = cache(async (slug: string) => {
   const serverNow = new Date();
   const publicAvailability = publicLiveAvailabilityWhere();
   const live = await getDb().live.findFirst({
@@ -43,6 +45,25 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
       },
     },
   });
+  return { live, serverNow };
+});
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const { live } = await loadPublicLive(slug);
+  // 與頁面使用同一套公開條件：找不到或尚未達發布條件時不洩漏任何內容。
+  if (!live || !getRuntimeLivePublishReadiness(live).ready) return unavailableShareMetadata();
+  return buildShareMetadata({
+    title: live.title,
+    description: shareDescription(live.accentCopy, live.description, `${live.vendor.name} 的直播`),
+    imageUrl: live.heroImageUrl ?? live.vendor.logoUrl,
+    siteName: live.vendor.name,
+  });
+}
+
+export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const { live, serverNow } = await loadPublicLive(slug);
 
   if (!live) {
     console.warn("PUBLIC_LIVE_NOT_FOUND_AVAILABILITY");
