@@ -25,7 +25,7 @@ describe("stream usage attribution contract", () => {
     expect(schema).toContain('attributionMode          String   @default("PROMOTER")');
     // The ledger row and its nested allocations are one create inside the
     // heartbeat transaction (READ COMMITTED since F-092, with conflict retry).
-    expect(usageSource).toContain("return await db.$transaction(work);");
+    expect(usageSource).toContain("return await db.$transaction(work, STREAM_USAGE_TRANSACTION_OPTIONS);");
     expect(usageSource).toContain("const entry = await tx.streamUsageLedgerEntry.create({");
     expect(usageSource).toContain("allocations: {");
     expect(usageSource).toContain("recipientKey: allocation.recipientKey");
