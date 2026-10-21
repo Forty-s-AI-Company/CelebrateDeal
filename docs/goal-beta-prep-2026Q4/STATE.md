@@ -57,6 +57,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 - #449 工作線 C：結帳頁備註、台灣時區與繁中 404、虛擬使用者不標示版、直播網址、腳本選配、Sentry 個資過濾（10-20，reviewer 兩輪後可合併；CI 擋下 secret scan 假金鑰、strict-index、slug 預檢順序、actions.ts 行數上限、e2e 404 標題與文案、g7 契約文案六個問題後通過）
 
 - #452 第二批 B：全表 RLS migration、RLS 目錄測試、migration 順序與 drift 檢查（10-20，reviewer 三輪後可合併）
+- #466 第六批 C：表單欄位錯誤與聚焦、直播草稿衝突明確選項、架構宣稱與 runbook 更正（10-22，reviewer 一輪可合併；CI 一次因 master 的帳號限流測試時間抖動失敗，重跑通過；無 migration）
 - staging：10-20 以 `staging-migrate.yml`（deploy）套用 master 的 migration 兩次（註冊同意表、全表 RLS）；alias 切換仍待 O-18
 
 **第二批（L0 可繞過＋L1）**：#452、#454（10-20）、#453（10-21）全部合併。累計合併 PR：#445、#446、#447、#448、#449、#452、#453、#454。
@@ -65,6 +66,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 
 ## 每日摘要
 
+- 10-22（下午）：#466（第六批 C）合併（累計 20 個 PR）。#465 經 reviewer 兩輪：BLOCKER（夾具缺 browser_live 授權）、MAJOR（courses 關閉仍可結帳課程商品、商家不能下架）、複審 BLOCKER（e2e 夾具授權未同步開啟商家模組開關）皆已修，等 CI 完整跑綠後三審。CI 揭露 master 既有的帳號限流 3601 秒抖動，根因是 `now()` 微秒寫進 TIMESTAMP(3) 四捨五入；開 #467 修正（截到毫秒＋回歸測試），reviewer 可合併，等 CI。
 - 10-19：Goal 啟動。三條工作線完成實作並開 PR #447／#448／#449；每個 PR 經 reviewer 一到三輪（A 兩個 MAJOR＋一個 MAJOR、B 兩個 MAJOR、C 一個 BLOCKER 皆已修）；#447 合併。CI 擋下的問題：secret scan 誤判測試 URL／假金鑰、API contract registry 未登記、strict-index typecheck、backup blob 白名單、slug 預檢順序，全部修正。工作線 A 曾因 Opus 額度中斷一次，10-20 重跑完成。
 - 10-22（續）：#464（第六批 B：兩租戶 action 矩陣、CI 收斂）合併（累計 19 個 PR）；#465（第六批 A：伺服器端功能閘門、月結不扣佣金）審查中；第六批 C 實作中。
 - 10-22：#462（第五批 A）合併並套用 staging migration；第五批全部進 master（累計 18 個 PR）。第六批（L1 最後一批）開工：A（F-001／F-002 伺服器端功能閘門、F-044 月結不扣佣金 D-31 A）、B（F-134 兩租戶 action 矩陣、F-147 CI 收斂）、C（F-117 表單欄位錯誤與聚焦、F-017／F-076 文件更正、B07-20 草稿衝突最小方案）。
