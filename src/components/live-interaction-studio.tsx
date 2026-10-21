@@ -90,14 +90,18 @@ export function LiveInteractionStudio({
   }
 
   return (
-    <section className="mb-6 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-red-50 p-5 shadow-sm" aria-labelledby="live-interaction-studio-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-700">即時互動控制台</p>
-          <h2 id="live-interaction-studio-title" className="mt-1 text-xl font-black text-slate-950">手動發起抽獎、投票、限時搶購或紅包</h2>
-          <p className="mt-1 text-sm text-slate-600">只有直播狀態為「直播中」時才會送出；時間軸自動事件仍由互動腳本負責。</p>
-        </div>
-      </div>
+    <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="live-interaction-studio-title">
+      {/* 進階工具：封測預設收合，不主動介紹；功能本身不變。 */}
+      <details data-testid="live-interaction-studio-details" className="group">
+        <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+          <span>
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">進階</span>
+            <span id="live-interaction-studio-title" className="mt-1 block text-lg font-black text-slate-950">手動發起互動（抽獎、投票、限時搶購、紅包）</span>
+            <span className="mt-1 block text-sm font-normal text-slate-600">一般銷售直播用不到，需要時再展開。只有直播狀態為「直播中」時才會送出；時間軸自動事件仍由互動腳本負責。</span>
+          </span>
+          <span className="text-sm font-semibold text-blue-700 group-open:hidden">展開</span>
+          <span className="hidden text-sm font-semibold text-blue-700 group-open:inline">收合</span>
+        </summary>
       <form action={startAction} className="mt-4 grid gap-3">
         <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
         <input type="hidden" name="liveId" value={liveId} />
@@ -125,7 +129,7 @@ export function LiveInteractionStudio({
           <div className="grid gap-3 md:grid-cols-2">
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               獎項名稱（選填）
-              <input name="prizeName" maxLength={100} placeholder="例如：iPhone 16、簽名書、一對一諮詢" className="h-11 rounded-xl border border-slate-500 px-3" />
+              <input name="prizeName" maxLength={100} placeholder="例如：簽名書、一對一諮詢" className="h-11 rounded-xl border border-slate-500 px-3" />
             </label>
             <label className="grid gap-1 text-sm font-semibold text-slate-700">
               抽獎資格
@@ -287,6 +291,7 @@ export function LiveInteractionStudio({
           ))}
         </div>
       </section>
+      </details>
     </section>
   );
 }
