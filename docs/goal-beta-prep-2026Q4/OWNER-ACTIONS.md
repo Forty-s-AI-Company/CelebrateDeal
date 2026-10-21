@@ -22,6 +22,9 @@
 | O-19 | ⏳ | **RLS migration 部署前置查詢（Production 才需要）**：PR #452 會對全部資料表啟用 RLS，執行 migration 的角色必須是每張表的 owner 或可繼承的成員。staging 已由主對話唯讀查證通過（postgres 是 prisma 的成員）；Production 專案主對話無法讀取，請在正式部署前依 `docs/operations/prisma-migration-guards-runbook.md` 的前置 SQL 查一次並回報「通過」 | Supabase SQL editor（Production 專案） | 回「通過」或貼出 owner 清單（不含資料） | migration 在 Production 會整批 RAISE 停止，不會部分成功，但部署會失敗 | B04-08、PR #452 |
 | O-20 | ⏳ | **Production migration 的前置（PR #457 之後）**：(a) GitHub `production` environment 設定 required reviewers（你自己）；(b) Production 備份 workflow 尚不存在，`production-migrate.yml` 在你設定 `PRODUCTION_BACKUP_WORKFLOW_PATH` 並提供備份 run ID 前一律拒絕部署，這是刻意的；正式上線前要先完成 O-4 的備份與還原演練 | GitHub Settings → Environments | 回「設了」 | 正式 migration 無法執行（封測不受影響，封測跑 staging） | F-064、D-41 |
 | O-21 | ⏳ | **個資保存期限定案**：`/api/cron/data-retention` 預設關閉，期限預設 WebhookEvent payload 180 天、AnalyticsEvent 365 天、AuditLog IP 365 天，請依律師建議回「採預設」或改數字；定案後主對話再開啟排程 | 回覆即可 | 回「採預設」或數字 | 保存期限未定前不清理（只影響儲存量） | F-070、D-38 |
+| O-22 | ⏳ | **直播分鐘額度即將第一次真正生效**：審查發現 master 上的用量心跳從 #136 起每次都 500，帳本是空的，所以「方案分鐘額度」從未擋過任何人。PR #461 合併後額度會真的生效。封測前請確認每個封測商家的方案額度足夠（或先設為不限），並在封測說明中告知「超過額度播放會暫停」 | 商家後台方案設定 | 回「確認了」 | 封測客戶直播到一半被暫停 | R461-02 |
+| O-23 | ⏳ | **封測商家功能授權**：PR #465 之後課程、billing、Funnel 綁卡、諮詢預約、瀏覽器直播、彈幕六個模組在伺服器端預設關閉，只有平台管理員能在 `/admin/vendor-features` 逐商家開啟。封測前請為每位封測商家決定要開哪些（預設全關；顧問型客戶可開諮詢預約） | staging `/admin/vendor-features` | 回「設了」 | 封測商家看不到這些模組（這是預設行為） | F-001、D-02 |
+| O-24 | ⏳ | **Vercel Hobby build 速率上限**：10-22 PR #465 的兩個 Vercel preview 檢查因 build-rate-limit 失敗（非程式問題，`quality` 綠）。切 alias（O-18）或之後自動部署若再遇到，等一小時重試；或與 O-6 一併評估升 Pro | Vercel | 無需立即動作 | 只影響 preview 部署時效 |
 | O-7 | ⏳ | **Cloudflare**：正式網域是否全程經 Cloudflare 代理（橘雲）且沒有其他直連入口 | Cloudflare DNS | 回「是／否」 | 否則限流可被偽造標頭繞過，要多修 1～1.5 人日 | D-20 |
 
 ## 封測前（10-27～10-29）
