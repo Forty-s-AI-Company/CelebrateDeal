@@ -164,3 +164,43 @@ export async function sendPasswordResetEmail({
     `,
   });
 }
+
+const VENDOR_MEMBER_ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  accountant: "Accountant（財務）",
+  support: "Support（客服）",
+};
+
+/** Invitation to join a vendor workspace (F-029). The link is single-use and expires. */
+export async function sendVendorMemberInvitationEmail({
+  to,
+  vendorName,
+  role,
+  acceptUrl,
+}: {
+  to: string;
+  vendorName: string;
+  role: string;
+  acceptUrl: string;
+}) {
+  const roleLabel = VENDOR_MEMBER_ROLE_LABELS[role] ?? role;
+  const safeVendor = escapeHtml(vendorName);
+  const safeRole = escapeHtml(roleLabel);
+  const safeUrl = escapeHtml(acceptUrl);
+  return sendTransactionalEmail({
+    to,
+    subject: `CelebrateDeal｜${vendorName} 邀請你加入商家後台`,
+    text: `${vendorName} 邀請你以「${roleLabel}」角色加入 CelebrateDeal 商家後台。\n\n請在 72 小時內開啟以下連結，確認後才會加入：\n${acceptUrl}\n\n如果你不認識這個商家，請直接忽略這封信，你的帳號不會有任何變更。`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
+        <h2 style="margin:0 0 12px">加入 ${safeVendor} 的商家後台</h2>
+        <p><strong>${safeVendor}</strong> 邀請你以「${safeRole}」角色加入 CelebrateDeal 商家後台。</p>
+        <p>請在 72 小時內開啟以下連結，確認後才會加入：</p>
+        <p><a href="${safeUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">查看邀請</a></p>
+        <p style="word-break:break-all;color:#475569">${safeUrl}</p>
+        <p>如果你不認識這個商家，請直接忽略這封信，你的帳號不會有任何變更。</p>
+      </div>
+    `,
+  });
+}

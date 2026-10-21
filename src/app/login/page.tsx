@@ -15,7 +15,7 @@ const errorMessages: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; revoked?: string; reset?: string; password_changed?: string; registered?: string }>;
+  searchParams: Promise<{ error?: string; revoked?: string; reset?: string; password_changed?: string; registered?: string; invited?: string }>;
 }) {
   const params = await searchParams;
   const showDemoHint = process.env.NODE_ENV !== "production";
@@ -32,6 +32,7 @@ export default async function LoginPage({
           </p>
         </div>
         {params.revoked ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-700">所有 session 已撤銷，請重新登入。</p> : null}
+        {params.invited ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">帳號已建立並加入商家，請用剛設定的密碼登入。</p> : null}
         {params.reset ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">密碼已重設，請用新密碼登入。</p> : null}
         {params.password_changed ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">密碼已更新，所有舊 session 已撤銷，請重新登入。</p> : null}
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "登入失敗，請稍後再試。"}</p> : null}

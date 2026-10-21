@@ -12,6 +12,7 @@ import {
   revokeAllSessionsAction,
   revokeOtherSessionsAction,
   resendVendorMemberInvitationAction,
+  revokeVendorMemberInvitationAction,
   sendPasswordResetSmokeAction,
   updatePasswordAction,
 } from "@/app/actions";
@@ -25,6 +26,7 @@ import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
 import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { loadPendingVendorInvitations, PendingVendorInvitations } from "@/components/pending-vendor-invitations";
 import { recentMfaStatus } from "@/lib/recent-mfa";
 import { statusLabel } from "@/lib/status-labels";
 
@@ -35,13 +37,12 @@ const errorMessages: Record<string, string> = {
   password_reuse: "新密碼不能與目前密碼相同。",
   owner_required: "只有商家 owner 可以管理成員。",
   member_invalid: "請確認成員姓名、Email 與角色都已填寫。",
-  member_invitation: "成員已更新，但邀請信寄送失敗，請稍後重新邀請。",
-  member_invitation_rate_limited: "邀請寄送次數過多，請稍候再試；商家成員尚未變更。",
-  member_invitation_unavailable: "邀請頻率檢查暫時無法使用；商家成員尚未變更，請稍候再試。",
+  member_invitation_rate_limited: "邀請次數過多，請稍候再試；未建立邀請。",
+  member_invitation_unavailable: "邀請頻率檢查暫時無法使用；未建立邀請，請稍候再試。",
+  member_invitation_not_found: "找不到可撤銷的待接受邀請。",
+  self_invite: "不能邀請自己的 Email。",
   member_invitation_resend_invalid: "找不到可重寄邀請的 active 商家成員。",
   member_invitation_resend_failed: "設定密碼邀請信寄送失敗，請稍後再試。",
-  platform_user: "平台管理員帳號不能加入商家成員清單。",
-  inactive_user: "此帳號已由平台停用，商家管理員不能自行重新啟用。",
   self_role: "不能把自己的 owner 權限降級。",
   self_deactivate: "不能停用自己的帳號。",
   last_owner: "至少要保留一位 active owner。",
@@ -59,7 +60,8 @@ const errorMessages: Record<string, string> = {
 
 const updatedMessages: Record<string, string> = {
   "1": "密碼已更新。",
-  member: "商家成員已更新，並已寄出設定密碼邀請信。",
+  member_invited: "已建立邀請。若這個 Email 可以加入，對方會收到邀請信；對方接受後才會成為成員。",
+  member_invitation_revoked: "邀請已撤銷，原連結不能再使用。",
   member_invitation_resent: "已重新寄出設定密碼邀請信。",
   member_deactivated: "商家成員已停用，相關 session 已撤銷。",
   sessions_revoked: "其他裝置 session 已撤銷。",
@@ -107,6 +109,7 @@ export default async function SecuritySettingsPage({
         orderBy: [{ status: "asc" }, { createdAt: "asc" }],
       })
     : [];
+  const pendingInvitations = await loadPendingVendorInvitations(isOwner, vendorId);
   const sessions = await db.userSession.findMany({
     where: {
       userId: auth.user.id,
@@ -277,7 +280,7 @@ export default async function SecuritySettingsPage({
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">商家成員</h2>
-              <p className="mt-1 text-sm text-slate-500">Owner 可用 Email 邀請或重新啟用成員；平台管理員帳號不會出現在商家端管理名單。</p>
+              <p className="mt-1 text-sm text-slate-500">Owner 以 Email 寄出邀請，對方開啟邀請信並接受後才會加入；也可用來變更既有成員角色或重新啟用成員。</p>
             </div>
             <Badge tone="green">owner</Badge>
           </div>
@@ -295,11 +298,13 @@ export default async function SecuritySettingsPage({
                 <option value="support">Support</option>
               </SelectField>
               <div className="md:col-span-2">
-                <p className="mb-3 text-sm text-blue-800">系統會寄送一次性的設定密碼連結，不會顯示或傳送初始密碼。</p>
-                <SubmitButton>寄送邀請 / 重新啟用成員</SubmitButton>
+                <p className="mb-3 text-sm text-blue-800">系統會寄送 72 小時內有效的一次性邀請連結；對方接受前不會建立或變更任何成員資格。</p>
+                <SubmitButton>寄送邀請</SubmitButton>
               </div>
             </form>
           ) : null}
+
+          <PendingVendorInvitations invitations={pendingInvitations} action={revokeVendorMemberInvitationAction} csrfField={<CsrfField />} />
 
           <div className="overflow-hidden rounded-lg border border-border">
             <table className="w-full text-left text-sm">

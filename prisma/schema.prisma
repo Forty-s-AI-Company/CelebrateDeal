@@ -84,6 +84,7 @@ model Vendor {
   updatedAt    DateTime @updatedAt
 
   members                          VendorMember[]
+  memberInvitations                VendorMemberInvitation[]
   tracking                         TrackingSetting?
   trackingDeliveries               TrackingDelivery[]
   videos                           Video[]
@@ -221,6 +222,8 @@ model User {
 
   memberships                  VendorMember[]
   sessions                     UserSession[]
+  sentMemberInvitations        VendorMemberInvitation[] @relation("VendorMemberInvitationInvitedBy")
+  acceptedMemberInvitations    VendorMemberInvitation[] @relation("VendorMemberInvitationAcceptedBy")
   passwordResetTokens          PasswordResetToken[]
   mfaFactor                    UserMfaFactor?
   recoveryCodes                UserRecoveryCode[]
@@ -360,6 +363,33 @@ model VendorMember {
   @@unique([vendorId, userId])
   @@unique([vendorId, id])
   @@index([vendorId, status])
+}
+
+/// Pending invitation to join a vendor (F-029 / B02-06). The owner's request
+/// never creates or changes a membership: the invitee must open the e-mailed
+/// link and accept while signed in as the invited address (or set a password
+/// for a new account). Only the SHA-256 of the token is stored.
+model VendorMemberInvitation {
+  id              String    @id @default(cuid())
+  vendorId        String
+  email           String
+  name            String
+  role            String
+  tokenHash       String    @unique
+  invitedByUserId String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  acceptedUserId  String?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vendor       Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  invitedBy    User?  @relation("VendorMemberInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  acceptedUser User?  @relation("VendorMemberInvitationAcceptedBy", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId, email])
+  @@index([expiresAt])
 }
 
 model TrackingSetting {

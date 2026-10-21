@@ -407,3 +407,12 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 不受 `RATE_LIMIT_PROVIDER` 影響；`checkRateLimit`（`@/lib/rate-limit`）只負責 IP 層，`cloudflare_waf` 時只放行 IP 層。帳號層：MFA 驗證（每帳號 5 次／分）、復原碼重產（3 次／15 分）、撥款帳號 step-up（5 次／15 分）、學員 magic link（每商家＋學員 3 次／15 分）、成員邀請（每商家 5 次／分）、密碼重設信（每收件人 3 次／15 分，超過時不寄、回應不變）。preflight 新增 `ACCOUNT_RATE_LIMIT` 說明，不再把 WAF 當成帳號層的替代。
 - 測試：`src/lib/account-rate-limit.db.test.ts`（上限、WAF 下仍擋、視窗重置、scope／subject 獨立、併發原子、只存 hash、閒置清理、503、CHECK）、`src/lib/password-reset.test.ts`（收件人上限）、`src/app/actions.test.ts`、`src/app/actions/student-portal-actions.test.ts`、`src/lib/env.test.ts`。
 - 目前 152 models、121 forward migrations；既有 SQL／checksum 不變。
+
+## 2026-10-21 F-029／B02-06 商家成員改為邀請 token，需對方接受
+
+- `20261021150100_vendor_member_invitation`：forward-only、純新增。新增 `VendorMemberInvitation`（`vendorId` FK ON DELETE CASCADE；`invitedByUserId`、`acceptedUserId` FK ON DELETE SET NULL；`tokenHash` 唯一；`(vendorId, email)`、`expiresAt` 索引）。CHECK：`role` 只允許 owner／admin／accountant／support、`email` 必須已 trim 且小寫、`tokenHash` 為 64 字元 hex、`acceptedAt` 與 `revokedAt` 不可同時有值、`acceptedUserId` 只在 `acceptedAt` 有值時存在。啟用 RLS（不新增 policy）。同一 migration 把 `UserPolicyConsent_context_check` 放寬為 `merchant_registration`、`vendor_member_invitation`（只擴大允許值，既有列必然符合；表很小，重建 CHECK 的驗證掃描很短）。交易層級 `lock_timeout = 5s`。Prisma 6 不比對 CHECK，drift 檢查不變、無新 allowlist 項目。
+- 程式：`src/lib/vendor-member-invitation.ts`。`createVendorMemberAction`（CSRF → owner → F-027 step-up → 輸入驗證 → IP 層＋每商家帳號層限流）只建立邀請（同商家同 Email 的舊待接受邀請一併撤銷），不建立或變更任何 `VendorMember`；未知 Email、他租戶使用者、既有成員、平台管理員、停權帳號一律回 `updated=member_invited`，租戶可見的 audit 一律為 `invite_vendor_member`。寄信在回應之後（`after()`）執行，平台管理員與停權帳號不寄、只寫平台層（無 vendorId）audit；每收件人跨租戶 3 次／小時（F-028）。邀請 72 小時有效，只存 token 的 SHA-256。
+- 接受（`/invitations/accept`、`acceptVendorMemberInvitationAction`）：vendor、role、Email 只取自邀請列。既有帳號必須是已登入（若有 factor 須已驗證）的受邀帳號本人；沒有帳號時以表單密碼與政策同意建立新帳號（`UserPolicyConsent.context = vendor_member_invitation`）。平台管理員與停權帳號不可接受。檢查、`acceptedAt` 條件更新（單次使用）、`VendorMember` upsert、last-owner 檢查與 audit 在同一 Serializable 交易。
+- 移除 `platform_user`、`inactive_user` 回應碼。既有成員的「重寄設定密碼邀請」與「停用」不變（皆加上 F-027 step-up）。
+- 測試：`src/lib/vendor-member-invitation.db.test.ts`（四種 Email 回應一致且不建 membership、寄信對象、跨租戶撤銷否定、本人登入才可接受、新帳號與政策同意、平台管理員／停權不可接受、過期／撤銷／偽造 token、last owner、併發單次使用、CHECK）、`src/app/actions.test.ts`、`src/app/invitations/accept/page.test.tsx`。
+- 目前 153 models、122 forward migrations；既有 SQL／checksum 不變。

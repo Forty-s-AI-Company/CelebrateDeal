@@ -77,6 +77,7 @@ import {
   createVendorMemberAction as createVendorMemberActionImpl,
   deactivateVendorMemberAction as deactivateVendorMemberActionImpl,
   resendVendorMemberInvitationAction as resendVendorMemberInvitationActionImpl,
+  revokeVendorMemberInvitationAction as revokeVendorMemberInvitationActionImpl,
 } from "./actions/vendor-member-actions";
 import { voidAffiliateCommissionAction as voidAffiliateCommissionActionImpl } from "./actions/affiliate-actions";
 import { parseWholeYuanToCents, parseYuanWithCentsToCents } from "@/lib/money-input";
@@ -562,6 +563,10 @@ export async function deactivateVendorMemberAction(formData: FormData) {
 
 export async function resendVendorMemberInvitationAction(formData: FormData) {
   return resendVendorMemberInvitationActionImpl(formData);
+}
+
+export async function revokeVendorMemberInvitationAction(formData: FormData) {
+  return revokeVendorMemberInvitationActionImpl(formData);
 }
 
 export async function voidAffiliateCommissionAction(formData: FormData) {
