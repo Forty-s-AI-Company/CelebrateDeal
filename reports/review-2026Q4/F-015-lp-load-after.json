@@ -1,0 +1,122 @@
+{
+  "label": "after-slug-only-proxy",
+  "measuredAt": "2026-10-21T03:02:53.729Z",
+  "node": "v22.23.1",
+  "platform": "win32-x64",
+  "target": "/lp/<synthetic audience funnel root>",
+  "sequential": {
+    "funnelRoot": {
+      "requests": 30,
+      "queriesPerRequest": 6,
+      "latencyMs": {
+        "p50": 24,
+        "p95": 30.8,
+        "p99": 33.5,
+        "max": 33.5
+      }
+    },
+    "legacyRootWithForm": {
+      "requests": 30,
+      "queriesPerRequest": 4,
+      "latencyMs": {
+        "p50": 18.1,
+        "p95": 24.1,
+        "p99": 24.2,
+        "max": 24.2
+      }
+    },
+    "missingSlug": {
+      "requests": 30,
+      "queriesPerRequest": 1,
+      "latencyMs": {
+        "p50": 7.3,
+        "p95": 10.1,
+        "p99": 10.1,
+        "max": 10.1
+      }
+    }
+  },
+  "load": {
+    "concurrency": 100,
+    "requests": 2000,
+    "failures": 0,
+    "statuses": {
+      "200": 2000
+    },
+    "requestsPerSecond": 86,
+    "queriesPerRequest": 6,
+    "latencyMs": {
+      "p50": 1111.6,
+      "p95": 1432.5,
+      "p99": 1740.9,
+      "max": 1763.2
+    }
+  },
+  "contract": {
+    "funnelRoot": {
+      "status": 200,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "robotsHeader": null,
+      "noindexMeta": false,
+      "echoesRequestedSlug": true,
+      "merchantReason": false
+    },
+    "legacyRoot": {
+      "status": 200,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "robotsHeader": null,
+      "noindexMeta": false,
+      "echoesRequestedSlug": true,
+      "merchantReason": false
+    },
+    "legacyHead": {
+      "status": 200,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "robotsHeader": null,
+      "noindexMeta": false,
+      "echoesRequestedSlug": false,
+      "merchantReason": false
+    },
+    "missingSlug": {
+      "status": 404,
+      "cacheControl": "no-store, max-age=0",
+      "robotsHeader": "noindex",
+      "noindexMeta": true,
+      "echoesRequestedSlug": false,
+      "merchantReason": false
+    },
+    "missingStep": {
+      "status": 404,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "robotsHeader": null,
+      "noindexMeta": true,
+      "echoesRequestedSlug": true,
+      "merchantReason": false
+    },
+    "legacyFormDisabled": {
+      "status": 404,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "robotsHeader": null,
+      "noindexMeta": true,
+      "echoesRequestedSlug": true,
+      "merchantReason": false
+    },
+    "funnelInvalidOperations": {
+      "status": 404,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "robotsHeader": null,
+      "noindexMeta": true,
+      "echoesRequestedSlug": true,
+      "merchantReason": false
+    },
+    "projectUnpublished": {
+      "status": 404,
+      "cacheControl": "no-store, max-age=0",
+      "robotsHeader": "noindex",
+      "noindexMeta": true,
+      "echoesRequestedSlug": false,
+      "merchantReason": false
+    }
+  },
+  "serverStderrSample": []
+}

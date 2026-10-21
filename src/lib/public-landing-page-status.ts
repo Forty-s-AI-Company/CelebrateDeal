@@ -6,12 +6,10 @@ import type { FunnelStepPages } from "@/lib/funnel-step-pages";
 import {
   normalizeLandingPageSlug,
   publicLandingPageCandidateWhere,
-  publicLiveBindingValid,
-  publishedLandingPageContent,
   type LandingPageStoredContent,
 } from "@/lib/public-landing-page-eligibility";
 
-type StatusDb = Pick<PrismaClient, "landingPage" | "registrationForm">;
+type StatusDb = Pick<PrismaClient, "landingPage">;
 
 function isFunnelStepPages(content: LandingPageStoredContent): content is FunnelStepPages {
   return "pages" in content && "flow" in content;
@@ -99,58 +97,37 @@ export function representativeFunnelVisitorIds(pageId: string, operations: unkno
 }
 
 /**
- * Read-only pre-stream check for a public `/lp/{slug}[/{stepPath}]` document.
- * Looks up the page by its public slug only, records nothing, caches nothing
- * and never returns a reason. Database errors propagate so the caller can
- * answer 503 instead of a false 404.
+ * Read-only pre-stream check for a public `/lp/{slug}[/{stepPath}]` document
+ * (F-015 / B05-04). Proxy runs it on every GET/HEAD, including RSC
+ * navigations and prefetches, so it is one indexed SQL statement that reads
+ * only `slug -> id` and the publication state (page published with a
+ * published version, not archived, sales project published). It never reads
+ * the published `content` JSON or any related row.
+ *
+ * Everything else (version/tenant consistency, bound live, step paths,
+ * Funnel operations, referenced forms, content validity) is decided by the
+ * page, whose `notFound()` runs before any Suspense boundary (`/lp` has no
+ * loading.tsx) and therefore still answers HTTP 404. Records nothing, caches
+ * nothing, never returns a reason. Database errors propagate so the caller
+ * can answer 503 instead of a false 404.
  */
-export async function publicLandingPageStatus(pathname: string, visitorId: string, database: StatusDb = getDb()): Promise<200 | 404> {
+export async function publicLandingPageStatus(pathname: string, database: StatusDb = getDb()): Promise<200 | 404> {
   const segments = pathname.split("/").filter(Boolean);
   if (segments[0] !== "lp" || segments.length < 2 || segments.length > 3) return 404;
   let slug: string;
-  let stepPath: string | undefined;
   try {
     slug = decodeURIComponent(segments[1]!);
-    stepPath = segments[2] === undefined ? undefined : decodeURIComponent(segments[2]);
+    if (segments[2] !== undefined) decodeURIComponent(segments[2]);
   } catch {
     return 404;
   }
   const safeSlug = normalizeLandingPageSlug(slug);
   if (!safeSlug) return 404;
-  // One slug lookup (unique index) with the published version and its bound
-  // live; no presentation, commerce, consultation or video data.
+  // Unique slug index; the project condition is part of the same statement.
   const candidates = await database.landingPage.findMany({
     where: publicLandingPageCandidateWhere(safeSlug),
     take: 2,
-    select: {
-      id: true,
-      vendorId: true,
-      projectId: true,
-      publishedAt: true,
-      operations: true,
-      publishedVersion: {
-        select: {
-          vendorId: true,
-          pageId: true,
-          content: true,
-          formId: true,
-          liveId: true,
-          live: { select: { vendorId: true, projectId: true, status: true, formId: true } },
-        },
-      },
-    },
+    select: { id: true },
   });
-  const page = candidates.length === 1 ? candidates[0] : undefined;
-  if (!page) return 404;
-  const published = publishedLandingPageContent(page);
-  if ("reason" in published) return 404;
-  const { version, content, formIds } = published;
-  if (!publicLiveBindingValid(page, version.liveId, version.live, formIds)) return 404;
-  const status = publicFunnelRouteStatus({ pageId: page.id, content, operations: page.operations, stepPath, visitorId });
-  if (status === 404 || formIds.length === 0) return status;
-  // Primary-key count, only when the published content references forms.
-  const activeForms = await database.registrationForm.count({
-    where: { id: { in: formIds }, vendorId: page.vendorId, projectId: page.projectId, isActive: true },
-  });
-  return activeForms === formIds.length ? 200 : 404;
+  return candidates.length === 1 ? 200 : 404;
 }

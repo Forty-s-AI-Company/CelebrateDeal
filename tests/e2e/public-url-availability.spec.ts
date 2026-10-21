@@ -56,6 +56,21 @@ async function expectAnonymous404(response: Awaited<ReturnType<import("@playwrig
   expect(body).toContain("<h1>404</h1>");
 }
 
+/**
+ * F-015: the proxy only checks slug -> id and publication state. Content and
+ * binding decisions (disabled form, unknown step, invalid Funnel operations)
+ * come from the page's notFound(), which still runs before streaming and is a
+ * real HTTP 404 with the app's not-found page and a noindex robots meta.
+ */
+async function expectPageNotFound(response: Awaited<ReturnType<import("@playwright/test").APIRequestContext["get"]>>) {
+  expect(response.status()).toBe(404);
+  expect(response.headers()["cache-control"]).toContain("no-store");
+  const body = await response.text();
+  expect(body).toMatch(/<meta name="robots" content="noindex/u);
+  expect(body).toContain("找不到這個頁面");
+  expect(body).not.toContain("專案尚未發布");
+}
+
 test("anonymous visitors get a real HTTP status for unavailable public URLs", async ({ request }) => {
   test.setTimeout(60_000);
   expect((await request.get(`/lp/${legacySlug}`)).status()).toBe(200);
@@ -72,16 +87,16 @@ test("anonymous visitors get a real HTTP status for unavailable public URLs", as
 
   await db.registrationForm.update({ where: { id: fixture.form.id }, data: { isActive: false } });
   try {
-    await expectAnonymous404(await request.get(`/lp/${legacySlug}`), legacySlug);
+    await expectPageNotFound(await request.get(`/lp/${legacySlug}`));
   } finally {
     await db.registrationForm.update({ where: { id: fixture.form.id }, data: { isActive: true } });
   }
   expect((await request.get(`/lp/${legacySlug}`)).status()).toBe(200);
 
-  await expectAnonymous404(await request.get(`/lp/${funnelSlug}/no-such-step`), funnelSlug);
+  await expectPageNotFound(await request.get(`/lp/${funnelSlug}/no-such-step`));
   await db.landingPage.update({ where: { id: funnelPageId }, data: { operations: { invalid: true } } });
   try {
-    await expectAnonymous404(await request.get(`/lp/${funnelSlug}`), funnelSlug);
+    await expectPageNotFound(await request.get(`/lp/${funnelSlug}`));
   } finally {
     await db.landingPage.update({ where: { id: funnelPageId }, data: { operations: Prisma.DbNull } });
   }
