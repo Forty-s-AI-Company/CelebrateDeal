@@ -39,7 +39,7 @@ async function user(db: PrismaClient, vendorId: string, role: string) {
   return db.user.create({ data: { email: `tracking-${randomUUID()}@example.test`, name: "合成追蹤管理員", passwordHash: hashPassword(password), status: "active", memberships: { create: { vendorId, role, status: "active" } } } });
 }
 async function vendor(db: PrismaClient) {
-  const id = randomUUID(); return db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], name: "合成追蹤商店", slug: `tracking-browser-${id}`, email: `${id}@example.test`, passwordHash: hashPassword(password), tracking: { create: { facebookPixelId: "123456789" } } } });
+  const id = randomUUID(); return db.vendor.create({ data: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"], name: "合成追蹤商店", slug: `tracking-browser-${id}`, email: `${id}@example.test`, passwordHash: hashPassword(password), tracking: { create: { facebookPixelId: "123456789" } } } });
 }
 
 test("manager saves encrypted credentials, rejects stale and CSRF writes, reloads real paid events, and keeps foreign tenant isolated", async ({ page, browser, baseURL }) => {
