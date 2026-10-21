@@ -26,7 +26,7 @@ export function LineRichMenuStudio({ csrfToken, existing }: { csrfToken: string;
 
   return <section className="rounded-lg border border-border bg-white p-5 shadow-sm" aria-labelledby="rich-menu-heading">
     <h2 id="rich-menu-heading" className="text-lg font-semibold">LINE 圖文選單草稿</h2>
-    <p className="mt-1 text-sm text-muted-foreground">先設定範本與按鈕，草稿會保存在此商家。同步至 LINE 的功能尚未開放。</p>
+    <p className="mt-1 text-sm text-slate-600">先設定範本與按鈕，草稿會保存在此商家。同步至 LINE 的功能尚未開放。</p>
     <form action={action} className="mt-5 space-y-4">
       <input type="hidden" name="_csrf" value={csrfToken} />
       <input type="hidden" name="id" value={state.reference?.id ?? ""} />
@@ -58,7 +58,7 @@ export function LineRichMenuStudio({ csrfToken, existing }: { csrfToken: string;
           {state.reference ? <button name="intent" value="delete" formNoValidate className="min-h-11 rounded-md border px-4">刪除草稿</button> : null}
         </div>
       </fieldset>
-      {state.status === "error" ? <p role="alert" className="text-sm text-destructive">{state.error ? errors[state.error] : errors.save_failed}</p> : null}
+      {state.status === "error" ? <p role="alert" className="text-sm text-red-700">{state.error ? errors[state.error] : errors.save_failed}</p> : null}
       {state.status === "saved" || state.status === "deleted" ? <p role="status" className="text-sm">{state.status === "saved" ? "草稿已儲存。" : "草稿已刪除，可重新編輯後儲存。"}</p> : null}
     </form>
     <div className="mx-auto mt-6 max-w-sm" aria-label="圖文選單預覽">

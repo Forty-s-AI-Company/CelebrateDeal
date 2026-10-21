@@ -197,7 +197,7 @@ function ScheduleDateTimeField({ timeZone, defaultValue, onChange }: { timeZone:
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       開播時間（{formatTimeZoneLabel(timeZone)}）
-      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-10 rounded-md border border-border px-3" />
+      <input name="scheduledAt" type="datetime-local" required autoComplete="off" defaultValue={defaultValue} onChange={(event) => onChange?.(event.target.value)} className="h-11 rounded-md border border-border px-3" />
       <span className="text-xs font-normal text-slate-500">請依商家時區輸入，提醒與公開頁會使用同一時間。</span>
     </label>
   );
@@ -555,25 +555,25 @@ function LiveRulesFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           允許聯盟來源
-          <select name="affiliateMode" defaultValue={initialValues.affiliateMode} className="h-10 rounded-md border border-border px-3">
+          <select name="affiliateMode" defaultValue={initialValues.affiliateMode} className="h-11 rounded-md border border-border px-3">
             <option value="enabled">啟用推薦連結來源追蹤</option>
             <option value="disabled">停用</option>
           </select>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           預設推廣碼
-          <select name="defaultAffiliateCode" defaultValue={initialValues.defaultAffiliateCode} className="h-10 rounded-md border border-border px-3">
+          <select name="defaultAffiliateCode" defaultValue={initialValues.defaultAffiliateCode} className="h-11 rounded-md border border-border px-3">
             <option value="">不指定</option>
             {affiliates.map((affiliate) => <option key={affiliate.id} value={affiliate.code}>{affiliate.name} · {affiliate.code}</option>)}
           </select>
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           觀看人數上限
-          <input name="maxConcurrentViewers" type="number" inputMode="numeric" min={1} defaultValue={initialValues.maxConcurrentViewers} className="h-10 rounded-md border border-border px-3" />
+          <input name="maxConcurrentViewers" type="number" inputMode="numeric" min={1} defaultValue={initialValues.maxConcurrentViewers} className="h-11 rounded-md border border-border px-3" />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           點數低於多少時停止推播
-          <input name="stopWhenCreditsBelow" type="number" inputMode="numeric" min={0} defaultValue={initialValues.stopWhenCreditsBelow} className="h-10 rounded-md border border-border px-3" />
+          <input name="stopWhenCreditsBelow" type="number" inputMode="numeric" min={0} defaultValue={initialValues.stopWhenCreditsBelow} className="h-11 rounded-md border border-border px-3" />
         </label>
       </div>
       <StreamAllocationEditor initialValues={initialValues} members={streamMembers} pages={streamPages} />
@@ -746,7 +746,7 @@ function NotificationRulesEditor({
           <h3 id="notification-rules-title" className="font-semibold text-slate-950">選配通知規則</h3>
           <p className="mt-1 text-sm text-slate-600">開播前與直播中通知已接通排程；課後通知維持既有排程。</p>
         </div>
-        <button type="button" onClick={applySuggestions} disabled={!hasSuggestionTemplates} className="min-h-10 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={applySuggestions} disabled={!hasSuggestionTemplates} className="min-h-11 rounded-md border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50">
           套用建議設定
         </button>
       </div>
@@ -766,7 +766,7 @@ function NotificationRulesEditor({
             {group.length === 0 ? <p className="text-sm text-slate-500">尚未設定通知。</p> : null}
             {group.map((rule, index) => (
               <div key={rule.id} className="grid gap-3 rounded-md bg-slate-50 p-3 lg:grid-cols-[auto_minmax(0,1fr)_150px_auto] lg:items-end">
-                <label className="flex min-h-10 items-center gap-2 text-sm font-medium text-slate-700">
+                <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
                     checked={rule.isActive}
@@ -782,7 +782,7 @@ function NotificationRulesEditor({
                     value={rule.messageTemplateId}
                     aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則 Email 模板`}
                     onChange={(event) => replaceRule(rule.id, { messageTemplateId: event.target.value })}
-                    className="h-10 min-w-0 rounded-md border border-border px-3"
+                    className="h-11 min-w-0 rounded-md border border-border px-3"
                   >
                     <option value="">請選擇模板</option>
                     {availableTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
@@ -798,18 +798,18 @@ function NotificationRulesEditor({
                     value={rule.offsetMinutes}
                     aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則寄送分鐘`}
                     onChange={(event) => replaceRule(rule.id, { offsetMinutes: Number(event.target.value) })}
-                    className="h-10 rounded-md border border-border px-3"
+                    className="h-11 rounded-md border border-border px-3"
                   />
                 </label>
                 <div className="flex flex-wrap gap-2" aria-label={`${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則排序控制`}>
-                  <button type="button" disabled={index === 0} aria-label={`上移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, -1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">上移</button>
-                  <button type="button" disabled={index === group.length - 1} aria-label={`下移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, 1)} className="min-h-10 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">下移</button>
-                  <button type="button" aria-label={`刪除${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => onChange(rules.filter((candidate) => candidate.id !== rule.id))} className="min-h-10 rounded-md border border-red-200 bg-white px-3 text-sm text-red-700">刪除</button>
+                  <button type="button" disabled={index === 0} aria-label={`上移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, -1)} className="min-h-11 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">上移</button>
+                  <button type="button" disabled={index === group.length - 1} aria-label={`下移${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => moveRule(trigger, rule.id, 1)} className="min-h-11 rounded-md border border-border bg-white px-3 text-sm disabled:opacity-40">下移</button>
+                  <button type="button" aria-label={`刪除${notificationRuleGroupCopy[trigger].title}第 ${index + 1} 則`} onClick={() => onChange(rules.filter((candidate) => candidate.id !== rule.id))} className="min-h-11 rounded-md border border-red-200 bg-white px-3 text-sm text-red-700">刪除</button>
                 </div>
               </div>
             ))}
             <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
-              <button type="button" aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-10 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" aria-describedby={availableTemplates.length === 0 ? addButtonDescriptionId : undefined} disabled={group.length >= LIVE_NOTIFICATION_RULE_LIMITS[trigger] || availableTemplates.length === 0} onClick={() => addRule(trigger)} className="min-h-11 rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
                 新增{notificationRuleGroupCopy[trigger].title}通知
               </button>
               {availableTemplates.length === 0 ? <span id={addButtonDescriptionId} className="text-xs text-amber-800">{missingTemplateReason}</span> : null}
@@ -856,14 +856,14 @@ function renderLiveStudioStepPanels({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             串流模式
-            <select name="streamMode" defaultValue={initialValues.streamMode} className="h-10 rounded-md border border-border px-3">
+            <select name="streamMode" defaultValue={initialValues.streamMode} className="h-11 rounded-md border border-border px-3">
               <option value="vod">Cloudflare Stream 預錄影片</option>
               <option value="live">Cloudflare Stream Live</option>
             </select>
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             影片／即時直播
-            <select name="videoId" defaultValue={selectedVideoId} onChange={(event) => onVideoChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            <select name="videoId" defaultValue={selectedVideoId} onChange={(event) => onVideoChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
               <option value="">不綁定影片</option>
               {videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
             </select>
@@ -886,7 +886,7 @@ function renderLiveStudioStepPanels({
         </div>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           促銷短句
-          <input name="accentCopy" autoComplete="off" defaultValue={initialValues.accentCopy} onChange={(event) => onAccentCopyChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="直播限定優惠" />
+          <input name="accentCopy" autoComplete="off" defaultValue={initialValues.accentCopy} onChange={(event) => onAccentCopyChange(event.target.value)} className="h-11 rounded-md border border-border px-3" placeholder="直播限定優惠" />
         </label>
       </StepPanel>
 
@@ -897,7 +897,7 @@ function renderLiveStudioStepPanels({
         </div>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           報名頁
-          <select name="formId" defaultValue={initialValues.formId} onChange={(event) => onFormChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+          <select name="formId" defaultValue={initialValues.formId} onChange={(event) => onFormChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
             <option value="">不綁定表單</option>
             {forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}
           </select>
@@ -913,7 +913,7 @@ function renderLiveStudioStepPanels({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             報名成功 Email
-            <select name="messageTemplateId" defaultValue={selectedTemplateId} onChange={(event) => onTemplateChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+            <select name="messageTemplateId" defaultValue={selectedTemplateId} onChange={(event) => onTemplateChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
               <option value="">不綁定模板</option>
               {registrationTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.channel}</option>)}
             </select>
@@ -933,7 +933,7 @@ function renderLiveStudioStepPanels({
         </div>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           互動腳本
-          <select name="interactionScriptId" defaultValue={selectedScriptId} onChange={(event) => onScriptChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
+          <select name="interactionScriptId" defaultValue={selectedScriptId} onChange={(event) => onScriptChange(event.target.value)} className="h-11 rounded-md border border-border px-3">
             <option value="">不綁定腳本</option>
             {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
           </select>
@@ -972,7 +972,7 @@ function renderLiveStudioBasicsStep(input: {
       {input.purposeStarter}
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         直播標題
-        <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-10 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
+        <input name="title" required autoComplete="off" defaultValue={input.initialValues.title} onChange={(event) => input.onTitleChange(event.target.value)} className="h-11 rounded-md border border-border px-3" placeholder="例如：週五新品導購直播" />
       </label>
       <LiveSlugField
         title={input.title}
@@ -1020,7 +1020,7 @@ function renderLiveStudioScheduleStep(input: {
       <input type="hidden" name="replayAvailableUntil" value="" disabled={input.replayEnabled} readOnly />
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
         回放觀看期限（{formatTimeZoneLabel(input.timeZone)}，選填）
-        <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-10 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
+        <input name="replayAvailableUntil" type="datetime-local" autoComplete="off" value={input.replayAvailableUntil} disabled={!input.replayEnabled} onChange={(event) => input.onReplayAvailableUntilChange(event.target.value)} className="h-11 rounded-md border border-border px-3 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
         <span className="text-xs font-normal text-slate-500">依商家時區設定；留空代表不限制回放期限。期限必須晚於直播或預錄內容自然結束時間。</span>
       </label>
       <MediaUploadField
