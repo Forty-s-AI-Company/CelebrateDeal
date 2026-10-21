@@ -844,33 +844,83 @@ describe("LivePlayback checkout", () => {
     );
   });
 
-  it("defers routine heartbeats while the tab is hidden and still flushes on a forced stop", async () => {
+  it("keeps sending heartbeats from a hidden tab for 5 minutes and still enforces the quota there (R461-01)", async () => {
     vi.stubGlobal("window", {
       location: { search: "" },
       localStorage: {},
     });
     vi.stubGlobal("document", { visibilityState: "hidden" });
-    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000003") });
+    let eventCounter = 0;
+    vi.stubGlobal("crypto", { randomUUID: vi.fn(() => `00000000-0000-4000-8000-${String(++eventCounter).padStart(12, "0")}`) });
+    vi.mocked(postStreamUsageHeartbeat)
+      .mockResolvedValueOnce("recorded")
+      .mockResolvedValueOnce("recorded")
+      .mockResolvedValueOnce("recorded")
+      .mockResolvedValueOnce("recorded")
+      .mockResolvedValueOnce("quota_exhausted");
+
+    let tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    let video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+
+    const pause = vi.fn();
+    (video.props.onPlay as (event: { currentTarget: { currentTime: number; pause: () => void } }) => void)({ currentTarget: { currentTime: 0, pause } });
+    for (let currentTime = 1; currentTime <= 300; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number; pause: () => void } }) => void)({
+        currentTarget: { currentTime, pause },
+      });
+      // Let each in-flight heartbeat settle as it would between real seconds.
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+
+    const calls = vi.mocked(postStreamUsageHeartbeat).mock.calls;
+    expect(calls).toHaveLength(5);
+    expect(calls.map(([heartbeat]) => heartbeat.watchSeconds)).toEqual([60, 60, 60, 60, 60]);
+    expect(new Set(calls.map(([heartbeat]) => heartbeat.eventId)).size).toBe(5);
+
+    // The fifth heartbeat, sent while still hidden, hit the quota: playback stops.
+    tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    video = findElements(tree, (element) => element.type === "video")[0];
+    expect(video).toBeUndefined();
+    expect(findElements(tree, (element) => typeof element.type === "function" && element.type.name === "StreamQuotaAlert")).toHaveLength(1);
+  });
+
+  it("sends the sub-minute remainder with a keepalive heartbeat on pagehide", async () => {
+    hookState.effectsEnabled = true;
+    const listeners = new Map<string, () => void>();
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+      setInterval,
+      clearInterval,
+      addEventListener: (type: string, listener: () => void) => listeners.set(type, listener),
+      removeEventListener: (type: string) => listeners.delete(type),
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000045") });
     vi.mocked(postStreamUsageHeartbeat).mockResolvedValue("recorded");
 
     const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    await flushHookEffects();
     const video = findElements(tree, (element) => element.type === "video")[0];
     if (!video) throw new Error("Expected video element");
-
     (video.props.onPlay as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 0 } });
-    for (let currentTime = 1; currentTime <= 90; currentTime += 1) {
-      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({
-        currentTarget: { currentTime },
-      });
+    for (let currentTime = 1; currentTime <= 45; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime } });
     }
     expect(postStreamUsageHeartbeat).not.toHaveBeenCalled();
 
-    (video.props.onPause as () => void)();
+    const onPageHide = listeners.get("pagehide");
+    if (!onPageHide) throw new Error("Expected a pagehide listener");
+    onPageHide();
+
     expect(postStreamUsageHeartbeat).toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: "00000000-0000-4000-8000-000000000003", watchSeconds: 60 }),
+      expect.objectContaining({ eventId: "00000000-0000-4000-8000-000000000045", watchSeconds: 45 }),
       fetch,
-      { signal: expect.any(AbortSignal) },
+      { signal: expect.any(AbortSignal), keepalive: true },
     );
+    cleanupHookEffects();
   });
 
   it("stops controls and exposes an accessible recovery message when Stream quota is exhausted", async () => {

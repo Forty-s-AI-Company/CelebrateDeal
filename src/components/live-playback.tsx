@@ -14,7 +14,6 @@ import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { postStreamUsageHeartbeat, type StreamUsageHeartbeat } from "@/lib/stream-usage-client";
-import { isPageVisible } from "@/lib/use-page-visibility";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import type { LiveRuntimeState } from "@/lib/live-runtime-state";
@@ -600,18 +599,14 @@ function useStreamUsageTracker({
   });
 
   useEffect(() => {
-    // Going hidden flushes what is pending once (bounding what a tab closed in
-    // the background could lose); coming back flushes the deferred seconds
-    // immediately. pagehide uses a keepalive request.
-    if (typeof document === "undefined" || typeof window === "undefined") return;
-    const onVisibilityChange = () => void flushStreamUsageRef.current(true);
+    // Usage heartbeats are NOT gated on page visibility (R461-01): a
+    // background tab still plays, consumes Stream minutes and must keep
+    // hitting the quota check. Only on pagehide is the sub-minute remainder
+    // sent once with a keepalive request so closing the tab does not drop it.
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
     const onPageHide = () => void flushStreamUsageRef.current(true, true);
-    document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", onPageHide);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("pagehide", onPageHide);
-    };
+    return () => window.removeEventListener("pagehide", onPageHide);
   }, []);
 
   useEffect(() => {
@@ -632,9 +627,6 @@ function useStreamUsageTracker({
       || retryTimerRef.current !== null
       || retrySuspendedRef.current
     ) return;
-    // F-091: a hidden tab keeps accumulating watched seconds but defers the
-    // routine heartbeat; visibility changes and pagehide force a flush.
-    if (!force && !isPageVisible()) return;
 
     let pendingHeartbeat = pendingHeartbeatRef.current;
     if (!pendingHeartbeat) {
