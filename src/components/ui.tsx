@@ -114,6 +114,12 @@ function useFieldMessages(error?: string | null, hint?: string | null) {
   };
 }
 
+function FieldShell({ field, children }: { field: ReturnType<typeof useFieldMessages>; children: React.ReactNode }) {
+  // Messages live outside the <label> so they never become part of the control's accessible name.
+  // The wrapper is always rendered so toggling messages never remounts (and clears) the control.
+  return <div className="grid gap-1.5">{children}{field.messages}</div>;
+}
+
 export function Field({
   label,
   name,
@@ -149,6 +155,7 @@ export function Field({
 }) {
   const field = useFieldMessages(error, hint);
   return (
+    <FieldShell field={field}>
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <input
@@ -167,8 +174,8 @@ export function Field({
         readOnly={readOnly}
         defaultValue={defaultValue ?? ""}
       />
-      {field.messages}
     </label>
+    </FieldShell>
   );
 }
 
@@ -195,6 +202,7 @@ export function TextArea({
 }) {
   const field = useFieldMessages(error, hint);
   return (
+    <FieldShell field={field}>
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <textarea
@@ -207,8 +215,8 @@ export function TextArea({
         maxLength={maxLength}
         defaultValue={defaultValue ?? ""}
       />
-      {field.messages}
     </label>
+    </FieldShell>
   );
 }
 
@@ -233,6 +241,7 @@ export function SelectField({
 }) {
   const field = useFieldMessages(error, hint);
   return (
+    <FieldShell field={field}>
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <select
@@ -244,8 +253,8 @@ export function SelectField({
       >
         {children}
       </select>
-      {field.messages}
     </label>
+    </FieldShell>
   );
 }
 

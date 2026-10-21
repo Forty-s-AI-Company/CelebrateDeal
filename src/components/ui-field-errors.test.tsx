@@ -26,4 +26,15 @@ describe("shared form controls expose error and hint slots (F-117)", () => {
       expect(html).toContain("aria-describedby=");
     }
   });
+
+  it("keeps the same outer element with and without messages so toggling an error never remounts the control", () => {
+    const outer = (html: string) => /^<(\w+)/u.exec(html)?.[1];
+    expect(outer(renderToStaticMarkup(<Field label="a" name="a" />)))
+      .toBe(outer(renderToStaticMarkup(<Field label="a" name="a" error="x" />)));
+  });
+
+  it("keeps error text out of the label so the accessible name stays the label", () => {
+    const html = renderToStaticMarkup(<Field label="商品名稱" name="name" error="請填寫商品名稱。" />);
+    expect(/<label[^>]*>(.*?)<\/label>/u.exec(html)?.[1]).not.toContain("請填寫商品名稱。");
+  });
 });
