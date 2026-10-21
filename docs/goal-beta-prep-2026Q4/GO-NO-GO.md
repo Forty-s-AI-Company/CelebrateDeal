@@ -5,6 +5,32 @@
 - 依據：`docs/ROADMAP-v2.md` §0.2、§3.1、§6.3；`docs/skills-2026Q4/05-execution-playbook.md` §6.3。
 - 規則：未驗證的項目不得勾選；不以「設定檔存在」代替「runtime 證據」（playbook §6.3）。
 
+## 0. Go／No-Go 摘要（2026-10-22，L1 全部合併時主對話輸出）
+
+**結論：工程端 GO（條件式）。** 封測形式維持「小規模、免費、concierge、staging＋PayUni Sandbox」。能否在 11-01 開放，取決於下列 owner 動作；工程端沒有未修的 BLOCKER。
+
+| 面向 | 狀態 | 證據 |
+|---|---|---|
+| 程式 | L0 核心 18 項與 L1 48 項全部進 master（PR #445～#467 共 22 個，含文件） | STATE.md 合併紀錄；每個金流／auth／migration PR 都有獨立 reviewer 報告（docs/review-2026Q4/30～47） |
+| 資料庫 | staging 所有 migration 已以 `staging-migrate.yml` 套用；全表 RLS、訂單號唯一、月結 ledger 修正已上 | workflow run 紀錄；STATE.md |
+| CI | `quality` 必要檢查全綠；master 既有的帳號限流 3601 秒抖動已修（#467） | PR 檢查 |
+| 排程 | GitHub Actions 每 5 分鐘呼叫 staging，端點回 200（line-notifications 405 待 O-18） | B2 證據 |
+| 封測功能閘門 | 六個模組伺服器端閘門已上，預設關閉；需 owner 逐商家在 `/admin/vendor-features` 開啟（O-23） | PR #465 |
+
+**11-01 前必須由 owner 完成（否則 No-Go 或縮小範圍）**
+
+1. O-18 把 staging 固定網址切到 master 最新部署（否則封測客戶看到 10-18 的舊版）。
+2. O-2 跑一筆 PayUni Sandbox 付款取樣本，10-30 再做 O-12 完整演練。
+3. O-3 平台管理員登記 TOTP；O-14 新增 QA TOTP secret。
+4. O-23 為每個封測商家開啟需要的模組。
+5. O-10／O-11 條款與揭露文字簽核（可先以封測協議過渡）。
+6. O-4 Supabase 升級與備份（沒做則封測資料無每日備份，屬可接受風險但需知情）。
+7. O-8 LINE 官方帳號方案於 10-27 前決定（10-28～11-02 LINE 維護期）。
+
+**已接受的殘餘風險**：F-093 Stream 簽章網址只做評估；F-091 (2)、F-134 其餘矩陣列 L2；虛擬使用者不標示版的公平法風險待律師（O-11）；Supabase 正式專案在孟買與 Vercel 東京跨區（O-15）。
+
+**封測期間工程端待命**：10-30 付款演練（O-12）配合、10-31 檢查表（本檔 §1～§3）逐項勾選、封測客戶回報分流。
+
 ## 1. 封測必修項（L0 核心，18 項 finding）
 
 對照 `ROADMAP-v2.md` §3.1 的 18 項核對表與 `STATE.md` 的工作項目。

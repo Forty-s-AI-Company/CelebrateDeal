@@ -4,6 +4,8 @@
 
 ## 狀態
 
+- 2026-10-22 22:00：L1 全部合併，loop 停止；等待 owner 動作（OWNER-ACTIONS.md）與 10-31 Go／No-Go 檢查。
+
 - STATUS：IN_PROGRESS
 - 基線：`origin/master@78621ca3`
 - 審查 PR：#445（docs，待 CI）；接手 PR：#436（WP-10 admin MFA，CONFLICTING，由工作線 A 處理）
@@ -59,6 +61,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 - #452 第二批 B：全表 RLS migration、RLS 目錄測試、migration 順序與 drift 檢查（10-20，reviewer 三輪後可合併）
 - #466 第六批 C：表單欄位錯誤與聚焦、直播草稿衝突明確選項、架構宣稱與 runbook 更正（10-22，reviewer 一輪可合併；CI 一次因 master 的帳號限流測試時間抖動失敗，重跑通過；無 migration）
 - #467 帳號限流鎖定起點截到毫秒（10-22，CI 抖動根因修正；reviewer 可合併；無 migration）
+- #465 第六批 A：伺服器端封測功能閘門（Vendor.betaFeatureGrants、/admin/vendor-features）、月結不扣聯盟佣金 D-31 A（10-22，reviewer 三輪：BLOCKER 夾具授權、MAJOR courses 關閉仍可結帳、複審 e2e 夾具模組開關、CI WP-88 守門清單；migration `20261021171100` 已套 staging）
 - staging：10-20 以 `staging-migrate.yml`（deploy）套用 master 的 migration 兩次（註冊同意表、全表 RLS）；alias 切換仍待 O-18
 
 **第二批（L0 可繞過＋L1）**：#452、#454（10-20）、#453（10-21）全部合併。累計合併 PR：#445、#446、#447、#448、#449、#452、#453、#454。
@@ -67,6 +70,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 
 ## 每日摘要
 
+- 10-22（晚）：#465 合併並套用 staging migration（累計 22 個 PR，含 #460 文件）。**L1 48 項全部進 master；OWNER-ACTIONS 只剩 owner 本人項目，Goal 自動推進 loop 依停止條件結束**。Go／No-Go 摘要見 GO-NO-GO.md §0。殘餘（封測後或 owner 決策）：F-093 Stream 簽章網址只完成評估，實作等 Cloudflare 設定；F-091 (2) 與 F-134 其餘 action 矩陣列 L2；Vercel Hobby build 速率上限 10-22 觸發一次（O-24）。
 - 10-22（傍晚）：#467 合併（累計 21 個 PR）。#465 同步 master 後 CI 在 Release browser gates 掛一個 Playwright 斷言，交回工作線 A 查根因。
 - 10-22（下午）：#466（第六批 C）合併（累計 20 個 PR）。#465 經 reviewer 兩輪：BLOCKER（夾具缺 browser_live 授權）、MAJOR（courses 關閉仍可結帳課程商品、商家不能下架）、複審 BLOCKER（e2e 夾具授權未同步開啟商家模組開關）皆已修，等 CI 完整跑綠後三審。CI 揭露 master 既有的帳號限流 3601 秒抖動，根因是 `now()` 微秒寫進 TIMESTAMP(3) 四捨五入；開 #467 修正（截到毫秒＋回歸測試），reviewer 可合併，等 CI。
 - 10-19：Goal 啟動。三條工作線完成實作並開 PR #447／#448／#449；每個 PR 經 reviewer 一到三輪（A 兩個 MAJOR＋一個 MAJOR、B 兩個 MAJOR、C 一個 BLOCKER 皆已修）；#447 合併。CI 擋下的問題：secret scan 誤判測試 URL／假金鑰、API contract registry 未登記、strict-index typecheck、backup blob 白名單、slug 預檢順序，全部修正。工作線 A 曾因 Opus 額度中斷一次，10-20 重跑完成。
