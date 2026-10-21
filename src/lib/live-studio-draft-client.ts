@@ -130,3 +130,27 @@ export async function saveLiveStudioDraft({
     slugCheckFailed: record.slugCheckFailed === true,
   };
 }
+
+const INVALID_FIELD_NAME = /^[A-Za-z][A-Za-z0-9]{0,63}$/u;
+
+/** F-117: first failing form-control name from a zod error, safe to put in a redirect query. */
+export function liveInvalidFieldName(error: unknown): string | null {
+  const issues = typeof error === "object" && error !== null && "issues" in error
+    ? (error as { issues?: unknown }).issues
+    : null;
+  if (!Array.isArray(issues)) return null;
+  for (const issue of issues) {
+    const path = typeof issue === "object" && issue !== null ? (issue as { path?: unknown }).path : null;
+    const first = Array.isArray(path) ? path[0] : undefined;
+    if (typeof first === "string" && INVALID_FIELD_NAME.test(first)) return first;
+    // A union failure nests the candidate issues one level down.
+    const nested = typeof issue === "object" && issue !== null ? (issue as { errors?: unknown }).errors : null;
+    if (Array.isArray(nested)) {
+      for (const group of nested) {
+        const name = liveInvalidFieldName({ issues: group });
+        if (name) return name;
+      }
+    }
+  }
+  return null;
+}
