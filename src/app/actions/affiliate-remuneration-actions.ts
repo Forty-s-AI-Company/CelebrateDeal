@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { z, ZodError } from "zod";
 import { requireAuth, requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 import { getDb } from "@/lib/db";
 import { BankAccountEncryptionError } from "@/lib/bank-account";
 import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "@/lib/affiliate-payee-profile";
@@ -65,6 +66,8 @@ export async function approveAffiliatePayeeProfileAction(form: FormData) {
   if (!["affiliate_program", "tax_remuneration"].every(feature => vendor.enabledFeatureModules.includes(feature))) notFound();
   const affiliateId = Id.parse(form.get("affiliateId"));
   const path = `/affiliates/${encodeURIComponent(affiliateId)}/remuneration`;
+  // Approving a payee's bank data decides where money goes (F-027 step-up).
+  requireRecentMfa(auth, { nextPath: path });
   return finish(path, async () => {
     if (form.get("reviewConfirmed") !== "on") return null;
     return approveAffiliatePayeeProfile(getDb(), { userId: auth.user.id }, { vendorId: vendor.id, affiliateId }, Revision.parse(form.get("expectedRevision")));

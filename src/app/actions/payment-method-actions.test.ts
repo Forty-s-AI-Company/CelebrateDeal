@@ -46,6 +46,8 @@ beforeEach(() => {
   mocks.requireVendorFinance.mockResolvedValue({
     vendor: { id: "vendor-current", name: "測試商家" },
     member: { id: "member-current", role: "owner" },
+    user: { id: "user-current", mfaFactor: { id: "factor-current" } },
+    session: { mfaVerifiedAt: new Date() },
   });
   mocks.membershipFindFirst.mockResolvedValue({ id: "membership-current" });
   mocks.getCanonicalAppUrl.mockReturnValue("http://localhost:31023");
@@ -79,6 +81,39 @@ beforeEach(() => {
     verifiedAt: new Date("2026-08-07T00:00:00.000Z"),
     expiresAt: null,
     lastValidatedAt: new Date("2026-08-07T00:00:00.000Z"),
+  });
+});
+
+describe("payment method step-up (F-027)", () => {
+  it.each([
+    ["startPaymentMethodSetupAction", () => startPaymentMethodSetupAction(form({ scopeType: "VENDOR" }))],
+    ["revokePaymentMethodReferenceAction", () => revokePaymentMethodReferenceAction(form({ referenceId: "reference-1" }))],
+  ])("%s sends a finance member without a factor to MFA setup before any provider or DB work", async (_name, run) => {
+    mocks.requireVendorFinance.mockResolvedValue({
+      vendor: { id: "vendor-current", name: "測試商家" },
+      member: { id: "member-current", role: "owner" },
+      user: { id: "user-current", mfaFactor: null },
+      session: { mfaVerifiedAt: null },
+    });
+
+    await expect(run()).rejects.toThrow("redirect:/mfa/setup?reason=step_up&next=%2Fbilling%2Fpayment-methods");
+    expect(mocks.createIntent).not.toHaveBeenCalled();
+    expect(mocks.referenceFindUnique).not.toHaveBeenCalled();
+    expect(mocks.getPaymentProvider).not.toHaveBeenCalled();
+  });
+
+  it("asks for re-verification when the session was verified more than 15 minutes ago", async () => {
+    mocks.requireVendorFinance.mockResolvedValue({
+      vendor: { id: "vendor-current", name: "測試商家" },
+      member: { id: "member-current", role: "owner" },
+      user: { id: "user-current", mfaFactor: { id: "factor-current" } },
+      session: { mfaVerifiedAt: new Date(Date.now() - 15 * 60_000 - 1_000) },
+    });
+
+    await expect(startPaymentMethodSetupAction(form({ scopeType: "VENDOR" }))).rejects.toThrow(
+      "redirect:/mfa/verify?reason=step_up&next=%2Fbilling%2Fpayment-methods",
+    );
+    expect(mocks.createIntent).not.toHaveBeenCalled();
   });
 });
 

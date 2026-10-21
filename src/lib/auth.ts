@@ -295,7 +295,12 @@ export async function requireVendorSupportContext(nextPath?: string) {
   return { auth, vendor };
 }
 
-export async function requireVendorSupportMfa(nextPath = "/support-cases") {
+/**
+ * Support-role guard that also hands back the active membership. It does not
+ * demand MFA; high-risk mutations call `requireRecentMfa` from
+ * `@/lib/recent-mfa` explicitly (F-027).
+ */
+export async function requireVendorSupportMember(nextPath = "/support-cases") {
   const { auth, vendor } = await requireVendorSupportContext(nextPath);
 
   return {
@@ -306,7 +311,8 @@ export async function requireVendorSupportMfa(nextPath = "/support-cases") {
   };
 }
 
-export async function requireVendorManagerMfa(nextPath = "/orders") {
+/** Manager-role guard returning the active membership; see requireVendorSupportMember. */
+export async function requireVendorManagerMember(nextPath = "/orders") {
   const { auth, vendor } = await requireVendorManagerContext(nextPath);
 
   return {
@@ -356,6 +362,7 @@ export async function requireVendorFinance(nextPath = "/billing/usage") {
 
   return {
     user: auth.user,
+    session: auth.session,
     vendor,
     member,
   };
@@ -379,6 +386,7 @@ export async function requireVendorOwner() {
 
   return {
     user: auth.user,
+    session: auth.session,
     vendor: auth.vendor,
     member: auth.member,
   };

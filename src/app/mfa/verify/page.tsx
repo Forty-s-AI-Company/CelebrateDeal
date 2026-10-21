@@ -16,7 +16,7 @@ function safeInternalPath(value: string | undefined) {
 export default async function MfaVerifyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   await requireAuth({ allowUnverifiedMfa: true });
@@ -29,6 +29,7 @@ export default async function MfaVerifyPage({
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">多因子驗證</h1>
           <p className="mt-2 text-sm text-slate-600">輸入 TOTP 驗證碼，或使用尚未用過的 recovery code。</p>
         </div>
+        {params.reason === "step_up" ? <p role="status" className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">這項操作屬於高風險操作，需要在 15 分鐘內完成雙重驗證。驗證後會回到原頁面，請再送出一次。</p> : null}
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "驗證失敗。"}</p> : null}
         <form action={verifyMfaAction} className="grid gap-4">
           <CsrfField />

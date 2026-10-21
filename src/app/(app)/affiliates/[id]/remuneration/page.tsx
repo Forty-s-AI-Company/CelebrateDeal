@@ -9,6 +9,8 @@ import { getAffiliateRemunerationDashboard } from "@/lib/affiliate-remuneration-
 import { approveAffiliatePayeeProfileAction } from "@/app/actions/affiliate-remuneration-actions";
 import { AffiliateRemunerationSummary } from "@/components/affiliate-remuneration-summary";
 import { ButtonLink, PageHeader } from "@/components/ui";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 export default async function AffiliateRemunerationManagerPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ cursor?: string; error?: string; saved?: string }> }) {
   const { id: affiliateId } = await params, query = await searchParams;
   const path = `/affiliates/${encodeURIComponent(affiliateId)}/remuneration`;
@@ -17,6 +19,7 @@ export default async function AffiliateRemunerationManagerPage({ params, searchP
   if (!current) notFound();
   const csrf = await getCsrfToken(), profile = current.profile;
   return <><PageHeader title={`${current.affiliate.name}：提領核准`} description="核對收款人的扣繳分類與憑證後核准精確資料版本，再匯出已簽署的提領。匯出不會執行付款。" action={<ButtonLink href={`/affiliates/${encodeURIComponent(affiliateId)}`}>回到夥伴</ButtonLink>} />
+    <div className="mb-4"><StepUpMfaNotice status={recentMfaStatus(auth)} nextPath={path} operation="核准收款資料或下載提領 CSV" /></div>
     {query.error === "conflict" ? <p role="alert">資料、權限或版本已變更，請重新確認後再送出。</p> : null}
     {query.saved === "1" ? <p role="status">資料已儲存。</p> : null}
     <section aria-label="收款分類核准" className="mb-6 rounded border p-4"><h2 className="text-xl font-bold">收款分類核准</h2>{profile ? <>

@@ -710,7 +710,8 @@ beforeEach(() => {
     member: { role: "platform_admin" },
   });
   mocks.requireVendorOwner.mockResolvedValue({
-    user: { id: "owner-1" },
+    user: { id: "owner-1", mfaFactor: { id: "factor-owner-1" } },
+    session: { mfaVerifiedAt: new Date() },
     member: { role: "owner" },
     vendor: { id: "vendor-1" },
   });
@@ -3378,6 +3379,26 @@ describe("regenerateRecoveryCodesAction", () => {
       expect.objectContaining({ httpOnly: true, maxAge: 600 }),
     );
     expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("recovery-code-1");
+  });
+});
+
+describe("vendor member management step-up (F-027)", () => {
+  it.each([
+    ["without a factor", null, null, "redirect:/mfa/setup?reason=step_up&next=%2Fsettings%2Fsecurity"],
+    ["verified more than 15 minutes ago", { id: "factor-owner-1" }, new Date(Date.now() - 16 * 60_000), "redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity"],
+  ])("blocks every member mutation for an owner %s before any lookup", async (_label, mfaFactor, mfaVerifiedAt, destination) => {
+    mocks.requireVendorOwner.mockResolvedValue({
+      user: { id: "owner-1", mfaFactor }, session: { mfaVerifiedAt }, member: { role: "owner" }, vendor: { id: "vendor-1" },
+    });
+
+    await expect(createVendorMemberAction(vendorMemberFormData({ role: "owner" }))).rejects.toThrow(destination);
+    await expect(resendVendorMemberInvitationAction(resendVendorMemberInvitationFormData())).rejects.toThrow(destination);
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(destination);
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberFindFirst).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 });
 

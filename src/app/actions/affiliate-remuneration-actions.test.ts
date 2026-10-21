@@ -17,7 +17,7 @@ function form() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.csrf.mockResolvedValue(undefined); mocks.auth.mockResolvedValue({ user: { id: "actual-user" } });
-  mocks.manager.mockResolvedValue({ auth: { user: { id: "actual-manager" } }, vendor: { id: "actual-vendor", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] } });
+  mocks.manager.mockResolvedValue({ auth: { user: { id: "actual-manager", mfaFactor: { id: "factor" } }, session: { mfaVerifiedAt: new Date() } }, vendor: { id: "actual-vendor", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] } });
   mocks.vendor.mockResolvedValue({ id: "actual-vendor" }); mocks.policy.mockResolvedValue({ bankFeeCents: 1500, enabled: true });
   mocks.submit.mockResolvedValue({ revision: 2 }); mocks.quote.mockResolvedValue({ id: "snapshot_a" }); mocks.sign.mockResolvedValue({ status: "signed" }); mocks.approve.mockResolvedValue({ approvedRevision: 1 });
 });
@@ -50,6 +50,15 @@ describe("affiliate remuneration protected actions", () => {
     const input = form(); input.set("reviewConfirmed", "on");
     await expect(approveAffiliatePayeeProfileAction(input)).rejects.toThrow("redirect:/affiliates/affiliate_a/remuneration?saved=1");
     expect(mocks.approve).toHaveBeenCalledWith(expect.anything(), { userId: "actual-manager" }, { vendorId: "actual-vendor", affiliateId: "affiliate_a" }, 1);
+  });
+  it.each([
+    ["without a factor", null, null, "redirect:/mfa/setup?reason=step_up&next=%2Faffiliates%2Faffiliate_a%2Fremuneration"],
+    ["with a stale verification", { id: "factor" }, new Date(Date.now() - 16 * 60_000), "redirect:/mfa/verify?reason=step_up&next=%2Faffiliates%2Faffiliate_a%2Fremuneration"],
+  ])("manager approval of payee bank data requires a recent MFA step-up %s (F-027)", async (_label, mfaFactor, mfaVerifiedAt, destination) => {
+    mocks.manager.mockResolvedValue({ auth: { user: { id: "actual-manager", mfaFactor }, session: { mfaVerifiedAt } }, vendor: { id: "actual-vendor", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] } });
+    const input = form(); input.set("reviewConfirmed", "on");
+    await expect(approveAffiliatePayeeProfileAction(input)).rejects.toThrow(destination);
+    expect(mocks.approve).not.toHaveBeenCalled();
   });
   it("stale financial state cannot be displayed as a successful signature", async () => {
     mocks.sign.mockResolvedValueOnce({ status: "stale" });

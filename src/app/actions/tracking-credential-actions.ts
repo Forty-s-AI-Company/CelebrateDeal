@@ -2,13 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 import { saveTrackingCredentialConfiguration, TrackingConfigurationConflict } from "@/lib/tracking-settings";
 
 export async function saveTrackingCredentialAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext("/settings/tracking");
+  // The Meta Conversions API token sends customer events off-platform (F-027 step-up).
+  requireRecentMfa(auth, { nextPath: "/settings/tracking" });
   const revision = formData.get("credentialRevision");
   const token = formData.get("facebookAccessToken");
   const code = formData.get("facebookTestEventCode");

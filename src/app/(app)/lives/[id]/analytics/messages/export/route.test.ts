@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.requireVendorManagerContext }));
+vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
@@ -21,7 +22,7 @@ vi.mock("@/lib/db", () => ({
 import { GET } from "./route";
 
 const context = {
-  auth: { user: { id: "user-current" }, member: { role: "owner" } },
+  auth: { user: { id: "user-current", mfaFactor: { id: "factor" } }, session: { mfaVerifiedAt: new Date() }, member: { role: "owner" } },
   vendor: { id: "vendor-current" },
 };
 
@@ -49,6 +50,20 @@ beforeEach(() => {
 });
 
 describe("live chat analytics CSV export", () => {
+  it.each([
+    ["without a factor", null, null, "redirect:/mfa/setup?reason=step_up&next=%2Flives%2Flive-current%2Fanalytics"],
+    ["with a stale verification", { id: "factor" }, new Date(Date.now() - 16 * 60_000), "redirect:/mfa/verify?reason=step_up&next=%2Flives%2Flive-current%2Fanalytics"],
+  ])("does not read viewer messages %s (F-027)", async (_label, mfaFactor, mfaVerifiedAt, destination) => {
+    mocks.requireVendorManagerContext.mockResolvedValue({
+      auth: { user: { id: "user-current", mfaFactor }, session: { mfaVerifiedAt }, member: { role: "owner" } },
+      vendor: { id: "vendor-current" },
+    });
+    await expect(GET(new Request("https://app.example.test"), { params: Promise.resolve({ id: "live-current" }) })).rejects.toThrow(destination);
+    expect(mocks.liveFindFirst).not.toHaveBeenCalled();
+    expect(mocks.viewerFindMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
   it("authenticates, scopes both sources to one tenant/live, and exports explicit source semantics", async () => {
     const response = await GET(new Request("https://app.example.test"), { params: Promise.resolve({ id: "live-current" }) });
     const bytes = new Uint8Array(await response.arrayBuffer());

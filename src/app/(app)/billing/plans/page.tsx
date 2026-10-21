@@ -1,6 +1,8 @@
 import { permitsWp4SyntheticPlan, wp4FinanceUserId } from "@/lib/wp4-runtime-boundary";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { Badge, Card, PageHeader } from "@/components/ui";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import type { BillingPlan } from "@prisma/client";
 import { cookies } from "next/headers";
 import { requireVendorFinance } from "@/lib/auth";
@@ -207,6 +209,7 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
     <>
       <DirectEntryAttributionReset isDirectEntry={referralPresentation.status !== "recorded"} />
        <PageHeader title="方案" description="平台月費、包含用量與服務費分開計算；Stream 包含額度用完後會暫停新播放，目前不會自動超額扣款。" />
+      {canManageBilling ? <div className="mb-4"><StepUpMfaNotice status={recentMfaStatus(finance)} nextPath="/billing/plans" operation="選擇付費方案" /></div> : null}
       {status === "changed" ? (
         <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
           方案已更新，新的月費與額度會套用到既有月結流程。

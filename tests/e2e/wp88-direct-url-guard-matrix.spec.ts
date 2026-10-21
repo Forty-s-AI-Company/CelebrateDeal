@@ -15,8 +15,8 @@ const workspaceRoot = process.cwd();
 // contract with synthetic users only.
 const guardFamilies = {
   vendorContext: ["requireVendorContext(", "requireVendor("],
-  vendorManagerMfa: ["requireVendorManagerMfa("],
-  vendorSupportMfa: ["requireVendorSupportMfa("],
+  vendorManagerMember: ["requireVendorManagerMember("],
+  vendorSupportMember: ["requireVendorSupportMember("],
   vendorOwner: ["requireVendorOwner("],
   vendorManager: ["requireVendorManager(", "requireVendorManagerContext("],
   vendorFinance: ["requireVendorFinance(", "requireVendorOwnerFinance("],
@@ -38,7 +38,7 @@ function pageFiles(root: string): string[] {
 function guardFor(source: string) {
   // Some pages compose `requireAuth` with a stricter vendor guard. Classify
   // those by the strictest guard so one route is counted once, not twice.
-  const priority = ["platformFinance", "vendorFinance", "vendorOwner", "vendorSupportMfa", "vendorManagerMfa", "vendorManager", "vendorContext", "authenticated"] as const;
+  const priority = ["platformFinance", "vendorFinance", "vendorOwner", "vendorSupportMember", "vendorManagerMember", "vendorManager", "vendorContext", "authenticated"] as const;
   const matching = priority.filter((family) => guardFamilies[family].some((call) => source.includes(call)));
 
   expect(matching, "每一個受保護 page 必須明確使用一個共同 authorization guard").not.toHaveLength(0);
@@ -83,8 +83,8 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
   expect(sourceFiles).toHaveLength(95);
   expect(familyCounts).toEqual({
     vendorContext: 7,
-    vendorManagerMfa: 2,
-    vendorSupportMfa: 2,
+    vendorManagerMember: 2,
+    vendorSupportMember: 2,
     vendorOwner: 3,
     vendorManager: 56,
     vendorFinance: 12,

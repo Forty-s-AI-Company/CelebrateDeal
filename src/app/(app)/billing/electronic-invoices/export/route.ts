@@ -1,5 +1,6 @@
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 
 function csvCell(value: string | number) {
   const raw = String(value);
@@ -8,7 +9,10 @@ function csvCell(value: string | number) {
 }
 
 export async function GET() {
-  const { vendor } = await requireVendorFinance("/billing/electronic-invoices/export");
+  const { user, session, vendor } = await requireVendorFinance("/billing/electronic-invoices/export");
+  // Buyer names and carriers are personal data (F-027 step-up). Return to the
+  // list page so a verified user starts the download deliberately.
+  requireRecentMfa({ user, session }, { nextPath: "/billing/electronic-invoices" });
   const invoices = await getDb().electronicInvoice.findMany({
     where: { vendorId: vendor.id },
     include: { order: { select: { orderNumber: true } } },

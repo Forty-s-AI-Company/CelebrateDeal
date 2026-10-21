@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireVendorFinance } from "@/lib/auth";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { getCanonicalAppUrl } from "@/lib/app-url";
@@ -35,7 +36,9 @@ function redirectStatus(status: string): never {
 
 export async function startPaymentMethodSetupAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor, member } = await requireVendorFinance(PAYMENT_METHODS_PATH);
+  const { user, session, vendor, member } = await requireVendorFinance(PAYMENT_METHODS_PATH);
+  // Binding a card authorizes future charges (F-027 step-up).
+  requireRecentMfa({ user, session }, { nextPath: PAYMENT_METHODS_PATH });
   const request = parsePaymentMethodSetupRequest({
     scopeType: formText(formData, "scopeType"),
     teamId: formText(formData, "teamId") || null,
@@ -152,7 +155,8 @@ export async function startPaymentMethodSetupStateAction(
 
 export async function revokePaymentMethodReferenceAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const { vendor, member } = await requireVendorFinance(PAYMENT_METHODS_PATH);
+  const { user, session, vendor, member } = await requireVendorFinance(PAYMENT_METHODS_PATH);
+  requireRecentMfa({ user, session }, { nextPath: PAYMENT_METHODS_PATH });
   const referenceId = formText(formData, "referenceId");
   if (!referenceId) redirectError("invalid_reference");
 

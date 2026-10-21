@@ -24,6 +24,8 @@ import { getDb } from "@/lib/db";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { statusLabel } from "@/lib/status-labels";
 
 const errorMessages: Record<string, string> = {
@@ -280,6 +282,7 @@ export default async function SecuritySettingsPage({
             <Badge tone="green">owner</Badge>
           </div>
 
+          <div className="mb-4"><StepUpMfaNotice status={recentMfaStatus(auth)} nextPath="/settings/security" operation="邀請、重寄或停用商家成員" /></div>
           {isOwner ? (
             <form action={createVendorMemberAction} className="mb-5 grid gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 md:grid-cols-2">
               <CsrfField />

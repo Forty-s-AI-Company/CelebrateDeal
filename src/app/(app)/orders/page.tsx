@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { COMMERCE_ORDER_STATUSES, type CommerceOrderStatus } from "@/lib/commerce-order-domain";
-import { requireVendorManagerMfa } from "@/lib/auth";
+import { requireVendorManagerMember } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 
@@ -25,7 +25,7 @@ function tone(status: CommerceOrderStatus): "green" | "orange" | "red" | "gray" 
 export default async function OrdersPage({ searchParams }: {
   searchParams?: Promise<{ status?: string | string[]; q?: string | string[]; productId?: string | string[] }>;
 }) {
-  const { vendor } = await requireVendorManagerMfa("/orders");
+  const { vendor } = await requireVendorManagerMember("/orders");
   const query = await searchParams;
   const status = selectedStatus(query?.status);
   const rawSearch = Array.isArray(query?.q) ? query?.q[0] : query?.q;

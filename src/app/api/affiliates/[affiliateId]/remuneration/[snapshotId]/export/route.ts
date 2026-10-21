@@ -4,6 +4,7 @@ import { getCurrentAuth } from "@/lib/auth";
 import { readFormDataBody, requireSameOriginRequest } from "@/lib/api-security";
 import { CSRF_FIELD_NAME, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { recentMfaRedirectPath, recentMfaStatus } from "@/lib/recent-mfa";
 import { BankAccountEncryptionError } from "@/lib/bank-account";
 import { AffiliateRemunerationInputError } from "@/lib/affiliate-remuneration";
 import { exportAffiliateRemunerationQuote } from "@/lib/affiliate-remuneration-quotes";
@@ -19,6 +20,12 @@ export async function POST(request: Request, context: { params: Promise<{ affili
   if (typeof token !== "string" || !await verifyCsrfToken(token)) return failure(403);
   const params = await context.params;
   if (![params.affiliateId, params.snapshotId].every(value => z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u).safeParse(value).success)) return failure(404);
+  // Payee identity and bank data leave the platform here (F-027 step-up). A
+  // native form POST must come back with 303 so the browser GETs the MFA page.
+  const stepUp = recentMfaStatus(auth);
+  if (stepUp !== "verified") {
+    return new Response(null, { status: 303, headers: { ...PrivateHeaders, Location: recentMfaRedirectPath(stepUp, `/affiliates/${encodeURIComponent(params.affiliateId)}/remuneration`) } });
+  }
   try {
     const policy = await getDb().merchantAffiliatePayoutPolicy.findUnique({ where: { vendorId: auth.vendor.id }, select: { bankFeeCents: true, enabled: true } });
     if (!policy?.enabled) return failure(409);

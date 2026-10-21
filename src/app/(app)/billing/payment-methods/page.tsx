@@ -1,4 +1,6 @@
 import { Badge, Card, PageHeader } from "@/components/ui";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { PaymentMethodSetupStartForm } from "@/components/payment-method-setup-start-form";
@@ -132,7 +134,8 @@ function statusLabel(status: string) {
 }
 
 export default async function PaymentMethodsPage({ searchParams }: PaymentMethodsPageProps) {
-  const { vendor } = await requireVendorFinance("/billing/payment-methods");
+  const { user, session, vendor } = await requireVendorFinance("/billing/payment-methods");
+  const stepUpStatus = recentMfaStatus({ user, session });
   const [references, memberships] = await Promise.all([
     getDb().paymentMethodReference.findMany({
       where: { vendorId: vendor.id },
@@ -178,6 +181,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
       />
       {message ? <p role="alert" className="mb-6 rounded-md bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800">{message}</p> : null}
       {status ? <p role="status" className="mb-6 rounded-md bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{status}</p> : null}
+      <div className="mb-6"><StepUpMfaNotice status={stepUpStatus} nextPath="/billing/payment-methods" operation="設定或撤銷付款方式" /></div>
       <p className="mb-6 text-sm text-slate-600">專案發布仍檢查有效的商家層級付款驗證紀錄，成員紀錄不計入。完成本頁設定不代表顧客收款已啟用或取得收款核可；顧客收款需另外確認，發布時也會重新檢查驗證有效性。</p>
 
       <div className="grid gap-4 lg:grid-cols-3">

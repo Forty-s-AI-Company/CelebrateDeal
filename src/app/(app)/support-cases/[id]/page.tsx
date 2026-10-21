@@ -11,7 +11,7 @@ import {
 } from "@/app/actions/support-case-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/components/ui";
-import { requireVendorSupportMfa } from "@/lib/auth";
+import { requireVendorSupportMember } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 import { revealSupportCaseContent, type SupportCaseContentKind } from "@/lib/support-case-pii";
@@ -214,7 +214,7 @@ export default async function SupportCaseDetailPage({ params, searchParams }: {
   searchParams?: Promise<{ error?: string | string[]; updated?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { vendor, member } = await requireVendorSupportMfa(`/support-cases/${encodeURIComponent(id)}`);
+  const { vendor, member } = await requireVendorSupportMember(`/support-cases/${encodeURIComponent(id)}`);
   const canManageOrders = member.role === "owner" || member.role === "admin";
   const detail = await loadSupportCaseDetail(id, vendor.id, canManageOrders);
   if (!detail) notFound();

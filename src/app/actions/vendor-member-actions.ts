@@ -13,6 +13,7 @@ import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
 import { sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 
 const MEMBER_ROLES = new Set(["owner", "admin", "accountant", "support"]);
 
@@ -39,6 +40,8 @@ function isSerializationConflict(error: unknown) {
 export async function createVendorMemberAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
+  // Member management can add owners (F-027 step-up).
+  requireRecentMfa(auth, { nextPath: "/settings/security" });
   const email = normalizedEmail(text(formData, "email"));
   const name = text(formData, "name");
   const role = text(formData, "role", "accountant");
@@ -142,6 +145,8 @@ export async function createVendorMemberAction(formData: FormData) {
 export async function resendVendorMemberInvitationAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
+  // Member management can add owners (F-027 step-up).
+  requireRecentMfa(auth, { nextPath: "/settings/security" });
   const id = text(formData, "id");
   const db = getDb();
   const member = await db.vendorMember.findFirst({
@@ -188,6 +193,8 @@ export async function resendVendorMemberInvitationAction(formData: FormData) {
 export async function deactivateVendorMemberAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
+  // Member management can add owners (F-027 step-up).
+  requireRecentMfa(auth, { nextPath: "/settings/security" });
   const id = text(formData, "id");
   const confirmation = normalizedEmail(text(formData, "confirmation"));
   const db = getDb();
