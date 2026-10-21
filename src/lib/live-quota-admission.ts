@@ -225,7 +225,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
       where: { id: existing.id },
       data: { lastSeenAt: now, expiresAt },
     });
-    return { token: requestedToken, expiresAt, reused: true };
+    return { token: requestedToken, expiresAt, reused: true, sessionId: existing.id };
   }
 
   const activeSessions = await tx.liveViewerSession.count({
@@ -237,7 +237,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
 
   const token = createLiveViewerToken();
   const expiresAt = new Date(now.getTime() + LIVE_VIEWER_SESSION_TTL_MS);
-  await tx.liveViewerSession.create({
+  const created = await tx.liveViewerSession.create({
     data: {
       vendorId: input.vendorId,
       liveId: input.liveId,
@@ -247,7 +247,7 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
     },
     select: { id: true },
   });
-  return { token, expiresAt, reused: false };
+  return { token, expiresAt, reused: false, sessionId: created.id };
 }
 
 function isPrismaCode(error: unknown, code: string) {

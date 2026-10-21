@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildViewerChatMessageId,
+  clearLiveChatBlacklistCache,
   createViewerChatMessage,
+  LIVE_CHAT_BLACKLIST_CACHE_TTL_MS,
   decodeLiveChatCursor,
   encodeLiveChatCursor,
   listViewerChatMessages,
 } from "@/lib/live-chat";
 import { createFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { hashLiveViewerToken } from "@/lib/live-quota-admission";
+import { createLiveViewerPass } from "@/lib/live-viewer-pass";
 
 const now = new Date("2026-08-17T00:00:00.000Z");
 const chatToken = "chat-token";
@@ -83,6 +86,104 @@ function baseInput(token: string | null = chatToken) {
 
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "live-chat-test-secret-longer-than-thirty-two-bytes");
+  clearLiveChatBlacklistCache();
+});
+
+describe("live chat read poll with a signed viewer pass (F-091)", () => {
+  const pass = (overrides: Partial<Parameters<typeof createLiveViewerPass>[0]> = {}) => createLiveViewerPass({
+    vendorId: "vendor-1",
+    liveId: "live-1",
+    viewerSessionId: "session-1",
+    admissionToken,
+    now,
+    ...overrides,
+  });
+
+  it("skips the viewer session read when the pass matches vendor, live and admission cookie", async () => {
+    const { db } = dbFixture();
+    const result = await listViewerChatMessages(db as never, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      chatSessionToken: null,
+      admissionToken,
+      viewerPass: pass(),
+      now,
+    });
+
+    expect(result.viewer.reason).toBe("verification_required");
+    expect(db.liveViewerSession.findUnique).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["another live", { liveId: "live-2" }],
+    ["another tenant", { vendorId: "vendor-2" }],
+    ["another admission cookie", { admissionToken: "B".repeat(43) }],
+    ["an expired pass", { now: new Date(now.getTime() - 11 * 60_000) }],
+  ])("falls back to the authoritative session row for a pass bound to %s", async (_label, overrides) => {
+    const { db } = dbFixture();
+    db.liveViewerSession.findUnique.mockResolvedValue(null);
+
+    await expect(listViewerChatMessages(db as never, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      chatSessionToken: null,
+      admissionToken,
+      viewerPass: pass(overrides),
+      now,
+    })).rejects.toMatchObject({ code: "access_denied" });
+    expect(db.liveViewerSession.findUnique).toHaveBeenCalledOnce();
+  });
+
+  it("never lets a pass replace the session check for posting", async () => {
+    const { db } = dbFixture();
+    db.liveViewerSession.findUnique.mockResolvedValue(null);
+    const token = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: new Date(now.getTime() - 1_000) });
+
+    await expect(createViewerChatMessage(db as never, {
+      ...baseInput(),
+      chatSessionToken: token,
+      viewerPass: pass(),
+    } as never)).rejects.toMatchObject({ code: "access_denied" });
+  });
+
+  it("caches the vendor blacklist for the read poll for 60 seconds while posting re-reads it", async () => {
+    const { db } = dbFixture();
+    const token = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: new Date(now.getTime() - 1_000) });
+    const list = (at: Date) => listViewerChatMessages(db as never, {
+      vendorId: "vendor-1",
+      liveId: "live-1",
+      chatSessionToken: token,
+      admissionToken,
+      viewerPass: pass(),
+      now: at,
+    });
+
+    await expect(list(now)).resolves.toMatchObject({ viewer: { canPost: true } });
+    db.blacklist.findMany.mockResolvedValue([{ identifier: "lead@example.test", identifierType: "email" }]);
+    await expect(list(new Date(now.getTime() + 30_000))).resolves.toMatchObject({ viewer: { canPost: true } });
+    expect(db.blacklist.findMany).toHaveBeenCalledTimes(1);
+
+    // Posting always reads the database: the new entry blocks immediately.
+    await expect(createViewerChatMessage(db as never, { ...baseInput(), chatSessionToken: token }))
+      .rejects.toMatchObject({ code: "blocked" });
+    expect(db.blacklist.findMany).toHaveBeenCalledTimes(2);
+
+    await expect(list(new Date(now.getTime() + LIVE_CHAT_BLACKLIST_CACHE_TTL_MS + 1))).resolves.toMatchObject({
+      viewer: { canPost: false, reason: "blocked" },
+    });
+    expect(db.blacklist.findMany).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not cache a failed blacklist read", async () => {
+    const { db } = dbFixture();
+    const token = createFormSubmissionChatSessionToken({ submissionId: "submission-1", now: new Date(now.getTime() - 1_000) });
+    const input = { vendorId: "vendor-1", liveId: "live-1", chatSessionToken: token, admissionToken, viewerPass: pass(), now };
+    db.blacklist.findMany.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(listViewerChatMessages(db as never, input)).rejects.toThrow("database unavailable");
+    await expect(listViewerChatMessages(db as never, input)).resolves.toMatchObject({ viewer: { canPost: true } });
+    expect(db.blacklist.findMany).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("live chat domain", () => {

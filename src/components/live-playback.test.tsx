@@ -844,6 +844,35 @@ describe("LivePlayback checkout", () => {
     );
   });
 
+  it("defers routine heartbeats while the tab is hidden and still flushes on a forced stop", async () => {
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      localStorage: {},
+    });
+    vi.stubGlobal("document", { visibilityState: "hidden" });
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("00000000-0000-4000-8000-000000000003") });
+    vi.mocked(postStreamUsageHeartbeat).mockResolvedValue("recorded");
+
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4" });
+    const video = findElements(tree, (element) => element.type === "video")[0];
+    if (!video) throw new Error("Expected video element");
+
+    (video.props.onPlay as (event: { currentTarget: { currentTime: number } }) => void)({ currentTarget: { currentTime: 0 } });
+    for (let currentTime = 1; currentTime <= 90; currentTime += 1) {
+      (video.props.onTimeUpdate as (event: { currentTarget: { currentTime: number } }) => void)({
+        currentTarget: { currentTime },
+      });
+    }
+    expect(postStreamUsageHeartbeat).not.toHaveBeenCalled();
+
+    (video.props.onPause as () => void)();
+    expect(postStreamUsageHeartbeat).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "00000000-0000-4000-8000-000000000003", watchSeconds: 60 }),
+      fetch,
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
   it("stops controls and exposes an accessible recovery message when Stream quota is exhausted", async () => {
     vi.stubGlobal("window", {
       location: { search: "" },

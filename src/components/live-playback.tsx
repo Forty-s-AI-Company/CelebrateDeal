@@ -14,6 +14,7 @@ import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { postStreamUsageHeartbeat, type StreamUsageHeartbeat } from "@/lib/stream-usage-client";
+import { isPageVisible } from "@/lib/use-page-visibility";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import type { LiveRuntimeState } from "@/lib/live-runtime-state";
@@ -592,6 +593,26 @@ function useStreamUsageTracker({
     }, delay);
   }
 
+  const flushStreamUsageRef = useRef(flushStreamUsage);
+  useEffect(() => {
+    flushStreamUsageRef.current = flushStreamUsage;
+  });
+
+  useEffect(() => {
+    // Going hidden flushes what is pending once (bounding what a tab closed in
+    // the background could lose); coming back flushes the deferred seconds
+    // immediately. pagehide uses a keepalive request.
+    if (typeof document === "undefined" || typeof window === "undefined") return;
+    const onVisibilityChange = () => void flushStreamUsageRef.current(true);
+    const onPageHide = () => void flushStreamUsageRef.current(true, true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, []);
+
   useEffect(() => {
     disposedRef.current = false;
     return () => {
@@ -602,7 +623,7 @@ function useStreamUsageTracker({
     };
   }, []);
 
-  async function flushStreamUsage(force = false) {
+  async function flushStreamUsage(force = false, keepalive = false) {
     if (
       disposedRef.current
       || quotaExhaustedRef.current
@@ -610,6 +631,9 @@ function useStreamUsageTracker({
       || retryTimerRef.current !== null
       || retrySuspendedRef.current
     ) return;
+    // F-091: a hidden tab keeps accumulating watched seconds but defers the
+    // routine heartbeat; visibility changes and pagehide force a flush.
+    if (!force && !isPageVisible()) return;
 
     let pendingHeartbeat = pendingHeartbeatRef.current;
     if (!pendingHeartbeat) {
@@ -631,7 +655,10 @@ function useStreamUsageTracker({
     usageFlushInFlightRef.current = true;
     const requestController = new AbortController();
     heartbeatAbortControllerRef.current = requestController;
-    const outcome = await postStreamUsageHeartbeat(pendingHeartbeat, fetch, { signal: requestController.signal });
+    const outcome = await postStreamUsageHeartbeat(pendingHeartbeat, fetch, {
+      signal: requestController.signal,
+      ...(keepalive ? { keepalive: true } : {}),
+    });
     if (heartbeatAbortControllerRef.current === requestController) {
       heartbeatAbortControllerRef.current = null;
     }

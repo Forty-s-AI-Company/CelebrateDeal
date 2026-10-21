@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Send } from "lucide-react";
 
 import type { ScheduledRuntimeMessage, ViewerRuntimeMessage } from "@/lib/live-chat-contract";
+import { usePageVisible } from "@/lib/use-page-visibility";
 
 const CHAT_ENDPOINT = "/api/live-chat/messages";
 const CHAT_POLL_INTERVAL_MS = 3_000;
@@ -130,6 +131,7 @@ function LiveChatSession({
   const generationRef = useRef(0);
   const postControllerRef = useRef<AbortController | null>(null);
   const admissionRefreshRequestedRef = useRef(false);
+  const pageVisible = usePageVisible();
 
   const visibleScheduledMessages = useMemo(() => sortScheduledMessages(scheduledMessages), [scheduledMessages]);
   const canPost = enabled && admissionStatus === "admitted" && !paused && viewer.canPost && pending === null;
@@ -145,7 +147,9 @@ function LiveChatSession({
   useEffect(() => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
-    if (!enabled || admissionStatus !== "admitted" || paused) return;
+    // Hidden tabs do not poll; returning to the foreground re-runs this
+    // effect, which fetches once immediately before the interval resumes.
+    if (!enabled || admissionStatus !== "admitted" || paused || !pageVisible) return;
 
     let disposed = false;
     let inFlight = false;
@@ -200,7 +204,7 @@ function LiveChatSession({
       window.clearInterval(timer);
       controller?.abort();
     };
-  }, [admissionStatus, enabled, liveId, onAdmissionInvalid, paused, vendorId]);
+  }, [admissionStatus, enabled, liveId, onAdmissionInvalid, pageVisible, paused, vendorId]);
 
   useEffect(() => {
     const log = logRef.current;

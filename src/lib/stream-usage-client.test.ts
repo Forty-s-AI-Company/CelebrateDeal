@@ -25,6 +25,15 @@ describe("postStreamUsageHeartbeat", () => {
     });
   });
 
+  it("marks only a pagehide flush as keepalive and treats a busy 503 as retryable", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    await postStreamUsageHeartbeat(heartbeat, fetcher, { keepalive: true });
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ keepalive: true });
+
+    const busy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Usage temporarily unavailable" }), { status: 503 }));
+    await expect(postStreamUsageHeartbeat(heartbeat, busy)).resolves.toBe("retryable_failure");
+  });
+
   it("does not treat non-success responses as recorded usage", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 409 }));
 

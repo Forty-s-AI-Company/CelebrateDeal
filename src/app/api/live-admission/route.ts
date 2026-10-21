@@ -3,6 +3,7 @@ import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
 import { admitLiveViewer, LiveQuotaAdmissionError, liveViewerCookieOptions, liveViewerTokenFromRequest, releaseLiveViewer } from "@/lib/live-quota-admission";
 import { getDb } from "@/lib/db";
+import { createLiveViewerPass, LIVE_VIEWER_PASS_COOKIE, liveViewerPassCookieOptions } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const LiveAdmissionPayload = z.object({
@@ -42,6 +43,14 @@ export async function POST(request: Request) {
     });
     const response = NextResponse.json({ ok: true });
     response.cookies.set("celebratedeal_live_viewer", result.token, liveViewerCookieOptions(request));
+    // Renewed with every admission: read polls verify this signature instead
+    // of reading the viewer session row (F-091).
+    response.cookies.set(LIVE_VIEWER_PASS_COOKIE, createLiveViewerPass({
+      vendorId: payload.vendorId,
+      liveId: payload.liveId,
+      viewerSessionId: result.sessionId,
+      admissionToken: result.token,
+    }), liveViewerPassCookieOptions(request));
     return response;
   } catch (error) {
     if (error instanceof LiveQuotaAdmissionError) return errorResponse(error);
@@ -60,5 +69,7 @@ export async function DELETE(request: Request) {
     ...payload,
     token: liveViewerTokenFromRequest(request),
   });
-  return NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(LIVE_VIEWER_PASS_COOKIE, "", liveViewerPassCookieOptions(request, 0));
+  return response;
 }

@@ -14,6 +14,8 @@ export const STREAM_USAGE_HEARTBEAT_TIMEOUT_MS = 2_000;
 type StreamUsageHeartbeatRequestOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Lets a pagehide flush outlive the document. */
+  keepalive?: boolean;
 };
 
 function isQuotaExhaustedResponse(value: unknown): value is { code: "stream_minutes_exhausted" } {
@@ -52,6 +54,7 @@ export async function postStreamUsageHeartbeat(
         },
         body: JSON.stringify(input),
         signal: controller.signal,
+        ...(options.keepalive ? { keepalive: true } : {}),
       }),
       aborted,
     ]);

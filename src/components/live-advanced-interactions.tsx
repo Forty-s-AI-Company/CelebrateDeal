@@ -3,6 +3,7 @@
 import { BarChart3, Flame, Gift, MessageCircleQuestion, PartyPopper, Sparkles, Trophy, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdvancedInteractionMetadata } from "@/lib/interaction-event";
+import { usePageVisible } from "@/lib/use-page-visibility";
 
 type AdvancedEvent = {
   id: string;
@@ -121,6 +122,7 @@ function ActiveLiveAdvancedInteractions({
   onCheckout?: (productId: string, flashSaleRunId?: string) => void | Promise<void>;
 }) {
   const [admissionLost, setAdmissionLost] = useState(false);
+  const pageVisible = usePageVisible();
   const [run, setRun] = useState<PublicRun | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [displayName, setDisplayName] = useState("");
@@ -147,7 +149,8 @@ function ActiveLiveAdvancedInteractions({
   }, [run?.id, scriptedEvent?.id, admissionLost]);
 
   useEffect(() => {
-    if (!enabled || admissionLost) return;
+    // 分頁隱藏時暫停輪詢；回到前景時重新執行並立即讀取一次。
+    if (!enabled || admissionLost || !pageVisible) return;
     // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
     const controller = new AbortController();
     const { signal } = controller;
@@ -187,7 +190,7 @@ function ActiveLiveAdvancedInteractions({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [enabled, admissionLost, liveId, scriptedEvent, vendorId]);
+  }, [enabled, admissionLost, liveId, pageVisible, scriptedEvent, vendorId]);
 
   useEffect(() => {
     if (!run) return;

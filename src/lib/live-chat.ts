@@ -5,6 +5,7 @@ import { BlacklistIdentifierType, matchesBlacklistKeyword, normalizeBlacklistIde
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import type { ViewerRuntimeMessage as ContractViewerRuntimeMessage } from "@/lib/live-chat-contract";
 import { hashLiveViewerToken, hasActiveLiveViewerSession } from "@/lib/live-quota-admission";
+import { verifyLiveViewerPass } from "@/lib/live-viewer-pass";
 import { normalizeClientIp } from "@/lib/request-client-ip";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
@@ -15,6 +16,9 @@ export const LIVE_CHAT_CURSOR_PURPOSE = "live-chat-cursor";
 const MAX_DISPLAY_NAME_LENGTH = 160;
 const CHAT_COOKIE_MAX_LENGTH = 320;
 const LIVE_VIEWER_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
+/** Read-poll blacklist cache (F-091): writes always read the database. */
+export const LIVE_CHAT_BLACKLIST_CACHE_TTL_MS = 60_000;
+const LIVE_CHAT_BLACKLIST_CACHE_MAX_VENDORS = 1_000;
 const UUID_PATTERN = z.string().uuid();
 
 export const ViewerChatQuerySchema = z.object({
@@ -264,9 +268,23 @@ function sameIdempotentMessage(
 async function resolveViewerAdmissionContext(
   database: LiveChatModels,
   input: { vendorId: string; liveId: string; admissionToken: string | null; now?: Date },
+  /** Only the read poll passes this; every write path leaves it null. */
+  readPollPass: string | null = null,
 ): Promise<ViewerChatAdmissionContext> {
   if (!input.admissionToken || !LIVE_VIEWER_TOKEN_PATTERN.test(input.admissionToken)) {
     throw new LiveChatError("access_denied");
+  }
+
+  // Read polls only: a valid signed pass for this vendor/live and admission
+  // cookie replaces the per-poll LiveViewerSession read. Without one (or for
+  // any write) the database session stays authoritative.
+  if (readPollPass !== null && verifyLiveViewerPass(readPollPass, {
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    admissionToken: input.admissionToken,
+    now: input.now,
+  })) {
+    return { admissionToken: input.admissionToken };
   }
 
   const activeAdmission = await hasActiveLiveViewerSession(database as unknown as PrismaClient, {
@@ -325,7 +343,39 @@ async function resolveVerifiedViewerContext(
   };
 }
 
-async function activeBlacklists(database: LiveChatModels, vendorId: string) {
+type BlacklistRows = Array<{ identifier: string; identifierType: string }>;
+
+const blacklistCache = new Map<string, { expiresAt: number; rows: Promise<BlacklistRows> }>();
+
+/** Test hook: drop every cached vendor blacklist. */
+export function clearLiveChatBlacklistCache() {
+  blacklistCache.clear();
+}
+
+/**
+ * Per-instance, per-vendor cache for the chat read poll only. A new
+ * blacklist entry can take up to 60 seconds to change `canPost` in the list
+ * response; posting always re-reads the database and is blocked at once.
+ */
+async function cachedActiveBlacklists(database: LiveChatModels, vendorId: string, now: number) {
+  const cached = blacklistCache.get(vendorId);
+  if (cached && cached.expiresAt > now) return cached.rows;
+  blacklistCache.delete(vendorId);
+  const rows = activeBlacklists(database, vendorId);
+  blacklistCache.set(vendorId, { expiresAt: now + LIVE_CHAT_BLACKLIST_CACHE_TTL_MS, rows });
+  // A failed read must not be cached.
+  rows.catch(() => {
+    if (blacklistCache.get(vendorId)?.rows === rows) blacklistCache.delete(vendorId);
+  });
+  while (blacklistCache.size > LIVE_CHAT_BLACKLIST_CACHE_MAX_VENDORS) {
+    const oldest = blacklistCache.keys().next().value;
+    if (oldest === undefined) break;
+    blacklistCache.delete(oldest);
+  }
+  return rows;
+}
+
+async function activeBlacklists(database: LiveChatModels, vendorId: string): Promise<BlacklistRows> {
   return database.blacklist.findMany({
     where: {
       vendorId,
@@ -418,13 +468,17 @@ export async function listViewerChatMessages(
   input: ViewerChatQuery & {
     chatSessionToken: string | null;
     admissionToken: string | null;
+    /** Signed viewer pass cookie; null/absent falls back to the session row. */
+    viewerPass?: string | null;
     ipAddress?: string | null;
     now?: Date;
   },
 ): Promise<ViewerChatListResult> {
-  const admission = await resolveViewerAdmissionContext(database, input);
+  const admission = await resolveViewerAdmissionContext(database, input, input.viewerPass ?? null);
   const context = await resolveVerifiedViewerContext(database, input, admission);
-  const blacklistRows = context ? await activeBlacklists(database, input.vendorId) : [];
+  const blacklistRows = context
+    ? await cachedActiveBlacklists(database, input.vendorId, (input.now ?? new Date()).getTime())
+    : [];
   const blocked = context
     ? isIdentityBlocked(blacklistRows, {
         email: context.submission.email,
