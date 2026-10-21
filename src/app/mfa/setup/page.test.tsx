@@ -16,9 +16,9 @@ describe("MFA page authentication return context", () => {
   });
 
   for (const [name, page] of [["setup", MfaSetupPage], ["settings", SecuritySettingsPage]] as const) {
-    it.each(["/orders?status=paid", "//outside.invalid"])(`${name} passes only a safe next to the authentication guard: %s`, async (next) => {
+    it.each(["/orders?status=paid", "//outside.invalid", "/\t/evil.example", "/\\evil.example", "javascript:alert(1)"])(`${name} passes only a safe next to the authentication guard: %j`, async (next) => {
       await expect(page({ searchParams: Promise.resolve({ next }) })).rejects.toThrow("auth-guard-redirect");
-      expect(mocks.requireAuth).toHaveBeenCalledWith({ nextPath: next.startsWith("//") ? undefined : next });
+      expect(mocks.requireAuth).toHaveBeenCalledWith({ nextPath: next === "/orders?status=paid" ? next : undefined });
     });
   }
 });

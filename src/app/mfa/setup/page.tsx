@@ -42,7 +42,7 @@ function isOrdersReturn(value: string | undefined) {
 export default async function MfaSetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ updated?: string; error?: string; next?: string }>;
+  searchParams: Promise<{ updated?: string; error?: string; next?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   const nextPath = safeMfaReturnPath(params.next);
@@ -80,6 +80,12 @@ export default async function MfaSetupPage({
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">保護你的管理工作區</h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">啟用 TOTP 可加強登入保護；敏感管理操作會要求雙重驗證。請準備驗證器 App，並妥善保存備援碼。</p>
         </div>
+        {params.reason === "step_up" && !returningToOrders ? (
+          <Card className="mb-6 border-amber-200 bg-amber-50/70 p-4 shadow-none">
+            <p className="font-semibold text-slate-950">需要驗證</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">綁卡、選擇付費方案、成員管理、收款資料核准、LINE／Meta 憑證與個資匯出都需要雙重驗證。登入時不強制，但執行這些操作前請先完成設定；完成後會回到原頁面。</p>
+          </Card>
+        ) : null}
         {returningToOrders ? (
           <Card className="mb-6 border-blue-200 bg-blue-50/70 p-4 shadow-none">
             <p className="font-semibold text-slate-950">為什麼現在需要設定？</p>

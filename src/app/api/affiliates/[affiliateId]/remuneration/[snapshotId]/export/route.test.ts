@@ -12,7 +12,7 @@ function request(token = "synthetic-csrf", origin = "https://example.test") {
 }
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.auth.mockResolvedValue({ user: { id: "actual-user", mfaFactor: null }, vendor: { id: "actual-vendor", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] }, isMfaVerified: true });
+  mocks.auth.mockResolvedValue({ user: { id: "actual-user", mfaFactor: { id: "factor" } }, session: { mfaVerifiedAt: new Date() }, vendor: { id: "actual-vendor", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] }, isMfaVerified: true });
   mocks.csrf.mockResolvedValue(true); mocks.policy.mockResolvedValue({ bankFeeCents: 1500, enabled: true });
   mocks.export.mockResolvedValue({ snapshotId: "snapshot_a" }); mocks.csv.mockReturnValue("synthetic-private-csv");
 });
@@ -36,6 +36,17 @@ describe("private remuneration export POST", () => {
     expect((await POST(request(), context)).status).toBe(401);
     expect(mocks.export).not.toHaveBeenCalled();
   });
+  it.each([
+    ["without a factor", null, null, "/mfa/setup?reason=step_up&next=%2Faffiliates%2Faffiliate_a%2Fremuneration"],
+    ["with a stale verification", { id: "factor" }, new Date(Date.now() - 16 * 60_000), "/mfa/verify?reason=step_up&next=%2Faffiliates%2Faffiliate_a%2Fremuneration"],
+  ])("sends a manager %s to MFA with a 303 and exports nothing (F-027)", async (_label, mfaFactor, mfaVerifiedAt, location) => {
+    mocks.auth.mockResolvedValueOnce({ user: { id: "actual-user", mfaFactor }, session: { mfaVerifiedAt }, vendor: { id: "actual-vendor", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] }, isMfaVerified: Boolean(mfaVerifiedAt) });
+    const response = await POST(request(), context);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(location);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(mocks.policy).not.toHaveBeenCalled(); expect(mocks.export).not.toHaveBeenCalled(); expect(mocks.csv).not.toHaveBeenCalled();
+  });
   it("rejects missing/invalid CSRF and oversized body", async () => {
     mocks.csrf.mockResolvedValue(false);
     expect((await POST(request(), context)).status).toBe(403);
@@ -52,7 +63,7 @@ describe("private remuneration export POST", () => {
   });
   it("rejects invalid attachment identifiers and disabled module", async () => {
     expect((await POST(request(), { params: Promise.resolve({ affiliateId: "affiliate_a", snapshotId: "../private" }) })).status).toBe(404);
-    mocks.auth.mockResolvedValueOnce({ user: { id: "actual-user", mfaFactor: null }, vendor: { id: "actual-vendor", enabledFeatureModules: [] }, isMfaVerified: true });
+    mocks.auth.mockResolvedValueOnce({ user: { id: "actual-user", mfaFactor: { id: "factor" } }, session: { mfaVerifiedAt: new Date() }, vendor: { id: "actual-vendor", enabledFeatureModules: [] }, isMfaVerified: true });
     expect((await POST(request(), context)).status).toBe(404);
     expect(mocks.export).not.toHaveBeenCalled();
   });

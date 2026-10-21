@@ -35,9 +35,16 @@ test("owner sets fee; partner submits, receives approval, signs and exports; ref
       return (await fetch(endpoint, { method: "POST", body: new URLSearchParams({ [field]: token }) })).status;
     }, { endpoint, field: CSRF_FIELD_NAME });
   }
+  // F-027 / PR #462: approving payee data and exporting payout CSVs need MFA
+  // verified within 15 minutes. Password-only synthetic managers get a
+  // synthetic factor and a fresh stamp on their live sessions after sign-in.
+  async function grantRecentMfa(userId: string) {
+    await db.userMfaFactor.upsert({ where: { userId }, create: { userId, secretEncrypted: "synthetic-not-decrypted" }, update: {} });
+    await db.userSession.updateMany({ where: { userId, revokedAt: null }, data: { mfaVerifiedAt: new Date() } });
+  }
   try {
     for (const context of [page.context(), partnerContext, foreignContext]) await context.route(url => url.origin !== new URL(baseURL!).origin, route => route.abort());
-    await login(page, manager.email); await page.goto("/affiliates"); await page.getByRole("link", { name: "提領費用", exact: true }).click();
+    await login(page, manager.email); await grantRecentMfa(manager.id); await page.goto("/affiliates"); await page.getByRole("link", { name: "提領費用", exact: true }).click();
     await page.getByLabel("每筆轉帳費用", { exact: false }).fill("1501"); await page.getByLabel("啟用提領報價與匯出", { exact: true }).check(); await page.getByRole("button", { name: "儲存提領政策", exact: true }).click();
     await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("提領政策已儲存。");
     expect(await db.merchantAffiliatePayoutPolicy.findUniqueOrThrow({ where: { vendorId: vendor.id } })).toMatchObject({ revision: 1, bankFeeCents: 1501, enabled: true });
@@ -52,7 +59,7 @@ test("owner sets fee; partner submits, receives approval, signs and exports; ref
     const snapshot = await db.affiliateRemunerationSnapshot.findFirstOrThrow({ where: { vendorId: vendor.id, affiliateId: affiliate.id, payoutId: payout.id } }); expect(snapshot.signedByUserId).toBe(partner.id);
     const endpoint = `/api/affiliates/${affiliate.id}/remuneration/${snapshot.id}/export`;
     await page.reload(); expect(await page.evaluate(async ({ endpoint, field }) => (await fetch(endpoint, { method: "POST", body: new URLSearchParams({ [field]: "synthetic-invalid" }) })).status, { endpoint, field: CSRF_FIELD_NAME })).toBe(403); expect(await db.affiliateRemunerationExport.count({ where: { snapshotId: snapshot.id } })).toBe(0);
-    await login(foreignPage, outsider.email); await foreignPage.goto("/affiliates/payout-policy"); await foreignPage.getByLabel("每筆轉帳費用", { exact: false }).fill("1501"); await foreignPage.getByLabel("啟用提領報價與匯出", { exact: true }).check(); await foreignPage.getByRole("button", { name: "儲存提領政策", exact: true }).click(); await expect(foreignPage.locator('[role="status"]:not(.sr-only)')).toHaveText("提領政策已儲存。"); expect(await exportStatus(foreignPage, endpoint)).toBe(409); await foreignPage.goto(managerPath); await expect(foreignPage.getByRole("button", { name: "下載私有提領 CSV", exact: true })).toHaveCount(0);
+    await login(foreignPage, outsider.email); await grantRecentMfa(outsider.id); await foreignPage.goto("/affiliates/payout-policy"); await foreignPage.getByLabel("每筆轉帳費用", { exact: false }).fill("1501"); await foreignPage.getByLabel("啟用提領報價與匯出", { exact: true }).check(); await foreignPage.getByRole("button", { name: "儲存提領政策", exact: true }).click(); await expect(foreignPage.locator('[role="status"]:not(.sr-only)')).toHaveText("提領政策已儲存。"); expect(await exportStatus(foreignPage, endpoint)).toBe(409); await foreignPage.goto(managerPath); await expect(foreignPage.getByRole("button", { name: "下載私有提領 CSV", exact: true })).toHaveCount(0);
     const downloadPromise = page.waitForEvent("download"); await page.getByRole("button", { name: "下載私有提領 CSV", exact: true }).click(); const download = await downloadPromise, file = await download.path(); expect(file).not.toBeNull(); const csv = fs.readFileSync(file!, "utf8"); expect(csv).toContain("2635199"); expect(csv).toContain("SYNTHETIC123"); expect(csv).toContain(snapshot.id);
     await page.reload(); expect(await exportStatus(page, endpoint)).toBe(200); expect(await db.affiliateRemunerationExport.count({ where: { snapshotId: snapshot.id } })).toBe(1); expect(await db.affiliatePayout.findUniqueOrThrow({ where: { id: payout.id } })).toMatchObject({ status: "pending", paidAt: null });
     const refund = { ...event, eventIdentity: randomUUID(), entryType: "refund" as const, amountCents: -500_000 };

@@ -112,6 +112,15 @@ const mocks = vi.hoisted(() => ({
   requireVendorOwner: vi.fn(),
   revalidatePath: vi.fn(),
   checkRateLimit: vi.fn(),
+  checkAccountRateLimit: vi.fn(),
+  consumeAccountRateLimit: vi.fn(),
+  accountLockRemainingSeconds: vi.fn(),
+  lockAccount: vi.fn(),
+  invitationFindFirst: vi.fn(),
+  createVendorMemberInvitation: vi.fn(),
+  revokeVendorMemberInvitation: vi.fn(),
+  sendVendorMemberInvitationEmail: vi.fn(),
+  after: vi.fn(),
   sendPasswordResetLink: vi.fn(),
   schedulePasswordResetLink: vi.fn(),
   settlementFindUnique: vi.fn(),
@@ -243,8 +252,20 @@ vi.mock("@/lib/password-reset", () => ({
   schedulePasswordResetLink: mocks.schedulePasswordResetLink,
   sendPasswordResetLink: mocks.sendPasswordResetLink,
 }));
-vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient }));
+vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient, sendVendorMemberInvitationEmail: mocks.sendVendorMemberInvitationEmail }));
+vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: mocks.after }));
+vi.mock("@/lib/vendor-member-invitation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/vendor-member-invitation")>()),
+  createVendorMemberInvitation: mocks.createVendorMemberInvitation,
+  revokeVendorMemberInvitation: mocks.revokeVendorMemberInvitation,
+}));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
+vi.mock("@/lib/account-rate-limit", () => ({
+  checkAccountRateLimit: mocks.checkAccountRateLimit,
+  consumeAccountRateLimit: mocks.consumeAccountRateLimit,
+  accountLockRemainingSeconds: mocks.accountLockRemainingSeconds,
+  lockAccount: mocks.lockAccount,
+}));
 vi.mock("@/lib/mfa", () => ({
   decryptMfaSecret: mocks.decryptMfaSecret,
   generateRecoveryCodes: mocks.generateRecoveryCodes,
@@ -336,6 +357,7 @@ vi.mock("@/lib/db", () => ({
       updateMany: mocks.userRecoveryCodeUpdateMany,
     },
     vendor: { findUnique: mocks.vendorFindUnique, update: mocks.vendorUpdate },
+    vendorMemberInvitation: { findMany: vi.fn(async () => []), findFirst: mocks.invitationFindFirst },
     vendorMember: {
       count: mocks.vendorMemberCount,
       findFirst: mocks.vendorMemberFindFirst,
@@ -410,6 +432,7 @@ import {
   markPayoutBatchExportedAction,
   refundPaymentTransactionAction,
   resendVendorMemberInvitationAction,
+  revokeVendorMemberInvitationAction,
   requestPasswordResetAction,
   regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
@@ -695,6 +718,11 @@ beforeEach(() => {
   mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
   mocks.createUserSession.mockResolvedValue({ token: "test-fixture-session-token", expiresAt: new Date("2026-07-18T00:00:00.000Z") });
   mocks.checkRateLimit.mockResolvedValue(null);
+  mocks.checkAccountRateLimit.mockResolvedValue(null);
+  mocks.consumeAccountRateLimit.mockResolvedValue({ allowed: true, count: 1, retryAfterSeconds: 60 });
+  mocks.accountLockRemainingSeconds.mockResolvedValue(0);
+  mocks.lockAccount.mockResolvedValue(undefined);
+  mocks.invitationFindFirst.mockResolvedValue(null);
   mocks.requireFinanceAdmin.mockResolvedValue({ member: { id: "finance-1", role: "finance_admin" } });
   mocks.requireVendorFinance.mockResolvedValue({
     vendor: { id: "vendor-1" },
@@ -710,7 +738,8 @@ beforeEach(() => {
     member: { role: "platform_admin" },
   });
   mocks.requireVendorOwner.mockResolvedValue({
-    user: { id: "owner-1" },
+    user: { id: "owner-1", mfaFactor: { id: "factor-owner-1" } },
+    session: { mfaVerifiedAt: new Date() },
     member: { role: "owner" },
     vendor: { id: "vendor-1" },
   });
@@ -3196,6 +3225,28 @@ describe("verifyMfaAction", () => {
     expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
   });
 
+  it.each([[429, "rate_limited"], [503, "temporarily_unavailable"]])(
+    "applies the database account limit even when the IP layer passes (cloudflare_waf) — %s (F-028)",
+    async (status, error) => {
+      mocks.checkRateLimit.mockResolvedValueOnce(null);
+      mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status }));
+
+      await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow(`redirect:/mfa/verify?error=${error}&next=`);
+
+      expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("mfa_verification", "admin-1");
+      expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+      expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["/\t/evil.example", "//evil.example", "/\\evil.example", "javascript:alert(1)", "/\n/evil.example"])(
+    "never redirects a verified user off-site through next=%j",
+    async (next) => {
+      await expect(verifyMfaAction(mfaVerifyFormData("123456", next))).rejects.toThrow(/^redirect:\/admin\/billing\/dashboard$/u);
+      expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+    },
+  );
+
   it("limits a verified user's MFA attempts by both user ID and forwarded source IP before validating the code", async () => {
     const formData = mfaVerifyFormData();
 
@@ -3333,6 +3384,19 @@ describe("regenerateRecoveryCodesAction", () => {
     expect(mocks.userRecoveryCodeDeleteMany).not.toHaveBeenCalled();
   });
 
+  it("applies the per-account database limit to recovery-code regeneration (F-028)", async () => {
+    authenticatedMfaUser();
+    mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    await expect(regenerateRecoveryCodesAction(recoveryRegenerationFormData())).rejects.toThrow(
+      "redirect:/settings/security?error=recovery_rate_limited",
+    );
+
+    expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("mfa_recovery_regeneration", "user-1");
+    expect(mocks.decryptMfaSecret).not.toHaveBeenCalled();
+    expect(mocks.userRecoveryCodeDeleteMany).not.toHaveBeenCalled();
+  });
+
   it("rejects an incorrect current TOTP without replacing any recovery code", async () => {
     authenticatedMfaUser();
     mocks.verifyTotpCode.mockReturnValueOnce(false);
@@ -3381,254 +3445,160 @@ describe("regenerateRecoveryCodesAction", () => {
   });
 });
 
-describe("createVendorMemberAction", () => {
-  it("allows an owner to invite the least-privilege support role", async () => {
-    const newUser = { id: "user-support", email: "support@example.com", name: "客服小美", status: "active", platformRole: "none" };
-    const savedMember = { id: "member-support", userId: newUser.id, role: "support", status: "active", user: newUser };
-    mocks.userFindUnique.mockResolvedValue(null);
-    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      user: { create: mocks.userCreate, update: mocks.userUpdate },
-      vendorMember: { upsert: mocks.vendorMemberUpsert },
-    }));
-    mocks.userCreate.mockResolvedValue(newUser);
-    mocks.userUpdate.mockResolvedValue(newUser);
-    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
+describe("vendor member management step-up (F-027)", () => {
+  it.each([
+    ["without a factor", null, null, "redirect:/mfa/setup?reason=step_up&next=%2Fsettings%2Fsecurity"],
+    ["verified more than 15 minutes ago", { id: "factor-owner-1" }, new Date(Date.now() - 16 * 60_000), "redirect:/mfa/verify?reason=step_up&next=%2Fsettings%2Fsecurity"],
+  ])("blocks every member mutation for an owner %s before any lookup", async (_label, mfaFactor, mfaVerifiedAt, destination) => {
+    mocks.requireVendorOwner.mockResolvedValue({
+      user: { id: "owner-1", mfaFactor }, session: { mfaVerifiedAt }, member: { role: "owner" }, vendor: { id: "vendor-1" },
+    });
 
-    await expect(createVendorMemberAction(vendorMemberFormData({ name: newUser.name, email: newUser.email, role: "support" }))).rejects.toThrow(
-      "redirect:/settings/security?updated=member",
-    );
-
-    expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({ role: "support", status: "active" }),
-    }));
-  });
-
-  it("rejects roles outside the member-role allowlist", async () => {
-    await expect(createVendorMemberAction(vendorMemberFormData({ role: "platform_admin" }))).rejects.toThrow(
-      "redirect:/settings/security?error=member_invalid",
-    );
-
+    await expect(createVendorMemberAction(vendorMemberFormData({ role: "owner" }))).rejects.toThrow(destination);
+    await expect(resendVendorMemberInvitationAction(resendVendorMemberInvitationFormData())).rejects.toThrow(destination);
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow(destination);
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
     expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberFindFirst).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("createVendorMemberAction (F-029 invitation flow)", () => {
+  const created = (deliver: boolean) => ({
+    invitationId: "invitation-1",
+    token: "synthetic-invitation-token",
+    expiresAt: new Date("2026-10-24T00:00:00.000Z"),
+    deliver,
   });
 
-  it("creates a member and sends a one-time password setup invitation without auditing the token or password", async () => {
-    const newUser = { id: "user-2", email: "member@example.com", name: "王小明", status: "active", platformRole: "none" };
-    const savedMember = { id: "member-2", userId: newUser.id, role: "accountant", status: "active", user: newUser };
-    mocks.userFindUnique.mockResolvedValue(null);
-    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      user: { create: mocks.userCreate, update: mocks.userUpdate },
-      vendorMember: { upsert: mocks.vendorMemberUpsert },
-    }));
-    mocks.userCreate.mockResolvedValue(newUser);
-    mocks.userUpdate.mockResolvedValue(newUser);
-    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
-
-    const formData = vendorMemberFormData();
-    const suppliedInitialPassword = "initial-password-must-not-be-sent";
-    formData.set("password", suppliedInitialPassword);
-    await expect(createVendorMemberAction(formData)).rejects.toThrow("redirect:/settings/security?updated=member");
-
-    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
-    expect(mocks.requireVendorOwner).toHaveBeenCalledOnce();
-    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
-      expect.any(Request),
-      "vendor-member-invitation",
-      5,
-      60_000,
-    );
-    const [rateLimitRequest] = mocks.checkRateLimit.mock.calls[0] as [Request];
-    expect(rateLimitRequest.headers.get("x-forwarded-for")).toBe("203.0.113.10, 198.51.100.1");
-    expect(mocks.userCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        email: newUser.email,
-        name: newUser.name,
-        passwordHash: expect.any(String),
-      }),
+  beforeEach(() => {
+    mocks.requireVendorOwner.mockResolvedValue({
+      user: { id: "owner-1", email: "owner@example.com", mfaFactor: { id: "factor-owner-1" } },
+      session: { mfaVerifiedAt: new Date() },
+      member: { role: "owner" },
+      vendor: { id: "vendor-1", name: "測試商家" },
     });
-    expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({
-        vendorId: "vendor-1",
-        userId: newUser.id,
-        role: "accountant",
-        status: "active",
-      }),
-    }));
-    // 與 Server Action 使用相同的環境網址，避免 CI 與本機設定不同時產生假失敗。
-    const expectedAppUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:31023";
-    expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith({
-      email: newUser.email,
-      appUrl: expectedAppUrl,
-      ipAddress: "203.0.113.10",
-      userAgent: "CelebrateDeal test",
-    });
-
-    const generatedPasswordHash = mocks.userCreate.mock.calls[0]?.[0].data.passwordHash;
-    const auditEntries = JSON.stringify(mocks.writeAuditLog.mock.calls);
-    expect(auditEntries).not.toContain("one-time-reset-token");
-    expect(auditEntries).not.toContain(generatedPasswordHash);
-    expect(auditEntries).not.toContain("passwordHash");
-    expect(auditEntries).not.toContain(suppliedInitialPassword);
-    expect(JSON.stringify(mocks.sendPasswordResetLink.mock.calls)).not.toContain(suppliedInitialPassword);
+    mocks.createVendorMemberInvitation.mockResolvedValue(created(true));
+    mocks.sendVendorMemberInvitationEmail.mockResolvedValue({ id: "email-1" });
+    mocks.after.mockImplementation(() => undefined);
   });
 
-  it("does not change members or create password reset tokens when the invitation rate limit is exceeded", async () => {
-    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 429 }));
+  function deferredDelivery() {
+    return mocks.after.mock.calls[0]?.[0] as () => Promise<void>;
+  }
 
-    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation_rate_limited",
+  it.each([
+    ["an unknown address or another tenant's user", true],
+    ["a platform administrator or suspended account", false],
+  ])("answers %s with the same message and never touches memberships", async (_label, deliver) => {
+    mocks.createVendorMemberInvitation.mockResolvedValue(created(deliver));
+
+    await expect(createVendorMemberAction(vendorMemberFormData({ email: " Member@Example.com ", role: "owner" }))).rejects.toThrow(
+      "redirect:/settings/security?updated=member_invited",
     );
 
+    expect(mocks.createVendorMemberInvitation).toHaveBeenCalledWith(expect.anything(), {
+      vendorId: "vendor-1", invitedByUserId: "owner-1", email: "member@example.com", name: "王小明", role: "owner",
+    });
     expect(mocks.userFindUnique).not.toHaveBeenCalled();
     expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
     expect(mocks.userCreate).not.toHaveBeenCalled();
-    expect(mocks.userUpdate).not.toHaveBeenCalled();
-    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
-    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
-  });
-
-  it("fails closed without changing members or creating password reset tokens when rate limiting is unavailable", async () => {
-    mocks.checkRateLimit.mockResolvedValue(new Response(null, { status: 503 }));
-
-    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation_unavailable",
-    );
-
-    expect(mocks.userFindUnique).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.userCreate).not.toHaveBeenCalled();
-    expect(mocks.userUpdate).not.toHaveBeenCalled();
-    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
-    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
-  });
-
-  it("re-enables an inactive membership for an active user and sends a new invitation", async () => {
-    const existingUser = { id: "user-2", email: "member@example.com", name: "原本姓名", status: "active", platformRole: "none" };
-    const inactiveMember = {
-      id: "member-2",
-      userId: existingUser.id,
-      role: "accountant",
-      status: "inactive",
-      user: { ...existingUser, passwordHash: "existing-password-hash" },
-    };
-    const savedMember = { ...inactiveMember, role: "admin", status: "active", deactivatedAt: null };
-    mocks.userFindUnique.mockResolvedValue(existingUser);
-    mocks.vendorMemberFindUnique.mockResolvedValue(inactiveMember);
-    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      user: { create: mocks.userCreate, update: mocks.userUpdate },
-      vendorMember: { upsert: mocks.vendorMemberUpsert },
+    // Delivery is deferred so response timing is the same for every branch.
+    expect(mocks.sendVendorMemberInvitationEmail).not.toHaveBeenCalled();
+    expect(mocks.after).toHaveBeenCalledOnce();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      vendorId: "vendor-1", action: "invite_vendor_member", targetType: "VendorMemberInvitation", targetId: "invitation-1",
     }));
-    mocks.userUpdate.mockResolvedValue(existingUser);
-    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
-
-    await expect(createVendorMemberAction(vendorMemberFormData({ role: "admin" }))).rejects.toThrow("redirect:/settings/security?updated=member");
-
-    expect(mocks.userCreate).not.toHaveBeenCalled();
-    expect(mocks.vendorMemberUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ role: "admin", status: "active", deactivatedAt: null }),
-    }));
-    expect(mocks.userUpdate).toHaveBeenCalledWith({
-      where: { id: existingUser.id },
-      data: { name: existingUser.name },
-    });
-    expect(mocks.sendPasswordResetLink).toHaveBeenCalledWith(expect.objectContaining({ email: existingUser.email }));
-    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "reactivate_vendor_member" }));
-    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("existing-password-hash");
+    expect(JSON.stringify(mocks.writeAuditLog.mock.calls)).not.toContain("synthetic-invitation-token");
   });
 
-  it("checks the last-owner invariant inside a Serializable role-update transaction", async () => {
-    const existingUser = {
-      id: "user-2",
-      email: "member@example.com",
-      name: "Second Owner",
-      status: "active",
-      platformRole: "none",
-    };
-    const existingOwner = {
-      id: "member-2",
-      userId: existingUser.id,
-      role: "owner",
-      status: "active",
-      user: { email: existingUser.email },
-    };
-    mocks.userFindUnique.mockResolvedValueOnce(existingUser);
-    mocks.vendorMemberFindUnique.mockResolvedValueOnce(existingOwner);
-    mocks.vendorMemberCount.mockResolvedValueOnce(0);
-    mocks.transaction.mockImplementationOnce(async (
-      callback: (tx: unknown) => Promise<unknown>,
-      options: unknown,
-    ) => {
-      expect(options).toEqual({ isolationLevel: "Serializable" });
-      return callback({
-        user: { create: mocks.userCreate, update: mocks.userUpdate },
-        vendorMember: {
-          count: mocks.vendorMemberCount,
-          upsert: mocks.vendorMemberUpsert,
-        },
-      });
-    });
-    mocks.userUpdate.mockResolvedValueOnce(existingUser);
+  it("e-mails an eligible invitee a single-use accept link after the response", async () => {
+    await expect(createVendorMemberAction(vendorMemberFormData({ role: "support" }))).rejects.toThrow("updated=member_invited");
+    await deferredDelivery()();
 
-    await expect(createVendorMemberAction(vendorMemberFormData({ role: "admin" }))).rejects.toThrow(
-      "redirect:/settings/security?error=last_owner",
-    );
-
-    expect(mocks.vendorMemberCount).toHaveBeenCalledWith({
-      where: {
-        vendorId: "vendor-1",
-        status: "active",
-        role: "owner",
-        id: { not: "member-2" },
-      },
-    });
-    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
-    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("vendor_member_invitation_recipient", "member@example.com");
+    expect(mocks.sendVendorMemberInvitationEmail).toHaveBeenCalledWith(expect.objectContaining({
+      to: "member@example.com",
+      vendorName: "測試商家",
+      role: "support",
+      acceptUrl: expect.stringMatching(/\/invitations\/accept\?token=synthetic-invitation-token$/u),
+    }));
   });
 
-  it("does not let a tenant owner reactivate a globally inactive user", async () => {
-    mocks.userFindUnique.mockResolvedValue({
-      id: "user-suspended",
-      email: "member@example.com",
-      name: "停權帳號",
-      status: "inactive",
-      platformRole: "none",
-    });
+  it("never e-mails a platform administrator or suspended account and keeps the note platform-scoped", async () => {
+    mocks.createVendorMemberInvitation.mockResolvedValue(created(false));
+    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow("updated=member_invited");
+    mocks.writeAuditLog.mockClear();
+    await deferredDelivery()();
 
-    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=inactive_user",
-    );
-
-    expect(mocks.vendorMemberFindUnique).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
-    expect(mocks.userUpdate).not.toHaveBeenCalled();
-    expect(mocks.vendorMemberUpsert).not.toHaveBeenCalled();
-    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+    expect(mocks.sendVendorMemberInvitationEmail).not.toHaveBeenCalled();
+    const [suppressed] = mocks.writeAuditLog.mock.calls[0] as [{ vendorId?: string | null; action: string }];
+    expect(suppressed.action).toBe("vendor_member_invitation_suppressed");
+    expect(suppressed.vendorId ?? null).toBeNull();
   });
 
-  it("keeps the membership update but reports an invitation delivery failure without auditing secrets", async () => {
-    const newUser = { id: "user-2", email: "member@example.com", name: "王小明", status: "active", platformRole: "none" };
-    const savedMember = { id: "member-2", userId: newUser.id, role: "accountant", status: "active", user: newUser };
-    mocks.userFindUnique.mockResolvedValue(null);
-    mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      user: { create: mocks.userCreate, update: mocks.userUpdate },
-      vendorMember: { upsert: mocks.vendorMemberUpsert },
-    }));
-    mocks.userCreate.mockResolvedValue(newUser);
-    mocks.userUpdate.mockResolvedValue(newUser);
-    mocks.vendorMemberUpsert.mockResolvedValue(savedMember);
-    mocks.sendPasswordResetLink.mockRejectedValueOnce(new Error("email delivery failed"));
+  it("suppresses delivery when the recipient's cross-tenant limit is reached", async () => {
+    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow("updated=member_invited");
+    mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+    await deferredDelivery()();
 
-    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(
-      "redirect:/settings/security?error=member_invitation",
-    );
+    expect(mocks.sendVendorMemberInvitationEmail).not.toHaveBeenCalled();
+  });
 
-    expect(mocks.writeAuditLog).toHaveBeenLastCalledWith(expect.objectContaining({
-      action: "vendor_member_invitation_email_failed",
-      after: { email: newUser.email, role: "accountant", status: "active" },
-    }));
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings/security");
-    const auditEntries = JSON.stringify(mocks.writeAuditLog.mock.calls);
-    expect(auditEntries).not.toContain("one-time-reset-token");
-    expect(auditEntries).not.toContain("passwordHash");
+  it("records a delivery failure without exposing it to the request", async () => {
+    mocks.sendVendorMemberInvitationEmail.mockRejectedValueOnce(new Error("provider down"));
+    await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow("updated=member_invited");
+    await deferredDelivery()();
+
+    expect(mocks.writeAuditLog).toHaveBeenLastCalledWith(expect.objectContaining({ action: "vendor_member_invitation_email_failed", targetId: "invitation-1" }));
+  });
+
+  it.each([
+    [{ role: "platform_admin" }],
+    [{ email: "not-an-email" }],
+    [{ name: "" }],
+  ])("rejects invalid input %j without creating an invitation", async (input) => {
+    await expect(createVendorMemberAction(vendorMemberFormData(input))).rejects.toThrow("redirect:/settings/security?error=member_invalid");
+    expect(mocks.createVendorMemberInvitation).not.toHaveBeenCalled();
+  });
+
+  it("does not invite the owner's own address", async () => {
+    await expect(createVendorMemberAction(vendorMemberFormData({ email: "OWNER@example.com" }))).rejects.toThrow("error=self_invite");
+    expect(mocks.createVendorMemberInvitation).not.toHaveBeenCalled();
+  });
+
+  it.each([[429, "member_invitation_rate_limited"], [503, "member_invitation_unavailable"]])(
+    "stops before creating an invitation when the vendor limit answers %s",
+    async (status, error) => {
+      mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status }));
+      await expect(createVendorMemberAction(vendorMemberFormData())).rejects.toThrow(`redirect:/settings/security?error=${error}`);
+      expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("vendor_member_invitation_vendor", "vendor-1");
+      expect(mocks.createVendorMemberInvitation).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("revokeVendorMemberInvitationAction", () => {
+  it("revokes only through the session vendor", async () => {
+    mocks.revokeVendorMemberInvitation.mockResolvedValue(true);
+    const formData = new FormData();
+    formData.set("invitationId", "invitation-1");
+    formData.set("vendorId", "foreign-vendor");
+
+    await expect(revokeVendorMemberInvitationAction(formData)).rejects.toThrow("updated=member_invitation_revoked");
+    expect(mocks.revokeVendorMemberInvitation).toHaveBeenCalledWith(expect.anything(), { vendorId: "vendor-1", invitationId: "invitation-1" });
+  });
+
+  it("reports another vendor's or a used invitation as not found", async () => {
+    mocks.revokeVendorMemberInvitation.mockResolvedValue(false);
+    const formData = new FormData();
+    formData.set("invitationId", "invitation-foreign");
+
+    await expect(revokeVendorMemberInvitationAction(formData)).rejects.toThrow("error=member_invitation_not_found");
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
   });
 });
 
@@ -5872,6 +5842,99 @@ describe("refundPaymentTransactionAction", () => {
     expect(committedPaymentTransactions).toHaveLength(1);
     expect(mocks.writeAuditLog).toHaveBeenCalledTimes(1);
     expect(events).toEqual(["committed", "audit"]);
+  });
+});
+
+describe("login for accounts without an active membership (#462 M1)", () => {
+  const memberWithoutVendor = {
+    user: { id: "user-2", email: "member@example.com", platformRole: "none", mfaFactor: null },
+    vendor: null,
+    member: null,
+    isPlatformAdmin: false,
+  };
+
+  function loginWithNext(next: string) {
+    const formData = loginFormData("member@example.com", "test-fixture-password");
+    formData.set("next", next);
+    return formData;
+  }
+
+  it("still refuses a session when no invitation is pending", async () => {
+    mocks.authenticateUser.mockResolvedValue(memberWithoutVendor);
+    await expect(loginAction(loginWithNext("/invitations/accept?token=abc"))).rejects.toThrow("redirect:/login?error=no_vendor");
+    expect(mocks.createUserSession).not.toHaveBeenCalled();
+  });
+
+  it("signs in to accept a pending invitation and returns to the invitation link", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(memberWithoutVendor);
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(loginWithNext("/invitations/accept?token=abc"))).rejects.toThrow("redirect:/invitations/accept?token=abc");
+    expect(mocks.invitationFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ email: "member@example.com", acceptedAt: null, revokedAt: null }),
+    }));
+    expect(mocks.createUserSession).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-2", vendorId: null }));
+  });
+
+  it.each(["/dashboard", "/\t/evil.example", "//evil.example"])("ignores a non-invitation next %j for such a session", async (next) => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(memberWithoutVendor);
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(loginWithNext(next))).rejects.toThrow(/^redirect:\/invitations\/accept$/u);
+  });
+
+  it("sends an enrolled account through MFA before the invitation", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue({ ...memberWithoutVendor, user: { ...memberWithoutVendor.user, mfaFactor: { id: "factor" } } });
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(loginWithNext("/invitations/accept?token=abc"))).rejects.toThrow(
+      "redirect:/mfa/verify?next=%2Finvitations%2Faccept%3Ftoken%3Dabc",
+    );
+  });
+
+  it.each([[429, "rate_limited"], [503, "temporarily_unavailable"]])(
+    "applies the per-address account limit (%s) before checking the password (#462 m4)",
+    async (status, error) => {
+      mocks.checkAccountRateLimit.mockResolvedValueOnce(new Response(null, { status }));
+      await expect(loginAction(loginFormData())).rejects.toThrow(`redirect:/login?error=${error}`);
+      expect(mocks.checkAccountRateLimit).toHaveBeenCalledWith("login_account", "member@example.com");
+      expect(mocks.authenticateUser).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("MFA verification lock (#462 m3)", () => {
+  it("rejects every attempt while the account is locked, without checking the code", async () => {
+    mocks.accountLockRemainingSeconds.mockResolvedValueOnce(1800);
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow("redirect:/mfa/verify?error=locked&next=");
+    expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+    expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the lock cannot be read", async () => {
+    mocks.accountLockRemainingSeconds.mockRejectedValueOnce(new Error("synthetic outage"));
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow("redirect:/mfa/verify?error=temporarily_unavailable");
+    expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+  });
+
+  it("locks for an hour once the daily failure limit is exceeded", async () => {
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+    mocks.consumeAccountRateLimit.mockResolvedValueOnce({ allowed: false, count: 51, retryAfterSeconds: 3600 });
+
+    await expect(verifyMfaAction(mfaVerifyFormData("000000"))).rejects.toThrow("redirect:/mfa/verify?error=locked");
+    expect(mocks.consumeAccountRateLimit).toHaveBeenCalledWith("mfa_verification_failures", "admin-1");
+    expect(mocks.lockAccount).toHaveBeenCalledWith("mfa_verification_lock", "admin-1");
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "mfa_verification_locked" }));
+  });
+
+  it("counts a failure without locking below the daily limit", async () => {
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+    await expect(verifyMfaAction(mfaVerifyFormData("000000"))).rejects.toThrow("redirect:/mfa/verify?error=invalid");
+    expect(mocks.consumeAccountRateLimit).toHaveBeenCalledWith("mfa_verification_failures", "admin-1");
+    expect(mocks.lockAccount).not.toHaveBeenCalled();
   });
 });
 

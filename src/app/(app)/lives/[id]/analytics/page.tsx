@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { requireVendorManagerContext } from "@/lib/auth";
 import { calculateAnalyticsFunnel } from "@/lib/analytics-funnel";
 import { getDb } from "@/lib/db";
@@ -261,6 +263,7 @@ export default async function LiveAnalyticsPage({ params }: { params: Promise<{ 
         description="觀看與點擊只計入已成功進入直播間的不重複觀看人次；真實留言與排程腳本分開統計。"
         action={<ButtonLink href={`/lives/${live.id}/analytics/messages/export`} tone="secondary">匯出留言 CSV</ButtonLink>}
       />
+      <div className="mb-4"><StepUpMfaNotice status={recentMfaStatus(auth)} nextPath={`/lives/${encodeURIComponent(live.id)}/analytics`} operation="匯出含觀眾留言的 CSV" /></div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card><p className="text-sm text-slate-500">觀看人次</p><p className="mt-2 text-3xl font-semibold">{pageViews}</p></Card>
         <Card><p className="text-sm text-slate-500">報名</p><p className="mt-2 text-3xl font-semibold">{registrationCount}</p></Card>

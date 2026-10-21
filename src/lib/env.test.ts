@@ -402,6 +402,20 @@ describe("getEnvCheckReport", () => {
     expect(failure?.message).toContain("in-memory 無法跨部署節點持久控流");
   });
 
+  it.each(["cloudflare_waf", "upstash_redis", "memory"])("reports account-level limits as database-backed under %s (F-028)", (provider) => {
+    const env = configuredEnv();
+    env[envKey("RATE", "LIMIT", "PROVIDER")] = provider;
+    env[envKey("UPSTASH", "REDIS", "REST", "URL")] = "https://upstash.test";
+    env[envKey("UPSTASH", "REDIS", "REST", "TOKEN")] = "test-upstash-value";
+
+    const report = getEnvCheckReport(env);
+    const account = check(report, "ACCOUNT_RATE_LIMIT", "pass");
+
+    expect(account?.message).toContain("帳號層限流");
+    expect(account?.message).toContain("資料庫計數");
+    if (provider === "cloudflare_waf") expect(account?.message).toContain("只負責 IP 層限流");
+  });
+
   it("fails when production relies on JOB_SECRET instead of a dedicated CSRF secret", () => {
     const env = configuredEnv();
     delete env[envKey("CSRF", "SECRET")];

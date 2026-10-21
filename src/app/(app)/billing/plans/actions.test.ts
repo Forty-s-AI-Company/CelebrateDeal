@@ -108,12 +108,18 @@ function formData(platformReferralClickId?: string) {
   return data;
 }
 
+// F-027: plan selection requires a factor verified within 15 minutes.
+function recentlyVerifiedOwner(verifiedAt: Date | null = new Date()) {
+  return { user: { id: "user-owner", mfaFactor: { id: "factor-owner" } }, session: { mfaVerifiedAt: verifiedAt } };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireVendorOwnerFinance.mockResolvedValue({
     vendor: { id: "vendor-current" },
     member: { id: "member-owner", role: "owner" },
+    ...recentlyVerifiedOwner(),
   });
   mocks.billingPlanFindFirst.mockResolvedValue(plan);
   mocks.subscriptionFindMany.mockResolvedValue([previousSubscription]);
@@ -173,7 +179,7 @@ function enableAcknowledgedRetry(cents = 100) {
   enableStagingLivePlanTest();
   vi.stubEnv("PAYUNI_MERCHANT_ID", PAYUNI_STAGING_RETRY_MERCHANT_ID);
   mocks.requireVendorOwnerFinance.mockResolvedValue({
-    vendor: { id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { id: "member-owner", role: "owner" },
+    vendor: { id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { id: "member-owner", role: "owner" }, ...recentlyVerifiedOwner(),
   });
   const permitData = {
     deploymentHost: "staging-test.vercel.app", merchantId: PAYUNI_STAGING_RETRY_MERCHANT_ID,
@@ -333,6 +339,32 @@ function enableStagingLivePlanTest() {
 }
 
 describe("selectBillingPlanAction", () => {
+  it("sends an owner without an enrolled factor to MFA setup before reading plans (F-027)", async () => {
+    mocks.requireVendorOwnerFinance.mockResolvedValue({
+      vendor: { id: "vendor-current" }, member: { id: "member-owner", role: "owner" },
+      user: { id: "user-owner", mfaFactor: null }, session: { mfaVerifiedAt: null },
+    });
+
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow(
+      "redirect:/mfa/setup?reason=step_up&next=%2Fbilling%2Fplans",
+    );
+    expect(mocks.billingPlanFindFirst).not.toHaveBeenCalled();
+    expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("requires re-verification when the last MFA check is older than 15 minutes (F-027)", async () => {
+    mocks.requireVendorOwnerFinance.mockResolvedValue({
+      vendor: { id: "vendor-current" }, member: { id: "member-owner", role: "owner" },
+      ...recentlyVerifiedOwner(new Date(Date.now() - 16 * 60_000)),
+    });
+
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow(
+      "redirect:/mfa/verify?reason=step_up&next=%2Fbilling%2Fplans",
+    );
+    expect(mocks.billingPlanFindFirst).not.toHaveBeenCalled();
+    expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("validates CSRF and owner access before changing the current vendor plan", async () => {
     const data = formData();
 

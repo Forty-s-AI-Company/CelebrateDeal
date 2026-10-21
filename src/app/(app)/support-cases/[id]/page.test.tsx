@@ -2,13 +2,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendorSupportMfa: vi.fn(),
+  requireVendorSupportMember: vi.fn(),
   supportCaseFindFirst: vi.fn(),
   vendorMemberFindMany: vi.fn(),
   notFound: vi.fn(() => { throw new Error("not-found"); }),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendorSupportMfa: mocks.requireVendorSupportMfa }));
+vi.mock("@/lib/auth", () => ({ requireVendorSupportMember: mocks.requireVendorSupportMember }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     supportCase: { findFirst: mocks.supportCaseFindFirst },
@@ -56,7 +56,7 @@ const supportCase = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorSupportMfa.mockResolvedValue({
+  mocks.requireVendorSupportMember.mockResolvedValue({
     vendor: { id: "vendor-1" },
     member: { id: "support-1", role: "support" },
   });
@@ -88,7 +88,7 @@ describe("/support-cases/[id] role controls", () => {
   });
 
   it("shows assignment, status and refund workflow only to owner or admin", async () => {
-    mocks.requireVendorSupportMfa.mockResolvedValue({
+    mocks.requireVendorSupportMember.mockResolvedValue({
       vendor: { id: "vendor-1" },
       member: { id: "owner-1", role: "owner" },
     });

@@ -1141,6 +1141,9 @@ test("desktop merchant can recover upload and validation errors, then publish an
   test("owner plan checkout activates limits only after trusted callback and reconciles failure refund and invoice", async ({ page }) => {
     test.setTimeout(90_000);
     await installOwnerSession(page);
+    // F-027 / PR #462: selecting a paid plan needs MFA verified within 15
+    // minutes; the shared fixture session carries an older stamp.
+    await db.userSession.updateMany({ where: { tokenHash: sessionTokenHash }, data: { mfaVerifiedAt: new Date() } });
     expect((await page.goto("/billing/plans"))?.status()).toBe(200);
 
     const firstPlan = await db.billingPlan.findUniqueOrThrow({ where: { id: fixture.billingPlanIds[0] } });

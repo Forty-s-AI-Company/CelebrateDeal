@@ -1,9 +1,10 @@
 import { paymentTransactionPurposeFor } from "@/lib/payment-transaction-purpose";
-import { wp4PlanSelectionAllowed, wp4FinanceUserId, wp4PlanScopeAllowed } from "./wp4-runtime-boundary";
+import { wp4PlanSelectionAllowed, wp4FinanceUserId, wp4PlanScopeAllowed, wp4PreviewStepUpActor } from "./wp4-runtime-boundary";
 import { Prisma, type BillingPlan, type PaymentTransaction } from "@prisma/client";
 import { cookies } from "next/headers";
 import { auditSnapshot, requestAuditMeta } from "@/lib/audit";
 import { requireVendorOwnerFinance } from "@/lib/auth";
+import { requireRecentMfa } from "@/lib/recent-mfa";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { getCanonicalAppUrl, isExplicitLocalE2eRuntime } from "@/lib/app-url";
@@ -265,6 +266,8 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
   await assertServerActionSecurity(formData);
   const finance = await requireVendorOwnerFinance("/billing/plans");
   const { vendor, member } = finance;
+  // Selecting a paid plan starts a charge (F-027 step-up).
+  requireRecentMfa(wp4PreviewStepUpActor(finance, vendor.id), { nextPath: "/billing/plans" });
   const userId = wp4FinanceUserId(finance);
   const planId = formText(formData, "planId");
 

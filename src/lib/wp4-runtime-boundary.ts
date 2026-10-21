@@ -59,3 +59,18 @@ export function wp4FinanceUserId(context: { user?: { id: string } }) { return co
 export function wp4PlanScopeAllowed(planId: string, permit: boolean) {
   return planId !== WP4_SANDBOX_FIXTURE.planId || permit;
 }
+
+/**
+ * The WP4 preview runner session is minted only by `createWp4PreviewMfaVerifiedSession`
+ * inside a bound non-production runtime, for the fixed synthetic owner, with a
+ * 15-minute `mfaVerifiedAt` stamp. That fixture has no enrolled factor, so its
+ * stamp stands in for one; the recency check still applies (F-027).
+ */
+export function wp4PreviewStepUpActor<T extends { user: { id: string; mfaFactor?: unknown }; session?: { mfaVerifiedAt?: Date | null } | null }>(
+  context: T,
+  vendorId: string,
+) {
+  const preview = context.user?.id === WP4_SANDBOX_FIXTURE.userId && vendorId === WP4_SANDBOX_FIXTURE.vendorId
+    && isWp4BoundNonProductionRuntime();
+  return preview ? { user: { mfaFactor: { synthetic: true } }, session: context.session } : context;
+}

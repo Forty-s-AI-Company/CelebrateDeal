@@ -15,6 +15,7 @@ vi.mock("@/lib/auth", () => ({ requireVendorOwner: mocks.requireVendorOwner }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ lineOfficialAccount: { upsert: mocks.upsert, findUnique: mocks.findUnique, update: mocks.update } }) }));
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 
 import { saveLineOfficialAccountAction, testLineOfficialAccountAction } from "@/app/actions/line-actions";
 import { protectLineOfficialAccountCredentials } from "@/lib/line-credentials";
@@ -36,7 +37,8 @@ describe("saveLineOfficialAccountAction", () => {
     vi.stubEnv("CSRF_SECRET", "line-action-test-secret-that-is-at-least-32-bytes");
     mocks.requireVendorOwner.mockResolvedValue({
       vendor: { id: "vendor-1" },
-      user: { id: "user-1" },
+      user: { id: "user-1", mfaFactor: { id: "factor-1" } },
+      session: { mfaVerifiedAt: new Date() },
       member: { role: "owner" },
     });
     mocks.upsert.mockResolvedValue({ id: "line-account-1", status: "active", connectedAt: new Date("2026-09-05T00:00:00Z") });
@@ -44,6 +46,20 @@ describe("saveLineOfficialAccountAction", () => {
     mocks.update.mockResolvedValue({});
   });
   afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ["without a factor", null, null, "/mfa/setup?reason=step_up&next=%2Fsettings%2Fline"],
+    ["verified more than 15 minutes ago", { id: "factor-1" }, new Date(Date.now() - 16 * 60_000), "/mfa/verify?reason=step_up&next=%2Fsettings%2Fline"],
+  ])("does not touch LINE credentials for an owner %s (F-027)", async (_label, mfaFactor, mfaVerifiedAt, destination) => {
+    mocks.requireVendorOwner.mockResolvedValue({
+      vendor: { id: "vendor-1" }, user: { id: "user-1", mfaFactor }, session: { mfaVerifiedAt }, member: { role: "owner" },
+    });
+
+    await expect(saveLineOfficialAccountAction({ status: "idle", error: null }, credentialsForm()))
+      .rejects.toThrow(`redirect:${destination}`);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
 
   it("requires CSRF and owner authorization before saving only encrypted values", async () => {
     await expect(saveLineOfficialAccountAction({ status: "idle", error: null }, credentialsForm()))

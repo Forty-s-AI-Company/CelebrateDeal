@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
-  requireVendorManagerMfa: vi.fn(),
-  requireVendorSupportMfa: vi.fn(),
+  requireVendorManagerMember: vi.fn(),
+  requireVendorSupportMember: vi.fn(),
   requireFinanceAdmin: vi.fn(),
   transaction: vi.fn(),
   supportCaseFindUnique: vi.fn(),
@@ -21,8 +21,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/auth", () => ({
-  requireVendorManagerMfa: mocks.requireVendorManagerMfa,
-  requireVendorSupportMfa: mocks.requireVendorSupportMfa,
+  requireVendorManagerMember: mocks.requireVendorManagerMember,
+  requireVendorSupportMember: mocks.requireVendorSupportMember,
   requireFinanceAdmin: mocks.requireFinanceAdmin,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({
@@ -66,10 +66,10 @@ function form(fields: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManagerMfa.mockResolvedValue({
+  mocks.requireVendorManagerMember.mockResolvedValue({
     vendor: { id: "vendor-1" }, member: { id: "member-1", role: "owner" },
   });
-  mocks.requireVendorSupportMfa.mockResolvedValue({
+  mocks.requireVendorSupportMember.mockResolvedValue({
     vendor: { id: "vendor-1" }, member: { id: "support-1", role: "support" },
   });
   mocks.requireFinanceAdmin.mockResolvedValue({ user: { id: "finance-1" } });
@@ -143,11 +143,11 @@ describe("support case actions", () => {
     });
     await expect(addSupportCaseCustomerReplyAction(data))
       .rejects.toThrow("redirect:/support-cases/case-1?updated=customer_reply");
-    expect(mocks.requireVendorSupportMfa).toHaveBeenCalledWith("/support-cases/case-1");
+    expect(mocks.requireVendorSupportMember).toHaveBeenCalledWith("/support-cases/case-1");
     expect(mocks.customerReply).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       vendorId: "vendor-1", actorMemberId: "support-1", message: "已收到，我們正在確認。",
     }));
-    expect(mocks.requireVendorManagerMfa).not.toHaveBeenCalled();
+    expect(mocks.requireVendorManagerMember).not.toHaveBeenCalled();
   });
 
   it("lets the support role add an internal note without manager privileges", async () => {
@@ -157,11 +157,11 @@ describe("support case actions", () => {
     });
     await expect(addSupportCaseNoteAction(data))
       .rejects.toThrow("redirect:/support-cases/case-1?updated=note");
-    expect(mocks.requireVendorSupportMfa).toHaveBeenCalledWith("/support-cases/case-1");
+    expect(mocks.requireVendorSupportMember).toHaveBeenCalledWith("/support-cases/case-1");
     expect(mocks.addNote).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       vendorId: "vendor-1", actorMemberId: "support-1",
     }));
-    expect(mocks.requireVendorManagerMfa).not.toHaveBeenCalled();
+    expect(mocks.requireVendorManagerMember).not.toHaveBeenCalled();
   });
 
   it("rejects an empty internal note before authorization or a transaction", async () => {
@@ -170,7 +170,7 @@ describe("support case actions", () => {
     });
     await expect(addSupportCaseNoteAction(data))
       .rejects.toThrow("redirect:/support-cases?error=invalid_case");
-    expect(mocks.requireVendorSupportMfa).not.toHaveBeenCalled();
+    expect(mocks.requireVendorSupportMember).not.toHaveBeenCalled();
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
@@ -180,8 +180,8 @@ describe("support case actions", () => {
     });
     await expect(assignSupportCaseAction(data))
       .rejects.toThrow("redirect:/support-cases/case-1?updated=assignment");
-    expect(mocks.requireVendorManagerMfa).toHaveBeenCalledWith("/support-cases/case-1");
-    expect(mocks.requireVendorSupportMfa).not.toHaveBeenCalled();
+    expect(mocks.requireVendorManagerMember).toHaveBeenCalledWith("/support-cases/case-1");
+    expect(mocks.requireVendorSupportMember).not.toHaveBeenCalled();
     expect(mocks.assignCase).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       vendorId: "vendor-1", actorMemberId: "member-1", assignedMemberId: "support-2",
     }));
@@ -193,8 +193,8 @@ describe("support case actions", () => {
     });
     await expect(transitionSupportCaseAction(data))
       .rejects.toThrow("redirect:/support-cases/case-1?updated=status");
-    expect(mocks.requireVendorManagerMfa).toHaveBeenCalledWith("/support-cases/case-1");
-    expect(mocks.requireVendorSupportMfa).not.toHaveBeenCalled();
+    expect(mocks.requireVendorManagerMember).toHaveBeenCalledWith("/support-cases/case-1");
+    expect(mocks.requireVendorSupportMember).not.toHaveBeenCalled();
     expect(mocks.transitionCase).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       vendorId: "vendor-1", actorMemberId: "member-1", nextStatus: "in_progress",
     }));
@@ -217,7 +217,7 @@ describe("support case actions", () => {
     });
     await expect(requestSupportRefundHandoffAction(data))
       .rejects.toThrow("redirect:/support-cases?error=invalid_refund");
-    expect(mocks.requireVendorManagerMfa).not.toHaveBeenCalled();
+    expect(mocks.requireVendorManagerMember).not.toHaveBeenCalled();
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 });

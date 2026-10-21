@@ -14,6 +14,7 @@ import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
 import { resolveBuyerSupportGrant } from "@/lib/buyer-support-access";
 import {
@@ -65,14 +66,9 @@ export async function requestMagicLinkAction(
   if (!vendor) return { status: "sent", message: t(genericSentMessage) };
 
   const customerKeyHash = automationCustomerKeyHash(vendor.id, email.data);
-  // A second bucket intentionally uses no client-provided forwarding headers.
-  // This keeps one tenant/student identity bounded even if XFF is spoofed.
-  const recipientLimited = await checkRateLimit(
-    new Request(getCanonicalAppUrl()),
-    `student-portal-magic-link-recipient:${vendor.id}:${customerKeyHash}`,
-    3,
-    15 * 60 * 1000,
-  );
+  // Account layer (F-028): one tenant/student identity is bounded in
+  // PostgreSQL whatever the source IP or RATE_LIMIT_PROVIDER.
+  const recipientLimited = await checkAccountRateLimit("student_portal_magic_link", `${vendor.id}:${customerKeyHash}`);
   if (recipientLimited) return { status: "rate_limited", message: t("申請次數較多，請稍後再試。") };
   const [orderCount, bookingCount, voucherCount] = await Promise.all([
     db.commerceOrder.count({ where: { vendorId: vendor.id, automationCustomerKeyHash: customerKeyHash, status: { in: ["paid", "partially_refunded", "refunded"] } } }),

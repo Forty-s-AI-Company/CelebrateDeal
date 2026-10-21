@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
-  requireVendorManagerMfa: vi.fn(),
+  requireVendorManagerMember: vi.fn(),
   transaction: vi.fn(),
   completeShippingFulfillment: vi.fn(),
   entitlement: vi.fn(),
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
-vi.mock("@/lib/auth", () => ({ requireVendorManagerMfa: mocks.requireVendorManagerMfa }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: mocks.requireVendorManagerMember }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction }) }));
 vi.mock("@/lib/commerce-shipping-action", () => ({ completeShippingFulfillment: mocks.completeShippingFulfillment }));
 vi.mock("@/lib/commerce-order-fulfillment", () => ({
@@ -38,7 +38,7 @@ function form(fields: Record<string, string>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
-  mocks.requireVendorManagerMfa.mockResolvedValue({
+  mocks.requireVendorManagerMember.mockResolvedValue({
     vendor: { id: "vendor-1" },
     member: { id: "member-1", role: "owner" },
   });

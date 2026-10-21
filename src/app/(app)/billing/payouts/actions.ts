@@ -11,6 +11,7 @@ import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { decryptMfaSecret, verifyTotpCode } from "@/lib/mfa";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkAccountRateLimit } from "@/lib/account-rate-limit";
 import {
   parseVendorPayoutAccountForm,
   saveVendorPayoutAccount,
@@ -59,7 +60,7 @@ export async function saveVendorPayoutAccountAction(formData: FormData) {
     `payout-account-step-up:${user.id}`,
     STEP_UP_LIMIT,
     STEP_UP_WINDOW_MS,
-  );
+  ) ?? await checkAccountRateLimit("payout_account_step_up", user.id);
   if (rateLimited) redirect(resultPath(rateLimited.status === 429 ? "step_up_rate_limited" : "step_up_unavailable"));
 
   const totpCode = formData.get("totpCode");

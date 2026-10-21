@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
-  requireVendorManagerMfa: vi.fn(),
+  requireVendorManagerMember: vi.fn(),
   getDb: vi.fn(),
   transitionShippingFulfillment: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
-vi.mock("@/lib/auth", () => ({ requireVendorManagerMfa: mocks.requireVendorManagerMfa }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: mocks.requireVendorManagerMember }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/commerce-order-fulfillment", () => ({
   transitionShippingFulfillment: mocks.transitionShippingFulfillment,
@@ -31,7 +31,7 @@ describe("completeShippingFulfillment", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.assertServerActionSecurity.mockResolvedValue(undefined);
-    mocks.requireVendorManagerMfa.mockResolvedValue({
+    mocks.requireVendorManagerMember.mockResolvedValue({
       vendor: { id: "vendor-1" },
       member: { id: "member-1", role: "owner" },
     });
@@ -47,7 +47,7 @@ describe("completeShippingFulfillment", () => {
     });
 
     await expect(completeShippingFulfillment(data)).resolves.toBe("/orders/order-1?updated=shipping");
-    expect(mocks.requireVendorManagerMfa).toHaveBeenCalledWith("/orders/order-1");
+    expect(mocks.requireVendorManagerMember).toHaveBeenCalledWith("/orders/order-1");
     expect(mocks.transitionShippingFulfillment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       vendorId: "vendor-1", fulfillmentId: "shipping-1", expectedRevision: 2,
       nextStatus: "shipped", actor: { id: "member-1" },

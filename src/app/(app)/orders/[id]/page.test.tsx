@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  requireVendorManagerMfa: vi.fn(),
+  requireVendorManagerMember: vi.fn(),
   findFirst: vi.fn(),
   findMany: vi.fn(),
   notFound: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ requireVendorManagerMfa: mocks.requireVendorManagerMfa }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerMember: mocks.requireVendorManagerMember }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({ commerceOrder: { findFirst: mocks.findFirst }, commerceOrderItem: { findMany: mocks.findMany } }) }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/components/commerce-order-detail", () => ({ CommerceOrderDetail: () => <div /> }));
@@ -17,7 +17,7 @@ import OrderDetailPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManagerMfa.mockResolvedValue({ vendor: { id: "vendor-current" } });
+  mocks.requireVendorManagerMember.mockResolvedValue({ vendor: { id: "vendor-current" } });
   mocks.findFirst.mockResolvedValue(null);
   mocks.findMany.mockResolvedValue([]);
   mocks.notFound.mockImplementation(() => {
@@ -32,7 +32,7 @@ describe("/orders/[id] tenant boundary", () => {
       searchParams: Promise.resolve({}),
     })).rejects.toThrow("NEXT_NOT_FOUND");
 
-    expect(mocks.requireVendorManagerMfa).toHaveBeenCalledExactlyOnceWith("/orders/order-foreign");
+    expect(mocks.requireVendorManagerMember).toHaveBeenCalledExactlyOnceWith("/orders/order-foreign");
     expect(mocks.findFirst).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       where: { id: "order-foreign", vendorId: "vendor-current" },
     }));

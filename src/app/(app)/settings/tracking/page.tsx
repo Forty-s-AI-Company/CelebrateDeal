@@ -2,11 +2,13 @@ import { saveTrackingCredentialAction } from "@/app/actions/tracking-credential-
 import { saveTrackingSettingsAction } from "@/app/actions/tracking-settings-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SubmitButton } from "@/components/ui";
-import { requireVendorManager } from "@/lib/auth";
+import { requireVendorManagerContext } from "@/lib/auth";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { getDb } from "@/lib/db";
 
 export default async function TrackingSettingsPage({ searchParams }: { searchParams?: Promise<{ tracking?: string }> }) {
-  const vendor = await requireVendorManager();
+  const { auth, vendor } = await requireVendorManagerContext("/settings/tracking");
   const tracking = vendor.tracking;
   const status = (await searchParams)?.tracking;
   const deliveries = await getDb().trackingDelivery.findMany({
@@ -25,6 +27,7 @@ export default async function TrackingSettingsPage({ searchParams }: { searchPar
           <CsrfField />
           <input type="hidden" name="credentialRevision" value={tracking?.credentialRevision ?? 0} />
           <h2 className="font-bold">Meta 伺服器追蹤</h2>
+          <StepUpMfaNotice status={recentMfaStatus(auth)} nextPath="/settings/tracking" operation="儲存 Meta 憑證" />
           <p className="text-sm text-slate-600">{tracking?.facebookAccessTokenEncrypted ? "已設定加密憑證。留白會保留既有憑證。" : "尚未設定憑證。"}</p>
           <Field label="Meta CAPI Access Token" name="facebookAccessToken" type="password" autoComplete="new-password" maxLength={4096} />
           <Field label="Meta Test Event Code" name="facebookTestEventCode" defaultValue={tracking?.facebookTestEventCode ?? ""} maxLength={128} autoComplete="off" />

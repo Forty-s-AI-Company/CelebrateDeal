@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { accountRateLimitKeyHash } from "@/lib/account-rate-limit";
 
 const mocks = vi.hoisted(() => ({
   after: vi.fn(),
@@ -58,6 +59,33 @@ describe("password reset flow", () => {
 
     expect(await getDb().passwordResetToken.count({ where: { userId: user.id } })).toBe(1);
     expect(mocks.sendPasswordResetEmail).toHaveBeenCalledOnce();
+  });
+
+  it("caps reset mail per recipient in the database whatever the IP layer does (F-028)", async () => {
+    vi.stubEnv("RATE_LIMIT_PROVIDER", "cloudflare_waf");
+    const user = await getDb().user.create({
+      data: {
+        email: `reset-limited-${Date.now()}@example.test`,
+        name: "Limited Reset User",
+        passwordHash: hashPassword("old-password-123"),
+      },
+    });
+    createdUserIds.push(user.id);
+    mocks.sendPasswordResetEmail.mockResolvedValue(undefined);
+    const deferred: Array<() => Promise<void>> = [];
+    mocks.after.mockImplementation((callback: () => Promise<void>) => { deferred.push(callback); });
+
+    // Mixed case and spacing normalise to the same recipient bucket.
+    for (const email of [user.email, user.email.toUpperCase(), ` ${user.email} `, user.email]) {
+      schedulePasswordResetLink({ email, appUrl: "https://app.example.test" });
+    }
+    for (const work of deferred) await work();
+
+    expect(mocks.sendPasswordResetEmail).toHaveBeenCalledTimes(3);
+    await getDb().accountRateLimitBucket.deleteMany({
+      where: { keyHash: accountRateLimitKeyHash("password_reset_request", user.email) },
+    });
+    vi.unstubAllEnvs();
   });
 
   it("creates one active token and revokes sessions after consume", async () => {

@@ -1,4 +1,5 @@
 "use server";
+import { safeInternalPathOr } from "@/lib/safe-internal-path";
 import { withMfaReturnPath } from "@/lib/mfa-return-path";
 
 import { cookies, headers } from "next/headers";
@@ -29,6 +30,8 @@ import {
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { accountLockRemainingSeconds, checkAccountRateLimit, consumeAccountRateLimit, lockAccount } from "@/lib/account-rate-limit";
+import { hasPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
 import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "@/lib/mfa-enrollment";
 import { regenerateMfaRecoveryCodes } from "@/lib/mfa-recovery-regeneration";
 
@@ -45,10 +48,7 @@ function normalizedEmail(value: string) {
 }
 
 function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") {
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
-    return fallback;
-  }
-  return value;
+  return safeInternalPathOr(value, fallback);
 }
 
 function forwardedRequestHeaders(headerStore: Awaited<ReturnType<typeof headers>>) {
@@ -89,13 +89,24 @@ export async function loginAction(formData: FormData) {
   if (sourceEmailRateLimited) {
     redirect(`/login?error=${sourceEmailRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
   }
+  // Account layer (#462 m4): bounds password guessing against one address
+  // across any number of source IPs, independent of RATE_LIMIT_PROVIDER. Keyed
+  // by the submitted address, so the answer does not reveal whether it exists.
+  const accountRateLimited = email ? await checkAccountRateLimit("login_account", email) : null;
+  if (accountRateLimited) {
+    redirect(`/login?error=${accountRateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}`);
+  }
 
   const auth = await authenticateUser(email, password);
   if (!auth) {
     await writeAuditLog({ actorLabel: "anonymous", action: "login_failed", targetType: "Auth", targetId: email, after: { email } });
     redirect("/login?error=1");
   }
-  if (!auth.isPlatformAdmin && !auth.vendor) {
+  // #462 M1: an account without an active membership (for example a member
+  // who was deactivated and invited again) may sign in only to accept a
+  // pending invitation addressed to it; everything else still says no_vendor.
+  const invitationLogin = !auth.isPlatformAdmin && !auth.vendor && await hasPendingVendorMemberInvitation(getDb(), auth.user.email);
+  if (!auth.isPlatformAdmin && !auth.vendor && !invitationLogin) {
     await writeAuditLog({
       actorId: auth.user.id,
       actorLabel: "user_without_vendor",
@@ -125,12 +136,20 @@ export async function loginAction(formData: FormData) {
     targetId: auth.user.id,
     after: { email: auth.user.email, platformRole: auth.user.platformRole, vendorId: auth.vendor?.id ?? null },
   });
-  const destination = auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
+  const destination = invitationLogin
+    ? invitationReturnPath(formData.get("next"))
+    : auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
   // Vendor roles may enroll voluntarily; the platform finance back office
   // sends a platform admin without a factor to setup. An enabled factor
   // protects every new session before authenticated content is available.
   if (auth.user.mfaFactor) redirect(`/mfa/verify?next=${encodeURIComponent(destination)}`);
   redirect(destination);
+}
+
+/** Only the invitation acceptance page is a valid post-login return target here. */
+function invitationReturnPath(value: FormDataEntryValue | null) {
+  const next = safeInternalPath(typeof value === "string" ? value : "", "/invitations/accept");
+  return next === "/invitations/accept" || next.startsWith("/invitations/accept?") ? next : "/invitations/accept";
 }
 
 export async function logoutAction(formData: FormData) {
@@ -235,8 +254,12 @@ export async function verifyMfaAction(formData: FormData) {
     `mfa-verification:${auth.user.id}`,
     5,
     60_000,
-  );
+  ) ?? await checkAccountRateLimit("mfa_verification", auth.user.id);
+  // The first check is the IP layer (skipped under cloudflare_waf); the second
+  // caps attempts per account in PostgreSQL regardless of provider (F-028).
   if (rateLimited) redirect(`/mfa/verify?error=${rateLimited.status === 429 ? "rate_limited" : "temporarily_unavailable"}&next=${encodeURIComponent(next)}`);
+  const lock = await mfaVerificationLockState(auth.user.id);
+  if (lock) redirect(`/mfa/verify?error=${lock}&next=${encodeURIComponent(next)}`);
 
   const secret = decryptMfaSecret(auth.user.mfaFactor.secretEncrypted);
   const recoveryCodes = await getDb().userRecoveryCode.findMany({ where: { userId: auth.user.id, usedAt: null } });
@@ -244,7 +267,7 @@ export async function verifyMfaAction(formData: FormData) {
   const matchedRecoveryCode = recoveryCodes.find((_, index) => recoveryCodeMatches[index]);
   if (!verifyTotpCode(secret, code) && !matchedRecoveryCode) {
     await writeAuditLog({ vendorId: auth.vendor?.id ?? null, actorId: auth.user.id, actorLabel: auth.member?.role ?? auth.user.platformRole, action: "mfa_verify_failed", targetType: "UserMfaFactor", targetId: auth.user.id });
-    redirect(`/mfa/verify?error=invalid&next=${encodeURIComponent(next)}`);
+    redirect(`/mfa/verify?error=${await recordMfaVerificationFailure(auth.user.id, auth.vendor?.id ?? null)}&next=${encodeURIComponent(next)}`);
   }
   if (matchedRecoveryCode) {
     const claim = await getDb().userRecoveryCode.updateMany({ where: { id: matchedRecoveryCode.id, userId: auth.user.id, usedAt: null }, data: { usedAt: new Date() } });
@@ -265,6 +288,32 @@ export async function verifyMfaAction(formData: FormData) {
     targetId: auth.user.id,
   });
   redirect(next);
+}
+
+/** "locked" while an MFA lock is active, "temporarily_unavailable" if it cannot be read (fail closed). */
+async function mfaVerificationLockState(userId: string) {
+  try {
+    return (await accountLockRemainingSeconds("mfa_verification_lock", userId)) > 0 ? "locked" : null;
+  } catch {
+    return "temporarily_unavailable";
+  }
+}
+
+/**
+ * #462 m3: counts failed verifications per account per day. Past the daily
+ * limit every further failure locks verification for an hour, so a stolen
+ * password plus distributed guessing gets at most ~70 TOTP attempts a day.
+ */
+async function recordMfaVerificationFailure(userId: string, vendorId: string | null) {
+  try {
+    const failures = await consumeAccountRateLimit("mfa_verification_failures", userId);
+    if (failures.allowed) return "invalid";
+    await lockAccount("mfa_verification_lock", userId);
+    await writeAuditLog({ vendorId, actorId: userId, actorLabel: "system", action: "mfa_verification_locked", targetType: "UserMfaFactor", targetId: userId, after: auditSnapshot({ failures: failures.count }) });
+    return "locked";
+  } catch {
+    return "temporarily_unavailable";
+  }
 }
 
 export async function dismissRecoveryCodesAction(formData: FormData) {

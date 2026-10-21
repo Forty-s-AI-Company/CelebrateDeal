@@ -1,6 +1,8 @@
 import { LineOfficialAccountForm } from "@/components/line-official-account-form";
 import { LineRichMenuStudio } from "@/components/line-rich-menu-studio";
 import { PageHeader } from "@/components/ui";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { requireVendorOwner } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getCsrfToken } from "@/lib/csrf";
@@ -52,6 +54,7 @@ export default async function LineSettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="LINE 整合" description="管理官方帳號推播與 LINE Login。憑證只會加密儲存，不會在頁面重新顯示。" />
+      <StepUpMfaNotice status={recentMfaStatus(auth)} nextPath="/settings/line" operation="儲存 LINE 憑證" />
       <LineOfficialAccountForm
         csrfToken={csrfToken}
         connected={account?.status === "active"}

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { requireFinanceAdmin, requireVendorManagerMfa, requireVendorSupportMfa } from "@/lib/auth";
+import { requireFinanceAdmin, requireVendorManagerMember, requireVendorSupportMember } from "@/lib/auth";
 import {
   addSupportCaseNote,
   addSupportCaseCustomerReply,
@@ -79,7 +79,7 @@ export async function createSupportCaseAction(formData: FormData) {
   if (!orderId.success || !intakeKey.success || !category.success || !priority.success) {
     redirect("/orders?error=support_invalid");
   }
-  const context = await requireVendorManagerMfa(`/orders/${encodeURIComponent(orderId.data)}`);
+  const context = await requireVendorManagerMember(`/orders/${encodeURIComponent(orderId.data)}`);
   let supportCase;
   try {
     supportCase = await serializable((tx) => createSupportCase(tx, {
@@ -122,7 +122,7 @@ export async function addSupportCaseNoteAction(formData: FormData) {
   ) {
     redirect("/support-cases?error=invalid_case");
   }
-  const context = await requireVendorSupportMfa(casePath(supportCaseId.data));
+  const context = await requireVendorSupportMember(casePath(supportCaseId.data));
   try {
     const updated = await serializable((tx) => addSupportCaseNote(tx, {
       vendorId: context.vendor.id,
@@ -152,7 +152,7 @@ export async function assignSupportCaseAction(formData: FormData) {
   if (!supportCaseId.success || !assignedMemberId.success || expectedRevision === null || !dedupKey.success) {
     redirect("/support-cases?error=invalid_case");
   }
-  const context = await requireVendorManagerMfa(casePath(supportCaseId.data));
+  const context = await requireVendorManagerMember(casePath(supportCaseId.data));
   try {
     await serializable((tx) => assignSupportCase(tx, {
       vendorId: context.vendor.id,
@@ -179,7 +179,7 @@ export async function transitionSupportCaseAction(formData: FormData) {
   if (!supportCaseId.success || !nextStatus.success || expectedRevision === null || !dedupKey.success) {
     redirect("/support-cases?error=invalid_case");
   }
-  const context = await requireVendorManagerMfa(casePath(supportCaseId.data));
+  const context = await requireVendorManagerMember(casePath(supportCaseId.data));
   try {
     await serializable((tx) => transitionSupportCase(tx, {
       vendorId: context.vendor.id,
@@ -212,7 +212,7 @@ export async function addSupportCaseCustomerReplyAction(formData: FormData) {
   ) {
     redirect("/support-cases?error=invalid_case");
   }
-  const context = await requireVendorSupportMfa(casePath(supportCaseId.data));
+  const context = await requireVendorSupportMember(casePath(supportCaseId.data));
   try {
     await serializable((tx) => addSupportCaseCustomerReply(tx, {
       vendorId: context.vendor.id,
@@ -248,7 +248,7 @@ export async function requestSupportRefundHandoffAction(formData: FormData) {
   ) {
     redirect("/support-cases?error=invalid_refund");
   }
-  const context = await requireVendorManagerMfa(casePath(supportCaseId.data));
+  const context = await requireVendorManagerMember(casePath(supportCaseId.data));
   try {
     const handoff = await serializable((tx) => requestSupportRefundHandoff(tx, {
       vendorId: context.vendor.id,

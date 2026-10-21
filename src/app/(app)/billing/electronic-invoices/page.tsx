@@ -2,6 +2,8 @@ import { Download, ReceiptText } from "lucide-react";
 import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireVendorFinance } from "@/lib/auth";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { getDb } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
@@ -9,7 +11,7 @@ const labels: Record<string, string> = { queued: "尚未開立（僅記錄需求
 const tones: Record<string, "gray" | "green" | "orange" | "red"> = { queued: "orange", issued: "green", allowance: "orange", voided: "red" };
 
 export default async function ElectronicInvoicesPage() {
-  const { vendor } = await requireVendorFinance("/billing/electronic-invoices");
+  const { user, session, vendor } = await requireVendorFinance("/billing/electronic-invoices");
   const invoices = await getDb().electronicInvoice.findMany({
     where: { vendorId: vendor.id },
     include: { order: { select: { orderNumber: true } }, allowances: { select: { id: true } } },
@@ -22,6 +24,7 @@ export default async function ElectronicInvoicesPage() {
       <p className="font-semibold">自動電子發票尚未開放</p>
       <p className="mt-1 leading-6">目前未提供自動開立服務。付款成功、已儲存發票需求或匯出紀錄，均不代表已開立發票；如需發票，請另行確認開立方式。</p>
     </div>
+    <div className="mb-4"><StepUpMfaNotice status={recentMfaStatus({ user, session })} nextPath="/billing/electronic-invoices" operation="匯出含買受人資料的 CSV" /></div>
     <div className="mb-6 flex justify-end">
       <Link href="/billing/electronic-invoices/export" prefetch={false} className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Download size={16} />匯出發票紀錄 CSV</Link>
     </div>

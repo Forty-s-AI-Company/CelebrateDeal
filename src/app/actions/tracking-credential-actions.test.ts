@@ -3,19 +3,28 @@ const mocks = vi.hoisted(() => ({ security: vi.fn(), auth: vi.fn(), save: vi.fn(
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(path); } }));
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
-vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.auth }));
+vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.auth }));
 vi.mock("@/lib/tracking-settings", () => ({ saveTrackingCredentialConfiguration: mocks.save, TrackingConfigurationConflict: class extends Error {} }));
 import { saveTrackingCredentialAction } from "@/app/actions/tracking-credential-actions";
 import { TrackingConfigurationConflict } from "@/lib/tracking-settings";
 function form() {
   const f = new FormData(); f.set("credentialRevision", "0"); f.set("facebookAccessToken", ""); f.set("facebookTestEventCode", "SYNTHETIC_TEST"); return f;
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.security.mockResolvedValue(undefined); mocks.auth.mockResolvedValue({ id: "vendor-one" }); mocks.save.mockResolvedValue({ revision: 1 }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.security.mockResolvedValue(undefined); mocks.auth.mockResolvedValue({ vendor: { id: "vendor-one" }, auth: { user: { mfaFactor: { id: "factor" } }, session: { mfaVerifiedAt: new Date() } } }); mocks.save.mockResolvedValue({ revision: 1 }); });
 it("uses authenticated tenant and never accepts a client-supplied vendor", async () => {
   const f = form(); f.set("vendorId", "foreign-vendor");
   await expect(saveTrackingCredentialAction(f)).rejects.toThrow("/settings/tracking?tracking=saved");
   expect(mocks.save).toHaveBeenCalledWith("vendor-one", { expectedRevision: 0, token: "", testEventCode: "SYNTHETIC_TEST", clearToken: false });
   expect(mocks.revalidate).toHaveBeenCalledWith("/settings/tracking");
+});
+it.each([
+  ["without a factor", null, null, "/mfa/setup?reason=step_up&next=%2Fsettings%2Ftracking"],
+  ["with a stale verification", { id: "factor" }, new Date(Date.now() - 16 * 60_000), "/mfa/verify?reason=step_up&next=%2Fsettings%2Ftracking"],
+])("requires a recent MFA step-up %s before saving the Meta token (F-027)", async (_label, mfaFactor, mfaVerifiedAt, destination) => {
+  mocks.auth.mockResolvedValue({ vendor: { id: "vendor-one" }, auth: { user: { mfaFactor }, session: { mfaVerifiedAt } } });
+  await expect(saveTrackingCredentialAction(form())).rejects.toThrow(destination);
+  expect(mocks.auth).toHaveBeenCalledWith("/settings/tracking");
+  expect(mocks.save).not.toHaveBeenCalled();
 });
 it("rejects CSRF before tenant lookup or persistence", async () => {
   mocks.security.mockRejectedValue(new Error("CSRF denied"));

@@ -1,15 +1,8 @@
-/** Keep MFA return navigation on this application, including after URL normalization. */
+import { safeInternalPath } from "@/lib/safe-internal-path";
+
+/** Keep MFA return navigation on this application (shared validator, see safe-internal-path). */
 export function safeMfaReturnPath(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length > 2048 || !value.startsWith("/") || value.startsWith("//")) return undefined;
-  if (/[\\\u0000-\u0020\u007f]/u.test(value)) return undefined;
-  try {
-    const base = "https://mfa-return.invalid";
-    const url = new URL(value, base);
-    if (url.origin !== base) return undefined;
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return undefined;
-  }
+  return safeInternalPath(value);
 }
 
 /** Add a validated return path without replacing an existing status query. */
