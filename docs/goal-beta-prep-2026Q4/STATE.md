@@ -66,6 +66,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 ## 每日摘要
 
 - 10-19：Goal 啟動。三條工作線完成實作並開 PR #447／#448／#449；每個 PR 經 reviewer 一到三輪（A 兩個 MAJOR＋一個 MAJOR、B 兩個 MAJOR、C 一個 BLOCKER 皆已修）；#447 合併。CI 擋下的問題：secret scan 誤判測試 URL／假金鑰、API contract registry 未登記、strict-index typecheck、backup blob 白名單、slug 預檢順序，全部修正。工作線 A 曾因 Opus 額度中斷一次，10-20 重跑完成。
+- 10-22（續）：#464（第六批 B：兩租戶 action 矩陣、CI 收斂）合併（累計 19 個 PR）；#465（第六批 A：伺服器端功能閘門、月結不扣佣金）審查中；第六批 C 實作中。
 - 10-22：#462（第五批 A）合併並套用 staging migration；第五批全部進 master（累計 18 個 PR）。第六批（L1 最後一批）開工：A（F-001／F-002 伺服器端功能閘門、F-044 月結不扣佣金 D-31 A）、B（F-134 兩租戶 action 矩陣、F-147 CI 收斂）、C（F-117 表單欄位錯誤與聚焦、F-017／F-076 文件更正、B07-20 草稿衝突最小方案）。
 - 10-21 深夜：#463（第五批 C：metadata、工程詞彙表與掃描、互動台收合、焦點與控件）合併；#462（第五批 A：step-up MFA、帳號限流、邀請 token）解衝突並修瀏覽器 gate fixture 後等 CI。累計 17 個 PR 進 master。
 - 10-21 傍晚：#461（第五批 B：用量心跳計數列、簽章 pass、/lp proxy）合併並套用 staging migration；**直播分鐘額度自此第一次真正生效（O-22）**。#462 與 master 衝突且 tracking 瀏覽器 gate 因 step-up 失敗，交回處理；#463 審查通過等 CI；#460 等 CI。
