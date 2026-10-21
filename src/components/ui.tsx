@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { clsx } from "clsx";
+import { useId } from "react";
 import { FormSubmitButton } from "@/components/form-submit-button";
 
 export function PageHeader({
@@ -95,6 +96,24 @@ export function DangerButton({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Shared error/hint slot wiring for form controls (F-117): aria-invalid + aria-describedby; forms announce a summary alert. */
+function useFieldMessages(error?: string | null, hint?: string | null) {
+  const id = useId();
+  const errorId = error ? `${id}-error` : undefined;
+  const hintId = hint ? `${id}-hint` : undefined;
+  const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
+  return {
+    controlProps: { "aria-invalid": error ? true : undefined, "aria-describedby": describedBy },
+    controlClass: error ? "border-red-600 focus:border-red-600" : "border-border-control focus:border-primary",
+    messages: (
+      <>
+        {hint ? <span id={hintId} className="text-xs font-normal text-slate-600">{hint}</span> : null}
+        {error ? <span id={errorId} className="text-xs font-medium text-red-700">{error}</span> : null}
+      </>
+    ),
+  };
+}
+
 export function Field({
   label,
   name,
@@ -109,8 +128,12 @@ export function Field({
   max,
   step,
   readOnly,
+  error,
+  hint,
 }: {
   label: string;
+  error?: string | null;
+  hint?: string | null;
   name: string;
   defaultValue?: string | number | null;
   type?: string;
@@ -124,11 +147,13 @@ export function Field({
   step?: number;
   readOnly?: boolean;
 }) {
+  const field = useFieldMessages(error, hint);
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <input
-        className="h-11 rounded-md border border-border-control bg-white px-3 text-sm transition focus:border-primary"
+        {...field.controlProps}
+        className={`h-11 rounded-md border bg-white px-3 text-sm transition ${field.controlClass}`}
         name={name}
         type={type}
         required={required}
@@ -142,6 +167,7 @@ export function Field({
         readOnly={readOnly}
         defaultValue={defaultValue ?? ""}
       />
+      {field.messages}
     </label>
   );
 }
@@ -154,8 +180,12 @@ export function TextArea({
   placeholder,
   required,
   maxLength,
+  error,
+  hint,
 }: {
   label: string;
+  error?: string | null;
+  hint?: string | null;
   name: string;
   defaultValue?: string | null;
   rows?: number;
@@ -163,11 +193,13 @@ export function TextArea({
   required?: boolean;
   maxLength?: number;
 }) {
+  const field = useFieldMessages(error, hint);
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <textarea
-        className="rounded-md border border-border-control bg-white px-3 py-2 text-sm transition focus:border-primary"
+        {...field.controlProps}
+        className={`rounded-md border bg-white px-3 py-2 text-sm transition ${field.controlClass}`}
         name={name}
         rows={rows}
         placeholder={placeholder}
@@ -175,6 +207,7 @@ export function TextArea({
         maxLength={maxLength}
         defaultValue={defaultValue ?? ""}
       />
+      {field.messages}
     </label>
   );
 }
@@ -186,25 +219,32 @@ export function SelectField({
   value,
   onChange,
   children,
+  error,
+  hint,
 }: {
   label: string;
+  error?: string | null;
+  hint?: string | null;
   name: string;
   defaultValue?: string | null;
   value?: string;
   onChange?: React.ChangeEventHandler<HTMLSelectElement>;
   children: React.ReactNode;
 }) {
+  const field = useFieldMessages(error, hint);
   return (
     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
       {label}
       <select
-        className="h-11 rounded-md border border-border-control bg-white px-3 text-sm transition focus:border-primary"
+        {...field.controlProps}
+        className={`h-11 rounded-md border bg-white px-3 text-sm transition ${field.controlClass}`}
         name={name}
         onChange={onChange}
         {...(value === undefined ? { defaultValue: defaultValue ?? "" } : { value })}
       >
         {children}
       </select>
+      {field.messages}
     </label>
   );
 }

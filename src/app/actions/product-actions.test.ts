@@ -340,3 +340,26 @@ describe("upsertProductAction", () => {
     expect(mocks.productCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("product field errors (F-117)", () => {
+  it("maps each invalid input to its own form control name", async () => {
+    const result = await upsertProductAction(initialProductActionState, validProduct({ name: "", slug: "", price: "-1", inventory: "x" }));
+    expect(result.error).toBe("invalid_product");
+    expect(Object.keys(result.fieldErrors ?? {}).sort()).toEqual(["inventory", "name", "price", "slug"]);
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+  });
+
+  it("flags a compare-at price below the selling price on compareAt only", async () => {
+    const result = await upsertProductAction(initialProductActionState, validProduct({ price: "100", compareAt: "50" }));
+    expect(result.fieldErrors).toEqual({ compareAt: expect.any(String) });
+  });
+
+  it("flags course fields and delivery fields individually", async () => {
+    const course = await upsertProductAction(initialProductActionState, validProduct({ fulfillmentType: "course" }));
+    expect(course.error).toBe("invalid_course_policy");
+    expect(Object.keys(course.fieldErrors ?? {}).sort()).toEqual(["courseContentOwnerMembershipId", "coursePromoterShareBps"]);
+    const delivery = await upsertProductAction(initialProductActionState, validProduct({ fulfillmentType: "digital", isActive: "on", deliveryUrl: "https://example.com/a" }));
+    expect(delivery.error).toBe("invalid_delivery");
+    expect(delivery.fieldErrors).toBeDefined();
+  });
+});

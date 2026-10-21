@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, type FormEvent } from "react";
+import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { upsertProductAction } from "@/app/actions/product-server-actions";
 import { MediaUploadField } from "@/components/media-upload-field";
 import { Field, SelectField, SubmitButton, TextArea } from "@/components/ui";
@@ -8,6 +8,7 @@ import {
   initialProductActionState,
   type ProductActionError,
   type ProductActionState,
+  type ProductFieldErrors,
   type ProductFormDraft,
 } from "@/lib/product-action-state";
 import type { CustomCheckoutField, CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
@@ -123,6 +124,15 @@ function safeProductError(value: unknown): ProductActionError {
     : "unavailable";
 }
 
+function safeFieldErrors(value: unknown): ProductFieldErrors {
+  if (typeof value !== "object" || value === null) return {};
+  const result: Record<string, string> = {};
+  for (const [key, message] of Object.entries(value)) {
+    if (typeof message === "string" && message.length <= 300) result[key] = message;
+  }
+  return result;
+}
+
 function nextFieldKey(fields: CustomCheckoutFields) {
   let index = fields.length + 1;
   while (fields.some((field) => field.key === `field_${index}`)) index += 1;
@@ -220,7 +230,8 @@ function CustomCheckoutFieldEditor({
   );
 }
 
-function CourseSplitFields({ visible, draft, memberships }: {
+function CourseSplitFields({ visible, draft, memberships, fieldErrors }: {
+  fieldErrors: ProductFieldErrors;
   visible: boolean;
   draft: { courseContentOwnerMembershipId: string; coursePromoterShareBps: string };
   memberships: CourseMembershipOption[];
@@ -229,11 +240,11 @@ function CourseSplitFields({ visible, draft, memberships }: {
   if (!visible) return null;
   return (
     <>
-      <SelectField label="課程內容所有人" name="courseContentOwnerMembershipId" defaultValue={draft.courseContentOwnerMembershipId}>
+      <SelectField label="課程內容所有人" name="courseContentOwnerMembershipId" error={fieldErrors.courseContentOwnerMembershipId} defaultValue={draft.courseContentOwnerMembershipId}>
         <option value="">一般商品／直購不指定</option>
         {memberships.map((membership) => <option key={membership.id} value={membership.id}>{membership.memberName} · {membership.teamName}</option>)}
       </SelectField>
-      <Field label="課程推廣者分潤比例（萬分比）" name="coursePromoterShareBps" type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
+      <Field label="課程推廣者分潤比例（萬分比）" name="coursePromoterShareBps" error={fieldErrors.coursePromoterShareBps} type="number" min={1} max={9999} defaultValue={draft.coursePromoterShareBps} placeholder="例如 2000 = 20%" />
       <p className="self-end text-xs leading-5 text-slate-600">付款成功會鎖定分潤比例與收款人；沒有推廣者歸因時，款項全數給課程內容所有人。</p>
     </>
   );
@@ -261,13 +272,25 @@ export function ProductFormClient({
     : initialProductActionState;
   const [state, formAction, pending] = useActionState(upsertProductAction, initialState);
   const [nativeError, setNativeError] = useState<ProductActionError>();
+  const [nativeFieldErrors, setNativeFieldErrors] = useState<ProductFieldErrors>();
+  const [nativeErrorTick, setNativeErrorTick] = useState(0);
   const [nativePending, setNativePending] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [mediaBlocked, setMediaBlocked] = useState(false);
   const draft = state.draft ?? initialDraft(product);
   const legacyCurrency = product && product.currency !== SUPPORTED_CHECKOUT_CURRENCY ? product.currency : null;
   const [selectedFulfillmentType, setSelectedFulfillmentType] = useState(draft.fulfillmentType);
   const [customCheckoutFields, setCustomCheckoutFields] = useState<CustomCheckoutFields>(draft.customCheckoutFields ?? []);
   const error = errorMessage(nativeError ?? state.error);
+  const fieldErrors: ProductFieldErrors = (nativeError ? nativeFieldErrors : state.fieldErrors) ?? {};
+  const fieldErrorEntries = Object.entries(fieldErrors).filter((entry): entry is [string, string] => Boolean(entry[1]));
+  const errorToken = `${state.version}:${nativeErrorTick}`;
+
+  // F-117: after a failed submit, move focus to the first invalid control.
+  useEffect(() => {
+    if (errorToken === "0:0") return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errorToken]);
 
   async function submitNatively(event: FormEvent<HTMLFormElement>) {
     if (!nativeAction) return;
@@ -275,6 +298,7 @@ export function ProductFormClient({
     if (nativePending || pending) return;
     setNativePending(true);
     setNativeError(undefined);
+    setNativeFieldErrors(undefined);
     try {
       const submitted = new FormData(event.currentTarget);
       const response = await fetch(nativeAction, {
@@ -303,7 +327,12 @@ export function ProductFormClient({
       const value = typeof payload === "object" && payload !== null && "error" in payload
         ? (payload as { error?: unknown }).error
         : undefined;
+      const rawFieldErrors = typeof payload === "object" && payload !== null && "fieldErrors" in payload
+        ? (payload as { fieldErrors?: unknown }).fieldErrors
+        : undefined;
+      setNativeFieldErrors(safeFieldErrors(rawFieldErrors));
       setNativeError(safeProductError(value));
+      setNativeErrorTick((tick) => tick + 1);
     } catch {
       setNativeError("unavailable");
     } finally {
@@ -312,11 +341,20 @@ export function ProductFormClient({
   }
 
   return (
-    <form key={state.version} action={formAction} onSubmit={submitNatively} className="grid gap-4" aria-busy={pending || nativePending}>
+    <form ref={formRef} key={state.version} action={formAction} onSubmit={submitNatively} className="grid gap-4" aria-busy={pending || nativePending}>
       {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       <input type="hidden" name="_csrf" value={csrfToken} />
       {product ? <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="revision" value={product.revision} /></> : null}
-      {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">{error}</p> : null}
+      {error ? (
+        <div role="alert" className="grid gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+          <p>{error}</p>
+          {fieldErrorEntries.length > 0 ? (
+            <ul className="list-disc pl-5 font-normal">
+              {fieldErrorEntries.map(([name, message]) => <li key={name}>{message}</li>)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {product && !product.fulfillmentTypeConfirmed ? (
         <p role="status" className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900">
           這是既有商品，交付方式尚未確認。請選擇正確類型並儲存；確認前不會開放結帳或綁定新的販售流程。
@@ -333,17 +371,17 @@ export function ProductFormClient({
       ) : null}
       {!product ? <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">新商品會先儲存為草稿；確認預覽、價格、庫存與交付方式後，再勾選上架。</p> : null}
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="商品名稱" name="name" required maxLength={200} defaultValue={draft.name} />
-        <Field label="商品網址" name="slug" required maxLength={200} defaultValue={draft.slug} />
-        <Field label="售價（元）" name="price" type="number" min={0} step={1} required defaultValue={draft.price} />
-        <Field label="原價（元）" name="compareAt" type="number" min={0.01} step={0.01} defaultValue={draft.compareAt} />
+        <Field label="商品名稱" name="name" error={fieldErrors.name} required maxLength={200} defaultValue={draft.name} />
+        <Field label="商品網址" name="slug" error={fieldErrors.slug} required maxLength={200} defaultValue={draft.slug} />
+        <Field label="售價（元）" name="price" error={fieldErrors.price} type="number" min={0} step={1} required defaultValue={draft.price} />
+        <Field label="原價（元）" name="compareAt" error={fieldErrors.compareAt} type="number" min={0.01} step={0.01} defaultValue={draft.compareAt} />
         <div className="grid gap-1 text-sm font-medium text-slate-700">
           <span>幣別</span>
           <input type="hidden" name="currency" value={SUPPORTED_CHECKOUT_CURRENCY} />
           <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900">新台幣（TWD）</p>
           <span className="text-xs font-normal text-slate-500">平台結帳、退款與月結目前只支援新台幣，售價須為整數元。</span>
         </div>
-        <Field label="可售庫存" name="inventory" type="number" min={0} step={1} required defaultValue={draft.inventory} />
+        <Field label="可售庫存" name="inventory" error={fieldErrors.inventory} type="number" min={0} step={1} required defaultValue={draft.inventory} />
       </div>
       <div className="grid gap-4 rounded-md border border-blue-100 bg-blue-50/50 p-4 md:grid-cols-2">
         <SelectField
@@ -357,7 +395,7 @@ export function ProductFormClient({
           <option value="service">服務（付款後安排時間）</option>
           <option value="course">課程（付款後授權並啟用課程分潤）</option>
         </SelectField>
-        <CourseSplitFields visible={selectedFulfillmentType === "course"} draft={draft} memberships={memberships} />
+        <CourseSplitFields visible={selectedFulfillmentType === "course"} draft={draft} memberships={memberships} fieldErrors={fieldErrors} />
       </div>
       {selectedFulfillmentType !== "physical" ? (
         <fieldset className="grid gap-4 rounded-md border border-emerald-200 bg-emerald-50/50 p-4">
@@ -368,14 +406,14 @@ export function ProductFormClient({
           <div className="grid gap-4 md:grid-cols-2">
             <Field
               label="買家看到的交付標題"
-              name="deliveryTitle"
+              name="deliveryTitle" error={fieldErrors.deliveryTitle}
               maxLength={120}
               defaultValue={draft.deliveryTitle}
               placeholder={selectedFulfillmentType === "service" ? "例如：一對一諮詢安排" : selectedFulfillmentType === "course" ? "例如：課程內容入口" : "例如：教材下載"}
             />
             <Field
               label={selectedFulfillmentType === "service" ? "會議／服務入口（選填）" : "付款後入口 URL"}
-              name="deliveryUrl"
+              name="deliveryUrl" error={fieldErrors.deliveryUrl}
               type="url"
               maxLength={2_048}
               defaultValue={draft.deliveryUrl}
@@ -384,7 +422,7 @@ export function ProductFormClient({
           </div>
           <TextArea
             label={selectedFulfillmentType === "service" ? "服務安排與準備說明" : "付款後說明（選填）"}
-            name="deliveryInstructions"
+            name="deliveryInstructions" error={fieldErrors.deliveryInstructions}
             maxLength={4_000}
             defaultValue={draft.deliveryInstructions}
             placeholder={selectedFulfillmentType === "service" ? "說明預約方式、服務前準備與聯絡流程。" : "說明如何開始使用內容；請勿貼上 API secret 或內部憑證。"}
@@ -421,7 +459,7 @@ export function ProductFormClient({
         </SelectField>
         <p className="self-end text-xs leading-5 text-slate-600">限同商家、同幣別且使用本站結帳的已上架商品；折抵後應付金額必須大於零。</p>
       </fieldset>
-      <TextArea label="商品描述" name="description" maxLength={10_000} defaultValue={draft.description} />
+      <TextArea label="商品描述" name="description" error={fieldErrors.description} maxLength={10_000} defaultValue={draft.description} />
       <MediaUploadField
         kind="image"
         label="商品圖片"
@@ -434,7 +472,7 @@ export function ProductFormClient({
         onBlockingChange={setMediaBlocked}
       />
       <div className="grid gap-2">
-        <Field label="外部結帳 URL（選填／進階）" name="checkoutUrl" defaultValue={draft.checkoutUrl} placeholder="https://..." />
+        <Field label="外部結帳 URL（選填／進階）" name="checkoutUrl" error={fieldErrors.checkoutUrl} defaultValue={draft.checkoutUrl} placeholder="https://..." />
         <p className="text-xs leading-5 text-orange-800">使用外部結帳會離開 CelebrateDeal，平台無法保證取得本地訂單、付款、退款與分潤閉環證據。需要完整交易追蹤時請留空。</p>
       </div>
       <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
