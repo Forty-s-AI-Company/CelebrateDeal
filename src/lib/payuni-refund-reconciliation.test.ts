@@ -68,6 +68,8 @@ function fakeDb(initial: {
   ];
   const auditLogs: Array<Record<string, unknown>> = [];
   const tx = {
+    // F-039: the refund month skips locked settlements; none are locked here.
+    settlement: { findMany: vi.fn(async () => []) },
     paymentTransaction: {
       findUnique: vi.fn(async () => transaction),
       update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => Object.assign(transaction, data)),
@@ -171,6 +173,8 @@ describe("PayUni refund reconciliation", () => {
     expect(result).toEqual({ disposition: "reconciled", transactionId: "tx-1", processedRefundRecordCount: 1, refundedAmountCents: 168_000 });
     expect(refunds[1]?.status).toBe("processed");
     expect(refunds[1]?.providerEventId).toMatch(/^reconcile:payuni:[a-f0-9]{64}$/);
+    // F-039: booked into the month the server confirmed the refund.
+    expect((refunds[1] as { monthKey?: string } | undefined)?.monthKey).toBe("2026-08");
     expect(transaction.status).toBe("refunded");
     expect(transaction.refundedAmountCents).toBe(168_000);
     expect(tx.refundRecord.update).toHaveBeenCalledOnce();

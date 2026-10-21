@@ -365,3 +365,22 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - 覆核門檻改為 `|新調整值| > 門檻` 或 `|新值 − 現值| > 門檻` 任一成立即需第二人（n-2）；金額輸入上限改為 NT$21,474,836，確保分值不超過 PostgreSQL `integer`（n-3）。
 - 目前 150 models、114 forward migrations；既有 SQL／checksum 不變。
 
+
+## 2026-10-21 F-038／B03-02 交易用途（月結只計買家訂單）
+
+- `20261021130100_payment_transaction_purpose`：forward-only。新增 enum `PaymentTransactionPurpose`（`buyer_order／platform_subscription／invoice_payment／demo／unclassified`）與 `PaymentTransaction.purpose`（NOT NULL，預設 `unclassified`）。回填只依伺服器寫入的資料：`providerName = 'demo'` 一律為 `demo`（PR #458 審查 m-3，月結排除且不擋）；其次 `metadata.billingPurpose` 為 `platform_subscription_checkout`／`invoice_payment`／`buyer_order` 分別對應三種用途；沒有 `billingPurpose` 但有 `CommerceOrder.primaryPaymentTransactionId` 指向它（同 vendor）的列為 `buyer_order`；明確的方案費／帳單款標記優先於 CommerceOrder 連結；其餘維持 `unclassified`。交易層級 `lock_timeout = 5s`。
+- 程式：checkout route 寫 `buyer_order`、`platform-plan-checkout` 寫 `platform_subscription`、`invoice-actions` 寫 `invoice_payment`；demo provider 建立的交易（含回呼建立的未知訂單）一律寫 `demo`（`paymentTransactionPurposeFor`）。fail-closed 只在訂閱為平台收款（`paymentMode = platform`）時生效。`calculateSettlement` 的營收與退款只計 `buyer_order`（或仍是 `unclassified` 但有 primary CommerceOrder 的列）；當月有 `unclassified` 且沒有 CommerceOrder 的已付款交易，或當月已處理退款屬於這類交易（PR #458 審查 M-3）時拋 `unclassified_payment_purpose`，月結不產生、不寫 Settlement／Invoice，需人工核對後以 SQL 更新 `purpose` 再重算。
+- 部署前盤點：`SELECT purpose, count(*) FROM "PaymentTransaction" WHERE status IN ('paid','partially_refunded','refunded') GROUP BY 1;`，`unclassified` 非 0 時逐筆核對。已鎖定月份不重算，若曾把方案費／帳單款算入商家營收，需人工另立調整。
+- 測試：`src/lib/settlement-revenue.db.test.ts`（精確金額、只有方案費／帳單款的月份撥款為 0、unclassified 拒絕、預設值）；回填 SQL 已在 loopback 拋棄式庫以 9 種 provider／metadata／CommerceOrder 組合驗證。
+- 目前 150 models、115 forward migrations；既有 SQL／checksum 不變。
+
+## 2026-10-21 F-039／B03-03 退款月份與負餘額結轉（D-32）
+
+- `20261021130200_settlement_negative_carry_forward`：forward-only、純新增。`Settlement` 新增 `refundAmountCents`（計算時納入的買家退款，CHECK ≥ 0）、`carriedInCents`（上期結轉扣抵，CHECK ≤ 0）、`carriedOutCents`（結轉到下期的待扣款，CHECK ≤ 0 且只在 `finalPayoutAmountCents = 0` 時可非 0），預設皆 0。新增 `SettlementAdjustmentLedgerEntry`（`vendorId`、`kind`、`sourceMonthKey`、`targetMonthKey`、`amountCents`）：CHECK `kind` 只允許 `negative_balance_carry_forward`、兩個月份格式 `YYYY-MM` 且 target > source、`amountCents ≤ 0`；`(vendorId, kind, sourceMonthKey)` 唯一、`(vendorId, targetMonthKey)` 索引；`vendorId` FK ON DELETE CASCADE；啟用 RLS（不新增 policy）。交易層級 `lock_timeout = 5s`。
+- 程式：`src/lib/settlement-period.ts`。退款月份一律取伺服器完成時間（UTC 月，與 `monthRange` 相同），該月月結已鎖定就順延到下一個未鎖定月份；套用於後台手動退款（不再接受表單 `monthKey`）、PayUni 退款完成、PayUni 退款對帳、付款 webhook 退款（不採用 provider 事件時間）。PayUni pending 保留的 `monthKey` 只是暫定值，轉 processed 時改寫。`calculateSettlement` 不再把 `grossRevenueCents` 截斷為 0，並加上 `targetMonthKey` 為本月的結轉；`generateSettlementForVendor` 在同一 Serializable 交易內確認退款與結轉沒有在計算後變動、淨額為負時撥款 0 並寫入（或更新）來源月份的結轉列。結轉列的目標月已鎖定時不再變更（`carry_forward_target_locked`）。手動調整（F-049）：負向調整不可讓撥款低於 0，正向調整可抵減結轉並同步更新結轉列。`lockSettlementAction` 改為 Serializable，並在鎖定前重新比對退款與結轉（`stale_settlement`，需先重新產生月結）。
+- PR #458 審查 M-1：同一 migration 為 `AffiliateCommissionLedgerEntry` 新增 `settlementMonthKey`（可空，CHECK 只允許 `entryType = 'refund'` 且格式 `YYYY-MM`；索引 `AffiliateCommissionLedger_v_settlement_month_idx`）。退款沖回佣金時寫入該筆 RefundRecord 的 `monthKey`，月結扣佣金改為「`settlementMonthKey` = 本月」加上「`settlementMonthKey` 為 NULL 且佣金月份為本月（pending／approved／locked／void）」；void 佣金也計入，因為它的沖回現在也計入，同月相抵為 0，跨月時沖回落在退款月份。既有列為 NULL，沿用舊規則。
+- PR #458 審查 M-2：撥款改用未截斷的淨手續費（當月手續費 − 當月手續費退回，可為負），`paymentGatewayFeeCents`／`transactionServiceFeeCents` 欄位與發票仍保留非負值。
+- PR #458 審查 m-1：負向人工調整最多把撥款扣到 0，不會產生或加深結轉（重新產生月結時亦同，`splitNetPayable`）；正向調整可抵減結轉。
+- 既有未鎖定月結的 `refundAmountCents` 為 0；若該月已有已處理退款，鎖定前必須重新產生月結。
+- 測試：`src/lib/settlement-carry-forward.db.test.ts`（鎖定月份順延、webhook 退款不採用 provider 時間、精確金額的負餘額結轉與扣抵、來源月重算、鎖定前輸入變動、目標月已鎖、正負調整、DB CHECK）。
+- 目前 151 models、116 forward migrations；既有 SQL／checksum 不變。

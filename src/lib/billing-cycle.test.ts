@@ -22,6 +22,17 @@ const mocks = vi.hoisted(() => ({
       this.name = "StreamUsageReconciliationRequiredError";
     }
   },
+  UnclassifiedPaymentPurposeError: class UnclassifiedPaymentPurposeError extends Error {
+    readonly code = "unclassified_payment_purpose";
+  },
+  assertSettlementInputsUnchanged: vi.fn(),
+  settleNetPayable: vi.fn(),
+  SettlementInputsChangedError: class SettlementInputsChangedError extends Error {
+    readonly code = "stale_settlement";
+  },
+  SettlementCarryForwardError: class SettlementCarryForwardError extends Error {
+    readonly code = "carry_forward_target_locked";
+  },
 }));
 
 vi.mock("@/lib/billing", () => ({
@@ -29,6 +40,7 @@ vi.mock("@/lib/billing", () => ({
   invoiceDueAt: mocks.invoiceDueAt,
   invoiceNumber: mocks.invoiceNumber,
   StreamUsageReconciliationRequiredError: mocks.StreamUsageReconciliationRequiredError,
+  UnclassifiedPaymentPurposeError: mocks.UnclassifiedPaymentPurposeError,
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -39,6 +51,12 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 vi.mock("@/lib/usage-estimation", () => ({ upsertUsageSnapshot: mocks.upsertUsageSnapshot }));
+vi.mock("@/lib/settlement-period", () => ({
+  assertSettlementInputsUnchanged: mocks.assertSettlementInputsUnchanged,
+  settleNetPayable: mocks.settleNetPayable,
+  SettlementInputsChangedError: mocks.SettlementInputsChangedError,
+  SettlementCarryForwardError: mocks.SettlementCarryForwardError,
+}));
 
 import { BillingCycleError, generateSettlementForVendor } from "./billing-cycle";
 import { UnsupportedCurrencyError } from "@/lib/checkout-currency";
@@ -55,6 +73,8 @@ const calculation = {
   paymentGatewayFeeCents: 600,
   grossRevenueCents: 10_000,
   payoutableAmountCents: 8_000,
+  refundAmountCents: 0,
+  carriedInCents: 0,
 };
 
 const settlement = {
@@ -95,6 +115,11 @@ beforeEach(() => {
   mocks.invoiceUpdate.mockResolvedValue(invoice);
   mocks.invoiceUpsert.mockResolvedValue(invoice);
   mocks.reconciliationFindFirstInTransaction.mockResolvedValue(null);
+  mocks.assertSettlementInputsUnchanged.mockResolvedValue(undefined);
+  mocks.settleNetPayable.mockImplementation(async (_tx: unknown, input: { payableCents: number; adjustmentCents: number }) => ({
+    finalPayoutAmountCents: Math.max(0, input.payableCents + input.adjustmentCents),
+    carriedOutCents: Math.min(0, input.payableCents + input.adjustmentCents),
+  }));
   mocks.upsertUsageSnapshot.mockResolvedValue({ snapshot: {}, record: { id: "usage-snapshot" } });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     settlement: {
@@ -186,6 +211,46 @@ describe("generateSettlementForVendor", () => {
 
     await expect(generateSettlementForVendor("vendor-1", "2026-07"))
       .rejects.toMatchObject({ name: "BillingCycleError", code: "unsupported_currency" });
+
+    expect(mocks.settlementCreate).not.toHaveBeenCalled();
+    expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
+  });
+
+  it("carries a negative payable forward instead of refusing the settlement (F-039, D-32)", async () => {
+    mocks.calculateSettlement.mockResolvedValueOnce({ ...calculation, grossRevenueCents: -5_000, payoutableAmountCents: -6_500, refundAmountCents: 15_000, carriedInCents: -1_000 });
+
+    const result = await generateSettlementForVendor("vendor-1", "2026-07");
+
+    expect(result.outcome).toBe("created");
+    expect(mocks.assertSettlementInputsUnchanged).toHaveBeenCalledWith(expect.any(Object), {
+      vendorId: "vendor-1", monthKey: "2026-07", refundAmountCents: 15_000, carriedInCents: -1_000,
+    });
+    expect(mocks.settleNetPayable).toHaveBeenCalledWith(expect.any(Object), { vendorId: "vendor-1", monthKey: "2026-07", payableCents: -6_500, adjustmentCents: 0 });
+    expect(mocks.settlementCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        payoutableAmountCents: -6_500,
+        finalPayoutAmountCents: 0,
+        carriedOutCents: -6_500,
+        carriedInCents: -1_000,
+        refundAmountCents: 15_000,
+      }),
+    });
+  });
+
+  it("maps refunds booked between calculation and write to a conflict, and a locked carry target to its own code", async () => {
+    mocks.assertSettlementInputsUnchanged.mockRejectedValueOnce(new mocks.SettlementInputsChangedError());
+    await expect(generateSettlementForVendor("vendor-1", "2026-07")).rejects.toMatchObject({ code: "conflict" });
+
+    mocks.settleNetPayable.mockRejectedValueOnce(new mocks.SettlementCarryForwardError());
+    await expect(generateSettlementForVendor("vendor-1", "2026-07")).rejects.toMatchObject({ code: "carry_forward_target_locked" });
+    expect(mocks.settlementCreate).not.toHaveBeenCalled();
+  });
+
+  it("maps an unclassified payment purpose to a bounded billing error without writes (F-038)", async () => {
+    mocks.calculateSettlement.mockRejectedValueOnce(new mocks.UnclassifiedPaymentPurposeError());
+
+    await expect(generateSettlementForVendor("vendor-1", "2026-07"))
+      .rejects.toMatchObject({ name: "BillingCycleError", code: "unclassified_payment_purpose" });
 
     expect(mocks.settlementCreate).not.toHaveBeenCalled();
     expect(mocks.invoiceUpsert).not.toHaveBeenCalled();
