@@ -64,6 +64,7 @@ function passCookie(overrides: Partial<Parameters<typeof createLiveViewerPass>[0
     liveId: "live-1",
     viewerSessionId: "session-1",
     admissionToken: "A".repeat(43),
+    sessionExpiresAt: new Date(Date.now() + 90_000),
     ...overrides,
   });
   return `${LIVE_VIEWER_PASS_COOKIE}=${encodeURIComponent(pass)}`;

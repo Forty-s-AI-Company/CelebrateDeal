@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tx = {
   live: { findFirst: vi.fn(), updateMany: vi.fn() },
@@ -55,6 +55,8 @@ function request(method: "POST" | "DELETE" = "POST", payload = { vendorId: "vend
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Self-contained: the pass HMAC key must not depend on the shell (R461-10).
+  vi.stubEnv("CSRF_SECRET", "live-admission-route-test-secret-longer-than-32-bytes");
   db.live.findFirst.mockResolvedValue({ id: "live-1", vendorId: "vendor-1", ...runtimeReadyContent });
   db.live.updateMany.mockResolvedValue({ count: 0 });
   tx.live.findFirst.mockResolvedValue({
@@ -77,6 +79,8 @@ beforeEach(() => {
   db.liveViewerSession.deleteMany.mockResolvedValue({ count: 1 });
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("POST /api/live-admission", () => {
   it("admits a viewer and returns only a generic success body", async () => {
     const response = await POST(request());
@@ -88,7 +92,7 @@ describe("POST /api/live-admission", () => {
     expect(JSON.stringify(body)).not.toContain("token");
   });
 
-  it("issues a 10-minute httpOnly viewer pass bound to the new session and admission cookie", async () => {
+  it("issues an httpOnly viewer pass that expires with the new session and is bound to the admission cookie", async () => {
     const response = await POST(request());
 
     const admissionToken = setCookieValue(response, "celebratedeal_live_viewer");
@@ -96,18 +100,20 @@ describe("POST /api/live-admission", () => {
     expect(admissionToken).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     const passHeader = response.headers.getSetCookie().find((cookie) => cookie.startsWith(`${LIVE_VIEWER_PASS_COOKIE}=`));
     expect(passHeader).toMatch(/HttpOnly/iu);
-    expect(passHeader).toMatch(/Max-Age=600/iu);
+    expect(passHeader).toMatch(/Max-Age=90/iu);
     expect(verifyLiveViewerPass(pass, { vendorId: "vendor-1", liveId: "live-1", admissionToken })).toMatchObject({
       viewerSessionId: "session-1",
     });
     expect(verifyLiveViewerPass(pass, { vendorId: "vendor-1", liveId: "live-2", admissionToken })).toBeNull();
   });
 
-  it("does not issue a pass when admission fails", async () => {
+  it("clears any previous pass when admission is refused", async () => {
     tx.liveViewerSession.count.mockResolvedValue(2);
     const response = await POST(request());
     expect(response.status).toBe(429);
-    expect(setCookieValue(response, LIVE_VIEWER_PASS_COOKIE)).toBeNull();
+    expect(setCookieValue(response, LIVE_VIEWER_PASS_COOKIE)).toBe("");
+    const cleared = response.headers.getSetCookie().find((cookie) => cookie.startsWith(`${LIVE_VIEWER_PASS_COOKIE}=`));
+    expect(cleared).toMatch(/Max-Age=0/iu);
   });
 
   it("refreshes an existing same-live cookie session", async () => {

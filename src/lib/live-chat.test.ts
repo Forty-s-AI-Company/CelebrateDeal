@@ -96,6 +96,7 @@ describe("live chat read poll with a signed viewer pass (F-091)", () => {
     viewerSessionId: "session-1",
     admissionToken,
     now,
+    sessionExpiresAt: new Date((overrides.now ?? now).getTime() + 90_000),
     ...overrides,
   });
 
@@ -118,7 +119,7 @@ describe("live chat read poll with a signed viewer pass (F-091)", () => {
     ["another live", { liveId: "live-2" }],
     ["another tenant", { vendorId: "vendor-2" }],
     ["another admission cookie", { admissionToken: "B".repeat(43) }],
-    ["an expired pass", { now: new Date(now.getTime() - 11 * 60_000) }],
+    ["a pass whose viewer session expired", { now: new Date(now.getTime() - 91_000) }],
   ])("falls back to the authoritative session row for a pass bound to %s", async (_label, overrides) => {
     const { db } = dbFixture();
     db.liveViewerSession.findUnique.mockResolvedValue(null);

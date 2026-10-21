@@ -5,7 +5,10 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
  * Short-lived signed viewer pass (F-091 / B06-05).
  *
  * `/api/live-admission` issues it next to the opaque admission cookie after
- * the database admission succeeded, and renews it on every admission renewal.
+ * the database admission succeeded, and renews it on every admission renewal
+ * (every 30 s). The pass expires together with the `LiveViewerSession` row it
+ * was issued for (90 s, R461-05), so a viewer whose admission lapses or is
+ * refused loses read access as soon as the session would.
  * High-frequency read polls (chat list, interaction state) verify only this
  * HMAC instead of reading `LiveViewerSession` every 2-3 seconds per viewer.
  *
@@ -16,7 +19,8 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
  */
 
 export const LIVE_VIEWER_PASS_COOKIE = "celebratedeal_live_pass";
-export const LIVE_VIEWER_PASS_TTL_SECONDS = 10 * 60;
+/** Upper bound on any pass lifetime; the issued expiry is the session's. */
+export const LIVE_VIEWER_PASS_TTL_SECONDS = 2 * 60;
 
 const PASS_VERSION = "lvp1";
 const PASS_PURPOSE = "live-viewer-pass";
@@ -65,17 +69,24 @@ export function createLiveViewerPass(input: {
   liveId: string;
   viewerSessionId: string;
   admissionToken: string;
+  /** The viewer session's `expiresAt`; the pass never outlives it. */
+  sessionExpiresAt: Date;
   now?: Date;
 }) {
   if (!isIdentifier(input.vendorId) || !isIdentifier(input.liveId) || !isIdentifier(input.viewerSessionId) || !input.admissionToken) {
     throw new Error("Invalid viewer pass binding.");
+  }
+  const currentSeconds = nowSeconds(input.now ?? new Date());
+  const expiresAtSeconds = Math.floor(input.sessionExpiresAt.getTime() / 1_000);
+  if (!Number.isSafeInteger(expiresAtSeconds) || expiresAtSeconds <= currentSeconds) {
+    throw new Error("Invalid viewer pass expiry.");
   }
   const claims: PassClaims = {
     v: input.vendorId,
     l: input.liveId,
     s: input.viewerSessionId,
     a: liveViewerAdmissionBinding(input.admissionToken),
-    e: nowSeconds(input.now ?? new Date()) + LIVE_VIEWER_PASS_TTL_SECONDS,
+    e: Math.min(expiresAtSeconds, currentSeconds + LIVE_VIEWER_PASS_TTL_SECONDS),
   };
   const payload = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
   const signedValue = `${PASS_VERSION}.${payload}`;

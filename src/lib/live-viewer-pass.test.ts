@@ -13,7 +13,16 @@ const admissionToken = "A".repeat(43);
 const scope = { vendorId: "vendor-1", liveId: "live-1", admissionToken, now };
 
 function issue(overrides: Partial<Parameters<typeof createLiveViewerPass>[0]> = {}) {
-  return createLiveViewerPass({ vendorId: "vendor-1", liveId: "live-1", viewerSessionId: "session-1", admissionToken, now, ...overrides });
+  const issuedAt = overrides.now ?? now;
+  return createLiveViewerPass({
+    vendorId: "vendor-1",
+    liveId: "live-1",
+    viewerSessionId: "session-1",
+    admissionToken,
+    now,
+    sessionExpiresAt: new Date(issuedAt.getTime() + 90_000),
+    ...overrides,
+  });
 }
 
 beforeEach(() => {
@@ -23,7 +32,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("signed live viewer pass", () => {
-  it("verifies for the exact vendor, live and admission cookie and expires after ten minutes", () => {
+  it("verifies for the exact vendor, live and admission cookie and expires with the viewer session", () => {
     const pass = issue();
     expect(pass.startsWith("lvp1.")).toBe(true);
     expect(pass).not.toContain(admissionToken);
@@ -31,10 +40,17 @@ describe("signed live viewer pass", () => {
       vendorId: "vendor-1",
       liveId: "live-1",
       viewerSessionId: "session-1",
-      expiresAt: new Date(now.getTime() + LIVE_VIEWER_PASS_TTL_SECONDS * 1_000),
+      expiresAt: new Date(now.getTime() + 90_000),
     });
-    expect(verifyLiveViewerPass(pass, { ...scope, now: new Date(now.getTime() + 599_000) })).not.toBeNull();
-    expect(verifyLiveViewerPass(pass, { ...scope, now: new Date(now.getTime() + 600_000) })).toBeNull();
+    expect(verifyLiveViewerPass(pass, { ...scope, now: new Date(now.getTime() + 89_000) })).not.toBeNull();
+    expect(verifyLiveViewerPass(pass, { ...scope, now: new Date(now.getTime() + 90_000) })).toBeNull();
+  });
+
+  it("never outlives the session and caps any expiry at two minutes", () => {
+    expect(LIVE_VIEWER_PASS_TTL_SECONDS).toBe(120);
+    const capped = issue({ sessionExpiresAt: new Date(now.getTime() + 60 * 60_000) });
+    expect(verifyLiveViewerPass(capped, scope)?.expiresAt).toEqual(new Date(now.getTime() + 120_000));
+    expect(() => issue({ sessionExpiresAt: now })).toThrow();
   });
 
   it.each([
@@ -80,7 +96,7 @@ describe("signed live viewer pass", () => {
     });
     expect(liveViewerPassFromRequest(request)).toBe(pass);
     expect(liveViewerPassFromRequest(new Request("https://app.example.test/"))).toBeNull();
-    expect(liveViewerPassCookieOptions(request)).toEqual({ httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 600 });
+    expect(liveViewerPassCookieOptions(request)).toEqual({ httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 120 });
     expect(liveViewerPassCookieOptions(new Request("http://localhost/"), 0)).toMatchObject({ secure: false, maxAge: 0 });
   });
 });
