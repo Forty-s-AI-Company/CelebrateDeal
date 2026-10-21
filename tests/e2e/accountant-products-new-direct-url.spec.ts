@@ -216,7 +216,7 @@ test("active accountant is denied products/new before the product form is render
     }
     for (const label of [
       "商品名稱",
-      "Slug",
+      "商品網址",
       "售價（分）",
       "原價（分）",
       "幣別",

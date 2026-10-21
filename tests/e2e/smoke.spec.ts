@@ -1455,7 +1455,7 @@ test("merchant can create and schedule a prerecorded content webinar from the ei
     await page.getByLabel("直播網址").fill(slug);
     await page.getByRole("button", { name: "下一步" }).click();
 
-    await page.getByLabel("影片 / Live Input").selectOption(seed.readyVideoId);
+    await page.getByLabel("影片／即時直播").selectOption(seed.readyVideoId);
     await page.getByRole("button", { name: "下一步" }).click();
     await page.getByRole("button", { name: "下一步" }).click();
 
@@ -1710,7 +1710,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await page.goto(sharePath);
     await expect(page.getByRole("heading", { name: "取得團隊模板" })).toBeVisible();
     await page.getByText(mode, { exact: true }).click();
-    await page.getByLabel("你的公開網址（slug）").fill(slug);
+    await page.getByLabel("你的公開網址").fill(slug);
     await page.getByRole("checkbox", { name: /我已確認建立自己的夥伴頁/ }).check();
     await page.getByRole("button", { name: "確認並建立夥伴頁" }).click();
     // 開發模式首次載入 Server Action 可能需要額外編譯時間。
@@ -1737,7 +1737,7 @@ test("team-funnel browser acceptance covers leader publishing, partner modes, at
     await leaderPage.goto("/team-templates/new");
     await expect(leaderPage.getByRole("heading", { name: "建立團隊原始頁" })).toBeVisible();
     await leaderPage.getByLabel("模板名稱").fill(fixture.scenario.templateName);
-    await leaderPage.getByLabel("原始頁網址（slug）").fill(fixture.scenario.sourceSlug);
+    await leaderPage.getByLabel("原始頁網址").fill(fixture.scenario.sourceSlug);
     await leaderPage.getByLabel("綁定 webinar").selectOption(fixture.seminar.id);
     await leaderPage.getByRole("textbox", { name: "主標題" }).fill("TEST ONLY A 模板主標題");
     await leaderPage.getByRole("textbox", { name: "副標題" }).fill("TEST ONLY 可由 B 編輯的副標題");

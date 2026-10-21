@@ -21,7 +21,7 @@ export default async function PasswordResetConfirmPage({
         <div className="mb-6">
           <p className="text-sm font-semibold text-primary">CelebrateDeal</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">設定新密碼</h1>
-          <p className="mt-2 text-sm text-slate-500">請輸入新的登入密碼；成功後所有舊 session 都會失效。</p>
+          <p className="mt-2 text-sm text-slate-500">請輸入新的登入密碼；成功後所有舊的登入狀態都會失效。</p>
         </div>
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "無法重設密碼。"}</p> : null}
         <form action={confirmPasswordResetAction} className="grid gap-4">
@@ -37,7 +37,7 @@ export default async function PasswordResetConfirmPage({
           </label>
           <FormSubmitButton
             pendingChildren="更新中…"
-            pendingMessage="正在更新密碼並撤銷舊 session，請勿重複送出。"
+            pendingMessage="正在更新密碼並結束舊的登入狀態，請勿重複送出。"
             className="h-10 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
           >
             更新密碼

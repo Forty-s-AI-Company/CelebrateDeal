@@ -146,7 +146,7 @@ export function VideoProviderStatus({
     <div ref={rootRef} className="rounded-lg border border-border bg-slate-50 p-3 text-sm text-slate-700" role="status" aria-live="polite">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-semibold">
-          Provider 狀態：{ready ? "ready" : providerError ? "error" : "processing"}
+          影片服務狀態：{ready ? "ready" : providerError ? "error" : "processing"}
         </p>
         {phase === "checking" && !ready && !providerError ? <LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" aria-label="檢查中" /> : null}
       </div>

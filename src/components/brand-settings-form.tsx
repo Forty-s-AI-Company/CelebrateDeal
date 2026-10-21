@@ -185,7 +185,7 @@ function BrandPublicPreview({ values }: { values: BrandSettingsFormValues }) {
         <DevicePreview device="mobile" values={values} primaryColor={primaryColor} ctaColor={ctaColor} logoUrl={logoUrl} />
       </div>
       <dl className="grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
-        <div><dt className="inline font-semibold">Slug：</dt><dd className="inline break-words">{values.slug || "未設定"}</dd></div>
+        <div><dt className="inline font-semibold">網址：</dt><dd className="inline break-words">{values.slug || "未設定"}</dd></div>
         <div><dt className="inline font-semibold">客服 Email：</dt><dd className="inline break-words">{values.supportEmail || "未設定"}</dd></div>
         <div><dt className="inline font-semibold">寄件人：</dt><dd className="inline break-words">{values.senderName.trim() || values.name || "品牌名稱"}</dd></div>
         <div data-contact-url-state={values.contactUrl ? (safeContact ? "safe" : "invalid") : "empty"}>
@@ -241,7 +241,7 @@ export function BrandSettingsForm({
           <input name="name" required value={values.name} onChange={updateValue("name")} className={inputClassName} />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          品牌 Slug
+          品牌網址
           <input name="slug" required value={values.slug} onChange={updateValue("slug")} className={inputClassName} />
         </label>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">

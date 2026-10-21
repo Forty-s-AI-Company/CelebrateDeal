@@ -47,7 +47,7 @@ test("same-team non-owner cannot read another member's template edit URL", async
     await login(ownerPage, fixture.partner.email);
     await ownerPage.goto("/team-templates/new");
     await ownerPage.getByLabel("模板名稱").fill(`${TEAM_FUNNEL_TEST_ONLY.templateName} WP86 B`);
-    await ownerPage.getByLabel("原始頁網址（slug）").fill(`wp86-b-source-${runKey}`.toLowerCase());
+    await ownerPage.getByLabel("原始頁網址").fill(`wp86-b-source-${runKey}`.toLowerCase());
     await ownerPage.getByLabel("綁定 webinar").selectOption(ownerWebinar.id);
     await ownerPage.getByRole("textbox", { name: "主標題" }).fill("TEST ONLY WP86 B 私有主標題");
     await ownerPage.getByRole("textbox", { name: "CTA 按鈕文字" }).fill("TEST ONLY WP86 B CTA");

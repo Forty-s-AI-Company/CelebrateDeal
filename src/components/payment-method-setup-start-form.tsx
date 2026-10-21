@@ -40,7 +40,7 @@ export function PaymentMethodSetupStartForm({ scopeType, providerId, liveProbeAv
         ) : null}
         <FormSubmitButton
           pendingChildren="建立中…"
-          pendingMessage="正在建立付款方式驗證 session，請勿重複送出。"
+          pendingMessage="正在建立付款方式驗證流程，請勿重複送出。"
           className={isVendor
             ? "inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark"
             : "inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"}

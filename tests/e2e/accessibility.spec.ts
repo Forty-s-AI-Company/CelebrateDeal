@@ -95,7 +95,7 @@ async function enableOwnerMfa(page: Page) {
   await page.getByRole("button", { name: "啟用 MFA", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/security\?updated=mfa_enabled$/);
   await waitForStableRoute(page, "/settings/security?updated=mfa_enabled");
-  await expect(page.getByText("目前 session：已完成 MFA 驗證", { exact: true })).toBeVisible();
+  await expect(page.getByText("目前登入狀態：已完成 MFA 驗證", { exact: true })).toBeVisible();
 }
 
 test.beforeAll(async () => {
@@ -468,7 +468,7 @@ test("live stepper has no blocking axe violations on any of the eight steps or o
   };
   await scanStep(0);
   await page.getByRole("button", { name: "下一步" }).click();
-  await page.getByLabel("影片 / Live Input").selectOption(fixture.videoId);
+  await page.getByLabel("影片／即時直播").selectOption(fixture.videoId);
   await scanStep(1);
   await page.getByRole("button", { name: "下一步" }).click();
   await scanStep(2);

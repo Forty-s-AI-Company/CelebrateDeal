@@ -7,7 +7,7 @@ test.afterAll(async()=>db.$disconnect());
 for(const width of [1440,390])test(`registration and questionnaire round trip at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:1000});const email=`onboarding-${randomUUID()}@example.test`;const password="  SyntheticBrowserPassword123!  ";
  try{
-  await page.goto('/login');await page.getByRole('link',{name:'建立商家 Workspace'}).click();await expect(page).toHaveURL(/\/register$/u);
+  await page.goto('/login');await page.getByRole('link',{name:'建立商家工作區'}).click();await expect(page).toHaveURL(/\/register$/u);
   await page.locator('input[name="name"]').fill('Synthetic owner');await page.locator('input[name="workspaceName"]').fill('Synthetic browser workspace');await page.locator('input[name="email"]').fill(email);await page.locator('input[name="password"]').fill(password);
   await expect(page.getByRole('heading',{name:'建立你的商家帳號'})).toBeVisible();
   // F-114: the native required checkbox blocks submission until consent is given.

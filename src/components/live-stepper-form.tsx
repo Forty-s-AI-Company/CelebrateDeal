@@ -38,7 +38,7 @@ import {
 
 const steps = [
   { key: "purpose", label: "用途與基本資料", icon: Calendar },
-  { key: "media", label: "媒體與 Live Input", icon: PlaySquare },
+  { key: "media", label: "影片與即時直播", icon: PlaySquare },
   { key: "products", label: "商品優惠", icon: Package },
   { key: "registration", label: "報名頁", icon: Calendar },
   { key: "schedule", label: "時間、回放與品牌", icon: Calendar },
@@ -272,7 +272,7 @@ function liveStatusAction(status: string) {
 }
 
 const readinessCopy: Record<LivePublishRequirementCodeWithReminder, { label: string; step: number; action: string }> = {
-  media: { label: "可播放的影片或 Live Input", step: 1, action: "前往媒體" },
+  media: { label: "可播放的影片或即時直播", step: 1, action: "前往媒體" },
   products: { label: "啟用且已確認履約類型的商品", step: 2, action: "前往商品優惠" },
   registration_form: { label: "有效的報名表單", step: 3, action: "前往報名頁" },
   registration_email: { label: "可寄送的報名成功 Email", step: 5, action: "前往 Email" },
@@ -333,7 +333,7 @@ function LiveReviewPanel({
           </span>
           <div>
             <h2 className="text-base font-semibold text-slate-950">確認直播間設定</h2>
-            <p className="mt-1 text-sm text-slate-500">直播頁會支援 VOD / Live Input、商品浮出、官方角色訊息、CTA 切換、聯盟來源追蹤與用量規則。</p>
+            <p className="mt-1 text-sm text-slate-500">直播頁會支援預錄影片或即時直播、商品浮出、官方角色訊息、按鈕切換、推薦來源追蹤與用量規則。</p>
           </div>
         </div>
 
@@ -556,7 +556,7 @@ function LiveRulesFields({
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           允許聯盟來源
           <select name="affiliateMode" defaultValue={initialValues.affiliateMode} className="h-10 rounded-md border border-border px-3">
-            <option value="enabled">啟用 ref 追蹤</option>
+            <option value="enabled">啟用推薦連結來源追蹤</option>
             <option value="disabled">停用</option>
           </select>
         </label>
@@ -579,7 +579,7 @@ function LiveRulesFields({
       <StreamAllocationEditor initialValues={initialValues} members={streamMembers} pages={streamPages} />
       <p className="flex items-start gap-2 rounded-md bg-orange-50 p-3 text-sm text-orange-700">
         <Ban size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-        成員／推廣頁額度會在 immutable usage ledger 寫入前 fail closed；額度用完會拒絕後續 heartbeat，不會自動扣款。
+        成員／推廣頁的額度用完時會暫停播放，不會自動扣款。
       </p>
     </>
   );
@@ -589,7 +589,7 @@ function liveFormError(error?: string) {
   const messages: Record<string, string> = {
     invalid_reference: "直播關聯資料無效，請重新選擇目前商店的影片、表單、模板、腳本與商品。",
     invalid_policy: "用量或聯盟來源規則無效，請確認模式、推廣碼與數值範圍。",
-    payment_method_required: "啟用成員／推廣頁 Stream 額度前，必須先由 payment provider 驗證付款方式 reference；目前不會自動扣款。",
+    payment_method_required: "啟用成員／推廣頁的影片額度前，必須先由付款服務驗證付款方式；目前不會自動扣款。",
     draft_conflict: "這份直播草稿已有較新的版本；系統沒有覆蓋它。請確認目前載入內容後再繼續。",
     invalid_status: "直播狀態轉換無效，內容尚未發布。",
     invalid_draft: "直播草稿內容不完整或格式無效；系統沒有發布任何變更。請修正欄位並重新儲存草稿。",
@@ -850,26 +850,26 @@ function renderLiveStudioStepPanels({
     <>
       <StepPanel active={activeStep === 1} index={1}>
         <div>
-          <h2 className="text-base font-semibold text-slate-950">媒體與 Live Input</h2>
-          <p className="mt-1 text-sm text-slate-500">選擇既有 Stream 影片或 Live Input；來源識別碼由受保護流程管理。</p>
+          <h2 className="text-base font-semibold text-slate-950">影片與即時直播</h2>
+          <p className="mt-1 text-sm text-slate-500">選擇既有影片或即時直播；來源識別碼由系統保護管理。</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             串流模式
             <select name="streamMode" defaultValue={initialValues.streamMode} className="h-10 rounded-md border border-border px-3">
-              <option value="vod">Cloudflare Stream VOD</option>
+              <option value="vod">Cloudflare Stream 預錄影片</option>
               <option value="live">Cloudflare Stream Live</option>
             </select>
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            影片 / Live Input
+            影片／即時直播
             <select name="videoId" defaultValue={selectedVideoId} onChange={(event) => onVideoChange(event.target.value)} className="h-10 rounded-md border border-border px-3">
               <option value="">不綁定影片</option>
               {videos.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
             </select>
           </label>
         </div>
-        {videos.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用媒體。<Link href="/videos/new" className="ml-1 font-semibold text-primary underline">新增影片或 Live Input</Link></p> : null}
+        {videos.length === 0 ? <p className="rounded-md bg-slate-50 px-4 py-3 text-sm text-slate-600">目前沒有可用媒體。<Link href="/videos/new" className="ml-1 font-semibold text-primary underline">新增影片或即時直播</Link></p> : null}
       </StepPanel>
 
       <StepPanel active={activeStep === 2} index={2}>

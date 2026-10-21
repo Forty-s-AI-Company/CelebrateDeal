@@ -120,7 +120,7 @@ export function TeamTemplateForm({
           {!isPublishing ? <label className="grid gap-1.5 text-sm font-medium text-slate-700">模板名稱
             <input name="name" required defaultValue={template?.name} className="h-10 rounded-md border border-border px-3 text-sm" placeholder="例如：夏季 webinar 導流頁" />
           </label> : <div className="rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800"><CheckCircle2 size={16} className="mr-1 inline" />發布會建立下一個不可變版本。</div>}
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">原始頁網址（slug）
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">原始頁網址
             <input name="slug" required defaultValue={template?.slug} className="h-10 rounded-md border border-border px-3 text-sm" placeholder="summer-webinar" />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">綁定 webinar

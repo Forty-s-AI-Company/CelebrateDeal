@@ -129,7 +129,7 @@ function LiveResourceWarnings({
   return (
     <>
       {hasUnavailableScript ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的互動腳本不是已發布版本，公開頁已停止載入；本次儲存會解除綁定，請改選已發布腳本。</p> : null}
-      {hasUnavailableVideo ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的影片或 Live Input 已無法播放；本次儲存會解除綁定，公開前請重新選擇可用媒體。</p> : null}
+      {hasUnavailableVideo ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的影片或即時直播 已無法播放；本次儲存會解除綁定，公開前請重新選擇可用媒體。</p> : null}
       {hasUnavailableProduct ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前有商品已停用或尚未確認履約類型；本次儲存會解除這些商品，請確認直播銷售清單。</p> : null}
       {hasUnavailableForm ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的報名表已停用或缺少必要姓名／Email 欄位；本次儲存會解除綁定。</p> : null}
       {hasUnavailableTemplate ? <p role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">目前綁定的通知模板不是啟用中的「報名成功 Email」，因此不會寄送；本次儲存會解除綁定，請改選可用模板。</p> : null}

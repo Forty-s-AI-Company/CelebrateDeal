@@ -180,7 +180,7 @@ describe("TeamLiveShareManager", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain("/live/replay?share=tls1.one-time");
     expect(html).toContain("複製連結");
-    expect(html).toContain("完整 token 只在這次畫面顯示");
+    expect(html).toContain("完整連結碼只在這次畫面顯示");
   });
 
   it("reports clipboard success and failure and keeps one cleanup-managed timer", async () => {

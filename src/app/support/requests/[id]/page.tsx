@@ -109,7 +109,7 @@ export default async function BuyerSupportRequestDetailPage({ params, searchPara
               <input type="hidden" name="supportCaseId" value={supportCase.id} />
               <input type="hidden" name="revision" value={supportCase.revision} />
               <input type="hidden" name="dedupKey" value={randomUUID()} />
-              <TextArea label="回覆內容" name="message" required maxLength={4_000} rows={5} placeholder="補充實際狀況；請勿填完整卡號、CVV、密碼或 Token。" />
+              <TextArea label="回覆內容" name="message" required maxLength={4_000} rows={5} placeholder="補充實際狀況；請勿填完整卡號、CVV、密碼或登入憑證。" />
               <SubmitButton pendingChildren="傳送中…" pendingMessage="正在安全傳送回覆，請勿重複送出。">送出回覆</SubmitButton>
             </form>
           </Card>

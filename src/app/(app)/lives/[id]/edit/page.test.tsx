@@ -217,7 +217,7 @@ describe("EditLivePage unified Live Studio", () => {
       searchParams: Promise.resolve({}),
     }));
 
-    expect(html).toContain("影片或 Live Input 已無法播放");
+    expect(html).toContain("影片或即時直播 已無法播放");
     expect(html).toContain("商品已停用或尚未確認履約類型");
     expect(html).toContain("報名表已停用或缺少必要姓名／Email 欄位");
     expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({

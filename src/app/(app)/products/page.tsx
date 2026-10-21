@@ -9,7 +9,7 @@ const fulfillmentLabels = {
   physical: "實體出貨",
   digital: "數位授權",
   service: "服務排程",
-  course: "課程授權／F/G",
+  course: "課程授權／課程分潤",
 } as const;
 
 type ProductStatus = "active" | "draft" | "soldout";
@@ -47,7 +47,7 @@ export default async function ProductsPage({ searchParams }: {
       {updated === "created" || updated === "saved" ? <p role="status" className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">商品已{updated === "created" ? "建立為草稿" : "儲存"}。</p> : null}
       <Card className="mb-5">
         <form method="get" className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
-          <label className="grid gap-1 text-sm font-medium text-slate-700">商品名稱或 Slug
+          <label className="grid gap-1 text-sm font-medium text-slate-700">商品名稱或網址
             <input name="q" defaultValue={search} maxLength={128} className="min-h-11 rounded-md border border-slate-500 px-3" placeholder="搜尋商品" />
           </label>
           <label className="grid gap-1 text-sm font-medium text-slate-700">販售狀態
