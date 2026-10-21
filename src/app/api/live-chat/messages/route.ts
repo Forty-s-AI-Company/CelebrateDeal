@@ -10,6 +10,7 @@ import {
   ViewerChatQuerySchema,
 } from "@/lib/live-chat";
 import { liveViewerTokenFromRequest } from "@/lib/live-quota-admission";
+import { liveViewerPassFromRequest } from "@/lib/live-viewer-pass";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { liveChatIpTrustConfig, rateLimitRequestWithIdentity } from "@/lib/live-chat-request-security";
 import { getRequestClientIp } from "@/lib/request-client-ip";
@@ -91,6 +92,8 @@ export async function GET(request: Request) {
       ...parsed.data,
       chatSessionToken: chatSessionTokenFromRequest(request),
       admissionToken: liveViewerTokenFromRequest(request),
+      // Read poll: a signed pass skips the per-poll viewer session read.
+      viewerPass: liveViewerPassFromRequest(request),
       ipAddress: security.clientIp,
     });
     return json(result);

@@ -1,0 +1,106 @@
+{
+  "label": "baseline-master-proxy",
+  "measuredAt": "2026-10-21T02:49:52.587Z",
+  "node": "v22.23.1",
+  "platform": "win32-x64",
+  "target": "/lp/<synthetic audience funnel root>",
+  "sequential": {
+    "funnelRoot": {
+      "requests": 30,
+      "queriesPerRequest": 7,
+      "latencyMs": {
+        "p50": 23,
+        "p95": 32.6,
+        "p99": 33.1,
+        "max": 33.1
+      }
+    },
+    "legacyRootWithForm": {
+      "requests": 30,
+      "queriesPerRequest": 6,
+      "latencyMs": {
+        "p50": 18.7,
+        "p95": 23.1,
+        "p99": 34,
+        "max": 34
+      }
+    },
+    "missingSlug": {
+      "requests": 30,
+      "queriesPerRequest": 1,
+      "latencyMs": {
+        "p50": 7.6,
+        "p95": 11,
+        "p99": 13.3,
+        "max": 13.3
+      }
+    }
+  },
+  "load": {
+    "concurrency": 100,
+    "requests": 2000,
+    "failures": 0,
+    "statuses": {
+      "200": 2000
+    },
+    "requestsPerSecond": 73.1,
+    "queriesPerRequest": 7,
+    "latencyMs": {
+      "p50": 1359.5,
+      "p95": 1635.6,
+      "p99": 1653.3,
+      "max": 1658.3
+    }
+  },
+  "contract": {
+    "funnelRoot": {
+      "status": 200,
+      "robotsHeader": null,
+      "noindexMeta": false,
+      "leaksSlug": true
+    },
+    "legacyRoot": {
+      "status": 200,
+      "robotsHeader": null,
+      "noindexMeta": false,
+      "leaksSlug": true
+    },
+    "legacyHead": {
+      "status": 200,
+      "robotsHeader": null,
+      "noindexMeta": false,
+      "leaksSlug": false
+    },
+    "missingSlug": {
+      "status": 404,
+      "robotsHeader": "noindex",
+      "noindexMeta": true,
+      "leaksSlug": false
+    },
+    "missingStep": {
+      "status": 404,
+      "robotsHeader": "noindex",
+      "noindexMeta": true,
+      "leaksSlug": false
+    },
+    "legacyFormDisabled": {
+      "status": 404,
+      "robotsHeader": "noindex",
+      "noindexMeta": true,
+      "leaksSlug": false
+    },
+    "funnelInvalidOperations": {
+      "status": 404,
+      "robotsHeader": "noindex",
+      "noindexMeta": true,
+      "leaksSlug": false
+    },
+    "projectUnpublished": {
+      "status": 404,
+      "robotsHeader": "noindex",
+      "noindexMeta": true,
+      "leaksSlug": false
+    }
+  },
+  "serverStderrSample": []
+}

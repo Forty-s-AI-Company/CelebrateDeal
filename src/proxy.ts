@@ -35,11 +35,13 @@ export async function proxy(request: NextRequest): Promise<Response> {
   const hasVisitorId = isFunnelVisitorId(existingVisitorId);
   const visitorId = hasVisitorId ? existingVisitorId : crypto.randomUUID();
   if (isPublicDocumentRequest(request)) {
-    // The root loading boundary starts streaming with HTTP 200 before a page
-    // can call notFound(), so availability is decided here instead.
+    // Publication-level availability (slug, publish state, tenant binding) is
+    // decided here with a content-free lookup so an unknown or unpublished
+    // URL is an anonymous 404 and a database failure a 503. Content-level
+    // decisions stay in the page (F-015 / B05-04).
     try {
       const { publicLandingPageStatus } = await import("@/lib/public-landing-page-status");
-      if (await publicLandingPageStatus(request.nextUrl.pathname, visitorId) === 404) return publicUnavailable(request.method, 404);
+      if (await publicLandingPageStatus(request.nextUrl.pathname) === 404) return publicUnavailable(request.method, 404);
     } catch (error) {
       await reportStatusReadFailure(error);
       return publicUnavailable(request.method, 503);

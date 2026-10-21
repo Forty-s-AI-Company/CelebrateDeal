@@ -19,6 +19,7 @@ import {
   liveViewerTokenFromRequest,
 } from "@/lib/live-quota-admission";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { liveViewerPassFromRequest, verifyLiveViewerPass } from "@/lib/live-viewer-pass";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { decryptSensitiveValue } from "@/lib/sensitive-data";
 import { normalizeLiveQuestionBody, normalizeLiveQuestionDisplayName } from "@/lib/live-question";
@@ -134,9 +135,18 @@ function configuration(value: Prisma.JsonValue): AdvancedInteractionMetadata | n
   return value as unknown as AdvancedInteractionMetadata;
 }
 
-async function admittedViewer(request: Request, vendorId: string, liveId: string) {
+/**
+ * `allowPass` is only for the 2-second poll paths (GET state, idempotent
+ * scheduled `open`): a signed pass bound to this vendor/live and admission
+ * cookie replaces the session row read. Responses and questions always use
+ * the database session.
+ */
+async function admittedViewer(request: Request, vendorId: string, liveId: string, options: { allowPass?: boolean } = {}) {
   const token = liveViewerTokenFromRequest(request);
-  if (!token || !await hasActiveLiveViewerSession(getDb(), { vendorId, liveId, token })) return null;
+  if (!token) return null;
+  const passValid = options.allowPass === true
+    && verifyLiveViewerPass(liveViewerPassFromRequest(request), { vendorId, liveId, admissionToken: token }) !== null;
+  if (!passValid && !await hasActiveLiveViewerSession(getDb(), { vendorId, liveId, token })) return null;
   return { token, participantHash: hashLiveViewerToken(token) };
 }
 
@@ -220,7 +230,7 @@ export async function GET(request: Request) {
   if (!Identifier.safeParse(vendorId).success || !Identifier.safeParse(liveId).success) {
     return NextResponse.json({ error: "Invalid interaction scope" }, { status: 400 });
   }
-  const viewer = await admittedViewer(request, vendorId, liveId);
+  const viewer = await admittedViewer(request, vendorId, liveId, { allowPass: true });
   if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
   const now = new Date();
   const [runs, spotlight] = await Promise.all([getDb().liveInteractionRun.findMany({
@@ -396,7 +406,9 @@ export async function POST(request: Request) {
   const parsed = RequestBody.safeParse(await readJsonBody(request));
   if (!parsed.success) return NextResponse.json({ error: "Invalid interaction request" }, { status: 400 });
   const data = parsed.data;
-  const viewer = await admittedViewer(request, data.vendorId, data.liveId);
+  // `open` repeats every 2 seconds while a scheduled event is due and only
+  // materializes the published script's run; it may use the signed pass.
+  const viewer = await admittedViewer(request, data.vendorId, data.liveId, { allowPass: data.action === "open" });
   if (!viewer) return NextResponse.json({ error: "Viewer admission required" }, { status: 401 });
 
   if (data.action === "ask_question") {
