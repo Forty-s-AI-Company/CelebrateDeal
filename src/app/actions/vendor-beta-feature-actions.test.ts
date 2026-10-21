@@ -73,6 +73,7 @@ describe("updateVendorBetaFeatureGrantsAction (F-001 / F-002)", () => {
   it("turns the merchant toggle on when consultation booking is first granted", async () => {
     await redirectPath(updateVendorBetaFeatureGrantsAction(form("vendor-1", ["consultation_booking"])));
     expect(runtime.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "vendor-1", betaFeatureGrants: { equals: [] }, enabledFeatureModules: { equals: ["funnel_builder"] } },
       data: { betaFeatureGrants: ["consultation_booking"], enabledFeatureModules: ["funnel_builder", "consultation_booking"] },
     }));
   });

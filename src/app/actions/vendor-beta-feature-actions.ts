@@ -45,7 +45,12 @@ export async function updateVendorBetaFeatureGrantsAction(formData: FormData) {
   // Compare-and-set on the value read above so two admins cannot silently
   // overwrite each other's change.
   const result = await db.vendor.updateMany({
-    where: { id: vendor.id, betaFeatureGrants: { equals: vendor.betaFeatureGrants } },
+    where: {
+      id: vendor.id,
+      betaFeatureGrants: { equals: vendor.betaFeatureGrants },
+      // The merchant may save its own toggles at the same time; never overwrite them blindly.
+      ...(enabledFeatureModules ? { enabledFeatureModules: { equals: vendor.enabledFeatureModules } } : {}),
+    },
     data: { betaFeatureGrants: grants, ...(enabledFeatureModules ? { enabledFeatureModules } : {}) },
   });
   if (result.count !== 1) redirect(`${ADMIN_PATH}?error=conflict`);

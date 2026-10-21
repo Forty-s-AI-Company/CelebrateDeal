@@ -33,7 +33,7 @@
 | Settlement lock | reconciliation 乾淨、核准期間 | 不可變 settlement snapshot；vendor＋period |
 | Payout | 已鎖定且 eligible 的 settlement、核准帳戶 | batch／item state；batch＋settlement |
 
-對帳必須一致：`refundedAmount = sum(valid RefundRecord)`；`net commission = positive commission + void/negative adjustments`；`settlement payable = collected - refunds - fees - commissions + adjustments`。以目前資料模型的單位與唯一鍵實作，不用文字公式取代 ledger 驗證。
+對帳必須一致：`refundedAmount = sum(valid RefundRecord)`；`net commission = positive commission + void/negative adjustments`；`settlement payable = collected - refunds - fees + adjustments`（D-31 A：聯盟佣金由商家自付，月結**不扣**佣金；`calculateSettlement` 的 `affiliateCommissionCents` 只回報、不扣除，規則與改成平台代扣代付前要補的項目見 `docs/operations/affiliate-commission-settlement-runbook.md`）。以目前資料模型的單位與唯一鍵實作，不用文字公式取代 ledger 驗證。
 
 未知訂單或未驗證 webhook 不可產生權威付款與佣金；client price／vendor／affiliate／rate 不可覆寫 server records。結算鎖定後只追加 adjustment，不改舊 ledger 掩蓋修正。Chargeback／拒付也須核對原交易、佣金與結算調整，不能未經 provider 證據就當成普通退款或重複扣除。回歸涵蓋重複、部分退款、亂序、重複／亂序拒付、過期連結、無效 affiliate、self-referral 政策、provider retry、併發與跨租戶；click-through 不能宣稱收入。
 
