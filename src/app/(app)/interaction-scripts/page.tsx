@@ -141,7 +141,7 @@ export default async function InteractionScriptsPage({
             <div className="flex flex-wrap items-center gap-2">
               <form>
                 <input type="hidden" name="page" value="1" />
-                <select name="pageSize" defaultValue={String(pageSize)} className="h-9 rounded-md border border-border bg-white px-3 text-sm" aria-label="每頁筆數">
+                <select name="pageSize" defaultValue={String(pageSize)} className="h-9 rounded-md border border-border-control bg-white px-3 text-sm" aria-label="每頁筆數">
                   <option value="10">10 筆 / 頁</option>
                   <option value="20">20 筆 / 頁</option>
                   <option value="50">50 筆 / 頁</option>

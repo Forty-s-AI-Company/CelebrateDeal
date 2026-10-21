@@ -136,7 +136,7 @@ describe("/affiliates/commissions/[id]", () => {
     const html = renderToStaticMarkup(await AffiliatePayoutDetailPage({ params: Promise.resolve({ id: payout.id }) }));
 
     expect(html).toContain("synthetic void reason");
-    expect(html).toContain("目前狀態預期 $0");
+    expect(html).toContain("目前狀態預期 NT$0");
     expect(html).toContain("金額一致");
   });
 

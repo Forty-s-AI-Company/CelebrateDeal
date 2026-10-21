@@ -10,7 +10,7 @@ import { requireFinanceAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
-const inputClassName = "h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
+const inputClassName = "h-10 rounded-md border border-border-control bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100";
 
 const feedbackMessages: Record<string, string> = {
   imported: "已匯入經過遮罩處理的 provider 使用量證據，請覆核對帳結果。",

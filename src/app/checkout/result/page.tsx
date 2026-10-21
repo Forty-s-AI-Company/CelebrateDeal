@@ -12,6 +12,7 @@ import { paymentReturnOutcome, type PaymentReturnOutcome } from "@/lib/payment-r
 import { CsrfField } from "@/components/csrf-field";
 import { enterStudentPortalFromCheckoutAction } from "@/app/actions/student-portal-actions";
 import { LineLoginButton } from "@/components/line-login-button";
+import { formatCurrency } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -63,7 +64,7 @@ const outcomePresentation: Record<PaymentReturnOutcome, { title: string; message
 };
 
 function formatAmount(amountCents: number, currency: string) {
-  return new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(amountCents / 100);
+  return formatCurrency(amountCents, currency);
 }
 
 function orderStatusTone(status: string) {

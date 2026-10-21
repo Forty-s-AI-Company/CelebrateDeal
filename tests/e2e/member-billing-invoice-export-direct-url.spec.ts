@@ -335,7 +335,7 @@ test("active member is denied billing invoice export before tenant query, CSV, a
       (value): value is string =>
         typeof value === "string" &&
         value.length > 0 &&
-        value !== "$0",
+        value !== "NT$0",
     );
     const csvHeaders = [
       "帳單編號",

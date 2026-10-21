@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { automationCustomerKeyHash } from "@/lib/automation-workflow";
+import { formatTwd } from "@/lib/format";
 
 export type JourneyEventKind = "registration" | "watch" | "chat" | "prize" | "consultation" | "order" | "invoice" | "tag" | "voucher" | "automation" | "note";
 export type CustomerJourneyEvent = { id: string; kind: JourneyEventKind; occurredAt: Date; title: string; detail?: string };
@@ -39,8 +40,8 @@ export function aggregateCustomerJourney(bundle: CrmSourceBundle) {
     ...(bundle.chats ?? []).map((item) => ({ id: `chat:${item.id}`, kind: "chat" as const, occurredAt: item.createdAt, title: `在 ${item.liveTitle} 留言`, detail: item.body })),
     ...(bundle.prizes ?? []).map((item) => ({ id: `prize:${item.id}`, kind: "prize" as const, occurredAt: item.createdAt, title: `抽獎中獎：${item.title}`, detail: `${item.liveTitle} · ${item.claimed ? "已領取" : "待領取"}` })),
     ...(bundle.bookings ?? []).map((item) => ({ id: `consultation:${item.id}`, kind: "consultation" as const, occurredAt: item.createdAt, title: `預約 ${item.eventTitle}`, detail: `${item.status} · ${item.startTime.toISOString()}` })),
-    ...(bundle.orders ?? []).map((item) => ({ id: `order:${item.id}`, kind: "order" as const, occurredAt: item.occurredAt, title: `訂單 ${item.orderNumber}`, detail: `${item.productNames.join("、")} · NT$${Math.round(item.amountCents / 100).toLocaleString("zh-TW")}` })),
-    ...(bundle.invoices ?? []).map((item) => ({ id: `invoice:${item.id}`, kind: "invoice" as const, occurredAt: item.occurredAt, title: `發票 ${item.invoiceNumber ?? "處理中"}`, detail: `NT$${Math.round(item.amountCents / 100).toLocaleString("zh-TW")}` })),
+    ...(bundle.orders ?? []).map((item) => ({ id: `order:${item.id}`, kind: "order" as const, occurredAt: item.occurredAt, title: `訂單 ${item.orderNumber}`, detail: `${item.productNames.join("、")} · ${formatTwd(item.amountCents)}` })),
+    ...(bundle.invoices ?? []).map((item) => ({ id: `invoice:${item.id}`, kind: "invoice" as const, occurredAt: item.occurredAt, title: `發票 ${item.invoiceNumber ?? "處理中"}`, detail: `${formatTwd(item.amountCents)}` })),
     ...(bundle.tags ?? []).map((item) => ({ id: `tag:${item.id}`, kind: "tag" as const, occurredAt: item.createdAt, title: `加入標籤：${item.tag}` })),
     ...(bundle.vouchers ?? []).map((item) => ({ id: `voucher:${item.id}`, kind: "voucher" as const, occurredAt: item.createdAt, title: "取得專屬優惠券", detail: `${item.discountType === "percentage" ? `${item.discountValue}%` : `NT$${Math.round(item.discountValue / 100)}`} · ${item.redeemedAt ? "已兌換" : "未兌換"}` })),
     ...(bundle.automations ?? []).map((item) => ({ id: `automation:${item.id}`, kind: "automation" as const, occurredAt: item.createdAt, title: `自動化：${item.trigger}`, detail: item.status })),

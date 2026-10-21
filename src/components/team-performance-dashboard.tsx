@@ -19,24 +19,24 @@ export function TeamPerformanceDashboard({
       <Card className="mb-6">
         <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" method="get">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">團隊
-            <select className="h-10 rounded-md border border-border bg-white px-3 text-sm" name="teamId" defaultValue={selected.teamId}>
+            <select className="h-10 rounded-md border border-border-control bg-white px-3 text-sm" name="teamId" defaultValue={selected.teamId}>
               {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">開始日期
-            <input className="h-10 rounded-md border border-border bg-white px-3 text-sm" name="startDate" type="date" defaultValue={selected.startDate} />
+            <input className="h-10 rounded-md border border-border-control bg-white px-3 text-sm" name="startDate" type="date" defaultValue={selected.startDate} />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">結束日期
-            <input className="h-10 rounded-md border border-border bg-white px-3 text-sm" name="endDate" type="date" defaultValue={selected.endDate} />
+            <input className="h-10 rounded-md border border-border-control bg-white px-3 text-sm" name="endDate" type="date" defaultValue={selected.endDate} />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">模板
-            <select className="h-10 rounded-md border border-border bg-white px-3 text-sm" name="templateId" defaultValue={selected.templateId ?? ""}>
+            <select className="h-10 rounded-md border border-border-control bg-white px-3 text-sm" name="templateId" defaultValue={selected.templateId ?? ""}>
               <option value="">全部模板</option>
               {report.templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
             </select>
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">夥伴
-            <select className="h-10 rounded-md border border-border bg-white px-3 text-sm" name="partnerMembershipId" defaultValue={selected.partnerMembershipId ?? ""}>
+            <select className="h-10 rounded-md border border-border-control bg-white px-3 text-sm" name="partnerMembershipId" defaultValue={selected.partnerMembershipId ?? ""}>
               <option value="">全部可見夥伴</option>
               {report.partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name}</option>)}
             </select>

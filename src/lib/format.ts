@@ -1,8 +1,25 @@
-export function formatCurrency(cents: number, currency = "TWD") {
+/**
+ * 台幣金額一律顯示為 `NT$1,234`（F-120）。zh-TW 的 Intl currency 格式只輸出「$」，
+ * 在台灣可能被誤認為美元，所以 TWD 不走 Intl currency。負數為 `-NT$1,234`。
+ * `fractionDigits: 2` 只供必須保留角分的撥款／分潤確認使用。
+ */
+export function formatTwd(cents: number, options: { fractionDigits?: 0 | 2 } = {}) {
+  const digits = options.fractionDigits ?? 0;
+  const amount = new Intl.NumberFormat("zh-TW", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(Math.abs(cents) / 100);
+  const negative = cents < 0 && Number(amount.replace(/,/g, "")) !== 0;
+  return `${negative ? "-" : ""}NT$${amount}`;
+}
+
+export function formatCurrency(cents: number, currency = "TWD", options: { fractionDigits?: 0 | 2 } = {}) {
+  if (currency === "TWD") return formatTwd(cents, options);
   return new Intl.NumberFormat("zh-TW", {
     style: "currency",
     currency,
-    maximumFractionDigits: currency === "TWD" ? 0 : 2,
+    // 未指定時交給 Intl 依幣別決定（JPY 不帶小數）。
+    ...(options.fractionDigits === undefined ? {} : { minimumFractionDigits: options.fractionDigits, maximumFractionDigits: options.fractionDigits }),
   }).format(cents / 100);
 }
 

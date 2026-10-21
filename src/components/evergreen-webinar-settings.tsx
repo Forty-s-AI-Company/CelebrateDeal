@@ -63,7 +63,7 @@ export function EvergreenWebinarSettings({
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[0, 1, 2, 3].map((index) => (
               <label key={index} className="grid gap-1 text-sm text-slate-700">場次 {index + 1}
-                <input className="h-11 rounded-md border border-border bg-white px-3 text-sm" name="evergreenDailyTimes" type="time" defaultValue={value.evergreenDailyTimes[index] ?? ""} />
+                <input className="h-11 rounded-md border border-border-control bg-white px-3 text-sm" name="evergreenDailyTimes" type="time" defaultValue={value.evergreenDailyTimes[index] ?? ""} />
               </label>
             ))}
           </div>

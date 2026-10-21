@@ -18,6 +18,7 @@ import { isPageVisible } from "@/lib/use-page-visibility";
 import { getOrCreateVisitorId } from "@/lib/visitor-id";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import type { LiveRuntimeState } from "@/lib/live-runtime-state";
+import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 const clientHeaders = {
   "Content-Type": "application/json",
@@ -907,6 +908,7 @@ function ExternalNavigationConfirmDialog({
 }) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  useDialogBehavior(Boolean(intent));
   useEffect(() => {
     if (!intent || typeof document === "undefined") return;
     cancelButtonRef.current?.focus();
@@ -936,6 +938,7 @@ function ExternalNavigationConfirmDialog({
   const title = intent.kind === "product" ? "前往外部商品頁？" : "開啟外部連結？";
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true"
+      onClick={(event) => { if (event.target === event.currentTarget && !isConfirming) onCancel(); }}
       aria-labelledby="external-navigation-title" aria-describedby="external-navigation-description">
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-950 shadow-2xl">
         <h2 id="external-navigation-title" className="text-lg font-black">{title}</h2>

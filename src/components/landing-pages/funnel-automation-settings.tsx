@@ -10,7 +10,7 @@ import {
 } from "@/app/actions/funnel-automation-actions";
 import type { FunnelAutomationRule } from "@/lib/funnel-automation-service";
 
-const control = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm disabled:opacity-50";
+const control = "min-h-10 rounded-lg border border-slate-500 bg-white px-3 text-sm disabled:opacity-50";
 
 /**
  * Page-local rules only support the safe MVP path: a verified form

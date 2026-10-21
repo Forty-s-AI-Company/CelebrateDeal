@@ -1,3 +1,5 @@
+import { formatCurrency } from "@/lib/format";
+
 /** 瀏覽器可用的優惠展示契約，不依賴簽章、金鑰或 Node.js 模組。 */
 export type PostPurchaseOffer = {
   kind: "upsell" | "downsell";
@@ -12,10 +14,5 @@ export type PostPurchaseOffer = {
 };
 
 export function formatPostPurchaseAmount(amountCents: number, currencyCode: string) {
-  return new Intl.NumberFormat("zh-TW", {
-    style: "currency",
-    currency: currencyCode,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amountCents / 100);
+  return formatCurrency(amountCents, currencyCode, { fractionDigits: 2 });
 }

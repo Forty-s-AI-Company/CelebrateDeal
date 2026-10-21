@@ -3,10 +3,12 @@
 import { useEffect, useRef } from "react";
 import { ArrowLeft, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 export function CheckoutOverlay({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useDialogBehavior(true);
 
   useEffect(() => {
     closeButtonRef.current?.focus();

@@ -63,16 +63,16 @@ export default async function SupportCasesPage({ searchParams }: {
       <Card className="mb-5">
         <form method="get" className="grid gap-3 lg:grid-cols-[1fr_200px_200px_auto] lg:items-end">
           <label className="grid gap-1 text-sm font-medium text-slate-700">案件／訂單編號
-            <input name="q" defaultValue={search} maxLength={160} className="min-h-11 rounded-md border border-slate-300 px-3" placeholder="SC-… 或訂單編號" />
+            <input name="q" defaultValue={search} maxLength={160} className="min-h-11 rounded-md border border-slate-500 px-3" placeholder="SC-… 或訂單編號" />
           </label>
           <label className="grid gap-1 text-sm font-medium text-slate-700">案件狀態
-            <select name="status" defaultValue={status ?? ""} className="min-h-11 rounded-md border border-slate-300 bg-white px-3">
+            <select name="status" defaultValue={status ?? ""} className="min-h-11 rounded-md border border-slate-500 bg-white px-3">
               <option value="">全部狀態</option>
               {SUPPORT_CASE_STATUSES.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-sm font-medium text-slate-700">優先等級
-            <select name="priority" defaultValue={priority ?? ""} className="min-h-11 rounded-md border border-slate-300 bg-white px-3">
+            <select name="priority" defaultValue={priority ?? ""} className="min-h-11 rounded-md border border-slate-500 bg-white px-3">
               <option value="">全部等級</option>
               {SUPPORT_CASE_PRIORITIES.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
             </select>

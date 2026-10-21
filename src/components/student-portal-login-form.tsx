@@ -23,7 +23,7 @@ export function StudentPortalLoginForm({
       <input type="hidden" name="vendorSlug" value={vendorSlug} /><input type="hidden" name="locale" value={locale} />
       <label className="grid gap-2 text-sm font-semibold text-slate-800">
         Email
-        <input name="email" type="email" inputMode="email" autoComplete="email" required maxLength={254} placeholder="you@example.com" className="h-12 rounded-xl border border-slate-300 bg-white px-4 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-current focus:ring-4 focus:ring-blue-100" />
+        <input name="email" type="email" inputMode="email" autoComplete="email" required maxLength={254} placeholder="you@example.com" className="h-12 rounded-xl border border-slate-500 bg-white px-4 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-current focus:ring-4 focus:ring-blue-100" />
       </label>
       <button type="submit" disabled={pending} className="inline-flex min-h-12 w-full items-center justify-center rounded-xl px-5 text-base font-bold text-white transition hover:brightness-95 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60" style={{
       backgroundColor: accentColor

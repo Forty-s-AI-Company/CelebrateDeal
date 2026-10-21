@@ -288,7 +288,7 @@ export default async function AdminBillingDashboardPage() {
                         <FormSubmitButton pendingChildren="重送中…" pendingMessage="正在重新處理 webhook，請勿重複送出。" className="h-9 rounded-md border border-border px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Retry</FormSubmitButton>
                       </form>
                     ) : (
-                      <span className="text-xs text-slate-400">-</span>
+                      <span className="text-xs text-slate-500">-</span>
                     )}
                   </td>
                 </tr>

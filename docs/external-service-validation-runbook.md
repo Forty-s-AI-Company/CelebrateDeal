@@ -319,3 +319,12 @@ node scripts/validate-release-evidence-bundle.mjs docs/ai-team/evidence/release-
 ```
 
 CLI 只讀安全 evidence roots，拒絕 traversal、敏感路徑、symlink escape、synthetic reference、raw payload、Production approval 與 source lineage drift。`GO` 搭配任何非 `PASS` gate 會 fail closed；`CANDIDATE` 只表示 bundle schema 與聚合規則通過，仍需 current completion audit 對照實際 receipt，不能直接改寫 `SANDBOX_READY` 或 `PRODUCTION_READY`。
+
+## 14. 排程觀察步驟（`/api/readiness`，F-142）
+
+`/api/health` 只證明資料庫可連線。排程部署或 Cron 變更後，另外以 `CRON_SECRET` Bearer 呼叫 `GET /api/readiness`（不要把 Secret 寫進 shell history 或回報），確認：
+
+- `jobs.email`、`jobs.line`、`jobs.webhookRetry`、`jobs.learnerNotifications`、`jobs.trackingOutbox` 皆有 `lastSuccessAt`（尚無流量的環境可為 `null`，需以合成資料觸發一次再確認）。
+- `due.count` 不持續上升，`due.oldestDueAt`（已到期、worker 現在就會處理的列）距現在不超過該 job 排程間隔的數倍；`inFlight.staleCount`（超過 lease 仍卡在處理中）必須為 0，否則視為 job 停擺，先查對應 `/api/jobs/*` 或 `/api/cron/*` 的最近執行紀錄。結果快取 60 秒，部署後請等一分鐘再判讀。
+
+回應只含時間戳與筆數，可安全貼入 evidence。

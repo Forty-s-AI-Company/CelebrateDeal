@@ -51,11 +51,11 @@ function PayUniDiagnosticsCard({ diagnostics }: { diagnostics: unknown }) {
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-blue-100 bg-white p-3">
-              <p className="text-xs font-semibold uppercase text-slate-400">EncryptInfo</p>
+              <p className="text-xs font-semibold uppercase text-slate-500">EncryptInfo</p>
               <p className="mt-1 font-mono text-sm text-slate-800">{data.payuni.encryptInfo?.present ? `present · ${data.payuni.encryptInfo.length} chars` : "missing"}</p>
             </div>
             <div className="rounded-lg border border-blue-100 bg-white p-3">
-              <p className="text-xs font-semibold uppercase text-slate-400">HashInfo</p>
+              <p className="text-xs font-semibold uppercase text-slate-500">HashInfo</p>
               <p className="mt-1 font-mono text-sm text-slate-800">{data.payuni.hashInfo?.present ? `present · ${data.payuni.hashInfo.length} chars` : "missing"}</p>
             </div>
           </div>

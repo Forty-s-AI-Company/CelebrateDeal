@@ -132,7 +132,7 @@ export default async function TeamSettingsPage({
                             <CsrfField />
                             <input type="hidden" name="teamId" value={team.id} />
                             <input type="hidden" name="downlineMembershipId" value={membership.id} />
-                            <select name="uplineMembershipId" defaultValue={currentUpline} className="h-10 min-w-0 flex-1 rounded-md border border-border bg-white px-2 text-sm">
+                            <select name="uplineMembershipId" defaultValue={currentUpline} className="h-10 min-w-0 flex-1 rounded-md border border-border-control bg-white px-2 text-sm">
                               <option value="">（無直接上線）</option>
                               {team.memberships.filter((candidate) => candidate.id !== membership.id).map((candidate) => (
                                 <option key={candidate.id} value={candidate.id}>{candidate.vendorMember.user.name || candidate.vendorMember.user.email}</option>
@@ -151,7 +151,7 @@ export default async function TeamSettingsPage({
                                 <input type="hidden" name="membershipId" value={membership.id} />
                                 <label className="text-xs font-medium text-slate-600">
                                   轉移到
-                                  <select name="targetTeamId" defaultValue="" className="mt-1 h-9 w-full rounded-md border border-border bg-white px-2 text-xs" required>
+                                  <select name="targetTeamId" defaultValue="" className="mt-1 h-9 w-full rounded-md border border-border-control bg-white px-2 text-xs" required>
                                     <option value="">請選擇目標團隊</option>
                                     {teams.filter((candidate) => candidate.id !== team.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
                                   </select>

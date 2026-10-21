@@ -14,6 +14,7 @@ import {
   checkoutIdempotencyStorageKey,
   type CheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
+import { formatCurrency } from "@/lib/format";
 
 type Recovery = typeof CommerceCheckoutRecoveryResponseSchema._output;
 type Summary = { vendorName?: string; description?: string | null; imageUrl?: string | null };
@@ -25,7 +26,7 @@ const fulfillmentLabels = {
 };
 
 function formatPrice(priceCents: number, currency: string) {
-  return new Intl.NumberFormat("zh-TW", { style: "currency", currency }).format(priceCents / 100);
+  return formatCurrency(priceCents, currency);
 }
 type State =
   | { kind: "loading" | "unavailable" | "finished" | "error" }

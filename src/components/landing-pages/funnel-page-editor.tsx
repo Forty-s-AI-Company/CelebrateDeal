@@ -91,7 +91,7 @@ function PaletteButton({ item, disabled, onAdd }: { item: (typeof palette)[numbe
   const definition = getFunnelNodeDefinition(item.type);
   const capability = definition.capability;
   const unavailable = capability.status !== "available" && definition.category !== "payment";
-  return <button draggable={!disabled && !unavailable} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-celebratedeal-funnel-element", item.type); }} disabled={disabled || unavailable} title={unavailable ? capability.reason : undefined} className="min-h-16 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" onClick={() => onAdd(item.type)}>{item.label}{unavailable ? <span className="mt-1 block text-[10px] font-medium text-amber-700">{capabilityBadge(capability.status)}</span> : null}</button>;
+  return <button draggable={!disabled && !unavailable} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-celebratedeal-funnel-element", item.type); }} disabled={disabled || unavailable} title={unavailable ? capability.reason : undefined} className="min-h-16 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" onClick={() => onAdd(item.type)}>{item.label}{unavailable ? <span className="mt-1 block text-[10px] font-medium text-amber-700">{capabilityBadge(capability.status)}</span> : null}</button>;
 }
 function BlockCapability({ limited }: { limited: boolean }) { return limited ? <span className="mt-1 block text-[10px] font-semibold text-amber-700">付款需綁定商品；部分功能有限制</span> : null; }
 /** Parent echoes acknowledge local edits; a different document starts a fresh
@@ -216,7 +216,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     if (result.ok) commit({ type: "update_flow", flow: result.flow });
   }
 
-  const control = "min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
+  const control = "min-h-9 rounded-lg border border-slate-500 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
   const visiblePalette = palette.filter((item) => `${item.label} ${item.type}`.toLocaleLowerCase("zh-TW").includes(elementQuery.trim().toLocaleLowerCase("zh-TW")));
   return <section className={`grid min-h-[calc(100dvh-10rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${sidebarCollapsed ? "grid-cols-[3.5rem_minmax(0,1fr)]" : "grid-cols-[18rem_minmax(0,1fr)]"}`}>
     <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
