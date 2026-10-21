@@ -143,6 +143,20 @@ describe("account rate limit (PostgreSQL)", () => {
     expect(await accountLockRemainingSeconds("mfa_verification_lock", user)).toBe(0);
   });
 
+  it("never reports more than the lock duration, even when read in the same instant", async () => {
+    // Within one transaction now() is constant, so any rounding of the stored
+    // start up to timestamp(3) would surface as 3601 seconds. Repeat to make a
+    // regression all but certain to fail.
+    const user = track("mfa_verification_lock", subject("lock-instant"));
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const remaining = await getDb().$transaction(async (tx) => {
+        await lockAccount("mfa_verification_lock", user, tx);
+        return accountLockRemainingSeconds("mfa_verification_lock", user, tx);
+      });
+      expect(remaining).toBe(ACCOUNT_LOCKS.mfa_verification_lock.durationMs / 1_000);
+    }
+  });
+
   it("fails closed with 503 when the counter cannot be written", async () => {
     const broken = {
       $queryRaw: () => Promise.reject(new Error("synthetic database outage")),
