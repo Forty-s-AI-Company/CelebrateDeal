@@ -28,6 +28,7 @@ import {
   PAYUNI_PRODUCTION_UPP_URL,
   type PayUniStagingRetryPermit,
 } from "@/lib/payuni-staging-plan-test";
+import { requireFeature } from "@/lib/feature-gates";
 
 const PLAN_CHANGE_MAX_ATTEMPTS = 3;
 const DEFAULT_BILLING_PAYMENT_MODE = "platform";
@@ -266,6 +267,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
   await assertServerActionSecurity(formData);
   const finance = await requireVendorOwnerFinance("/billing/plans");
   const { vendor, member } = finance;
+  requireFeature(vendor, "billing");
   // Selecting a paid plan starts a charge (F-027 step-up).
   requireRecentMfa(wp4PreviewStepUpActor(finance, vendor.id), { nextPath: "/billing/plans" });
   const userId = wp4FinanceUserId(finance);

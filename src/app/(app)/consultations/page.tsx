@@ -7,6 +7,7 @@ import { requireVendorManagerContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getSalesProjectScope } from "@/lib/sales-project-scope";
 import { statusLabel } from "@/lib/status-labels";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 type PageSearchParams = { updated?: string; error?: string };
 
@@ -22,6 +23,7 @@ function statusTone(status: string) {
 
 export default async function ConsultationsPage({ searchParams }: { searchParams: Promise<PageSearchParams> }) {
   const [{ auth, vendor }, params] = await Promise.all([requireVendorManagerContext(), searchParams]);
+  requireFeatureOrNotFound(vendor, "consultation_booking");
   const scope = await getSalesProjectScope(auth.user.id, vendor.id);
   const db = database();
   const [events, bookings] = await Promise.all([

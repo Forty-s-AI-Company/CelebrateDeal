@@ -31,6 +31,7 @@ import OnboardingPage from "./page";
 import { sellableLiveReadinessQuery } from "@/lib/sellable-live";
 
 const vendor = {
+  betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"],
   id: "vendor-onboarding",
   supportEmail: "support@example.test",
   tracking: { googleTagManagerId: "GTM-SYNTHETIC", facebookPixelId: null, tiktokPixelId: null },

@@ -17,6 +17,7 @@ import {
 } from "@/lib/payment-providers/types";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
 import { withPaymentOrderNumberRetry } from "@/lib/payment-order-number";
+import { requireFeature } from "@/lib/feature-gates";
 
 const INVOICE_PAYMENT_PURPOSE = "invoice_payment";
 const INVOICE_PAYMENT_MAX_ATTEMPTS = 3;
@@ -85,6 +86,7 @@ async function failInvoicePaymentCheckout(transactionId: string) {
 export async function payInvoiceAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { vendor, member } = await requireVendorFinance(INVOICE_PAYMENT_PATH);
+  requireFeature(vendor, "billing");
   const invoiceId = formText(formData, "invoiceId");
   if (!invoiceId || invoiceId.length > 64) redirectError("invalid_invoice");
 

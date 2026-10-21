@@ -15,7 +15,7 @@ const payload = { liveId: "live-1", layout: DEFAULT_PRESENTER_LAYOUT };
 function request(body?: unknown) { return new Request("https://app.example.test/api/live-presenter?liveId=live-1", body === undefined ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
 beforeEach(() => {
   vi.resetAllMocks();
-  m.auth.mockResolvedValue({ vendor: { id: "vendor-1" }, member: { status: "active", role: "owner" } });
+  m.auth.mockResolvedValue({ vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { status: "active", role: "owner" } });
   m.origin.mockReturnValue("https://media.example.test"); m.sameOrigin.mockReturnValue(null); m.limit.mockResolvedValue(null);
   m.live.mockResolvedValue(live); m.video.mockResolvedValue({ id: "new-browser-video" }); m.update.mockResolvedValue({ id: "live-1" });
   m.transaction.mockImplementation(async callback => callback({ video: { create: m.video }, live: { update: m.update } }));
@@ -31,13 +31,13 @@ describe("presenter layout persistence", () => {
     expect(await (await GET(request())).json()).toMatchObject({ layout });
   });
   it.each(["owner", "admin"])("allows active %s to save tenant-scoped layout", async role => {
-    m.auth.mockResolvedValue({ vendor: { id: "vendor-1" }, member: { status: "active", role } });
+    m.auth.mockResolvedValue({ vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { status: "active", role } });
     expect((await POST(request(payload))).status).toBe(200);
     expect(m.live).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "live-1", vendorId: "vendor-1" } }));
     expect(m.update).toHaveBeenCalledWith({ where: { vendorId_id: { vendorId: "vendor-1", id: "live-1" }, status: "scheduled", presenterLayout: { equals: Prisma.DbNull } }, data: { presenterLayout: DEFAULT_PRESENTER_LAYOUT } });
     expect(m.video).not.toHaveBeenCalled();
   });
-  it.each([null, { vendor: { id: "vendor-1" }, member: { status: "inactive", role: "owner" } }, { vendor: { id: "vendor-1" }, member: { status: "active", role: "viewer" } }])("denies layout reads and writes for non-managers", async auth => {
+  it.each([null, { vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { status: "inactive", role: "owner" } }, { vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" }, member: { status: "active", role: "viewer" } }])("denies layout reads and writes for non-managers", async auth => {
     m.auth.mockResolvedValue(auth); expect((await GET(request())).status).toBe(403); expect((await POST(request(payload))).status).toBe(403); expect(m.live).not.toHaveBeenCalled();
   });
   it("does not save an activity outside the current tenant", async () => {

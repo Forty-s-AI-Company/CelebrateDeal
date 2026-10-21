@@ -10,7 +10,7 @@ vi.mock("@/lib/auth", () => ({
     await guards.manager();
     return {
     auth: { user: { id: "synthetic-user" }, member: { id: "synthetic-member", role: "owner" } },
-    vendor: { id: runtime.vendorId, name: "Synthetic tenant" },
+    vendor: { id: runtime.vendorId, name: "Synthetic tenant", betaFeatureGrants: ["consultation_booking"] },
     };
   },
 }));

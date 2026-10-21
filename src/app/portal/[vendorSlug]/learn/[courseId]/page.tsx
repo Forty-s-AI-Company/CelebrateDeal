@@ -7,6 +7,7 @@ import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { getStudentCourse } from "@/lib/student-course-learning";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
+import { requireVendorFeatureOrNotFound } from "@/lib/feature-gates";
 export const dynamic = "force-dynamic";
 export default async function StudentCoursePage({
   params
@@ -25,6 +26,7 @@ export default async function StudentCoursePage({
   const {
     session
   } = await requireStudentPortalSession(vendorSlug);
+  await requireVendorFeatureOrNotFound(getDb(), session.vendorId, "courses");
   const course = await getStudentCourse(getDb(), session, courseId);
   if (!course) notFound();
   return <main className="min-h-screen bg-slate-100 px-4 py-6 text-slate-950 sm:px-6 sm:py-10"><div className="mx-auto max-w-7xl"><nav className="mb-5 flex flex-wrap justify-between gap-3"><a href={`/portal/${encodeURIComponent(vendorSlug)}`} className="inline-flex min-h-11 items-center text-sm font-bold text-blue-700 hover:underline">{t("\u2190 \u56DE\u5230\u5B78\u54E1\u4E2D\u5FC3")}</a><a href={`/portal/${encodeURIComponent(vendorSlug)}/learn/${encodeURIComponent(courseId)}/community`} className="inline-flex min-h-11 items-center text-sm font-bold text-blue-700 hover:underline">{t("\u5B78\u54E1\u8A0E\u8AD6")}</a></nav><CoursePlayer locale={locale} vendorSlug={vendorSlug} course={course.course} lessons={course.lessons} initialProgress={course.progress} csrfToken={await getCsrfToken()} /><LearnerNotificationSettings locale={locale} vendorSlug={vendorSlug} courseId={courseId} /></div></main>;

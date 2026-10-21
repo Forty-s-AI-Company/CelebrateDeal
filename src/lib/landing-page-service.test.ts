@@ -28,7 +28,7 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(), assertServer
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.manager }));
 vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.editableScope, getSalesProjectScope: mocks.salesScope }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.transaction }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.transaction, vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) } }) }));
 vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mocks.listCommerce, publicFunnelCommerceViews: mocks.publicCommerce, validateFunnelCommerceBindings: mocks.validateCommerce }));
 
 import {
@@ -50,7 +50,7 @@ const page = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.manager.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1" } });
+  mocks.manager.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" } });
   mocks.editableScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季專案", isAggregate: false, isLegacyWorkspace: false });
   mocks.salesScope.mockResolvedValue({ projectId: "project-1", projectName: "秋季專案", isAggregate: false, isLegacyWorkspace: false });
   mocks.formFindMany.mockResolvedValue([]); mocks.liveFindFirst.mockResolvedValue(null); database.live.findMany.mockResolvedValue([]);

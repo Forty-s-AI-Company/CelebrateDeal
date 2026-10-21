@@ -25,6 +25,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({
   consultationEvent: { create: runtime.eventCreate, updateMany: runtime.eventUpdateMany, findFirst: runtime.eventFindFirst, findMany: runtime.eventFindMany },
   consultationBooking: { findMany: runtime.bookingFindMany, updateMany: runtime.bookingUpdateMany },
   $transaction: runtime.transaction,
+  vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) },
 }) }));
 
 import {
@@ -60,7 +61,7 @@ function eventForm() {
 beforeEach(() => {
   vi.clearAllMocks();
   runtime.security.mockResolvedValue(undefined);
-  runtime.manager.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { id: "vendor-1" } });
+  runtime.manager.mockResolvedValue({ auth: { user: { id: "user-1" } }, vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" } });
   runtime.editableScope.mockResolvedValue({ projectId: null, projectName: null, isAggregate: false, isLegacyWorkspace: true });
   runtime.eventCreate.mockResolvedValue(event);
   runtime.eventUpdateMany.mockResolvedValue({ count: 1 });

@@ -3,7 +3,7 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import {CommunityConflict} from "@/lib/course-community";
 const mocks=vi.hoisted(()=>({session:vi.fn(),feed:vi.fn(),replies:vi.fn(),mutate:vi.fn(),csrf:vi.fn(),token:vi.fn()}));
 vi.mock("@/lib/student-portal-auth",()=>({requireStudentPortalSession:mocks.session}));
-vi.mock("@/lib/db",()=>({getDb:()=>({syntheticDatabase:true})}));
+vi.mock("@/lib/db",()=>({getDb:()=>({syntheticDatabase:true,vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) }})}));
 vi.mock("@/lib/csrf",()=>({verifyCsrfToken:mocks.csrf,getCsrfToken:mocks.token}));
 vi.mock("@/lib/course-community",async importOriginal=>({...await importOriginal<typeof import("@/lib/course-community")>(),getCourseCommunity:mocks.feed,getCourseCommunityReplies:mocks.replies,mutateCourseCommunity:mocks.mutate}));
 import {GET,POST} from "./route";

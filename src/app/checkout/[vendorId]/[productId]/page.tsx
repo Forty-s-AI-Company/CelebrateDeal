@@ -6,6 +6,7 @@ import type { CommerceCheckoutFulfillmentType } from "@/lib/commerce-checkout";
 import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
+import { isProductPurchasable } from "@/lib/feature-gates";
 
 function checkoutIntent(query?: { resume?: string; flashSale?: string; postPurchaseToken?: string }) {
   const flashSaleRunId = query?.flashSale;
@@ -52,11 +53,14 @@ export default async function CommerceCheckoutPage({
       checkoutUrl: true,
       customCheckoutFields: true,
       fulfillmentType: true,
+      commerceDomain: true,
       deliveryConfig: { select: { status: true, fulfillmentType: true } },
-      vendor: { select: { name: true } },
+      vendor: { select: { name: true, enabledFeatureModules: true, betaFeatureGrants: true } },
     },
   });
   if (!product) notFound();
+  // A course cannot be sold while the courses module is closed (F-001).
+  if (!isProductPurchasable(product.vendor, product)) notFound();
   if (postPurchaseToken && product.checkoutUrl) notFound();
   if (flashSaleRunId && product.checkoutUrl) notFound();
   if (product.checkoutUrl && product.isActive && !resume) {

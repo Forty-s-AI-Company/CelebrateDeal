@@ -8,10 +8,12 @@ import { requireVendorManager } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { CurriculumConflict, saveCourseLesson } from "@/lib/course-curriculum";
 import { getDb } from "@/lib/db";
+import { requireFeature } from "@/lib/feature-gates";
 
 export async function saveCourseLessonAction(form: FormData) {
   await assertServerActionSecurity(form);
   const vendor = await requireVendorManager();
+  requireFeature(vendor, "courses");
   const productId = form.get("productId");
   if (typeof productId !== "string" || !productId || productId.length > 160) throw new Error("Invalid course.");
   const path = `/products/${encodeURIComponent(productId)}/lessons`;

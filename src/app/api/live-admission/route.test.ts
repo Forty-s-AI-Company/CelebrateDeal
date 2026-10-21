@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const tx = {
   live: { findFirst: vi.fn(), updateMany: vi.fn() },
   paymentMethodReference: { findFirst: vi.fn(), findMany: vi.fn() },
+  vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) },
   vendorUsageLimit: { findUnique: vi.fn() },
   liveViewerSession: { findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
 };

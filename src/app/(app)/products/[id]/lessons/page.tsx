@@ -5,11 +5,13 @@ import { CsrfField } from "@/components/csrf-field";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 export default async function CourseLessonsPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string }>;
 }) {
   const vendor = await requireVendorManager();
+  requireFeatureOrNotFound(vendor, "courses");
   const { id } = await params;
   const query = await searchParams;
   const product = await getDb().product.findFirst({ where: { id, vendorId: vendor.id, fulfillmentType: "course" }, include: { courseLessons: { orderBy: { position: "asc" } } } });

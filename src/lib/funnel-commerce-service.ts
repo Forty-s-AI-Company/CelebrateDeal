@@ -14,6 +14,7 @@ import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 import { parseFunnelOperations } from "@/lib/funnel-operations";
 import { isFunnelDeadlineExpired, resolveFunnelDeadline } from "@/lib/funnel-runtime";
 import { safeParseCustomCheckoutFields, type CustomCheckoutFields } from "@/lib/commerce-custom-checkout";
+import { purchasableProductWhere } from "@/lib/feature-gates";
 
 type CommerceScope = { vendorId: string; projectId: string };
 
@@ -112,11 +113,14 @@ function bindingsIn(content: unknown) {
 }
 
 async function catalogProducts(database: ReturnType<typeof getDb>, scope: CommerceScope, ids?: string[]) {
+  // Course products are not offered while the courses module is closed (F-001).
+  const purchasable = await purchasableProductWhere(database, scope.vendorId);
   return database.product.findMany({
     where: {
       vendorId: scope.vendorId,
       ...(ids ? { id: { in: ids } } : {}),
       salesProjectLinks: { some: { vendorId: scope.vendorId, projectId: scope.projectId } },
+      ...purchasable,
     },
     select: productSelect,
     orderBy: [{ name: "asc" }, { id: "asc" }],

@@ -6,6 +6,7 @@ import { requireVendorManager } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { merchantOnboardingProgress } from "@/lib/merchant-onboarding";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
+import { isCardBindingRequired } from "@/lib/feature-gates";
 import { liveReadyVideoWhere } from "@/lib/live-video-readiness";
 import {
   hasUsableMessageTemplateContent,
@@ -31,7 +32,8 @@ export default async function OnboardingPage() {
     readyVideoCount,
     sellableLiveCandidates,
   ] = await Promise.all([
-    db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendor.id, now) }),
+    // While funnel_binding is closed no card can be bound, so the step counts as satisfied (F-002).
+    isCardBindingRequired(vendor) ? db.paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendor.id, now) }) : Promise.resolve(1),
     db.product.count({
       where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true },
     }),

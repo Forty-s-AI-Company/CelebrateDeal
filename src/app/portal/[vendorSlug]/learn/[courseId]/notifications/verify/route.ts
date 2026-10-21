@@ -4,6 +4,7 @@ import { verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
 import { consumeLearnerContactVerification, LearnerContactVerificationInput } from "@/lib/learner-notification-verification";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
@@ -20,6 +21,7 @@ export async function POST(request: Request, { params }: Context) {
  const { vendorSlug, courseId } = await params;
  if (!courseIdentifier.test(courseId)) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
  const { session } = await requireStudentPortalSession(vendorSlug);
+ if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "courses")) return featureDisabledResponse();
  try {
   const result = await consumeLearnerContactVerification(getDb(), session, courseId, input.data);
   if (result.status !== "verified") return NextResponse.json({ status: result.status }, { status: result.status === "not_found" ? 404 : 409, headers });

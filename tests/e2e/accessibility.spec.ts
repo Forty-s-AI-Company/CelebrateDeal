@@ -101,6 +101,7 @@ async function enableOwnerMfa(page: Page) {
 test.beforeAll(async () => {
   const vendor = await db.vendor.create({
     data: {
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],
       name: "Accessibility Test Vendor",
       slug: fixture.slug,
       email: fixture.email,

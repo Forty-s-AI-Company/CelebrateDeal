@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   deliveryConfigCreate: vi.fn(),
   deliveryConfigUpdateMany: vi.fn(),
   transaction: vi.fn(),
+  betaFeatureGrants: { value: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] as string[] },
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
@@ -35,7 +36,7 @@ vi.mock("@/lib/db", () => ({
       vendorDeliveryUrlAllowlist: { upsert: mocks.deliveryAllowlistUpsert },
       productDeliveryConfig: { create: mocks.deliveryConfigCreate, updateMany: mocks.deliveryConfigUpdateMany },
     };
-    return { ...delegates, $transaction: (callback: (tx: typeof delegates) => unknown) => mocks.transaction(callback, delegates) };
+    return { ...delegates, vendor: { findUnique: async () => ({ betaFeatureGrants: mocks.betaFeatureGrants.value }) }, $transaction: (callback: (tx: typeof delegates) => unknown) => mocks.transaction(callback, delegates) };
   },
 }));
 
@@ -54,6 +55,7 @@ function validProduct(fields: Record<string, string> = {}) {
 }
 
 beforeEach(() => {
+  mocks.betaFeatureGrants.value = ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"];
   vi.clearAllMocks();
   mocks.projectFindFirst.mockResolvedValue(null);
   mocks.projectProductCreate.mockResolvedValue({ id: "link-1" });
@@ -224,6 +226,30 @@ describe("upsertProductAction", () => {
     const result = await upsertProductAction(initialProductActionState, validProduct({ fulfillmentType: "course", courseContentOwnerMembershipId: "missing-owner", coursePromoterShareBps: "2500" }));
     expect(result.error).toBe("invalid_course_owner");
     expect(mocks.productCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to create or list a course product while the courses module is closed (F-001)", async () => {
+    mocks.betaFeatureGrants.value = [];
+    const created = await upsertProductAction(initialProductActionState, validProduct({ fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" }));
+    expect(created.error).toBe("course_feature_disabled");
+
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2500, coursePolicyVersion: 3, revision: 7 });
+    const listed = await upsertProductAction(initialProductActionState, validProduct({ id: "product-existing", revision: "7", isActive: "on", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500", deliveryTitle: "課程入口", deliveryUrl: "https://learn.example.com/course", deliveryInstructions: "付款後開通。", deliveryHostConfirmed: "on" }));
+    expect(listed.error).toBe("course_feature_disabled");
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+    expect(mocks.productUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("still lets the merchant edit and unlist an existing course product while the module is closed (F-001)", async () => {
+    mocks.betaFeatureGrants.value = [];
+    mocks.productFindFirst.mockResolvedValue({ id: "product-existing", currency: "TWD", commerceDomain: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: 2500, coursePolicyVersion: 3, revision: 7 });
+    const data = validProduct({ id: "product-existing", revision: "7", fulfillmentType: "course", courseContentOwnerMembershipId: "membership-owner", coursePromoterShareBps: "2500" });
+
+    await expect(upsertProductAction(initialProductActionState, data)).rejects.toThrow("redirect:/products?updated=saved");
+    expect(mocks.productUpdateMany).toHaveBeenCalledWith({
+      where: { id: "product-existing", vendorId: "vendor-1", revision: 7 },
+      data: expect.objectContaining({ isActive: false, commerceDomain: "course" }),
+    });
   });
 
   it("uses optimistic concurrency and increments policy version on an edit", async () => {

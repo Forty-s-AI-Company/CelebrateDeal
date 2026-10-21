@@ -1263,7 +1263,9 @@ describe("payment webhook processing", () => {
       where: { vendorId: vendor.id, affiliateCommissionId: commission.id },
       _sum: { amountCents: true },
     })).toEqual({ _sum: { amountCents: 6400 } });
-    expect(settlement.payoutableAmountCents).toBe(73600);
+    // F-044 / D-31 A: the commission is reported, never withheld from the merchant payout.
+    expect(settlement.affiliateCommissionCents).toBe(6400);
+    expect(settlement.payoutableAmountCents).toBe(80000);
   });
 
   it("reduces an unpaid locked affiliate payout when a later partial refund lowers the ledger balance", async () => {

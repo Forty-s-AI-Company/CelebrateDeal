@@ -44,7 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireVendorFinance.mockResolvedValue({
-    vendor: { id: "vendor-current", name: "測試商家" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current", name: "測試商家" },
     member: { id: "member-current", role: "owner" },
     user: { id: "user-current", mfaFactor: { id: "factor-current" } },
     session: { mfaVerifiedAt: new Date() },
@@ -90,7 +90,7 @@ describe("payment method step-up (F-027)", () => {
     ["revokePaymentMethodReferenceAction", () => revokePaymentMethodReferenceAction(form({ referenceId: "reference-1" }))],
   ])("%s sends a finance member without a factor to MFA setup before any provider or DB work", async (_name, run) => {
     mocks.requireVendorFinance.mockResolvedValue({
-      vendor: { id: "vendor-current", name: "測試商家" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current", name: "測試商家" },
       member: { id: "member-current", role: "owner" },
       user: { id: "user-current", mfaFactor: null },
       session: { mfaVerifiedAt: null },
@@ -104,7 +104,7 @@ describe("payment method step-up (F-027)", () => {
 
   it("asks for re-verification when the session was verified more than 15 minutes ago", async () => {
     mocks.requireVendorFinance.mockResolvedValue({
-      vendor: { id: "vendor-current", name: "測試商家" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current", name: "測試商家" },
       member: { id: "member-current", role: "owner" },
       user: { id: "user-current", mfaFactor: { id: "factor-current" } },
       session: { mfaVerifiedAt: new Date(Date.now() - 15 * 60_000 - 1_000) },
@@ -179,7 +179,7 @@ describe("startPaymentMethodSetupAction", () => {
     expect(setup).toHaveBeenCalledWith(expect.objectContaining({
       intentId: "intent-1",
       setupNonce: "synthetic-nonce",
-      vendor: { id: "vendor-current", name: "測試商家" },
+      vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current", name: "測試商家" },
       scopeType: "VENDOR",
       appUrl: "http://localhost:31023",
       returnPath: "/billing/payment-methods",

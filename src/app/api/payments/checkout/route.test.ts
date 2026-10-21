@@ -677,9 +677,40 @@ describe("successful checkout response", () => {
     expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses to sell a course product while the vendor's courses module is closed (F-001)", async () => {
+    db.product.findFirst.mockResolvedValueOnce({
+      ...(await db.product.findFirst()),
+      fulfillmentType: "course",
+      commerceDomain: "course",
+      deliveryConfig: { id: "delivery-config-1", status: "active", fulfillmentType: "course" },
+      vendor: { id: "vendor-1", betaFeatureGrants: [] },
+    });
+    const response = await POST(checkoutRequest(undefined, { shipping: null }));
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ code: "FEATURE_DISABLED" });
+    expect(db.paymentTransaction.create).not.toHaveBeenCalled();
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a course order bump while the vendor's courses module is closed (F-001)", async () => {
+    const main = await db.product.findFirst();
+    db.product.findFirst.mockReset();
+    db.product.findFirst
+      .mockResolvedValueOnce({ ...main, vendor: { id: "vendor-1", betaFeatureGrants: [] } })
+      .mockResolvedValueOnce({
+        ...main, id: "bump-course", slug: "bump-course", priceCents: 500, fulfillmentType: "course", commerceDomain: "course",
+        deliveryConfig: { id: "delivery-config-2", status: "active", fulfillmentType: "course" },
+      });
+    const response = await POST(checkoutRequest(undefined, { orderBump: { productId: "bump-course" } }));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "FEATURE_DISABLED" });
+    expect(db.paymentTransaction.create).not.toHaveBeenCalled();
+  });
+
   it("locks a course policy snapshot into trusted checkout metadata", async () => {
     db.product.findFirst.mockResolvedValueOnce({
       ...(await db.product.findFirst()),
+      vendor: { id: "vendor-1", betaFeatureGrants: ["courses"] },
       fulfillmentType: "course",
       commerceDomain: "course",
       courseContentOwnerMembershipId: "membership-f",

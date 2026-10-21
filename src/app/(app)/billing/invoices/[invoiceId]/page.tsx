@@ -13,6 +13,7 @@ import { invoiceStatusLabel, invoiceStatusTone } from "@/lib/invoice-presentatio
 import { allowedPaymentUrl, checkoutSessionFromMetadata, metadataObject } from "@/lib/payment-checkout-presentation";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
 import { PrintInvoiceButton } from "./print-invoice-button";
+import { requireFeatureOrNotFound } from "@/lib/feature-gates";
 
 type InvoiceDetailPageProps = {
   params: Promise<{ invoiceId: string }>;
@@ -75,6 +76,7 @@ const paymentErrors: Record<string, string> = {
 
 export default async function InvoiceDetailPage({ params, searchParams }: InvoiceDetailPageProps) {
   const { vendor } = await requireVendorFinance("/billing/invoices");
+  requireFeatureOrNotFound(vendor, "billing");
   const { invoiceId } = await params;
   if (!invoiceId || invoiceId.length > 64) notFound();
 

@@ -128,6 +128,8 @@ async function main() {
       ctaColor: "#f97316",
       timezone: "Asia/Taipei",
       supportEmail: "support@celebratedeal.local",
+      // Local demo data opens every closed-beta module so all screens stay reachable.
+      betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], enabledFeatureModules: ["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced", "consultation_booking"],
       tracking: {
         create: {
           facebookPixelId: "1234567890",

@@ -3,7 +3,7 @@ const mocks = vi.hoisted(() => ({ boundary: vi.fn(), readJson: vi.fn(), csrf: vi
 vi.mock("@/lib/api-security", () => ({ requireSameOriginRequest: mocks.boundary, readJsonBody: mocks.readJson }));
 vi.mock("@/lib/csrf", () => ({ verifyCsrfToken: mocks.csrf }));
 vi.mock("@/lib/student-portal-auth", () => ({ requireStudentPortalSession: mocks.session }));
-vi.mock("@/lib/db", () => ({ getDb: () => mocks.db }));
+vi.mock("@/lib/db", () => ({ getDb: () => Object.assign(mocks.db, { vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) } }) }));
 vi.mock("@/lib/learner-notification-verification", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/learner-notification-verification")>(), consumeLearnerContactVerification: mocks.consume }));
 import { POST } from "./route";
 const identity = { vendorId: "vendor-1", customerKeyHash: "a".repeat(43) };

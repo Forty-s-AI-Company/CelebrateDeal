@@ -18,6 +18,7 @@ import {
 } from "@/lib/payment-method-setup";
 import { createPaymentMethodSetupIntent, PaymentMethodSetupIntentRejectedError } from "@/lib/payment-method-setup-intent";
 import { newPayUniLiveProbeOrderNumber, payUniLiveProbeAvailable, PAYUNI_LIVE_PROBE_CONSENT_TEXT, PAYUNI_LIVE_PROBE_CONSENT_VERSION } from "@/lib/payuni-live-probe";
+import { requireFeature } from "@/lib/feature-gates";
 
 const PAYMENT_METHODS_PATH = "/billing/payment-methods";
 
@@ -37,6 +38,7 @@ function redirectStatus(status: string): never {
 export async function startPaymentMethodSetupAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { user, session, vendor, member } = await requireVendorFinance(PAYMENT_METHODS_PATH);
+  requireFeature(vendor, "funnel_binding");
   // Binding a card authorizes future charges (F-027 step-up).
   requireRecentMfa({ user, session }, { nextPath: PAYMENT_METHODS_PATH });
   const request = parsePaymentMethodSetupRequest({
@@ -156,6 +158,7 @@ export async function startPaymentMethodSetupStateAction(
 export async function revokePaymentMethodReferenceAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { user, session, vendor, member } = await requireVendorFinance(PAYMENT_METHODS_PATH);
+  requireFeature(vendor, "funnel_binding");
   requireRecentMfa({ user, session }, { nextPath: PAYMENT_METHODS_PATH });
   const referenceId = formText(formData, "referenceId");
   if (!referenceId) redirectError("invalid_reference");

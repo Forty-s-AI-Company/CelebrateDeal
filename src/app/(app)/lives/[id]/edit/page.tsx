@@ -4,6 +4,7 @@ import { LiveInteractionStudio } from "@/components/live-interaction-studio";
 import { EvergreenWebinarSettings, type EvergreenWebinarSettingsValue } from "@/components/evergreen-webinar-settings";
 import { PageHeader } from "@/components/ui";
 import { requireVendorManagerContext } from "@/lib/auth";
+import { isFeatureEnabled } from "@/lib/feature-gates";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { LiveStudioDraftPayloadSchema } from "@/lib/live-studio-draft";
@@ -378,6 +379,7 @@ export default async function EditLivePage({
           .filter((run) => run.winnerResponseId && unclaimedWinnerIds.has(run.winnerResponseId))
           .map((run) => ({ id: run.id, title: run.title }))}
         hasScheduledInteractions={scheduledInteractionCount > 0}
+        danmakuEnabled={isFeatureEnabled(vendor, "danmaku")}
         initialQuestions={liveQuestions.map((question) => ({ ...question, createdAt: question.createdAt.toISOString() }))}
       />
       <LiveStepperForm

@@ -6,6 +6,7 @@ import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { getCourseCommunity } from "@/lib/course-community";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
+import { requireVendorFeatureOrNotFound } from "@/lib/feature-gates";
 export const dynamic = "force-dynamic";
 export default async function CourseCommunityPage({
   params
@@ -24,6 +25,7 @@ export default async function CourseCommunityPage({
   const {
     session
   } = await requireStudentPortalSession(vendorSlug);
+  await requireVendorFeatureOrNotFound(getDb(), session.vendorId, "courses");
   const feed = await getCourseCommunity(getDb(), session, courseId);
   if (!feed) notFound();
   const courseUrl = `/portal/${encodeURIComponent(vendorSlug)}/learn/${encodeURIComponent(courseId)}`;

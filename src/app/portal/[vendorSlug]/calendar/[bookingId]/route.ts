@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
+import { featureDisabledResponse, isVendorFeatureEnabled } from "@/lib/feature-gates";
 
 function icsText(value: string) {
   return value.replace(/[\r\n]+/gu, " ").replace(/([,;\\])/gu, "\\$1");
@@ -16,6 +17,7 @@ function safeMeetingUrl(value: string | null) {
 export async function GET(_request: Request, { params }: { params: Promise<{ vendorSlug: string; bookingId: string }> }) {
   const { vendorSlug, bookingId } = await params;
   const { session } = await requireStudentPortalSession(vendorSlug);
+  if (!await isVendorFeatureEnabled(getDb(), session.vendorId, "consultation_booking")) return featureDisabledResponse();
   const booking = await getDb().consultationBooking.findFirst({
     where: { id: bookingId, vendorId: session.vendorId, customerKeyHash: session.customerKeyHash },
     select: { id: true, startTime: true, endTime: true, meetingUrl: true, event: { select: { title: true, description: true } } },

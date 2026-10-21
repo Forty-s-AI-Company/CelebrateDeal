@@ -30,6 +30,7 @@ import {
   type PublicLandingPageUnavailableReason,
 } from "@/lib/public-landing-page-eligibility";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
+import { isCardBindingRequiredForVendor, isVendorFeatureEnabled } from "@/lib/feature-gates";
 import { canPublishSalesProject } from "@/lib/sales-workspace";
 import { isFunnelDeadlineExpired } from "@/lib/funnel-runtime";
 import { publicFunnelRouteOutcome, representativeFunnelVisitorIds } from "@/lib/public-landing-page-status";
@@ -163,7 +164,7 @@ export class LandingPageScopeError extends Error {
 type FormRecord = { id: string; slug: string; name: string; vendorId?: string; projectId?: string | null; isActive?: boolean; fields?: unknown; submitLabel?: string; successMessage?: string };
 type LiveRecord = { id: string; slug: string; title: string; status: string; scheduledAt: Date; formId?: string | null; vendorId?: string; projectId?: string | null; replayEnabled?: boolean; replayAvailableUntil?: Date | null; videoId?: string | null; video?: (LiveVideoReadiness & { id: string; vendorId: string; title: string }) | null };
 
-type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent">;
+type LandingPageDb = Pick<PrismaClient, "landingPage" | "landingPageVersion" | "registrationForm" | "live" | "consultationEvent" | "vendor">;
 
 function db() {
   return getDb();
@@ -235,6 +236,8 @@ function consultationEventIdsInContent(content: LandingPageStoredContent): Set<s
 async function publicConsultationEvents(database: LandingPageDb, scope: { vendorId: string; projectId: string | null }, content: LandingPageStoredContent) {
   const referencedIds = [...consultationEventIdsInContent(content)];
   if (referencedIds.length === 0) return [];
+  // A closed consultation_booking module publishes no bookable events (F-001).
+  if (!await isVendorFeatureEnabled(database, scope.vendorId, "consultation_booking")) return [];
   const events = await database.consultationEvent.findMany({
     where: {
       id: { in: referencedIds },
@@ -764,7 +767,8 @@ export async function getLandingPagePublicationStatus(pageId: string): Promise<L
       db().registrationForm.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true } }),
       db().live.count({ where: { vendorId: scope.vendorId, projectId: scope.projectId } }),
       db().consultationEvent.findMany({ where: { vendorId: scope.vendorId, projectId: scope.projectId, isActive: true }, select: { weeklySchedule: true } }),
-      db().paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(scope.vendorId, now) }),
+      // While funnel_binding is closed no card can be bound, so none is required (F-002).
+      (await isCardBindingRequiredForVendor(db(), scope.vendorId)) ? db().paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(scope.vendorId, now) }) : Promise.resolve(1),
     ]);
     const hasAvailability = hasBookableAvailability(consultations);
     const missing: LandingPagePublicationStatus["missing"] = [];

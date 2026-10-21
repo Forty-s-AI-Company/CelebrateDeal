@@ -47,7 +47,7 @@ const invoice = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireVendorFinance.mockResolvedValue({
-    vendor: { id: "vendor-current", name: "賀成交測試商店" },
+    vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-current", name: "賀成交測試商店" },
   });
   mocks.invoiceFindFirst.mockResolvedValue(invoice);
   mocks.paymentTransactionFindFirst.mockResolvedValue(null);
