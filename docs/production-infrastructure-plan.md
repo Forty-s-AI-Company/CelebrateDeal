@@ -4,7 +4,7 @@
 
 ## 1. 目前專案判斷
 
-CelebrateDeal 目前是 Next.js App Router + Prisma + PostgreSQL baseline 的 Cloudflare-first 直播導購 SaaS MVP；舊 SQLite 僅保留為本機歷史 demo 資料。已完成的核心方向包含：
+CelebrateDeal 目前是 Next.js App Router + Prisma + PostgreSQL baseline 的直播導購 SaaS MVP（Vercel 部署、Supabase 資料庫、Cloudflare 負責影音與儲存）；SQLite 已移除。已完成的核心方向包含：
 
 - 自建前台直播導購頁：`/live/:slug`
 - Cloudflare Stream / Stream Live 欄位預留
@@ -29,11 +29,11 @@ CelebrateDeal 目前是 Next.js App Router + Prisma + PostgreSQL baseline 的 Cl
 | 類別 | 正式 MVP 建議 | 理由 | 替代方案 |
 |---|---|---|---|
 | Domain | Spaceship 買網域，Cloudflare 管 DNS | Spaceship 可作為便宜 registrar；Cloudflare DNS / WAF / Stream 整合更順 | Cloudflare Registrar |
-| DNS / CDN / WAF | Cloudflare | 本產品已 Cloudflare-first，後續 Stream、Turnstile、WAF、DNS 都可集中管理 | Vercel DNS 僅作簡化管理 |
+| DNS / CDN / WAF | Cloudflare（規劃；正式網域須經橘雲代理為上線前置條件 O-7，尚待驗證） | Stream 與 R2 已在使用；Turnstile、WAF、Workers 目前程式中沒有使用，屬後續規劃 | Vercel DNS 僅作簡化管理 |
 | Hosting | Vercel Pro | 專案是 Next.js 16 App Router，Vercel 部署摩擦最低 | Cloudflare Pages / Workers、Fly.io、Render |
 | Database | Supabase Pro Postgres | 現有 Prisma schema 可從 SQLite 遷移到 Postgres；Supabase 有備份、Auth、Storage 可逐步使用 | Neon |
 | Object Storage | Supabase Storage 初期；大量檔案改 Cloudflare R2 | MVP 先少一個服務；之後大量圖片、匯出檔、報表檔改 R2 | Cloudflare R2 |
-| Video Infrastructure | Cloudflare Stream / Stream Live | 目前資料模型已 Cloudflare-first；避免 YouTube 依賴 | Mux，但成本與架構會不同 |
+| Video Infrastructure | Cloudflare Stream / Stream Live | 資料模型已使用 Cloudflare Stream 欄位；避免 YouTube 依賴 | Mux，但成本與架構會不同 |
 | Payment Provider | PayUni 先接，保留 ECPay / NewebPay adapter | 台灣市場優先，支援在地付款與月結對帳需求 | ECPay、NewebPay、Stripe、TapPay |
 | Email Provider | Resend | Next.js / API 整合簡單，適合交易通知與系統信 | Mailgun |
 | Error Monitoring | Sentry | 前端、API、Server Action、Webhook 錯誤追蹤成熟 | Better Stack / Logtail |

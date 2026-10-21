@@ -80,6 +80,8 @@ export const SaveLiveStudioDraftRequestSchema = z.object({
   draftId: optionalReference,
   liveId: optionalReference,
   revision: z.number().int().positive().nullable().default(null),
+  /** B07-20: 使用者在衝突後明確選擇「以我的覆蓋」；只略過 revision 比對，其餘條件不變。 */
+  overwrite: z.boolean().default(false),
   payload: LiveStudioDraftPayloadSchema,
 }).strict();
 

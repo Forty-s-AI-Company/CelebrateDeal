@@ -56,9 +56,9 @@ function LiveDraftResumeNotice({ drafts, timeZone }: { drafts: ResumableLiveDraf
   );
 }
 
-export default async function NewLivePage({ searchParams }: { searchParams: Promise<{ error?: string; draft?: string; projectId?: string }> }) {
+export default async function NewLivePage({ searchParams }: { searchParams: Promise<{ error?: string; field?: string; draft?: string; projectId?: string }> }) {
   const vendor = await requireVendorManager();
-  const { error, draft, projectId: requestedProjectId } = await searchParams;
+  const { error, field: invalidField, draft, projectId: requestedProjectId } = await searchParams;
   const requestedDraftId = typeof draft === "string" && /^[a-z0-9_-]{1,128}$/iu.test(draft) ? draft : "";
   const db = getDb();
   const draftLookupAt = new Date();
@@ -190,6 +190,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
         projectId={projectId}
         csrfToken={csrfToken}
         error={error}
+        invalidField={invalidField}
         initialDraft={initialDraft}
         timeZone={vendor.timezone}
       />
