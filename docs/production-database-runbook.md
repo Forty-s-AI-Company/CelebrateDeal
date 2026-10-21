@@ -1,6 +1,6 @@
 # CelebrateDeal Production Database Runbook
 
-最後更新：2026-07-09
+最後更新：2026-10-21
 
 ## 1. 本次資料庫正式化狀態
 
@@ -16,24 +16,18 @@ CelebrateDeal 已從本機 SQLite migration 流程切換成正式 PostgreSQL / S
 - `prisma/seed.ts` 已加入 production seed 保護。
 - CI 已改為啟動 PostgreSQL service 後執行 migration 與測試。
 
-目前仍保留的本機 SQLite 檔：
+SQLite 已完全移除：repo 不再追蹤任何 `dev.db`，歷史 SQLite migrations 只存在於 `prisma/migrations_sqlite_archive/` 供查閱，不得作為 production migrate 的來源。本機開發一律使用 PostgreSQL（見 §4）。
 
-- `prisma/dev.db`
+## 2. SQLite 相依點盤點（已完成，僅供查閱）
 
-這個檔案只視為舊本機 demo 資料，不再是正式 migration 來源。
-
-## 2. SQLite 相依點盤點
-
-正式化前的 SQLite 相依點：
-
-| 類型 | 位置 | 處理方式 |
+| 類型 | 位置 | 狀態 |
 |---|---|---|
-| Prisma provider | `prisma/schema.prisma` | 已改為 `postgresql` |
-| Prisma CLI fallback | `prisma.config.ts` | 已移除 `file:dev.db` fallback，改用 PostgreSQL fallback |
-| Local env | `.env` | 既有本機檔可能仍是 `file:dev.db`，正式環境不可沿用 |
+| Prisma provider | `prisma/schema.prisma` | 已為 `postgresql` |
+| Prisma CLI fallback | `prisma.config.ts` | 已移除 `file:dev.db`；migration 連線只認 shell 注入的 `DIRECT_URL`／`DATABASE_URL`（F-065） |
 | Migration lock | `prisma/migrations_sqlite_archive/migration_lock.toml` | 已歸檔 |
-| SQLite migrations | `prisma/migrations_sqlite_archive/**` | 只保留查閱，不再給 production migrate 使用 |
-| SQLite DB file | `prisma/dev.db` | 只保留本機舊資料，不納入 production |
+| SQLite migrations | `prisma/migrations_sqlite_archive/**` | 只供查閱 |
+
+PostgreSQL 版本以 `.github/workflows/ci.yml` 與本機 Docker 的 `postgres:16-alpine` 為準；Supabase production／staging 專案的實際主版本請在 Supabase dashboard 的 Database settings 確認並記錄，升版前先在 staging 演練。
 
 ## 3. Supabase 連線變數
 
@@ -204,48 +198,24 @@ Production 禁止：
 
 ## 6. Production Seed Policy
 
-`prisma/seed.ts` 現在分成兩種模式。
+`prisma/seed.ts` 只允許在 loopback 上的可拋棄資料庫執行：檔案開頭呼叫 `assertLocalTestDatabase("DATABASE_URL", ...)`，目標不是 loopback 的 `celebratedeal_*` 資料庫時一律拒絕，**包含 `SEED_MODE=production-bootstrap`**。
 
 ### 6.1 Demo seed
 
-預設 `SEED_MODE=demo`，用途是本機與測試環境建立完整展示資料。
+預設 `SEED_MODE=demo`，只用於本機與測試環境建立合成展示資料。這個模式會清空並重建 vendor、user、billing plan、payout batch、webhook event、audit log 等表，因此永遠不可對 staging 或 production 執行（守門也會擋下）。
 
-這個模式會清空並重建多個資料表：
+### 6.2 Production 平台預設值（目前沒有可用的 seed 路徑）
 
-- vendors
-- users
-- billing plans
-- payout batches
-- webhook events
-- audit logs
+`SEED_MODE=production-bootstrap` 只 upsert 預設 billing plans（`starter`、`growth`、`team-pro`），但因上述 loopback 守門，**無法直接對 production 執行**。若 production 需要這些方案，請使用經 PR 審查的 forward migration 或由 owner 授權的一次性受控 SQL 寫入，並留下非敏感的驗收紀錄；不要為了跑 seed 而放寬 `assertLocalTestDatabase`。
 
-因此 demo seed 不可在 production 執行。
-
-### 6.2 Production bootstrap
-
-正式環境只允許：
-
-```powershell
-$env:NODE_ENV="production"
-$env:SEED_MODE="production-bootstrap"
-npm run db:seed
-```
-
-目前 production bootstrap 僅會 upsert 預設 billing plans：
-
-- Starter
-- Growth
-- Team / Pro
-
-不會建立 demo vendor、demo live、demo payment transaction、demo settlement、demo payout。
-
-第一個 platform admin 帳號需等正式 Auth / admin role matrix 定案後，再用獨立 bootstrap script 或後台安全流程建立。
+第一個 platform admin 帳號需等正式 Auth／admin role matrix 定案後，再用獨立 bootstrap script 或後台安全流程建立。
 
 ## 7. Backup Policy
 
 正式 MVP 上線前至少要做到：
 
 - 依 Supabase organization plan 確認可用的 backup 形式，並留下非敏感驗收紀錄。Pro、Team、Enterprise 才有 dashboard daily backup；Free plan 必須用加密的站外 logical dump。
+- **應用層加密金鑰必須隨備份一起管理**（F-031①）：資料庫內的 MFA secret、LINE 憑證、買家個資、私訊、交付網址等欄位以 `CSRF_SECRET`（無則 `JOB_SECRET`）衍生的金鑰加密，銀行帳號另用 `BANK_ACCOUNT_KEYRING_JSON`。備份檔不含這些金鑰，還原時缺金鑰會讓加密欄位全部不可讀。金鑰存放在與備份分開的密碼管理器，記錄各段備份對應的版本；`CSRF_SECRET` 禁止輪替。細節見 `docs/staging-production-env-vars.md` §7 與 `docs/production-backup-restore-runbook.md`。
 - 每次 production migration 前建立可驗證的 backup。可用 dashboard backup 時記錄 restore point；否則建立 roles、schema、data 的 logical dump。CelebrateDeal 的 Prisma migration history 位於 `public._prisma_migrations`，已包含於 public data dump。
 - 每次月結 lock settlement 前與每次建立 payout batch 前建立可驗證的 backup。
 - 每週至少一次 restore drill 到隔離 staging / restore project，不得覆寫正在使用的 Staging。
@@ -298,8 +268,9 @@ npm run db:seed
 - [ ] Staging 已執行 `npm run db:migrate:deploy`
 - [ ] Production migration 前 snapshot 已完成
 - [ ] Production 已執行 `npm run db:migrate:deploy`
-- [ ] Production 不執行 demo seed
-- [ ] Production bootstrap 只 upsert billing plans
+- [ ] Production 不執行 demo seed（seed 守門也只允許 loopback 資料庫）
+- [ ] Production billing plans 已由 forward migration 或 owner 授權的受控寫入建立（見 §6.2）
+- [ ] 加密金鑰（`CSRF_SECRET`／`JOB_SECRET`、`BANK_ACCOUNT_KEYRING_JSON`）已與備份分開保存並記錄版本
 - [ ] Smoke test 通過
 - [ ] Backup restore drill 完成
 - [ ] 備份形式與 organization plan 相符，且 backup / restore evidence 不含 secret 或 customer data
