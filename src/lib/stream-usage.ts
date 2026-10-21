@@ -80,6 +80,20 @@ function isUniqueConflict(error: unknown) {
 }
 
 const RETRYABLE_POSTGRES_CODES = new Set(["40001", "40P01"]);
+/**
+ * Interactive transaction limits (R461-04). Heartbeats of one vendor queue on
+ * the vendor-month counter row lock, and that wait counts toward `timeout`.
+ */
+export const STREAM_USAGE_TRANSACTION_OPTIONS = {
+  isolationLevel: "ReadCommitted",
+  maxWait: 5_000,
+  timeout: 10_000,
+} as const;
+
+/** P2028: the transaction could not start or timed out (pool or lock wait). */
+function isTransactionTimeout(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2028";
+}
 
 /** P2034, or a raw-query failure (P2010) carrying a serialization/deadlock SQLSTATE. */
 function isSerializationConflict(error: unknown) {
@@ -192,6 +206,7 @@ async function upsertVendorQuotaAlert(input: {
   vendorId: string;
   monthKey: string;
   streamMinutesLimit: number;
+  previousSeconds: number;
   usedSeconds: number;
 }) {
   const limitSeconds = input.streamMinutesLimit * 60;
@@ -203,8 +218,11 @@ async function upsertVendorQuotaAlert(input: {
     id: "system",
     label: "stream-quota-monitor",
   };
-  const isExhausted = input.usedSeconds >= limitSeconds;
-  const isWarning = input.usedSeconds * 100 >= limitSeconds * 80;
+  // Write only when this heartbeat crosses a threshold (R461-04): no extra
+  // write while holding the counter lock, and an acknowledged alert is not
+  // reopened by every later heartbeat of the month.
+  const isExhausted = input.usedSeconds >= limitSeconds && input.previousSeconds < limitSeconds;
+  const isWarning = input.usedSeconds * 100 >= limitSeconds * 80 && input.previousSeconds * 100 < limitSeconds * 80;
 
   if (isExhausted) {
     await input.tx.streamOperationsAlert.upsert({
@@ -385,8 +403,11 @@ async function runUsageTransaction<T>(
 ): Promise<T> {
   for (let attempt = 1; attempt <= STREAM_USAGE_MAX_ATTEMPTS; attempt += 1) {
     try {
-      return await db.$transaction(work);
+      return await db.$transaction(work, STREAM_USAGE_TRANSACTION_OPTIONS);
     } catch (error) {
+      // A saturated lock queue or pool is retryable for the browser, not a
+      // 500; retrying it here would only lengthen the queue.
+      if (isTransactionTimeout(error)) throw new StreamUsageValidationError("usage_busy");
       if (!isSerializationConflict(error)) throw error;
       if (attempt === STREAM_USAGE_MAX_ATTEMPTS) break;
       await sleep(streamUsageRetryDelayMs(attempt, randomInt(0, STREAM_USAGE_RETRY_JITTER_MS + 1)));
@@ -461,6 +482,7 @@ async function recordInTransaction(tx: Prisma.TransactionClient, context: {
       vendorId: input.vendorId,
       monthKey: currentMonthKey,
       streamMinutesLimit: vendorQuota.streamMinutesLimit,
+      previousSeconds: vendorQuota.usedSeconds,
       usedSeconds: vendorQuota.usedSeconds + input.watchSeconds,
     });
   }

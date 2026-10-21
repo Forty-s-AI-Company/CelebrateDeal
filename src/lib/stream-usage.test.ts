@@ -434,10 +434,29 @@ describe("recordStreamUsageLedgerEntry", () => {
     });
   });
 
-  it("runs in READ COMMITTED: no Serializable isolation option is passed", async () => {
+  it("runs in explicit READ COMMITTED with bounded lock-wait limits", async () => {
     await recordStreamUsageLedgerEntry(directInput);
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    expect(mocks.transaction.mock.calls[0]).toHaveLength(1);
+    expect(mocks.transaction.mock.calls[0]?.[1]).toEqual({ isolationLevel: "ReadCommitted", maxWait: 5_000, timeout: 10_000 });
+  });
+
+  it("maps a transaction start or lock-wait timeout (P2028) to retryable usage_busy without retrying", async () => {
+    mocks.transaction.mockRejectedValueOnce({ code: "P2028" });
+    await expect(recordStreamUsageLedgerEntry(directInput)).rejects.toMatchObject({ code: "usage_busy" });
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes quota alerts only when a heartbeat crosses the 80% or 100% threshold", async () => {
+    const limit = { streamMinutesLimit: 10, streamMinutesUsed: 0, resetAt: new Date("2026-08-01T00:00:00.000Z") };
+    mocks.usageLimitFindUnique.mockResolvedValue(limit);
+    mocks.reserveVendorStreamSeconds.mockResolvedValueOnce({ admitted: true, previousSeconds: 490, totalSeconds: 535 });
+    await recordStreamUsageLedgerEntry(directInput);
+    expect(mocks.alertUpsert).not.toHaveBeenCalled();
+
+    mocks.reserveVendorStreamSeconds.mockResolvedValueOnce({ admitted: true, previousSeconds: 555, totalSeconds: 600 });
+    await recordStreamUsageLedgerEntry({ ...directInput, eventId: "00000000-0000-4000-8000-000000000009" });
+    expect(mocks.alertUpsert).toHaveBeenCalledOnce();
+    expect(mocks.alertUpsert).toHaveBeenCalledWith(expect.objectContaining({ where: { dedupKey: "stream-quota-exhausted:vendor-1:2026-07" } }));
   });
 
   it("retries a write conflict or deadlock instead of reporting quota exhaustion", async () => {
