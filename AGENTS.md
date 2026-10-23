@@ -26,7 +26,7 @@ CelebrateDeal is a multi-tenant Next.js + Prisma (PostgreSQL) SaaS for live and 
 - 依風險跑 targeted tests、`npm run typecheck`、`npm run lint`；沒跑的測試不能說通過。
 - 不降低 assertion 或 coverage 門檻，不用 skip 或假資料掩蓋失敗。
 - 付款、checkout、退款、佣金、auth／權限或 migration 的變更，合併前需要一次獨立審查。
-- 在 `codex/*` 分支工作，經 PR 合併；`master` 受保護，需 `quality` CI 通過並以 squash 合併。禁止 force push 與直推 `master`。
+- 在 `ai/*` 分支工作（舊的 `codex/*` 分支沿用至合併完成），經 PR 合併；`master` 受保護，需 `quality` CI 通過並以 squash 合併。禁止 force push 與直推 `master`。
 
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
