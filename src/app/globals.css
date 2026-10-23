@@ -45,6 +45,26 @@ textarea {
   touch-action: manipulation;
 }
 
+/* Tailwind v4 preflight resets button cursors to default; restore a pointer on
+   usable controls. Kept in the base layer so utilities such as cursor-default
+   still win, and the specificity beats preflight's bare `button` selector. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  summary,
+  label:has(input[type="checkbox"]),
+  label:has(input[type="radio"]),
+  select:not(:disabled),
+  input[type="submit"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
 /* Keep the global announcement launcher out of the persistent player controls. */
 body:has([data-live-player-mode="checkout"]) [data-testid="announcement-center-launcher"] {
   bottom: 13rem;
