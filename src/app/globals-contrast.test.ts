@@ -28,4 +28,9 @@ describe("F-121 design tokens", () => {
       expect(fs.readFileSync(path.resolve(file), "utf8")).not.toContain("text-slate-400");
     }
   });
+
+  it("restores pointer cursors on usable controls and not-allowed on disabled ones", () => {
+    expect(css).toMatch(/@layer base\s*\{[^@]*button:not\(:disabled\)[^{]*\{\s*cursor:\s*pointer;/);
+    expect(css).toMatch(/button:disabled,\s*\[aria-disabled="true"\]\s*\{\s*cursor:\s*not-allowed;/);
+  });
 });
