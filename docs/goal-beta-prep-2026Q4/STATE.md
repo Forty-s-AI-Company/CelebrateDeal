@@ -70,6 +70,7 @@ D-05：#436 經 rebase、QA 帳號 TOTP、reviewer 通過、CI 綠後由主對�
 
 ## 每日摘要
 
+- 10-23（晚）：**O-2 完成**：owner 在 staging 以 NT$1 合成商品完成 PayUni Sandbox 付款，訂單與交易 `paid`、回呼 1 筆 `processed`；實際回呼為 `Status=SUCCESS`、`TradeStatus=1`、`PaymentType=1`，與 F-037 一致（證據 `evidence/O-2-…`）。owner 同時發現結帳頁兩個問題並交付修正：①發票類型／載具下拉一切換就誤報錯且舊錯誤不清除；②收件資料缺「同購買人」勾選（工作線 B，分支 `codex/beta-checkout-form-fixes`，屬 checkout 需獨立審查）。
 - 10-23：owner 開始執行 O-18／O-3。**O-18 完成**：staging 固定網址切到 `celebrate-deal-staging-qytj0bbdk`（commit a8c07b01，= master 少 #467），排程 workflow 手動跑成功。發現 staging 平台管理員的 7 月驗證器資料因 `CSRF_SECRET` 之後被換過而無法解密（登入後 `/mfa/verify` 解密失敗），經 owner 同意刪除該帳號驗證器與備援碼，待其重新登記（O-3）。Owner 兩項產品決策：①一般用戶密碼改 8 碼＋常見密碼清單，管理員維持 12 碼（PR #468，reviewer 兩輪後可合併；複審 MINOR 待辦：NFKC 展開可繞過長度下限、少數弱密碼如 `1qaz2wsx!`、`Pa$$w0rd` 仍通過）；②雙重驗證頁改「第一步、第二步」白話教學（PR #469；`settings/security` 頁雙重驗證區塊文案待 #468 合併後補，並同步 `tests/e2e/accessibility.spec.ts:87,95`、`src/app/actions.test.ts:3898`）。**新阻擋**：今天公布 next 16.0.0–16.4.0 與 @sentry/nextjs ≤10.75.1 的嚴重漏洞，CI 的 `npm audit` 失敗擋住所有 PR；暴露面：圖片優化已關閉、無 `use cache`，Server Actions DoS 適用；已派 engineer-hard 做 `codex/beta-security-deps-upgrade`，完成後審查並合併，再讓 #468／#469 同步 CI。
 - 10-22（晚）：#465 合併並套用 staging migration（累計 22 個 PR，含 #460 文件）。**L1 48 項全部進 master；OWNER-ACTIONS 只剩 owner 本人項目，Goal 自動推進 loop 依停止條件結束**。Go／No-Go 摘要見 GO-NO-GO.md §0。殘餘（封測後或 owner 決策）：F-093 Stream 簽章網址只完成評估，實作等 Cloudflare 設定；F-091 (2) 與 F-134 其餘 action 矩陣列 L2；Vercel Hobby build 速率上限 10-22 觸發一次（O-24）。
 - 10-22（傍晚）：#467 合併（累計 21 個 PR）。#465 同步 master 後 CI 在 Release browser gates 掛一個 Playwright 斷言，交回工作線 A 查根因。
