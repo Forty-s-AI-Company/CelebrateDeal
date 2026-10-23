@@ -26,6 +26,7 @@
 | O-23 | ⏳ | **封測商家功能授權**：PR #465 之後課程、billing、Funnel 綁卡、諮詢預約、瀏覽器直播、彈幕六個模組在伺服器端預設關閉，只有平台管理員能在 `/admin/vendor-features` 逐商家開啟。封測前請為每位封測商家決定要開哪些（預設全關；顧問型客戶可開諮詢預約） | staging `/admin/vendor-features` | 回「設了」 | 封測商家看不到這些模組（這是預設行為） | F-001、D-02 |
 | O-24 | ⏳ | **Vercel Hobby build 速率上限**：10-22 PR #465 的兩個 Vercel preview 檢查因 build-rate-limit 失敗（非程式問題，`quality` 綠）。切 alias（O-18）或之後自動部署若再遇到，等一小時重試；或與 O-6 一併評估升 Pro | Vercel | 無需立即動作 | 只影響 preview 部署時效 |
 | O-25 | ⏳ | **`CSRF_SECRET` 不可再更換**：staging 的 `CSRF_SECRET` 在 7 月後被換過，導致當時加密的資料（管理員驗證器、舊測試的 LINE／付款設定）永遠解不開。封測前請確認 staging 與之後的 Production 都不要再輪替；若不得不換，要先備份並規劃重新登記（D-39） | Vercel／GitHub 環境變數 | 回「知道了」 | 再換一次，封測商家已登記的驗證器與已存的 LINE／Meta 金鑰全部失效 | D-39、F-031 |
+| O-26 | ⏳ | **PayUni 正式商店費率與環境變數**：owner 提供的正式商店頁（10-23 唯讀查看）顯示信用卡一次付清國內卡 2.5%、國外卡 3.5%、銀聯 2.8%；請款設定為自動請款；國內外卡皆啟用 3D；Apple／Google／Samsung Pay 皆有；**頁面沒有信用卡約定 Token（綁卡）項目**。程式預設手續費是 2.8%＋5% 營業稅（`PAYUNI_CREDIT_FEE_BPS` 預設 280）。正式上線前請在正式環境把 `PAYUNI_CREDIT_FEE_BPS` 設為 250（並確認 PayUni 費率是否含稅，決定 `PAYUNI_FEE_TAX_BPS`），否則月結的手續費會多算。**封測期間用 Sandbox，不受影響** | Vercel Production 環境變數（Production 設定需 owner 本人） | 回「設了」 | 正式月結手續費與 PayUni 實際扣款不一致 | F-040、docs/staging-production-env-vars.md |
 | O-7 | ⏳ | **Cloudflare**：正式網域是否全程經 Cloudflare 代理（橘雲）且沒有其他直連入口 | Cloudflare DNS | 回「是／否」 | 否則限流可被偽造標頭繞過，要多修 1～1.5 人日 | D-20 |
 
 ## 封測前（10-27～10-29）
