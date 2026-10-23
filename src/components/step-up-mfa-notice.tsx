@@ -25,16 +25,16 @@ export function StepUpMfaNotice({
         <span>
           <strong className="font-semibold">需要驗證：</strong>
           {setup
-            ? `${operation}前需先啟用雙重驗證（MFA）。`
-            : `${operation}前需在 ${STEP_UP_MFA_MAX_AGE_MINUTES} 分鐘內完成雙重驗證。`}
+            ? `${operation}前，需要先開啟雙重驗證（只要設定一次）。`
+            : `${operation}前，請先輸入手機上的驗證碼（${STEP_UP_MFA_MAX_AGE_MINUTES} 分鐘內有效）。`}
         </span>
       </p>
       <Link
         href={recentMfaRedirectPath(status, nextPath)}
         prefetch={false}
-        className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 font-semibold text-amber-900 hover:bg-amber-100"
+        className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 font-semibold text-amber-900 hover:bg-amber-100"
       >
-        {setup ? "前往啟用" : "立即驗證"}
+        {setup ? "前往設定" : "輸入驗證碼"}
       </Link>
     </div>
   );
