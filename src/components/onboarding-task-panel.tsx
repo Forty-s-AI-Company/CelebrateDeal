@@ -1,12 +1,12 @@
 "use client";
 
 import { useId, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, ChevronDown, Clock3, MoreHorizontal, Rocket } from "lucide-react";
-import { controlOnboardingGuideAction } from "@/app/actions/sales-workspace-actions";
+import { controlOnboardingGuideAction, setOnboardingTaskStatusAction } from "@/app/actions/sales-workspace-actions";
 
-export type SidebarOnboardingTask = { key: string; title: string; href: string; status: string; estimateMinutes: number; impact?: string | null };
+export type SidebarOnboardingTask = { key: string; title: string; href: string; status: string; estimateMinutes: number; impact?: string | null; scopeKey?: string; required?: boolean };
 
 export function OnboardingTaskPanel({ title, tasks, initiallyCollapsed, persistCollapsed }: { title: string; tasks: SidebarOnboardingTask[]; initiallyCollapsed: boolean; persistCollapsed: (collapsed: boolean) => Promise<void> }) {
   const completed = tasks.filter((task) => task.status === "completed").length;
@@ -21,6 +21,7 @@ export function OnboardingTaskPanel({ title, tasks, initiallyCollapsed, persistC
   const [, startTransition] = useTransition();
   const [controlPending, startControlTransition] = useTransition();
   const router = useRouter();
+  const pathname = usePathname();
   const next = tasks.find((task) => !["completed", "skipped", "archived"].includes(task.status));
   const percentage = tasks.length === 0 ? 0 : Math.round((completed / tasks.length) * 100);
 
@@ -37,6 +38,13 @@ export function OnboardingTaskPanel({ title, tasks, initiallyCollapsed, persistC
     });
   }
 
+  function skipTask(task: SidebarOnboardingTask) {
+    startControlTransition(async () => {
+      await setOnboardingTaskStatusAction(task.scopeKey ?? "workspace", task.key, "skipped");
+      router.refresh();
+    });
+  }
+
   if (tasks.length === 0) return null;
   return <section className="mb-3 overflow-hidden rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50" aria-labelledby={titleId}>
     <button type="button" onClick={toggle} aria-expanded={!effectiveCollapsed} aria-controls={contentId} className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 focus-visible:ring-4 focus-visible:ring-blue-200">
@@ -44,7 +52,7 @@ export function OnboardingTaskPanel({ title, tasks, initiallyCollapsed, persistC
     </button>
     {!effectiveCollapsed ? <div id={contentId} className="border-t border-blue-100 px-3 pb-3 pt-3">
       <div className="h-2 overflow-hidden rounded-full bg-white" role="progressbar" aria-label={`${title}完成進度`} aria-valuenow={percentage} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${completed}/${tasks.length} 已完成`}><div className="h-full rounded-full bg-blue-600 transition-[width] motion-reduce:transition-none" style={{ width: `${percentage}%` }} /></div>
-      {allComplete ? <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 size={17} aria-hidden="true" />{completed === tasks.length ? "所有任務已完成" : "所有任務已處理（含略過或封存）"}</p> : next ? <div className="mt-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">下一個最重要的任務</p><p className="mt-1 text-sm font-semibold text-slate-900">{next.title}</p>{next.impact ? <p className="mt-1 text-xs leading-5 text-amber-700">{next.impact}</p> : null}<p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Clock3 size={13} aria-hidden="true" />約 {next.estimateMinutes} 分鐘</p><Link href={next.href} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700">繼續設定</Link></div> : null}
+      {allComplete ? <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 size={17} aria-hidden="true" />{completed === tasks.length ? "所有任務已完成" : "所有任務已處理（含略過或封存）"}</p> : next ? <div className="mt-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">下一個最重要的任務</p><p className="mt-1 text-sm font-semibold text-slate-900">{next.title}</p>{next.impact ? <p className="mt-1 text-xs leading-5 text-amber-700">{next.impact}</p> : null}<p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Clock3 size={13} aria-hidden="true" />約 {next.estimateMinutes} 分鐘</p>{next.href.split("?")[0] === pathname ? <div className="mt-3 grid gap-2"><p className="rounded-lg bg-white/70 px-3 py-2 text-xs leading-5 text-slate-700">你已在這個任務的設定頁，請在右側頁面完成設定，完成後進度會自動更新。</p>{next.required === false ? <button type="button" disabled={controlPending} onClick={() => skipTask(next)} className="min-h-11 w-full rounded-lg border border-blue-200 bg-white px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50">{controlPending ? "處理中…" : "略過此任務（可稍後再做）"}</button> : null}</div> : <Link href={next.href} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700">繼續設定</Link>}</div> : null}
       <Link href="/onboarding" className="mt-2 inline-flex min-h-11 w-full items-center justify-center text-xs font-semibold text-blue-700 hover:underline">查看全部任務</Link>
       <details className="group mt-1 border-t border-blue-100 pt-1">
         <summary className="flex min-h-9 cursor-pointer list-none items-center justify-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200">
