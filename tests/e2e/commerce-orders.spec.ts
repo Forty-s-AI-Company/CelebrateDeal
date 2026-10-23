@@ -1543,7 +1543,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     await page.getByLabel("縣市", { exact: true }).fill("台北市");
     await page.getByLabel("鄉鎮市區", { exact: true }).fill("中正區");
     await page.getByLabel("地址", { exact: true }).fill("合成公開驗收路 14 號");
-    await page.getByRole("checkbox").check();
+    await page.getByRole("checkbox", { name: /我已閱讀目前的/u }).check();
     await page.getByRole("button", { name: /購買/u }).click();
 
     await expect(page.getByRole("status")).toContainText(/訂單 .* 已建立/u);
@@ -1630,7 +1630,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
       await page.getByLabel("縣市", { exact: true }).fill("台北市");
       await page.getByLabel("鄉鎮市區", { exact: true }).fill("中正區");
       await page.getByLabel("地址", { exact: true }).fill("合成回應遺失路 57 號");
-      await page.getByRole("checkbox").check();
+      await page.getByRole("checkbox", { name: /我已閱讀目前的/u }).check();
     };
 
     expect((await page.goto(`/checkout/${fixture.vendorIds[0]}/${fixture.productId}`))?.status()).toBe(200);
