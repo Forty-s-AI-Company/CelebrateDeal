@@ -508,7 +508,7 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
   await gotoStableRoute(page, "/mfa/setup");
   await expectNoBlockingAxeViolations(page);
 
-  await page.getByRole("button", { name: "開始建立 TOTP" }).click();
+  await page.getByRole("button", { name: "開始設定雙重驗證" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_started/);
   await waitForStableRoute(page, "/mfa/setup?updated=mfa_started");
   await expectNoBlockingAxeViolations(page);
@@ -516,7 +516,7 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
   expect(totpSeed).toBeTruthy();
 
   await page.getByLabel("6 位數驗證碼").fill(totpCodeForTimestamp(totpSeed!));
-  await page.getByRole("button", { name: "啟用 MFA" }).click();
+  await page.getByRole("button", { name: "完成設定" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_enabled/);
   await waitForStableRoute(page, "/mfa/setup?updated=mfa_enabled");
   await expectNoBlockingAxeViolations(page);

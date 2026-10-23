@@ -20,14 +20,14 @@ export function MfaEnrollmentForm({ csrfField, nextPath }: { csrfField: ReactNod
       {csrfField}
       {safeMfaReturnPath(nextPath) ? <input type="hidden" name="next" value={safeMfaReturnPath(nextPath)} /> : null}
       <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-        6 位數驗證碼
+        App 上目前的 6 位數驗證碼
         <input
           name="code"
           inputMode="numeric"
           autoComplete="one-time-code"
           pattern="[0-9]{6}"
           required
-          className="h-10 rounded-md border border-border px-3 tracking-[0.2em]"
+          className="h-11 rounded-md border border-border px-3 tracking-[0.2em]"
           placeholder="123456"
         />
       </label>
@@ -38,10 +38,10 @@ export function MfaEnrollmentForm({ csrfField, nextPath }: { csrfField: ReactNod
         aria-busy={pending}
         className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {pending ? "啟用中…" : "啟用 MFA"}
+        {pending ? "設定中…" : "完成設定"}
       </button>
       <span role="status" aria-live="polite" className="sr-only">
-        {pending ? "正在啟用 MFA，請勿重複送出。" : ""}
+        {pending ? "正在完成設定，請勿重複送出。" : ""}
       </span>
     </form>
   );
