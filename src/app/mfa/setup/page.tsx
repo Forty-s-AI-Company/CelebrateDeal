@@ -10,6 +10,7 @@ import {
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { RecoveryCodesActions } from "@/components/recovery-codes-actions";
 import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
 import { Badge, Card } from "@/components/ui";
 import { requireAuth } from "@/lib/auth";
@@ -182,12 +183,13 @@ export default async function MfaSetupPage({
             <div className="flex items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-600"><KeyRound className="size-5" aria-hidden="true" /></span><h2 className="text-lg font-semibold text-slate-950">{auth.user.mfaFactor ? "備用救援碼" : "第四步：保存備用救援碼"}</h2></div>
             {recoveryCodes?.length ? (
               <>
-                <p className="mt-4 text-sm leading-6 text-slate-700">手機遺失或換新手機時，可以用這些救援碼救回帳號。每一組只能用一次。請現在就截圖、抄在紙上，或存進密碼管理員。離開這個頁面後就不會再顯示。</p>
+                <p className="mt-4 text-sm leading-6 text-slate-700">手機遺失或換新手機時，可以用這些救援碼救回帳號。每一組只能用一次。請現在就截圖、抄在紙上，或存進密碼管理員。離開這個頁面後就不會再顯示。建議先下載或複製，再按「我已保存」。</p>
                 <div className="mt-4 grid gap-2 rounded-xl border border-blue-100 bg-blue-50/70 p-4">
                   {recoveryCodes.map((code: string) => (
                     <div key={code} className="font-mono text-sm font-semibold text-slate-800">{code}</div>
                   ))}
                 </div>
+                <RecoveryCodesActions codes={recoveryCodes} />
                 <form action="/api/settings/security/mfa/recovery-codes/dismiss" method="post" className="mt-4">
                   <CsrfField />
                   <MfaReturnField nextPath={nextPath} />

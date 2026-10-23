@@ -83,6 +83,9 @@ describe("/mfa/setup 白話教學", () => {
     expect(html).toContain("每一組只能用一次");
     expect(html).toContain("離開這個頁面後就不會再顯示");
     expect(html).toContain("我已保存備用救援碼");
+    expect(html).toContain("複製全部");
+    expect(html).toContain("下載成文字檔");
+    expect(html).toContain("建議先下載或複製，再按「我已保存」");
     expect(html).toContain("已開啟雙重驗證，請先保存備用救援碼。");
   });
 
