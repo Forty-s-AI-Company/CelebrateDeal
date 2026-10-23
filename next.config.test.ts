@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const sentry = vi.hoisted(() => ({ wrap: vi.fn((config) => config) }));
-vi.mock("@sentry/nextjs", () => ({ withSentryConfig: sentry.wrap }));
+vi.mock("@sentry/nextjs/config", () => ({ withSentryConfig: sentry.wrap }));
 
 afterEach(() => {
   vi.unstubAllEnvs();
