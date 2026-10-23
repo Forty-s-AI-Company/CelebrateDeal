@@ -33,6 +33,9 @@ export async function updateVendorBetaFeatureGrantsAction(formData: FormData) {
   const db = getDb();
   const vendor = await db.vendor.findUnique({ where: { id: vendorId }, select: { id: true, betaFeatureGrants: true, enabledFeatureModules: true } });
   if (!vendor) redirect(`${ADMIN_PATH}?error=not_found`);
+  // Only the id of a vendor just read from the database is echoed back, never the raw input.
+  const target = `vendor=${encodeURIComponent(vendor.id)}`;
+  const hash = `#vendor-${vendor.id}`;
   const before = normalizeBetaFeatureGrants(vendor.betaFeatureGrants);
   // Opening consultation_booking for a consulting customer also switches the
   // merchant toggle on, so the grant takes effect without a second step. The
@@ -53,7 +56,7 @@ export async function updateVendorBetaFeatureGrantsAction(formData: FormData) {
     },
     data: { betaFeatureGrants: grants, ...(enabledFeatureModules ? { enabledFeatureModules } : {}) },
   });
-  if (result.count !== 1) redirect(`${ADMIN_PATH}?error=conflict`);
+  if (result.count !== 1) redirect(`${ADMIN_PATH}?error=conflict&${target}${hash}`);
 
   await writeAuditLog({
     vendorId: vendor.id,
@@ -66,5 +69,5 @@ export async function updateVendorBetaFeatureGrantsAction(formData: FormData) {
     after: { betaFeatureGrants: grants },
   });
   revalidatePath("/", "layout");
-  redirect(`${ADMIN_PATH}?saved=1`);
+  redirect(`${ADMIN_PATH}?saved=1&${target}${hash}`);
 }

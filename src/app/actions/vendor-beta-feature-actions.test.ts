@@ -59,7 +59,7 @@ describe("updateVendorBetaFeatureGrantsAction (F-001 / F-002)", () => {
   });
 
   it("writes the normalized grants with a compare-and-set and an audit record", async () => {
-    await expect(redirectPath(updateVendorBetaFeatureGrantsAction(form("vendor-1", ["danmaku", "billing"])))).resolves.toBe("/admin/vendor-features?saved=1");
+    await expect(redirectPath(updateVendorBetaFeatureGrantsAction(form("vendor-1", ["danmaku", "billing"])))).resolves.toBe("/admin/vendor-features?saved=1&vendor=vendor-1#vendor-vendor-1");
     expect(runtime.updateMany).toHaveBeenCalledWith({
       where: { id: "vendor-1", betaFeatureGrants: { equals: [] } },
       data: { betaFeatureGrants: ["billing", "danmaku"] },
@@ -78,11 +78,18 @@ describe("updateVendorBetaFeatureGrantsAction (F-001 / F-002)", () => {
     }));
   });
 
+  it("does not echo an unknown vendor id back in the redirect", async () => {
+    runtime.findUnique.mockResolvedValueOnce(null);
+    const path = await redirectPath(updateVendorBetaFeatureGrantsAction(form("vendor-x", ["billing"])));
+    expect(path).toBe("/admin/vendor-features?error=not_found");
+    expect(path).not.toContain("vendor-x");
+  });
+
   it("refuses an unknown vendor and a concurrent change", async () => {
     runtime.findUnique.mockResolvedValueOnce(null);
     await expect(redirectPath(updateVendorBetaFeatureGrantsAction(form("vendor-x", [])))).resolves.toBe("/admin/vendor-features?error=not_found");
     runtime.updateMany.mockResolvedValueOnce({ count: 0 });
-    await expect(redirectPath(updateVendorBetaFeatureGrantsAction(form("vendor-1", ["courses"])))).resolves.toBe("/admin/vendor-features?error=conflict");
+    await expect(redirectPath(updateVendorBetaFeatureGrantsAction(form("vendor-1", ["courses"])))).resolves.toBe("/admin/vendor-features?error=conflict&vendor=vendor-1#vendor-vendor-1");
     expect(runtime.writeAuditLog).not.toHaveBeenCalled();
   });
 });
