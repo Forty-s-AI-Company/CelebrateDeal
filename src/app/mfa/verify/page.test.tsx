@@ -31,6 +31,25 @@ describe("/mfa/verify return path", () => {
 
   it("explains a step-up request", async () => {
     const html = renderToStaticMarkup(await MfaVerifyPage({ searchParams: Promise.resolve({ reason: "step_up" }) }));
-    expect(html).toContain("15 分鐘內完成雙重驗證");
+    expect(html).toContain("回到剛才的頁面，請再按一次送出");
+  });
+
+  it("用白話說明標題、輸入來源與備用救援碼格式", async () => {
+    const html = renderToStaticMarkup(await MfaVerifyPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("輸入驗證碼");
+    expect(html).toContain("打開手機上的驗證碼 App");
+    expect(html).toContain("備用救援碼（格式像 ABCDE-12345）");
+    expect(html).not.toMatch(/TOTP|MFA|[Rr]ecovery/);
+  });
+
+  it.each([
+    ["invalid", "每 30 秒會換一組"],
+    ["rate_limited", "請稍後再試"],
+    ["locked", "已暫停 1 小時"],
+    ["temporarily_unavailable", "聯絡平台客服"],
+  ])("錯誤碼 %s 對應白話文案", async (error, text) => {
+    const html = renderToStaticMarkup(await MfaVerifyPage({ searchParams: Promise.resolve({ error }) }));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain(text);
   });
 });
