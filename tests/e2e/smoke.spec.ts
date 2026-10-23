@@ -12,7 +12,7 @@ const db = new PrismaClient();
 const password = "Password12345!";
 const previousCredential = ["Previous", "Credential", "123!"].join("");
 const replacementCredential = ["Replacement", "Credential", "123!"].join("");
-const undersizedCredential = ["too", "short"].join("-");
+const undersizedCredential = ["too", "sho"].join("-");
 const stamp = Date.now();
 // 每次 Playwright 程序都使用不同識別碼，避免重試或中斷後的假資料互相衝突。
 const e2eRunId = `${stamp.toString(36)}-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
@@ -993,8 +993,8 @@ passwordResetTest("password reset confirmation validates safely and replaces cre
   await page.goto(confirmUrlWithInvalidResetReference());
   const newPassword = page.getByLabel("新密碼", { exact: true });
   const confirmPassword = page.getByLabel("確認密碼", { exact: true });
-  await expect(newPassword).toHaveAttribute("minlength", "12");
-  await expect(confirmPassword).toHaveAttribute("minlength", "12");
+  await expect(newPassword).toHaveAttribute("minlength", "8");
+  await expect(confirmPassword).toHaveAttribute("minlength", "8");
   await newPassword.fill(undersizedCredential);
   await confirmPassword.fill(undersizedCredential);
   await page.getByRole("button", { name: "更新密碼" }).click();

@@ -9,6 +9,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
+import { PASSWORD_INPUT_LIMIT, validateNewPassword } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -16,8 +17,9 @@ const RegistrationInput = z.object({
   name: z.string().trim().min(2).max(120),
   workspaceName: z.string().trim().min(2).max(120),
   email: z.string().trim().toLowerCase().email().max(320),
-  // Match the existing login action, which trims submitted passwords.
-  password: z.string().max(128).transform((value) => value.trim()).pipe(z.string().min(12)),
+  // Match the existing login action, which trims submitted passwords. Length
+  // and commonness are the password policy's job; this only bounds the input.
+  password: z.string().max(PASSWORD_INPUT_LIMIT).transform((value) => value.trim()),
 });
 
 /** Create the original self-service workspace flow using current security boundaries. */
@@ -32,6 +34,9 @@ export async function registerAction(formData: FormData) {
   const parsed = RegistrationInput.safeParse({ name: formData.get("name"), workspaceName: formData.get("workspaceName"), email: formData.get("email"), password: formData.get("password") });
   if (!parsed.success) redirect("/register?error=invalid");
   const input = parsed.data;
+  const passwordPolicy = validateNewPassword(input.password, { email: input.email });
+  // Length failures keep the existing "invalid" copy, which states the minimum.
+  if (!passwordPolicy.ok) redirect(`/register?error=${passwordPolicy.reason === "short" || passwordPolicy.reason === "long" ? "invalid" : passwordPolicy.reason}`);
   const incoming = await headers();
   const forwarded = new Headers();
   for (const name of ["cf-connecting-ip", "x-forwarded-for"]) {

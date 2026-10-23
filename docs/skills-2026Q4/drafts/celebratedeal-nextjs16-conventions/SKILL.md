@@ -6,7 +6,7 @@ description: 修改或審查 CelebrateDeal 的 Next.js 16 程式（app router、
 # CelebrateDeal Next.js 16 慣例
 
 ## 何時用
-新增或修改 `src/app/**`、`src/proxy.ts`、`error.tsx`／`loading.tsx`、`next/image`、`<form action>`、`revalidatePath`／`revalidateTag`、`dynamic`／`revalidate` 設定，或審查這類 diff 時。專案用 `next` 16.3.8，與訓練資料中的 Next 不同，不可憑記憶。
+新增或修改 `src/app/**`、`src/proxy.ts`、`error.tsx`／`loading.tsx`、`next/image`、`<form action>`、`revalidatePath`／`revalidateTag`、`dynamic`／`revalidate` 設定，或審查這類 diff 時。專案用 `next` 16.4.2，與訓練資料中的 Next 不同，不可憑記憶。
 
 ## 必讀文件
 1. `AGENTS.md` 的 Next.js 區塊。

@@ -98,31 +98,55 @@ function CheckoutCustomFields({ fields, disabled }: { fields: CustomCheckoutFiel
   );
 }
 
-function CheckoutContactFields({ requiresPhone, disabled }: { requiresPhone: boolean; disabled: boolean }) {
+type BuyerContact = { name: string; phone: string };
+
+function CheckoutContactFields({ requiresPhone, disabled, onContactChange }: {
+  requiresPhone: boolean; disabled: boolean; onContactChange: (field: keyof BuyerContact, value: string) => void;
+}) {
   return (
     <fieldset className="grid gap-4" disabled={disabled}>
       <legend className="text-lg font-bold text-slate-950">聯絡資料</legend>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="text-sm font-semibold text-slate-800">姓名<input name="buyerName" autoComplete="name" required maxLength={120} className={fieldClassName()} /></label>
+        <label className="text-sm font-semibold text-slate-800">姓名<input name="buyerName" autoComplete="name" required maxLength={120} onChange={(event) => onContactChange("name", event.currentTarget.value)} className={fieldClassName()} /></label>
         <label className="text-sm font-semibold text-slate-800">Email<input name="buyerEmail" type="email" inputMode="email" autoComplete="email" required maxLength={320} className={fieldClassName()} /></label>
       </div>
-      <label className="text-sm font-semibold text-slate-800">電話{requiresPhone ? "" : "（選填）"}<input name="buyerPhone" type="tel" inputMode="tel" autoComplete="tel" required={requiresPhone} maxLength={32} className={fieldClassName()} /></label>
+      <label className="text-sm font-semibold text-slate-800">電話{requiresPhone ? "" : "（選填）"}<input name="buyerPhone" type="tel" inputMode="tel" autoComplete="tel" required={requiresPhone} maxLength={32} onChange={(event) => onContactChange("phone", event.currentTarget.value)} className={fieldClassName()} /></label>
     </fieldset>
   );
 }
 
-function CheckoutShippingFields({ disabled }: { disabled: boolean }) {
+function CheckoutShippingFields({ disabled, buyer }: { disabled: boolean; buyer: BuyerContact }) {
+  // 預設寄給購買人：勾選期間收件人／收件電話跟著聯絡資料；手動修改即取消勾選，之後不再覆寫。
+  const [sameAsBuyer, setSameAsBuyer] = useState(true);
+  const [recipient, setRecipient] = useState<BuyerContact>({ name: "", phone: "" });
+  const shownRecipient = sameAsBuyer ? buyer : recipient;
+  function editRecipient(field: keyof BuyerContact, value: string) {
+    setRecipient({ ...shownRecipient, [field]: value });
+    setSameAsBuyer(false);
+  }
+  function toggleSameAsBuyer(checked: boolean) {
+    // 取消勾選時保留畫面上的值，讓買家從目前內容繼續修改。
+    if (!checked) setRecipient(shownRecipient);
+    setSameAsBuyer(checked);
+  }
   return (
         <fieldset className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4" disabled={disabled}>
           <legend className="px-1 text-lg font-bold text-slate-950">收件資料</legend>
+          <div>
+            <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-slate-800">
+              <input type="checkbox" checked={sameAsBuyer} onChange={(event) => toggleSameAsBuyer(event.currentTarget.checked)} aria-describedby="shipping-same-as-buyer-help" className="h-5 w-5 shrink-0 accent-blue-600" />
+              <span>收件資料同購買人</span>
+            </label>
+            <p id="shipping-same-as-buyer-help" className="text-xs leading-5 text-slate-600">勾選時帶入上方聯絡資料的姓名與電話；修改收件人或收件電話會自動取消勾選。</p>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-semibold text-slate-800">
               收件人
-              <input name="recipientName" autoComplete="shipping name" required maxLength={120} className={fieldClassName()} />
+              <input name="recipientName" autoComplete="shipping name" required maxLength={120} value={shownRecipient.name} onChange={(event) => editRecipient("name", event.currentTarget.value)} className={fieldClassName()} />
             </label>
             <label className="text-sm font-semibold text-slate-800">
               收件電話
-              <input name="shippingPhone" type="tel" inputMode="tel" autoComplete="shipping tel" required maxLength={32} className={fieldClassName()} />
+              <input name="shippingPhone" type="tel" inputMode="tel" autoComplete="shipping tel" required maxLength={32} value={shownRecipient.phone} onChange={(event) => editRecipient("phone", event.currentTarget.value)} className={fieldClassName()} />
             </label>
           </div>
           <div className="grid gap-4 sm:grid-cols-[120px_1fr_1fr]">
@@ -231,6 +255,7 @@ export function CommerceCheckoutForm({
   const [orderBumpSelected, setOrderBumpSelected] = useState(initialOrderBumpSelected);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [confirmedOffer, setConfirmedOffer] = useState<{ priceCents: number; currency: string } | null>(null);
+  const [buyerContact, setBuyerContact] = useState<BuyerContact>({ name: "", phone: "" });
   const contactStep = formMode === "two_step" && checkoutStep === 1;
   const admission = useRef<{ admissionToken: string; idempotencyKey: string } | null>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
@@ -481,7 +506,7 @@ export function CommerceCheckoutForm({
     >
       <CheckoutProgress mode={formMode} step={checkoutStep} disabled={fieldsDisabled} onBack={() => setCheckoutStep(1)} />
       <div hidden={formMode === "two_step" && checkoutStep === 2}>
-        <CheckoutContactFields requiresPhone={requiresPhone} disabled={fieldsDisabled} />
+        <CheckoutContactFields requiresPhone={requiresPhone} disabled={fieldsDisabled} onContactChange={(field, value) => setBuyerContact((current) => ({ ...current, [field]: value }))} />
       </div>
       {contactStep ? <button type="submit" className="min-h-12 rounded-xl bg-blue-700 px-5 py-3 font-bold text-white">下一步：確認訂單</button> : null}
       <fieldset disabled={contactStep} hidden={contactStep} className={contactStep ? "hidden" : "grid gap-6"}>
@@ -489,7 +514,7 @@ export function CommerceCheckoutForm({
       <CheckoutInvoiceFields disabled={fieldsDisabled} />
 
       {requiresShipping ? (
-        <CheckoutShippingFields disabled={fieldsDisabled} />
+        <CheckoutShippingFields disabled={fieldsDisabled} buyer={buyerContact} />
       ) : null}
 
       <CheckoutCustomFields fields={customCheckoutFields} disabled={fieldsDisabled} />
