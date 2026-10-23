@@ -1,9 +1,10 @@
 import { confirmPasswordResetAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGES } from "@/lib/password-policy";
 
 const errorMessages: Record<string, string> = {
-  short: "密碼至少需要 12 個字元。",
+  ...PASSWORD_POLICY_MESSAGES,
   mismatch: "兩次輸入的密碼不一致。",
   expired: "這個重設連結已失效，請重新申請。",
 };
@@ -27,13 +28,16 @@ export default async function PasswordResetConfirmPage({
         <form action={confirmPasswordResetAction} className="grid gap-4">
           <CsrfField />
           <input type="hidden" name="token" value={params.token ?? ""} />
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-            新密碼
-            <input name="password" type="password" autoComplete="new-password" minLength={12} required className="h-10 rounded-md border border-border px-3" />
-          </label>
+          <div className="grid gap-1.5">
+            <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+              新密碼
+              <input name="password" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} required aria-describedby="password-reset-hint" className="h-10 rounded-md border border-border px-3" />
+            </label>
+            <span id="password-reset-hint" className="text-xs font-normal text-slate-600">{PASSWORD_HINT}</span>
+          </div>
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             確認密碼
-            <input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} required className="h-10 rounded-md border border-border px-3" />
+            <input name="confirmPassword" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} required className="h-10 rounded-md border border-border px-3" />
           </label>
           <FormSubmitButton
             pendingChildren="更新中…"

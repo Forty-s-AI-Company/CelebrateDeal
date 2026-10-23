@@ -40,7 +40,9 @@ describe("auth entry pending feedback", () => {
     expect(confirmation).toContain("更新中…");
     expect(confirmation).toContain("正在更新密碼並結束舊的登入狀態，請勿重複送出。");
     expect(confirmation).toContain('autoComplete="new-password"');
-    expect(confirmation).toContain('minLength="12"');
+    expect(confirmation).toContain('minLength="8"');
+    expect(confirmation).toContain("至少 8 個字元，可以用一句好記的話。");
+    expect(confirmation).toContain('aria-describedby="password-reset-hint"');
   });
 
   it("exposes password reset failures as an alert", async () => {
@@ -51,5 +53,21 @@ describe("auth entry pending feedback", () => {
 
     expect(html).toContain('role="alert"');
     expect(html).toContain("兩次輸入的密碼不一致。");
+  });
+
+  it.each([
+    ["short", "密碼至少需要 8 個字元。"],
+    ["common", "這個密碼太常見，請換一個。"],
+    ["personal", "密碼不要包含你的 Email 帳號名稱。"],
+    ["admin_short", "管理員密碼至少需要 12 個字元。"],
+    ["long", "密碼最多 128 個字元。"],
+  ])("explains the %s password policy failure on reset", async (error, message) => {
+    formStatus.pending = false;
+    const html = renderToStaticMarkup(await PasswordResetConfirmPage({
+      searchParams: Promise.resolve({ token: "synthetic-reset-token", error }),
+    }));
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain(message);
   });
 });

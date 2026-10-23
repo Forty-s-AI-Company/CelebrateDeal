@@ -59,6 +59,10 @@ describe("/invitations/accept", () => {
     expect(html).toContain('name="password"');
     expect(html).toContain('name="acceptPolicies"');
     expect(html).toContain('name="token" value="synthetic-token"');
+    expect(html).toContain('minLength="8"');
+    expect(html).toContain('maxLength="128"');
+    expect(html).toContain("至少 8 個字元，可以用一句好記的話。");
+    expect(html).toContain('aria-describedby="invitation-password-hint"');
   });
 
   it("asks an existing invitee to sign in before accepting", async () => {
@@ -97,5 +101,9 @@ describe("/invitations/accept", () => {
   it("renders fixed copy for result codes and ignores unknown ones", async () => {
     expect(await render({ token: "synthetic-token", error: "last_owner" })).toContain("沒有任何 owner");
     expect(await render({ token: "synthetic-token", error: "<script>" })).toContain("無法接受邀請");
+    expect(await render({ token: "synthetic-token", error: "short" })).toContain("密碼至少需要 8 個字元。");
+    expect(await render({ token: "synthetic-token", error: "long" })).toContain("密碼最多 128 個字元。");
+    expect(await render({ token: "synthetic-token", error: "common" })).toContain("這個密碼太常見，請換一個。");
+    expect(await render({ token: "synthetic-token", error: "personal" })).toContain("密碼不要包含你的 Email 帳號名稱。");
   });
 });
