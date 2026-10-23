@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-vi.mock("@sentry/nextjs", () => ({ withSentryConfig: (config: unknown) => config }));
+vi.mock("@sentry/nextjs/config", () => ({ withSentryConfig: (config: unknown) => config }));
 import config from "../../next.config";
 describe("studio capture permissions", () => {
   it("keeps global capture denied and only overrides the instructor document after the global rule", async () => {
