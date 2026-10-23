@@ -123,6 +123,8 @@ const mocks = vi.hoisted(() => ({
   after: vi.fn(),
   sendPasswordResetLink: vi.fn(),
   schedulePasswordResetLink: vi.fn(),
+  consumePasswordResetToken: vi.fn(),
+  findPasswordResetTokenAccount: vi.fn(),
   settlementFindUnique: vi.fn(),
   settlementFindMany: vi.fn(),
   settlementUpdateMany: vi.fn(),
@@ -251,6 +253,8 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerAct
 vi.mock("@/lib/password-reset", () => ({
   schedulePasswordResetLink: mocks.schedulePasswordResetLink,
   sendPasswordResetLink: mocks.sendPasswordResetLink,
+  consumePasswordResetToken: mocks.consumePasswordResetToken,
+  findPasswordResetTokenAccount: mocks.findPasswordResetTokenAccount,
 }));
 vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient, sendVendorMemberInvitationEmail: mocks.sendVendorMemberInvitationEmail }));
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: mocks.after }));
@@ -434,6 +438,7 @@ import {
   resendVendorMemberInvitationAction,
   revokeVendorMemberInvitationAction,
   requestPasswordResetAction,
+  confirmPasswordResetAction,
   regenerateRecoveryCodesAction,
   sendPasswordResetSmokeAction,
   updatePasswordAction,
@@ -461,6 +466,7 @@ import { savePartnerPageAction } from "./actions/team-funnel-partner-actions";
 import { RefundProviderError } from "@/lib/payment-providers/types";
 import SecuritySettingsPage from "./(app)/settings/security/page";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { Field } from "@/components/ui";
 import { hashPassword } from "@/lib/password";
 import { BillingCycleError } from "@/lib/billing-cycle";
 import { SettlementAdjustmentError } from "@/lib/settlement-adjustment";
@@ -1066,13 +1072,13 @@ describe("loginAction", () => {
 describe("updatePasswordAction", () => {
   const currentPassword = "current-password-123";
 
-  function authenticatedUser() {
+  function authenticatedUser(platformRole = "user") {
     mocks.requireAuth.mockResolvedValue({
       user: {
         id: "user-1",
         email: "member@example.com",
         passwordHash: hashPassword(currentPassword, "current-password-test-salt"),
-        platformRole: "user",
+        platformRole,
       },
       session: { id: "session-1" },
       vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
@@ -1092,6 +1098,53 @@ describe("updatePasswordAction", () => {
     expect(mocks.userUpdate).not.toHaveBeenCalled();
     expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
     expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a 7-character password", "bluewha", "short"],
+    ["a listed common password", "Password123", "common"],
+    ["a straight digit run", "23456789", "common"],
+    ["a common word with a year", "dragon2026", "common"],
+    ["a password over 128 characters", "x".repeat(129), "long"],
+    ["a password containing the account e-mail name", "member-2026!", "personal"],
+  ])("rejects %s before writing any credential data", async (_description, password, reason) => {
+    authenticatedUser();
+
+    await expect(updatePasswordAction(updatePasswordFormData({ password }))).rejects.toThrow(
+      `redirect:/settings/security?error=${reason}`,
+    );
+
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.userSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("accepts an 8-character password that is not common", async () => {
+    authenticatedUser();
+    mocks.cookies.mockResolvedValueOnce({ delete: vi.fn(), set: vi.fn() });
+    mocks.transaction.mockResolvedValueOnce([]);
+
+    await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhal" }))).rejects.toThrow(
+      "redirect:/login?password_changed=1",
+    );
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a platform administrator at 12 characters: 11 is refused, 12 is accepted", async () => {
+    authenticatedUser("platform_admin");
+
+    await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhale12" }))).rejects.toThrow(
+      "redirect:/settings/security?error=admin_short",
+    );
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+
+    mocks.cookies.mockResolvedValueOnce({ delete: vi.fn(), set: vi.fn() });
+    mocks.transaction.mockResolvedValueOnce([]);
+    await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhale123" }))).rejects.toThrow(
+      "redirect:/login?password_changed=1",
+    );
+    expect(mocks.transaction).toHaveBeenCalledOnce();
   });
 
   it("rejects a mismatched confirmation before writing any credential data", async () => {
@@ -3135,6 +3188,69 @@ describe("requestPasswordResetAction", () => {
   });
 });
 
+describe("confirmPasswordResetAction", () => {
+  const token = "synthetic-reset-reference";
+
+  function confirmFormData(password: string, confirmPassword = password) {
+    const formData = new FormData();
+    formData.set("token", token);
+    formData.set("password", password);
+    formData.set("confirmPassword", confirmPassword);
+    return formData;
+  }
+
+  beforeEach(() => {
+    mocks.findPasswordResetTokenAccount.mockResolvedValue({ email: "reset.member@example.com", platformRole: "none" });
+    mocks.consumePasswordResetToken.mockResolvedValue({ ok: true, userId: "user-1" });
+  });
+
+  it.each([
+    ["a 7-character password", "bluewha", "short"],
+    ["a listed common password", "  Password123  ", "common"],
+    ["a repeated unit", "abababab", "common"],
+    ["a password over 128 characters", "x".repeat(129), "long"],
+    ["a common word with digits around it", "2026password", "common"],
+    ["a password containing the account e-mail name", "Reset.Member-2026", "personal"],
+  ])("rejects %s without consuming the reset token", async (_description, password, reason) => {
+    await expect(confirmPasswordResetAction(confirmFormData(password))).rejects.toThrow(
+      `redirect:/password-reset/confirm?token=${token}&error=${reason}`,
+    );
+    expect(mocks.consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it("checks the e-mail name only for the account the token belongs to", async () => {
+    mocks.findPasswordResetTokenAccount.mockResolvedValue(null);
+
+    await expect(confirmPasswordResetAction(confirmFormData("Reset.Member-2026"))).rejects.toThrow("redirect:/login?reset=1");
+    expect(mocks.findPasswordResetTokenAccount).toHaveBeenCalledWith(token);
+    expect(mocks.consumePasswordResetToken).toHaveBeenCalledWith(token, "Reset.Member-2026");
+  });
+
+  it("accepts an 8-character password that is not common", async () => {
+    await expect(confirmPasswordResetAction(confirmFormData("bluewhal"))).rejects.toThrow("redirect:/login?reset=1");
+    expect(mocks.consumePasswordResetToken).toHaveBeenCalledWith(token, "bluewhal");
+  });
+
+  it("keeps a platform administrator at 12 characters: 11 is refused, 12 is accepted", async () => {
+    mocks.findPasswordResetTokenAccount.mockResolvedValue({ email: "reset.admin@example.com", platformRole: "platform_admin" });
+
+    await expect(confirmPasswordResetAction(confirmFormData("bluewhale12"))).rejects.toThrow(
+      `redirect:/password-reset/confirm?token=${token}&error=admin_short`,
+    );
+    expect(mocks.consumePasswordResetToken).not.toHaveBeenCalled();
+
+    await expect(confirmPasswordResetAction(confirmFormData("bluewhale123"))).rejects.toThrow("redirect:/login?reset=1");
+    expect(mocks.consumePasswordResetToken).toHaveBeenCalledWith(token, "bluewhale123");
+  });
+
+  it("still rejects a mismatched confirmation", async () => {
+    await expect(confirmPasswordResetAction(confirmFormData("bluewhal", "bluewhale"))).rejects.toThrow(
+      `redirect:/password-reset/confirm?token=${token}&error=mismatch`,
+    );
+    expect(mocks.consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+});
+
 describe("sendPasswordResetSmokeAction", () => {
   it.each([false, true])("rejects deployed production before mail work (admin: %s)", async (isPlatformAdmin) => {
     vi.stubEnv("NODE_ENV", "production");
@@ -3899,6 +4015,12 @@ describe("/settings/security member invitation controls", () => {
     expect(elementsOfType(page, "button")).toHaveLength(0);
     expect(paragraphs.some((paragraph) => paragraph.props.role === "status" && paragraph.props["aria-live"] === "polite")).toBe(true);
     expect(paragraphs.some((paragraph) => paragraph.props.role === "alert")).toBe(true);
+    const passwordFields = elementsOfType(page, Field).filter((field) => field.props.name === "password" || field.props.name === "confirmPassword");
+    expect(passwordFields.map((field) => [field.props.name, field.props.minLength, field.props.maxLength])).toEqual([
+      ["password", 8, 128],
+      ["confirmPassword", 8, 128],
+    ]);
+    expect(passwordFields[0]?.props.hint).toBe("至少 8 個字元，可以用一句好記的話。");
   });
 });
 
