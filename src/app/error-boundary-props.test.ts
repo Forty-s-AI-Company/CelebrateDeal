@@ -11,7 +11,7 @@ function collect(dir: string, out: string[] = []) {
   return out;
 }
 
-// Next 16.3.8 的 ErrorBoundary 只傳 { error, reset, retry }。
+// Next 16.4.2 的 ErrorBoundary 只傳 { error, reset, retry }（error 型別為 unknown）。
 // 這個測試直接掃描原始碼，避免元件 prop 名稱與 runtime 實際傳入者脫節（F-077／F-078）。
 describe("error boundary props", () => {
   const files = collect(join(process.cwd(), "src", "app"));
