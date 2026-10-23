@@ -21,6 +21,28 @@ describe("Taiwan invoice validators", () => {
     expect(isValidTaiwanBusinessId("10458575")).toBe(true);
   });
 
+  // 財政部財政資訊中心公告（2023-04-01 起檢查邏輯由 10 的倍數改為 5 的倍數）的官方測試統編。
+  it.each(["04595252", "10458570"])("accepts official post-2023 business id %s", (value) => {
+    expect(isValidTaiwanBusinessId(value)).toBe(true);
+  });
+
+  // 官方說明文件的第七碼為 7 範例：Z1 或 Z2 任一可整除即有效。
+  it.each(["10458574", "10458575"])("accepts official seventh-digit-seven example %s", (value) => {
+    expect(isValidTaiwanBusinessId(value)).toBe(true);
+  });
+
+  // 合成向量（非真實統編）：只滿足新規則，加權總和 % 10 !== 0。
+  it("accepts a synthetic seventh-digit-seven id that satisfies only the new rule", () => {
+    expect(isValidTaiwanBusinessId("10458579")).toBe(true); // 第七碼為 7，總和 34、+1 = 35；舊規則無效
+  });
+
+  it.each(["04595253", "10458571", "10458572", "0459525", "045952520", "0459525A", ""])(
+    "still rejects invalid business id %s",
+    (value) => {
+      expect(isValidTaiwanBusinessId(value)).toBe(false);
+    },
+  );
+
   it.each(["/ABC1234", "/12.+-_A", "/0000000"])("accepts valid mobile barcode %s", (value) => {
     expect(isValidMobileBarcode(value)).toBe(true);
   });
