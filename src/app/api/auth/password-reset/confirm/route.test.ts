@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { checkRateLimit, consumePasswordResetToken } = vi.hoisted(() => ({
+const { checkRateLimit, consumePasswordResetToken, findPasswordResetTokenAccount } = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   consumePasswordResetToken: vi.fn(),
+  findPasswordResetTokenAccount: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
-vi.mock("@/lib/password-reset", () => ({ consumePasswordResetToken }));
+vi.mock("@/lib/password-reset", () => ({ consumePasswordResetToken, findPasswordResetTokenAccount }));
 
 import { POST } from "@/app/api/auth/password-reset/confirm/route";
 
@@ -35,6 +36,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   checkRateLimit.mockResolvedValue(null);
   consumePasswordResetToken.mockResolvedValue({ ok: true });
+  findPasswordResetTokenAccount.mockResolvedValue({ email: "reset.member@example.test", platformRole: "none" });
 });
 
 describe("POST /api/auth/password-reset/confirm", () => {
@@ -65,13 +67,74 @@ describe("POST /api/auth/password-reset/confirm", () => {
 
   it.each([
     ["an invalid token", { ...validPayload, token: "test-fixture-token" }],
-    ["a short password", { ...validPayload, password: "test-short" }],
+    ["an oversized password body", { ...validPayload, password: "x".repeat(1025) }],
   ])("returns 400 for %s without consuming a token", async (_description, payload) => {
     const response = await POST(passwordResetConfirm(payload));
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Invalid password reset confirmation" });
     expect(consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a 7-character password", "tst-sho", { reason: "short", minLength: 8 }],
+    ["a password over 128 characters", "x".repeat(129), { reason: "long" }],
+    ["a listed common password", "Password123", { reason: "common" }],
+    ["a repeated character", "aaaaaaaaaa", { reason: "common" }],
+    ["a common word with a year", "dragon2026", { reason: "common" }],
+    ["a password built from the account e-mail name", "reset.member!2026", { reason: "personal" }],
+  ])("returns 400 for %s without consuming a token", async (_description, password, detail) => {
+    const response = await POST(passwordResetConfirm({ ...validPayload, password }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid password reset confirmation", ...detail });
+    expect(findPasswordResetTokenAccount).toHaveBeenCalledWith(validPayload.token);
+    expect(consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it("accepts an 8-character password that is not common", async () => {
+    const response = await POST(passwordResetConfirm({ ...validPayload, password: "bluewhal" }));
+
+    expect(response.status).toBe(200);
+    expect(consumePasswordResetToken).toHaveBeenCalledWith(validPayload.token, "bluewhal");
+  });
+
+  it("checks and stores the same trimmed value that sign-in will compare", async () => {
+    const response = await POST(passwordResetConfirm({ ...validPayload, password: "  bluewhal  " }));
+
+    expect(response.status).toBe(200);
+    expect(consumePasswordResetToken).toHaveBeenCalledWith(validPayload.token, "bluewhal");
+  });
+
+  it("refuses a 7-character password even when padded with spaces", async () => {
+    const response = await POST(passwordResetConfirm({ ...validPayload, password: "bluewha      " }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid password reset confirmation", reason: "short", minLength: 8 });
+    expect(consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it("requires 12 characters when the token belongs to a platform administrator", async () => {
+    findPasswordResetTokenAccount.mockResolvedValue({ email: "reset.admin@example.test", platformRole: "platform_admin" });
+
+    const short = await POST(passwordResetConfirm({ ...validPayload, password: "bluewhale12" }));
+    expect(short.status).toBe(400);
+    await expect(short.json()).resolves.toEqual({ error: "Invalid password reset confirmation", reason: "short", minLength: 12 });
+    expect(consumePasswordResetToken).not.toHaveBeenCalled();
+
+    const accepted = await POST(passwordResetConfirm({ ...validPayload, password: "bluewhale123" }));
+    expect(accepted.status).toBe(200);
+    expect(consumePasswordResetToken).toHaveBeenCalledWith(validPayload.token, "bluewhale123");
+  });
+
+  it("applies the 8-character rule when the token is not usable, leaving the refusal to the reset service", async () => {
+    findPasswordResetTokenAccount.mockResolvedValue(null);
+    consumePasswordResetToken.mockResolvedValue({ ok: false });
+
+    const response = await POST(passwordResetConfirm({ ...validPayload, password: "bluewhal" }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid or expired reset token" });
   });
 
   it("returns 400 when the reset service rejects the token", async () => {

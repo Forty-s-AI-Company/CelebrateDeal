@@ -4,6 +4,7 @@ import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { getCurrentAuth, requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGES } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
 
@@ -15,7 +16,7 @@ const errorMessages: Record<string, string> = {
   wrong_account: "目前登入的帳號不是受邀的 Email。請登出後以受邀帳號登入，再開啟邀請連結。",
   account_exists: "這個 Email 剛建立了帳號，請先登入後再開啟邀請連結。",
   last_owner: "接受後商家將沒有任何 owner，請先請其他 owner 處理。",
-  short: "密碼需為 12 到 128 個字元。",
+  ...PASSWORD_POLICY_MESSAGES,
   mismatch: "兩次輸入的密碼不一致。",
   consent_required: "請先閱讀並勾選同意使用條款與隱私通知。",
   policy_updated: "使用條款或隱私通知已更新，請重新閱讀後再勾選同意。",
@@ -124,13 +125,16 @@ export default async function AcceptVendorInvitationPage({
           姓名
           <input name="name" defaultValue={invitation.name} required maxLength={120} autoComplete="name" className="h-10 rounded-md border border-border px-3" />
         </label>
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-          設定密碼
-          <input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required className="h-10 rounded-md border border-border px-3" />
-        </label>
+        <div className="grid gap-1.5">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            設定密碼
+            <input name="password" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} required aria-describedby="invitation-password-hint" className="h-10 rounded-md border border-border px-3" />
+          </label>
+          <span id="invitation-password-hint" className="text-xs font-normal text-slate-600">{PASSWORD_HINT}</span>
+        </div>
         <label className="grid gap-1.5 text-sm font-medium text-slate-700">
           確認密碼
-          <input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required className="h-10 rounded-md border border-border px-3" />
+          <input name="confirmPassword" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} required className="h-10 rounded-md border border-border px-3" />
         </label>
         <input type="hidden" name="policyVersion" value={consentVersion} />
         <label className="flex items-start gap-2 text-sm leading-6 text-slate-700">

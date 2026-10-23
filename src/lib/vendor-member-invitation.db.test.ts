@@ -32,6 +32,7 @@ vi.mock("@/lib/app-url", async (importOriginal) => ({
 }));
 vi.mock("@/lib/email", () => ({ sendVendorMemberInvitationEmail: vi.fn(async () => ({ id: "synthetic-email" })) }));
 
+import { headers } from "next/headers";
 import { changeVendorMemberRoleAction, createVendorMemberAction, deactivateVendorMemberAction, revokeVendorMemberInvitationAction } from "@/app/actions/vendor-member-actions";
 import { loginAction } from "@/app/actions/auth-security-actions";
 import { hashPassword } from "@/lib/password";
@@ -296,6 +297,33 @@ describe("member invitation acceptance (PostgreSQL)", () => {
     expect(user.passwordHash).not.toContain("synthetic-password-123");
     expect(user.policyConsents).toEqual([expect.objectContaining({ vendorId: vendor.id, context: "vendor_member_invitation" })]);
     expect(await membership(vendor.id, user.id)).toMatchObject({ role: "support", status: "active" });
+  });
+
+  it("refuses a short, long, common or self-referencing password without creating the account", async () => {
+    const { vendor, owner } = await createVendor("policy");
+    const name = `policy${randomUUID().slice(0, 8)}`;
+    const email = `${name}@example.test`;
+    created.emails.push(email);
+    const invitation = await createVendorMemberInvitation(getDb(), { vendorId: vendor.id, invitedByUserId: owner.id, email, name: "Policy", role: "support" });
+    const policy = merchantRegistrationPolicyVersions();
+
+    const attempts = [["bluewha", "short"], ["x".repeat(129), "long"], ["Password123", "common"], ["dragon2026", "common"], [`${name}!2026`, "personal"]] as const;
+    for (const [index, [password, reason]] of attempts.entries()) {
+      // A distinct synthetic source per attempt, so this case never spends the shared acceptance rate-limit budget.
+      vi.mocked(headers).mockResolvedValueOnce(new Headers({ "user-agent": "synthetic-agent", "x-forwarded-for": `198.51.100.${index + 10}` }) as Awaited<ReturnType<typeof headers>>);
+      const form = new FormData();
+      form.set("token", invitation.token);
+      form.set("name", "Policy Member");
+      form.set("password", password);
+      form.set("confirmPassword", password);
+      form.set("acceptPolicies", "on");
+      form.set("policyVersion", policy.consentVersion);
+      await expect(acceptVendorMemberInvitationAction(form)).rejects.toThrow(`&error=${reason}`);
+    }
+
+    expect(await getDb().user.findUnique({ where: { email } })).toBeNull();
+    const stored = await getDb().vendorMemberInvitation.findUniqueOrThrow({ where: { id: invitation.invitationId } });
+    expect(stored.acceptedAt).toBeNull();
   });
 
   it.each([

@@ -133,6 +133,23 @@ export function schedulePasswordResetLink(
   });
 }
 
+/**
+ * The address and platform role of the account a still-usable reset token
+ * belongs to, so the new-password policy can apply the administrator length
+ * and refuse a password built from the address. One read-only lookup; an
+ * unusable token yields null, the same as an unknown one. Consuming the token
+ * stays in consumePasswordResetToken, which re-checks everything atomically.
+ */
+export async function findPasswordResetTokenAccount(token: string, now = new Date()) {
+  if (!token) return null;
+  const resetToken = await getDb().passwordResetToken.findUnique({
+    where: { tokenHash: tokenHash(token) },
+    select: { usedAt: true, expiresAt: true, user: { select: { email: true, status: true, platformRole: true } } },
+  });
+  if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= now || resetToken.user.status !== "active") return null;
+  return { email: resetToken.user.email, platformRole: resetToken.user.platformRole };
+}
+
 export async function consumePasswordResetToken(token: string, password: string) {
   const now = new Date();
   const passwordHash = await hashPasswordAsync(password);
