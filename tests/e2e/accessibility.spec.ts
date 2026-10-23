@@ -92,7 +92,7 @@ async function enableOwnerMfa(page: Page) {
   if (!totpSeed) throw new Error("Owner MFA setup did not provide a TOTP secret.");
 
   await page.getByLabel("6 位數驗證碼").fill(totpCodeForTimestamp(totpSeed));
-  await page.getByRole("button", { name: "啟用 MFA", exact: true }).click();
+  await page.getByRole("button", { name: "完成設定", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/security\?updated=mfa_enabled$/);
   await waitForStableRoute(page, "/settings/security?updated=mfa_enabled");
   await expect(page.getByText("目前登入狀態：已完成 MFA 驗證", { exact: true })).toBeVisible();
