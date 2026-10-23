@@ -5,7 +5,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGES } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 
-const errors: Record<string, string> = { invalid: "請確認資料完整，密碼至少 8 個字元。", common: PASSWORD_POLICY_MESSAGES.common, exists: "這個 Email 已註冊，請直接登入。", rate_limited: "註冊嘗試過多，請稍後再試。", temporarily_unavailable: "註冊保護服務暫時無法使用。", consent_required: "請先閱讀並勾選同意使用條款與隱私通知。", policy_updated: "使用條款或隱私通知已更新，請重新閱讀後再勾選同意。" };
+const errors: Record<string, string> = { invalid: "請確認資料完整，密碼至少 8 個字元。", common: PASSWORD_POLICY_MESSAGES.common, personal: PASSWORD_POLICY_MESSAGES.personal, exists: "這個 Email 已註冊，請直接登入。", rate_limited: "註冊嘗試過多，請稍後再試。", temporarily_unavailable: "註冊保護服務暫時無法使用。", consent_required: "請先閱讀並勾選同意使用條款與隱私通知。", policy_updated: "使用條款或隱私通知已更新，請重新閱讀後再勾選同意。" };
 export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   const { consentVersion } = merchantRegistrationPolicyVersions();

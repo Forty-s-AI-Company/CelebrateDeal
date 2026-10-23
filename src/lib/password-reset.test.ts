@@ -14,7 +14,7 @@ vi.mock("next/server", () => ({ after: mocks.after }));
 import {
   consumePasswordResetToken,
   createPasswordResetToken,
-  findPasswordResetTokenEmail,
+  findPasswordResetTokenAccount,
   schedulePasswordResetLink,
   sendPasswordResetLink,
 } from "@/lib/password-reset";
@@ -159,7 +159,7 @@ describe("password reset flow", () => {
     expect(consumedTokens).toBe(1);
   });
 
-  it("reveals the account address only for a usable token, without consuming it", async () => {
+  it("reveals the account address and platform role only for a usable token, without consuming it", async () => {
     const user = await getDb().user.create({
       data: {
         email: `reset-lookup-${Date.now()}@example.test`,
@@ -170,18 +170,33 @@ describe("password reset flow", () => {
     createdUserIds.push(user.id);
     const reset = await createPasswordResetToken({ email: user.email });
 
-    expect(await findPasswordResetTokenEmail(reset!.token)).toBe(user.email);
+    expect(await findPasswordResetTokenAccount(reset!.token)).toEqual({ email: user.email, platformRole: "none" });
     expect(await getDb().passwordResetToken.count({ where: { userId: user.id, usedAt: null } })).toBe(1);
-    expect(await findPasswordResetTokenEmail("")).toBeNull();
-    expect(await findPasswordResetTokenEmail("synthetic-unknown-reset-reference")).toBeNull();
-    expect(await findPasswordResetTokenEmail(reset!.token, new Date(Date.now() + 24 * 60 * 60 * 1000))).toBeNull();
+    expect(await findPasswordResetTokenAccount("")).toBeNull();
+    expect(await findPasswordResetTokenAccount("synthetic-unknown-reset-reference")).toBeNull();
+    expect(await findPasswordResetTokenAccount(reset!.token, new Date(Date.now() + 24 * 60 * 60 * 1000))).toBeNull();
 
     await getDb().user.update({ where: { id: user.id }, data: { status: "inactive" } });
-    expect(await findPasswordResetTokenEmail(reset!.token)).toBeNull();
+    expect(await findPasswordResetTokenAccount(reset!.token)).toBeNull();
     await getDb().user.update({ where: { id: user.id }, data: { status: "active" } });
 
     expect((await consumePasswordResetToken(reset!.token, "first-password-123")).ok).toBe(true);
-    expect(await findPasswordResetTokenEmail(reset!.token)).toBeNull();
+    expect(await findPasswordResetTokenAccount(reset!.token)).toBeNull();
+  });
+
+  it("reports a platform administrator's role so the reset applies the 12-character rule", async () => {
+    const admin = await getDb().user.create({
+      data: {
+        email: `reset-admin-${Date.now()}@example.test`,
+        name: "Reset Admin User",
+        passwordHash: hashPassword("old-admin-password-123"),
+        platformRole: "platform_admin",
+      },
+    });
+    createdUserIds.push(admin.id);
+    const reset = await createPasswordResetToken({ email: admin.email });
+
+    expect(await findPasswordResetTokenAccount(reset!.token)).toEqual({ email: admin.email, platformRole: "platform_admin" });
   });
 
   it("atomically allows only one concurrent consumer to change the password", async () => {

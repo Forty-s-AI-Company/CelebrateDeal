@@ -70,3 +70,27 @@ export const COMMON_PASSWORDS: readonly string[] = [
   "celebratedeal", "celebratedeal1", "celebratedeal123", "celebrate1", "celebrate123", "celebration",
   "webinar123", "livestream", "livesales", "sales1234", "shop12345", "store1234",
 ];
+
+/**
+ * Short words (mostly 4 to 7 letters) that people pad with digits or symbols to
+ * reach the minimum length: qwerty2026, admin2026!, 2026password. Used only
+ * by the "listed word plus digits or symbols" rule, never matched alone
+ * (most are shorter than the minimum anyway). Letters only, lower case.
+ */
+export const COMMON_PASSWORD_BASES: readonly string[] = [
+  "pass", "passwd", "passw", "pwd", "qwerty", "qwert", "asdf", "asdfgh", "zxcv", "zxcvb", "qazwsx", "abcd",
+  "abcde", "abcdef", "admin", "root", "login", "logon", "user", "guest", "test", "temp", "demo", "default",
+  "welcome", "letmein", "hello", "hallo", "iloveu", "iloveyo", "love", "lover", "loveme", "baby", "babe",
+  "angel", "honey", "sweet", "kitty", "dragon", "monkey", "master", "shadow", "tiger", "lion", "eagle",
+  "batman", "hunter", "killer", "ninja", "pokemon", "naruto", "soccer", "hockey", "golf", "tennis",
+  "secret", "magic", "money", "lucky", "happy", "smile", "summer", "winter", "spring", "autumn", "sunny",
+  "sunshin", "flower", "orange", "banana", "apple", "cookie", "coffee", "pepper", "ginger", "purple",
+  "silver", "golden", "freedom", "family", "friend", "google", "yahoo", "gmail", "facebook", "iphone",
+  "samsung", "nokia", "taiwan", "taipei", "china", "woaini", "nihao", "baobei", "laopo", "laogong",
+  "mima", "wode", "aini", "qwer", "asdzxc", "zaq", "michael", "jordan", "charlie", "thomas", "andrew",
+  "jessica", "daniel", "george", "maggie", "ashley", "amanda", "nicole", "access", "trustno", "matrix",
+  "starwar", "mustang", "corvette", "ferrari", "porsche", "harley", "yankees", "lakers", "arsenal",
+  "chelsea", "liverpo", "barca", "messi", "ronaldo", "jesus", "christ", "god", "superman", "computer",
+  "internet", "office", "company", "manager", "support", "service", "sales", "shop", "store",
+  "password", "iloveyou", "sunshine", "football", "baseball", "princess", "whatever", "changeme",
+];

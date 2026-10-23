@@ -124,7 +124,7 @@ const mocks = vi.hoisted(() => ({
   sendPasswordResetLink: vi.fn(),
   schedulePasswordResetLink: vi.fn(),
   consumePasswordResetToken: vi.fn(),
-  findPasswordResetTokenEmail: vi.fn(),
+  findPasswordResetTokenAccount: vi.fn(),
   settlementFindUnique: vi.fn(),
   settlementFindMany: vi.fn(),
   settlementUpdateMany: vi.fn(),
@@ -254,7 +254,7 @@ vi.mock("@/lib/password-reset", () => ({
   schedulePasswordResetLink: mocks.schedulePasswordResetLink,
   sendPasswordResetLink: mocks.sendPasswordResetLink,
   consumePasswordResetToken: mocks.consumePasswordResetToken,
-  findPasswordResetTokenEmail: mocks.findPasswordResetTokenEmail,
+  findPasswordResetTokenAccount: mocks.findPasswordResetTokenAccount,
 }));
 vi.mock("@/lib/email", () => ({ isAllowedSmokeTestRecipient: mocks.isAllowedSmokeTestRecipient, sendVendorMemberInvitationEmail: mocks.sendVendorMemberInvitationEmail }));
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: mocks.after }));
@@ -1072,13 +1072,13 @@ describe("loginAction", () => {
 describe("updatePasswordAction", () => {
   const currentPassword = "current-password-123";
 
-  function authenticatedUser() {
+  function authenticatedUser(platformRole = "user") {
     mocks.requireAuth.mockResolvedValue({
       user: {
         id: "user-1",
         email: "member@example.com",
         passwordHash: hashPassword(currentPassword, "current-password-test-salt"),
-        platformRole: "user",
+        platformRole,
       },
       session: { id: "session-1" },
       vendor: { betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"], id: "vendor-1" },
@@ -1104,7 +1104,9 @@ describe("updatePasswordAction", () => {
     ["a 7-character password", "bluewha", "short"],
     ["a listed common password", "Password123", "common"],
     ["a straight digit run", "23456789", "common"],
-    ["a password containing the account e-mail name", "member-2026!", "common"],
+    ["a common word with a year", "dragon2026", "common"],
+    ["a password over 128 characters", "x".repeat(129), "long"],
+    ["a password containing the account e-mail name", "member-2026!", "personal"],
   ])("rejects %s before writing any credential data", async (_description, password, reason) => {
     authenticatedUser();
 
@@ -1123,6 +1125,23 @@ describe("updatePasswordAction", () => {
     mocks.transaction.mockResolvedValueOnce([]);
 
     await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhal" }))).rejects.toThrow(
+      "redirect:/login?password_changed=1",
+    );
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a platform administrator at 12 characters: 11 is refused, 12 is accepted", async () => {
+    authenticatedUser("platform_admin");
+
+    await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhale12" }))).rejects.toThrow(
+      "redirect:/settings/security?error=admin_short",
+    );
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+
+    mocks.cookies.mockResolvedValueOnce({ delete: vi.fn(), set: vi.fn() });
+    mocks.transaction.mockResolvedValueOnce([]);
+    await expect(updatePasswordAction(updatePasswordFormData({ password: "bluewhale123" }))).rejects.toThrow(
       "redirect:/login?password_changed=1",
     );
     expect(mocks.transaction).toHaveBeenCalledOnce();
@@ -3181,7 +3200,7 @@ describe("confirmPasswordResetAction", () => {
   }
 
   beforeEach(() => {
-    mocks.findPasswordResetTokenEmail.mockResolvedValue("reset.member@example.com");
+    mocks.findPasswordResetTokenAccount.mockResolvedValue({ email: "reset.member@example.com", platformRole: "none" });
     mocks.consumePasswordResetToken.mockResolvedValue({ ok: true, userId: "user-1" });
   });
 
@@ -3189,7 +3208,9 @@ describe("confirmPasswordResetAction", () => {
     ["a 7-character password", "bluewha", "short"],
     ["a listed common password", "  Password123  ", "common"],
     ["a repeated unit", "abababab", "common"],
-    ["a password containing the account e-mail name", "Reset.Member-2026", "common"],
+    ["a password over 128 characters", "x".repeat(129), "long"],
+    ["a common word with digits around it", "2026password", "common"],
+    ["a password containing the account e-mail name", "Reset.Member-2026", "personal"],
   ])("rejects %s without consuming the reset token", async (_description, password, reason) => {
     await expect(confirmPasswordResetAction(confirmFormData(password))).rejects.toThrow(
       `redirect:/password-reset/confirm?token=${token}&error=${reason}`,
@@ -3198,16 +3219,28 @@ describe("confirmPasswordResetAction", () => {
   });
 
   it("checks the e-mail name only for the account the token belongs to", async () => {
-    mocks.findPasswordResetTokenEmail.mockResolvedValue(null);
+    mocks.findPasswordResetTokenAccount.mockResolvedValue(null);
 
     await expect(confirmPasswordResetAction(confirmFormData("Reset.Member-2026"))).rejects.toThrow("redirect:/login?reset=1");
-    expect(mocks.findPasswordResetTokenEmail).toHaveBeenCalledWith(token);
+    expect(mocks.findPasswordResetTokenAccount).toHaveBeenCalledWith(token);
     expect(mocks.consumePasswordResetToken).toHaveBeenCalledWith(token, "Reset.Member-2026");
   });
 
   it("accepts an 8-character password that is not common", async () => {
     await expect(confirmPasswordResetAction(confirmFormData("bluewhal"))).rejects.toThrow("redirect:/login?reset=1");
     expect(mocks.consumePasswordResetToken).toHaveBeenCalledWith(token, "bluewhal");
+  });
+
+  it("keeps a platform administrator at 12 characters: 11 is refused, 12 is accepted", async () => {
+    mocks.findPasswordResetTokenAccount.mockResolvedValue({ email: "reset.admin@example.com", platformRole: "platform_admin" });
+
+    await expect(confirmPasswordResetAction(confirmFormData("bluewhale12"))).rejects.toThrow(
+      `redirect:/password-reset/confirm?token=${token}&error=admin_short`,
+    );
+    expect(mocks.consumePasswordResetToken).not.toHaveBeenCalled();
+
+    await expect(confirmPasswordResetAction(confirmFormData("bluewhale123"))).rejects.toThrow("redirect:/login?reset=1");
+    expect(mocks.consumePasswordResetToken).toHaveBeenCalledWith(token, "bluewhale123");
   });
 
   it("still rejects a mismatched confirmation", async () => {

@@ -104,5 +104,6 @@ describe("/invitations/accept", () => {
     expect(await render({ token: "synthetic-token", error: "short" })).toContain("密碼至少需要 8 個字元。");
     expect(await render({ token: "synthetic-token", error: "long" })).toContain("密碼最多 128 個字元。");
     expect(await render({ token: "synthetic-token", error: "common" })).toContain("這個密碼太常見，請換一個。");
+    expect(await render({ token: "synthetic-token", error: "personal" })).toContain("密碼不要包含你的 Email 帳號名稱。");
   });
 });

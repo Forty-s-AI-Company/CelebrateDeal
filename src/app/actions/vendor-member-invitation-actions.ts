@@ -7,7 +7,7 @@ import { getCurrentAuth } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
-import { validateNewPassword } from "@/lib/password-policy";
+import { passwordPolicyErrorCode, validateNewPassword } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { acceptVendorMemberInvitation, findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
@@ -54,7 +54,7 @@ export async function acceptVendorMemberInvitationAction(formData: FormData) {
     if (password) {
       const policy = merchantRegistrationPolicyVersions();
       const passwordPolicy = validateNewPassword(password, { email: invitation.email });
-      if (!passwordPolicy.ok) redirect(acceptPath(token, passwordPolicy.reason));
+      if (!passwordPolicy.ok) redirect(acceptPath(token, passwordPolicyErrorCode(passwordPolicy)));
       if (password !== text(formData, "confirmPassword")) redirect(acceptPath(token, "mismatch"));
       if (formData.get("acceptPolicies") !== "on") redirect(acceptPath(token, "consent_required"));
       if (formData.get("policyVersion") !== policy.consentVersion) redirect(acceptPath(token, "policy_updated"));

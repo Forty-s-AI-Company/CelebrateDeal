@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody, requireSameOriginRequest } from "@/lib/api-security";
-import { PASSWORD_MAX_LENGTH, validateNewPassword } from "@/lib/password-policy";
-import { consumePasswordResetToken, findPasswordResetTokenEmail } from "@/lib/password-reset";
+import { PASSWORD_INPUT_LIMIT, validateNewPassword } from "@/lib/password-policy";
+import { consumePasswordResetToken, findPasswordResetTokenAccount } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const PasswordResetConfirm = z.object({
   token: z.string().min(24),
-  password: z.string().min(1).max(PASSWORD_MAX_LENGTH),
+  // Trim like the Server Actions and sign-in do, so the value checked is the
+  // value stored. The policy, not the schema, decides short and long.
+  password: z.string().max(PASSWORD_INPUT_LIMIT).transform((value) => value.trim()),
 });
 
 export async function POST(request: Request) {
@@ -21,14 +23,18 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid password reset confirmation" }, { status: 400 });
   }
+  const { token, password } = parsed.data;
 
-  // An unusable token yields no address; consumePasswordResetToken still refuses it below.
-  const policy = validateNewPassword(parsed.data.password, { email: await findPasswordResetTokenEmail(parsed.data.token) });
+  // An unusable token yields no account (8-character rule); consumePasswordResetToken still refuses it below.
+  const policy = validateNewPassword(password, await findPasswordResetTokenAccount(token) ?? {});
   if (!policy.ok) {
-    return NextResponse.json({ error: "Invalid password reset confirmation", reason: policy.reason }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid password reset confirmation", reason: policy.reason, ...(policy.reason === "short" ? { minLength: policy.minLength } : {}) },
+      { status: 400 },
+    );
   }
 
-  const result = await consumePasswordResetToken(parsed.data.token, parsed.data.password);
+  const result = await consumePasswordResetToken(token, password);
   if (!result.ok) {
     return NextResponse.json({ error: "Invalid or expired reset token" }, { status: 400 });
   }

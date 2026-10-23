@@ -58,6 +58,9 @@ describe("auth entry pending feedback", () => {
   it.each([
     ["short", "密碼至少需要 8 個字元。"],
     ["common", "這個密碼太常見，請換一個。"],
+    ["personal", "密碼不要包含你的 Email 帳號名稱。"],
+    ["admin_short", "管理員密碼至少需要 12 個字元。"],
+    ["long", "密碼最多 128 個字元。"],
   ])("explains the %s password policy failure on reset", async (error, message) => {
     formStatus.pending = false;
     const html = renderToStaticMarkup(await PasswordResetConfirmPage({
