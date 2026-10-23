@@ -17,7 +17,10 @@ export function isValidDonationCode(value: string): boolean {
 
 /**
  * 台灣公司統編檢核：各位數依 1,2,1,2,1,2,4,1 加權後拆位相加。
- * 一般總和須為 10 的倍數；第七碼為 7 時，總和加一亦可成立。
+ * 財政部自 2023-04-01 起檢查邏輯由「可被 10 整除」改為「可被 5 整除」（新舊號碼相容，
+ * 10 的倍數必為 5 的倍數）；第七碼為 7 時，總和加一亦可成立。
+ * 來源：財政部財政資訊中心「營利事業統一編號檢查碼邏輯修正說明」
+ * https://www.fia.gov.tw/singlehtml/3?cntId=c4d9cff38c8642ef8872774ee9987283
  */
 export function isValidTaiwanBusinessId(value: string): boolean {
   if (!/^[0-9]{8}$/u.test(value)) return false;
@@ -29,7 +32,7 @@ export function isValidTaiwanBusinessId(value: string): boolean {
     return total + Math.floor(product / 10) + (product % 10);
   }, 0);
 
-  return sum % 10 === 0 || (digits[6] === 7 && (sum + 1) % 10 === 0);
+  return sum % 5 === 0 || (digits[6] === 7 && (sum + 1) % 5 === 0);
 }
 
 export type CheckoutInvoiceSelection =
