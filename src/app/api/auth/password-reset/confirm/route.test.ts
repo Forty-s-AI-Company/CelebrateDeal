@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { checkRateLimit, consumePasswordResetToken } = vi.hoisted(() => ({
+const { checkRateLimit, consumePasswordResetToken, findPasswordResetTokenEmail } = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   consumePasswordResetToken: vi.fn(),
+  findPasswordResetTokenEmail: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit }));
-vi.mock("@/lib/password-reset", () => ({ consumePasswordResetToken }));
+vi.mock("@/lib/password-reset", () => ({ consumePasswordResetToken, findPasswordResetTokenEmail }));
 
 import { POST } from "@/app/api/auth/password-reset/confirm/route";
 
@@ -35,6 +36,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   checkRateLimit.mockResolvedValue(null);
   consumePasswordResetToken.mockResolvedValue({ ok: true });
+  findPasswordResetTokenEmail.mockResolvedValue("reset.member@example.test");
 });
 
 describe("POST /api/auth/password-reset/confirm", () => {
@@ -65,13 +67,34 @@ describe("POST /api/auth/password-reset/confirm", () => {
 
   it.each([
     ["an invalid token", { ...validPayload, token: "test-fixture-token" }],
-    ["a short password", { ...validPayload, password: "test-short" }],
+    ["a password over 128 characters", { ...validPayload, password: "x".repeat(129) }],
   ])("returns 400 for %s without consuming a token", async (_description, payload) => {
     const response = await POST(passwordResetConfirm(payload));
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Invalid password reset confirmation" });
     expect(consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a 7-character password", "tst-sho", "short"],
+    ["a listed common password", "Password123", "common"],
+    ["a repeated character", "aaaaaaaaaa", "common"],
+    ["a password built from the account e-mail name", "reset.member!2026", "common"],
+  ])("returns 400 for %s without consuming a token", async (_description, password, reason) => {
+    const response = await POST(passwordResetConfirm({ ...validPayload, password }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid password reset confirmation", reason });
+    expect(findPasswordResetTokenEmail).toHaveBeenCalledWith(validPayload.token);
+    expect(consumePasswordResetToken).not.toHaveBeenCalled();
+  });
+
+  it("accepts an 8-character password that is not common", async () => {
+    const response = await POST(passwordResetConfirm({ ...validPayload, password: "bluewhal" }));
+
+    expect(response.status).toBe(200);
+    expect(consumePasswordResetToken).toHaveBeenCalledWith(validPayload.token, "bluewhal");
   });
 
   it("returns 400 when the reset service rejects the token", async () => {

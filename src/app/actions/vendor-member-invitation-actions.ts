@@ -7,6 +7,7 @@ import { getCurrentAuth } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
+import { validateNewPassword } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { acceptVendorMemberInvitation, findPendingVendorMemberInvitation } from "@/lib/vendor-member-invitation";
@@ -42,7 +43,8 @@ export async function acceptVendorMemberInvitationAction(formData: FormData) {
   if (limited) redirect(acceptPath(token, limited.status === 429 ? "rate_limited" : "temporarily_unavailable"));
 
   // Reject unknown tokens before any password hashing work (#462 n11).
-  if (!await findPendingVendorMemberInvitation(getDb(), token)) redirect(acceptPath(token, "invalid"));
+  const invitation = await findPendingVendorMemberInvitation(getDb(), token);
+  if (!invitation) redirect(acceptPath(token, "invalid"));
 
   // getCurrentAuth returns null for a session whose enrolled factor is not yet verified.
   const auth = await getCurrentAuth();
@@ -51,7 +53,8 @@ export async function acceptVendorMemberInvitationAction(formData: FormData) {
     const password = text(formData, "password");
     if (password) {
       const policy = merchantRegistrationPolicyVersions();
-      if (password.length < 12 || password.length > 128) redirect(acceptPath(token, "short"));
+      const passwordPolicy = validateNewPassword(password, { email: invitation.email });
+      if (!passwordPolicy.ok) redirect(acceptPath(token, passwordPolicy.reason));
       if (password !== text(formData, "confirmPassword")) redirect(acceptPath(token, "mismatch"));
       if (formData.get("acceptPolicies") !== "on") redirect(acceptPath(token, "consent_required"));
       if (formData.get("policyVersion") !== policy.consentVersion) redirect(acceptPath(token, "policy_updated"));

@@ -14,6 +14,7 @@ vi.mock("next/server", () => ({ after: mocks.after }));
 import {
   consumePasswordResetToken,
   createPasswordResetToken,
+  findPasswordResetTokenEmail,
   schedulePasswordResetLink,
   sendPasswordResetLink,
 } from "@/lib/password-reset";
@@ -156,6 +157,31 @@ describe("password reset flow", () => {
       },
     });
     expect(consumedTokens).toBe(1);
+  });
+
+  it("reveals the account address only for a usable token, without consuming it", async () => {
+    const user = await getDb().user.create({
+      data: {
+        email: `reset-lookup-${Date.now()}@example.test`,
+        name: "Reset Lookup User",
+        passwordHash: hashPassword("old-password-123"),
+      },
+    });
+    createdUserIds.push(user.id);
+    const reset = await createPasswordResetToken({ email: user.email });
+
+    expect(await findPasswordResetTokenEmail(reset!.token)).toBe(user.email);
+    expect(await getDb().passwordResetToken.count({ where: { userId: user.id, usedAt: null } })).toBe(1);
+    expect(await findPasswordResetTokenEmail("")).toBeNull();
+    expect(await findPasswordResetTokenEmail("synthetic-unknown-reset-reference")).toBeNull();
+    expect(await findPasswordResetTokenEmail(reset!.token, new Date(Date.now() + 24 * 60 * 60 * 1000))).toBeNull();
+
+    await getDb().user.update({ where: { id: user.id }, data: { status: "inactive" } });
+    expect(await findPasswordResetTokenEmail(reset!.token)).toBeNull();
+    await getDb().user.update({ where: { id: user.id }, data: { status: "active" } });
+
+    expect((await consumePasswordResetToken(reset!.token, "first-password-123")).ok).toBe(true);
+    expect(await findPasswordResetTokenEmail(reset!.token)).toBeNull();
   });
 
   it("atomically allows only one concurrent consumer to change the password", async () => {

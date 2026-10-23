@@ -9,6 +9,7 @@ import { getCanonicalAppUrl } from "@/lib/app-url";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { hashPasswordAsync } from "@/lib/password";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validateNewPassword } from "@/lib/password-policy";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -17,7 +18,7 @@ const RegistrationInput = z.object({
   workspaceName: z.string().trim().min(2).max(120),
   email: z.string().trim().toLowerCase().email().max(320),
   // Match the existing login action, which trims submitted passwords.
-  password: z.string().max(128).transform((value) => value.trim()).pipe(z.string().min(12)),
+  password: z.string().max(PASSWORD_MAX_LENGTH).transform((value) => value.trim()).pipe(z.string().min(PASSWORD_MIN_LENGTH)),
 });
 
 /** Create the original self-service workspace flow using current security boundaries. */
@@ -32,6 +33,9 @@ export async function registerAction(formData: FormData) {
   const parsed = RegistrationInput.safeParse({ name: formData.get("name"), workspaceName: formData.get("workspaceName"), email: formData.get("email"), password: formData.get("password") });
   if (!parsed.success) redirect("/register?error=invalid");
   const input = parsed.data;
+  const passwordPolicy = validateNewPassword(input.password, { email: input.email });
+  // Length was already enforced by the schema; only the common-password result needs its own message.
+  if (!passwordPolicy.ok) redirect(`/register?error=${passwordPolicy.reason === "common" ? "common" : "invalid"}`);
   const incoming = await headers();
   const forwarded = new Headers();
   for (const name of ["cf-connecting-ip", "x-forwarded-for"]) {

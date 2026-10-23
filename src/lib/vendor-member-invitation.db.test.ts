@@ -298,6 +298,30 @@ describe("member invitation acceptance (PostgreSQL)", () => {
     expect(await membership(vendor.id, user.id)).toMatchObject({ role: "support", status: "active" });
   });
 
+  it("refuses a short, common or self-referencing password without creating the account", async () => {
+    const { vendor, owner } = await createVendor("policy");
+    const name = `policy${randomUUID().slice(0, 8)}`;
+    const email = `${name}@example.test`;
+    created.emails.push(email);
+    const invitation = await createVendorMemberInvitation(getDb(), { vendorId: vendor.id, invitedByUserId: owner.id, email, name: "Policy", role: "support" });
+    const policy = merchantRegistrationPolicyVersions();
+
+    for (const [password, reason] of [["bluewha", "short"], ["Password123", "common"], [`${name}!2026`, "common"]] as const) {
+      const form = new FormData();
+      form.set("token", invitation.token);
+      form.set("name", "Policy Member");
+      form.set("password", password);
+      form.set("confirmPassword", password);
+      form.set("acceptPolicies", "on");
+      form.set("policyVersion", policy.consentVersion);
+      await expect(acceptVendorMemberInvitationAction(form)).rejects.toThrow(`&error=${reason}`);
+    }
+
+    expect(await getDb().user.findUnique({ where: { email } })).toBeNull();
+    const stored = await getDb().vendorMemberInvitation.findUniqueOrThrow({ where: { id: invitation.invitationId } });
+    expect(stored.acceptedAt).toBeNull();
+  });
+
   it.each([
     ["platform administrator", { platformRole: "platform_admin" }],
     ["suspended account", { status: "inactive" }],

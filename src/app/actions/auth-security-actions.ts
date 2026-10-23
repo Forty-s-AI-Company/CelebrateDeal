@@ -28,6 +28,7 @@ import {
   verifyTotpCode,
 } from "@/lib/mfa";
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
+import { validateNewPassword } from "@/lib/password-policy";
 import { schedulePasswordResetLink, sendPasswordResetLink } from "@/lib/password-reset";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { accountLockRemainingSeconds, checkAccountRateLimit, consumeAccountRateLimit, lockAccount } from "@/lib/account-rate-limit";
@@ -168,7 +169,8 @@ export async function updatePasswordAction(formData: FormData) {
   const password = text(formData, "password");
   const confirmPassword = text(formData, "confirmPassword");
   if (!await verifyPasswordAsync(currentPassword, auth.user.passwordHash)) redirect("/settings/security?error=current_password");
-  if (password.length < 12) redirect("/settings/security?error=short");
+  const policy = validateNewPassword(password, { email: auth.user.email });
+  if (!policy.ok) redirect(`/settings/security?error=${policy.reason}`);
   if (password !== confirmPassword) redirect("/settings/security?error=password_mismatch");
   if (await verifyPasswordAsync(password, auth.user.passwordHash)) redirect("/settings/security?error=password_reuse");
 
@@ -222,10 +224,12 @@ export async function confirmPasswordResetAction(formData: FormData) {
   const token = text(formData, "token");
   const password = text(formData, "password");
   const confirmPassword = text(formData, "confirmPassword");
-  if (password.length < 12) redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=short`);
+  const { consumePasswordResetToken, findPasswordResetTokenEmail } = await import("@/lib/password-reset");
+  // An unusable token yields no address; consumePasswordResetToken still refuses it below.
+  const policy = validateNewPassword(password, { email: await findPasswordResetTokenEmail(token) });
+  if (!policy.ok) redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=${policy.reason}`);
   if (password !== confirmPassword) redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=mismatch`);
 
-  const { consumePasswordResetToken } = await import("@/lib/password-reset");
   const result = await consumePasswordResetToken(token, password);
   if (!result.ok) redirect(`/password-reset/confirm?token=${encodeURIComponent(token)}&error=expired`);
   redirect("/login?reset=1");

@@ -1,6 +1,7 @@
 import { MfaReturnField } from "@/components/mfa-return-field";
 import { safeMfaReturnPath } from "@/lib/mfa-return-path";
 import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
+import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGES } from "@/lib/password-policy";
 import { cookies } from "next/headers";
 import Image from "next/image";
 import QRCode from "qrcode";
@@ -34,7 +35,7 @@ import { statusLabel } from "@/lib/status-labels";
 
 const errorMessages: Record<string, string> = {
   current_password: "目前密碼不正確。",
-  short: "密碼至少需要 12 個字元。",
+  ...PASSWORD_POLICY_MESSAGES,
   password_mismatch: "新密碼與確認密碼不一致。",
   password_reuse: "新密碼不能與目前密碼相同。",
   owner_required: "只有商家 owner 可以管理成員。",
@@ -135,8 +136,8 @@ export default async function SecuritySettingsPage({
           <form action={updatePasswordAction} className="grid gap-4">
             <CsrfField />
             <Field label="目前密碼" name="currentPassword" type="password" autoComplete="current-password" required />
-            <Field label="新密碼" name="password" type="password" autoComplete="new-password" minLength={12} required />
-            <Field label="確認新密碼" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} required />
+            <Field label="新密碼" name="password" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} hint={PASSWORD_HINT} required />
+            <Field label="確認新密碼" name="confirmPassword" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} required />
             <p className="text-xs text-slate-500">更新後會撤銷所有裝置的登入狀態，請用新密碼重新登入。</p>
             <SubmitButton>更新密碼並全部登出</SubmitButton>
           </form>
