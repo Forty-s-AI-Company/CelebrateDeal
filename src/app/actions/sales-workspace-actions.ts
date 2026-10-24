@@ -97,7 +97,19 @@ export async function createSalesProjectAction(formData: FormData) {
   redirect(parsed.onboardingEnabled ? "/onboarding" : `/projects/${project.id}`);
 }
 
-/** Publishes only when the selected project has a real sellable flow. */
+/**
+ * Publishes only when the selected project has a real sellable flow.
+ *
+ * Independent audience publication (src/lib/independent-publish-limit.ts):
+ * pages of a published project do not count toward the vendor's free
+ * independent-publish limit. Today this action is the only writer of
+ * `SalesProject.status`, so no path moves a project back out of "published"
+ * (or out of "archived"). Any future "unpublish project" or "unarchive
+ * project" feature must apply that limit (and the kill switch) to the
+ * project's published audience pages, or move the excess pages back to draft,
+ * because they would otherwise become independently public without passing
+ * the publish-time check.
+ */
 export async function publishSalesProjectAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { vendor } = await requireVendorManagerContext();

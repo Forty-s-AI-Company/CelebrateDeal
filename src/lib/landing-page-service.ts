@@ -32,9 +32,13 @@ import {
   publicProjectGateSatisfied,
   publishedLandingPageContent,
   registrationFormIdsInContent,
+  independentPublishBlockers,
+  type IndependentPublishBlocker,
   type LandingPageStoredContent,
   type PublicLandingPageUnavailableReason,
 } from "@/lib/public-landing-page-eligibility";
+import { getFunnelStepCatalog, stepsAddedOutsideGoal } from "@/lib/funnel-flow";
+import { independentPublishAllowance, independentPublishLimitMessage, INDEPENDENT_PUBLISH_DISABLED_MESSAGE, lockIndependentPublishSlots } from "@/lib/independent-publish-limit";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { isCardBindingRequiredForVendor, isVendorFeatureEnabled } from "@/lib/feature-gates";
 import { canPublishSalesProject } from "@/lib/sales-workspace";
@@ -363,6 +367,7 @@ export async function createLandingPage(input: Omit<LandingPageDraftInput, "id" 
   const formId = input.formId ? identifier(input.formId) : null;
   const liveId = input.liveId ? identifier(input.liveId) : null;
   if (!name || !slug || (input.formId && !formId) || (input.liveId && !liveId)) throw new LandingPageInputError();
+  assertNoStepsAddedOutsideGoal(undefined, content);
   await validateBindings(db(), { ...scope, content, formId, liveId });
   return db().landingPage.create({
     data: { vendorId: scope.vendorId, projectId: scope.projectId, name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId: formId, draftLiveId: liveId },
@@ -464,6 +469,7 @@ export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraft
   const existing = await requireScopedPage(db(), scope, id);
   if (existing.revision !== revision) throw new LandingPageConflictError();
   if (existing.status === "published" && existing.slug !== slug) throw new LandingPageInputError("landing_page_slug_locked");
+  assertNoStepsAddedOutsideGoal(existing.draftContent, content);
   validateOperationalReferences(existing.operations, content);
   // An editor that does not know about the publish-time lead form sends no
   // form; keep this page's own auto-created form instead of unbinding it.
@@ -581,6 +587,46 @@ async function ensureAudienceLeadForm(
   }
 }
 
+/**
+ * Abuse guard for independent publication: a page that would become public
+ * only through independent audience publication takes one of the vendor's
+ * free slots (see `INDEPENDENT_AUDIENCE_PUBLISH_FREE_LIMIT`), and the
+ * platform kill switch refuses such new publishes altogether. The caller
+ * holds the per-vendor lock taken at the start of the transaction, so
+ * concurrent publishes cannot both take the last slot. Republishing a page
+ * that is already public this way takes no new slot; pages published before
+ * the limit existed keep working.
+ */
+async function assertIndependentPublishAllowed(
+  transaction: Prisma.TransactionClient,
+  scope: { vendorId: string; projectId: string },
+  page: { id: string; draftLiveId: string | null },
+  content: LandingPageStoredContent,
+) {
+  if (page.draftLiveId || !isIndependentlyPublishedFunnel(content)) return;
+  const project = await transaction.salesProject.findFirst({ where: { id: scope.projectId, vendorId: scope.vendorId }, select: { status: true, publishedAt: true } });
+  if (isPublishedSalesProject(project)) return;
+  const allowance = await independentPublishAllowance(transaction, scope.vendorId, page.id);
+  if (allowance.allowed) return;
+  throw new LandingPageInputError(allowance.disabled ? "landing_page_independent_publish_disabled" : "landing_page_independent_publish_limit");
+}
+
+function contentFlow(content: LandingPageStoredContent | null | undefined) {
+  return content && "flow" in content ? content.flow ?? null : null;
+}
+
+/**
+ * Whole-document saves follow the add-step rule: a client cannot add a step
+ * the Funnel's goal refuses (for example a sales step in an audience
+ * Funnel). Steps an older saved document already has are kept.
+ */
+function assertNoStepsAddedOutsideGoal(previous: unknown, next: LandingPageStoredContent) {
+  const nextFlow = contentFlow(next);
+  if (!nextFlow) return;
+  const previousFlow = previous === undefined ? null : contentFlow(parseFunnelStepPages(previous) ?? parsePageDocument(previous));
+  if (stepsAddedOutsideGoal(previousFlow, nextFlow).length) throw new LandingPageInputError("landing_page_step_type_not_allowed");
+}
+
 /** A live never becomes public before its project, so such an audience Funnel cannot publish yet. */
 async function assertAudienceLiveProjectPublished(
   transaction: Prisma.TransactionClient,
@@ -600,11 +646,17 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
   if (!id || !revision) throw new LandingPageInputError();
   try {
     return await db().$transaction(async (transaction) => {
+      // First statement: serialise this vendor's publishes before anything is
+      // read, so the independent-slot count below sees every publish that
+      // committed while this one waited. This relies on READ COMMITTED (set
+      // explicitly below): a REPEATABLE READ snapshot could predate the lock.
+      await lockIndependentPublishSlots(transaction, scope.vendorId);
       const page = await requireScopedPage(transaction, scope, id);
       if (page.revision !== revision) throw new LandingPageConflictError();
       const content = inputContent(page.draftContent);
       validateOperationalReferences(page.operations, content);
       await assertAudienceLiveProjectPublished(transaction, scope, page, content);
+      await assertIndependentPublishAllowed(transaction, scope, page, content);
       const formId = await ensureAudienceLeadForm(transaction, scope, page, content);
       await validateBindings(transaction, { ...scope, content, formId, liveId: page.draftLiveId, publishing: true });
       const nextVersion = await transaction.landingPageVersion.count({ where: { vendorId: scope.vendorId, pageId: id } }) + 1;
@@ -618,7 +670,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
       });
       if (updated.count !== 1) throw new LandingPageConflictError();
       return { id, revision: revision + 1, version: version.version, formId };
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
     // Concurrent publishers can both read the next version number. The unique
     // version key is the final compare-and-swap guard, so expose no DB detail.
@@ -891,18 +943,61 @@ function independentFunnelWarnings(publicPage: PublicLandingPage, steps: FunnelS
   return warnings;
 }
 
+/** Where the merchant can lift the independent publication limit; links to authenticated pages only. */
+async function independentPublishLimitLinks(vendorId: string, projectHref: string) {
+  const links: LandingPagePublicationStatus["missing"] = [{ label: "發布所屬專案（專案內的網站不計入上限）", href: projectHref }];
+  // While funnel_binding is closed no card can be bound, so do not point there (F-002).
+  if (await isCardBindingRequiredForVendor(db(), vendorId)) links.push({ label: "新增並驗證商家付款方式", href: "/billing/payment-methods" });
+  links.push({ label: "升級付費方案", href: "/billing/plans" });
+  return links;
+}
+
 /** An audience Funnel's own state before the public loader runs; null when the loader decides. */
-function audienceFunnelPreflightStatus(
-  page: { status: string; draftLiveId: string | null },
+async function audienceFunnelPreflightStatus(
+  scope: { vendorId: string },
+  page: { id: string; status: string; draftLiveId: string | null },
   project: { status: string; publishedAt: Date | null },
   projectHref: string,
-): LandingPagePublicationStatus | null {
+): Promise<LandingPagePublicationStatus | null> {
   if (project.status === "archived") return { available: false, message: "所屬專案已封存，公開網址目前無法開啟。", projectHref, missing: [] };
   if (page.status === "published") return null;
-  if (page.draftLiveId && !isPublishedSalesProject(project)) {
+  const projectPublished = isPublishedSalesProject(project);
+  if (page.draftLiveId && !projectPublished) {
     return { available: false, message: "一頁式網站尚未發布。這個名單型網站綁定了直播，直播要等所屬專案發布後才能公開，所以目前無法發布；請移除直播綁定，或先發布專案。", projectHref, missing: [] };
   }
-  return { available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。名單型網站發布後即可開啟，不需要先發布專案。", projectHref, missing: [] };
+  let usage = "";
+  if (!projectPublished) {
+    // Read-only mirror of the publish-time limit; the publish transaction re-checks under its lock.
+    const allowance = await independentPublishAllowance(db(), scope.vendorId, page.id);
+    if (!allowance.allowed && allowance.disabled) {
+      return { available: false, message: `一頁式網站尚未發布。${INDEPENDENT_PUBLISH_DISABLED_MESSAGE}`, projectHref, missing: [{ label: "發布所屬專案", href: projectHref }] };
+    }
+    if (!allowance.allowed) {
+      return { available: false, message: `一頁式網站尚未發布。${independentPublishLimitMessage(allowance.used ?? undefined)}`, projectHref, missing: await independentPublishLimitLinks(scope.vendorId, projectHref) };
+    }
+    if (!allowance.uncapped && allowance.used !== null) usage = `（免費帳號可同時獨立發布 ${allowance.limit} 個名單型網站，目前已使用 ${allowance.used} 個）`;
+  }
+  return { available: false, message: `一頁式網站尚未發布，公開網址目前無法開啟。名單型網站發布後即可開啟，不需要先發布專案${usage}。`, projectHref, missing: [] };
+}
+
+const STEP_LABELS = new Map(getFunnelStepCatalog().map((step) => [step.type, step.label]));
+const COMMERCE_KIND_LABELS = { binding: "商品結帳設定", payment: "付款元件", checkout_form: "結帳聯絡表單" } as const;
+const MAX_NAMED_BLOCKERS = 5;
+
+function blockerLabel(blocker: IndependentPublishBlocker) {
+  if (blocker.kind === "commerce") return `頁面『${blocker.stepName}』含${blocker.commerce.map((kind) => COMMERCE_KIND_LABELS[kind]).join("、")}`;
+  const typeLabel = STEP_LABELS.get(blocker.stepType) ?? blocker.stepType;
+  const group = blocker.group === "webinar" ? "Webinar 流程" : "銷售流程";
+  return `步驟『${blocker.stepName}』${blocker.stepName === typeLabel ? "" : `（${typeLabel}）`}屬於${group}`;
+}
+
+/** Names the steps and pages that keep an audience Funnel behind its project. */
+function audienceProjectRequiredNote(content: FunnelStepPages) {
+  const labels = independentPublishBlockers(content).map(blockerLabel);
+  if (!labels.length) return "這個名單網站含有銷售、結帳或 Webinar 內容，需要所屬專案發布後才能公開。";
+  const named = labels.slice(0, MAX_NAMED_BLOCKERS).join("；");
+  const more = labels.length > MAX_NAMED_BLOCKERS ? `；另有 ${labels.length - MAX_NAMED_BLOCKERS} 項` : "";
+  return `這個名單網站需要所屬專案發布後才能公開，因為${named}${more}。若要不發布專案就直接公開，請移除這些步驟或元件後重新發布。`;
 }
 
 /** Project prerequisites for a Funnel whose public URL waits for its sales project. */
@@ -978,17 +1073,17 @@ export async function getLandingPagePublicationStatus(pageId: string): Promise<L
   const independent = isIndependentlyPublishedFunnel(gateContent);
   const projectPublished = isPublishedSalesProject(project);
   if (independent && !projectPublished) {
-    const preflight = audienceFunnelPreflightStatus(page, project, projectHref);
+    const preflight = await audienceFunnelPreflightStatus(scope, page, project, projectHref);
     if (preflight) return preflight;
   }
   // Every other Funnel still waits for its project (owner decision 2026-10-24).
   if (!projectPublished && !independent) {
-    const note = isAudienceFunnel(gateContent) ? "這個名單網站含有銷售、結帳或 Webinar 內容，需要所屬專案發布後才能公開。" : "";
+    const note = isAudienceFunnel(gateContent) ? audienceProjectRequiredNote(gateContent) : "";
     return unpublishedProjectStatus(scope, project.primaryFlow, projectHref, note);
   }
   if (page.status !== "published") {
     return independent
-      ? audienceFunnelPreflightStatus(page, project, projectHref)!
+      ? (await audienceFunnelPreflightStatus(scope, page, project, projectHref))!
       : { available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
   }
   let reason: PublicLandingPageUnavailableReason | null = null;
