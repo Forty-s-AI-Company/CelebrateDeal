@@ -179,7 +179,7 @@ describe("independent audience publication limit (PostgreSQL)", () => {
     await expect(publishLandingPage(blocked.id, blocked.revision)).resolves.toMatchObject({ version: 1 });
   });
 
-  it("does not limit a vendor through an ended or free plan", async () => {
+  it("keeps limiting a vendor whose only plans are free, pending payment or ended", async () => {
     const tenant = await createTenant("free-plan");
     const db = getDb();
     const free = await db.billingPlan.create({ data: { name: "Synthetic free plan", code: `synthetic-free-${randomUUID()}`, monthlyPriceCents: 0 } });
@@ -245,6 +245,61 @@ describe("independent audience publication limit (PostgreSQL)", () => {
     actAs(tenant);
     await rejectsWithLimit(publishLandingPage(fresh.id, fresh.revision));
     for (const page of legacy) expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(200);
+  });
+
+  it("does not treat many published audience pages with payment elements as using the free slots", async () => {
+    const tenant = await createTenant("payment-elements");
+    const db = getDb();
+    const content = audienceContent();
+    const row = content.pages.opt_in.root[0]!.children![0]!;
+    row.children = [...(row.children ?? []), { schemaVersion: 1, id: "pay_button", type: "payment_button", props: { label: "立即付款" }, style: {}, overrides: {}, visible: true, actions: [], attributes: {} }];
+    // More than one scan batch of pages that pass the SQL pre-filter but are not public (payment element).
+    for (let index = 0; index < 30; index += 1) {
+      const page = await db.landingPage.create({ data: { vendorId: tenant.vendorId, projectId: tenant.projectId, name: "含付款元件", slug: `lim-pay-${randomUUID()}`, draftContent: content as unknown as Prisma.InputJsonValue } });
+      const version = await db.landingPageVersion.create({ data: { vendorId: tenant.vendorId, pageId: page.id, version: 1, content: content as unknown as Prisma.InputJsonValue } });
+      await db.landingPage.update({ where: { id: page.id }, data: { status: "published", publishedVersionId: version.id, publishedAt: new Date() } });
+    }
+    expect(await independentlyPublishedPageIds(db, tenant.vendorId)).toEqual([]);
+    await publish(tenant);
+    await publish(tenant);
+    const third = await createDraftPage(tenant);
+    actAs(tenant);
+    await expect(getLandingPagePublicationStatus(third.id)).resolves.toMatchObject({ message: expect.stringContaining("目前已使用 2 個") });
+    await expect(publishLandingPage(third.id, third.revision)).resolves.toMatchObject({ version: 1 });
+    const fourth = await createDraftPage(tenant);
+    actAs(tenant);
+    await expect(getLandingPagePublicationStatus(fourth.id)).resolves.toMatchObject({ message: expect.stringContaining("目前已有 3 個") });
+    await rejectsWithLimit(publishLandingPage(fourth.id, fourth.revision));
+  });
+
+  it("pauses every new independent publish with the platform kill switch, leaving public pages untouched", async () => {
+    const tenant = await createTenant("kill-switch");
+    await givePaidPlan(tenant);
+    const existing = await publish(tenant);
+    vi.stubEnv("INDEPENDENT_AUDIENCE_PUBLISH_DISABLED", "1");
+    try {
+      const fresh = await createDraftPage(tenant);
+      actAs(tenant);
+      const status = await getLandingPagePublicationStatus(fresh.id);
+      expect(status.message).toContain("平台目前暫停「不需發布專案就公開」的名單型網站新發布");
+      const error = await publishLandingPage(fresh.id, fresh.revision).then(() => null, (reason: unknown) => reason);
+      expect((error as Error).message).toBe("landing_page_independent_publish_disabled");
+      expect(await getDb().landingPage.findUniqueOrThrow({ where: { id: fresh.id } })).toMatchObject({ status: "draft", publishedVersionId: null });
+
+      // Already public: keeps opening and can be republished.
+      expect(await publicLandingPageStatus(`/lp/${existing.slug}`)).toBe(200);
+      await expect(publishLandingPage(existing.id, existing.revision)).resolves.toMatchObject({ version: 2 });
+
+      // Inside a published project nothing is independent, so nothing is paused.
+      const publishedProject = await createProject(tenant.vendorId, true);
+      const inProject = await publish({ ...tenant, projectId: publishedProject.id });
+      expect(await getDb().landingPage.findUniqueOrThrow({ where: { id: inProject.id } })).toMatchObject({ status: "published" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    const after = await createDraftPage(tenant);
+    actAs(tenant);
+    await expect(publishLandingPage(after.id, after.revision)).resolves.toMatchObject({ version: 1 });
   });
 
   it("counts each vendor separately", async () => {

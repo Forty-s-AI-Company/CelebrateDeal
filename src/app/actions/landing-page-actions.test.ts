@@ -177,6 +177,17 @@ describe("dual publication feedback", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
+  it("explains the platform kill switch and attaches the scoped diagnosis", async () => {
+    mocks.publish.mockRejectedValueOnce(new errorTypes.Input("landing_page_independent_publish_disabled"));
+    const diagnosis = { available: false, message: "一頁式網站尚未發布。平台目前暫停…", projectHref: "/projects/project-1", missing: [{ label: "發布所屬專案", href: "/projects/project-1" }] };
+    mocks.publication.mockResolvedValueOnce(diagnosis);
+    const result = await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("平台目前暫停「不需發布專案就公開」的名單型網站新發布");
+    expect(result.message).toContain("已經公開的網站不受影響");
+    expect(result.publication).toEqual(diagnosis);
+  });
+
   it("explains a sales step added to an audience Funnel", async () => {
     mocks.save.mockRejectedValueOnce(new errorTypes.Input("landing_page_step_type_not_allowed"));
     const result = await landingPageAction(idle, form({ operation: "save", id: "page-1", revision: "2", name: "頁面", slug: "page", content: "{}" }));

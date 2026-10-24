@@ -513,13 +513,19 @@ describe("independent audience Funnel publication (owner decision 2026-10-24)", 
     expect(reasons).toEqual(["live_requires_published_project"]);
   });
 
-  it("publishes an audience Funnel without consulting project publication and binds a server-owned lead form", async () => {
+  it("publishes an audience Funnel without requiring project prerequisites and binds a server-owned lead form", async () => {
     mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), project: draftProject }));
     mocks.formFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([leadForm("form-lead")]);
     await expect(publishLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1", revision: 3, version: 1, formId: "form-lead" });
-    // The project is read only to decide whether this publish takes an independent slot, never as a prerequisite.
+    // The project is read only to decide whether this publish takes an independent slot ...
     expect(database.salesProject.findFirst).toHaveBeenCalledWith({ where: { id: "project-1", vendorId: "vendor-1" }, select: { status: true, publishedAt: true } });
+    // ... never for the project's publication prerequisites (priced product, verified payment method).
+    expect(database.salesProjectProduct.count).not.toHaveBeenCalled();
+    expect(database.paymentMethodReference.count).not.toHaveBeenCalled();
+    // The vendor lock is the transaction's first statement, in an explicit READ COMMITTED transaction.
     expect(database.$executeRaw).toHaveBeenCalledOnce();
+    expect(database.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(mocks.findFirst.mock.invocationCallOrder[0]!);
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "ReadCommitted" });
     // The auto-created form is looked up by this page's own slug inside the tenant and project.
     expect(mocks.formFindMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { vendorId: "vendor-1", projectId: "project-1", OR: [{ slug: "lead-auto-page-1" }, { slug: { startsWith: "lead-auto-page-1-" } }] } }));
     expect(database.registrationForm.create).toHaveBeenCalledWith({
@@ -674,6 +680,55 @@ describe("independent audience Funnel publication (owner decision 2026-10-24)", 
     // Every count is bound to the authenticated vendor.
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", id: { not: "page-1" } }) }));
     expect(database.vendorSubscription.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", status: "active" }) }));
+  });
+
+  it("does not count audience pages whose payment surface keeps them closed, and gives an exact count", async () => {
+    const content = funnelWithLeadForm();
+    const closed = { ...content, pages: { ...content.pages, opt_in: { ...content.pages.opt_in!, commerce: { schemaVersion: 1 as const, productId: "product-1", formMode: "single" as const } } } };
+    const batch = (prefix: string, count: number, body: unknown) => Array.from({ length: count }, (_, index) => ({ id: `${prefix}-${String(index).padStart(3, "0")}`, publishedVersion: { content: body } }));
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: content })).mockResolvedValueOnce(null);
+    mocks.findMany.mockResolvedValueOnce(batch("closed", 25, closed)).mockResolvedValueOnce([...batch("more", 5, closed), ...batch("open", 2, content)]);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result.message).toContain("目前已使用 2 個");
+    // The scan walks the candidates in id order, batch after batch.
+    expect(mocks.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ id: { not: "page-1", gt: "closed-024" } }), orderBy: { id: "asc" } }));
+  });
+
+  it("fails closed without a count when the scan bound is reached", async () => {
+    const content = funnelWithLeadForm();
+    const closed = { ...content, pages: { ...content.pages, opt_in: { ...content.pages.opt_in!, commerce: { schemaVersion: 1 as const, productId: "product-1", formMode: "single" as const } } } };
+    let next = 0;
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: content })).mockResolvedValueOnce(null);
+    mocks.findMany.mockImplementation(async () => Array.from({ length: 25 }, () => ({ id: `closed-${String(next++).padStart(4, "0")}`, publishedVersion: { content: closed } })));
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(mocks.findMany).toHaveBeenCalledTimes(20);
+    expect(result.available).toBe(false);
+    expect(result.message).toContain("目前已達上限，所以這個網站現在無法發布");
+    expect(result.message).not.toMatch(/目前已有 \d+ 個/u);
+  });
+
+  it("refuses a new independent publish while the platform kill switch is on, and lets an already public page republish", async () => {
+    vi.stubEnv("INDEPENDENT_AUDIENCE_PUBLISH_DISABLED", "1");
+    try {
+      // A paid vendor is refused too: the switch is platform-wide.
+      database.vendorSubscription.findFirst.mockResolvedValue({ id: "subscription-1" });
+      mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() })).mockResolvedValueOnce(null);
+      await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_independent_publish_disabled");
+      expect(mocks.versionCreate).not.toHaveBeenCalled();
+
+      mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() })).mockResolvedValueOnce(null);
+      const status = await getLandingPagePublicationStatus("page-1");
+      expect(status).toMatchObject({ available: false, missing: [{ label: "發布所屬專案", href: "/projects/project-1" }] });
+      expect(status.message).toContain("平台目前暫停「不需發布專案就公開」的名單型網站新發布");
+
+      const live = { id: "page-1", publishedVersion: { content: funnelWithLeadForm() } };
+      mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), status: "published" })).mockResolvedValueOnce(live);
+      mocks.formFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([leadForm("form-lead")]);
+      await expect(publishLandingPage("page-1", 2)).resolves.toMatchObject({ version: 1 });
+    } finally {
+      vi.unstubAllEnvs();
+      database.vendorSubscription.findFirst.mockReset();
+    }
   });
 
   it("refuses an independent publish past the limit inside the publish transaction", async () => {

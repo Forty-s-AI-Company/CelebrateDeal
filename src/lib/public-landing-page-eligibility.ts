@@ -112,8 +112,9 @@ export function independentAudienceVersionWhere(): Prisma.LandingPageVersionWher
 /**
  * Published pages of a vendor that are public only through independent
  * audience publication: not archived, project neither published nor archived,
- * published version passing the SQL pre-filter. Callers re-check the parsed
- * content with {@link isIndependentlyPublishedFunnel}.
+ * published version passing the SQL pre-filter and bound to no live (a live
+ * keeps the page closed until its project publishes). Callers re-check the
+ * parsed content with {@link isIndependentlyPublishedFunnel}.
  */
 export function independentlyPublishedPageCandidatesWhere(vendorId: string): Prisma.LandingPageWhereInput {
   return {
@@ -122,7 +123,7 @@ export function independentlyPublishedPageCandidatesWhere(vendorId: string): Pri
     publishedVersionId: { not: null },
     archivedAt: null,
     project: { is: { status: { not: "archived" }, NOT: PUBLISHED_SALES_PROJECT } },
-    publishedVersion: { is: { vendorId, ...independentAudienceVersionWhere() } },
+    publishedVersion: { is: { vendorId, liveId: null, ...independentAudienceVersionWhere() } },
   };
 }
 

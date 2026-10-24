@@ -240,6 +240,11 @@ export function getFunnelStepCatalog(): ReadonlyArray<{ type: FunnelStepType; gr
  * publishable without its sales project. Parsing is deliberately looser:
  * saved documents that already contain other steps keep loading (and, for an
  * audience Funnel, keep needing a published project).
+ *
+ * This is a UX / data-hygiene rule, not a security boundary: the goal is
+ * merchant-declared and older documents bypass it. Whether a page may be
+ * public without its project is decided only by the structural eligibility
+ * check (`isIndependentlyPublishedFunnel` / `publicFunnelProjectGateWhere`).
  */
 const ADDABLE_STEP_GROUPS: Record<FunnelGoal, ReadonlySet<FunnelStepGroup>> = {
   audience: new Set(["audience", "general"]),

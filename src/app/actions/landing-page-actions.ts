@@ -19,7 +19,9 @@ import {
   type LandingPageActionState,
 } from "@/lib/landing-page-service";
 import type { FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
-import { independentPublishLimitMessage } from "@/lib/independent-publish-limit";
+import { independentPublishLimitMessage, INDEPENDENT_PUBLISH_DISABLED_MESSAGE } from "@/lib/independent-publish-limit";
+
+const INDEPENDENT_PUBLISH_REFUSALS = new Set(["landing_page_independent_publish_limit", "landing_page_independent_publish_disabled"]);
 
 const MAX_CONTENT_BYTES = 128 * 1024;
 
@@ -100,6 +102,7 @@ function failure(error: unknown): LandingPageActionState {
     if (error.message === "landing_page_live_form_mismatch") return { status: "error", message: "這個頁面已綁定活動場次，所有報名按鈕都必須使用該場次的報名表。請把按鈕改成該場次的報名表，或在頁面設定改選場次後再試。" };
     if (error.message === "landing_page_lead_form_retry") return { status: "error", message: "建立名單表單時剛好與另一個操作衝突，網站尚未發布。請再按一次發布。" };
     if (error.message === "landing_page_independent_publish_limit") return { status: "error", message: independentPublishLimitMessage() };
+    if (error.message === "landing_page_independent_publish_disabled") return { status: "error", message: INDEPENDENT_PUBLISH_DISABLED_MESSAGE };
     if (error.message === "landing_page_step_type_not_allowed") return { status: "error", message: "建立名單網站只能新增名單或資訊步驟，這次變更沒有儲存。銷售頁、訂單表單、加購頁與（銷售）感謝頁請建立在銷售網站中；名單的感謝頁請選「名單感謝頁」。" };
     return { status: "error", message: "請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。" };
   }
@@ -120,13 +123,13 @@ async function successWithPublication(message: string, result: { id: string; rev
   return { ...success(`${message}${publication.message}`, result), publication };
 }
 
-/** Publishes; a refusal by the independent publication limit carries the scoped diagnosis and its links. */
+/** Publishes; a refusal by the independent publication limit or kill switch carries the scoped diagnosis and its links. */
 async function publishWithDiagnosis(id: string, expectedRevision: number): Promise<LandingPageActionState> {
   let published: Awaited<ReturnType<typeof publishLandingPage>>;
   try {
     published = await publishLandingPage(id, expectedRevision);
   } catch (error) {
-    if (!(error instanceof LandingPageInputError && error.message === "landing_page_independent_publish_limit")) throw error;
+    if (!(error instanceof LandingPageInputError && INDEPENDENT_PUBLISH_REFUSALS.has(error.message))) throw error;
     const publication = await getLandingPagePublicationStatus(id).catch(() => undefined);
     return { ...failure(error), ...(publication ? { publication } : {}) };
   }

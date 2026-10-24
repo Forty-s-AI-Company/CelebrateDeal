@@ -38,7 +38,7 @@ import {
   type PublicLandingPageUnavailableReason,
 } from "@/lib/public-landing-page-eligibility";
 import { getFunnelStepCatalog, stepsAddedOutsideGoal } from "@/lib/funnel-flow";
-import { independentPublishAllowance, independentPublishLimitMessage, lockIndependentPublishSlots } from "@/lib/independent-publish-limit";
+import { independentPublishAllowance, independentPublishLimitMessage, INDEPENDENT_PUBLISH_DISABLED_MESSAGE, lockIndependentPublishSlots } from "@/lib/independent-publish-limit";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { isCardBindingRequiredForVendor, isVendorFeatureEnabled } from "@/lib/feature-gates";
 import { canPublishSalesProject } from "@/lib/sales-workspace";
@@ -590,11 +590,12 @@ async function ensureAudienceLeadForm(
 /**
  * Abuse guard for independent publication: a page that would become public
  * only through independent audience publication takes one of the vendor's
- * free slots (see {@link INDEPENDENT_AUDIENCE_PUBLISH_FREE_LIMIT}). The slot
- * count runs after a per-vendor transaction lock, so concurrent publishes
- * cannot both take the last slot. Republishing a page that is already public
- * this way takes no new slot; pages published before the limit existed keep
- * working.
+ * free slots (see `INDEPENDENT_AUDIENCE_PUBLISH_FREE_LIMIT`), and the
+ * platform kill switch refuses such new publishes altogether. The caller
+ * holds the per-vendor lock taken at the start of the transaction, so
+ * concurrent publishes cannot both take the last slot. Republishing a page
+ * that is already public this way takes no new slot; pages published before
+ * the limit existed keep working.
  */
 async function assertIndependentPublishAllowed(
   transaction: Prisma.TransactionClient,
@@ -605,9 +606,9 @@ async function assertIndependentPublishAllowed(
   if (page.draftLiveId || !isIndependentlyPublishedFunnel(content)) return;
   const project = await transaction.salesProject.findFirst({ where: { id: scope.projectId, vendorId: scope.vendorId }, select: { status: true, publishedAt: true } });
   if (isPublishedSalesProject(project)) return;
-  await lockIndependentPublishSlots(transaction, scope.vendorId);
   const allowance = await independentPublishAllowance(transaction, scope.vendorId, page.id);
-  if (!allowance.allowed) throw new LandingPageInputError("landing_page_independent_publish_limit");
+  if (allowance.allowed) return;
+  throw new LandingPageInputError(allowance.disabled ? "landing_page_independent_publish_disabled" : "landing_page_independent_publish_limit");
 }
 
 function contentFlow(content: LandingPageStoredContent | null | undefined) {
@@ -645,6 +646,11 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
   if (!id || !revision) throw new LandingPageInputError();
   try {
     return await db().$transaction(async (transaction) => {
+      // First statement: serialise this vendor's publishes before anything is
+      // read, so the independent-slot count below sees every publish that
+      // committed while this one waited. This relies on READ COMMITTED (set
+      // explicitly below): a REPEATABLE READ snapshot could predate the lock.
+      await lockIndependentPublishSlots(transaction, scope.vendorId);
       const page = await requireScopedPage(transaction, scope, id);
       if (page.revision !== revision) throw new LandingPageConflictError();
       const content = inputContent(page.draftContent);
@@ -664,7 +670,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
       });
       if (updated.count !== 1) throw new LandingPageConflictError();
       return { id, revision: revision + 1, version: version.version, formId };
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   } catch (error) {
     // Concurrent publishers can both read the next version number. The unique
     // version key is the final compare-and-swap guard, so expose no DB detail.
@@ -963,10 +969,13 @@ async function audienceFunnelPreflightStatus(
   if (!projectPublished) {
     // Read-only mirror of the publish-time limit; the publish transaction re-checks under its lock.
     const allowance = await independentPublishAllowance(db(), scope.vendorId, page.id);
-    if (!allowance.allowed) {
-      return { available: false, message: `一頁式網站尚未發布。${independentPublishLimitMessage(allowance.used)}`, projectHref, missing: await independentPublishLimitLinks(scope.vendorId, projectHref) };
+    if (!allowance.allowed && allowance.disabled) {
+      return { available: false, message: `一頁式網站尚未發布。${INDEPENDENT_PUBLISH_DISABLED_MESSAGE}`, projectHref, missing: [{ label: "發布所屬專案", href: projectHref }] };
     }
-    if (!allowance.uncapped) usage = `（免費帳號可同時獨立發布 ${allowance.limit} 個名單型網站，目前已使用 ${allowance.used} 個）`;
+    if (!allowance.allowed) {
+      return { available: false, message: `一頁式網站尚未發布。${independentPublishLimitMessage(allowance.used ?? undefined)}`, projectHref, missing: await independentPublishLimitLinks(scope.vendorId, projectHref) };
+    }
+    if (!allowance.uncapped && allowance.used !== null) usage = `（免費帳號可同時獨立發布 ${allowance.limit} 個名單型網站，目前已使用 ${allowance.used} 個）`;
   }
   return { available: false, message: `一頁式網站尚未發布，公開網址目前無法開啟。名單型網站發布後即可開啟，不需要先發布專案${usage}。`, projectHref, missing: [] };
 }
