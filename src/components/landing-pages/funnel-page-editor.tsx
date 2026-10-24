@@ -250,9 +250,14 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     return true;
   }
 
+  /**
+   * The first click on a node always selects it and opens its settings, even
+   * when it is already selected because it was just added from the library;
+   * a further click on that node (settings open) starts inline editing.
+   */
   function selectFromCanvas(id: string, detail?: FunnelNodeSelectDetail) {
     if (inlineEdit?.nodeId === id && inlineEdit.itemIndex === detail?.itemIndex) return;
-    if (id === selectedId && startInlineEdit(id, detail)) return;
+    if (id === selectedId && leftView === "node" && startInlineEdit(id, detail)) return;
     inspect(id);
   }
 
