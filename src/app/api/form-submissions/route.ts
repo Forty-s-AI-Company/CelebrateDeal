@@ -254,6 +254,50 @@ async function resolveTrustedFunnelSource(input: {
     : { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
 }
 
+/**
+ * The trusted source is re-read from the published page, never taken from
+ * the request: its runtime already required the published version to be
+ * bound to this form and to no live, and to pass the project gate, which for
+ * an unpublished project only an audience Funnel does. It must also sit in
+ * the form's own tenant and project.
+ */
+function independentFunnelOwnsForm(
+  resolution: TrustedFunnelSourceResolution | null,
+  form: { vendorId: string; projectId: string | null },
+) {
+  const source = resolution?.ok ? resolution.source : null;
+  return Boolean(source
+    && form.projectId
+    && source.vendorId === form.vendorId
+    && source.projectId === form.projectId);
+}
+
+/**
+ * A form of an unpublished project only accepts leads through an
+ * independently published audience Funnel that the server re-resolves as
+ * bound to this exact form, tenant and project (owner decision 2026-10-24).
+ * Every other entry point keeps the project publication gate. The resolved
+ * source is returned so the caller does not resolve it twice.
+ */
+async function formProjectGate(input: {
+  form: { id: string; vendorId: string; projectId: string | null };
+  landingPageId: string | undefined;
+  funnelStepId: string | undefined;
+  liveId: string | null;
+  request: Request;
+}): Promise<{ open: true; funnelResolution: TrustedFunnelSourceResolution | null } | { open: false }> {
+  const { form } = input;
+  if (!form.projectId) return { open: true, funnelResolution: null };
+  const project = await getDb().salesProject.findFirst({
+    where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } },
+    select: { id: true },
+  });
+  if (project) return { open: true, funnelResolution: null };
+  if (!input.funnelStepId) return { open: false };
+  const funnelResolution = await resolveTrustedFunnelSource({ landingPageId: input.landingPageId, funnelStepId: input.funnelStepId, formId: form.id, liveId: input.liveId, request: input.request });
+  return independentFunnelOwnsForm(funnelResolution, form) ? { open: true, funnelResolution } : { open: false };
+}
+
 /** Marketing hints never authorize access, commissions or automation targeting. */
 async function resolveMarketingPageHint(pageId: string | undefined, vendorId: string, source: TrustedFunnelSource | null) {
   if (source || !pageId) return {};
@@ -484,13 +528,10 @@ async function processSubmission(request: Request, native?: { formData: FormData
   if (!form) {
     return NextResponse.json({ error: "Form not found" }, { status: 404 });
   }
-  if (form.projectId) {
-    const project = await getDb().salesProject.findFirst({
-      where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } },
-      select: { id: true },
-    });
-    if (!project) return NextResponse.json({ error: "Form not found" }, { status: 404 });
-  }
+  const submittedLiveId = parsed.data.liveId ?? null;
+  const projectGate = await formProjectGate({ form, landingPageId: parsed.data.landingPageId, funnelStepId: parsed.data.funnelStepId, liveId: submittedLiveId, request });
+  if (!projectGate.open) return NextResponse.json({ error: "Form not found" }, { status: 404 });
+  const earlyFunnelResolution = projectGate.funnelResolution;
 
   const fieldSpecs = parseRegistrationFormFields(form.fields);
   if (!fieldSpecs.success) {
@@ -501,8 +542,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     return NextResponse.json({ error: "Invalid form answers" }, { status: 400 });
   }
 
-  const submittedLiveId = parsed.data.liveId ?? null;
-  const missingLiveResponse = await missingLiveSelectionResponse({ submittedLiveId, formId: form.id, vendorId: form.vendorId, hideExpiredSessions: form.hideExpiredSessions });
+  const missingLiveResponse =await missingLiveSelectionResponse({ submittedLiveId, formId: form.id, vendorId: form.vendorId, hideExpiredSessions: form.hideExpiredSessions });
   if (missingLiveResponse) return missingLiveResponse;
 
   const liveContext = await loadFormLiveQuotaPolicy({
@@ -517,7 +557,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
   // A public Funnel source is only accepted when the current published page,
   // its bound form/live pair, deadline and observed visit all re-resolve.
   // Legacy form posts omit funnelStepId and retain their existing behavior.
-  const funnelResolution = await resolveTrustedFunnelSource({ landingPageId: parsed.data.landingPageId, funnelStepId: parsed.data.funnelStepId, formId: form.id, liveId: submittedLiveId, request });
+  const funnelResolution = earlyFunnelResolution ?? await resolveTrustedFunnelSource({ landingPageId: parsed.data.landingPageId, funnelStepId: parsed.data.funnelStepId, formId: form.id, liveId: submittedLiveId, request });
   if (!funnelResolution.ok) return funnelResolution.response;
   const funnelSource = funnelResolution.source;
 

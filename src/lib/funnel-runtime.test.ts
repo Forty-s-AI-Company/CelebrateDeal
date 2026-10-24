@@ -118,7 +118,8 @@ describe("public Funnel runtime", () => {
     const database = {
       landingPage: {
         findFirst: async () => ({
-          id: "page_1", vendorId: "vendor_1", operations: defaultFunnelOperations(),
+          id: "page_1", vendorId: "vendor_1", projectId: "project_1", operations: defaultFunnelOperations(),
+          project: { status: "published", publishedAt: new Date("2026-09-01T00:00:00.000Z") },
           publishedVersion: { content, formId: "form_1", liveId: null },
         }),
       },
@@ -128,7 +129,7 @@ describe("public Funnel runtime", () => {
     };
     await expect(resolveTrustedFunnelSubmission({
       pageId: "page_1", stepId: "opt_in", formId: "form_1", liveId: null, visitorId, database: database as never,
-    })).resolves.toEqual({ vendorId: "vendor_1", pageId: "page_1", stepId: "opt_in", visitId: "visit_1" });
+    })).resolves.toEqual({ vendorId: "vendor_1", projectId: "project_1", projectPublished: true, pageId: "page_1", stepId: "opt_in", visitId: "visit_1" });
     await expect(resolveTrustedFunnelSubmission({
       pageId: "page_1", stepId: "opt_in", formId: "other_form", liveId: null, visitorId, database: database as never,
     })).resolves.toBeNull();
@@ -171,5 +172,50 @@ describe("public Funnel runtime", () => {
     // 截止後仍可查看感謝頁，不代表該頁可以重新開放報名。
     await expect(resolveTrustedFunnelSubmission({ pageId: "page_1", stepId: "opt_in_thank_you", formId: "form_1", liveId: null, visitorId, now: new Date("2026-09-17T02:00:00.000Z"), database: database as never })).resolves.toBeNull();
     expect(database.funnelVisit.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("independent audience Funnel publication (owner decision 2026-10-24)", () => {
+  const draftProject = { status: "draft", publishedAt: null };
+  const runtimeDb = (goal: "audience" | "sell" | "custom", overrides: Record<string, unknown> = {}) => {
+    const content = createFunnelStepPages(createFunnelFlow({ id: "funnel_gate", name: "Funnel", goal, domain: "gate" })!)!;
+    return {
+      landingPage: { findFirst: vi.fn().mockResolvedValue({ id: "page_1", vendorId: "vendor_1", projectId: "project_1", operations: defaultFunnelOperations(), project: draftProject, publishedVersion: { content, formId: "form_1", liveId: null }, ...overrides }) },
+      funnelVisit: { findFirst: vi.fn().mockResolvedValue({ id: "visit_1" }) },
+    };
+  };
+  const firstStep = (goal: "audience" | "sell" | "custom") => createFunnelStepPages(createFunnelFlow({ id: "funnel_gate", name: "Funnel", goal, domain: "gate" })!)!.flow.steps.find((step) => !step.isSystem)?.id ?? "missing";
+
+  it("queries the project gate in SQL: published project or a published audience version", async () => {
+    const database = runtimeDb("audience");
+    await resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: database as never });
+    expect(database.landingPage.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        id: "page_1", status: "published", publishedVersionId: { not: null }, archivedAt: null,
+        OR: [
+          { project: { is: { status: "published", publishedAt: { not: null } } } },
+          { publishedVersion: { is: { content: { path: ["flow", "goal"], equals: "audience" } } } },
+        ],
+      },
+    }));
+  });
+
+  it("renders and accepts leads for an audience Funnel whose project is not published", async () => {
+    const database = runtimeDb("audience");
+    await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: database as never })).resolves.toMatchObject({ page: { projectPublished: false }, decision: { status: "render" } });
+    await expect(resolveTrustedFunnelSubmission({ pageId: "page_1", stepId: "opt_in", formId: "form_1", liveId: null, visitorId, database: database as never }))
+      .resolves.toEqual({ vendorId: "vendor_1", projectId: "project_1", projectPublished: false, pageId: "page_1", stepId: "opt_in", visitId: "visit_1" });
+  });
+
+  it.each(["sell", "custom"] as const)("keeps a %s Funnel of an unpublished project closed even if the SQL gate were bypassed", async (goal) => {
+    const database = runtimeDb(goal);
+    await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: firstStep(goal), visitorId, database: database as never })).resolves.toBeNull();
+    await expect(resolveTrustedFunnelSubmission({ pageId: "page_1", stepId: firstStep(goal), formId: "form_1", liveId: null, visitorId, database: database as never })).resolves.toBeNull();
+  });
+
+  it("refuses a live-bound submission through an audience Funnel of an unpublished project", async () => {
+    const content = createFunnelStepPages(createFunnelFlow({ id: "funnel_gate", name: "Funnel", goal: "audience", domain: "gate" })!)!;
+    const database = runtimeDb("audience", { publishedVersion: { content, formId: "form_1", liveId: "live_1" } });
+    await expect(resolveTrustedFunnelSubmission({ pageId: "page_1", stepId: "opt_in", formId: "form_1", liveId: "live_1", visitorId, database: database as never })).resolves.toBeNull();
   });
 });

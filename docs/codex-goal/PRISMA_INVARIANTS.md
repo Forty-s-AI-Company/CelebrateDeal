@@ -437,3 +437,12 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - PR #465 審查修正：`courses` 關閉時課程商品不可購買（`isProductPurchasable`／`purchasableProductWhere`：結帳頁 404、`/api/payments/checkout` 主商品 404 `FEATURE_DISABLED`、加購 409、漏斗商品清單與直播間商品不列出）；商家仍可編輯並下架既有課程商品，只擋新建與上架（`course_feature_disabled`）。平台管理員同時改動商家開關時，`enabledFeatureModules` 也做 compare-and-set。WP4 Sandbox 夾具商家建立時帶 `billing`、`funnel_binding` 授權，既有夾具補上缺少的授權（只在 WP4 preview／Sandbox 邊界內執行）。
 - 部署前盤點（D-02，資料不刪）：以唯讀查詢列出有效 `ConsultationEvent` 與未來預約、有效課程商品、`Video.sourceType = 'browser_live'` 的已排程直播，決定逐商家授權或先通知商家；`billing` 關閉期間月結排程仍會開立內部帳單（排程預設關閉，見 `docs/launch/scheduled-jobs-runbook.md`），開放 billing 前需先清理。
 - 目前 154 models、124 forward migrations；既有 SQL／checksum 不變。
+
+## 2026-10-24 名單型一頁式網站獨立發布（無 migration）
+
+- Owner 決策：Funnel `flow.goal = "audience"` 的已發布版本不再要求所屬 `SalesProject` 已發布。`sell`、`webinar`、`custom` 與舊版頁面文件不變。沒有新增 model、欄位或 migration；目前仍為 154 models、124 forward migrations。
+- 公開查詢不變量：`publicLandingPageCandidateWhere`（proxy 預檢與 `loadPublicLandingPage`）與 `resolvePublicFunnelRuntime` 共用 `publicFunnelProjectGateWhere()`：`project` 已發布，**或** `publishedVersion.content` 的 JSON path `flow.goal` 等於 `"audience"`。條件在同一句 SQL 內判斷，proxy 仍只回 `id`。解析內容的呼叫端再以 `publicProjectGateSatisfied` 對照解析後的內容，兩者不一致時一律關閉（`invalid_content`）。`status = published`、`publishedVersionId`、`archivedAt: null`、slug 唯一、版本與租戶一致、表單與直播必須屬於同一 vendor＋project 等檢查都保留。
+- 專案未發布時的限制：綁定直播的名單網站回 404（`live_requires_published_project`，直播不會早於專案公開）；不投影商品結帳區塊（`resolvePublishedFunnelCheckout` 仍要求專案已發布）；預約區塊不顯示時段（`publicConsultationEvents` 不變）；表單自己的 `/form/[slug]` 仍要求專案已發布。
+- 名單收集：`publishLandingPage` 發布名單網站時，若頁面有名單表單節點、沒有綁定報名表也沒有直播，會在同一個發布交易內建立一張 `RegistrationForm`（`vendorId`、`projectId` 取自已驗證的編輯範圍，欄位為必填姓名與 Email，slug 為 `lead-` 加隨機值），並寫入 `LandingPage.draftFormId` 與版本 `formId`。既有綁定不會被取代，其他目標不會自動建立表單。
+- `/api/form-submissions`：表單所屬專案未發布時，只接受經 `resolveTrustedFunnelSubmission` 重新解析成功的名單網站來源（已發布版本綁定此表單、沒有直播、有伺服器記錄的造訪），且來源頁的 vendor 與 project 必須等於表單的 vendor 與 project；其他情況維持 404 `Form not found`。限流與 Origin 檢查不變。原生表單重試草稿以 `independentFunnelBindsForm` 做同樣的綁定檢查。
+- 測試：`src/lib/audience-funnel-independent-publish.db.test.ts`（未發布專案的公開網址與名單寫入、報表、跨租戶、取消發布與封存、其他目標仍關閉）、`src/lib/landing-page-service.test.ts`、`src/lib/funnel-runtime.test.ts`、`src/lib/public-landing-page-status.test.ts`。

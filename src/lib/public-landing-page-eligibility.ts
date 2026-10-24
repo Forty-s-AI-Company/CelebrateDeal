@@ -23,7 +23,9 @@ export type PublicLandingPageUnavailableReason =
   | "version_mismatch"
   | "invalid_content"
   | "form_unavailable"
-  | "live_unavailable";
+  | "live_unavailable"
+  /** An independently published audience Funnel bound to a live of an unpublished project. */
+  | "live_requires_published_project";
 
 export function normalizeLandingPageSlug(value: string) {
   const trimmed = value.trim().toLowerCase();
@@ -57,15 +59,57 @@ export function registrationFormIdsInContent(content: LandingPageStoredContent) 
   return ids;
 }
 
-/** Both the Funnel and its sales project must be published; the slug is globally unique. */
+/**
+ * Owner decision 2026-10-24: a lead-capture ("audience") Funnel is published
+ * on its own, like a systeme.io funnel. Its public URL does not wait for the
+ * sales project; every other goal (sell, webinar, custom, legacy documents)
+ * still needs a published project.
+ */
+export const INDEPENDENT_PUBLISH_FUNNEL_GOAL = "audience";
+
+const PUBLISHED_SALES_PROJECT = { status: "published", publishedAt: { not: null } } as const;
+
+/**
+ * Project gate of every public Funnel read. The published version's
+ * `flow.goal` is matched inside the same SQL statement, so the proxy check
+ * stays one indexed lookup; callers that parse the content re-check it with
+ * {@link publicProjectGateSatisfied}.
+ */
+export function publicFunnelProjectGateWhere(): Prisma.LandingPageWhereInput {
+  return {
+    OR: [
+      { project: { is: PUBLISHED_SALES_PROJECT } },
+      { publishedVersion: { is: { content: { path: ["flow", "goal"], equals: INDEPENDENT_PUBLISH_FUNNEL_GOAL } } } },
+    ],
+  };
+}
+
+/** The slug is globally unique; the Funnel is published and passes the project gate. */
 export function publicLandingPageCandidateWhere(slug: string): Prisma.LandingPageWhereInput {
   return {
     slug,
     status: "published",
     publishedVersionId: { not: null },
     archivedAt: null,
-    project: { is: { status: "published", publishedAt: { not: null } } },
+    ...publicFunnelProjectGateWhere(),
   };
+}
+
+export function isPublishedSalesProject(project: { status: string; publishedAt: Date | null } | null | undefined) {
+  return Boolean(project && project.status === "published" && project.publishedAt);
+}
+
+/** Only a parsed multi-step Funnel can carry the independent-publish goal. */
+export function isIndependentlyPublishedFunnel(content: LandingPageStoredContent | null | undefined) {
+  return Boolean(content && "pages" in content && "flow" in content && content.flow.goal === INDEPENDENT_PUBLISH_FUNNEL_GOAL);
+}
+
+/** Code-side mirror of {@link publicFunnelProjectGateWhere} on parsed content. */
+export function publicProjectGateSatisfied(
+  project: { status: string; publishedAt: Date | null } | null | undefined,
+  content: LandingPageStoredContent | null | undefined,
+) {
+  return isPublishedSalesProject(project) || isIndependentlyPublishedFunnel(content);
 }
 
 type CandidateVersion = { vendorId: string; pageId: string; content: unknown; formId: string | null };

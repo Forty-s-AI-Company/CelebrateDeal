@@ -99,10 +99,12 @@ export function representativeFunnelVisitorIds(pageId: string, operations: unkno
 /**
  * Read-only pre-stream check for a public `/lp/{slug}[/{stepPath}]` document
  * (F-015 / B05-04). Proxy runs it on every GET/HEAD, including RSC
- * navigations and prefetches, so it is one indexed SQL statement that reads
- * only `slug -> id` and the publication state (page published with a
- * published version, not archived, sales project published). It never reads
- * the published `content` JSON or any related row.
+ * navigations and prefetches, so it is one indexed SQL statement that returns
+ * only `slug -> id` and checks the publication state (page published with a
+ * published version, not archived, and either the sales project published or
+ * the published version's `flow.goal` is `audience`, which the database
+ * matches without returning the content). It never selects the published
+ * `content` JSON or any related row.
  *
  * Everything else (version/tenant consistency, bound live, step paths,
  * Funnel operations, referenced forms, content validity) is decided by the
@@ -123,7 +125,7 @@ export async function publicLandingPageStatus(pathname: string, database: Status
   }
   const safeSlug = normalizeLandingPageSlug(slug);
   if (!safeSlug) return 404;
-  // Unique slug index; the project condition is part of the same statement.
+  // Unique slug index; the project gate is part of the same statement.
   const candidates = await database.landingPage.findMany({
     where: publicLandingPageCandidateWhere(safeSlug),
     take: 2,

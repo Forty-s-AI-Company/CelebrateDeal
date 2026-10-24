@@ -27,11 +27,18 @@ describe("public pre-stream status (content-free, F-015)", () => {
     expect(findMany).not.toHaveBeenCalled();
   });
 
-  it("reads only slug -> id under both publication layers: no content, version or live rows", async () => {
+  it("selects only slug -> id under both publication layers: no content, version or live rows are returned", async () => {
     expect(await publicLandingPageStatus("/lp/Fall-Launch", database)).toBe(200);
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(findMany).toHaveBeenCalledWith({
-      where: { slug: "fall-launch", status: "published", publishedVersionId: { not: null }, archivedAt: null, project: { is: { status: "published", publishedAt: { not: null } } } },
+      where: {
+        slug: "fall-launch", status: "published", publishedVersionId: { not: null }, archivedAt: null,
+        // Owner decision 2026-10-24: an audience Funnel opens without a published project.
+        OR: [
+          { project: { is: { status: "published", publishedAt: { not: null } } } },
+          { publishedVersion: { is: { content: { path: ["flow", "goal"], equals: "audience" } } } },
+        ],
+      },
       take: 2,
       select: { id: true },
     });
