@@ -167,7 +167,7 @@ describe("form_registered automation on existing submissions", () => {
     const ruleA = await rule("funnel-a", pageA.id);
     const ruleB = await rule("funnel-b", pageB.id);
     vi.mocked(funnelVisitorIdFromRequest).mockReturnValue("synthetic-visitor-123456789012345678901234");
-    vi.mocked(resolveTrustedFunnelSubmission).mockImplementation(async (input) => ({ vendorId: vendor.id, pageId: input.pageId, stepId: input.stepId, visitId: null as unknown as string }));
+    vi.mocked(resolveTrustedFunnelSubmission).mockImplementation(async (input) => ({ vendorId: vendor.id, projectId: project.id, projectPublished: false, pageId: input.pageId, stepId: input.stepId, visitId: null as unknown as string }));
     const submit = (pageId: string) => POST(new Request("https://app.example.test/api/form-submissions", {
       method: "POST",
       headers: { "content-type": "application/json", origin: "https://app.example.test", "x-celebratedeal-client": "web" },
