@@ -233,6 +233,46 @@ export function getFunnelStepCatalog(): ReadonlyArray<{ type: FunnelStepType; gr
   }));
 }
 
+/**
+ * Step groups a merchant may add to a Funnel of this goal; the add-step menu
+ * and every server-side add path read this one rule. A lead-capture
+ * ("audience") Funnel only takes lead and general steps, so it stays
+ * publishable without its sales project. Parsing is deliberately looser:
+ * saved documents that already contain other steps keep loading (and, for an
+ * audience Funnel, keep needing a published project).
+ */
+const ADDABLE_STEP_GROUPS: Record<FunnelGoal, ReadonlySet<FunnelStepGroup>> = {
+  audience: new Set(["audience", "general"]),
+  sell: new Set(["sales", "audience", "general"]),
+  custom: new Set(["sales", "audience", "general"]),
+  webinar: new Set(["sales", "audience", "general", "webinar"]),
+};
+
+export function funnelStepGroupsAddableForGoal(goal: FunnelGoal): ReadonlySet<FunnelStepGroup> {
+  return ADDABLE_STEP_GROUPS[goal];
+}
+
+export function isFunnelStepTypeAddableForGoal(goal: FunnelGoal, type: FunnelStepType): boolean {
+  return type !== "inactive_page" && type in STEPS && ADDABLE_STEP_GROUPS[goal].has(STEPS[type].group);
+}
+
+function stepNotAddableError(goal: FunnelGoal, type: FunnelStepType) {
+  if (STEPS[type].group === "webinar") return "Webinar 步驟只能新增至 Webinar 一頁式網站";
+  if (goal === "audience") return `建立名單網站只能新增名單或資訊步驟；「${STEPS[type].label}」屬於${STEPS[type].group === "sales" ? "銷售流程" : "其他流程"}`;
+  return "此步驟類型不可新增至這個一頁式網站";
+}
+
+/**
+ * Steps of `next` that were not in `previous` (same id and type) and whose
+ * type cannot be added to `next`'s goal. Used by whole-document saves so a
+ * client cannot add a step the add-step paths would refuse, while steps that
+ * an older document already contains are kept.
+ */
+export function stepsAddedOutsideGoal(previous: Pick<FunnelFlow, "steps"> | null | undefined, next: Pick<FunnelFlow, "goal" | "steps">): FunnelStep[] {
+  const existing = new Set((previous?.steps ?? []).map((step) => `${step.id}\u0000${step.type}`));
+  return next.steps.filter((step) => !step.isSystem && !existing.has(`${step.id}\u0000${step.type}`) && !isFunnelStepTypeAddableForGoal(next.goal, step.type));
+}
+
 function validFlow(flow: FunnelFlow): FunnelFlow | null { return parseFunnelFlow(flow); }
 function stepIndex(flow: FunnelFlow, stepId: string): number { return flow.steps.findIndex((step) => step.id === stepId); }
 function mutationFlow(flow: FunnelFlow, mutate: (next: FunnelFlow) => string | null): FunnelFlowMutationResult {
@@ -247,8 +287,8 @@ function mutationFlow(flow: FunnelFlow, mutate: (next: FunnelFlow) => string | n
 
 export function addFunnelStep(flow: FunnelFlow, input: FunnelStepInput, index?: number): FunnelFlowMutationResult {
   return mutationFlow(flow, (next) => {
-    if (!(input.type in STEPS)) return "此步驟類型不可手動新增";
-    if (STEPS[input.type].group === "webinar" && next.goal !== "webinar") return "Webinar 步驟只能新增至 Webinar 一頁式網站";
+    if (!(input.type in STEPS) || input.type === ("inactive_page" as FunnelStepType)) return "此步驟類型不可手動新增";
+    if (!isFunnelStepTypeAddableForGoal(next.goal, input.type)) return stepNotAddableError(next.goal, input.type);
     if (!validName(input.name) || !validPath(input.path)) return "步驟名稱或 URL Path 不符合格式";
     const source = input.templateSource ?? (input.templateId ? "template" : "blank");
     if (source === "template" && (!input.templateId || !templateIdPattern.test(input.templateId))) return "選擇模板時必須提供安全的 template ID";
@@ -306,6 +346,8 @@ export function duplicateFunnelStep(flow: FunnelFlow, stepId: string, input: Pic
     const original = next.steps[index];
     if (!original) return "找不到指定步驟";
     if (original.isSystem) return "停用頁由系統管理，不能複製";
+    // A copy adds a step: an existing step outside the goal's groups is kept but not multiplied.
+    if (!isFunnelStepTypeAddableForGoal(next.goal, original.type)) return stepNotAddableError(next.goal, original.type);
     if (!validName(input.name) || !validPath(input.path)) return "副本名稱或 URL Path 不符合格式";
     const used = new Set(next.steps.map((step) => step.id));
     const id = input.id ?? nextId("step", used);

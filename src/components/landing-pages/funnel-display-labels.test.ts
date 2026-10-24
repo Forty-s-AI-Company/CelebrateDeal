@@ -1,7 +1,21 @@
 import { resolvePaymentStatus, type PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
 import { describe, expect, it } from "vitest";
 import { FUNNEL_GOALS, FUNNEL_STEP_TYPES } from "@/lib/funnel-flow";
-import { funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel, referenceOptions } from "./funnel-display-labels";
+import { addableStepTypeOptions, funnelGoalLabels, funnelStepLabels, funnelTabLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel, referenceOptions } from "./funnel-display-labels";
+
+describe("add-step menu", () => {
+  const groups = (goal: (typeof FUNNEL_GOALS)[number]) => addableStepTypeOptions(goal).map((group) => group.label);
+  it("follows the step catalog groups each goal accepts", () => {
+    expect(groups("audience")).toEqual(["名單", "資訊"]);
+    expect(groups("sell")).toEqual(["銷售", "名單", "資訊"]);
+    expect(groups("custom")).toEqual(["銷售", "名單", "資訊"]);
+    expect(groups("webinar")).toEqual(["銷售", "名單", "資訊", "線上講座"]);
+    const audienceTypes = addableStepTypeOptions("audience").flatMap((group) => group.items.map((item) => item.value));
+    expect(audienceTypes).not.toContain("thank_you_page");
+    expect(addableStepTypeOptions("sell").flatMap((group) => group.items).find((item) => item.value === "thank_you_page")?.label).toBe(funnelStepLabels.thank_you_page);
+    for (const goal of FUNNEL_GOALS) expect(addableStepTypeOptions(goal).flatMap((group) => group.items.map((item) => item.value))).not.toContain("inactive_page");
+  });
+});
 
 describe("merchant display terminology", () => {
   it("covers every persisted goal and step type without changing its key", () => {

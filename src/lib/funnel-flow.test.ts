@@ -14,7 +14,11 @@ import {
   serializeFunnelFlow,
   setFunnelStepPath,
   setFunnelStepTemplate,
+  funnelStepGroupsAddableForGoal,
+  isFunnelStepTypeAddableForGoal,
+  stepsAddedOutsideGoal,
   type FunnelFlow,
+  type FunnelGoal,
 } from "@/lib/funnel-flow";
 
 function flow(goal: "audience" | "sell" | "custom" = "custom"): FunnelFlow {
@@ -83,5 +87,49 @@ describe("Funnel flow v1", () => {
     expect(deserializeFunnelFlow("{")).toBeNull();
     expect(parseFunnelFlow({ ...original.flow, goal: "webinar", webinar: { timezone: "invalid" } })).toBeNull();
     expect(() => serializeFunnelFlow({ ...original.flow, domain: "not/a/path" })).toThrow();
+  });
+
+  it("建立名單網站只能新增名單與資訊步驟；其他目標維持原本可新增的群組", () => {
+    const groups = (goal: FunnelGoal) => [...funnelStepGroupsAddableForGoal(goal)].sort();
+    expect(groups("audience")).toEqual(["audience", "general"]);
+    expect(groups("sell")).toEqual(["audience", "general", "sales"]);
+    expect(groups("custom")).toEqual(["audience", "general", "sales"]);
+    expect(groups("webinar")).toEqual(["audience", "general", "sales", "webinar"]);
+    expect(isFunnelStepTypeAddableForGoal("audience", "thank_you_page")).toBe(false);
+    expect(isFunnelStepTypeAddableForGoal("audience", "opt_in_thank_you_page")).toBe(true);
+    expect(isFunnelStepTypeAddableForGoal("sell", "inactive_page")).toBe(false);
+
+    const audience = flow("audience");
+    for (const type of ["sales_page", "order_form", "upsell", "downsell", "thank_you_page"] as const) {
+      const result = addFunnelStep(audience, { name: "銷售", path: `sale-${type.replace(/_/gu, "-")}`, type });
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error).toContain("建立名單網站只能新增名單或資訊步驟");
+    }
+    expect(addFunnelStep(audience, { name: "Webinar", path: "webinar", type: "webinar_registration_page" }).ok).toBe(false);
+    expect(addFunnelStep(audience, { name: "資訊", path: "info", type: "info_page" }).ok).toBe(true);
+    expect(addFunnelStep(audience, { name: "彈出", path: "popup", type: "popup_form" }).ok).toBe(true);
+    expect(addFunnelStep(flow("sell"), { name: "加購", path: "upsell", type: "upsell" }).ok).toBe(true);
+  });
+
+  it("既有的名單網站若已含銷售步驟仍可讀取，但不能再複製出新的銷售步驟", () => {
+    const sell = flow("sell");
+    const relabelled = parseFunnelFlow({ ...sell, goal: "audience" });
+    expect(relabelled?.steps.map((step) => step.type)).toEqual(["order_form", "thank_you_page", "inactive_page"]);
+    const copy = duplicateFunnelStep(relabelled!, "thank_you", { name: "感謝頁副本", path: "thank-you-copy" });
+    expect(copy.ok).toBe(false);
+    expect(duplicateFunnelStep(flow("audience"), "opt_in", { name: "名單頁副本", path: "opt-in-copy" }).ok).toBe(true);
+  });
+
+  it("整份儲存只拒絕這次新加入、且目標不接受的步驟", () => {
+    const audience = flow("audience");
+    const withSale = { ...audience, steps: [{ ...audience.steps[0]!, id: "sale", path: "sale", type: "sales_page" as const }, ...audience.steps] };
+    expect(stepsAddedOutsideGoal(audience, withSale).map((step) => step.id)).toEqual(["sale"]);
+    expect(stepsAddedOutsideGoal(null, withSale).map((step) => step.id)).toEqual(["sale"]);
+    // Already saved: kept.
+    expect(stepsAddedOutsideGoal(withSale, withSale)).toEqual([]);
+    // Same id, new type: counts as added.
+    const retyped = { ...audience, steps: audience.steps.map((step) => step.id === "opt_in" ? { ...step, type: "order_form" as const } : step) };
+    expect(stepsAddedOutsideGoal(audience, retyped).map((step) => step.id)).toEqual(["opt_in"]);
+    expect(stepsAddedOutsideGoal(null, flow("sell"))).toEqual([]);
   });
 });
