@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createEmptyPageDocument, parsePageDocument, type FunnelNode } from "@/lib/funnel-page-document";
 import { createFunnelInspectorActionUpdate } from "@/lib/funnel-element-inspector";
-import { funnelRegistrationHref, publicRegistrationLinks } from "@/lib/funnel-registration-action";
+import { funnelRegistrationHref, publicRegistrationLinks, registrationFormChoices } from "@/lib/funnel-registration-action";
 import { registrationFormIdsInContent } from "@/lib/public-landing-page-eligibility";
 
 const links = { pageId: "page_1", forms: [{ id: "form_1", slug: "autumn signup/2030" }], live: { id: "live 1", formId: "form_1" } };
@@ -17,6 +17,13 @@ describe("funnelRegistrationHref", () => {
     expect(funnelRegistrationHref({ formId: "form_1" }, { ...links, live: { id: "live_2", formId: "form_2" } })).toBe("/form/autumn%20signup%2F2030");
     expect(funnelRegistrationHref({ formId: "form_1" }, { ...links, live: { id: "live_2" } })).toBe("/form/autumn%20signup%2F2030");
     expect(funnelRegistrationHref({ formId: "form_1", useBoundLive: false }, links)).toBe("/form/autumn%20signup%2F2030");
+  });
+
+  it("offers every project form without a bound live, and only the live's form with one", () => {
+    const forms = [{ id: "form_1", slug: "a" }, { id: "form_2", slug: "b" }];
+    expect(registrationFormChoices({ forms })).toEqual(forms);
+    expect(registrationFormChoices({ forms, live: { id: "live_1", formId: "form_2" } })).toEqual([{ id: "form_2", slug: "b" }]);
+    expect(registrationFormChoices({ forms, live: { id: "live_1" } })).toEqual([]);
   });
 
   it("returns null for a form the server did not provide", () => {

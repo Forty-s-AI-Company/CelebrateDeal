@@ -10,7 +10,7 @@ export type FunnelRegistrationLinks = {
   /** Landing page id, sent as the `lp` attribution parameter on public pages. */
   pageId?: string;
   forms: ReadonlyArray<{ id: string; slug: string; name?: string }>;
-  live?: { id: string; formId?: string };
+  live?: { id: string; formId?: string; title?: string };
 };
 
 export const EMPTY_REGISTRATION_LINKS: FunnelRegistrationLinks = { forms: [] };
@@ -26,6 +26,18 @@ export function funnelRegistrationHref(action: { formId: string; useBoundLive?: 
   // Same rule as the legacy renderer: carry the bound live only when it registers through this form.
   const live = action.useBoundLive !== false && links.live?.formId === action.formId ? links.live : undefined;
   return `/form/${encodeURIComponent(form.slug)}${live ? `?liveId=${encodeURIComponent(live.id)}` : ""}`;
+}
+
+export const BOUND_LIVE_FORM_RULE = "這個頁面已綁定活動場次，所有報名按鈕都必須使用該場次的報名表。";
+
+/**
+ * Forms a registration button may use. With a bound live the server requires
+ * every referenced form to be that live's form (`landing_page_live_form_mismatch`),
+ * so only that form is offered.
+ */
+export function registrationFormChoices(links: FunnelRegistrationLinks): FunnelRegistrationLinks["forms"] {
+  if (!links.live) return links.forms;
+  return links.forms.filter((form) => form.id === links.live?.formId);
 }
 
 /** The minimum of the public render context a browser needs for registration links. */

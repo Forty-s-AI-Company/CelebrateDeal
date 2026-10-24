@@ -182,7 +182,7 @@ describe("opening a legacy page", () => {
     const container = await mount(legacyWorkspace());
     const notice = container.querySelector<HTMLElement>('[aria-label="舊版頁面轉換說明"]')!;
     expect(notice.textContent).toContain("這是舊版頁面，已轉換成新版編輯器格式；儲存後會以新版格式保存。舊版內容在你儲存前不會被改動。");
-    expect(notice.textContent).toContain("公開頁在你重新發布之前，仍會顯示舊版內容。");
+    expect(notice.textContent).toContain("儲存並重新發布後，公開頁才會改用新版內容。");
     expect(notice.textContent).toContain("轉換報告：");
     expect(notice.textContent).toContain("倒數計時");
     expect(notice.textContent).toContain("固定截止時間");
