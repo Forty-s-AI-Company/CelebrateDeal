@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { FunnelPageDocumentRenderer, type FunnelViewport } from "./funnel-page-document-renderer";
 import { FunnelPopupPreview } from "./funnel-popup-preview";
-import { FunnelElementInspector } from "./funnel-element-inspector";
-import { FunnelCommerceSettings } from "./funnel-commerce-settings";
+import { FunnelEditorToolbar, type FunnelEditorView } from "./funnel-editor-toolbar";
+import { EditorLibrary, FUNNEL_BLOCK_DRAG_TYPE, FUNNEL_ELEMENT_DRAG_TYPE, funnelNodeLabel } from "./funnel-editor-library";
+import { NodeSettingsPanel, PageSettingsPanel, PanelHeader, PopupsPanel } from "./funnel-editor-panels";
+import { editorShortcutFor, type EditorShortcut, type FunnelEditorChrome } from "./funnel-editor-chrome";
 import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import {
   createFunnelPageHistory,
@@ -14,28 +17,10 @@ import {
   type FunnelPageCommand,
 } from "@/lib/funnel-page-history";
 import { getFunnelNodeDefinition, type FunnelNode, type FunnelNodeType, type PageDocument } from "@/lib/funnel-page-document";
-import { FUNNEL_BLOCK_REGISTRY, instantiateBlock } from "@/lib/funnel-block-library";
-import { createFunnelPopup, deleteFunnelPopup, updateFunnelPopup, validatePopupTrigger } from "@/lib/funnel-popup";
-import { FUNNEL_TEMPLATE_TRANSACTION_TEMPLATES, changeFunnelTemplate } from "@/lib/funnel-template-transaction";
-import { addFunnelStep, moveFunnelStep, removeFunnelStep, renameFunnelStep, setFunnelStepPath, type FunnelFlowMutationResult } from "@/lib/funnel-flow";
+import { instantiateBlock } from "@/lib/funnel-block-library";
 
-type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };
-
-const palette: Array<{ type: FunnelNodeType; label: string }> = [
-  { type: "section", label: "區塊" }, { type: "row", label: "欄列" },
-  { type: "columns_2", label: "2 欄" }, { type: "columns_3", label: "3 欄" }, { type: "columns_4", label: "4 欄" },
-  { type: "text", label: "文字" }, { type: "headline", label: "標題" }, { type: "image", label: "圖片" },
-  { type: "button", label: "按鈕" }, { type: "bulleted_list", label: "項目清單" },
-  { type: "content_box", label: "內容盒" }, { type: "horizontal_line", label: "水平線" },
-  { type: "video", label: "影片" }, { type: "audio", label: "音訊" }, { type: "carousel", label: "輪播" },
-  { type: "form", label: "表單" }, { type: "form_input", label: "表單欄位" }, { type: "checkbox", label: "核取方塊" },
-  { type: "calendar", label: "行事曆" }, { type: "x_share_button", label: "X 分享" }, { type: "survey", label: "問卷" },
-  { type: "countdown", label: "倒數計時" }, { type: "menu", label: "選單" }, { type: "faq", label: "常見問題" },
-  { type: "raw_html", label: "自訂 HTML" }, { type: "recaptcha", label: "reCAPTCHA" },
-  { type: "payment_button", label: "付款按鈕" }, { type: "payment_method", label: "付款方式" }, { type: "offer_price", label: "方案價格" },
-  { type: "physical_product", label: "實體商品" }, { type: "customer_type", label: "客戶類型" }, { type: "agreement", label: "同意條款" },
-  { type: "order_bump", label: "加購方案" }, { type: "two_step_order_form", label: "兩步驟結帳" }, { type: "coupon", label: "優惠券狀態" }, { type: "shipping_fees", label: "運費狀態" },
-];
+type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean; chrome?: FunnelEditorChrome };
+type History = ReturnType<typeof createFunnelPageHistory>;
 
 function nodeId(type: FunnelNodeType) {
   const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID().replaceAll("-", "").slice(0, 12) : `${Date.now()}${Math.random().toString(16).slice(2)}`;
@@ -82,18 +67,29 @@ function findNodeLocation(nodes: FunnelNode[], id: string, parentId: string | nu
   }
   return null;
 }
-function capabilityBadge(status: string) { return status === "limited" ? "功能未啟用" : "待驗證"; }
-function applyHistoryDirection(history: ReturnType<typeof createFunnelPageHistory>, direction: "undo" | "redo") {
+function applyHistoryDirection(history: History, direction: "undo" | "redo") {
   if (direction === "undo") return undoFunnelPageHistory(history);
   return redoFunnelPageHistory(history);
 }
-function PaletteButton({ item, disabled, onAdd }: { item: (typeof palette)[number]; disabled: boolean; onAdd: (type: FunnelNodeType) => void }) {
-  const definition = getFunnelNodeDefinition(item.type);
-  const capability = definition.capability;
-  const unavailable = capability.status !== "available" && definition.category !== "payment";
-  return <button draggable={!disabled && !unavailable} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-celebratedeal-funnel-element", item.type); }} disabled={disabled || unavailable} title={unavailable ? capability.reason : undefined} className="min-h-16 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" onClick={() => onAdd(item.type)}>{item.label}{unavailable ? <span className="mt-1 block text-[10px] font-medium text-amber-700">{capabilityBadge(capability.status)}</span> : null}</button>;
+/** Narrow screens open with the panel collapsed so it overlays instead of squeezing the canvas. */
+function initiallyCollapsed() {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1023px)").matches;
 }
-function BlockCapability({ limited }: { limited: boolean }) { return limited ? <span className="mt-1 block text-[10px] font-semibold text-amber-700">付款需綁定商品；部分功能有限制</span> : null; }
+
+/** Window-level shortcuts; the latest handler always runs (no stale closures). */
+function useEditorShortcuts(handle: (shortcut: EditorShortcut, event: KeyboardEvent) => void) {
+  const handler = useRef(handle);
+  useEffect(() => { handler.current = handle; });
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent) => {
+      const shortcut = editorShortcutFor(event);
+      if (shortcut) handler.current(shortcut, event);
+    };
+    window.addEventListener("keydown", keyboard);
+    return () => window.removeEventListener("keydown", keyboard);
+  }, []);
+}
+
 /** Parent echoes acknowledge local edits; a different document starts a fresh
  * editing session so old undo commands cannot overwrite a restored document. */
 export function FunnelPageEditor(props: Props) {
@@ -110,42 +106,42 @@ export function FunnelPageEditor(props: Props) {
   }} />;
 }
 
-// The editor coordinates the palette, history, inspector, templates, Popups and canvas in one persisted session.
-// eslint-disable-next-line complexity -- one session boundary owns the mutually exclusive editor panels.
-function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds, stepNames }: Props) {
+type LeftView = "library" | "node" | FunnelEditorView;
+
+// The session owns history, selection, the left panel view and the canvas viewport.
+function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds, stepNames, chrome }: Props) {
   const [history, setHistory] = useState(() => createFunnelPageHistory(document));
   const historyRef = useRef(history);
   const [selectedId, setSelectedId] = useState<string>();
   const [viewport, setViewport] = useState<FunnelViewport>("desktop");
-  const [panel, setPanel] = useState<"elements" | "blocks" | "settings" | "page" | "popups" | "templates" | "flow">("elements");
+  const [leftView, setLeftView] = useState<LeftView>("library");
   const [previewPopupId, setPreviewPopupId] = useState<string>();
   const [editingPopupId, setEditingPopupId] = useState<string>();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [elementQuery, setElementQuery] = useState("");
+  const [collapsed, setCollapsed] = useState(initiallyCollapsed);
+  const [previewing, setPreviewing] = useState(false);
 
   const editingPopup = history.present.popups.find((popup) => popup.id === editingPopupId);
   const activeRoot = editingPopup?.root ?? history.present.root;
   const path = useMemo(() => selectedId ? findPath(activeRoot, selectedId) : null, [activeRoot, selectedId]);
   const selected = path?.at(-1);
   const canvasDocument = useMemo(() => editingPopup ? { ...history.present, root: editingPopup.root, popups: [] } : history.present, [editingPopup, history.present]);
+  const resolvedStepIds = stepIds ?? history.present.flow?.steps.map((step) => step.id);
+  const resolvedStepNames = stepNames ?? Object.fromEntries((history.present.flow?.steps ?? []).map((step) => [step.id, step.name]));
+  const views: FunnelEditorView[] = chrome?.versions ? ["popups", "page", "versions"] : ["popups", "page"];
 
-  useEffect(() => {
-    const keyboard = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        stepHistory(event.shiftKey ? "redo" : "undo");
-      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedId) {
-        event.preventDefault();
-        commit({ type: "delete", nodeId: selectedId });
-        setSelectedId(undefined);
-      }
-    };
-    window.addEventListener("keydown", keyboard);
-    return () => window.removeEventListener("keydown", keyboard);
+  useEditorShortcuts((shortcut, event) => {
+    if (shortcut === "save") {
+      event.preventDefault();
+      if (chrome && chrome.saveState === "dirty" && !chrome.saveBlocked) chrome.onSave();
+      return;
+    }
+    if (previewing) return;
+    if (shortcut === "undo" || shortcut === "redo") { event.preventDefault(); stepHistory(shortcut); }
+    else if (shortcut === "delete" && selectedId && !disabled) { event.preventDefault(); removeSelected(); }
+    else if (shortcut === "deselect" && (selectedId || leftView !== "library")) { event.preventDefault(); deselect(); }
   });
 
+  // Legacy integration: older toolbars and QA harnesses dispatch window commands.
   useEffect(() => {
     const command = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
@@ -161,7 +157,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     publishHistory(dispatchFunnelPageCommand(historyRef.current, command));
   }
 
-  function publishHistory(next: ReturnType<typeof createFunnelPageHistory>) {
+  function publishHistory(next: History) {
     if (next === historyRef.current) return;
     // Keep callbacks outside React state updaters: Strict Mode may replay them.
     // The outer multi-page store may reject broken cross-page references.
@@ -174,8 +170,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   function add(type: FunnelNodeType) {
     const node = newNode(type);
     const selectedParent = selected && selected.children && getFunnelNodeDefinition(type).allowedParents.includes(selected.type) ? selected.id : null;
-    const targetRoot = editingPopup?.root ?? history.present.root;
-    const parentId = type === "section" ? null : selectedParent ?? findFirstAccepting(targetRoot, type);
+    const parentId = type === "section" ? null : selectedParent ?? findFirstAccepting(activeRoot, type);
     commit({ type: "add", node, parentId, popupId: editingPopup?.id ?? null });
     setSelectedId(node.id);
   }
@@ -204,65 +199,86 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     commit({ type: "replace_document", document: next });
   }
 
-  function changeTemplate(templateId: string) {
-    const preview = changeFunnelTemplate(history.present, { templateId });
-    if (!preview.ok) { window.alert(preview.error ?? "此模板目前無法套用。"); return; }
-    if (!preview.impact || !window.confirm(`${preview.impact.warning}\n\n目前 ${preview.impact.previousRootCount} 個區段將替換為 ${preview.impact.nextRootCount} 個區段。`)) return;
-    const applied = changeFunnelTemplate(history.present, { templateId, confirm: true });
-    if (applied.ok) { setSelectedId(undefined); replaceDocument(applied.document); }
+  function inspect(id: string) {
+    setSelectedId(id);
+    setLeftView("node");
+    setCollapsed(false);
+  }
+  function deselect() {
+    setSelectedId(undefined);
+    setLeftView("library");
+  }
+  function removeSelected() {
+    if (!selectedId) return;
+    commit({ type: "delete", nodeId: selectedId });
+    deselect();
+  }
+  function toggleView(view: FunnelEditorView) {
+    setCollapsed(false);
+    setLeftView((current) => current === view ? (selected ? "node" : "library") : view);
+  }
+  function backToCanvasPanel() { setLeftView(selected ? "node" : "library"); }
+  function editPopup(popupId: string) {
+    setSelectedId(undefined);
+    setEditingPopupId(popupId || undefined);
+    if (popupId) setLeftView("library");
   }
 
-  function commitFlow(result: FunnelFlowMutationResult) {
-    if (result.ok) commit({ type: "update_flow", flow: result.flow });
+  function renderPanel() {
+    if (leftView === "page") return <PageSettingsPanel document={history.present} disabled={disabled} commerceEnabled={commerceEnabled} commerceProducts={commerceProducts} workspaceSettings={chrome?.pageSettings} onCommand={commit} onReplace={replaceDocument} onBack={backToCanvasPanel} />;
+    if (leftView === "popups") return <PopupsPanel document={history.present} disabled={disabled} editingPopupId={editingPopupId} onReplace={replaceDocument} onEdit={editPopup} onPreview={setPreviewPopupId} onBack={backToCanvasPanel} />;
+    if (leftView === "versions" && chrome?.versions) return <div><PanelHeader title="版本紀錄" onBack={backToCanvasPanel} />{chrome.versions}</div>;
+    if (leftView === "node" && selected && path) return <NodeSettingsPanel node={selected} path={path} disabled={disabled} popups={history.present.popups} stepIds={resolvedStepIds} stepNames={resolvedStepNames} onCommand={commit} onBack={deselect} onDelete={removeSelected} />;
+    return <EditorLibrary disabled={disabled} onAddElement={add} onAddBlock={addBlock} />;
+  }
+  function renderCanvas() {
+    if (previewing && chrome?.renderPreview) return chrome.renderPreview(viewport);
+    return <FunnelPageDocumentRenderer document={canvasDocument} commerce={commerceViewForBinding(canvasDocument.commerce, commerceProducts)} viewport={viewport} mode="editor" selectedNodeId={selectedId} onMoveNode={moveNode} onSelectNode={inspect} />;
   }
 
-  const control = "min-h-9 rounded-lg border border-slate-500 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
-  const visiblePalette = palette.filter((item) => `${item.label} ${item.type}`.toLocaleLowerCase("zh-TW").includes(elementQuery.trim().toLocaleLowerCase("zh-TW")));
-  return <section className={`grid min-h-[calc(100dvh-10rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${sidebarCollapsed ? "grid-cols-[3.5rem_minmax(0,1fr)]" : "grid-cols-[18rem_minmax(0,1fr)]"}`}>
-    <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
-      <button type="button" aria-label={sidebarCollapsed ? "展開左側面板" : "收合左側面板"} onClick={() => setSidebarCollapsed((value) => !value)} className="m-2 min-h-10 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-700">{sidebarCollapsed ? "→" : "← 收合"}</button>
-      {sidebarCollapsed ? null : <>
-      <div className="grid grid-cols-3 gap-1 border-b border-slate-200 p-2">
-        <button className={`${control} ${panel === "elements" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("elements")}>元件</button>
-        <button className={`${control} ${panel === "blocks" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("blocks")}>版型區塊</button>
-        <button className={`${control} ${panel === "settings" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("settings")}>設定</button>
-        <button id="funnel-page-settings-tab" className={`${control} ${panel === "page" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("page")}>頁面</button>
-        <button id="funnel-popups-tab" className={`${control} ${panel === "popups" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("popups")}>彈出視窗</button>
-        <button className={`${control} ${panel === "templates" ? "border-blue-600 text-blue-700" : ""}`} onClick={() => setPanel("templates")}>換模板</button>
-        <button className={`${control} ${panel === "flow" ? "border-blue-600 text-blue-700" : ""}`} disabled={!history.present.flow} onClick={() => setPanel("flow")}>流程</button>
-      </div>
-      <div className="flex items-center gap-2 border-b border-slate-200 p-2">
-        <button className={control} disabled={disabled || !history.past.length} onClick={() => stepHistory("undo")}>復原</button>
-        <button className={control} disabled={disabled || !history.future.length} onClick={() => stepHistory("redo")}>重做</button>
-        <button className={control} onClick={() => setViewport(viewport === "desktop" ? "mobile" : "desktop")}>{viewport === "desktop" ? "桌機" : "手機"}</button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        {panel === "elements" ? <div className="grid gap-2"><input aria-label="搜尋元件" value={elementQuery} onChange={(event) => setElementQuery(event.currentTarget.value)} placeholder="搜尋元件" className={control} /><div className="grid grid-cols-2 gap-2">{visiblePalette.map((item) => <PaletteButton key={item.type} item={item} disabled={disabled} onAdd={add} />)}</div>{!visiblePalette.length ? <p className="py-6 text-center text-sm text-slate-500">找不到符合的元件。</p> : null}</div> : panel === "blocks" ? <div className="grid gap-2">{Object.values(FUNNEL_BLOCK_REGISTRY).map((block) => <button key={block.id} draggable={!disabled} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-celebratedeal-funnel-block", block.id); }} disabled={disabled} className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-blue-400" onClick={() => addBlock(block.id)}><span className="block text-sm font-bold text-slate-800">{block.label}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{block.description}</span><BlockCapability limited={Boolean(block.capability)} /></button>)}</div> : panel === "flow" && history.present.flow ? <div className="grid gap-3"><div><h2 className="font-bold">一頁式網站 流程</h2><p className="mt-1 text-xs text-slate-500">{history.present.flow.name} · {history.present.flow.currency}</p></div>{history.present.flow.steps.map((step, index) => <article key={step.id} className="grid gap-2 rounded-xl border bg-white p-3"><input aria-label={`${step.name} 名稱`} disabled={step.isSystem} className={control} value={step.name} onChange={(event) => commitFlow(renameFunnelStep(history.present.flow!, step.id, event.currentTarget.value))} /><label className="text-xs text-slate-500">網址路徑<input disabled={step.isSystem} className={control} value={step.path} onChange={(event) => commitFlow(setFunnelStepPath(history.present.flow!, step.id, event.currentTarget.value))} /></label>{!step.isSystem ? <div className="grid grid-cols-3 gap-1"><button className={control} disabled={index === 0} onClick={() => commitFlow(moveFunnelStep(history.present.flow!, step.id, index - 1))}>上移</button><button className={control} disabled={index >= history.present.flow!.steps.length - 2} onClick={() => commitFlow(moveFunnelStep(history.present.flow!, step.id, index + 1))}>下移</button><button className={`${control} text-red-700`} onClick={() => { if (window.confirm(`確定移除「${step.name}」？`)) commitFlow(removeFunnelStep(history.present.flow!, step.id)); }}>移除</button></div> : <p className="text-xs text-slate-500">系統停用頁</p>}</article>)}<button className={control} onClick={() => commitFlow(addFunnelStep(history.present.flow!, { name: "新資訊頁", path: `info-${history.present.flow!.steps.length}`, type: "info_page", templateSource: "blank" }))}>＋ 新增資訊頁</button><p className="mt-3 text-sm text-slate-500">請由上方「一頁式網站 管理」開啟 自動化規則、A/B、報表、期限與全域設定。</p></div> : panel === "templates" ? <div className="grid gap-3"><h2 className="font-bold">更換頁面模板</h2><p className="text-xs leading-5 text-amber-800">套用後會替換目前畫布與彈出視窗；頁面名稱、版本及設定會保留。</p>{Object.values(FUNNEL_TEMPLATE_TRANSACTION_TEMPLATES).map((template) => <button key={template.id} disabled={disabled || template.status !== "available"} title={template.reason} className="rounded-xl border border-slate-200 bg-white p-3 text-left disabled:cursor-not-allowed disabled:bg-slate-100" onClick={() => changeTemplate(template.id)}><span className="font-bold text-slate-800">{template.name}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{template.description}</span>{template.status !== "available" ? <span className="mt-2 inline-flex rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">待驗證</span> : null}</button>)}</div> : panel === "popups" ? <div className="grid gap-3">
-          <div className="flex items-center justify-between"><h2 className="font-bold">彈出視窗</h2><button className={control} onClick={() => replaceDocument(createFunnelPopup(history.present, { name: `彈出視窗 ${history.present.popups.length + 1}` }))}>＋ 新增</button></div>
-          {!history.present.popups.length ? <p className="rounded-lg border border-dashed p-4 text-sm text-slate-500">尚未建立彈出視窗。</p> : history.present.popups.map((popup) => { const auto = validatePopupTrigger(popup, "automatic_delay"); const exit = validatePopupTrigger(popup, "exit_intent"); return <article key={popup.id} className="grid gap-2 rounded-xl border bg-white p-3"><input className={control} value={popup.name} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { name: event.currentTarget.value }))} /><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openAutomatically} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openAutomatically: event.currentTarget.checked } }))} />自動開啟</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.showCloseButton} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { showCloseButton: event.currentTarget.checked } }))} />顯示關閉按鈕</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.settings.openOnExitIntent} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { openOnExitIntent: event.currentTarget.checked } }))} />離開頁面時顯示（桌機單次觸發；手機不支援）</label><label className="grid gap-1 text-xs">顯示延遲（秒）<input className={control} type="number" min="0" value={popup.settings.automaticDelaySeconds} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { automaticDelaySeconds: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">背景色<input className={control} value={popup.settings.backgroundColor} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { backgroundColor: event.currentTarget.value } }))} /></label><label className="grid gap-1 text-xs">內距<input type="number" min="0" className={control} value={popup.settings.padding} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { padding: Number(event.currentTarget.value) } }))} /></label><div className="grid grid-cols-2 gap-2"><label className="grid gap-1 text-xs">邊框<input type="number" min="0" className={control} value={popup.settings.borderWidth} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { borderWidth: Number(event.currentTarget.value) } }))} /></label><label className="grid gap-1 text-xs">陰影<select className={control} value={popup.settings.shadow} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { settings: { shadow: event.currentTarget.value as typeof popup.settings.shadow } }))}><option value="none">無</option><option value="soft">柔和</option><option value="medium">中等</option><option value="strong">明顯</option></select></label></div><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={popup.pageId === history.present.id} onChange={(event) => replaceDocument(updateFunnelPopup(history.present, popup.id, { pageId: event.currentTarget.checked ? history.present.id : undefined }))} />只綁定目前頁面</label><p className="text-[11px] text-slate-500">自動顯示：{auto.executable ? `${auto.delayMs}ms` : auto.reason}</p><p className="text-[11px] text-amber-700">離開頁面時顯示：{exit.reason}</p><p className="text-[11px] text-slate-500">寬度與圓角可進入「編輯」後選取彈出視窗區塊 調整。</p><div className="grid grid-cols-3 gap-2"><button className={control} onClick={() => { setEditingPopupId(popup.id); setSelectedId(undefined); }}>編輯</button><button className={control} onClick={() => setPreviewPopupId(popup.id)}>預覽</button><button className={`${control} text-red-700`} onClick={() => { if (editingPopupId === popup.id) setEditingPopupId(undefined); replaceDocument(deleteFunnelPopup(history.present, popup.id)); }}>刪除</button></div></article>; })}
-        </div> : panel === "page" ? <div className="grid gap-4">
-          <h2 className="text-base font-bold">頁面設定</h2>
-          {commerceEnabled ? <FunnelCommerceSettings binding={history.present.commerce} products={commerceProducts} disabled={disabled} onChange={(commerce) => replaceDocument({ ...history.present, commerce })} /> : <p className="text-xs text-slate-600">商品與結帳設定位於「訂單表單」步驟的頁面設定。</p>}
-          <label className="grid gap-1 text-sm font-semibold">語言<select className={control} value={history.present.settings.language} onChange={(event) => commit({ type: "update_settings", settings: { language: event.currentTarget.value as PageDocument["settings"]["language"] } })}><option value="zh-TW">繁體中文</option><option value="en">英文</option><option value="ja">日本語</option></select></label>
-          <label className="grid gap-1 text-sm font-semibold">搜尋引擎標題<input className={control} value={history.present.settings.seo.title ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, title: event.currentTarget.value } } })} /></label>
-          <label className="grid gap-1 text-sm font-semibold">搜尋引擎描述<textarea className={control} value={history.present.settings.seo.description ?? ""} onChange={(event) => commit({ type: "update_settings", settings: { seo: { ...history.present.settings.seo, description: event.currentTarget.value } } })} /></label>
-          <label className="grid gap-1 text-sm font-semibold">背景色<input className={control} value={history.present.settings.background.color} onChange={(event) => commit({ type: "update_settings", settings: { background: { ...history.present.settings.background, color: event.currentTarget.value } } })} /></label>
-          <label className="grid gap-1 text-sm font-semibold">內文字型<input className={control} value={history.present.settings.typography.bodyFont} onChange={(event) => commit({ type: "update_settings", settings: { typography: { ...history.present.settings.typography, bodyFont: event.currentTarget.value } } })} /></label>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">追蹤設定：{history.present.settings.tracking.reason}<br />推薦夥伴：{history.present.settings.affiliate.reason}</div>
-        </div> : selected ? <div className="grid gap-4">
-          <div><p className="text-xs font-bold text-slate-500">目前位置</p><p className="mt-1 text-sm text-slate-700">{path?.map((item) => getFunnelNodeDefinition(item.type).label).join(" › ")}</p></div>
-          <FunnelElementInspector node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} popupNames={Object.fromEntries(history.present.popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds ?? history.present.flow?.steps.map((step) => step.id)} stepNames={stepNames ?? Object.fromEntries((history.present.flow?.steps ?? []).map((step) => [step.id, step.name]))} onCommand={commit} />
-          <div className="grid grid-cols-2 gap-2"><button className={control} onClick={() => commit({ type: "move_up", nodeId: selected.id })}>上移</button><button className={control} onClick={() => commit({ type: "move_down", nodeId: selected.id })}>下移</button><button className={control} onClick={() => commit({ type: "duplicate", nodeId: selected.id })}>複製</button><button className={`${control} text-red-700`} onClick={() => { commit({ type: "delete", nodeId: selected.id }); setSelectedId(undefined); }}>刪除</button></div>
-        </div> : <p className="text-sm text-slate-500">請先在畫布選取節點。</p>}
-      </div>
-      </>}
-    </aside>
-    <div className="min-h-0 overflow-auto bg-slate-200/70 p-5" onDragOver={(event) => { if (event.dataTransfer.types.some((type) => type.includes("celebratedeal-funnel-element") || type.includes("celebratedeal-funnel-block"))) event.preventDefault(); }} onDrop={(event) => { const type = event.dataTransfer.getData("application/x-celebratedeal-funnel-element") as FunnelNodeType; const blockId = event.dataTransfer.getData("application/x-celebratedeal-funnel-block"); if (type) { event.preventDefault(); add(type); } else if (blockId) { event.preventDefault(); addBlock(blockId); } }}>
-      <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><span className="font-semibold text-slate-700">{editingPopup ? `正在編輯彈出視窗：${editingPopup.name}` : "正在編輯頁面"}</span>{editingPopup ? <button type="button" className={control} onClick={() => { setEditingPopupId(undefined); setSelectedId(undefined); }}>返回頁面畫布</button> : null}</div>
-      <div className={`mx-auto min-h-full bg-white shadow-xl transition-[width] ${viewport === "mobile" ? "w-[375px] max-w-full rounded-[2rem] border-[10px] border-slate-900" : "w-full max-w-[1440px]"}`}>
-        <FunnelPageDocumentRenderer document={canvasDocument} commerce={commerceViewForBinding(canvasDocument.commerce, commerceProducts)} viewport={viewport} mode="editor" selectedNodeId={selectedId} onMoveNode={moveNode} onSelectNode={(id) => { setSelectedId(id); setPanel("settings"); }} />
-      </div>
+  const crumbs = path?.map((node) => ({ id: node.id, label: funnelNodeLabel(node.type) })) ?? [];
+  const historyControls = { canUndo: !disabled && history.past.length > 0, canRedo: !disabled && history.future.length > 0, onUndo: () => stepHistory("undo"), onRedo: () => stepHistory("redo") };
+  const toolbarView = leftView === "library" || leftView === "node" ? null : leftView;
+  return <div data-funnel-page-editor className="flex h-full min-h-0 w-full flex-col bg-slate-100">
+    <FunnelEditorToolbar chrome={chrome} history={historyControls} views={views} view={toolbarView} onToggleView={toggleView}
+      crumbs={crumbs} context={editingPopup ? `彈出視窗：${editingPopup.name}` : undefined} onSelectCrumb={inspect}
+      viewport={viewport} onViewport={setViewport} previewing={previewing} onTogglePreview={chrome?.renderPreview ? () => setPreviewing((value) => !value) : undefined} />
+    <div className="relative flex min-h-0 flex-1">
+      {previewing ? null : <EditorSidePanel collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>{renderPanel()}</EditorSidePanel>}
+      <EditorCanvas previewing={previewing} viewport={viewport} popupName={editingPopup?.name} onExitPopup={() => editPopup("")} onDeselect={deselect} onDropElement={add} onDropBlock={addBlock}>{renderCanvas()}</EditorCanvas>
     </div>
     {previewPopupId ? <FunnelPopupPreview document={history.present} commerce={commerceViewForBinding(history.present.commerce, commerceProducts)} popupId={previewPopupId} viewport={viewport} previewEnabled onTriggerStatus={() => undefined} /> : null}
-  </section>;
+  </div>;
+}
+
+const panelWidth = "w-[min(20rem,calc(100vw-3rem))] lg:w-80";
+
+/** EDT-LAYOUT-001 left panel with an edge toggle; below `lg` it overlays the canvas. */
+function EditorSidePanel({ collapsed, onToggle, children }: { collapsed: boolean; onToggle: () => void; children: React.ReactNode }) {
+  const label = collapsed ? "展開左側面板" : "收合左側面板";
+  return <>
+    <aside id="funnel-editor-left-panel" aria-label="編輯面板" hidden={collapsed} className={`absolute inset-y-0 left-0 z-30 flex ${panelWidth} flex-col border-r border-slate-200 bg-white shadow-xl lg:static lg:z-auto lg:shrink-0 lg:shadow-none`}>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+    </aside>
+    <button type="button" aria-controls="funnel-editor-left-panel" aria-expanded={!collapsed} aria-label={label} title={label} onClick={onToggle}
+      className={`absolute top-1/2 z-30 grid h-12 w-6 -translate-y-1/2 cursor-pointer place-items-center rounded-r-lg border border-l-0 border-slate-200 bg-white text-slate-500 shadow-sm hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${collapsed ? "left-0" : "left-[min(20rem,calc(100vw-3rem))] lg:left-80"}`}>
+      {collapsed ? <PanelLeftOpen size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
+    </button>
+  </>;
+}
+
+/** Scrollable canvas: full width up to the page max width, or the 375px device frame. */
+function EditorCanvas({ previewing, viewport, popupName, onExitPopup, onDeselect, onDropElement, onDropBlock, children }: { previewing: boolean; viewport: FunnelViewport; popupName?: string; onExitPopup: () => void; onDeselect: () => void; onDropElement: (type: FunnelNodeType) => void; onDropBlock: (templateId: string) => void; children: React.ReactNode }) {
+  return <div role="region" aria-label={previewing ? "預覽畫面" : "編輯畫布"} className="min-w-0 flex-1 overflow-auto px-4 py-5 lg:px-8"
+    onClick={(event) => { if (!previewing && event.target === event.currentTarget) onDeselect(); }}
+    onDragOver={(event) => { if (!previewing && event.dataTransfer.types.some((type) => type === FUNNEL_ELEMENT_DRAG_TYPE || type === FUNNEL_BLOCK_DRAG_TYPE)) event.preventDefault(); }}
+    onDrop={(event) => {
+      if (previewing) return;
+      const type = event.dataTransfer.getData(FUNNEL_ELEMENT_DRAG_TYPE) as FunnelNodeType;
+      const blockId = event.dataTransfer.getData(FUNNEL_BLOCK_DRAG_TYPE);
+      if (type) { event.preventDefault(); onDropElement(type); } else if (blockId) { event.preventDefault(); onDropBlock(blockId); }
+    }}>
+    {popupName && !previewing ? <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm"><span className="font-semibold text-violet-900">正在編輯彈出視窗：{popupName}</span><button type="button" className="min-h-9 cursor-pointer rounded-lg border border-violet-300 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-100" onClick={onExitPopup}>返回頁面畫布</button></div> : null}
+    <div className={`mx-auto min-h-full bg-white shadow-xl transition-[width] ${viewport === "mobile" ? "w-[375px] max-w-full overflow-hidden rounded-[2rem] border-[10px] border-slate-900" : "w-full max-w-[1440px]"}`}>{children}</div>
+  </div>;
 }

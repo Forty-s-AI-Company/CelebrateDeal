@@ -10,7 +10,6 @@ import {
   getFunnelInspectorFieldValue,
   type FunnelInspectorActionInput,
   type FunnelInspectorField,
-  type FunnelInspectorGroup,
   type FunnelInspectorScope,
 } from "@/lib/funnel-element-inspector";
 import type { FunnelNode, FunnelNodeAction } from "@/lib/funnel-page-document";
@@ -103,17 +102,51 @@ function ActionFields({ node, popupIds, stepIds, stepNames, popupNames, disabled
   </div>;
 }
 
+type InspectorSectionKey = "content" | "typography" | "color" | "size" | "actions" | "advanced";
+const sectionLabels: Record<InspectorSectionKey, string> = { content: "內容", typography: "字型", color: "顏色", size: "尺寸與位置", actions: "動作", advanced: "進階" };
+const typographyFieldIds = new Set(["fontSize", "lineHeight", "textAlign", "fontFamily", "fontWeight", "letterSpacing"]);
+
+/** Presentation-only grouping (systeme.io: Typography / Color / Size and position / Advanced).
+ * The field schema and its validation stay in `@/lib/funnel-element-inspector`. */
+export function inspectorSectionFor(field: FunnelInspectorField): InspectorSectionKey {
+  if (field.group === "content") return "content";
+  if (field.group === "actions") return "actions";
+  if (field.group === "advanced" || field.target === "visible") return "advanced";
+  if (typographyFieldIds.has(field.id)) return "typography";
+  if (/colou?r/iu.test(field.id)) return "color";
+  return "size";
+}
+
+function InspectorSection({ id, label, defaultOpen, children }: { id: string; label: string; defaultOpen: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return <div className="border-t border-slate-200 pt-3">
+    <h3><button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)} className="flex min-h-9 w-full cursor-pointer items-center justify-between rounded-md text-left text-sm font-bold text-slate-900 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+      <span>{label}</span><span aria-hidden className={`text-xs text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+    </button></h3>
+    <div id={id} hidden={!open} className="mt-3 grid gap-3">{children}</div>
+  </div>;
+}
+
 /** Shared inspector UI for every node in a structured Funnel document. */
 export function FunnelElementInspector({ node, disabled = false, popupIds = [], stepIds, stepNames, popupNames, onCommand }: InspectorProps) {
-  const [group, setGroup] = useState<FunnelInspectorGroup>("content");
   const [scope, setScope] = useState<FunnelInspectorScope>("base");
   const definition = getFunnelElementInspectorDefinition(node.type);
-  const fields = useMemo(() => definition.fields.filter((field) => field.group === group), [definition.fields, group]);
-  const groups: FunnelInspectorGroup[] = ["content", "design", "actions", "advanced"];
-  return <section data-funnel-element-inspector data-node-type={node.type} className="grid gap-4">
-    <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="元件設定分類">{groups.map((item) => <button key={item} type="button" role="tab" aria-selected={group === item} className={`min-h-9 rounded-lg border px-2 text-sm font-semibold ${group === item ? "border-blue-600 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-700"}`} onClick={() => setGroup(item)}>{({ content: "內容", design: "設計", actions: "動作", advanced: "進階" })[item]}</button>)}</div>
+  const sections = useMemo(() => {
+    const grouped = new Map<InspectorSectionKey, FunnelInspectorField[]>();
+    for (const field of definition.fields) {
+      const key = inspectorSectionFor(field);
+      grouped.set(key, [...(grouped.get(key) ?? []), field]);
+    }
+    return (Object.keys(sectionLabels) as InspectorSectionKey[]).filter((key) => key === "actions" || grouped.get(key)?.length).map((key) => ({ key, fields: grouped.get(key) ?? [] }));
+  }, [definition.fields]);
+  const responsive = definition.fields.some((field) => field.responsive);
+  return <section data-funnel-element-inspector data-node-type={node.type} className="grid gap-3">
     {definition.capabilityNote ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">{definition.capabilityNote}</p> : null}
-    {group === "design" || group === "content" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-600">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
-    {group === "actions" ? <ActionFields stepNames={stepNames} popupNames={popupNames} stepIds={stepIds} key={`${node.id}:${JSON.stringify(node.actions ?? [])}`} node={node} popupIds={popupIds} disabled={disabled} onCommand={onCommand} /> : fields.length ? <div className="grid gap-3">{fields.map((field) => <FieldControl key={field.id} field={field} node={node} scope={scope} disabled={disabled || Boolean(definition.capabilityNote && field.target === "props")} onCommand={onCommand} />)}</div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-600">這個分類沒有可調整的設定。</p>}
+    {responsive ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-600">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
+    {sections.map(({ key, fields }) => <InspectorSection key={key} id={`funnel-inspector-${node.id}-${key}`} label={sectionLabels[key]} defaultOpen={key !== "actions" && key !== "advanced"}>
+      {key === "actions"
+        ? <ActionFields stepNames={stepNames} popupNames={popupNames} stepIds={stepIds} key={`${node.id}:${JSON.stringify(node.actions ?? [])}`} node={node} popupIds={popupIds} disabled={disabled} onCommand={onCommand} />
+        : fields.map((field) => <FieldControl key={field.id} field={field} node={node} scope={scope} disabled={disabled || Boolean(definition.capabilityNote && field.target === "props")} onCommand={onCommand} />)}
+    </InspectorSection>)}
   </section>;
 }

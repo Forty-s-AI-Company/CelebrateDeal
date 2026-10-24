@@ -43,6 +43,9 @@ test("only owner-side Funnel server actions may write", () => {
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/new`, "POST", headers)), "FUNNEL_WRITE");
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/abc123/operations`, "POST", headers), "/landing-pages/abc123"), "FUNNEL_WRITE");
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/abc123`, "POST", headers), "/landing-pages/abc123"), "FUNNEL_WRITE");
+  assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/abc123/edit`, "POST", headers), "/landing-pages/abc123"), "FUNNEL_WRITE");
+  assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/other/edit`, "POST", headers), "/landing-pages/abc123"), "BLOCK");
+  assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/abc123/edit`, "POST"), "/landing-pages/abc123"), "BLOCK");
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/other/operations`, "POST", headers), "/landing-pages/abc123"), "BLOCK");
   assert.equal(classifyFunnelRequest(request(`${origin}/landing-pages/abc123`, "POST")), "BLOCK");
   assert.equal(classifyFunnelRequest(request(`${origin}/api/payments/checkout`, "POST", headers)), "BLOCK");

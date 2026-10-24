@@ -74,8 +74,8 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "模板已套用" })).toBeVisible();
   await page.getByRole("button", { name: "編輯頁面", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
-  await page.getByRole("button", { name: "頁面", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}/edit\\?step=`, "u"));
+  await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   const productSelect = page.getByRole("combobox", { name: /^本步驟商品/u });
   await expect(productSelect).toBeVisible();
   await expect(productSelect.locator(`option[value="${fixture.unlinked.id}"]`)).toHaveCount(0);
@@ -91,11 +91,12 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   const agreementInput = page.getByRole("textbox", { name: "額外同意條款（選填）", exact: true });
   await agreementInput.fill(agreement);
   await expect(agreementInput).toHaveValue(agreement);
-  await expect(page.getByRole("status").filter({ hasText: "有尚未儲存的變更" })).toBeVisible();
-  await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "有尚未儲存的變更" })).toBeAttached();
+  const toolbar = page.getByLabel("編輯器工具列", { exact: true });
+  await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "草稿已儲存。" })).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
-  await expect(page.getByRole("button", { name: "發布已儲存草稿", exact: true })).toBeEnabled();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}/edit\\?step=`, "u"));
+  await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
   // 驗證實際持久化的綁定，避免僅靠編輯器畫面判定儲存成功。
   const savedDraft = await db.landingPage.findUniqueOrThrow({ where: { id: funnelId }, select: { draftContent: true } });
   const savedStepId = new URL(page.url()).searchParams.get("step");
@@ -109,17 +110,21 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
     agreement: { label: agreement },
   });
   await page.reload();
-  await page.getByRole("button", { name: "頁面", exact: true }).click();
+  await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await expect(productSelect).toHaveValue(fixture.product.id);
   await expect(page.getByRole("combobox", { name: /^加購商品（選填）/u })).toHaveValue(fixture.bump.id);
   await expect(page.getByRole("combobox", { name: /^結帳版面/u })).toHaveValue("two_step");
   await expect(page.getByRole("textbox", { name: "額外同意條款（選填）", exact: true })).toHaveValue(agreement);
-  await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click();
-  await expect(page.getByRole("link", { name: /查看公開頁/u })).toBeVisible();
   await page.getByRole("button", { name: "預覽", exact: true }).click();
   await expect(page.locator('[data-render-mode="preview"]:visible')).toBeVisible();
   await expect(page.getByRole("button", { name: "前往安全結帳（預覽不收款）", exact: true })).toBeDisabled();
   await expect(page.locator('[data-funnel-renderer] a[href$="/checkout"]')).toHaveCount(0);
+  // Publishing moved from the editor to the management page (systeme.io parity).
+  await page.getByRole("button", { name: "返回編輯", exact: true }).click();
+  await page.getByRole("button", { name: "離開", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}/operations\\?step=`, "u"));
+  await page.getByRole("button", { name: "發布", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^發布狀態：(已發布|公開網址無法開啟)/u })).toBeVisible();
   await page.goto(`/lp/${slug}`);
   const checkoutLink = page.getByRole("link", { name: "前往安全結帳", exact: true });
   await expect(checkoutLink).toHaveAttribute("href", new RegExp(`^/lp/${slug}/[^/]+/checkout$`, "u"));

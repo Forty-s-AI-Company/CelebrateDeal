@@ -1,38 +1,32 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ editor: vi.fn(), publication: vi.fn(), manager: vi.fn() }));
-const errors = vi.hoisted(() => ({ Missing: class extends Error {}, Scope: class extends Error {} }));
-vi.mock("@/lib/landing-page-service", () => ({ getLandingPageForEditor: mocks.editor, getLandingPagePublicationStatus: mocks.publication, LandingPageNotFoundError: errors.Missing, LandingPageScopeError: errors.Scope }));
+const mocks = vi.hoisted(() => ({ manager: vi.fn(), redirect: vi.fn((href: string) => { throw new Error(`redirect:${href}`); }) }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.manager }));
-vi.mock("@/lib/csrf", () => ({ CSRF_FIELD_NAME: "synthetic", getCsrfToken: async () => "synthetic" }));
-vi.mock("@/components/landing-page-workspace", () => ({ LandingPageWorkspace: () => null }));
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("not_found"); } }));
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
-import EditLandingPage from "./page";
+import LegacyLandingPageEditorRedirect from "./page";
 
-const props = () => ({ params: Promise.resolve({ id: "page-1" }), searchParams: Promise.resolve({}) });
+const props = (id: string, searchParams: { step?: string | string[] } = {}) => ({ params: Promise.resolve({ id }), searchParams: Promise.resolve(searchParams) });
 
-beforeEach(() => {
-  vi.resetAllMocks();
-  mocks.editor.mockResolvedValue({ page: { id: "page-1", name: "合成頁面", slug: "synthetic", status: "draft", revision: 1, content: { schemaVersion: 1, data: { root: {}, content: [] } }, formId: null, liveId: null, versions: [] }, forms: [], lives: [] });
+beforeEach(() => vi.clearAllMocks());
+
+it("redirects the old editor URL to the full-screen editor and keeps the step", async () => {
+  await expect(LegacyLandingPageEditorRedirect(props("page-1", { step: "step_abc" }))).rejects.toThrow("redirect:/landing-pages/page-1/edit?step=step_abc");
+  expect(mocks.manager).toHaveBeenCalledOnce();
 });
 
-it("passes the merchant diagnosis to the editor", async () => {
-  const diagnosis = { available: false, message: "專案尚未發布，公開網址目前無法開啟。", projectHref: "/projects/project-1", missing: [] };
-  mocks.publication.mockResolvedValue(diagnosis);
-  const result = await EditLandingPage(props());
-  expect(result.props.initialPublication).toEqual(diagnosis);
+it("redirects without a step when none (or an ambiguous list) is given", async () => {
+  await expect(LegacyLandingPageEditorRedirect(props("page-1"))).rejects.toThrow("redirect:/landing-pages/page-1/edit");
+  await expect(LegacyLandingPageEditorRedirect(props("page-1", { step: ["a", "b"] }))).rejects.toThrow(/redirect:\/landing-pages\/page-1\/edit$/u);
 });
 
-it("keeps the editor available when the informational read fails", async () => {
-  mocks.publication.mockRejectedValue(new Error("synthetic-read-failure"));
-  const result = await EditLandingPage(props());
-  expect(result.props.initialPublication).toMatchObject({ available: false, projectHref: "/projects" });
-  expect(result.props.initialPublication.message).toContain("尚無法確認");
-  expect(result.props.page.id).toBe("page-1");
+it("encodes ids and steps so the redirect cannot leave the editor route", async () => {
+  await expect(LegacyLandingPageEditorRedirect(props("a/../b", { step: "x&tab=y" }))).rejects.toThrow("redirect:/landing-pages/a%2F..%2Fb/edit?step=x%26tab%3Dy");
 });
 
-it.each([errors.Missing, errors.Scope])("keeps scoped not-found handling", async (ErrorType) => {
-  mocks.publication.mockRejectedValue(new ErrorType());
-  await expect(EditLandingPage(props())).rejects.toThrow("not_found");
+it("checks the manager role before redirecting", async () => {
+  const denied = new Error("synthetic authorization denial");
+  mocks.manager.mockRejectedValueOnce(denied);
+  await expect(LegacyLandingPageEditorRedirect(props("page-1"))).rejects.toBe(denied);
+  expect(mocks.redirect).not.toHaveBeenCalled();
 });

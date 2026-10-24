@@ -21,10 +21,13 @@ describe("Funnel commerce renderer", () => {
   });
   it("lets editors add the supported payment elements while scripts remain disabled", () => {
     const html = renderToStaticMarkup(<FunnelPageEditor document={document("payment_button")} commerceProducts={[commerce.product]} commerceEnabled onChange={() => {}} />);
+    // Palette tiles are `<button>` > icon + label span; the label must sit inside an enabled tile.
+    const tile = (label: string, enabled: boolean) => new RegExp(`<button${enabled ? "(?![^>]*\\sdisabled=)" : "[^>]*\\sdisabled=\"\""}[^>]*>(?:(?!</button>).)*<span[^>]*>${label}</span>`, "u");
     for (const label of ["付款按鈕", "方案價格", "加購方案", "兩步驟結帳", "同意條款", "運費狀態"]) {
-      expect(html).toMatch(new RegExp(`<button(?![^>]*\\sdisabled=)[^>]*>${label}</button>`, "u"));
+      expect(html).toMatch(tile(label, true));
     }
-    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>自訂 HTML/u);
+    expect(html).toMatch(tile("自訂 HTML", false));
+    expect(html).not.toMatch(tile("自訂 HTML", true));
   });
   it("uses trusted prices equally in editor and mobile preview, never node overrides", () => {
     for (const mode of ["editor", "preview"] as const) {

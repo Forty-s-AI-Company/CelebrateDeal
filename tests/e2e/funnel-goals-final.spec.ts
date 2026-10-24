@@ -73,8 +73,8 @@ async function createGoal(page: Page, goal: Goal) {
   }
 
   await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
-  await expect(page.getByLabel("一頁式網站編輯器工具列", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/edit\\?step=`, "u"));
+  await expect(page.getByLabel("編輯器工具列", { exact: true })).toBeVisible();
   return { slug, pageId };
 }
 
@@ -82,14 +82,17 @@ for (const { goal } of goals) {
   test(`四 Goal：${goal} 依序經過管理、模板與單頁編輯器`, async ({ page }) => {
     await login(page);
     const { slug, pageId } = await createGoal(page, goal);
-    const toolbar = page.getByLabel("一頁式網站編輯器工具列", { exact: true });
+    const toolbar = page.getByLabel("編輯器工具列", { exact: true });
 
-    await expect(toolbar.getByRole("button", { name: "儲存", exact: true })).toBeVisible();
+    // Nothing to save until the canvas changes (EDT-TB-001).
+    await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "區段", exact: true }).click();
     await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: /草稿已儲存|已儲存/u }).first()).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: /草稿已儲存/u }).first()).toBeVisible();
+    await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
     await expect.poll(async () => (await db.landingPage.findUnique({ where: { id: pageId }, select: { slug: true } }))?.slug).toBe(slug);
 
-    await toolbar.getByRole("button", { name: /返回頁面設定$/u }).click();
+    await toolbar.getByRole("button", { name: "返回管理頁", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/operations\\?step=`, "u"));
     const management = page.getByRole("region", { name: "一頁式網站管理", exact: true });
     await expect(management.getByRole("button", { name: "頁面設定", exact: true })).toBeVisible();
@@ -97,21 +100,20 @@ for (const { goal } of goals) {
     await expect(page.getByRole("region", { name: "報名後自動化", exact: true })).toBeVisible();
 
     await management.getByRole("button", { name: "頁面設定", exact: true }).click();
-    await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
-    const publish = page.getByRole("button", { name: "發布已儲存草稿", exact: true });
+    // Publishing, duplicating and deleting live on the management page.
+    const publish = management.getByRole("button", { name: "發布", exact: true });
     if (goal !== "webinar") {
       await expect(publish).toBeEnabled();
       await publish.click();
-      await expect(page.getByRole("link", { name: /查看公開頁/u })).toBeVisible();
+      await expect(management.getByRole("button", { name: /^發布狀態：(已發布|公開網址無法開啟)/u })).toBeVisible();
     } else {
       if (await publish.isEnabled()) await publish.click();
-      await expect(page.getByRole("link", { name: /查看公開頁/u })).toHaveCount(0);
+      await expect(management.getByRole("button", { name: "發布狀態：草稿", exact: true })).toBeVisible();
     }
 
-    const remove = page.getByRole("button", { name: "刪除一頁式網站", exact: true });
+    await management.getByRole("button", { name: "更多網站操作", exact: true }).click();
     page.once("dialog", (dialog) => dialog.accept());
-    await remove.click();
+    await management.getByRole("button", { name: "刪除網站", exact: true }).click();
     await expect(page).toHaveURL(/\/landing-pages$/u);
     if (goal !== "webinar") {
       // F-072 (owner decision D-19): a published Funnel is archived, never

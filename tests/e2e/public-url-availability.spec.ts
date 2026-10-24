@@ -113,6 +113,9 @@ test("the merchant sees why the public URL is unavailable", async ({ page }) => 
     await page.getByRole("button", { name: "登入" }).click();
     await expect(page).toHaveURL(/\/dashboard$/u);
     await page.goto(`/landing-pages/${legacyPageId}`);
+    await expect(page).toHaveURL(new RegExp(`/landing-pages/${legacyPageId}/edit$`, "u"));
+    // The editor shows publication as a compact toolbar chip; its popover holds the diagnosis.
+    await page.getByRole("button", { name: /^發布狀態：/u }).click();
     const panel = page.getByRole("region", { name: "公開網址狀態" });
     await expect(panel).toContainText("專案尚未發布，公開網址目前無法開啟");
     await expect(panel.getByRole("link", { name: "尚無有效且已驗證的商家付款方式" })).toHaveAttribute("href", "/billing/payment-methods");

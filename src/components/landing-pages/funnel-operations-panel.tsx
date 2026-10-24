@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { funnelTabKeys, funnelTabLabels, funnelGoalLabels, funnelStepLabels, experimentStatusLabels, experimentArmLabels, reportStatusLabel } from "./funnel-display-labels";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Eye, MoreHorizontal, Pencil, Plus, Settings, X } from "lucide-react";
+import { ExternalLink, Eye, MoreHorizontal, Pencil, Plus, Rocket, Settings, X } from "lucide-react";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
 import { readFunnelOperations, updateFunnelOperations } from "@/app/actions/funnel-operations-actions";
 import { FunnelAutomationSettings } from "@/components/landing-pages/funnel-automation-settings";
@@ -25,6 +25,9 @@ import {
   type FunnelStepPages,
 } from "@/lib/funnel-step-pages";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
+import { landingPageEditorHref } from "@/lib/landing-page-editor-href";
+import type { LandingPagePublicationStatus } from "@/lib/landing-page-service";
+import { PublicationChip } from "@/components/landing-page-publication-chip";
 
 const tabs = funnelTabKeys;
 type Tab = typeof tabs[number];
@@ -48,7 +51,7 @@ function editableSteps(content: FunnelStepPages): Steps {
 // One management surface coordinates the seven tabs and atomic step actions;
 // splitting its state across sibling owners would make revision conflicts harder to guard.
 // eslint-disable-next-line complexity
-export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfToken }: { initial: FunnelOperationsEditor; initialStepId: string; csrfName: string; csrfToken: string }) {
+export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfToken, initialPublication }: { initial: FunnelOperationsEditor; initialStepId: string; csrfName: string; csrfToken: string; initialPublication?: LandingPagePublicationStatus }) {
   const router = useRouter();
   const initialContent = { ...initial.content, activeStepId: initialStepId };
   const [editor, setEditor] = useState(initial);
@@ -60,6 +63,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   const [tab, setTab] = useState<Tab>("Configuration");
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
+  const [publication, setPublication] = useState(initialPublication);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   useDialogBehavior(settingsOpen, () => setSettingsOpen(false));
@@ -199,6 +203,27 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
     if (!pathed.ok) { setMessage(pathed.error); return; }
     persistContent(pathed.state, "步驟設定已自動儲存。");
   }
+  /** Publishing, duplicating and deleting live here, not in the full-screen editor. */
+  function runPageOperation(operation: "publish" | "unpublish" | "duplicate" | "delete") {
+    if (inFlight.current) { setMessage("前一個變更仍在儲存，請稍候再試。"); return; }
+    if (operation === "delete" && !window.confirm("確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) return;
+    inFlight.current = true;
+    const data = new FormData();
+    data.set(csrfName, csrfToken); data.set("operation", operation); data.set("id", editor.pageId); data.set("revision", String(revisionRef.current));
+    runPending(async () => {
+      try {
+        const result = await landingPageAction({ status: "success", message: "" }, data);
+        setMessage(result.message);
+        if (result.status !== "success") return;
+        if (result.revision) { revisionRef.current = result.revision; setEditor((value) => ({ ...value, revision: result.revision! })); }
+        if (result.publication) setPublication(result.publication);
+        if (operation === "publish" || operation === "unpublish") setEditor((value) => ({ ...value, status: operation === "publish" ? "published" : "draft" }));
+        if (operation === "duplicate" && result.id) router.push(`/landing-pages/${encodeURIComponent(result.id)}/operations`);
+        if (operation === "delete") router.push("/landing-pages");
+      } catch { setMessage("連線中斷，請稍後重試。"); }
+      finally { inFlight.current = false; }
+    });
+  }
   function addStep() {
     const ordinal = content.flow.steps.filter((step) => !step.isSystem).length + 1;
     const input = { id: `step_${crypto.randomUUID().replace(/-/gu, "").slice(0, 24)}`, name: newStepName.trim(), path: newStepPath.trim() || `step-${ordinal}`, type: newStepType, templateSource: newStepSource, ...(newStepSource === "template" && effectiveNewTemplateId ? { templateId: effectiveNewTemplateId } : {}) } as const;
@@ -224,7 +249,7 @@ export function FunnelOperationsPanel({ initial, initialStepId, csrfName, csrfTo
   return <section aria-label="一頁式網站管理" className="min-w-0 space-y-2 lg:space-y-4">
     <header className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm lg:gap-4 lg:px-5 lg:py-4">
       <div className="min-w-0"><p className="text-xs font-semibold text-slate-600"><Link href="/landing-pages" className="hover:text-blue-700">一頁式網站</Link> <span aria-hidden>›</span> {editor.name}</p><h1 className="mt-1 truncate text-2xl font-bold text-slate-950">{editor.name}</h1><p className="mt-1 text-sm text-slate-600">{funnelGoalLabels[content.flow.goal]} · 版本 {editor.revision}</p></div>
-      <div className="flex flex-wrap gap-2"><Link href={`/lp/${editor.slug}`} target="_blank" className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-800"><Eye size={17} />查看網站</Link><button type="button" onClick={() => setSettingsOpen(true)} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-800"><Settings size={17} />網站設定</button></div>
+      <div className="flex flex-wrap items-center gap-2"><PublicationChip published={editor.status === "published"} publication={publication} slug={editor.slug} /><PageActions published={editor.status === "published"} disabled={pending || dirty} onRun={runPageOperation} /><Link href={`/lp/${editor.slug}`} target="_blank" className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-800"><Eye size={17} />查看網站</Link><button type="button" onClick={() => setSettingsOpen(true)} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-800"><Settings size={17} />網站設定</button></div>
     </header>
     <div className="grid min-h-[70dvh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100dvh-13rem)] lg:min-h-[36rem] lg:grid-cols-[18rem_minmax(0,1fr)]">
       <aside aria-label="網站步驟" className="flex min-h-0 flex-col border-b border-slate-200 bg-white lg:border-r lg:border-b-0">
@@ -256,7 +281,33 @@ function ConfigurationPanel({ active, content, editor, templates, selectedTempla
   if (needsTemplate || changeTemplate) return <div><div className="mb-5"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">基本設定</p><h2 className="mt-1 text-xl font-bold">為「{active.step.name}」選擇模板</h2><p className="mt-2 text-sm text-slate-600">模板已依 {funnelGoalLabels[content.flow.goal]} 與 {funnelStepLabels[active.step.type]} 過濾。完整預覽後再套用。</p></div>{templates.length ? <FunnelTemplateGalleryPicker templates={templates} selectedId={selectedTemplateId} disabled={disabled} onSelect={setSelectedTemplateId} onApply={onApply} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">這個頁面類型 沒有相容模板。請新增步驟時選擇「從空白開始」。</div>}{changeTemplate ? <button type="button" onClick={() => setChangeTemplate(false)} className={`${button} mt-4`}>取消更換模板</button> : null}</div>;
   const nextName = (name: string) => { const result = renameFunnelStepPage(content, active.step.id, name); if (result.ok) setContent(result.state); };
   const nextPath = (path: string) => { const result = setFunnelStepPathPage(content, active.step.id, path); if (result.ok) setContent(result.state); };
-  return <div><div className="mb-3 lg:mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">基本設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-500 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(`/landing-pages/${editor.pageId}?step=${encodeURIComponent(active.step.id)}`)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
+  return <div><div className="mb-3 lg:mb-6"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">基本設定</p><h2 className="mt-1 text-xl font-bold text-slate-950">{active.step.name}</h2></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_14rem]"><div className="space-y-5"><label className="grid gap-1.5 text-sm font-semibold text-slate-700">名稱 *<input className={control} value={active.step.name} disabled={disabled} onChange={(event) => nextName(event.currentTarget.value)} onBlur={onBlur} /></label><label className="grid gap-1.5 text-sm font-semibold text-slate-700">網址路徑 *<div className="flex min-h-10 overflow-hidden rounded-lg border border-slate-500 bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"><span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">/lp/{editor.slug}/</span><input aria-label="步驟 網址路徑" className="min-w-0 flex-1 px-3 text-sm outline-none" value={active.step.path} disabled={disabled} onChange={(event) => nextPath(event.currentTarget.value)} onBlur={onBlur} /></div></label><div className="border-t border-slate-200 pt-5"><p className="text-sm text-slate-600">模板：{active.step.template.templateId ? templates.find((item) => item.id === active.step.template.templateId)?.name ?? "已套用模板" : "從空白開始"}</p></div></div><div className="grid content-start gap-3"><Link href={`/lp/${editor.slug}/${active.step.path}`} target="_blank" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800"><ExternalLink size={17} />查看步驟頁面</Link><button type="button" disabled={disabled} onClick={() => navigate(landingPageEditorHref(editor.pageId, active.step.id))} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={17} />編輯頁面</button>{templates.length ? <button type="button" disabled={disabled} onClick={() => setChangeTemplate(true)} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40"><Settings size={17} />更換模板</button> : null}</div></div></div>;
+}
+
+/** Publish the saved draft (edited in the full-screen editor), plus duplicate / delete. */
+function PageActions({ published, disabled, onRun }: { published: boolean; disabled: boolean; onRun: (operation: "publish" | "unpublish" | "duplicate" | "delete") => void }) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  useDialogBehavior(open, () => setOpen(false));
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: MouseEvent) => { if (menu.current && !menu.current.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", outside);
+    return () => document.removeEventListener("mousedown", outside);
+  }, [open]);
+  const item = "flex min-h-10 w-full cursor-pointer items-center rounded-md px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40";
+  const choose = (operation: "unpublish" | "duplicate" | "delete") => { setOpen(false); onRun(operation); };
+  return <>
+    <button type="button" disabled={disabled} title={disabled ? "請先儲存或重新載入設定" : "發布編輯器中已儲存的草稿"} onClick={() => onRun("publish")} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"><Rocket size={17} aria-hidden />{published ? "重新發布" : "發布"}</button>
+    <div ref={menu} className="relative">
+      <button type="button" aria-label="更多網站操作" aria-expanded={open} aria-controls="funnel-page-actions-menu" onClick={() => setOpen((value) => !value)} className="inline-flex min-h-10 min-w-10 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"><MoreHorizontal size={18} aria-hidden /></button>
+      {open ? <div id="funnel-page-actions-menu" role="group" aria-label="更多網站操作" className="absolute top-12 right-0 z-50 grid w-48 gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+        {published ? <button type="button" disabled={disabled} className={item} onClick={() => choose("unpublish")}>取消發布</button> : null}
+        <button type="button" disabled={disabled} className={item} onClick={() => choose("duplicate")}>複製網站</button>
+        <button type="button" disabled={disabled} className={`${item} text-red-700 hover:bg-red-50`} onClick={() => choose("delete")}>刪除網站</button>
+      </div> : null}
+    </div>
+  </>;
 }
 
 function SettingsFooter({ pending, dirty, save, reload }: { pending: boolean; dirty: boolean; save: () => void; reload: () => void }) {
