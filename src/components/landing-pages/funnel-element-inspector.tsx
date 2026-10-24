@@ -10,12 +10,35 @@ import {
   createFunnelInspectorUpdate,
   getFunnelElementInspectorDefinition,
   getFunnelInspectorFieldValue,
+  isSafeInspectorHref,
   type FunnelInspectorActionInput,
   type FunnelInspectorField,
   type FunnelInspectorScope,
 } from "@/lib/funnel-element-inspector";
 import type { FunnelNode, FunnelNodeAction } from "@/lib/funnel-page-document";
 import type { FunnelPageCommand } from "@/lib/funnel-page-history";
+import { isSafeContentAssetUrl, isSafeContentHref, UNSAFE_CONTENT_ASSET_MESSAGE, UNSAFE_CONTENT_HREF_MESSAGE } from "@/lib/safe-url";
+
+/** Content fields holding a URL; an unsafe value is kept for editing but flagged, and never rendered as a link. */
+const URL_FIELD_RULES: Readonly<Record<string, { valid: (value: string) => boolean; message: string }>> = {
+  src: { valid: isSafeContentAssetUrl, message: UNSAFE_CONTENT_ASSET_MESSAGE },
+  poster: { valid: isSafeContentAssetUrl, message: UNSAFE_CONTENT_ASSET_MESSAGE },
+  url: { valid: isSafeContentHref, message: UNSAFE_CONTENT_HREF_MESSAGE },
+};
+
+/** zh-TW message when a URL content field holds an unsafe value; null when empty or safe. */
+export function inspectorUrlFieldError(field: FunnelInspectorField, value: unknown): string | null {
+  const rule = field.target === "props" && field.kind === "text" ? URL_FIELD_RULES[field.id] : undefined;
+  if (!rule || typeof value !== "string" || !value.trim()) return null;
+  return rule.valid(value.trim()) ? null : rule.message;
+}
+
+/** zh-TW message when an open_url / download action holds an unsafe href; null otherwise. */
+export function inspectorActionHrefError(action: FunnelInspectorActionInput): string | null {
+  if (action.type !== "open_url" && action.type !== "download") return null;
+  const href = action.href?.trim();
+  return href && !isSafeInspectorHref(href) ? UNSAFE_CONTENT_HREF_MESSAGE : null;
+}
 
 type InspectorProps = {
   node: FunnelNode;
@@ -59,7 +82,9 @@ function FieldControl({ field, node, scope, disabled, onCommand }: { field: Funn
     if (command) onCommand(command);
   };
   const describedBy = field.description ? `funnel-field-${node.id}-${field.id}` : undefined;
-  const common = { disabled: disabled || field.disabled, "aria-describedby": describedBy };
+  const urlError = inspectorUrlFieldError(field, value);
+  const errorId = `funnel-field-${node.id}-${field.id}-error`;
+  const common = { disabled: disabled || field.disabled, "aria-describedby": [describedBy, urlError ? errorId : undefined].filter(Boolean).join(" ") || undefined, "aria-invalid": urlError ? true : undefined };
   let input: React.ReactNode;
   if (field.kind === "checkbox") input = <input {...common} className="h-4 w-4 rounded border-slate-300 text-blue-700" type="checkbox" checked={value === true} onChange={(event) => commit(event.currentTarget.checked)} />;
   else if (field.kind === "select") input = <select {...common} className={control} value={String(value)} onChange={(event) => commit(event.currentTarget.value)}><option value="">未設定</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
@@ -67,6 +92,7 @@ function FieldControl({ field, node, scope, disabled, onCommand }: { field: Funn
   else input = <input {...common} className={control} type={field.kind === "number" ? "number" : "text"} min={field.min} max={field.max} step={field.step} value={String(value)} onChange={(event) => commit(event.currentTarget.value)} />;
   return <label className={field.kind === "checkbox" ? "flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm font-semibold text-slate-700" : "grid gap-1 text-sm font-semibold text-slate-700"}>
     <span>{field.label}</span>{input}{field.description ? <span id={describedBy} className="text-xs font-normal leading-5 text-slate-600">{field.description}</span> : null}
+    {urlError ? <span id={errorId} role="alert" className="text-xs font-normal leading-5 text-red-700">{urlError}頁面上不會顯示這個網址。</span> : null}
   </label>;
 }
 
@@ -104,8 +130,10 @@ function ActionFields({ node, popupIds, stepIds, stepNames, popupNames, disabled
   const choices = useMemo(() => registrationFormChoices(links), [links]);
   const formIds = useMemo(() => choices.map((form) => form.id), [choices]);
   const { missingPopup, missingStep, missingForm, invalidTarget } = actionTargetState(action, popupIds, stepIds, formIds);
+  const hrefError = inspectorActionHrefError(action);
+  const hrefErrorId = `funnel-action-href-${node.id}-error`;
   const apply = () => {
-    if (disabled || invalidTarget) return;
+    if (disabled || invalidTarget || hrefError) return;
     const command = createFunnelInspectorActionUpdate(node, action);
     if (command) onCommand(command);
   };
@@ -114,7 +142,7 @@ function ActionFields({ node, popupIds, stepIds, stepNames, popupNames, disabled
     <label className="grid gap-1 text-sm font-semibold text-slate-700">點擊後動作
       <select className={control} disabled={disabled} value={action.type} onChange={(event) => set("type", event.currentTarget.value as FunnelNodeAction["type"])}>{actionTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
     </label>
-    {needsHref ? <label className="grid gap-1 text-sm font-semibold text-slate-700">網址<input className={control} disabled={disabled} value={action.href ?? ""} placeholder="https:// 或 /path 或 #anchor" onChange={(event) => set("href", event.currentTarget.value)} /></label> : null}
+    {needsHref ? <label className="grid gap-1 text-sm font-semibold text-slate-700">網址<input className={control} disabled={disabled} value={action.href ?? ""} placeholder="https:// 或 /path 或 #anchor" aria-invalid={hrefError ? true : undefined} aria-describedby={hrefError ? hrefErrorId : undefined} onChange={(event) => set("href", event.currentTarget.value)} />{hrefError ? <span id={hrefErrorId} role="alert" className="text-xs font-normal leading-5 text-red-700">{hrefError}</span> : null}</label> : null}
     {action.type === "open_url" ? <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={action.newTab === true} disabled={disabled} onChange={(event) => set("newTab", event.currentTarget.checked)} />另開分頁</label> : null}
     {action.type === "download" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">檔案名稱（選填）<input className={control} disabled={disabled} value={action.fileName ?? ""} onChange={(event) => set("fileName", event.currentTarget.value)} /></label> : null}
     {action.type === "show_popup" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">選擇彈出視窗<select className={control} disabled={disabled || !popupIds.length} value={action.popupId ?? ""} onChange={(event) => set("popupId", event.currentTarget.value)}><option value="">請選擇</option>{missingPopup ? <option value={action.popupId} disabled>原彈出視窗已不存在，請重新選擇</option> : null}{referenceOptions(popupIds, popupNames, "彈出視窗").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{!popupIds.length ? <span className="text-xs font-normal text-amber-700">請先在彈出視窗建立一個視窗。</span> : null}</label> : null}
@@ -123,7 +151,7 @@ function ActionFields({ node, popupIds, stepIds, stepNames, popupNames, disabled
     {action.type === "registration" ? <RegistrationActionFields action={action} choices={choices} missingForm={missingForm} disabled={disabled} onForm={(id) => set("registrationFormId", id)} onUseBoundLive={(value) => set("useBoundLive", value)} /> : null}
     {action.type === "next_step" && stepIds?.length === 0 ? <p role="status" className="text-xs text-amber-800">目前沒有可選步驟，請先建立步驟。</p> : null}
     {invalidTarget ? <p role="status" className="text-xs text-amber-800">請選擇有效的目標後再套用動作。</p> : null}
-    <button type="button" disabled={disabled || invalidTarget} className="min-h-10 rounded-lg bg-blue-700 px-3 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50" onClick={apply}>套用動作</button>
+    <button type="button" disabled={disabled || invalidTarget || Boolean(hrefError)} className="min-h-10 rounded-lg bg-blue-700 px-3 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50" onClick={apply}>套用動作</button>
     <p className="text-xs leading-5 text-slate-600">網址只接受 HTTPS、同源路徑或頁面錨點；不會在編輯器內執行自訂程式碼。</p>
   </div>;
 }

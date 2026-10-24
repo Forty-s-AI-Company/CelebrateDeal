@@ -11,6 +11,7 @@ import type { FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import type { FunnelNode, PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelPageCommand } from "@/lib/funnel-page-history";
 import { createFunnelPopup, deleteFunnelPopup, updateFunnelPopup, validatePopupTrigger } from "@/lib/funnel-popup";
+import { isSafeContentAssetUrl } from "@/lib/safe-url";
 
 export const panelControl = "min-h-9 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50";
 const smallButton = "inline-flex min-h-9 cursor-pointer items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-40";
@@ -97,9 +98,10 @@ function ColorField({ id, label, value, disabled, placeholder, onCommit, onClear
   </div>;
 }
 
+/** Page background / social image: no CSS-breaking characters, then the shared asset rule (`@/lib/safe-url`). */
 function isSafePageUrl(value: string) {
   if (/[\u0000- "'()\\<>]/u.test(value)) return false;
-  return (value.startsWith("/") && !value.startsWith("//")) || /^https:\/\/[^/]/iu.test(value);
+  return isSafeContentAssetUrl(value);
 }
 
 function UrlField({ id, label, value, disabled, hint, onCommit }: { id: string; label: string; value: string | undefined; disabled: boolean; hint?: string; onCommit: (value: string | undefined) => void }) {
@@ -109,7 +111,7 @@ function UrlField({ id, label, value, disabled, hint, onCommit }: { id: string; 
   return <label className={fieldLabel}>{label}
     <input disabled={disabled} className={panelControl} inputMode="url" placeholder="https:// 或 /images/…" value={draft} aria-invalid={invalid || undefined} aria-describedby={`${id}-hint`} spellCheck={false}
       onChange={(event) => { const next = event.currentTarget.value; setDraft(next); const clean = next.trim(); if (!clean) onCommit(undefined); else if (isSafePageUrl(clean)) onCommit(clean); }} />
-    <span id={`${id}-hint`} className={`text-xs font-normal ${invalid ? "text-red-700" : "text-slate-600"}`}>{invalid ? "只接受 HTTPS 網址或本站路徑（/ 開頭）。" : hint}</span>
+    <span id={`${id}-hint`} className={`text-xs font-normal ${invalid ? "text-red-700" : "text-slate-600"}`}>{invalid ? "只接受 HTTPS 網址或本站路徑（以單一 / 開頭，不可接 / 或 \\），且不可含空白、引號或括號。" : hint}</span>
   </label>;
 }
 

@@ -96,3 +96,41 @@ describe("Funnel PageDocument v1", () => {
     expect(parsePageDocument(document)).toBeNull();
   });
 });
+
+describe("PageDocument 連結安全", () => {
+  const OFF_SITE = ["/\\evil.example", "/\\\\evil.example", "/\\/evil.example", "https://app.example@evil.example", `/${String.fromCodePoint(0x202e)}evil.example`];
+
+  function withButton(actions: unknown[]): PageDocument {
+    const document = starter();
+    document.root[0]!.children![0]!.children![0]!.children = [{ ...node("button", "button_1"), actions } as FunnelNode];
+    return document;
+  }
+  const buttonOf = (document: PageDocument) => document.root[0]!.children![0]!.children![0]!.children![0]!;
+
+  it("保留合法的站內路徑、錨點與 HTTPS 連結", () => {
+    const actions = [{ type: "open_url", href: "/lp/shop/order?utm_source=line#pricing", newTab: false }];
+    expect(buttonOf(parsePageDocument(withButton(actions))!).actions).toEqual(actions);
+    expect(buttonOf(parsePageDocument(withButton([{ type: "open_url", href: "#pricing", newTab: false }]))!).actions).toHaveLength(1);
+    expect(buttonOf(parsePageDocument(withButton([{ type: "download", href: "https://cdn.example.com/a.pdf" }]))!).actions).toEqual([{ type: "download", href: "https://cdn.example.com/a.pdf" }]);
+  });
+
+  it.each(OFF_SITE)("舊資料中會導向站外的連結 %s 在讀取時被移除，頁面仍可顯示", (href) => {
+    const parsed = parsePageDocument(withButton([{ type: "open_url", href, newTab: true }, { type: "download", href }]));
+    expect(parsed).not.toBeNull();
+    expect(buttonOf(parsed!).actions).toEqual([]);
+    expect(JSON.stringify(parsed)).not.toContain("evil.example");
+  });
+
+  it("舊資料中不安全的背景圖與分享圖片在讀取時被移除", () => {
+    const document = starter();
+    const parsed = parsePageDocument({ ...document, settings: { ...document.settings, background: { color: "white", blur: 0, imageUrl: "/\\evil.example/bg.png" }, seo: { hideFromSearch: false, socialImage: "/\\evil.example/og.png" } } });
+    expect(parsed).not.toBeNull();
+    expect(parsed!.settings.background.imageUrl).toBeUndefined();
+    expect(parsed!.settings.seo.socialImage).toBeUndefined();
+    expect(serializePageDocument(parsed!)).not.toContain("evil.example");
+  });
+
+  it.each(["javascript:alert(1)", "//evil.example", "data:text/html,x", `/${"\t"}/evil.example`])("先前就拒絕的連結 %s 仍讓整份文件驗證失敗", (href) => {
+    expect(parsePageDocument(withButton([{ type: "open_url", href, newTab: false }]))).toBeNull();
+  });
+});

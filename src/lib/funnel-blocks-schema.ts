@@ -1,16 +1,15 @@
 import { z } from "zod";
 
+import { isSafeContentAssetUrl, isSafeExternalHttpsUrl, isSafeInternalPath } from "@/lib/safe-url";
+
 const identifier = z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/u);
 const shortText = z.string().trim().min(1).max(160);
 const longText = z.string().trim().max(2_000);
 const safeHref = z.string().trim().max(2_048).refine(
-  (value) => (value.startsWith("/") && !value.startsWith("//")) || /^#[A-Za-z][A-Za-z0-9_.:-]*$/u.test(value) || /^https:\/\//iu.test(value),
+  (value) => isSafeInternalPath(value) || /^#[A-Za-z][A-Za-z0-9_.:-]*$/u.test(value) || isSafeExternalHttpsUrl(value),
   "連結僅允許站內路徑、錨點或 HTTPS 網址",
 );
-const safeImageUrl = z.string().trim().max(2_048).refine(
-  (value) => (value.startsWith("/") && !value.startsWith("//")) || /^https:\/\//iu.test(value),
-  "圖片僅允許站內路徑或 HTTPS 網址",
-);
+const safeImageUrl = z.string().trim().max(2_048).refine(isSafeContentAssetUrl, "圖片僅允許站內路徑或 HTTPS 網址");
 const baseBlock = {
   id: identifier,
   sortOrder: z.number().int().min(0).max(10_000),

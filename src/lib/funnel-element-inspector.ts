@@ -5,6 +5,7 @@ import type {
   FunnelNodeType,
 } from "@/lib/funnel-page-document";
 import type { FunnelNodePatch, FunnelPageCommand } from "@/lib/funnel-page-history";
+import { isSafeContentHref } from "@/lib/safe-url";
 
 /**
  * Declarative inspector metadata.  The editor and future alternative
@@ -106,16 +107,16 @@ function trimLineList(value: string) {
   return value.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean).slice(0, 100);
 }
 
-function safeInspectorHref(value: string) {
-  const href = value.trim();
-  return (href.startsWith("/") && !href.startsWith("//")) || href.startsWith("#") || /^https:\/\//iu.test(href);
+/** Same rule as the persisted document and the renderer (`@/lib/safe-url`). */
+export function isSafeInspectorHref(value: string) {
+  return isSafeContentHref(value.trim());
 }
 
 function menuItems(value: string) {
   return trimLineList(value).flatMap((line) => {
     const [rawLabel, rawHref] = line.split("|").map((part) => part.trim());
     if (!rawLabel) return [];
-    return [{ label: rawLabel.slice(0, 240), href: rawHref && safeInspectorHref(rawHref) ? rawHref : "#" }];
+    return [{ label: rawLabel.slice(0, 240), href: rawHref && isSafeInspectorHref(rawHref) ? rawHref : "#" }];
   });
 }
 
@@ -188,8 +189,8 @@ export function createFunnelInspectorActionUpdate(node: FunnelNode, input: Funne
     case "submit_form": action = input.formId ? { type: "submit_form", formId: input.formId } : { type: "submit_form" }; break;
     case "show_popup": if (!input.popupId) return null; action = { type: "show_popup", popupId: input.popupId }; break;
     case "next_step": if (!input.stepId) return null; action = { type: "next_step", stepId: input.stepId }; break;
-    case "open_url": if (!input.href || !safeInspectorHref(input.href)) return null; action = { type: "open_url", href: input.href.trim(), newTab: input.newTab === true }; break;
-    case "download": if (!input.href || !safeInspectorHref(input.href)) return null; action = { type: "download", href: input.href.trim(), ...(input.fileName?.trim() ? { fileName: input.fileName.trim().slice(0, 240) } : {}) }; break;
+    case "open_url": if (!input.href || !isSafeInspectorHref(input.href)) return null; action = { type: "open_url", href: input.href.trim(), newTab: input.newTab === true }; break;
+    case "download": if (!input.href || !isSafeInspectorHref(input.href)) return null; action = { type: "download", href: input.href.trim(), ...(input.fileName?.trim() ? { fileName: input.fileName.trim().slice(0, 240) } : {}) }; break;
     // Ownership of the form is validated by the server on save; here only the id format is checked.
     case "registration": if (!input.registrationFormId || !/^[A-Za-z0-9_-]{1,100}$/u.test(input.registrationFormId)) return null; action = { type: "registration", formId: input.registrationFormId, useBoundLive: input.useBoundLive !== false }; break;
     default: return null;

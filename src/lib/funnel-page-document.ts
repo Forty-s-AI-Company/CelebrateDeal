@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { parseFunnelFlow, type FunnelFlow } from "@/lib/funnel-flow";
 import { FunnelCommerceBindingSchema } from "@/lib/funnel-commerce";
+import { isSafeContentHref } from "@/lib/safe-url";
 
 /**
  * Persisted Funnel editor contract.  This is deliberately independent from
@@ -33,10 +34,31 @@ export type FunnelCapability = { status: FunnelCapabilityStatus; reason: string;
 
 const identifier = z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/u, "識別碼只能包含英數、底線與連字號");
 const safeShortText = z.string().trim().max(240);
-const safeHref = z.string().trim().max(2_048).refine((value) => {
-  if (/^[\u0000-\u0020]/u.test(value) || /[\u0000-\u001f\u007f]/u.test(value)) return false;
-  return (value.startsWith("/") && !value.startsWith("//")) || value.startsWith("#") || /^https:\/\//iu.test(value);
-}, "網址只允許同源路徑、錨點或 HTTPS");
+const safeHref = z.string().trim().max(2_048).refine(isSafeContentHref, "網址只允許同源路徑、錨點或 HTTPS");
+
+/**
+ * Documents saved before `@/lib/safe-url` may hold a link the earlier check
+ * accepted but that resolves off-site (for example "/\evil.example", which
+ * browsers read as "//evil.example"). Such a value is dropped on read so the
+ * page still renders, just without that link. Anything the earlier check
+ * already rejected keeps failing the whole document, exactly as before.
+ */
+function isRetiredUnsafeHref(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed.length > 2_048 || isSafeContentHref(trimmed)) return false;
+  if (/^[\u0000-\u0020]/u.test(trimmed) || /[\u0000-\u001f\u007f]/u.test(trimmed)) return false;
+  return (trimmed.startsWith("/") && !trimmed.startsWith("//")) || trimmed.startsWith("#") || /^https:\/\//iu.test(trimmed);
+}
+const optionalSafeHref = z.preprocess((value) => (isRetiredUnsafeHref(value) ? undefined : value), safeHref.optional()).optional();
+function withoutRetiredUnsafeLinkActions(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.filter((action: unknown) => {
+    if (!action || typeof action !== "object") return true;
+    const record = action as Record<string, unknown>;
+    return !((record.type === "open_url" || record.type === "download") && isRetiredUnsafeHref(record.href));
+  });
+}
 const safeColor = z.string().trim().max(32).regex(/^(#[0-9a-f]{3,8}|rgb\([0-9, .]+\)|rgba\([0-9, .]+\)|transparent|white|black)$/iu, "顏色格式不正確");
 const safeCssToken = z.string().trim().max(120).refine((value) => !/[{};<>]/u.test(value) && !/\b(?:javascript|data|vbscript):/iu.test(value), "樣式值不安全");
 
@@ -130,7 +152,7 @@ const NodeSchemaBase = z.object({
   style: FunnelNodeStyleSchema.default({}),
   overrides: FunnelNodeOverridesSchema.default({}),
   visible: z.boolean().default(true),
-  actions: z.array(NodeActionSchema).max(20).default([]),
+  actions: z.preprocess(withoutRetiredUnsafeLinkActions, z.array(NodeActionSchema).max(20)).default([]),
   attributes: NodeAttributesSchema.default({}),
   children: z.array(z.lazy(() => FunnelNodeSchema)).max(100).optional(),
 }).strict();
@@ -241,8 +263,8 @@ const PageSettingsSchema = z.object({
     headingColor: safeColor.optional(),
   }).strict().default({ bodyFont: "system-ui", headingFont: "system-ui", bodySize: 16, bodyLineHeight: 1.5, linkColor: "#2563eb", textColor: "#0f172a", alignment: "left" }),
   language: z.enum(["zh-TW", "en", "fr", "es", "it", "pt", "de", "nl", "ru", "ja", "ar", "tr", "sv", "ro", "cs", "hu", "sk", "da", "id", "pl", "el", "sr", "hi", "no", "th", "sl", "uk", "sq"]).default("zh-TW"),
-  background: z.object({ color: safeColor.default("white"), imageUrl: safeHref.optional(), blur: z.number().finite().min(0).max(100).default(0) }).strict().default({ color: "white", blur: 0 }),
-  seo: z.object({ title: safeShortText.optional(), description: z.string().trim().max(320).optional(), keywords: z.string().trim().max(500).optional(), author: safeShortText.optional(), socialImage: safeHref.optional(), hideFromSearch: z.boolean().default(false) }).strict().default({ hideFromSearch: false }),
+  background: z.object({ color: safeColor.default("white"), imageUrl: optionalSafeHref, blur: z.number().finite().min(0).max(100).default(0) }).strict().default({ color: "white", blur: 0 }),
+  seo: z.object({ title: safeShortText.optional(), description: z.string().trim().max(320).optional(), keywords: z.string().trim().max(500).optional(), author: safeShortText.optional(), socialImage: optionalSafeHref, hideFromSearch: z.boolean().default(false) }).strict().default({ hideFromSearch: false }),
   tracking: FunnelCapabilityStatusSchema.default(FUNNEL_CAPABILITIES.tracking),
   affiliate: FunnelCapabilityStatusSchema.default(FUNNEL_CAPABILITIES.affiliate),
 }).strict();

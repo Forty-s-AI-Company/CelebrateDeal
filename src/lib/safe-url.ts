@@ -72,7 +72,7 @@ function parsesSameOrigin(value: string): URL | null {
  * neither "/" nor "\", no backslash or control character anywhere, and still
  * same-origin after URL parsing. Query and fragment are allowed.
  */
-export function isSafeInternalPath(value: unknown): value is string {
+export function isSafeInternalPath(value: unknown): boolean {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_SAFE_URL_LENGTH) return false;
   if (value[0] !== "/" || value[1] === "/" || value[1] === "\\") return false;
   if (hasUnsafeUrlCharacter(value)) return false;
@@ -95,7 +95,7 @@ export function safeInternalRedirectPath(value: unknown): string | undefined {
 }
 
 /** An in-page anchor such as `#pricing`. */
-export function isSafeFragmentHref(value: unknown): value is string {
+export function isSafeFragmentHref(value: unknown): boolean {
   return typeof value === "string" && value.startsWith("#") && value.length <= MAX_SAFE_URL_LENGTH && !hasUnsafeUrlCharacter(value);
 }
 
@@ -113,7 +113,7 @@ function parseExternalHttps(value: unknown): URL | null {
 }
 
 /** An absolute HTTPS URL with a host and without credentials (`https://user@host`). */
-export function isSafeExternalHttpsUrl(value: unknown): value is string {
+export function isSafeExternalHttpsUrl(value: unknown): boolean {
   return parseExternalHttps(value) !== null;
 }
 
@@ -123,12 +123,12 @@ export function safeExternalHttpsUrl(value: unknown): string | null {
 }
 
 /** Link targets authored in page content: same-origin path, `#anchor` or HTTPS. */
-export function isSafeContentHref(value: unknown): value is string {
+export function isSafeContentHref(value: unknown): boolean {
   return isSafeInternalPath(value) || isSafeFragmentHref(value) || isSafeExternalHttpsUrl(value);
 }
 
 /** Image / media / background sources authored in page content: same-origin path or HTTPS. */
-export function isSafeContentAssetUrl(value: unknown): value is string {
+export function isSafeContentAssetUrl(value: unknown): boolean {
   return isSafeInternalPath(value) || isSafeExternalHttpsUrl(value);
 }
 

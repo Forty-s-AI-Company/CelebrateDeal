@@ -17,6 +17,7 @@ import { FunnelDocumentCarousel } from "./funnel-document-carousel";
 import { FunnelSurvey } from "./funnel-survey";
 import { SandboxedHtml } from "./sandboxed-html";
 import { InlineEditableText } from "./funnel-inline-editable";
+import { safeContentHref } from "@/lib/safe-url";
 
 import {
   createEmptyPageDocument,
@@ -151,17 +152,9 @@ function stringList(value: unknown): string[] {
   });
 }
 
+/** Links and media sources from page content; the rules live in `@/lib/safe-url`. */
 function safeResourceUrl(value: unknown): string | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  const href = value.trim();
-  if (/^[\u0000-\u0020]/u.test(href) || /[\u0000-\u001f\u007f]/u.test(href)) return null;
-  if ((href.startsWith("/") && !href.startsWith("//")) || href.startsWith("#")) return href;
-  try {
-    const url = new URL(href);
-    return url.protocol === "https:" ? href : null;
-  } catch {
-    return null;
-  }
+  return safeContentHref(value);
 }
 
 function safeAttributeName(value: string): boolean {

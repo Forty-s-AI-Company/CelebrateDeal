@@ -63,6 +63,20 @@ describe("Funnel element inspector schema", () => {
     expect(createFunnelInspectorActionUpdate(candidate, { type: "open_url", href: "https://example.com", newTab: true })).toEqual({ type: "update", nodeId: "text_1", patch: { actions: [{ type: "open_url", href: "https://example.com", newTab: true }] } });
   });
 
+  it.each(["/\\evil.example", "/\\\\evil.example", "/\t/evil.example", "/.//evil.example", "https://app.example@evil.example", "JaVaScRiPt:alert(1)"])("動作與選單拒絕會導向站外的網址 %s", (href) => {
+    const candidate = node("button");
+    expect(createFunnelInspectorActionUpdate(candidate, { type: "open_url", href })).toBeNull();
+    expect(createFunnelInspectorActionUpdate(candidate, { type: "download", href })).toBeNull();
+    const menu = createFunnelInspectorUpdate(node("menu"), "base", field("menu", "items"), `首頁 | /\n不安全 | ${href}`);
+    expect(menu).toEqual({ type: "update", nodeId: "text_1", patch: { props: { items: [{ label: "首頁", href: "/" }, { label: "不安全", href: "#" }] } } });
+  });
+
+  it("動作接受站內路徑、錨點與 HTTPS", () => {
+    for (const href of ["/lp/shop/order?utm_source=line#pricing", "#pricing", "https://example.com/offer"]) {
+      expect(createFunnelInspectorActionUpdate(node("button"), { type: "open_url", href, newTab: false })).toEqual({ type: "update", nodeId: "text_1", patch: { actions: [{ type: "open_url", href, newTab: false }] } });
+    }
+  });
+
   it("讀取時先沿用基礎值，再套用手機覆寫", () => {
     const candidate = { ...node(), overrides: { mobile: { style: { fontSize: 14 }, props: { text: "手機文案" }, visible: false } } };
     expect(getFunnelInspectorFieldValue(candidate, "desktop", field("text", "fontSize"))).toBe(18);
