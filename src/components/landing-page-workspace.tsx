@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspaceEditor } from "@/components/landing-pages/workspace-editor";
 import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
-import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
+import { FunnelPageDocumentRenderer, type FunnelViewport } from "@/components/landing-pages/funnel-page-document-renderer";
 import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-preview";
+import { FunnelEditorToolbar, type FunnelEditorView } from "@/components/landing-pages/funnel-editor-toolbar";
+import { PanelHeader, panelControl } from "@/components/landing-pages/funnel-editor-panels";
+import type { FunnelEditorChrome, FunnelEditorSaveState } from "@/components/landing-pages/funnel-editor-chrome";
+import { UnsavedChangesDialog } from "@/components/landing-pages/unsaved-changes-dialog";
+import { PublicationChip } from "@/components/landing-page-publication-chip";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
 import type { LandingPageRenderContext } from "@/lib/landing-page-content";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
@@ -14,14 +19,15 @@ import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
 import { getActiveFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
+import { landingPageEditorHref } from "@/lib/landing-page-editor-href";
 
 import { FunnelWebinarSettings } from "@/components/landing-pages/funnel-webinar-settings";
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 
 type PageInput = Omit<LandingPageEditorPage, "publishedAt" | "updatedAt" | "versions"> & { versions: Array<{ version: number }> };
-function currentPublishedVersion(version: string, page?: PageInput): string {
-  return version || String(page?.versions[0]?.version ?? "");
-}
+type Lives = NonNullable<LandingPageRenderContext["live"]>[];
+type Notice = { text: string; tone: "info" | "error" };
+
 function starterDocument(goal: FunnelGoal = "custom"): PageDocument {
   const leaf = (id: string, type: FunnelNode["type"], props: Record<string, unknown>): FunnelNode => ({ schemaVersion: 1, id, type, props, style: {}, overrides: {}, visible: true, actions: [], attributes: {} });
   const document = createEmptyPageDocument("funnel-page", "新的一頁式網站頁面");
@@ -32,27 +38,27 @@ function starterDocument(goal: FunnelGoal = "custom"): PageDocument {
 }
 function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
 function isFunnelStepPages(content: LandingPageStoredContent): content is FunnelStepPages { return "pages" in content && "activeStepId" in content && "flow" in content; }
-function supportsFunnelCommands(content: LandingPageStoredContent): boolean { return isPageDocument(content) || isFunnelStepPages(content); }
-function workspaceBlocked(input: { pending: boolean; stepPending: boolean; valid: boolean; name: string; slug: string }) {
-  return input.pending || input.stepPending || !input.valid || !input.name.trim() || !input.slug.trim();
+function isStructured(content: LandingPageStoredContent) { return isPageDocument(content) || isFunnelStepPages(content); }
+function isWebinar(content: LandingPageStoredContent): content is FunnelStepPages {
+  return isFunnelStepPages(content) && content.flow.goal === "webinar";
 }
-function saveStateLabel(dirty: boolean, stepPending: boolean) {
-  if (stepPending) return "● 步驟儲存中";
-  return dirty ? "● 尚未儲存" : "✓ 已儲存";
+/** The dirty flag compares against the last persisted snapshot (EDT-SAVE-001), so undoing back to it is clean again. */
+function workspaceSnapshot(input: { content: LandingPageStoredContent; name: string; slug: string; formId: string; liveId: string }) {
+  return JSON.stringify([input.content, input.name, input.slug, input.formId, input.liveId]);
 }
-function WorkspacePreview({ content, forms, live, commerceProducts, viewport }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"]; commerceProducts: FunnelCommerceProduct[]; viewport: "desktop" | "mobile" }) {
+
+function WorkspacePreview({ content, forms, live, commerceProducts, viewport }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"]; commerceProducts: FunnelCommerceProduct[]; viewport: FunnelViewport }) {
   if (isFunnelStepPages(content)) {
     const active = getActiveFunnelStepPage(content);
     return active ? <><FunnelPageDocumentRenderer document={active.page} commerce={commerceViewForBinding(active.page.commerce, commerceProducts)} viewport={viewport} mode="preview" />{active.page.popups.filter((popup) => !popup.pageId || popup.pageId === active.page.id).map((popup) => <FunnelPopupPreview key={popup.id} document={active.page} popupId={popup.id} viewport={viewport} />)}</> : <p role="alert">無法預覽目前一頁式網站步驟。</p>;
   }
-  if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
+  if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport={viewport} mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport={viewport} />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
 }
-function CurrentWorkspacePreview({ show, content, slug, resource, viewport, commerceProducts, forms, live }: {
-  show: boolean; content: LandingPageStoredContent; slug: string; resource: ReturnType<typeof resolveWebinarResource>;
-  viewport: "desktop" | "mobile"; commerceProducts: FunnelCommerceProduct[]; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
+function CurrentWorkspacePreview({ content, slug, resource, viewport, commerceProducts, forms, live }: {
+  content: LandingPageStoredContent; slug: string; resource: ReturnType<typeof resolveWebinarResource>;
+  viewport: FunnelViewport; commerceProducts: FunnelCommerceProduct[]; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
 }) {
-  if (!show) return null;
   if (isWebinar(content)) return <FunnelWebinarExperience state={content} stepId={content.activeStepId} slug={slug} resource={resource} preview viewport={viewport} />;
   return <WorkspacePreview content={content} commerceProducts={commerceProducts} viewport={viewport} forms={forms} live={live} />;
 }
@@ -71,13 +77,22 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
     version: String(page?.versions[0]?.version ?? ""),
   };
 }
-/** The workspace owns persistence; Puck owns only the current editing session. */
-function normalizeCommerceProducts(products?: FunnelCommerceProduct[]) { return products ?? []; }
-// This legacy-compatible workspace still handles publish history, previews,
-// webinar bindings, and three persisted content schemas at one boundary.
-// eslint-disable-next-line complexity
-export function LandingPageWorkspace({ initialPublication, page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref }: { initialPublication?: LandingPagePublicationStatus; commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: NonNullable<LandingPageRenderContext["live"]>[]; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string }) {
-  const commerceProducts = normalizeCommerceProducts(products);
+
+function saveStateFor(pendingOperation: string | null, dirty: boolean): FunnelEditorSaveState {
+  if (pendingOperation === "save" || pendingOperation === "create") return "saving";
+  return dirty ? "dirty" : "saved";
+}
+
+type WorkspaceProps = { initialPublication?: LandingPagePublicationStatus; commerceProducts?: FunnelCommerceProduct[]; webinarResources?: FunnelWebinarResources; page?: PageInput; forms: LandingPageRenderContext["forms"]; lives: Lives; csrfToken: string; csrfName: string; initialGoal?: FunnelGoal; initialName?: string; initialSlug?: string; initialCurrency?: string; returnHref?: string; managementHref?: string };
+
+/**
+ * Persistence owner of the full-screen editor: save/exit, page metadata,
+ * version restore and the publication chip. Structured pages render the
+ * shared toolbar inside the canvas editor; legacy pages get the same toolbar
+ * around the legacy editor.
+ */
+export function LandingPageWorkspace({ initialPublication, page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref, managementHref }: WorkspaceProps) {
+  const commerceProducts = products ?? [];
   const router = useRouter();
   const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
   const [content, setContent] = useState<LandingPageStoredContent>(initial.content);
@@ -87,25 +102,25 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const [formId, setFormId] = useState(initial.formId);
   const [liveId, setLiveId] = useState(initial.liveId);
   const [revision, setRevision] = useState(initial.revision);
-  const [dirty, setDirty] = useState(!page);
+  const snapshot = useMemo(() => workspaceSnapshot({ content, name, slug, formId, liveId }), [content, name, slug, formId, liveId]);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => page ? workspaceSnapshot(initial) : null);
+  const dirty = snapshot !== savedSnapshot;
   const [valid, setValid] = useState(initial.valid);
-  const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState<Notice | null>(null);
   // An action result overrides the server diagnosis until the server sends a newer one.
   const [publicationResult, setPublicationResult] = useState<{ source?: LandingPagePublicationStatus; value: LandingPagePublicationStatus }>();
   const publication = publicationResult && publicationResult.source === initialPublication ? publicationResult.value : initialPublication;
   const [, startTransition] = useTransition();
-  const [pending, setPending] = useState(false);
+  const [pendingOperation, setPendingOperation] = useState<string | null>(null);
+  const pending = pendingOperation !== null;
   const [exitQueued, setExitQueued] = useState(false);
-  const stepPending = false;
+  const [exitPrompt, setExitPrompt] = useState(false);
   const inFlight = useRef(false);
-  const pendingOperation = useRef<string | null>(null);
   const revisionRef = useRef(initial.revision);
   const [published, setPublished] = useState(initial.published);
   const [version, setVersion] = useState(initial.version);
-  const selectedVersion = currentPublishedVersion(version, page);
-  const [preview, setPreview] = useState(false);
-  const [previewViewport, setPreviewViewport] = useState<"desktop" | "mobile">("desktop");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const selectedVersion = version || String(page?.versions[0]?.version ?? "");
+  const exitHref = returnHref ?? "/landing-pages";
   useEffect(() => {
     if (!dirty) return;
     const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); };
@@ -114,15 +129,18 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   }, [dirty]);
   useEffect(() => {
     if (!exitQueued || pending || dirty || inFlight.current) return;
-    setExitQueued(false);
-    router.push(returnHref ?? "/landing-pages");
-  }, [dirty, exitQueued, pending, returnHref, router]);
+    router.push(exitHref);
+  }, [dirty, exitQueued, pending, exitHref, router]);
+  useEffect(() => {
+    if (notice?.tone !== "info") return;
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   function run(operation: string) {
-    if (inFlight.current || stepPending) return;
+    if (inFlight.current) return;
     inFlight.current = true;
-    pendingOperation.current = operation;
-    setPending(true);
+    setPendingOperation(operation);
     const data = new FormData();
     data.set(csrfName, csrfToken);
     data.set("operation", operation);
@@ -131,118 +149,126 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     data.set("name", name); data.set("slug", slug); data.set("formId", formId); data.set("liveId", liveId);
     // Read the synchronous snapshot so a rapid sequence of controlled input
     // events cannot save the previous render's content.
-    data.set("content", JSON.stringify(contentRef.current)); data.set("version", selectedVersion);
+    const sentContent = contentRef.current;
+    const sentSnapshot = workspaceSnapshot({ content: sentContent, name, slug, formId, liveId });
+    data.set("content", JSON.stringify(sentContent)); data.set("version", selectedVersion);
     startTransition(async () => {
       try {
         const result = await landingPageAction({ status: "success", message: "" }, data);
-        setMessage(result.message);
-        if (result.status !== "success") { setExitQueued(false); return; }
+        setNotice({ text: result.message, tone: result.status === "success" ? "info" : "error" });
+        if (result.status !== "success") { setExitQueued(false); setExitPrompt(false); return; }
         if (result.revision) { revisionRef.current = result.revision; setRevision(result.revision); }
         if (result.publication) setPublicationResult({ source: initialPublication, value: result.publication });
         if (operation === "publish") setPublished(true);
         if (operation === "unpublish") setPublished(false);
-        if (operation === "save" || operation === "create") setDirty(false);
-        if ((operation === "create" || operation === "duplicate") && result.id) router.push(`/landing-pages/${result.id}`);
+        if (operation === "save" || operation === "create") setSavedSnapshot(sentSnapshot);
+        if ((operation === "create" || operation === "duplicate") && result.id) router.push(landingPageEditorHref(result.id));
         // Restoring a historical snapshot intentionally starts a fresh editing
         // session. Ordinary save/publish must preserve current UI and history.
         if (operation === "rollback") window.location.reload();
         if (operation === "delete") router.push("/landing-pages");
-        // The action already revalidates this route and returns its updated RSC
-        // tree. A second refresh inside the same transition can keep Save pending.
-      } catch { setExitQueued(false); setMessage("連線中斷，內容仍保留，請稍後再試。"); }
+      } catch { setExitQueued(false); setExitPrompt(false); setNotice({ text: "連線中斷，內容仍保留，請稍後再試。", tone: "error" }); }
       finally {
         inFlight.current = false;
-        pendingOperation.current = null;
-        setPending(false);
+        setPendingOperation(null);
       }
     });
   }
   function updateContent(next: LandingPageStoredContent) {
     contentRef.current = next;
     setContent(next);
-    setDirty(true);
   }
+  function save() { run(page ? "save" : "create"); }
   function exitEditor() {
     if (inFlight.current) {
-      if (pendingOperation.current === "save") {
+      if (pendingOperation === "save") {
         setExitQueued(true);
-        setMessage("儲存完成後會返回原本的頁面設定。");
+        setNotice({ text: "儲存完成後會返回管理頁。", tone: "info" });
       }
       return;
     }
-    const leavingUnsaved = dirty || stepPending;
-    if (leavingUnsaved && !window.confirm("這個頁面還有尚未儲存的變更。確定要離開並捨棄變更嗎？")) return;
-    router.push(returnHref ?? "/landing-pages");
+    if (dirty) { setExitPrompt(true); return; }
+    router.push(exitHref);
   }
-  const inputClass = "mt-1 min-h-10 w-full min-w-0 rounded-lg border border-slate-500 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
-  const secondaryButtonClass = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-40";
+  const saveBlocked = pending || !valid || !name.trim() || !slug.trim();
   const selectedLive = lives.find((live) => live.id === liveId);
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
-  const blocked = workspaceBlocked({ pending, stepPending, valid, name, slug });
-  return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
-    <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="一頁式網站編輯器工具列">
-      <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回頁面設定" : "返回"}</button>
-      <div className="hidden h-8 w-px bg-slate-200 sm:block" />
-      <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name}</p>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>復原</button>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "redo" }))}>重做</button>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} title={supportsFunnelCommands(content) ? "管理本頁彈出視窗" : "舊版頁面需先轉換後使用彈出視窗"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>彈出視窗</button>
-      <button type="button" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); document.getElementById("funnel-page-settings-tab")?.click(); }} className={secondaryButtonClass}>頁面設定</button>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("desktop"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "desktop" })); }}>桌機</button>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("mobile"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "mobile" })); }}>手機</button>
-      <button type="button" disabled={pending || !valid} onClick={() => setPreview((value) => !value)} className={secondaryButtonClass}>{preview ? "返回編輯" : "預覽"}</button>
-      <button type="button" disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "儲存中…" : "儲存"}</button>
-      <button type="button" onClick={exitEditor} className="min-h-10 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">離開</button>
-      <span role="status" className={`w-full text-right text-xs font-semibold sm:w-auto ${dirty || stepPending ? "text-amber-700" : "text-emerald-700"}`}>{saveStateLabel(dirty, stepPending)}</span>
-    </header>
-    <div className="min-h-0 flex-1 overflow-auto p-3 md:p-5">
-    <section aria-labelledby="landing-page-settings" className={`${settingsOpen ? "block" : "hidden"} mb-5 rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6`}>
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">基本設定</p><h2 id="landing-page-settings" className="mt-1 text-lg font-bold tracking-tight text-slate-950">頁面設定</h2><p className="mt-1 text-sm text-slate-500">先確認頁面資訊，再開始編排招生內容。</p></div>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "一頁式網站已發布（公開狀態見下方）" : "草稿頁面") : "新頁面"}</span>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">頁面名稱<input disabled={pending} aria-label="頁面名稱" className={inputClass} value={name} maxLength={160} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></label>
-        <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700"><span>公開網址 <span className="font-normal text-slate-500">/lp/</span></span><input disabled={pending} aria-label="公開網址" className={inputClass} value={slug} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="webinar-intro" maxLength={100} onChange={(e) => { setSlug(e.target.value); setDirty(true); }} /></label>
-        <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">預設報名表<select disabled={pending} aria-label="預設報名表" className={inputClass} value={formId} onChange={(e) => { setFormId(e.target.value); setDirty(true); }}><option value="">不指定</option>{forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}</select></label>
-        <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">活動場次<select disabled={pending} aria-label="活動場次" className={inputClass} value={liveId} onChange={(e) => { setLiveId(e.target.value); setDirty(true); }}><option value="">由報名表提供場次選擇</option>{lives.map((live) => <option key={live.id} value={live.id}>{live.title}</option>)}</select></label>
-      </div>
-    </section>
-    {publication ? <section aria-label="公開網址狀態" className={`mb-4 rounded-lg border p-3 text-sm text-slate-900 ${publication.available ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
-      <p role="status">{publication.message}</p>
-      {publication.missing.length ? <ul className="mt-2 list-disc pl-5">{publication.missing.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
-      {publication.warnings?.length ? <ul aria-label="需要注意" className="mt-2 list-disc pl-5 text-amber-900">{publication.warnings.map((item) => <li key={item.label}><a className="underline" href={item.href}>{item.label}</a></li>)}</ul> : null}
-      {!publication.available ? <a className="mt-2 inline-block underline" href={publication.projectHref}>前往專案檢查與發布</a> : null}
-    </section> : null}
-    <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); setDirty(true); }} />
-    {!forms.length ? <p className="rounded-lg bg-amber-50 p-3 text-sm">目前沒有啟用中的報名表。可先建立頁面內容，再到報名管理建立表單。</p> : null}
-    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
-      <button disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "處理中…" : "儲存草稿"}</button>
-      <button disabled={pending || !valid} onClick={() => setPreview(!preview)} className={secondaryButtonClass}>{preview ? "返回編輯" : "預覽草稿"}</button>
-      {page ? <>
-        <button disabled={blocked || dirty} onClick={() => run("publish")} className={secondaryButtonClass}>發布已儲存草稿</button>
-        <button disabled={pending || stepPending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
-        <button disabled={pending || stepPending || dirty} onClick={() => {
-          if (window.confirm("確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) run("delete");
-        }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除一頁式網站</button>
-        {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || stepPending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
-        {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || stepPending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}
-      </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => updateContent(createEmptyPageDocument("funnel-page", name))}>使用空白頁</button>}
-      <span role="status" className="ml-auto text-xs font-medium text-slate-500">{dirty ? "● 有尚未儲存的變更" : "✓ 草稿已儲存"}</span>
-    </div>
-    {message ? <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm">{message}</p> : null}
-    <CurrentWorkspacePreview show={preview} content={content} slug={slug} resource={webinarResource} viewport={previewViewport} commerceProducts={commerceProducts} forms={forms} live={selectedLive} />
-    <div className={preview ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={lives.find((live) => live.id === liveId)} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={updateContent} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(contentRef.current)) updateContent(next); }} /></div>
-    </div>
+  const settings = <WorkspaceSettingsFields name={name} slug={slug} formId={formId} liveId={liveId} forms={forms} lives={lives} disabled={pending} onName={setName} onSlug={setSlug} onForm={setFormId} onLive={setLiveId}>
+    <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); }} />
+  </WorkspaceSettingsFields>;
+  const versions = page?.versions.length ? <VersionHistory versions={page.versions} selected={selectedVersion} disabled={pending || dirty} dirty={dirty} onSelect={setVersion} onRestore={() => run("rollback")} /> : undefined;
+  const legacyActions = page && !managementHref ? <LegacyPublishActions published={published} disabled={pending || dirty} onRun={run} /> : undefined;
+  const chrome: FunnelEditorChrome = {
+    title: name, saveState: saveStateFor(pendingOperation, dirty), saveBlocked, onSave: save, onExit: exitEditor,
+    status: page ? <PublicationChip published={published} publication={publication} slug={slug} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
+    pageSettings: settings, versions,
+    renderPreview: (viewport) => <CurrentWorkspacePreview content={content} slug={slug} resource={webinarResource} viewport={viewport} commerceProducts={commerceProducts} forms={forms} live={selectedLive} />,
+  };
+  return <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-100">
+    {isStructured(content)
+      ? <div className="min-h-0 flex-1"><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={selectedLive} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={updateContent} onLegacyChange={() => undefined} chrome={chrome} /></div>
+      : <LegacyWorkspaceShell chrome={chrome}>
+        <WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={selectedLive} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={updateContent} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(contentRef.current)) updateContent(next); }} />
+      </LegacyWorkspaceShell>}
+    {notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${notice.tone === "error" ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>{notice.text}{notice.tone === "error" ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={() => setNotice(null)}>關閉</button> : null}</p> : null}
+    {exitPrompt ? <UnsavedChangesDialog saving={pendingOperation === "save" || pendingOperation === "create"} saveBlocked={saveBlocked && !pending} onCancel={() => setExitPrompt(false)} onDiscard={() => { setExitPrompt(false); router.push(exitHref); }} onSave={() => { setExitQueued(true); save(); }} /> : null}
   </div>;
 }
 
-
-
-function isWebinar(content: LandingPageStoredContent): content is FunnelStepPages {
-  return isFunnelStepPages(content) && content.flow.goal === "webinar";
+/** Legacy (pre-structured) pages keep their editor; only the shell is shared. */
+function LegacyWorkspaceShell({ chrome, children }: { chrome: FunnelEditorChrome; children: React.ReactNode }) {
+  const [view, setView] = useState<FunnelEditorView | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const views: FunnelEditorView[] = chrome.versions ? ["page", "versions"] : ["page"];
+  const toggle = (next: FunnelEditorView) => setView((current) => current === next ? null : next);
+  return <>
+    <FunnelEditorToolbar chrome={chrome} views={views} view={view} onToggleView={toggle} crumbs={[]} onSelectCrumb={() => undefined} previewing={previewing} onTogglePreview={() => setPreviewing((value) => !value)} />
+    <div className="flex min-h-0 flex-1">
+      {view && !previewing ? <aside aria-label="編輯面板" className="w-80 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4">
+        {view === "page" ? <><PanelHeader title="頁面設定" onBack={() => setView(null)} />{chrome.pageSettings}</> : <><PanelHeader title="版本紀錄" onBack={() => setView(null)} />{chrome.versions}</>}
+      </aside> : null}
+      <div className="min-w-0 flex-1 overflow-auto p-4">
+        {previewing ? chrome.renderPreview?.("desktop") : null}
+        <div className={previewing ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}>{children}</div>
+      </div>
+    </div>
+  </>;
 }
-function resolveWebinarResource(resources: FunnelWebinarResources | undefined, lives: NonNullable<LandingPageRenderContext["live"]>[], liveId: string, formId: string) {
+
+function WorkspaceSettingsFields({ name, slug, formId, liveId, forms, lives, disabled, onName, onSlug, onForm, onLive, children }: { name: string; slug: string; formId: string; liveId: string; forms: LandingPageRenderContext["forms"]; lives: Lives; disabled: boolean; onName: (value: string) => void; onSlug: (value: string) => void; onForm: (value: string) => void; onLive: (value: string) => void; children?: React.ReactNode }) {
+  const label = "grid min-w-0 content-start gap-1 text-sm font-semibold text-slate-700";
+  return <div className="grid gap-3">
+    <label className={label}>頁面名稱<input disabled={disabled} aria-label="頁面名稱" className={panelControl} value={name} maxLength={160} onChange={(event) => onName(event.target.value)} /></label>
+    <label className={label}><span>公開網址 <span className="font-normal text-slate-500">/lp/</span></span><input disabled={disabled} aria-label="公開網址" className={panelControl} value={slug} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="webinar-intro" maxLength={100} onChange={(event) => onSlug(event.target.value)} /></label>
+    <label className={label}>預設報名表<select disabled={disabled} aria-label="預設報名表" className={panelControl} value={formId} onChange={(event) => onForm(event.target.value)}><option value="">不指定</option>{forms.map((form) => <option key={form.id} value={form.id}>{form.name}</option>)}</select></label>
+    {!forms.length ? <p className="rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900">目前沒有啟用中的報名表。可先建立頁面內容，再到報名管理建立表單。</p> : null}
+    <label className={label}>活動場次<select disabled={disabled} aria-label="活動場次" className={panelControl} value={liveId} onChange={(event) => onLive(event.target.value)}><option value="">由報名表提供場次選擇</option>{lives.map((live) => <option key={live.id} value={live.id}>{live.title}</option>)}</select></label>
+    {children}
+  </div>;
+}
+
+function VersionHistory({ versions, selected, disabled, dirty, onSelect, onRestore }: { versions: Array<{ version: number }>; selected: string; disabled: boolean; dirty: boolean; onSelect: (version: string) => void; onRestore: () => void }) {
+  return <div className="grid gap-3">
+    <p className="text-sm leading-6 text-slate-600">每次發布都會保留一個版本。還原後會把該版本變成新的草稿；公開頁面在再次發布前不會改變。</p>
+    <label className="grid gap-1 text-sm font-semibold text-slate-700">歷史發布版本<select aria-label="歷史發布版本" className={panelControl} value={selected} onChange={(event) => onSelect(event.target.value)}>{versions.map((item) => <option key={item.version} value={item.version}>版本 {item.version}</option>)}</select></label>
+    <button type="button" disabled={disabled || !selected} onClick={onRestore} className="min-h-10 cursor-pointer rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">還原此版本為草稿</button>
+    {dirty ? <p role="status" className="text-xs text-amber-800">請先儲存或復原目前的變更，再還原歷史版本。</p> : null}
+  </div>;
+}
+
+/** Only for pages without a management page (legacy content); funnels publish there. */
+function LegacyPublishActions({ published, disabled, onRun }: { published: boolean; disabled: boolean; onRun: (operation: string) => void }) {
+  const button = "min-h-9 cursor-pointer rounded-lg border border-slate-300 bg-white px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40";
+  return <div className="grid gap-2 border-t border-slate-200 pt-3">
+    {disabled ? <p className="text-xs text-slate-500">請先儲存變更再發布或管理。</p> : null}
+    <button type="button" disabled={disabled} onClick={() => onRun("publish")} className={button}>發布已儲存草稿</button>
+    {published ? <button type="button" disabled={disabled} onClick={() => onRun("unpublish")} className={button}>取消發布</button> : null}
+    <button type="button" disabled={disabled} onClick={() => onRun("duplicate")} className={button}>複製頁面</button>
+    <button type="button" disabled={disabled} onClick={() => { if (window.confirm("確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) onRun("delete"); }} className={`${button} border-red-200 text-red-700 hover:bg-red-50`}>刪除一頁式網站</button>
+  </div>;
+}
+
+function resolveWebinarResource(resources: FunnelWebinarResources | undefined, lives: Lives, liveId: string, formId: string) {
   const live = lives.find((item) => item.id === liveId);
   const video = resources?.lives.find((item) => item.id === liveId);
   const form = resources?.forms.find((item) => item.id === formId);
@@ -250,16 +276,16 @@ function resolveWebinarResource(resources: FunnelWebinarResources | undefined, l
   return { form, live: { id: live.id, slug: live.slug, videoId: video.videoId, videoTitle: video.videoTitle ?? "活動影片" } };
 }
 function WebinarWorkspaceSettings({ content, pending, resources, lives, liveId, onValidityChange, onChange, onSelect }: {
-  content: LandingPageStoredContent; pending: boolean; resources?: FunnelWebinarResources; lives: NonNullable<LandingPageRenderContext["live"]>[]; liveId: string;
+  content: LandingPageStoredContent; pending: boolean; resources?: FunnelWebinarResources; lives: Lives; liveId: string;
   onValidityChange: (valid: boolean) => void; onChange: (state: FunnelStepPages) => void; onSelect: (id: string, formId?: string) => void;
 }) {
   if (!isWebinar(content)) return null;
   const selected = resources?.lives.find((live) => live.id === liveId);
   return <>
     <FunnelWebinarSettings state={content} disabled={pending} onValidityChange={onValidityChange} onChange={onChange} />
-    <label className="mb-4 grid gap-1 text-sm">來源影片<select disabled={pending} aria-label="來源影片" className="min-h-10 rounded-lg border px-3" value={selected?.id ?? ""} onChange={(event) => {
+    <label className="grid gap-1 text-sm font-semibold text-slate-700">來源影片<select disabled={pending} aria-label="來源影片" className={panelControl} value={selected?.id ?? ""} onChange={(event) => {
       const match = resources?.lives.find((live) => live.id === event.target.value && live.videoReady);
       if (match) onSelect(match.id, lives.find((item) => item.id === match.id)?.formId);
-    }}><option value="">請選擇已綁定活動的可播放影片</option>{resources?.lives.filter((live) => live.videoReady && live.videoId).map((live) => <option key={live.id} value={live.id}>{live.videoTitle} · {lives.find((item) => item.id === live.id)?.title}</option>)}</select><span>沿用活動 Studio 的來源影片；選擇影片會同步選擇其活動。實際播放仍依 Live 排程與觀看權限。</span></label>
+    }}><option value="">請選擇已綁定活動的可播放影片</option>{resources?.lives.filter((live) => live.videoReady && live.videoId).map((live) => <option key={live.id} value={live.id}>{live.videoTitle} · {lives.find((item) => item.id === live.id)?.title}</option>)}</select><span className="text-xs font-normal leading-5 text-slate-600">沿用活動 Studio 的來源影片；選擇影片會同步選擇其活動。實際播放仍依 Live 排程與觀看權限。</span></label>
   </>;
 }
