@@ -86,6 +86,13 @@ const NodeActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("open_url"), href: safeHref, newTab: z.boolean().default(false) }).strict(),
   z.object({ type: z.literal("next_step"), stepId: identifier }).strict(),
   z.object({ type: z.literal("download"), href: safeHref, fileName: safeShortText.optional() }).strict(),
+  /**
+   * Opens a hosted registration form. Only the form id is stored: the public
+   * slug and the draft's bound live are resolved from server records at render
+   * time, and the server validates the form (vendor, project, active) on save,
+   * publish and public load via `registrationFormIdsInContent`.
+   */
+  z.object({ type: z.literal("registration"), formId: identifier, useBoundLive: z.boolean().default(true) }).strict(),
 ]);
 export type FunnelNodeAction = z.infer<typeof NodeActionSchema>;
 

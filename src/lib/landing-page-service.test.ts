@@ -80,6 +80,48 @@ describe("landing page scoped mutations", () => {
     expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 } }));
   });
 
+  describe("registration button actions are validated like legacy registration actions", () => {
+    const withRegistration = (formId: string) => {
+      const converted = convertParsedLegacyLandingPage(createLandingPageContent("webinar", formId), { id: "page-1", forms: [{ id: formId, slug: "signup", name: "報名" }] });
+      if (!converted.ok) throw new Error(converted.reason);
+      return JSON.parse(JSON.stringify(converted.document)) as PageDocument;
+    };
+    const activeForm = { id: "form-1", slug: "signup", name: "報名表", fields: [], submitLabel: "送出", successMessage: "完成" };
+
+    it("rejects saving a button bound to another vendor's or project's form", async () => {
+      mocks.formFindMany.mockResolvedValueOnce([]);
+      await expect(saveLandingPageDraft({ id: "page-1", revision: 2, name: "秋季活動", slug: "fall-launch", content: withRegistration("foreign-form") })).rejects.toBeInstanceOf(LandingPageInputError);
+      expect(mocks.formFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", projectId: "project-1", isActive: true, id: { in: ["foreign-form"] } } }));
+      expect(mocks.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("blocks publishing while a bound form is deactivated, and publishes once it is active", async () => {
+      mocks.findFirst.mockResolvedValue(page({ draftContent: withRegistration("form-1") }));
+      mocks.formFindMany.mockResolvedValueOnce([]);
+      await expect(publishLandingPage("page-1", 2)).rejects.toBeInstanceOf(LandingPageInputError);
+      expect(mocks.formFindMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1", isActive: true, id: { in: ["form-1"] } }) }));
+      expect(mocks.versionCreate).not.toHaveBeenCalled();
+      mocks.formFindMany.mockResolvedValueOnce([activeForm]);
+      await expect(publishLandingPage("page-1", 2)).resolves.toMatchObject({ id: "page-1", revision: 3, version: 1 });
+      expect(mocks.versionCreate).toHaveBeenCalledOnce();
+    });
+
+    it("makes the public page unavailable when a bound form is gone, and otherwise serves the form's current slug", async () => {
+      const published = () => [page({ status: "published", publishedVersionId: "version-1", publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content: withRegistration("form-1"), formId: null, liveId: null, live: null } })];
+      mocks.findMany.mockResolvedValueOnce(published());
+      mocks.formFindMany.mockResolvedValueOnce([]);
+      const reasons: string[] = [];
+      await expect(loadPublicLandingPage("fall-launch", (reason) => reasons.push(reason))).resolves.toBeNull();
+      expect(reasons).toEqual(["form_unavailable"]);
+      expect(mocks.formFindMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: { in: ["form-1"] }, vendorId: "vendor-1", projectId: "project-1", isActive: true } }));
+
+      mocks.findMany.mockResolvedValueOnce(published());
+      mocks.formFindMany.mockResolvedValueOnce([{ ...activeForm, slug: "renamed-signup" }]);
+      const result = await loadPublicLandingPage("fall-launch");
+      expect(result?.context).toMatchObject({ pageId: "page-1", forms: [{ id: "form-1", slug: "renamed-signup", name: "報名表" }] });
+    });
+  });
+
   it("舊版草稿在編輯器轉換後，以既有儲存流程存成 PageDocument，且表單與直播仍走同租戶驗證", async () => {
     const forms = [{ id: "form-1", slug: "fall-signup", name: "秋季報名" }];
     const live = { id: "live-1", slug: "fall-live", title: "秋季直播", status: "scheduled" as const, formId: "form-1", scheduledAt: now.toISOString() };

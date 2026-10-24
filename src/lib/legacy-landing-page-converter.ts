@@ -289,9 +289,17 @@ function convertAction(state: State, block: LegacyBlock, action: LandingPageActi
     report(state, block, `「${label}」原本連到的報名表已停用或不屬於這個專案，按鈕暫時沒有動作，請重新設定。`);
     return { type: "none" };
   }
-  // Same destination the legacy renderer built: the hosted form, plus the bound live when it uses this form.
-  const liveId = state.live?.formId === action.formId ? state.live.id : undefined;
-  return { type: "open_url", href: `/form/${encodeURIComponent(form.slug)}${liveId ? `?liveId=${encodeURIComponent(liveId)}` : ""}`, newTab: false };
+  // Keep the form binding itself: the renderer resolves the slug and the bound live from server records,
+  // and the server re-validates the form on every save, publish and public load.
+  return { type: "registration", formId: form.id, useBoundLive: true };
+}
+
+/** Merchant-facing description of where a legacy action led. */
+function describeAction(state: State, action: LandingPageAction): string {
+  if (action.type === "external") return `「${action.href}」`;
+  if (action.type === "anchor") return `頁面錨點 #${action.targetId}`;
+  const form = state.forms.find((candidate) => candidate.id === action.formId);
+  return form ? `報名表「${form.name}」` : "已停用或不屬於這個專案的報名表";
 }
 
 function button(state: State, block: LegacyBlock, id: string, label: string, action: LandingPageAction, style: FunnelNodeStyle): FunnelNode {
@@ -595,10 +603,10 @@ function faq(state: State, block: LegacyBlockOf<"FAQ">, ctx: Ctx, ink: string | 
   ]))];
 }
 
-const EXPIRED_ACTION_LABEL = { show_message: "顯示", hide_cta: "隱藏報名按鈕", redirect: "轉址到指定頁面" } as const;
+const EXPIRED_ACTION_LABEL = { show_message: "顯示", hide_cta: "隱藏報名按鈕", redirect: "轉址到" } as const;
 
 function countdown(state: State, block: LegacyBlockOf<"Countdown">, ctx: Ctx, ink: string | undefined): FunnelNode[] {
-  const { id, title, mode, targetAt, ctaLabel, ctaAction, expiredMessage, expiredAction } = block.props;
+  const { id, title, mode, targetAt, ctaLabel, ctaAction, expiredMessage, expiredAction, expiredRedirect } = block.props;
   let target = mode === "fixed_date" ? targetAt : undefined;
   if (mode === "live_linked") {
     if (state.live?.scheduledAt) {
@@ -606,7 +614,9 @@ function countdown(state: State, block: LegacyBlockOf<"Countdown">, ctx: Ctx, in
       report(state, block, `原本依直播開播時間倒數，已改為固定截止時間（${state.live.scheduledAt}）；若直播改期，請手動更新倒數時間。`);
     } else report(state, block, "原本依直播開播時間倒數，但目前沒有綁定直播場次，請設定倒數的截止時間。");
   }
-  const expiry = expiredAction === "show_message" ? `${EXPIRED_ACTION_LABEL.show_message}「${expiredMessage}」` : EXPIRED_ACTION_LABEL[expiredAction];
+  const expiry = expiredAction === "show_message" ? `${EXPIRED_ACTION_LABEL.show_message}「${expiredMessage}」`
+    : expiredAction === "redirect" ? `${EXPIRED_ACTION_LABEL.redirect}${expiredRedirect ? describeAction(state, expiredRedirect) : "指定頁面"}`
+      : EXPIRED_ACTION_LABEL[expiredAction];
   report(state, block, `倒數結束後原本會${expiry}；新版倒數元件尚不支援到期處理，結束時會停在 0，請視需要手動調整頁面。`);
   const titleNodes = title ? [heading(state, id, "title", title, "h2", ink)] : [];
   const cta = optionalCta(state, block, id, ctaLabel, ctaAction, LEGACY_BUTTON);

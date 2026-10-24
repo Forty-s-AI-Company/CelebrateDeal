@@ -84,17 +84,19 @@ describe("convertLegacyLandingPage: webinar template", () => {
     for (const value of legacyStrings(template.data.content)) expect(serialized).toContain(JSON.stringify(value).slice(1, -1));
   });
 
-  it("turns registration actions into the same hosted-form link, carrying the bound live", () => {
+  it("keeps registration actions bound to the form id, never to a stored slug or live", () => {
     const buttons = ofType(result.document.root, "button");
     expect(buttons.map((node) => node.props.label)).toEqual(["立即保留席次", "立即報名"]);
-    for (const node of buttons) expect(node.actions).toEqual([{ type: "open_url", href: "/form/webinar-signup?liveId=live_1", newTab: false }]);
-    // Bindings live in links, not in legacy action objects the server would re-validate as registrations.
-    expect(registrationFormIdsInContent(result.document).size).toBe(0);
+    for (const node of buttons) expect(node.actions).toEqual([{ type: "registration", formId: "form_1", useBoundLive: true }]);
+    expect(JSON.stringify(result.document)).not.toContain("webinar-signup");
+    expect(JSON.stringify(result.document)).not.toContain("live_1");
+    // The server keeps validating these forms on save, publish and public load.
+    expect([...registrationFormIdsInContent(result.document)]).toEqual(["form_1"]);
   });
 
-  it("omits liveId when the bound live uses a different form, like the legacy renderer", () => {
+  it("does not depend on which live is bound when converting", () => {
     const other = convert(template, { live: { ...live, formId: "form_other" } });
-    expect(ofType(other.document.root, "button")[0]!.actions).toEqual([{ type: "open_url", href: "/form/webinar-signup", newTab: false }]);
+    expect(other.document).toEqual(result.document);
   });
 
   it("is deterministic and keeps node ids stable across runs", () => {
@@ -137,7 +139,7 @@ describe("convertLegacyLandingPage: every legacy block type", () => {
   it("maps every button action", () => {
     expect(byId(document, "button_external-button")?.actions).toEqual([{ type: "open_url", href: "https://example.com/more", newTab: false }]);
     expect(byId(document, "button_anchor-button")?.actions).toEqual([{ type: "open_url", href: "#register", newTab: false }]);
-    expect(byId(document, "button_form-button")?.actions).toEqual([{ type: "open_url", href: "/form/webinar-signup?liveId=live_1", newTab: false }]);
+    expect(byId(document, "button_form-button")?.actions).toEqual([{ type: "registration", formId: "form_1", useBoundLive: true }]);
     expect(byId(document, "button_form-button")?.style).toMatchObject({ backgroundColor: "#1d4ed8", color: "#ffffff" });
   });
 
@@ -207,6 +209,14 @@ describe("convertLegacyLandingPage: bindings and settings", () => {
     const result = convert(legacy([{ type: "Button", props: { id: "cta", label: "報名", action: { type: "registration", formId: "foreign_form" } } }]));
     expect(ofType(result.document.root, "button")[0]!.actions).toEqual([{ type: "none" }]);
     expect(result.issues).toEqual([expect.objectContaining({ blockId: "cta", blockLabel: "按鈕", message: expect.stringContaining("報名表已停用") })]);
+  });
+
+  it("names where an expired countdown used to redirect", () => {
+    const redirect = (expiredRedirect: unknown) => convert(legacy([{ type: "Countdown", props: { id: "timer", mode: "fixed_date", targetAt: "2030-01-01T00:00:00+08:00", expiredMessage: "結束", expiredAction: "redirect", expiredRedirect } }])).issues.map((issue) => issue.message).join("\n");
+    expect(redirect({ type: "external", href: "https://example.com/waitlist" })).toContain("轉址到「https://example.com/waitlist」");
+    expect(redirect({ type: "anchor", targetId: "waitlist" })).toContain("轉址到頁面錨點 #waitlist");
+    expect(redirect({ type: "registration", formId: "form_1" })).toContain("轉址到報名表「講座報名」");
+    expect(redirect({ type: "registration", formId: "gone" })).toContain("轉址到已停用或不屬於這個專案的報名表");
   });
 
   it("reports a CTA label that had no action instead of creating a dead button", () => {

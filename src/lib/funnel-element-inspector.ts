@@ -177,7 +177,8 @@ export function createFunnelInspectorUpdate(node: FunnelNode, scope: FunnelInspe
   return patch ? { type: "update", nodeId: node.id, patch } : null;
 }
 
-export type FunnelInspectorActionInput = { type: FunnelNodeAction["type"]; href?: string; popupId?: string; formId?: string; stepId?: string; newTab?: boolean; fileName?: string };
+/** `formId` is a form node on the page (submit_form); `registrationFormId` is a registration form record (registration). */
+export type FunnelInspectorActionInput = { type: FunnelNodeAction["type"]; href?: string; popupId?: string; formId?: string; stepId?: string; newTab?: boolean; fileName?: string; registrationFormId?: string; useBoundLive?: boolean };
 
 /** Create a validated action update; incomplete or unsafe links are rejected. */
 export function createFunnelInspectorActionUpdate(node: FunnelNode, input: FunnelInspectorActionInput): FunnelPageCommand | null {
@@ -189,6 +190,8 @@ export function createFunnelInspectorActionUpdate(node: FunnelNode, input: Funne
     case "next_step": if (!input.stepId) return null; action = { type: "next_step", stepId: input.stepId }; break;
     case "open_url": if (!input.href || !safeInspectorHref(input.href)) return null; action = { type: "open_url", href: input.href.trim(), newTab: input.newTab === true }; break;
     case "download": if (!input.href || !safeInspectorHref(input.href)) return null; action = { type: "download", href: input.href.trim(), ...(input.fileName?.trim() ? { fileName: input.fileName.trim().slice(0, 240) } : {}) }; break;
+    // Ownership of the form is validated by the server on save; here only the id format is checked.
+    case "registration": if (!input.registrationFormId || !/^[A-Za-z0-9_-]{1,100}$/u.test(input.registrationFormId)) return null; action = { type: "registration", formId: input.registrationFormId, useBoundLive: input.useBoundLive !== false }; break;
     default: return null;
   }
   return { type: "update", nodeId: node.id, patch: { actions: [action] } };

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { referenceOptions } from "./funnel-display-labels";
+import { useFunnelRegistrationLinks } from "./funnel-registration-links";
 
 import {
   createFunnelInspectorActionUpdate,
@@ -32,6 +33,7 @@ const actionTypes: Array<{ value: FunnelNodeAction["type"]; label: string }> = [
   { value: "show_popup", label: "顯示彈出視窗" },
   { value: "submit_form", label: "送出表單" },
   { value: "next_step", label: "前往下一個步驟" },
+  { value: "registration", label: "開啟報名表" },
   { value: "download", label: "下載檔案" },
 ];
 
@@ -44,6 +46,7 @@ function initialAction(node: FunnelNode): FunnelInspectorActionInput {
     case "submit_form": return { type: action.type, formId: action.formId };
     case "next_step": return { type: action.type, stepId: action.stepId };
     case "download": return { type: action.type, href: action.href, fileName: action.fileName };
+    case "registration": return { type: action.type, registrationFormId: action.formId, useBoundLive: action.useBoundLive };
     default: return { type: "none" };
   }
 }
@@ -67,18 +70,31 @@ function FieldControl({ field, node, scope, disabled, onCommand }: { field: Funn
 }
 
 // 集中目標有效性，顯示與套用防線使用相同判斷。
-function actionTargetState(action: FunnelInspectorActionInput, popupIds: readonly string[], stepIds?: readonly string[]) {
+function actionTargetState(action: FunnelInspectorActionInput, popupIds: readonly string[], stepIds: readonly string[] | undefined, formIds: readonly string[]) {
   const missingPopup = Boolean(action.popupId && !popupIds.includes(action.popupId));
   const missingStep = Boolean(action.stepId && stepIds && !stepIds.includes(action.stepId));
+  const missingForm = Boolean(action.registrationFormId && !formIds.includes(action.registrationFormId));
   const invalidTarget = action.type === "show_popup" ? !action.popupId || missingPopup
-    : action.type === "next_step" ? !action.stepId || missingStep : false;
-  return { missingPopup, missingStep, invalidTarget };
+    : action.type === "next_step" ? !action.stepId || missingStep
+      : action.type === "registration" ? !action.registrationFormId || missingForm : false;
+  return { missingPopup, missingStep, missingForm, invalidTarget };
+}
+
+/** 報名表只列出目前專案中啟用的表單（由伺服器提供）；實際綁定仍在儲存時由伺服器驗證。 */
+function RegistrationActionFields({ action, missingForm, disabled, onForm, onUseBoundLive }: { action: FunnelInspectorActionInput; missingForm: boolean; disabled: boolean; onForm: (id: string) => void; onUseBoundLive: (value: boolean) => void }) {
+  const { forms } = useFunnelRegistrationLinks();
+  return <>
+    <label className="grid gap-1 text-sm font-semibold text-slate-700">選擇報名表<select className={control} disabled={disabled || !forms.length} value={action.registrationFormId ?? ""} onChange={(event) => onForm(event.currentTarget.value)}><option value="">請選擇</option>{missingForm ? <option value={action.registrationFormId} disabled>原報名表已停用或不屬於此專案，請重新選擇</option> : null}{forms.map((form) => <option key={form.id} value={form.id}>{form.name ?? form.id}</option>)}</select>{!forms.length ? <span className="text-xs font-normal text-amber-700">目前專案沒有啟用中的報名表，請先到報名管理建立表單。</span> : null}</label>
+    <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={action.useBoundLive !== false} disabled={disabled} onChange={(event) => onUseBoundLive(event.currentTarget.checked)} />帶入頁面綁定的活動場次（場次使用同一份報名表時）</label>
+  </>;
 }
 
 function ActionFields({ node, popupIds, stepIds, stepNames, popupNames, disabled, onCommand }: { node: FunnelNode; popupIds: readonly string[]; stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>; popupNames?: Readonly<Record<string, string>>; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
   const [action, setAction] = useState<FunnelInspectorActionInput>(() => initialAction(node));
   const set = <Key extends keyof FunnelInspectorActionInput>(key: Key, value: FunnelInspectorActionInput[Key]) => setAction((current) => ({ ...current, [key]: value }));
-  const { missingPopup, missingStep, invalidTarget } = actionTargetState(action, popupIds, stepIds);
+  const { forms } = useFunnelRegistrationLinks();
+  const formIds = useMemo(() => forms.map((form) => form.id), [forms]);
+  const { missingPopup, missingStep, missingForm, invalidTarget } = actionTargetState(action, popupIds, stepIds, formIds);
   const apply = () => {
     if (disabled || invalidTarget) return;
     const command = createFunnelInspectorActionUpdate(node, action);
@@ -95,6 +111,7 @@ function ActionFields({ node, popupIds, stepIds, stepNames, popupNames, disabled
     {action.type === "show_popup" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">選擇彈出視窗<select className={control} disabled={disabled || !popupIds.length} value={action.popupId ?? ""} onChange={(event) => set("popupId", event.currentTarget.value)}><option value="">請選擇</option>{missingPopup ? <option value={action.popupId} disabled>原彈出視窗已不存在，請重新選擇</option> : null}{referenceOptions(popupIds, popupNames, "彈出視窗").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{!popupIds.length ? <span className="text-xs font-normal text-amber-700">請先在彈出視窗建立一個視窗。</span> : null}</label> : null}
     {action.type === "submit_form" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">表單編號（選填）<input className={control} disabled={disabled} value={action.formId ?? ""} onChange={(event) => set("formId", event.currentTarget.value)} /></label> : null}
     {action.type === "next_step" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">下一個步驟{stepIds ? <select className={control} disabled={disabled || !stepIds.length} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)}><option value="">請選擇</option>{missingStep ? <option value={action.stepId} disabled>原步驟已不存在，請重新選擇</option> : null}{referenceOptions(stepIds, stepNames, "步驟").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select> : <input className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)} />}</label> : null}
+    {action.type === "registration" ? <RegistrationActionFields action={action} missingForm={missingForm} disabled={disabled} onForm={(id) => set("registrationFormId", id)} onUseBoundLive={(value) => set("useBoundLive", value)} /> : null}
     {action.type === "next_step" && stepIds?.length === 0 ? <p role="status" className="text-xs text-amber-800">目前沒有可選步驟，請先建立步驟。</p> : null}
     {invalidTarget ? <p role="status" className="text-xs text-amber-800">請選擇有效的目標後再套用動作。</p> : null}
     <button type="button" disabled={disabled || invalidTarget} className="min-h-10 rounded-lg bg-blue-700 px-3 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50" onClick={apply}>套用動作</button>

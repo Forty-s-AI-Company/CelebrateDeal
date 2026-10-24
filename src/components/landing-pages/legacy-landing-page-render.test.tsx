@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
 import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
-import { createEmptyPageDocument, type FunnelNode } from "@/lib/funnel-page-document";
+import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
+import { FunnelRegistrationLinkProvider } from "@/components/landing-pages/funnel-registration-links";
+import type { FunnelRegistrationLinks } from "@/lib/funnel-registration-action";
 import { createLandingPageContent, parseLandingPageContent } from "@/lib/landing-page-content";
 import { convertParsedLegacyLandingPage } from "@/lib/legacy-landing-page-converter";
 
@@ -48,22 +50,58 @@ describe("legacy public renderer (published legacy versions keep rendering until
 });
 
 describe("converted legacy page in the new renderer", () => {
-  it("renders the converted webinar template with the same registration destination and attribution", () => {
+  const links = { pageId: "page_1", forms, live };
+  const render = (document: PageDocument, value: FunnelRegistrationLinks = links) => renderToStaticMarkup(<FunnelRegistrationLinkProvider value={value}><FunnelPageDocumentRenderer document={document} mode="preview" publicSurface /></FunnelRegistrationLinkProvider>);
+  const converted = () => {
     const result = convertParsedLegacyLandingPage(createLandingPageContent("webinar", "form_1"), { id: "page_1", forms, live });
     if (!result.ok) throw new Error(result.reason);
-    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={result.document} mode="preview" publicSurface submission={{ landingPageId: "page_1", form: { id: "form_1", fields: [], submitLabel: "送出", successMessage: "ok" } }} />);
+    return result.document;
+  };
+  const button = (id: string, action: FunnelNode["actions"][number]): FunnelNode => ({ schemaVersion: 1, id, type: "button", props: { label: id }, style: {}, overrides: {}, visible: true, actions: [action], attributes: {} });
+  const page = (nodes: FunnelNode[]): PageDocument => ({ ...createEmptyPageDocument("links", "連結"), root: [{ schemaVersion: 1, id: "s", type: "section", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "r", type: "row", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: nodes }] }] });
+
+  it("renders the converted webinar template with the legacy registration destination and attribution", () => {
+    const html = render(converted());
     expect(html).toContain("<h1");
     expect(html).toContain("用一場直播，讓對的人認識你的價值");
     expect(html.match(/href="\/form\/webinar-signup\?liveId=live_1&amp;lp=page_1"/gu)).toHaveLength(2);
   });
 
-  it("leaves other links untouched", () => {
-    const button = (id: string, href: string): FunnelNode => ({ schemaVersion: 1, id, type: "button", props: { label: id }, style: {}, overrides: {}, visible: true, actions: [{ type: "open_url", href, newTab: false }], attributes: {} });
-    const document = { ...createEmptyPageDocument("links", "連結"), root: [{ schemaVersion: 1 as const, id: "s", type: "section" as const, props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1 as const, id: "r", type: "row" as const, props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [button("external", "https://example.com/form/x"), button("anchor", "#register"), button("formless", "/forms-list")] }] }] };
-    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document} mode="preview" submission={{ landingPageId: "page_1", form: { id: "f", fields: [], submitLabel: "送出", successMessage: "ok" } }} />);
-    expect(html).toContain('href="https://example.com/form/x"');
+  it("follows a renamed form slug and a re-bound live, because neither is stored in the document", () => {
+    const html = render(converted(), { pageId: "page_1", forms: [{ id: "form_1", slug: "renamed-signup" }], live: { id: "live_2", formId: "form_1" } });
+    expect(html.match(/href="\/form\/renamed-signup\?liveId=live_2&amp;lp=page_1"/gu)).toHaveLength(2);
+    expect(html).not.toContain("webinar-signup");
+    expect(html).not.toContain("live_1");
+  });
+
+  it("omits the live when it uses another form or the button opts out, and disables a form the server did not provide", () => {
+    const document = page([
+      button("bound", { type: "registration", formId: "form_1", useBoundLive: true }),
+      button("unbound", { type: "registration", formId: "form_1", useBoundLive: false }),
+      button("foreign", { type: "registration", formId: "form_other_vendor", useBoundLive: true }),
+    ]);
+    expect(render(document, { ...links, live: { id: "live_9", formId: "form_2" } })).toContain('href="/form/webinar-signup?lp=page_1">bound</a>');
+    const html = render(document);
+    expect(html).toContain('href="/form/webinar-signup?liveId=live_1&amp;lp=page_1">bound</a>');
+    expect(html).toContain('href="/form/webinar-signup?lp=page_1">unbound</a>');
+    expect(html).toMatch(/<button type="button" disabled="" aria-disabled="true" title="這個報名表已停用或不屬於此專案"[^>]*>foreign<\/button>/u);
+    expect(html).not.toContain("form_other_vendor");
+    // Without the server context (no provider) nothing is linked.
+    expect(renderToStaticMarkup(<FunnelPageDocumentRenderer document={document} mode="preview" />)).not.toContain("/form/");
+  });
+
+  it("renders existing open_url links, including /form/ links, exactly as before", () => {
+    const document = page([
+      button("form-link", { type: "open_url", href: "/form/legacy-slug", newTab: false }),
+      button("external", { type: "open_url", href: "https://example.com/form/x", newTab: true }),
+      button("anchor", { type: "open_url", href: "#register", newTab: false }),
+    ]);
+    const html = render(document);
+    expect(html).toContain('<a href="/form/legacy-slug" class="transition-[filter] hover:brightness-95 focus-visible:outline-offset-2"');
+    expect(html).toContain('href="https://example.com/form/x" target="_blank" rel="noreferrer"');
     expect(html).toContain('href="#register"');
-    expect(html).toContain('href="/forms-list"');
     expect(html).not.toContain("lp=page_1");
+    // Identical with or without registration context.
+    expect(renderToStaticMarkup(<FunnelPageDocumentRenderer document={document} mode="preview" publicSurface />)).toBe(html);
   });
 });

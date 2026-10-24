@@ -6,6 +6,8 @@ import { useRegistrationRetry } from "@/components/registration-retry-context";
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
 import { LandingPageLink } from "@/components/landing-page-link";
+import { useFunnelRegistrationLinks } from "./funnel-registration-links";
+import { funnelRegistrationHref } from "@/lib/funnel-registration-action";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
@@ -604,13 +606,24 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const submit = sourceType === "submit_form";
       const supportedButton = sourceType === null || sourceType === "none" || submit || Boolean(popupId);
       const controlClass = "transition-[filter] hover:brightness-95 focus-visible:outline-offset-2";
-      // Hosted registration-form links carry the visitor's UTM / referral parameters and this page, like legacy landing pages did.
-      const formLink = action && !action.download && /^\/form\/[^/?#]+(?:[?#]|$)/u.test(action.href);
-      return surface(action && formLink ? <LandingPageLink href={action.href} pageId={submission?.landingPageId} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} className={controlClass} style={controlStyle}>{label}</LandingPageLink> : action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className={controlClass} style={controlStyle}>{label}</a> : nextStepHref ? <a href={nextStepHref} className={controlClass} style={controlStyle}>{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-60`} style={controlStyle}>{label}</button>);
+      if (sourceType === "registration") return surface(<RegistrationButton action={source as Extract<FunnelNodeAction, { type: "registration" }>} label={label} className={controlClass} style={controlStyle} />);
+      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className={controlClass} style={controlStyle}>{label}</a> : nextStepHref ? <a href={nextStepHref} className={controlClass} style={controlStyle}>{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-60`} style={controlStyle}>{label}</button>);
     }
     case "horizontal_line": return surface(<hr className="border-slate-200" />);
     default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);
   }
+}
+
+/**
+ * A `registration` action stores only the form id; the slug and bound live come
+ * from the server-provided render context. Like legacy landing pages, the link
+ * carries the visitor's UTM / referral parameters and the page id (`lp`).
+ */
+function RegistrationButton({ action, label, className, style }: { action: Extract<FunnelNodeAction, { type: "registration" }>; label: string; className: string; style: CSSProperties }) {
+  const links = useFunnelRegistrationLinks();
+  const href = funnelRegistrationHref(action, links);
+  if (!href) return <button type="button" disabled aria-disabled title="這個報名表已停用或不屬於此專案" className={`${className} disabled:cursor-not-allowed disabled:opacity-60`} style={style}>{label}</button>;
+  return <LandingPageLink href={href} pageId={links.pageId} className={className} style={style}>{label}</LandingPageLink>;
 }
 
 function UnsupportedNode({ node, message, children }: { node: FunnelNode; message: string; children?: ReactNode }) {
