@@ -256,7 +256,7 @@ export const PageDocumentSchema = z.object({
   popups: z.array(FunnelPopupSchema).max(50).default([]),
   settings: PageSettingsSchema.default(defaultPageSettings),
   commerce: FunnelCommerceBindingSchema.optional(),
-  flow: z.custom<FunnelFlow>((value) => parseFunnelFlow(value) !== null, { message: "Funnel 流程資料不符合格式" }).optional(),
+  flow: z.custom<FunnelFlow>((value) => parseFunnelFlow(value) !== null, { message: "一頁式網站流程資料不符合格式" }).optional(),
 }).strict();
 export type PageDocument = z.infer<typeof PageDocumentSchema>;
 

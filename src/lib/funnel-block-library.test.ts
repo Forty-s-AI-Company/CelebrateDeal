@@ -58,6 +58,6 @@ describe("Funnel block library", () => {
   });
 
   it("未知 template ID 明確失敗", () => {
-    expect(() => instantiateBlock("missing-template")).toThrow("找不到 Funnel block");
+    expect(() => instantiateBlock("missing-template")).toThrow("找不到一頁式網站區塊");
   });
 });

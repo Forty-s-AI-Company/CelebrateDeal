@@ -15,15 +15,15 @@ export const FunnelSettingsInputSchema = z.object({
 }).strict();
 
 async function scopedPage(pageId: string, database = getDb()) {
-  if (!identifier.safeParse(pageId).success) throw new FunnelOperationsError("找不到 Funnel。");
+  if (!identifier.safeParse(pageId).success) throw new FunnelOperationsError("找不到一頁式網站。");
   const { auth, vendor } = await requireVendorManagerContext();
   const scope = await requireEditableSalesProjectScope(auth.user.id, vendor.id);
   if (!scope.projectId) throw new FunnelOperationsError("請先選擇銷售專案。");
   const page = await database.landingPage.findFirst({ where: { id: pageId, vendorId: vendor.id, projectId: scope.projectId, archivedAt: null }, include: { publishedVersion: { select: { content: true } } } });
-  if (!page) throw new FunnelOperationsError("找不到 Funnel 或沒有存取權限。");
+  if (!page) throw new FunnelOperationsError("找不到一頁式網站或沒有存取權限。");
   const state = parseFunnelStepPages(page.draftContent);
   const operations = parseFunnelOperations(page.operations);
-  if (!state || !operations) throw new FunnelOperationsError("Funnel 資料格式無效，原始資料已保留。");
+  if (!state || !operations) throw new FunnelOperationsError("一頁式網站資料格式無效，原始資料已保留。");
   return { page, state, operations };
 }
 

@@ -723,8 +723,8 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
 
 const UNAVAILABLE_REASON_MESSAGES: Record<PublicLandingPageUnavailableReason, string> = {
   invalid_slug: "公開網址格式不正確。",
-  not_unique: "找不到唯一可公開的 Funnel 版本；請確認 Funnel 與專案發布狀態。",
-  version_mismatch: "Funnel 發布版本不存在或不一致，請重新發布。",
+  not_unique: "找不到唯一可公開的一頁式網站版本；請確認一頁式網站與專案發布狀態。",
+  version_mismatch: "一頁式網站發布版本不存在或不一致，請重新發布。",
   invalid_content: "已發布版本的頁面內容格式無效，請修復後重新發布。",
   form_unavailable: "已發布版本的報名表不存在、已停用或不屬於此專案。",
   live_unavailable: "已發布版本的直播不可公開，或直播與報名表的專案綁定不一致。",
@@ -797,20 +797,20 @@ export async function getLandingPagePublicationStatus(pageId: string): Promise<L
       : "專案尚未發布，公開網址目前無法開啟。請先補齊下列項目，再到專案頁發布。";
     return { available: false, message, projectHref, missing };
   }
-  if (page.status !== "published") return { available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
+  if (page.status !== "published") return { available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
   let reason: PublicLandingPageUnavailableReason | null = null;
   const publicPage = await loadPublicLandingPage(page.slug, (value) => { reason = value; });
   if (!publicPage) {
     return { available: false, message: reason ? UNAVAILABLE_REASON_MESSAGES[reason] : "公開頁目前無法開啟，請檢查發布資源。", projectHref, missing: [] };
   }
   if (publicPage.id !== page.id) return { available: false, message: "公開網址與目前頁面的發布版本不一致，請確認網址與發布版本。", projectHref, missing: [] };
-  if (!("pages" in publicPage.content)) return { available: true, message: "專案與 Funnel 均已發布，公開頁目前可開啟。", projectHref, missing: [] };
+  if (!("pages" in publicPage.content)) return { available: true, message: "專案與一頁式網站均已發布，公開頁目前可開啟。", projectHref, missing: [] };
   const steps = publicPage.content;
   const operationsHref = `/landing-pages/${encodeURIComponent(page.id)}/operations`;
   const operations = parseFunnelOperations(page.operations);
   // Unparseable operations make every public step 404 at runtime.
   if (!operations) {
-    return { available: false, message: "Funnel 的 A/B 或截止設定無效，公開網址會回傳 404；請到 Funnel 管理修正。", projectHref, missing: [{ label: "檢查 Funnel 管理設定", href: operationsHref }] };
+    return { available: false, message: "一頁式網站的 A/B 或截止設定無效，公開網址會回傳 404；請到一頁式網站管理修正。", projectHref, missing: [{ label: "檢查一頁式網站管理設定", href: operationsHref }] };
   }
   // `available` reflects only what the public root URL actually answers, for
   // a deterministic visitor in every A/B arm, following a deadline redirect.
@@ -820,15 +820,15 @@ export async function getLandingPagePublicationStatus(pageId: string): Promise<L
     return !root.redirectPath || publicFunnelRouteOutcome({ pageId: page.id, content: steps, operations: page.operations, stepPath: root.redirectPath, visitorId }).status === 200;
   });
   if (!rootWorks) {
-    return { available: false, message: "公開網址的第一個步驟目前無法開啟（含 A/B 各組與截止轉向），請檢查 Funnel 步驟與 A/B 設定。", projectHref, missing: [{ label: "檢查 Funnel 管理設定", href: operationsHref }] };
+    return { available: false, message: "公開網址的第一個步驟目前無法開啟（含 A/B 各組與截止轉向），請檢查一頁式網站步驟與 A/B 設定。", projectHref, missing: [{ label: "檢查一頁式網站管理設定", href: operationsHref }] };
   }
   // Non-blocking: the root renders, but settings need attention. (A step
   // without a page document cannot reach here: parseFunnelStepPages rejects
   // the whole version, which the loader reports as invalid content.)
   const warnings: NonNullable<LandingPagePublicationStatus["warnings"]> = [];
-  if (!funnelOperationsReferencesValid(page.operations, steps.flow.steps)) warnings.push({ label: "部分 A/B、截止或報表設定參照已不存在的步驟，請到 Funnel 管理檢查。", href: operationsHref });
+  if (!funnelOperationsReferencesValid(page.operations, steps.flow.steps)) warnings.push({ label: "部分 A/B、截止或報表設定參照已不存在的步驟，請到一頁式網站管理檢查。", href: operationsHref });
   const message = isFunnelDeadlineExpired(operations)
-    ? "專案與 Funnel 均已發布，但活動已截止；公開頁依設定顯示截止訊息或轉向其他步驟。"
-    : "專案與 Funnel 均已發布，公開頁目前可開啟。";
+    ? "專案與一頁式網站均已發布，但活動已截止；公開頁依設定顯示截止訊息或轉向其他步驟。"
+    : "專案與一頁式網站均已發布，公開頁目前可開啟。";
   return { available: true, message, projectHref, missing: [], ...(warnings.length ? { warnings } : {}) };
 }

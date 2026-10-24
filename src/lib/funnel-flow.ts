@@ -90,7 +90,7 @@ const webinarAvailable: FunnelCapability = {
   status: "available",
   reason: "固定場次 Webinar，依排程導向已綁定的 Live。",
 };
-const available: FunnelCapability = { status: "available", reason: "在 Funnel 管理中編輯、儲存與查看可信來源資料。" };
+const available: FunnelCapability = { status: "available", reason: "在一頁式網站管理中編輯、儲存與查看可信來源資料。" };
 
 function clone<T>(value: T): T {
   if (Array.isArray(value)) return value.map(clone) as T;
@@ -237,18 +237,18 @@ function validFlow(flow: FunnelFlow): FunnelFlow | null { return parseFunnelFlow
 function stepIndex(flow: FunnelFlow, stepId: string): number { return flow.steps.findIndex((step) => step.id === stepId); }
 function mutationFlow(flow: FunnelFlow, mutate: (next: FunnelFlow) => string | null): FunnelFlowMutationResult {
   const parsed = validFlow(flow);
-  if (!parsed) return failed(flow, "Funnel 流程資料無法通過驗證，拒絕修改");
+  if (!parsed) return failed(flow, "一頁式網站流程資料無法通過驗證，拒絕修改");
   const next = clone(parsed);
   const error = mutate(next);
   if (error) return failed(parsed, error);
   const verified = parseFunnelFlow(next);
-  return verified ? succeeded(verified) : failed(parsed, "修改後的 Funnel 流程不符合資料規格，已回復原狀");
+  return verified ? succeeded(verified) : failed(parsed, "修改後的一頁式網站流程不符合資料規格，已回復原狀");
 }
 
 export function addFunnelStep(flow: FunnelFlow, input: FunnelStepInput, index?: number): FunnelFlowMutationResult {
   return mutationFlow(flow, (next) => {
     if (!(input.type in STEPS)) return "此步驟類型不可手動新增";
-    if (STEPS[input.type].group === "webinar" && next.goal !== "webinar") return "Webinar 步驟只能新增至 Webinar Funnel";
+    if (STEPS[input.type].group === "webinar" && next.goal !== "webinar") return "Webinar 步驟只能新增至 Webinar 一頁式網站";
     if (!validName(input.name) || !validPath(input.path)) return "步驟名稱或 URL Path 不符合格式";
     const source = input.templateSource ?? (input.templateId ? "template" : "blank");
     if (source === "template" && (!input.templateId || !templateIdPattern.test(input.templateId))) return "選擇模板時必須提供安全的 template ID";
@@ -351,6 +351,6 @@ export function getFunnelSecondaryTabs(flow: FunnelFlow): ReadonlyArray<FunnelSe
     { id: "leads", label: "Leads", capability: available },
     { id: "sales", label: "Sales", capability: available },
     { id: "deadline_settings", label: "Deadline Settings", capability: available },
-    { id: "funnel_settings", label: "Funnel Settings", capability: available },
+    { id: "funnel_settings", label: "一頁式網站設定", capability: available },
   ];
 }

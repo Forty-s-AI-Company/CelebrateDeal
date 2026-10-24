@@ -76,12 +76,12 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await headline.click();
   await page.locator("[data-funnel-element-inspector]").getByRole("textbox", { name: "標題", exact: true }).fill(editedHeadline);
   await expect(headline).toHaveText(editedHeadline);
-  const toolbar = page.getByLabel("Funnel 編輯器工具列", { exact: true });
-  await toolbar.getByRole("button", { name: "Undo", exact: true }).click();
+  const toolbar = page.getByLabel("一頁式網站編輯器工具列", { exact: true });
+  await toolbar.getByRole("button", { name: "復原", exact: true }).click();
   await expect(headline).toHaveText(originalHeadline);
-  await toolbar.getByRole("button", { name: "Redo", exact: true }).click();
+  await toolbar.getByRole("button", { name: "重做", exact: true }).click();
   await expect(headline).toHaveText(editedHeadline);
-  await toolbar.getByRole("button", { name: "Save", exact: true }).click();
+  await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: /草稿已儲存|已儲存/u }).first()).toBeVisible();
   await toolbar.getByRole("button", { name: /返回頁面設定$/u }).click();
   await expect(page).toHaveURL(new RegExp(`${operationsPath.replaceAll("/", "\\/")}\\?step=`, "u"));
@@ -128,7 +128,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   const saved = await db.landingPage.findUniqueOrThrow({ where: { id }, select: { publishedVersion: { select: { formId: true, liveId: true } } } });
   expect(saved.publishedVersion).toEqual({ formId: fixture.form.id, liveId: fixture.live.id });
   await page.screenshot({ path: shot("webinar-editor.png"), fullPage: true });
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.getByRole("button", { name: "預覽", exact: true }).click();
   const preview = page.locator("[data-webinar-state]");
   await expect(preview.locator("[data-funnel-renderer]")).toHaveAttribute("data-viewport", "desktop");
   await expect(preview.getByRole("button", { name: "預覽模式，不送出報名", exact: true })).toBeDisabled();

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FunnelPageDocumentRenderer, type FunnelViewport } from "./funnel-page-document-renderer";
-import { instantiateFunnelTemplate, type FunnelTemplateGalleryItem } from "@/lib/funnel-template-gallery";
+import { previewFunnelTemplate, type FunnelTemplateGalleryItem } from "@/lib/funnel-template-gallery";
 import { useDialogBehavior } from "@/lib/use-dialog-behavior";
 
 type Props = {
@@ -18,7 +18,7 @@ export function FunnelTemplateGalleryPicker({ templates, selectedId, disabled = 
   const [viewport, setViewport] = useState<FunnelViewport>("desktop");
   const [error, setError] = useState<string>();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const documents = useMemo(() => new Map(templates.map((template) => [template.id, instantiateFunnelTemplate(template.id, `gallery_preview_${template.id}`)])), [templates]);
+  const documents = useMemo(() => new Map(templates.map((template) => [template.id, previewFunnelTemplate(template.id, `gallery_preview_${template.id}`)])), [templates]);
   const preview = templates.find((template) => template.id === previewId);
   useDialogBehavior(Boolean(preview));
 

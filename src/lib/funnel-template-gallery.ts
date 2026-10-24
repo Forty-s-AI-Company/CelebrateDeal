@@ -62,7 +62,7 @@ const headline = (prefix: string, id: string, value: string, level: "h1" | "h2" 
 const button = (prefix: string, id: string, label: string, action: FunnelNodeAction) =>
   node(prefix, id, "button", { label }, undefined, { borderRadius: 8 }, [action]);
 const image = (prefix: string, id: string, alt: string) =>
-  node(prefix, id, "image", { src: "/placeholder.svg", alt, objectFit: "cover" }, undefined, { imageWidth: 100, borderRadius: 12 });
+  node(prefix, id, "image", { src: FUNNEL_PLACEHOLDER_IMAGE_SRC, alt, objectFit: "cover" }, undefined, { imageWidth: 100, borderRadius: 12 });
 const box = (prefix: string, id: string, children: FunnelNode[]) => node(prefix, id, "content_box", {}, children, { padding: 24, borderRadius: 12 });
 const columns = (prefix: string, id: string, children: FunnelNode[], count: 2 | 3 = 2) =>
   node(prefix, id, count === 3 ? "columns_3" : "columns_2", { gap: 24 }, children);
@@ -303,13 +303,27 @@ export function listFunnelTemplateGallery(goal?: FunnelTemplateGoal, stepType?: 
   return [];
 }
 
-/** Build a fresh, validated PageDocument. No template object or node reference is shared. */
-export function instantiateFunnelTemplate(templateId: string, pageId?: string): PageDocument {
-  const template = getFunnelTemplateGalleryItem(templateId);
-  if (!template) throw new Error(`找不到 Funnel template：${templateId}`);
-  const prefix = nextPrefix(template.id);
+/** 預設圖片占位檔；實體檔案位於 public/placeholder.svg。 */
+export const FUNNEL_PLACEHOLDER_IMAGE_SRC = "/placeholder.svg";
+
+function buildTemplateDocument(template: FunnelTemplateGalleryItem, prefix: string, pageId?: string): PageDocument {
   const empty = createEmptyPageDocument(pageId ?? `${prefix}_page`, template.name);
   const document = parsePageDocument({ ...empty, root: template.build(prefix) });
-  if (!document) throw new Error(`Funnel template 無法通過 PageDocument 驗證：${template.id}`);
+  if (!document) throw new Error(`一頁式網站模板無法通過 PageDocument 驗證：${template.id}`);
   return document;
+}
+
+/** Build a fresh, validated PageDocument. 節點 ID 每次呼叫都唯一，只可在套用（事件處理）時呼叫，不可用於 render。 */
+export function instantiateFunnelTemplate(templateId: string, pageId?: string): PageDocument {
+  const template = getFunnelTemplateGalleryItem(templateId);
+  if (!template) throw new Error(`找不到一頁式網站模板：${templateId}`);
+  return buildTemplateDocument(template, nextPrefix(template.id), pageId);
+}
+
+/** 預覽專用：節點 ID 只由模板 ID 決定，伺服器與瀏覽器 render 結果一致，避免 hydration 不符。 */
+export function previewFunnelTemplate(templateId: string, pageId?: string): PageDocument {
+  const template = getFunnelTemplateGalleryItem(templateId);
+  if (!template) throw new Error(`找不到一頁式網站模板：${templateId}`);
+  const prefix = `gallery_${template.id}_preview`;
+  return buildTemplateDocument(template, prefix, pageId ?? `${prefix}_page`);
 }

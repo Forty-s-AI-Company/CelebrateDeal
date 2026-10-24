@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -12,6 +14,8 @@ import {
   getFunnelTemplateGalleryItem,
   instantiateFunnelTemplate,
   listFunnelTemplateGallery,
+  previewFunnelTemplate,
+  FUNNEL_PLACEHOLDER_IMAGE_SRC,
 } from "./funnel-template-gallery";
 
 function flatten(nodes: FunnelNode[]): FunnelNode[] {
@@ -88,7 +92,7 @@ describe("funnel template gallery", () => {
 
   it("未知模板明確拒絕", () => {
     expect(getFunnelTemplateGalleryItem("missing")).toBeNull();
-    expect(() => instantiateFunnelTemplate("missing")).toThrow("找不到 Funnel template");
+    expect(() => instantiateFunnelTemplate("missing")).toThrow("找不到一頁式網站模板");
   });
 
   it.each([
@@ -163,5 +167,30 @@ describe("既有模板相容性", () => {
       const actual = createHash("sha256").update(JSON.stringify({ meta, nodes: build("compat") })).digest("hex");
       expect(actual, id).toBe(expected);
     }
+  });
+});
+
+describe("funnel template gallery 預覽與預設圖片", () => {
+  it("預覽模板的節點 ID 具決定性，重複建立結果一致", () => {
+    for (const template of FUNNEL_TEMPLATE_GALLERY) {
+      const ids = (doc: ReturnType<typeof previewFunnelTemplate>) => flatten(doc.root).map((node) => node.id);
+      expect(ids(previewFunnelTemplate(template.id))).toEqual(ids(previewFunnelTemplate(template.id)));
+    }
+  });
+
+  it("套用模板兩次會產生互不重複的節點 ID", () => {
+    const ids = (doc: ReturnType<typeof instantiateFunnelTemplate>) => flatten(doc.root).map((node) => node.id);
+    const first = ids(instantiateFunnelTemplate("audience-volunteer"));
+    const second = ids(instantiateFunnelTemplate("audience-volunteer"));
+    expect(new Set(first).size).toBe(first.length);
+    expect(first.filter((id) => second.includes(id))).toEqual([]);
+  });
+
+  it("預設圖片檔案存在於 public 目錄", () => {
+    expect(FUNNEL_PLACEHOLDER_IMAGE_SRC).toBe("/placeholder.svg");
+    expect(existsSync(path.join(process.cwd(), "public", FUNNEL_PLACEHOLDER_IMAGE_SRC))).toBe(true);
+    const srcs = flatten(instantiateFunnelTemplate("audience-volunteer").root).filter((n) => n.type === "image").map((n) => n.props.src);
+    expect(srcs.length).toBeGreaterThan(0);
+    for (const src of srcs) expect(existsSync(path.join(process.cwd(), "public", String(src)))).toBe(true);
   });
 });

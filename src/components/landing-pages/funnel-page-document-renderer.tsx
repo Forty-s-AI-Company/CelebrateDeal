@@ -406,7 +406,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       if (children.some((child) => getFunnelNodeDefinition(child.type).category === "payment")) return surface(<div aria-label={label}>{renderChildren()}</div>);
       const requireConsent = children.some((child) => child.type === "checkbox" && child.props.required === true);
       if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} />);
-      if (publicSurface) return surface(<UnsupportedNode node={node} message="此 Funnel 尚未綁定可公開使用的報名表，表單已停用。" />);
+      if (publicSurface) return surface(<UnsupportedNode node={node} message="此一頁式網站尚未綁定可公開使用的報名表，表單已停用。" />);
       return surface(<form aria-label={label} onSubmit={(event) => event.preventDefault()}>{stringProp(props, ["title", "heading"]) ? <h3 className="mb-4 font-semibold">{stringProp(props, ["title", "heading"])}</h3> : null}{renderChildren()}</form>);
     }
     case "form_input": {
@@ -422,7 +422,7 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const eventId = stringProp(props, ["eventId", "calendarId", "bookingEventId"]);
       const event = consultation?.events.find((candidate) => candidate.id === eventId);
       const executable = Boolean(event);
-      if (!executable || !consultation) return surface(<UnsupportedNode node={node} message="尚未綁定行事曆事件，或事件不屬於此 Funnel 的公開專案；預約功能已停用。" />);
+      if (!executable || !consultation) return surface(<UnsupportedNode node={node} message="尚未綁定行事曆事件，或事件不屬於此一頁式網站的公開專案；預約功能已停用。" />);
       return surface(<ConsultationBookingBlock eventId={eventId} csrfToken={consultation.csrfToken} settings={{ title: event!.title, description: event!.description ?? undefined, timezone: event!.timezone, durationMinutes: event!.durationMinutes, submitLabel: stringProp(props, ["submitLabel"], "送出預約"), successMessage: stringProp(props, ["successMessage"], "預約已送出。"), intakeFields: Array.isArray(event!.intakeFormFields) ? event!.intakeFormFields as never[] : [] }} />);
     }
     case "x_share_button": {
