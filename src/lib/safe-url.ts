@@ -101,8 +101,12 @@ export function isSafeFragmentHref(value: unknown): boolean {
 
 function parseExternalHttps(value: unknown): URL | null {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_SAFE_URL_LENGTH) return null;
-  // Require the literal "https://" so parser fix-ups ("https:evil", "https:/evil") never apply.
-  if (!/^https:\/\//iu.test(value) || hasUnsafeUrlCharacter(value)) return null;
+  // Require the literal "https://" followed directly by the host, so parser
+  // fix-ups ("https:evil", "https:/evil", "https:///evil") never apply, and no
+  // "@" in the authority, which also covers empty credentials ("https://:@evil").
+  if (!/^https:\/\/[^/\\@]/iu.test(value) || hasUnsafeUrlCharacter(value)) return null;
+  const authority = value.slice("https://".length).split(/[/?#]/u, 1)[0] ?? "";
+  if (authority.includes("@")) return null;
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return null;

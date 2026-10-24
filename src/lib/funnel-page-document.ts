@@ -50,13 +50,25 @@ function isRetiredUnsafeHref(value: unknown): boolean {
   if (/^[\u0000-\u0020]/u.test(trimmed) || /[\u0000-\u001f\u007f]/u.test(trimmed)) return false;
   return (trimmed.startsWith("/") && !trimmed.startsWith("//")) || trimmed.startsWith("#") || /^https:\/\//iu.test(trimmed);
 }
-const optionalSafeHref = z.preprocess((value) => (isRetiredUnsafeHref(value) ? undefined : value), safeHref.optional()).optional();
+type RetiredHrefField = "action_href" | "background_image" | "social_image";
+/** Counts of links dropped during the current parsePageDocument call (never the URL itself). */
+let retiredHrefCounts: Partial<Record<RetiredHrefField, number>> | null = null;
+function noteRetiredHref(field: RetiredHrefField) {
+  if (retiredHrefCounts) retiredHrefCounts[field] = (retiredHrefCounts[field] ?? 0) + 1;
+}
+const optionalSafeHref = (field: RetiredHrefField) => z.preprocess((value) => {
+  if (!isRetiredUnsafeHref(value)) return value;
+  noteRetiredHref(field);
+  return undefined;
+}, safeHref.optional()).optional();
 function withoutRetiredUnsafeLinkActions(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   return value.filter((action: unknown) => {
     if (!action || typeof action !== "object") return true;
     const record = action as Record<string, unknown>;
-    return !((record.type === "open_url" || record.type === "download") && isRetiredUnsafeHref(record.href));
+    const retired = (record.type === "open_url" || record.type === "download") && isRetiredUnsafeHref(record.href);
+    if (retired) noteRetiredHref("action_href");
+    return !retired;
   });
 }
 const safeColor = z.string().trim().max(32).regex(/^(#[0-9a-f]{3,8}|rgb\([0-9, .]+\)|rgba\([0-9, .]+\)|transparent|white|black)$/iu, "顏色格式不正確");
@@ -263,8 +275,8 @@ const PageSettingsSchema = z.object({
     headingColor: safeColor.optional(),
   }).strict().default({ bodyFont: "system-ui", headingFont: "system-ui", bodySize: 16, bodyLineHeight: 1.5, linkColor: "#2563eb", textColor: "#0f172a", alignment: "left" }),
   language: z.enum(["zh-TW", "en", "fr", "es", "it", "pt", "de", "nl", "ru", "ja", "ar", "tr", "sv", "ro", "cs", "hu", "sk", "da", "id", "pl", "el", "sr", "hi", "no", "th", "sl", "uk", "sq"]).default("zh-TW"),
-  background: z.object({ color: safeColor.default("white"), imageUrl: optionalSafeHref, blur: z.number().finite().min(0).max(100).default(0) }).strict().default({ color: "white", blur: 0 }),
-  seo: z.object({ title: safeShortText.optional(), description: z.string().trim().max(320).optional(), keywords: z.string().trim().max(500).optional(), author: safeShortText.optional(), socialImage: optionalSafeHref, hideFromSearch: z.boolean().default(false) }).strict().default({ hideFromSearch: false }),
+  background: z.object({ color: safeColor.default("white"), imageUrl: optionalSafeHref("background_image"), blur: z.number().finite().min(0).max(100).default(0) }).strict().default({ color: "white", blur: 0 }),
+  seo: z.object({ title: safeShortText.optional(), description: z.string().trim().max(320).optional(), keywords: z.string().trim().max(500).optional(), author: safeShortText.optional(), socialImage: optionalSafeHref("social_image"), hideFromSearch: z.boolean().default(false) }).strict().default({ hideFromSearch: false }),
   tracking: FunnelCapabilityStatusSchema.default(FUNNEL_CAPABILITIES.tracking),
   affiliate: FunnelCapabilityStatusSchema.default(FUNNEL_CAPABILITIES.affiliate),
 }).strict();
@@ -314,7 +326,10 @@ function validateNodeTree(nodes: FunnelNode[], parent: "root" | FunnelNodeType, 
 /** Parse and validate a document at the persistence boundary. Fails closed. */
 export function parsePageDocument(value: unknown): PageDocument | null {
   let parsed: ReturnType<typeof PageDocumentSchema.safeParse>;
-  try { parsed = PageDocumentSchema.safeParse(value); } catch { return null; }
+  const outerCounts = retiredHrefCounts;
+  const counts: Partial<Record<RetiredHrefField, number>> = {};
+  retiredHrefCounts = counts;
+  try { parsed = PageDocumentSchema.safeParse(value); } catch { return null; } finally { retiredHrefCounts = outerCounts; }
   if (!parsed.success) return null;
   const state = { ids: new Set<string>(), htmlIds: new Set<string>(), count: 0, references: new Set<object>() };
   const rootIssue = validateNodeTree(parsed.data.root, "root", 1, state);
@@ -325,6 +340,8 @@ export function parsePageDocument(value: unknown): PageDocument | null {
     const popupIssue = validateNodeTree(popup.root, "root", 1, state);
     if (popupIssue) return null;
   }
+  // Observability for links dropped from stored content: per-field counts only, never the URL.
+  if (Object.keys(counts).length) console.warn("funnel_href_retired", counts);
   return parsed.data;
 }
 

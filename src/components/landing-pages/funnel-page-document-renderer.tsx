@@ -17,7 +17,7 @@ import { FunnelDocumentCarousel } from "./funnel-document-carousel";
 import { FunnelSurvey } from "./funnel-survey";
 import { SandboxedHtml } from "./sandboxed-html";
 import { InlineEditableText } from "./funnel-inline-editable";
-import { safeContentHref } from "@/lib/safe-url";
+import { safeContentAssetUrl, safeContentHref } from "@/lib/safe-url";
 
 import {
   createEmptyPageDocument,
@@ -152,7 +152,7 @@ function stringList(value: unknown): string[] {
   });
 }
 
-/** Links and media sources from page content; the rules live in `@/lib/safe-url`. */
+/** Link targets from page content (path, `#anchor` or HTTPS); media sources use safeContentAssetUrl. Rules live in `@/lib/safe-url`. */
 function safeResourceUrl(value: unknown): string | null {
   return safeContentHref(value);
 }
@@ -317,7 +317,7 @@ function safeMenuItems(value: unknown): Array<{ label: string; href: string | nu
 }
 
 function safeMediaSource(props: Record<string, unknown>): string | null {
-  return safeResourceUrl(props.src ?? props.url ?? props.mediaUrl ?? props.videoUrl ?? props.audioUrl);
+  return safeContentAssetUrl(props.src ?? props.url ?? props.mediaUrl ?? props.videoUrl ?? props.audioUrl);
 }
 
 function CountdownDisplay({ target }: { target: string }) {
@@ -501,12 +501,12 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       return surface(<div className={`flex min-w-0 flex-col${custom ? "" : " rounded-xl border border-slate-200 bg-white/70 p-4"}`} style={{ gap: layoutNumber(props.gap, 0, 120, layout.boxGap) }}>{children.length ? renderChildren() : <p className="whitespace-pre-line">{stringProp(props, ["text", "content", "description", "title"], "內容區塊")}</p>}</div>);
     }
     case "image": {
-      const src = safeResourceUrl(props.src ?? props.imageUrl ?? props.url);
+      const src = safeContentAssetUrl(props.src ?? props.imageUrl ?? props.url);
       return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} style={imageStyle(resolved.style)} />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm text-slate-600">{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
     }
     case "video": {
       const src = safeMediaSource(props);
-      const poster = safeResourceUrl(props.poster);
+      const poster = safeContentAssetUrl(props.poster);
       return surface(src ? <video autoPlay={props.autoplay === true} controls={props.controls !== false} poster={poster ?? undefined} preload="metadata" className="max-w-full" src={src}>{stringProp(props, ["fallback", "alt"], "您的瀏覽器不支援影片播放。")} </video> : <UnsupportedNode node={node} message="影片網址不安全或尚未設定。" />);
     }
     case "audio": {

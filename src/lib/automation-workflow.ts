@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import { protectEmailDeliveryPayload } from "@/lib/email-delivery-pii";
+import { isSafeExternalHttpsUrl } from "@/lib/safe-url";
 import {
   buildAutomationLineMessage,
   enqueueLineNotification,
@@ -40,6 +41,10 @@ const AutomationConditionSchema = z.discriminatedUnion("type", [
 
 const AUTOMATION_URL_PLACEHOLDERS = new Set(["{{voucher_url}}", "{{consultation_url}}", "{{webinar_url}}"]);
 
+/**
+ * Send-time check for stored rules. Deliberately the original, looser rule so
+ * automations saved before the stricter create-time check keep sending.
+ */
 function isSafeAutomationButtonUrl(value: string | null | undefined) {
   if (!value || AUTOMATION_URL_PLACEHOLDERS.has(value)) return true;
   try {
@@ -48,6 +53,17 @@ function isSafeAutomationButtonUrl(value: string | null | undefined) {
     return false;
   }
 }
+
+/**
+ * Create-time check for a new LINE button URL: an approved placeholder or a
+ * plain HTTPS URL with a host and no credentials, so a button cannot read as
+ * "https://brand.example@evil.example".
+ */
+export function isSafeNewAutomationButtonUrl(value: string | null | undefined) {
+  return !value || AUTOMATION_URL_PLACEHOLDERS.has(value) || isSafeExternalHttpsUrl(value);
+}
+
+export const AUTOMATION_BUTTON_URL_ERROR_MESSAGE = "LINE 按鈕網址只接受 HTTPS 網址（不可包含帳號或密碼，例如「名稱@網域」），或 {{voucher_url}}、{{consultation_url}}、{{webinar_url}}。";
 
 const AutomationActionSchema = z.discriminatedUnion("type", [
   z.object({

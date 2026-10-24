@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   FUNNEL_CAPABILITIES,
@@ -119,6 +119,24 @@ describe("PageDocument 連結安全", () => {
     expect(parsed).not.toBeNull();
     expect(buttonOf(parsed!).actions).toEqual([]);
     expect(JSON.stringify(parsed)).not.toContain("evil.example");
+  });
+
+  it("移除舊連結時每次解析只記錄一筆欄位計數，不含網址內容", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const document = withButton([{ type: "open_url", href: "/\\evil.example", newTab: true }, { type: "download", href: "https://app.example@evil.example/a.pdf" }]);
+      const parsed = parsePageDocument({ ...document, settings: { ...document.settings, background: { color: "white", blur: 0, imageUrl: "/\\evil.example/bg.png" } } });
+      expect(parsed).not.toBeNull();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith("funnel_href_retired", { action_href: 2, background_image: 1 });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("evil.example");
+      warn.mockClear();
+      expect(parsePageDocument(withButton([{ type: "open_url", href: "/lp/shop", newTab: false }]))).not.toBeNull();
+      expect(parsePageDocument(withButton([{ type: "open_url", href: "javascript:alert(1)", newTab: false }]))).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("舊資料中不安全的背景圖與分享圖片在讀取時被移除", () => {

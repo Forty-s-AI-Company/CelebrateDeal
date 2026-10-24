@@ -1,7 +1,7 @@
 import { createAutomationRecipeAction, createAutomationRuleAction, dryRunAutomationRuleAction, toggleAutomationRuleAction } from "@/app/actions/automation-actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Badge, Card, Field, PageHeader, SelectField, SubmitButton, TextArea } from "@/components/ui";
-import { AUTOMATION_RECIPES, maskAutomationTarget } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, maskAutomationTarget } from "@/lib/automation-workflow";
 import { requireVendorOwner } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
@@ -29,7 +29,7 @@ export default async function AutomationSettingsPage({ searchParams }: { searchP
     <PageHeader title="自動化" description="把報名、直播、諮詢與訂單串成跨管道行銷流程。只有商家 owner 可以管理。" />
     {params.updated ? <p role="status" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">自動化規則已更新。</p> : null}
     {params.dryRun ? <p role="status" className="mb-4 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">模擬結果：{params.dryRun === "would_dispatch" ? "條件符合，正式事件會執行動作。" : params.dryRun === "would_skip" ? "條件未符合，正式事件會略過。" : "規則無效。"}</p> : null}
-    {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">規則無法更新（{params.error}）。</p> : null}
+    {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{params.error === "invalid_button_url" ? `規則無法建立：${AUTOMATION_BUTTON_URL_ERROR_MESSAGE}` : `規則無法更新（${params.error}）。`}</p> : null}
 
     <Card className="mb-6"><h2 className="text-lg font-semibold text-slate-950">熱門劇本一鍵套用</h2><p className="mb-4 text-sm text-slate-600">需要派券的劇本請先選商品。</p><div className="grid gap-4 lg:grid-cols-2">{AUTOMATION_RECIPES.map((recipe) => <form action={createAutomationRecipeAction} key={recipe.id} className="grid gap-3 rounded-xl border border-border p-4"><CsrfField /><input type="hidden" name="recipeId" value={recipe.id} /><div><h3 className="font-semibold text-slate-900">{recipe.name}</h3><p className="mt-1 text-sm text-slate-600">{recipe.description}</p></div><p className="text-xs font-medium text-slate-500">{TRIGGERS[recipe.trigger]} → {actionLabels(recipe.actions).join(" + ")}</p>{recipe.actions.some((action) => action.type === "issue_repurchase_voucher") ? <SelectField label="套券商品" name="productId"><option value="">請選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField> : null}<SubmitButton pendingChildren="套用中…">一鍵套用劇本</SubmitButton></form>)}</div></Card>
 

@@ -51,6 +51,10 @@ const BYPASS_VECTORS: Array<[string, string]> = [
   ["https userinfo trick", "https://app.example@evil.example"],
   ["https user and password", "https://user:pass@evil.example/"],
   ["https empty host", "https://"],
+  ["https triple slash", "https:///evil.example"],
+  ["https empty credentials", "https://:@evil.example"],
+  ["https empty user", "https://@evil.example"],
+  ["https userinfo with path", "https://app.example@evil.example/a?b=@c"],
   ["https newline in host", "https://exa\nmple.com"],
   ["bare host", "evil.example"],
   ["empty", ""],
@@ -150,6 +154,7 @@ describe("safeExternalHttpsUrl", () => {
     ["https://example.com/offer?x=1#y", "https://example.com/offer?x=1#y"],
     ["HTTPS://Example.com/a", "https://example.com/a"],
     ["https://example.com:8443/a", "https://example.com:8443/a"],
+    ["https://example.com/u/@handle?mail=a@b.example#@x", "https://example.com/u/@handle?mail=a@b.example#@x"],
   ])("accepts %s", (value, canonical) => {
     expect(isSafeExternalHttpsUrl(value)).toBe(true);
     expect(safeExternalHttpsUrl(value)).toBe(canonical);

@@ -126,6 +126,21 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).not.toContain("data-funnel-background");
   });
 
+  it("does not use a bare anchor as an image, video, poster or audio source", () => {
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={documentWith([
+      node("image", "image", { props: { src: "#top" } }),
+      node("video", "video", { props: { src: "#top", poster: "#top" } }),
+      node("audio", "audio", { props: { src: "#top" } }),
+    ])} />);
+    expect(html).not.toMatch(/(?:src|poster)="#top"/u);
+    expect(html).toContain("圖片網址不安全或尚未設定。");
+    expect(html).toContain("影片網址不安全或尚未設定。");
+    expect(html).toContain("音訊網址不安全或尚未設定。");
+    const poster = renderToStaticMarkup(<FunnelPageDocumentRenderer document={documentWith([node("video", "video", { props: { src: "/media/a.mp4", poster: "#top" } })])} />);
+    expect(poster).toContain('src="/media/a.mp4"');
+    expect(poster).not.toContain("poster=");
+  });
+
   it("keeps legitimate same-origin, anchor and HTTPS links unchanged", () => {
     const document = documentWith([
       node("button", "path", { props: { label: "站內" }, actions: [{ type: "open_url", href: "/lp/shop/order?utm_source=line#pricing", newTab: false }] }),
