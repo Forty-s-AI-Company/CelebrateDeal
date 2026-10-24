@@ -542,7 +542,7 @@ async function processSubmission(request: Request, native?: { formData: FormData
     return NextResponse.json({ error: "Invalid form answers" }, { status: 400 });
   }
 
-  const missingLiveResponse =await missingLiveSelectionResponse({ submittedLiveId, formId: form.id, vendorId: form.vendorId, hideExpiredSessions: form.hideExpiredSessions });
+  const missingLiveResponse = await missingLiveSelectionResponse({ submittedLiveId, formId: form.id, vendorId: form.vendorId, hideExpiredSessions: form.hideExpiredSessions });
   if (missingLiveResponse) return missingLiveResponse;
 
   const liveContext = await loadFormLiveQuotaPolicy({

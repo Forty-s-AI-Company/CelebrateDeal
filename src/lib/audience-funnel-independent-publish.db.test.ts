@@ -23,7 +23,8 @@ import { createFunnelFlow, type FunnelGoal } from "@/lib/funnel-flow";
 import { createFunnelStepPages } from "@/lib/funnel-step-pages";
 import { applyFunnelTemplateChange } from "@/lib/funnel-template-transaction";
 import type { PageDocument } from "@/lib/funnel-page-document";
-import { deleteLandingPage, getLandingPagePublicationStatus, loadPublicLandingPage, publishLandingPage, unpublishLandingPage } from "@/lib/landing-page-service";
+import { deleteLandingPage, getLandingPagePublicationStatus, LandingPageConflictError, loadPublicLandingPage, publishLandingPage, saveLandingPageDraft, unpublishLandingPage } from "@/lib/landing-page-service";
+import { resolvePublishedFunnelCheckout } from "@/lib/funnel-commerce-service";
 import { publicLandingPageStatus } from "@/lib/public-landing-page-status";
 import { independentFunnelBindsForm, recordPublicFunnelVisit, resolvePublicFunnelRuntime } from "@/lib/funnel-runtime";
 import { loadFunnelReports } from "@/lib/funnel-operations-service";
@@ -225,6 +226,110 @@ describe("audience Funnel in an unpublished project (PostgreSQL)", () => {
     expect(await publicLandingPageStatus(`/lp/${archived.page.slug}`)).toBe(404);
     expect(await loadPublicLandingPage(archived.page.slug)).toBeNull();
     expect(await getDb().formSubmission.count({ where: { formId: { in: [unpublished.page.draftFormId!, archived.page.draftFormId!] } } })).toBe(0);
+  });
+});
+
+describe("auto-created lead form lifecycle (PostgreSQL)", () => {
+  const autoForms = (tenant: Tenant, pageId: string) => getDb().registrationForm.findMany({
+    where: { vendorId: tenant.vendorId, projectId: tenant.projectId, OR: [{ slug: `lead-auto-${pageId}` }, { slug: { startsWith: `lead-auto-${pageId}-` } }] },
+  });
+
+  it("keeps exactly one lead form across publish, an editor save without a form, and publish again", async () => {
+    const tenant = await createTenant("republish");
+    const first = await publishAudience(tenant);
+    const formId = first.page.draftFormId!;
+    expect(await getDb().registrationForm.findUniqueOrThrow({ where: { id: formId } })).toMatchObject({ name: "合成名單網站｜名單表單（自動建立）", slug: `lead-auto-${first.page.id}` });
+    const visitorId = await visit(first.page.id);
+    expect((await submit({ formId, landingPageId: first.page.id, funnelStepId: "opt_in", visitorId })).status).toBe(200);
+
+    // The current editor keeps formId "" in its state and sends it on the next save.
+    actAs(tenant);
+    const saved = await saveLandingPageDraft({ id: first.page.id, revision: first.revision, name: first.page.name, slug: first.page.slug, formId: "", content: first.page.draftContent });
+    expect((await getDb().landingPage.findUniqueOrThrow({ where: { id: first.page.id } })).draftFormId).toBe(formId);
+    const second = await publishLandingPage(first.page.id, saved.revision);
+    expect(second.formId).toBe(formId);
+
+    // A binding cleared by an older save is re-adopted, not duplicated.
+    await getDb().landingPage.update({ where: { id: first.page.id }, data: { draftFormId: null } });
+    const cleared = await getDb().landingPage.findUniqueOrThrow({ where: { id: first.page.id } });
+    const third = await publishLandingPage(first.page.id, cleared.revision);
+    expect(third.formId).toBe(formId);
+
+    expect((await autoForms(tenant, first.page.id)).map((form) => form.id)).toEqual([formId]);
+    const stored = await getDb().landingPage.findUniqueOrThrow({ where: { id: first.page.id }, include: { publishedVersion: true } });
+    expect(stored).toMatchObject({ draftFormId: formId, publishedVersion: { formId, version: 3 } });
+    const reports = await loadFunnelReports(first.page.id);
+    expect(reports.leads).toHaveLength(1);
+    expect((await getDb().formSubmission.findUniqueOrThrow({ where: { id: reports.leads[0]!.submissionId } })).formId).toBe(formId);
+  });
+
+  it("rolls the auto-created form back when the publish transaction fails", async () => {
+    const tenant = await createTenant("rollback");
+    actAs(tenant);
+    const page = await createDraftPage(tenant, "audience");
+    // A version row already numbered 2 makes the next version number collide inside the transaction.
+    await getDb().landingPageVersion.create({ data: { vendorId: tenant.vendorId, pageId: page.id, version: 2, content: page.draftContent as Prisma.InputJsonValue } });
+    await expect(publishLandingPage(page.id, page.revision)).rejects.toBeInstanceOf(LandingPageConflictError);
+    expect(await autoForms(tenant, page.id)).toEqual([]);
+    expect(await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } })).toMatchObject({ status: "draft", draftFormId: null, publishedVersionId: null });
+  });
+
+  it("refuses a form of another project of the same vendor", async () => {
+    const tenant = await createTenant("projects");
+    const otherProject = await getDb().salesProject.create({ data: { vendorId: tenant.vendorId, name: "Synthetic second project", slug: `audience-project-${randomUUID()}`, mode: "live_course", primaryFlow: "live" } });
+    const projectA = await publishAudience(tenant);
+    const projectB = await publishAudience({ ...tenant, projectId: otherProject.id });
+
+    const visitorA = await visit(projectA.page.id);
+    expect((await submit({ formId: projectB.page.draftFormId!, landingPageId: projectA.page.id, funnelStepId: "opt_in", visitorId: visitorA })).status).toBe(404);
+    const visitorB = await visit(projectB.page.id);
+    expect((await submit({ formId: projectA.page.draftFormId!, landingPageId: projectB.page.id, funnelStepId: "opt_in", visitorId: visitorB })).status).toBe(404);
+    expect(await getDb().formSubmission.count({ where: { formId: { in: [projectA.page.draftFormId!, projectB.page.draftFormId!] } } })).toBe(0);
+    expect(await independentFunnelBindsForm({ pageId: projectA.page.id, formId: projectA.page.draftFormId!, vendorId: tenant.vendorId, projectId: otherProject.id })).toBe(false);
+  });
+});
+
+describe("structural limits of independent publication (PostgreSQL)", () => {
+  it("keeps a sell Funnel relabelled as audience closed, including its checkout, until the project is published", async () => {
+    const tenant = await createTenant("relabel");
+    const product = await getDb().product.create({ data: { vendorId: tenant.vendorId, name: "合成實體商品", slug: `synthetic-${randomUUID()}`, priceCents: 1200, inventory: 5 } });
+    await getDb().salesProjectProduct.create({ data: { vendorId: tenant.vendorId, projectId: tenant.projectId, productId: product.id } });
+    const sell = funnelContent("sell");
+    const relabelled = {
+      ...sell,
+      flow: { ...sell.flow, goal: "audience" },
+      pages: { ...sell.pages, order_form: { ...sell.pages.order_form!, commerce: { schemaVersion: 1, productId: product.id, formMode: "single" } } },
+    };
+    const db = getDb();
+    const page = await db.landingPage.create({ data: { vendorId: tenant.vendorId, projectId: tenant.projectId, name: "改標籤的銷售頁", slug: `aud-${randomUUID()}`, draftContent: relabelled as unknown as Prisma.InputJsonValue } });
+    const version = await db.landingPageVersion.create({ data: { vendorId: tenant.vendorId, pageId: page.id, version: 1, content: relabelled as unknown as Prisma.InputJsonValue } });
+    await db.landingPage.update({ where: { id: page.id }, data: { status: "published", publishedVersionId: version.id, publishedAt: new Date() } });
+
+    // The SQL gate rejects the sales steps, the parsed check agrees, and checkout stays closed.
+    expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(404);
+    expect(await loadPublicLandingPage(page.slug)).toBeNull();
+    expect(await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: "order_form", visitorId: `synthetic-visitor-${randomUUID()}` })).toBeNull();
+    expect(await resolvePublishedFunnelCheckout({ slug: page.slug, stepId: "order_form" })).toBeNull();
+
+    // The same fixture is a working checkout once the project is published.
+    await db.salesProject.update({ where: { id: tenant.projectId }, data: { status: "published", publishedAt: new Date() } });
+    expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(200);
+    expect(await resolvePublishedFunnelCheckout({ slug: page.slug, stepId: "order_form" })).toMatchObject({ vendorId: tenant.vendorId });
+  });
+
+  it("closes an audience Funnel when its project is archived", async () => {
+    const tenant = await createTenant("archived-project");
+    const { page } = await publishAudience(tenant);
+    expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(200);
+    const visitorId = await visit(page.id);
+    await getDb().salesProject.update({ where: { id: tenant.projectId }, data: { status: "archived" } });
+    expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(404);
+    expect(await loadPublicLandingPage(page.slug)).toBeNull();
+    expect(await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: "opt_in", visitorId })).toBeNull();
+    expect(await independentFunnelBindsForm({ pageId: page.id, formId: page.draftFormId!, vendorId: tenant.vendorId, projectId: tenant.projectId })).toBe(false);
+    expect((await submit({ formId: page.draftFormId!, landingPageId: page.id, funnelStepId: "opt_in", visitorId })).status).toBe(404);
+    actAs(tenant);
+    await expect(getLandingPagePublicationStatus(page.id)).resolves.toMatchObject({ available: false, message: "所屬專案已封存，公開網址目前無法開啟。" });
   });
 });
 

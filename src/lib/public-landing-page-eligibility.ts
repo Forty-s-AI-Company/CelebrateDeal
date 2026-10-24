@@ -2,6 +2,8 @@ import type { Prisma } from "@prisma/client";
 import { parseLandingPageContent, type LandingPageContent } from "@/lib/landing-page-content";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
 import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { getFunnelStepCatalog, type FunnelStepGroup } from "@/lib/funnel-flow";
+import { pageDocumentHasCommerce } from "@/lib/funnel-registration-surface";
 
 /**
  * Public-URL eligibility shared by the full public loader and the proxy's
@@ -67,19 +69,39 @@ export function registrationFormIdsInContent(content: LandingPageStoredContent) 
  */
 export const INDEPENDENT_PUBLISH_FUNNEL_GOAL = "audience";
 
+/** "audience" is merchant-declared, so independence also requires lead-only steps. */
+const INDEPENDENT_STEP_GROUPS: ReadonlySet<FunnelStepGroup> = new Set(["audience", "general", "system"]);
+const NON_INDEPENDENT_STEP_TYPES = getFunnelStepCatalog().filter((step) => !INDEPENDENT_STEP_GROUPS.has(step.group)).map((step) => step.type);
+
 const PUBLISHED_SALES_PROJECT = { status: "published", publishedAt: { not: null } } as const;
 
 /**
- * Project gate of every public Funnel read. The published version's
- * `flow.goal` is matched inside the same SQL statement, so the proxy check
- * stays one indexed lookup; callers that parse the content re-check it with
- * {@link publicProjectGateSatisfied}.
+ * Project gate of every public Funnel read: the sales project is published,
+ * or the published version is an independent audience Funnel of a project
+ * that is not archived. The version's `flow.goal` and step types are matched
+ * inside the same SQL statement, so the proxy check stays one indexed lookup.
+ * Per-page commerce cannot be expressed as a JSON path; callers that parse
+ * the content re-check everything with {@link publicProjectGateSatisfied},
+ * which is authoritative and fails closed.
+ *
+ * Known trade-off (accepted for the beta): the database reads the published
+ * version's JSONB for the path checks on every `/lp` document request. If
+ * that cost matters, persist a boolean on LandingPageVersion at publish time
+ * (forward migration) and match it here instead.
  */
 export function publicFunnelProjectGateWhere(): Prisma.LandingPageWhereInput {
   return {
     OR: [
       { project: { is: PUBLISHED_SALES_PROJECT } },
-      { publishedVersion: { is: { content: { path: ["flow", "goal"], equals: INDEPENDENT_PUBLISH_FUNNEL_GOAL } } } },
+      {
+        project: { is: { status: { not: "archived" } } },
+        publishedVersion: {
+          is: {
+            content: { path: ["flow", "goal"], equals: INDEPENDENT_PUBLISH_FUNNEL_GOAL },
+            NOT: NON_INDEPENDENT_STEP_TYPES.map((type) => ({ content: { path: ["flow", "steps"], array_contains: [{ type }] } })),
+          },
+        },
+      },
     ],
   };
 }
@@ -99,17 +121,29 @@ export function isPublishedSalesProject(project: { status: string; publishedAt: 
   return Boolean(project && project.status === "published" && project.publishedAt);
 }
 
-/** Only a parsed multi-step Funnel can carry the independent-publish goal. */
-export function isIndependentlyPublishedFunnel(content: LandingPageStoredContent | null | undefined) {
+/** A multi-step Funnel whose goal is audience (merchant-declared, not yet structural). */
+export function isAudienceFunnel(content: LandingPageStoredContent | null | undefined): content is FunnelStepPages {
   return Boolean(content && "pages" in content && "flow" in content && content.flow.goal === INDEPENDENT_PUBLISH_FUNNEL_GOAL);
 }
 
-/** Code-side mirror of {@link publicFunnelProjectGateWhere} on parsed content. */
+/**
+ * Structural guarantee for publishing without a sales project: the goal is
+ * audience, every step is a lead or general step, and no page carries a
+ * commerce binding, payment block or checkout form.
+ */
+export function isIndependentlyPublishedFunnel(content: LandingPageStoredContent | null | undefined) {
+  if (!isAudienceFunnel(content)) return false;
+  if (content.flow.steps.some((step) => NON_INDEPENDENT_STEP_TYPES.includes(step.type))) return false;
+  return !Object.values(content.pages).some((document) => pageDocumentHasCommerce(document));
+}
+
+/** Code-side mirror of {@link publicFunnelProjectGateWhere} on parsed content; authoritative. */
 export function publicProjectGateSatisfied(
   project: { status: string; publishedAt: Date | null } | null | undefined,
   content: LandingPageStoredContent | null | undefined,
 ) {
-  return isPublishedSalesProject(project) || isIndependentlyPublishedFunnel(content);
+  if (isPublishedSalesProject(project)) return true;
+  return Boolean(project && project.status !== "archived" && isIndependentlyPublishedFunnel(content));
 }
 
 type CandidateVersion = { vendorId: string; pageId: string; content: unknown; formId: string | null };

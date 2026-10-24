@@ -33,10 +33,18 @@ describe("public pre-stream status (content-free, F-015)", () => {
     expect(findMany).toHaveBeenCalledWith({
       where: {
         slug: "fall-launch", status: "published", publishedVersionId: { not: null }, archivedAt: null,
-        // Owner decision 2026-10-24: an audience Funnel opens without a published project.
+        // Owner decision 2026-10-24: a lead-only audience Funnel of a project
+        // that is not archived opens without a published project.
         OR: [
           { project: { is: { status: "published", publishedAt: { not: null } } } },
-          { publishedVersion: { is: { content: { path: ["flow", "goal"], equals: "audience" } } } },
+          {
+            project: { is: { status: { not: "archived" } } },
+            publishedVersion: { is: {
+              content: { path: ["flow", "goal"], equals: "audience" },
+              NOT: ["sales_page", "order_form", "upsell", "downsell", "thank_you_page", "webinar_registration_page", "webinar_thank_you_page", "webinar_broadcast_page"]
+                .map((type) => ({ content: { path: ["flow", "steps"], array_contains: [{ type }] } })),
+            } },
+          },
         ],
       },
       take: 2,

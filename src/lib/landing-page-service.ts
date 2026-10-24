@@ -11,7 +11,7 @@ import {
 } from "@/lib/landing-page-content";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
 import { applyFunnelStepPersistenceMutation, parseFunnelStepPages, type FunnelStepPages, type FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
-import { pageDocumentRendersRegistrationForm } from "@/lib/funnel-registration-surface";
+import { isLeadCaptureFormNode, pageDocumentRendersRegistrationForm, surveyLeadFormFields } from "@/lib/funnel-registration-surface";
 import { getSalesProjectScope, requireEditableSalesProjectScope } from "@/lib/sales-project-scope";
 
 import { hasDirectWebinarVideo } from "@/lib/funnel-webinar-media";
@@ -25,6 +25,7 @@ import {
   normalizeLandingPageSlug as pageSlug,
   PUBLIC_LIVE_STATUSES,
   publicLandingPageCandidateWhere,
+  isAudienceFunnel,
   isIndependentlyPublishedFunnel,
   isPublishedSalesProject,
   publicLiveBindingValid,
@@ -63,6 +64,8 @@ export type LandingPageActionState = {
   message: string;
   id?: string;
   revision?: number;
+  /** After a publish: the form the published version uses (an audience page may get one automatically). */
+  formId?: string | null;
   publication?: LandingPagePublicationStatus;
 };
 
@@ -462,67 +465,132 @@ export async function saveLandingPageDraft(input: Required<Pick<LandingPageDraft
   if (existing.revision !== revision) throw new LandingPageConflictError();
   if (existing.status === "published" && existing.slug !== slug) throw new LandingPageInputError("landing_page_slug_locked");
   validateOperationalReferences(existing.operations, content);
-  await validateBindings(db(), { ...scope, content, formId, liveId });
+  // An editor that does not know about the publish-time lead form sends no
+  // form; keep this page's own auto-created form instead of unbinding it.
+  const draftFormId = formId ?? (!liveId && existing.draftFormId && isIndependentlyPublishedFunnel(content)
+    && await ownAutoLeadForm(db(), scope, id, existing.draftFormId) ? existing.draftFormId : null);
+  await validateBindings(db(), { ...scope, content, formId: draftFormId, liveId });
   const updated = await db().landingPage.updateMany({
     where: { id, vendorId: scope.vendorId, projectId: scope.projectId, revision },
-    data: { name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId: formId, draftLiveId: liveId, revision: { increment: 1 } },
+    data: { name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId, draftLiveId: liveId, revision: { increment: 1 } },
   });
   if (updated.count !== 1) throw new LandingPageConflictError();
   return { id, revision: revision + 1 };
 }
 
-const DEFAULT_LEAD_FORM_FIELDS = [
+const DEFAULT_LEAD_FORM_FIELDS: RegistrationFormFieldSpec[] = [
   { key: "name", label: "姓名", type: "text", required: true },
   { key: "email", label: "Email", type: "email", required: true },
-] as const;
+];
 
-function leadFormSubmitLabel(steps: FunnelStepPages) {
+/**
+ * Auto-created lead forms are recognised without a schema change by their
+ * slug: `lead-auto-<pageId>` (or `lead-auto-<pageId>-<suffix>` when that slug
+ * is already taken elsewhere), always within the page's vendor and project.
+ */
+function autoLeadFormSlug(pageId: string) {
+  return `lead-auto-${pageId.toLowerCase()}`;
+}
+
+function autoLeadFormWhere(scope: { vendorId: string; projectId: string }, pageId: string): Prisma.RegistrationFormWhereInput {
+  const base = autoLeadFormSlug(pageId);
+  return { vendorId: scope.vendorId, projectId: scope.projectId, OR: [{ slug: base }, { slug: { startsWith: `${base}-` } }] };
+}
+
+async function ownAutoLeadForm(database: LandingPageDb, scope: { vendorId: string; projectId: string }, pageId: string, formId: string) {
+  return Boolean(await database.registrationForm.findFirst({ where: { id: formId, isActive: true, ...autoLeadFormWhere(scope, pageId) }, select: { id: true } }));
+}
+
+/** Lead-capture pages in step order; the same set the form detection and the button label read. */
+function leadCapturePages(steps: FunnelStepPages) {
+  return steps.flow.steps.flatMap((step) => steps.pages[step.id] ? [steps.pages[step.id]!] : []);
+}
+
+function leadFormSubmitLabel(documents: ReturnType<typeof leadCapturePages>) {
   const find = (nodes: PageDocument["root"] | undefined): string | null => {
     for (const node of nodes ?? []) {
-      const label = node.type === "form" && typeof node.props.submitLabel === "string" ? node.props.submitLabel.trim() : "";
+      const label = isLeadCaptureFormNode(node) && typeof node.props.submitLabel === "string" ? node.props.submitLabel.trim() : "";
       if (label && label.length <= 40) return label;
       const nested = find(node.children);
       if (nested) return nested;
     }
     return null;
   };
-  for (const step of steps.flow.steps) {
-    const document = steps.pages[step.id];
-    const label = document ? find(document.root) ?? document.popups.map((popup) => find(popup.root)).find(Boolean) : null;
+  for (const document of documents) {
+    const label = find(document.root) ?? document.popups.map((popup) => find(popup.root)).find(Boolean);
     if (label) return label;
   }
   return "送出";
 }
 
+function autoLeadFormFields(documents: ReturnType<typeof leadCapturePages>) {
+  const fields = [...DEFAULT_LEAD_FORM_FIELDS];
+  for (const document of documents) {
+    fields.push(...surveyLeadFormFields(document, new Set(fields.map((field) => field.key))));
+  }
+  return fields.slice(0, 32);
+}
+
 /**
  * Owner decision 2026-10-24: an audience Funnel captures leads without the
  * merchant first building a registration form. When its lead form has no
- * bound form, publishing creates one owned by the same vendor and project in
- * the publish transaction. Nothing from the request chooses the owner, and an
- * existing binding (or a live, which must use its own form) is never replaced.
+ * bound form, publishing reuses this page's auto-created form, or creates one
+ * owned by the same vendor and project inside the publish transaction.
+ * Nothing from the request chooses the owner, an explicit binding (or a live,
+ * which must use its own form) is never replaced, and a deactivated
+ * auto-created form is not recreated.
  */
 async function ensureAudienceLeadForm(
   transaction: Prisma.TransactionClient,
   scope: { vendorId: string; projectId: string },
-  page: { name: string; draftFormId: string | null; draftLiveId: string | null },
+  page: { id: string; name: string; draftFormId: string | null; draftLiveId: string | null },
   content: LandingPageStoredContent,
 ) {
-  if (page.draftFormId || page.draftLiveId || !isIndependentlyPublishedFunnel(content) || !("pages" in content)) return page.draftFormId;
-  if (!Object.values(content.pages).some((document) => pageDocumentRendersRegistrationForm(document))) return null;
-  const form = await transaction.registrationForm.create({
-    data: {
-      vendorId: scope.vendorId,
-      projectId: scope.projectId,
-      name: `${page.name}｜名單表單`.slice(0, MAX_NAME_LENGTH),
-      slug: `lead-${randomUUID().replace(/-/gu, "").slice(0, 20)}`,
-      headline: page.name,
-      submitLabel: leadFormSubmitLabel(content),
-      successMessage: "已收到你的資料，我們會再與你聯繫。",
-      fields: DEFAULT_LEAD_FORM_FIELDS as unknown as Prisma.InputJsonValue,
-    },
-    select: { id: true },
+  if (page.draftFormId || page.draftLiveId || !isIndependentlyPublishedFunnel(content)) return page.draftFormId;
+  const documents = leadCapturePages(content as FunnelStepPages);
+  if (!documents.some((document) => pageDocumentRendersRegistrationForm(document))) return null;
+  const existing = await transaction.registrationForm.findMany({
+    where: autoLeadFormWhere(scope, page.id),
+    select: { id: true, isActive: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  return form.id;
+  if (existing.length) return existing.find((form) => form.isActive)?.id ?? null;
+  // Slugs are global: a slug held by another tenant only changes ours, never reuses theirs.
+  const base = autoLeadFormSlug(page.id);
+  const taken = await transaction.registrationForm.findFirst({ where: { slug: base }, select: { id: true } });
+  const slug = taken ? `${base}-${randomUUID().replace(/-/gu, "").slice(0, 12)}` : base;
+  try {
+    const form = await transaction.registrationForm.create({
+      data: {
+        vendorId: scope.vendorId,
+        projectId: scope.projectId,
+        name: `${page.name}｜名單表單（自動建立）`.slice(0, MAX_NAME_LENGTH),
+        slug,
+        headline: page.name,
+        submitLabel: leadFormSubmitLabel(documents),
+        successMessage: "已收到你的資料，我們會再與你聯繫。",
+        fields: autoLeadFormFields(documents) as unknown as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+    return form.id;
+  } catch (error) {
+    // A concurrent publish took the slug; the aborted transaction keeps nothing.
+    if (databaseErrorCode(error) === "P2002") throw new LandingPageInputError("landing_page_lead_form_retry");
+    throw error;
+  }
+}
+
+/** A live never becomes public before its project, so such an audience Funnel cannot publish yet. */
+async function assertAudienceLiveProjectPublished(
+  transaction: Prisma.TransactionClient,
+  scope: { vendorId: string; projectId: string },
+  page: { draftLiveId: string | null },
+  content: LandingPageStoredContent,
+) {
+  if (!page.draftLiveId || !isIndependentlyPublishedFunnel(content)) return;
+  const project = await transaction.salesProject.findFirst({ where: { id: scope.projectId, vendorId: scope.vendorId }, select: { status: true, publishedAt: true } });
+  if (!isPublishedSalesProject(project)) throw new LandingPageInputError("landing_page_audience_live_requires_project");
 }
 
 export async function publishLandingPage(pageId: string, expectedRevision: number) {
@@ -536,6 +604,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
       if (page.revision !== revision) throw new LandingPageConflictError();
       const content = inputContent(page.draftContent);
       validateOperationalReferences(page.operations, content);
+      await assertAudienceLiveProjectPublished(transaction, scope, page, content);
       const formId = await ensureAudienceLeadForm(transaction, scope, page, content);
       await validateBindings(transaction, { ...scope, content, formId, liveId: page.draftLiveId, publishing: true });
       const nextVersion = await transaction.landingPageVersion.count({ where: { vendorId: scope.vendorId, pageId: id } }) + 1;
@@ -548,7 +617,7 @@ export async function publishLandingPage(pageId: string, expectedRevision: numbe
         data: { status: "published", publishedVersionId: version.id, publishedAt: new Date(), unpublishedAt: null, ...(formId !== page.draftFormId ? { draftFormId: formId } : {}), revision: { increment: 1 } },
       });
       if (updated.count !== 1) throw new LandingPageConflictError();
-      return { id, revision: revision + 1, version: version.version };
+      return { id, revision: revision + 1, version: version.version, formId };
     });
   } catch (error) {
     // Concurrent publishers can both read the next version number. The unique
@@ -754,7 +823,7 @@ export async function loadPublicLandingPage(slug: string, onUnavailable?: (reaso
   const published = publishedLandingPageContent(page);
   if ("reason" in published) return unavailable(published.reason);
   const { version, publishedAt, content, formIds: ids } = published;
-  // The SQL gate matched `flow.goal`; the parsed content must agree.
+  // The SQL gate only pre-filters; the structural check on parsed content is authoritative.
   if (!publicProjectGateSatisfied(page.project, content)) return unavailable("invalid_content");
   const projectPublished = isPublishedSalesProject(page.project);
   const forms = ids.length === 0 ? [] : await db().registrationForm.findMany({
@@ -810,14 +879,30 @@ function hasBookableAvailability(consultations: Array<{ weeklySchedule: unknown 
 /** Non-blocking notes for a published audience Funnel: the URL opens, but some blocks wait. */
 function independentFunnelWarnings(publicPage: PublicLandingPage, steps: FunnelStepPages, projectPublished: boolean, projectHref: string) {
   const warnings: NonNullable<LandingPagePublicationStatus["warnings"]> = [];
-  const documents = Object.values(steps.pages);
+  const documents = leadCapturePages(steps);
   if (!publicPage.submissionForm && documents.some((document) => pageDocumentRendersRegistrationForm(document))) {
-    warnings.push({ label: "頁面上的表單尚未連結名單表單，訪客目前無法送出資料；請重新發布，系統會自動建立名單表單。", href: "/forms" });
+    warnings.push({ label: "頁面上的表單沒有連結可用的名單表單，訪客目前無法送出資料。請重新發布讓系統建立名單表單，或到報名管理確認表單已啟用。", href: "/forms" });
   }
-  if (projectPublished) return warnings;
-  if (documents.some((document) => document.commerce)) warnings.push({ label: "頁面含有商品結帳區塊；所屬專案發布前不會顯示購買按鈕。", href: projectHref });
-  if (consultationEventIdsInContent(steps).size > 0) warnings.push({ label: "頁面含有預約區塊；所屬專案發布前不會顯示可預約時段。", href: projectHref });
+  const formKeys = new Set(publicPage.submissionForm?.fields.map((field) => field.key) ?? []);
+  if (publicPage.submissionForm && documents.some((document) => surveyLeadFormFields(document, new Set()).some((field) => !formKeys.has(field.key)))) {
+    warnings.push({ label: "頁面上的問卷題目不在目前的名單表單欄位裡，訪客無法作答；請到報名管理為表單加入對應欄位。", href: "/forms" });
+  }
+  if (!projectPublished && consultationEventIdsInContent(steps).size > 0) warnings.push({ label: "頁面含有預約區塊；所屬專案發布前不會顯示可預約時段。", href: projectHref });
   return warnings;
+}
+
+/** An audience Funnel's own state before the public loader runs; null when the loader decides. */
+function audienceFunnelPreflightStatus(
+  page: { status: string; draftLiveId: string | null },
+  project: { status: string; publishedAt: Date | null },
+  projectHref: string,
+): LandingPagePublicationStatus | null {
+  if (project.status === "archived") return { available: false, message: "所屬專案已封存，公開網址目前無法開啟。", projectHref, missing: [] };
+  if (page.status === "published") return null;
+  if (page.draftLiveId && !isPublishedSalesProject(project)) {
+    return { available: false, message: "一頁式網站尚未發布。這個名單型網站綁定了直播，直播要等所屬專案發布後才能公開，所以目前無法發布；請移除直播綁定，或先發布專案。", projectHref, missing: [] };
+  }
+  return { available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。名單型網站發布後即可開啟，不需要先發布專案。", projectHref, missing: [] };
 }
 
 /** Project prerequisites for a Funnel whose public URL waits for its sales project. */
@@ -825,6 +910,7 @@ async function unpublishedProjectStatus(
   scope: { vendorId: string; projectId: string },
   primaryFlow: Parameters<typeof canPublishSalesProject>[0],
   projectHref: string,
+  note = "",
 ): Promise<LandingPagePublicationStatus> {
   const now = new Date();
   const [pricedProducts, forms, lives, consultations, paymentMethods] = await Promise.all([
@@ -860,7 +946,7 @@ async function unpublishedProjectStatus(
   const message = ready
     ? "專案尚未發布，公開網址目前無法開啟。發布條件已齊備，請到專案頁發布。"
     : "專案尚未發布，公開網址目前無法開啟。請先補齊下列項目，再到專案頁發布。";
-  return { available: false, message, projectHref, missing };
+  return { available: false, message: `${note}${message}`, projectHref, missing };
 }
 
 /**
@@ -878,7 +964,7 @@ export async function getLandingPagePublicationStatus(pageId: string): Promise<L
   if (!id) throw new LandingPageNotFoundError();
   const page = await db().landingPage.findFirst({
     where: { id, vendorId: scope.vendorId, projectId: scope.projectId, archivedAt: null },
-    select: { id: true, slug: true, status: true, operations: true, draftContent: true, publishedVersion: { select: { content: true } } },
+    select: { id: true, slug: true, status: true, operations: true, draftContent: true, draftLiveId: true, publishedVersion: { select: { content: true } } },
   });
   if (!page) throw new LandingPageNotFoundError();
   const projectHref = `/projects/${encodeURIComponent(scope.projectId)}`;
@@ -887,14 +973,22 @@ export async function getLandingPagePublicationStatus(pageId: string): Promise<L
     select: { status: true, publishedAt: true, primaryFlow: true },
   });
   if (!project) return { available: false, message: "所屬專案不存在，公開網址目前無法開啟。", projectHref, missing: [] };
-  // The goal that decides the public gate: the live version once published, otherwise the draft.
-  const independent = isIndependentlyPublishedFunnel(parseFunnelStepPages(page.status === "published" ? page.publishedVersion?.content : page.draftContent));
+  // The content that decides the public gate: the live version once published, otherwise the draft.
+  const gateContent = parseFunnelStepPages(page.status === "published" ? page.publishedVersion?.content : page.draftContent);
+  const independent = isIndependentlyPublishedFunnel(gateContent);
   const projectPublished = isPublishedSalesProject(project);
-  // Every goal except audience still waits for its project (owner decision 2026-10-24).
-  if (!projectPublished && !independent) return unpublishedProjectStatus(scope, project.primaryFlow, projectHref);
+  if (independent && !projectPublished) {
+    const preflight = audienceFunnelPreflightStatus(page, project, projectHref);
+    if (preflight) return preflight;
+  }
+  // Every other Funnel still waits for its project (owner decision 2026-10-24).
+  if (!projectPublished && !independent) {
+    const note = isAudienceFunnel(gateContent) ? "這個名單網站含有銷售、結帳或 Webinar 內容，需要所屬專案發布後才能公開。" : "";
+    return unpublishedProjectStatus(scope, project.primaryFlow, projectHref, note);
+  }
   if (page.status !== "published") {
     return independent
-      ? { available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。名單型網站發布後即可開啟，不需要先發布專案。", projectHref, missing: [] }
+      ? audienceFunnelPreflightStatus(page, project, projectHref)!
       : { available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref, missing: [] };
   }
   let reason: PublicLandingPageUnavailableReason | null = null;

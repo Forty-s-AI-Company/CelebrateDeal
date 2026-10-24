@@ -14,6 +14,7 @@ import {
   resolvePublicFunnelRuntime,
   resolveTrustedFunnelSubmission,
 } from "./funnel-runtime";
+import { publicFunnelProjectGateWhere } from "./public-landing-page-eligibility";
 
 const visitorId = "visitor-12345678901234567890";
 const flow = createFunnelFlow({ id: "funnel_1", name: "Funnel", goal: "audience", domain: "offer" })!;
@@ -144,7 +145,7 @@ describe("public Funnel runtime", () => {
     const visitCreate = vi.fn().mockResolvedValue({ id: "visit-1" });
     const submissionUpsert = vi.fn().mockResolvedValue({ id: "submission-1" });
     const database = {
-      landingPage: { findFirst: vi.fn().mockResolvedValue({ id: "page_1", vendorId: "vendor_1", operations: defaultFunnelOperations(), publishedVersion: { content, formId: "form_1", liveId: null } }) },
+      landingPage: { findFirst: vi.fn().mockResolvedValue({ id: "page_1", vendorId: "vendor_1", projectId: "project_1", operations: defaultFunnelOperations(), project: { status: "published", publishedAt: new Date("2026-09-01T00:00:00.000Z") }, publishedVersion: { content, formId: "form_1", liveId: null } }) },
       funnelVisit: { create: visitCreate, findFirst: vi.fn().mockResolvedValue({ id: "visit-1" }) },
       funnelSubmission: { upsert: submissionUpsert },
     };
@@ -165,7 +166,7 @@ describe("public Funnel runtime", () => {
     const operations = defaultFunnelOperations();
     operations.deadline = { enabled: true, timezone: "Asia/Taipei", expiresAt: "2026-09-17T10:00:00+08:00", behavior, redirectPath: behavior === "redirect" ? "thank-you" : "" };
     const database = {
-      landingPage: { findFirst: vi.fn().mockResolvedValue({ id: "page_1", vendorId: "vendor_1", operations, publishedVersion: { content: createFunnelStepPages(flow), formId: "form_1", liveId: null } }) },
+      landingPage: { findFirst: vi.fn().mockResolvedValue({ id: "page_1", vendorId: "vendor_1", projectId: "project_1", operations, project: { status: "published", publishedAt: new Date("2026-09-01T00:00:00.000Z") }, publishedVersion: { content: createFunnelStepPages(flow), formId: "form_1", liveId: null } }) },
       funnelVisit: { findFirst: vi.fn() },
     };
     await expect(resolveTrustedFunnelSubmission({ pageId: "page_1", stepId: "opt_in", formId: "form_1", liveId: null, visitorId, now: new Date("2026-09-17T02:00:00.000Z"), database: database as never })).resolves.toBeNull();
@@ -186,18 +187,20 @@ describe("independent audience Funnel publication (owner decision 2026-10-24)", 
   };
   const firstStep = (goal: "audience" | "sell" | "custom") => createFunnelStepPages(createFunnelFlow({ id: "funnel_gate", name: "Funnel", goal, domain: "gate" })!)!.flow.steps.find((step) => !step.isSystem)?.id ?? "missing";
 
-  it("queries the project gate in SQL: published project or a published audience version", async () => {
+  it("queries the same project gate in SQL as the public slug lookup", async () => {
     const database = runtimeDb("audience");
     await resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: database as never });
     expect(database.landingPage.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: {
-        id: "page_1", status: "published", publishedVersionId: { not: null }, archivedAt: null,
-        OR: [
-          { project: { is: { status: "published", publishedAt: { not: null } } } },
-          { publishedVersion: { is: { content: { path: ["flow", "goal"], equals: "audience" } } } },
-        ],
-      },
+      where: { id: "page_1", status: "published", publishedVersionId: { not: null }, archivedAt: null, ...publicFunnelProjectGateWhere() },
     }));
+  });
+
+  it("keeps a relabelled sell Funnel and an archived project's audience Funnel closed", async () => {
+    const sell = createFunnelStepPages(createFunnelFlow({ id: "funnel_gate", name: "Funnel", goal: "sell", domain: "gate" })!)!;
+    const relabelled = runtimeDb("audience", { publishedVersion: { content: { ...sell, flow: { ...sell.flow, goal: "audience" } }, formId: "form_1", liveId: null } });
+    await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "order_form", visitorId, database: relabelled as never })).resolves.toBeNull();
+    const archived = runtimeDb("audience", { project: { status: "archived", publishedAt: null } });
+    await expect(resolvePublicFunnelRuntime({ pageId: "page_1", requestedStepId: "opt_in", visitorId, database: archived as never })).resolves.toBeNull();
   });
 
   it("renders and accepts leads for an audience Funnel whose project is not published", async () => {
