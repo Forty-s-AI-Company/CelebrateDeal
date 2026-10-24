@@ -1,9 +1,24 @@
 import { readFile } from "node:fs/promises";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const navigation = vi.hoisted(() => ({ pathname: vi.fn<() => string | null>(() => null) }));
+vi.mock("next/navigation", () => ({ usePathname: navigation.pathname }));
+
 import { AnnouncementCenter } from "./announcement-center";
 
+afterEach(() => navigation.pathname.mockReset().mockReturnValue(null));
+
 describe("AnnouncementCenter", () => {
+  it("hides the launcher on the full-screen editor route only", () => {
+    navigation.pathname.mockReturnValue("/landing-pages/page-1/edit");
+    expect(renderToStaticMarkup(<AnnouncementCenter />)).toBe("");
+    for (const pathname of ["/landing-pages/page-1/operations", "/landing-pages", "/dashboard", "/"]) {
+      navigation.pathname.mockReturnValue(pathname);
+      expect(renderToStaticMarkup(<AnnouncementCenter />)).toContain('data-testid="announcement-center-launcher"');
+    }
+  });
+
   it("renders a hydration-safe launcher without opening a dialog during SSR", () => {
     const html = renderToStaticMarkup(<AnnouncementCenter />);
 
