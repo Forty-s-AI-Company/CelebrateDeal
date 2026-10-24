@@ -123,3 +123,10 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 3. **備份必須一併保存對應版本**：每一份資料庫備份都要能對應到「備份當下」的 `CSRF_SECRET`（必要時含 `JOB_SECRET`）。金鑰存放在與備份分開的密碼管理器，記錄「哪一段期間的備份對應哪一版」；不得與備份檔放在同一處，不得寫進 repo、log、收據或聊天。
 4. **還原時缺它，加密資料全部不可讀**：資料表與筆數都會還原成功，但所有加密欄位與雜湊查詢失效，等同遺失個資與 MFA。隔離還原演練必須用對應版本的金鑰抽查加密欄位可讀，見 `docs/production-backup-restore-runbook.md` §B 第 6 步與 §E。
 5. staging 與 production 必須使用不同值；staging 值外洩不影響 production 資料。
+6. **根金鑰只能用在 KDF（domain separation）**：根金鑰（`CSRF_SECRET`，或退回時的 `JOB_SECRET`）只能出現在 `deriveKeyFromRootSecret()`，也就是 `HMAC(root, "CelebrateDeal:" + purpose)`。任何其他 HMAC／雜湊都必須先用自己的 purpose 衍生金鑰，再在該金鑰下計算，並在訊息前加固定標籤。**絕對不可直接用根金鑰 HMAC 攻擊者可控的輸入**（cookie、header、表單值、URL）：只要輸出會回到使用者手上，攻擊者送出 `CelebrateDeal:<purpose>` 就能讀到該用途的衍生金鑰。2026-10-25 前的 CSRF fingerprint 就是這個漏洞（`HMAC(CSRF_SECRET, session cookie)`），現已改為 `csrf-hmac-v1` 衍生金鑰＋`csrf-fp:v1:`／`csrf-token:v1:` 標籤；修正後部署時，既有 CSRF token（最長 2 小時）會失效，行為與 token 過期相同。`deriveSensitiveDataKey()` 的輸出不得改變，`src/lib/sensitive-data.test.ts` 以合成秘密的 golden 值鎖住既有用途；`src/lib/sensitive-data-root-key-boundary.test.ts` 確保通用 KDF helper 不外露，且只有 `csrf.ts` 使用 `deriveCsrfMacKey()`。
+   - **修正前的曝露無法偵測**：任何人都可能已從公開頁取得各用途衍生金鑰的前 192 bits，且不會留下可辨識的紀錄，因此應視為可能已外洩。
+   - **依用途輪替，絕不為此輪替根金鑰 `CSRF_SECRET`**（換根金鑰會讓所有密文失效，見第 1 點）。優先順序併入 keyring 工作 B04-03 追蹤：
+     1. 第 1 級：尚未正式使用的用途直接改名，例如商家邀請改用 `merchant-registration-invite-v2`。
+     2. 第 2 級：短效公開 bearer token，例如 `public-checkout-admission`、`form-submission-email-verification`、`form-submission-chat-session`、`form-submission-line-binding`。
+     3. 第 3 級：長效連結，需要新舊兩版並行驗證，例如 `email-delivery-unsubscribe`、`student-portal-access-token-v1`、`automation-voucher-bearer-v1`、`team-funnel-attribution-cookie`。
+     4. 第 4 級：加密與雜湊索引金鑰，需要 re-encrypt migration，先處理 MFA，再處理 PII。
