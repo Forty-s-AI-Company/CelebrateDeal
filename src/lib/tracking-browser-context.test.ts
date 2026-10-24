@@ -22,6 +22,9 @@ describe("server-derived encrypted tracking browser context", () => {
     expect(captureTrackingBrowserContext(headers())).toBeNull();
     expect(captureTrackingBrowserContext(headers(), "//foreign.example.test")).toBeNull();
   });
+  it.each(["/\\foreign.example.test/register", "/\\\\foreign.example.test", "/\t/foreign.example.test", "/.//foreign.example.test"])("never resolves a server path %s to another origin", path => {
+    expect(captureTrackingBrowserContext(headers(), path)).toBeNull();
+  });
   it("encrypts with tenant and source binding and rejects swaps/tampering", () => {
     const context = captureTrackingBrowserContext(headers(), "/register")!;
     const encrypted = protectTrackingBrowserContext("vendor-a", "source-a", context);
