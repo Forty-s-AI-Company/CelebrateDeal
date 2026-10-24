@@ -60,6 +60,7 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   await expect(page.getByLabel("頁面名稱")).toBeVisible();
   await page.getByLabel("活動場次").selectOption(fixture.live.id);
   await expect(page.getByText("正在載入編輯器…", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("正在載入網站編輯器…", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-editor.png"), fullPage: true });
   await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
   await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
