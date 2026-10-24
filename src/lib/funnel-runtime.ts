@@ -5,6 +5,7 @@ import { parseFunnelOperations, type FunnelOperations } from "@/lib/funnel-opera
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 import type { FunnelStep } from "@/lib/funnel-flow";
 import { isFunnelVisitorId } from "@/lib/funnel-runtime-visitor";
+import { isPublishedSalesProject, publicFunnelProjectGateWhere, publicProjectGateSatisfied } from "@/lib/public-landing-page-eligibility";
 
 export { FUNNEL_VISITOR_COOKIE, funnelVisitorIdFromRequest, isFunnelVisitorId } from "@/lib/funnel-runtime-visitor";
 
@@ -18,7 +19,10 @@ export type FunnelRuntimeDecision =
 type RuntimePage = {
   id: string;
   vendorId: string;
+  projectId: string;
   operations: unknown;
+  /** False only for an independently published audience Funnel (owner decision 2026-10-24). */
+  projectPublished: boolean;
   publishedVersion: { content: unknown; formId: string | null; liveId: string | null } | null;
 };
 
@@ -105,24 +109,34 @@ export async function resolvePublicFunnelRuntime(input: {
   database?: RuntimeDb;
 }): Promise<{ page: RuntimePage; decision: FunnelRuntimeDecision } | null> {
   const database = input.database ?? getDb();
-  const page = await database.landingPage.findFirst({
+  const record = await database.landingPage.findFirst({
     where: {
       id: input.pageId,
       status: "published",
       publishedVersionId: { not: null },
       archivedAt: null,
-      project: { is: { status: "published", publishedAt: { not: null } } },
+      ...publicFunnelProjectGateWhere(),
     },
     select: {
       id: true,
       vendorId: true,
+      projectId: true,
       operations: true,
+      project: { select: { status: true, publishedAt: true } },
       publishedVersion: { select: { content: true, formId: true, liveId: true } },
     },
-  }) as RuntimePage | null;
-  if (!page?.publishedVersion) return null;
-  const state = parseFunnelStepPages(page.publishedVersion.content);
-  if (!state) return null;
+  });
+  if (!record?.publishedVersion) return null;
+  const state = parseFunnelStepPages(record.publishedVersion.content);
+  if (!state || !publicProjectGateSatisfied(record.project, state)) return null;
+  const page: RuntimePage = {
+    id: record.id,
+    vendorId: record.vendorId,
+    projectId: record.projectId,
+    operations: record.operations,
+    projectPublished: isPublishedSalesProject(record.project),
+    publishedVersion: record.publishedVersion,
+  };
   const decision = decidePublicFunnelRuntime({
     pageId: page.id,
     requestedStepId: input.requestedStepId,
@@ -167,7 +181,7 @@ export async function resolveTrustedFunnelSubmission(input: {
   visitorId: string;
   now?: Date;
   database?: RuntimeDb;
-}): Promise<{ vendorId: string; pageId: string; stepId: string; visitId: string | null } | null> {
+}): Promise<{ vendorId: string; projectId: string; projectPublished: boolean; pageId: string; stepId: string; visitId: string | null } | null> {
   const resolved = await resolvePublicFunnelRuntime({
     pageId: input.pageId,
     requestedStepId: input.stepId,
@@ -178,6 +192,8 @@ export async function resolveTrustedFunnelSubmission(input: {
   if (!resolved || resolved.decision.status !== "render") return null;
   if (isFunnelDeadlineExpired(parseFunnelOperations(resolved.page.operations), input.now)) return null;
   if (resolved.page.publishedVersion?.formId !== input.formId || resolved.page.publishedVersion.liveId !== input.liveId) return null;
+  // A live keeps its project's publication gate, even on an independent audience Funnel.
+  if (!resolved.page.projectPublished && resolved.page.publishedVersion.liveId) return null;
   const database = input.database ?? getDb();
   const visit = await database.funnelVisit.findFirst({
     where: {
@@ -192,10 +208,42 @@ export async function resolveTrustedFunnelSubmission(input: {
   if (!visit) return null;
   return {
     vendorId: resolved.page.vendorId,
+    projectId: resolved.page.projectId,
+    projectPublished: resolved.page.projectPublished,
     pageId: resolved.page.id,
     stepId: resolved.decision.renderedStepId,
     visitId: visit.id,
   };
+}
+
+/**
+ * Whether a published, independently public audience Funnel of this tenant
+ * and project is bound to the form (and to no live). Lets a native retry keep
+ * the visitor's fields for a form whose project is not published yet; it
+ * never authorizes a submission (that needs resolveTrustedFunnelSubmission).
+ */
+export async function independentFunnelBindsForm(input: {
+  pageId: string | null | undefined;
+  formId: string;
+  vendorId: string;
+  projectId: string;
+  database?: RuntimeDb;
+}) {
+  if (!input.pageId || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.pageId)) return false;
+  const database = input.database ?? getDb();
+  const page = await database.landingPage.findFirst({
+    where: {
+      id: input.pageId,
+      vendorId: input.vendorId,
+      projectId: input.projectId,
+      status: "published",
+      archivedAt: null,
+      ...publicFunnelProjectGateWhere(),
+      publishedVersion: { is: { formId: input.formId, liveId: null } },
+    },
+    select: { project: { select: { status: true, publishedAt: true } }, publishedVersion: { select: { content: true } } },
+  });
+  return Boolean(page?.publishedVersion && publicProjectGateSatisfied(page.project, parseFunnelStepPages(page.publishedVersion.content)));
 }
 
 /** The unique submission key makes retrying a verified public POST idempotent. */

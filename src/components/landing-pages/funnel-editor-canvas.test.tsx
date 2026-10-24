@@ -120,6 +120,21 @@ describe("inline editing on the canvas", () => {
     expect(find(documents[0]!, "list_a").props.items).toEqual(["第一點", "改過的第二點"]);
   });
 
+  it("opens settings on the first click of a node that was selected by adding it, and edits on the next click", async () => {
+    const { container } = await setup();
+    await click(canvasNode(container, "text_a"));
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="返回（取消選取）"]')!);
+    await click(container.querySelector<HTMLElement>('[data-palette-type="text"]')!);
+    const added = container.querySelector<HTMLElement>('[role="region"] [data-funnel-selected="true"]')!;
+    expect(added.getAttribute("data-funnel-node-type")).toBe("text");
+    expect(container.querySelector("[data-funnel-node-settings]")).toBeNull();
+    await click(added);
+    expect(editable(container)).toBeNull();
+    expect(container.querySelector("[data-funnel-node-settings]")?.getAttribute("data-funnel-node-settings")).toBe("text");
+    await click(added);
+    expect(editable(container)?.textContent).toBe("新的文字內容");
+  });
+
   it("opens from the floating toolbar's 編輯文字 button too", async () => {
     const { container } = await setup();
     await click(canvasNode(container, "text_a"));

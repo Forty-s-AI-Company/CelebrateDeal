@@ -99,16 +99,35 @@ test.describe("Funnel editor history lifecycle", () => {
     await palette(page, "欄列").click();
     await palette(page, "文字").click();
     const text = page.locator('[data-funnel-node-type="text"]');
+    const textRoot = async () => JSON.stringify((await parentDocument(page)).root);
+    const textValue = async () => (await parentDocument(page)).root[0].children[0].children[0]?.props.text as string | undefined;
+    // The palette selects the new node; the first canvas click opens its settings, not inline editing.
     await text.click();
     const panel = page.getByRole("complementary", { name: "編輯面板" });
-    await expect(panel.getByRole("heading", { name: "文字", exact: true })).toBeVisible();
+    const inlineEditor = page.getByRole("textbox", { name: "編輯文字", exact: true });
+    await expect(panel.locator('[data-funnel-node-settings="text"]').getByRole("heading", { name: "文字", exact: true })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "目前選取位置" })).toContainText("區段欄列文字");
+    await expect(inlineEditor).toHaveCount(0);
+    // Delete inside a settings field edits the field, never the node.
     await panel.getByRole("textbox", { name: "文字內容" }).press("Delete");
-    await expect.poll(async () => JSON.stringify((await parentDocument(page)).root)).toContain('"type":"text"');
-    // Clicking the canvas node moves focus out of the text field again.
+    await expect.poll(textRoot).toContain('"type":"text"');
+    const beforeInline = await textValue();
+    expect(beforeInline?.length).toBeGreaterThan(1);
+    // A second click on the selected text enters inline editing; Delete/Backspace then edit the text.
     await text.click();
+    await expect(inlineEditor).toBeFocused();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Backspace");
     await page.keyboard.press("Delete");
-    await expect.poll(async () => JSON.stringify((await parentDocument(page)).root)).not.toContain('"type":"text"');
+    await expect(inlineEditor).toHaveText(beforeInline!.slice(0, -1));
+    // Nothing is written until the edit is committed, and the node is never removed.
+    expect(await textValue()).toBe(beforeInline);
+    await page.keyboard.press("Enter");
+    await expect(inlineEditor).toHaveCount(0);
+    await expect.poll(textValue).toBe(beforeInline!.slice(0, -1));
+    // Outside inputs and inline editing, Delete removes the selected node.
+    await page.keyboard.press("Delete");
+    await expect.poll(textRoot).not.toContain('"type":"text"');
     await expect(panel.getByRole("tab", { name: "元件", exact: true })).toBeVisible();
   });
 });

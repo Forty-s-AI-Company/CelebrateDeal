@@ -157,10 +157,10 @@ describe("dual publication feedback", () => {
   });
 
   it("returns a fresh diagnosis immediately after unpublish", async () => {
-    mocks.publication.mockResolvedValueOnce({ available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。", projectHref: "/projects/project-1", missing: [] });
+    mocks.publication.mockResolvedValueOnce({ available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。", projectHref: "/projects/project-1", missing: [] });
     const result = await landingPageAction(idle, form({ operation: "unpublish", id: "page-1", revision: "3" }));
     expect(result.publication?.available).toBe(false);
-    expect(result.publication?.message).toContain("Funnel 尚未發布");
+    expect(result.publication?.message).toContain("一頁式網站尚未發布");
   });
 
   it("does not diagnose when the publication write itself failed", async () => {
