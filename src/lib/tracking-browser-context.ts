@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getCanonicalAppUrl } from "@/lib/app-url";
+import { isSafeInternalPath } from "@/lib/safe-url";
 import { decryptSensitiveValue, encryptSensitiveValue } from "@/lib/sensitive-data";
 
 const Context = z.object({
@@ -31,7 +32,7 @@ export function captureTrackingBrowserContext(headers: Pick<Headers, "get">, ser
     // 只保留同源公開頁路徑；不保存回復 token、query 或會員/管理頁資訊。
     if (url?.origin === origin && !url.username && !url.password && /^\/(?:live\/[^/]+|checkout\/[^/]+\/[^/]+|lp\/[^/]+(?:\/[^/]+)?(?:\/checkout)?|register|verify-registration)\/?$/u.test(url.pathname)) path = url.pathname;
   } catch { /* 不可信 Referer 不能改變 server-owned fallback。 */ }
-  if (!path || !path.startsWith("/") || path.startsWith("//") || /[?#\u0000-\u001f\u007f]/u.test(path)) return null;
+  if (!path || !isSafeInternalPath(path) || /[?#\u0000-\u001f\u007f]/u.test(path)) return null;
   try { return validate({ sourceUrl: new URL(path, origin).toString(), userAgent }); } catch { return null; }
 }
 

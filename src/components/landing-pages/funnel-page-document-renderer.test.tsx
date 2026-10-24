@@ -88,6 +88,73 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).toContain('disabled=""');
   });
 
+  it.each([
+    ["backslash", "/\\evil.example", true],
+    ["double backslash", "/\\\\evil.example", true],
+    ["backslash then slash", "/\\/evil.example", true],
+    ["tab after slash", "/\t/evil.example", false],
+    ["newline after slash", "/\n/evil.example", false],
+    ["dot segment", "/.//evil.example", true],
+    ["protocol-relative", "//evil.example", false],
+    ["userinfo", "https://app.example@evil.example", true],
+    ["https without slashes", "https:evil.example", false],
+    ["mixed-case javascript", "JaVaScRiPt:alert(1)", false],
+    ["data URL", "data:text/html,evil.example", false],
+  ] as const)("renders a crafted document with %s links without any off-site target", (_label, unsafe, acceptedByEarlierSchema) => {
+    // Schema-validated fields (actions, background) can only hold values the earlier check
+    // accepted; anything else already failed the whole document before this change.
+    const storedAction = acceptedByEarlierSchema ? [{ type: "open_url" as const, href: unsafe, newTab: true }] : [];
+    const document = documentWith([
+      node("button", "stored-action", { props: { label: "舊資料按鈕" }, actions: storedAction }),
+      node("button", "props-action", { props: { label: "屬性按鈕", action: { type: "download", href: unsafe } } }),
+      node("menu", "menu", { props: { items: [{ label: "首頁", href: "/" }, { label: "外連", href: unsafe }] } }),
+      node("image", "image", { props: { src: unsafe } }),
+      node("video", "video", { props: { src: unsafe, poster: unsafe } }),
+      node("x_share_button", "share", { props: { url: unsafe } }),
+      node("raw_html", "raw", { props: { html: `<a href="${unsafe}">連結</a><img src="${unsafe}">` } }),
+    ]);
+    if (acceptedByEarlierSchema) document.settings.background = { color: "white", blur: 0, imageUrl: unsafe };
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document} />);
+    // A crafted value never blanks the page; the link is simply not rendered.
+    expect(html).not.toContain("頁面內容不符合安全格式");
+    expect(html).toContain("舊資料按鈕");
+    expect(html).toContain("屬性按鈕");
+    expect(html).toContain('href="/"');
+    expect(html).toContain("外連");
+    expect(html).not.toContain("evil.example");
+    expect(html).not.toMatch(/javascript:/iu);
+    expect(html).not.toContain("data-funnel-background");
+  });
+
+  it("does not use a bare anchor as an image, video, poster or audio source", () => {
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={documentWith([
+      node("image", "image", { props: { src: "#top" } }),
+      node("video", "video", { props: { src: "#top", poster: "#top" } }),
+      node("audio", "audio", { props: { src: "#top" } }),
+    ])} />);
+    expect(html).not.toMatch(/(?:src|poster)="#top"/u);
+    expect(html).toContain("圖片網址不安全或尚未設定。");
+    expect(html).toContain("影片網址不安全或尚未設定。");
+    expect(html).toContain("音訊網址不安全或尚未設定。");
+    const poster = renderToStaticMarkup(<FunnelPageDocumentRenderer document={documentWith([node("video", "video", { props: { src: "/media/a.mp4", poster: "#top" } })])} />);
+    expect(poster).toContain('src="/media/a.mp4"');
+    expect(poster).not.toContain("poster=");
+  });
+
+  it("keeps legitimate same-origin, anchor and HTTPS links unchanged", () => {
+    const document = documentWith([
+      node("button", "path", { props: { label: "站內" }, actions: [{ type: "open_url", href: "/lp/shop/order?utm_source=line#pricing", newTab: false }] }),
+      node("button", "anchor", { props: { label: "錨點" }, actions: [{ type: "open_url", href: "#pricing", newTab: false }] }),
+      node("menu", "menu", { props: { items: [{ label: "外部", href: "https://example.com/a?b=1" }] } }),
+      node("image", "image", { props: { src: "/images/hero.png" } }),
+    ]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document} />);
+    expect(html).toContain('href="/lp/shop/order?utm_source=line#pricing"');
+    expect(html).toContain('href="#pricing"');
+    expect(html).toContain('href="https://example.com/a?b=1"');
+    expect(html).toContain('src="/images/hero.png"');
+  });
+
   it("keeps validated Popup and form button actions executable without rendering unsafe code", () => {
     const page = documentWith([
       node("button", "popup-button", { props: { label: "開啟優惠" }, actions: [{ type: "show_popup", popupId: "popup_offer" }] }),

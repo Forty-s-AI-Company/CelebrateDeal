@@ -34,6 +34,18 @@ describe("funnel blocks schema", () => {
     expect(FunnelPageBlocksSchema.safeParse([{ ...pricingBlock, settings: { ...pricingBlock.settings, cards: pricingBlock.settings.cards.map((card) => ({ ...card, checkoutUrl: "javascript:alert(1)" })) } }]).success).toBe(false);
   });
 
+  it.each(["/\\evil.example", "/\t/evil.example", "//evil.example", "https://app.example@evil.example", "https:evil.example"])("rejects the off-site checkout URL %s", (checkoutUrl) => {
+    const cards = pricingBlock.settings.cards.map((card) => ({ ...card, checkoutUrl }));
+    expect(FunnelPageBlocksSchema.safeParse([{ ...pricingBlock, settings: { ...pricingBlock.settings, cards } }]).success).toBe(false);
+  });
+
+  it("keeps same-origin, anchor and HTTPS checkout URLs", () => {
+    for (const checkoutUrl of ["/checkout/vendor/basic?ref=line", "#pricing", "https://pay.example.com/checkout"]) {
+      const cards = pricingBlock.settings.cards.map((card) => ({ ...card, checkoutUrl }));
+      expect(FunnelPageBlocksSchema.safeParse([{ ...pricingBlock, settings: { ...pricingBlock.settings, cards } }]).success).toBe(true);
+    }
+  });
+
   it("rejects a visible action without its required destination", () => {
     const cards = pricingBlock.settings.cards.map((card) => ({ ...card, checkoutUrl: undefined }));
     expect(FunnelPageBlocksSchema.safeParse([{ ...pricingBlock, settings: { ...pricingBlock.settings, cards } }]).success).toBe(false);

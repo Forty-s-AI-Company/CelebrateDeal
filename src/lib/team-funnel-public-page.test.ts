@@ -175,6 +175,17 @@ describe("public team funnel page resolver", () => {
     expect(result.page?.cta.href).toBe("#registration-heading");
   });
 
+  it.each(["/.//evil.com", "/..//evil.com", "/%2e//evil.com", "/%2E%2E//evil.com", "/\\evil.com", "/\t/evil.com", "//evil.com"])("never emits a protocol-relative CTA for %s", (ctaUrl) => {
+    const href = prepareTeamFunnelPublicPage(page({ ctaUrl })).page?.cta.href;
+    expect(href).toBe("#registration-heading");
+    expect(new URL(href!, "https://app.example.test/p/partner-b").origin).toBe("https://app.example.test");
+  });
+
+  it("keeps a same-origin CTA path and normalizes harmless dot segments", () => {
+    expect(prepareTeamFunnelPublicPage(page({ ctaUrl: "/lp/offer?ref=B-CODE#buy" })).page?.cta.href).toBe("/lp/offer?ref=B-CODE#buy");
+    expect(prepareTeamFunnelPublicPage(page({ ctaUrl: "/a/../lp/offer" })).page?.cta.href).toBe("/lp/offer");
+  });
+
   it.each([
     ["draft", true],
     ["ended", false],

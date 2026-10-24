@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { requireVendorOwner } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
-import { AUTOMATION_TRIGGERS, dryRunAutomationRule, materializeAutomationRecipe } from "@/lib/automation-workflow";
+import { AUTOMATION_TRIGGERS, dryRunAutomationRule, isSafeNewAutomationButtonUrl, materializeAutomationRecipe } from "@/lib/automation-workflow";
 import { getDb } from "@/lib/db";
 
 const PATH = "/settings/automations";
@@ -20,7 +20,7 @@ function lineAction(form: FormData): Record<string, unknown> | null {
   const buttonLabel = text(form, "buttonLabel");
   const buttonUrl = text(form, "buttonUrl");
   if (!message || message.length > 1500 || (buttonLabel && !buttonUrl)) throw new Error("invalid");
-  if (buttonUrl && !["{{voucher_url}}", "{{consultation_url}}", "{{webinar_url}}"].includes(buttonUrl) && !/^https:\/\//i.test(buttonUrl)) throw new Error("invalid");
+  if (!isSafeNewAutomationButtonUrl(buttonUrl)) throw new Error("invalid_button_url");
   return { type: "line_push", message, buttonLabel: buttonLabel || null, buttonUrl: buttonUrl || null };
 }
 
@@ -121,7 +121,7 @@ export async function createAutomationRuleAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireVendorOwner();
   let parsed: ReturnType<typeof parseRule>;
-  try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && error.message === "no_action" ? "no_action" : "invalid_rule"); }
+  try { parsed = parseRule(formData); } catch (error) { fail(error instanceof Error && (error.message === "no_action" || error.message === "invalid_button_url") ? error.message : "invalid_rule"); }
   const productId = parsed.actions.find((a) => a.type === "issue_repurchase_voucher")?.productId;
   if (productId && !(await getDb().product.findFirst({ where: { id: String(productId), vendorId: auth.vendor.id, isActive: true }, select: { id: true } }))) fail("invalid_product");
   const created = await getDb().automationRule.create({ data: { vendorId: auth.vendor.id, name: parsed.name, trigger: parsed.trigger, condition: parsed.condition as Prisma.InputJsonValue, actions: parsed.actions as Prisma.InputJsonArray } });

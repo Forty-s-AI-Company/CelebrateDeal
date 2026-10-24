@@ -16,7 +16,7 @@ vi.mock("@/lib/line-notification", () => ({
   stableLineIdempotencyKey: mocks.stableLineIdempotencyKey,
 }));
 
-import { AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationConditionMatches, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
+import { AUTOMATION_BUTTON_URL_ERROR_MESSAGE, AUTOMATION_RECIPES, AUTOMATION_TRIGGERS, automationConditionMatches, isSafeNewAutomationButtonUrl, automationCustomerKeyHash, dispatchAutomationEvent, dispatchFormNoShowAutomationsForLive, dispatchPaymentPaidAutomationByOrder, dryRunAutomationRule, maskAutomationTarget, materializeAutomationRecipe, parseAutomationRule } from "@/lib/automation-workflow";
 
 const event = {
   vendorId: "vendor-1",
@@ -57,6 +57,22 @@ describe("smart automation workflow engine", () => {
     })).toBeNull();
     expect(automationConditionMatches({ type: "order_amount_gte", amountCents: 10_000 }, event)).toBe(true);
     expect(automationConditionMatches({ type: "watch_seconds_gte", seconds: 60 }, event)).toBe(false);
+  });
+
+  it("rejects phishing-looking LINE button URLs for new rules but keeps stored rules sendable", () => {
+    for (const url of ["https://brand.example@evil.example", "https://user:pass@evil.example/", "https://:@evil.example", "https:///evil.example", "https:evil.example", "http://evil.example", "javascript:alert(1)"]) {
+      expect(isSafeNewAutomationButtonUrl(url)).toBe(false);
+    }
+    for (const url of [null, undefined, "", "{{voucher_url}}", "{{consultation_url}}", "{{webinar_url}}", "https://shop.example/offer"]) {
+      expect(isSafeNewAutomationButtonUrl(url)).toBe(true);
+    }
+    // A rule saved before the create-time check still parses at send time.
+    expect(parseAutomationRule({
+      id: "legacy-rule",
+      condition: { type: "always" },
+      actions: [{ type: "line_push", message: "舊規則", buttonLabel: "查看", buttonUrl: "https://brand.example@shop.example/offer" }],
+    })).not.toBeNull();
+    expect(AUTOMATION_BUTTON_URL_ERROR_MESSAGE).toContain("HTTPS");
   });
 
   it("materializes all four recipes and evaluates dry-runs without side effects", () => {

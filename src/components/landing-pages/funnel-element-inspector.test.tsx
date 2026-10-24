@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { FunnelElementInspector, inspectorSectionFor } from "@/components/landing-pages/funnel-element-inspector";
+import { FunnelElementInspector, inspectorActionHrefError, inspectorSectionFor, inspectorUrlFieldError } from "@/components/landing-pages/funnel-element-inspector";
 import { getFunnelElementInspectorDefinition } from "@/lib/funnel-element-inspector";
 import type { FunnelNode } from "@/lib/funnel-page-document";
 
@@ -37,5 +37,39 @@ describe("FunnelElementInspector", () => {
     const byId = Object.fromEntries(fields.map((field) => [field.id, inspectorSectionFor(field)]));
     expect(byId).toMatchObject({ text: "content", fontSize: "typography", lineHeight: "typography", textAlign: "typography", padding: "size", margin: "size", width: "size", visible: "advanced", id: "advanced" });
     expect(inspectorSectionFor({ id: "textColor", label: "文字顏色", group: "design", kind: "text", target: "style" })).toBe("color");
+  });
+
+  it.each(["/\\evil.example", "/\t/evil.example", "//evil.example", "https://app.example@evil.example", "javascript:alert(1)"])("以繁中錯誤訊息拒絕會導向站外的動作網址 %s，且無法套用", (href) => {
+    const node: FunnelNode = { ...button, actions: [{ type: "open_url", href, newTab: false }] };
+    const html = renderToStaticMarkup(<FunnelElementInspector node={node} onCommand={() => undefined} />);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("網址只接受 HTTPS 網址、本站路徑（以單一 / 開頭，不可接 / 或 \\）或頁面錨點（#）。");
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toMatch(/<button type="button" disabled=""[^>]*>套用動作<\/button>/u);
+    expect(inspectorActionHrefError({ type: "open_url", href })).not.toBeNull();
+    expect(inspectorActionHrefError({ type: "download", href })).not.toBeNull();
+  });
+
+  it("合法的動作網址不顯示錯誤", () => {
+    for (const href of ["/lp/shop/order?utm_source=line", "#pricing", "https://example.com/offer", ""]) {
+      expect(inspectorActionHrefError({ type: "open_url", href })).toBeNull();
+    }
+    const node: FunnelNode = { ...button, actions: [{ type: "open_url", href: "/lp/shop", newTab: false }] };
+    const html = renderToStaticMarkup(<FunnelElementInspector node={node} onCommand={() => undefined} />);
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toMatch(/disabled=""[^>]*>套用動作/u);
+  });
+
+  it("圖片、影片與分享網址欄位標示不安全的值", () => {
+    const image: FunnelNode = { ...button, id: "hero_image", type: "image", props: { src: "/\\evil.example/a.png" } };
+    const html = renderToStaticMarkup(<FunnelElementInspector node={image} onCommand={() => undefined} />);
+    expect(html).toContain("網址只接受 HTTPS 網址或本站路徑（以單一 / 開頭，不可接 / 或 \\）。頁面上不會顯示這個網址。");
+    const field = (type: FunnelNode["type"], id: string) => getFunnelElementInspectorDefinition(type).fields.find((item) => item.id === id)!;
+    expect(inspectorUrlFieldError(field("image", "src"), "/images/a.png")).toBeNull();
+    expect(inspectorUrlFieldError(field("image", "src"), "#top")).not.toBeNull();
+    expect(inspectorUrlFieldError(field("video", "poster"), "https://user@evil.example/p.png")).not.toBeNull();
+    expect(inspectorUrlFieldError(field("x_share_button", "url"), "/\\evil.example")).not.toBeNull();
+    expect(inspectorUrlFieldError(field("x_share_button", "url"), "https://example.com/post")).toBeNull();
+    expect(inspectorUrlFieldError(field("text", "text"), "/\\not-a-url-field")).toBeNull();
   });
 });

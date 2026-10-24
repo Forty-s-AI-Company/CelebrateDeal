@@ -26,6 +26,22 @@ describe("automation actions", () => { it("requires CSRF and writes tenant-scope
     await expect(createAutomationRuleAction(freeOrder)).rejects.toThrow("redirect:/settings/automations?error=invalid_rule");
   });
 
+  it.each(["https://brand.example@evil.example/offer", "https://user:pass@evil.example", "https://:@evil.example", "https:///evil.example", "http://evil.example", "javascript:alert(1)", "/\\evil.example"])("rejects the LINE button URL %s with a dedicated error and writes nothing", async (buttonUrl) => {
+    const f = form();
+    f.set("buttonLabel", "立即查看");
+    f.set("buttonUrl", buttonUrl);
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?error=invalid_button_url");
+    expect(runtime.db.automationRule.create).not.toHaveBeenCalled();
+  });
+
+  it.each(["https://shop.example/offer?x=1", "{{voucher_url}}", "{{webinar_url}}"])("accepts the LINE button URL %s", async (buttonUrl) => {
+    const f = form();
+    f.set("buttonLabel", "立即查看");
+    f.set("buttonUrl", buttonUrl);
+    await expect(createAutomationRuleAction(f)).rejects.toThrow("redirect:/settings/automations?updated=created");
+    expect(runtime.db.automationRule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actions: [expect.objectContaining({ type: "line_push", buttonUrl })] }) }));
+  });
+
   it("creates a tenant-scoped built-in recipe and dry-runs only an owned rule", async () => {
     runtime.db.product.findFirst.mockResolvedValue({ id: "p1" });
     const recipe = new FormData();

@@ -1,5 +1,7 @@
 "use client";
 
+import { safeContentHref } from "@/lib/safe-url";
+
 const ALLOWED_TAGS = new Set(["a", "b", "blockquote", "br", "code", "div", "em", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "span", "strong", "ul"]);
 const VOID_TAGS = new Set(["br", "hr", "img"]);
 
@@ -7,10 +9,9 @@ function escapeAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+/** href/src values keep only same-origin paths, anchors and HTTPS (rules in `@/lib/safe-url`). */
 function safeUrl(value: string): string | null {
-  const trimmed = value.trim();
-  if ((trimmed.startsWith("/") && !trimmed.startsWith("//")) || trimmed.startsWith("#")) return trimmed;
-  try { return new URL(trimmed).protocol === "https:" ? trimmed : null; } catch { return null; }
+  return safeContentHref(value);
 }
 
 export function sanitizeFunnelHtml(input: string): string {

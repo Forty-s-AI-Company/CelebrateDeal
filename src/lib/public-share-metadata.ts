@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { getCanonicalAppUrl } from "@/lib/app-url";
+import { isSafeInternalPath } from "@/lib/safe-url";
 
 const DESCRIPTION_LIMIT = 160;
 
@@ -22,7 +23,7 @@ export function shareImageUrl(raw: string | null | undefined) {
   try {
     const url = /^https?:\/\//i.test(value)
       ? new URL(value)
-      : value.startsWith("/") && !value.startsWith("//")
+      : isSafeInternalPath(value)
         ? new URL(value, getCanonicalAppUrl())
         : null;
     return url && (url.protocol === "https:" || url.protocol === "http:") ? url.toString() : undefined;

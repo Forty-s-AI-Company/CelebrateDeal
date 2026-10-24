@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import { renderTeamFunnelPageText } from "@/lib/team-funnel-pages";
+import { isSafeInternalPath } from "@/lib/safe-url";
 import {
   parseSafeTeamFunnelProductUrl,
   resolveTeamFunnelPartnerProfile,
@@ -293,16 +294,19 @@ function isActiveMembership(member: PublicMembership) {
   return member.status === "ACTIVE" && member.leftAt === null && member.vendorMember.status === "active" && member.vendorMember.deactivatedAt === null;
 }
 
+/**
+ * A CTA is either a same-origin path (shared rule in `@/lib/safe-url`, which also
+ * rejects dot segments that normalize to "//host") or a safe product URL. The
+ * normalized path is emitted; isSafeInternalPath guarantees it is not "//…".
+ */
 function parseSafePublicHref(value: string | null | undefined) {
   if (!value) return null;
   if (value.startsWith("/")) {
-    try {
-      const origin = "https://public-page.invalid";
-      const url = new URL(value, origin);
-      if (url.origin === origin) return `${url.pathname}${url.search}${url.hash}`;
-    } catch {
-      return null;
-    }
+    if (!isSafeInternalPath(value)) return null;
+    const origin = "https://public-page.invalid";
+    const url = new URL(value, origin);
+    const normalized = `${url.pathname}${url.search}${url.hash}`;
+    return url.origin === origin && !normalized.startsWith("//") ? normalized : null;
   }
   return parseSafeTeamFunnelProductUrl(value);
 }
