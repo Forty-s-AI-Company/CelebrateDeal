@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { FunnelWebinarExperience, type WebinarExperienceResource } from "@/components/landing-pages/funnel-webinar-experience";
 import { createGoalFunnelStepPages } from "./funnel-goal-step-pages";
+import { findFunnelContrastIssues } from "./funnel-design-contrast";
 import { FUNNEL_CAPABILITIES, parsePageDocument, type FunnelNode } from "./funnel-page-document";
 import {
   FUNNEL_TEMPLATE_GALLERY,
@@ -143,29 +144,94 @@ describe("funnel template gallery", () => {
   });
 });
 
-// 在新增課程銷講模板之前，以 master 的實作計算出的內容雜湊；任何既有模板的輸出改變都會讓這裡失敗。
-const LEGACY_TEMPLATE_HASHES: Record<string, string> = {
-  "webinar-broadcast": "784a2b7cd39e1286bdd14a185601bb479281a186d190177ec703e8fd6ad0f769",
-  "webinar-thank-you": "f28e222e617a0783ed1321fc87d4f019398aafe9c6ba3c4847a7f292e8be8536",
-  "webinar-registration": "196db99560f5a613556d6a8ebbdd7e53cb176f9c4df1a4a4a4756b322e9d7a76",
-  "sell-product-checkout": "87c1ac5faf610440b42afd7ae52e7e2f3c15bdf25970de12a1be40bfae8e61ff",
-  "sell-simple-checkout": "08c4ce2d8804802a0fb0018d648a0b335c9951ee53b59a61f7b39c78f2871c53",
-  "sell-content-subscription": "78775c66c4f9d976875a569a1796d6cccf705df50581dfcc473c7a754734a944",
-  "audience-volunteer": "23dee2ade5e0b6f377439c8b1c4db510a166338a5fe484ffd23b60a1190eae1d",
-  "audience-charity-event": "6cd6df2f9debacf17157f16b14057b25de1ff6968a1bcaab2d2456b1218a2237",
-  "audience-environment": "9f7f3499298d889ae492bb07767c77a4b8d20dac4976eb5fbb014e0b4c07d671",
-  "custom-privacy": "6f7f5966cbc33b2c360b7cbe12299e28b16f44320e61995b1d5ac019dbcdeb41",
-  "custom-terms": "b1539a67757987e63dcf6886c17a6eadd19eff73ad77a9d0b4f707ef43a81234",
-  "custom-brand-info": "ae58b0b34f72de1f6285a9c76317c454471bc7c85c16ea42f886b4753d05586c",
+// R3 起模板會調整樣式（字級、間距、配色），但節點 ID、型別與順序必須維持不變：
+// 已儲存的頁面、分析與 A/B 設定都以這些 ID 為依據。雜湊以 R3 之前的實作計算。
+const TEMPLATE_NODE_ID_HASHES: Record<string, string> = {
+  "webinar-broadcast": "93c571e1a2136378fca8757c1344bd9f37c9e5cc01de4d41ae26489264684ce3",
+  "webinar-thank-you": "0ca1a349b5fc1982e36ae384a0fb8ea3d320199237d0fd2f6f293429a8b78eb2",
+  "webinar-registration": "88e9f41ae0890e3adf007b538ac48a42d5aabb3f768d498558ccb00cfd3bd92d",
+  "sell-product-checkout": "dcfbb85a88daae5fc98900cbec0fe80a1672c45b2e21e7a37a9eef9176785dce",
+  "sell-simple-checkout": "dcfbb85a88daae5fc98900cbec0fe80a1672c45b2e21e7a37a9eef9176785dce",
+  "sell-content-subscription": "f0db8efdcd8fe81f37542d13012f74b2f34b28c0dd937ec6e8d1b295e8d76364",
+  "audience-volunteer": "69eb486cc73feda134ae82a4f0df5db05430df2bb95e2454a28d432732bcce2f",
+  "audience-charity-event": "69eb486cc73feda134ae82a4f0df5db05430df2bb95e2454a28d432732bcce2f",
+  "audience-environment": "69eb486cc73feda134ae82a4f0df5db05430df2bb95e2454a28d432732bcce2f",
+  "custom-privacy": "326e011a470c219c8b6ad481321483802ce71d9de435e6ebfa89aba204c37d5c",
+  "custom-terms": "326e011a470c219c8b6ad481321483802ce71d9de435e6ebfa89aba204c37d5c",
+  "custom-brand-info": "67bc964e06684362b31d46f5c297b54067c7003e9b6bf8ab929084359487582f",
+  "audience-course-workbook": "8359d805c3984c8f752223de0444e1adaba3e9f3e9499915513819dd27a19b77",
+  "audience-course-consultation": "33391bdf22a392210f1020dd9d9ee80cc969ddbf8be9d3a536c78e4502b2a310",
+  "audience-course-lesson": "33391bdf22a392210f1020dd9d9ee80cc969ddbf8be9d3a536c78e4502b2a310",
+  "webinar-course-registration": "a22d5a018681e693165a99fbe752eb54116070b4c0c68e09ae49c87a4842c410",
+  "webinar-workshop-registration": "caf9714fe0e7237dbc354ff28af52786592348cec9829a56eb50705ca094c5b7",
+  "webinar-strategy-registration": "caf9714fe0e7237dbc354ff28af52786592348cec9829a56eb50705ca094c5b7",
 };
 
 describe("既有模板相容性", () => {
-  it("原本 12 個模板的中繼資料與節點輸出與新增前完全相同", () => {
-    for (const [id, expected] of Object.entries(LEGACY_TEMPLATE_HASHES)) {
-      const template = getFunnelTemplateGalleryItem(id)!;
-      const { build, ...meta } = template;
-      const actual = createHash("sha256").update(JSON.stringify({ meta, nodes: build("compat") })).digest("hex");
+  it("每個模板的節點 ID、型別與順序與 R3 之前完全相同", () => {
+    expect(Object.keys(TEMPLATE_NODE_ID_HASHES).sort()).toEqual(FUNNEL_TEMPLATE_GALLERY.map((template) => template.id).sort());
+    for (const [id, expected] of Object.entries(TEMPLATE_NODE_ID_HASHES)) {
+      const nodes = flatten(getFunnelTemplateGalleryItem(id)!.build("compat"));
+      const actual = createHash("sha256").update(nodes.map((node) => `${node.id}:${node.type}`).join("\n")).digest("hex");
       expect(actual, id).toBe(expected);
+    }
+  });
+
+  it("模板 ID、分類與預覽資訊維持不變", () => {
+    expect(FUNNEL_TEMPLATE_GALLERY.map((template) => `${template.id}|${template.referenceId}|${template.goal}|${template.status}|${template.preview.sectionCount}`)).toMatchInlineSnapshot(`
+      [
+        "webinar-broadcast|celebratedeal-webinar-broadcast|webinar|available|2",
+        "webinar-thank-you|celebratedeal-webinar-thank-you|webinar|available|3",
+        "webinar-registration|celebratedeal-webinar-registration|webinar|available|3",
+        "sell-product-checkout|25969|sell|limited|2",
+        "sell-simple-checkout|25963|sell|limited|2",
+        "sell-content-subscription|25957|sell|limited|2",
+        "audience-volunteer|26050|audience|available|5",
+        "audience-charity-event|26049|audience|available|5",
+        "audience-environment|26048|audience|available|5",
+        "custom-privacy|3012|custom|available|1",
+        "custom-terms|3011|custom|available|1",
+        "custom-brand-info|3010|custom|available|4",
+        "audience-course-workbook|celebratedeal-course-workbook|audience|available|3",
+        "audience-course-consultation|celebratedeal-course-consultation|audience|available|4",
+        "audience-course-lesson|celebratedeal-course-lesson|audience|available|4",
+        "webinar-course-registration|celebratedeal-webinar-course|webinar|available|4",
+        "webinar-workshop-registration|celebratedeal-webinar-workshop|webinar|available|5",
+        "webinar-strategy-registration|celebratedeal-webinar-strategy|webinar|available|5",
+      ]
+    `);
+  });
+});
+
+describe("模板設計品質（R3）", () => {
+  it.each(FUNNEL_TEMPLATE_GALLERY)("$id 的文字、標題與按鈕顏色對比達 WCAG AA", (template) => {
+    expect(findFunnelContrastIssues(previewFunnelTemplate(template.id))).toEqual([]);
+  });
+
+  it.each(FUNNEL_TEMPLATE_GALLERY)("$id 有清楚的標題層級與手機版區段內距", (template) => {
+    const document = previewFunnelTemplate(template.id);
+    const nodes = flatten(document.root);
+    const levels = nodes.filter((node) => node.type === "headline").map((node) => node.props.level);
+    expect(levels.filter((level) => level === "h1").length).toBeLessThanOrEqual(1);
+    expect(levels.length).toBeGreaterThan(0);
+    expect(document.root.every((section) => typeof section.overrides.mobile?.style?.padding === "string")).toBe(true);
+    expect(document.settings.typography).toMatchObject({ headingColor: "#0f172a", bodyLineHeight: 1.7 });
+  });
+
+  it("主視覺使用設計過的插圖而不是空白占位圖", () => {
+    for (const id of ["audience-volunteer", "audience-charity-event", "audience-environment", "custom-brand-info", "webinar-registration"]) {
+      const srcs = flatten(previewFunnelTemplate(id).root).filter((node) => node.type === "image").map((node) => String(node.props.src));
+      expect(srcs.length, id).toBeGreaterThan(0);
+      expect(srcs.every((src) => src.startsWith("/funnel-illustrations/")), id).toBe(true);
+    }
+  });
+
+  it("模板中的圖片都是站內檔案且確實存在", () => {
+    for (const template of FUNNEL_TEMPLATE_GALLERY) {
+      for (const src of flatten(previewFunnelTemplate(template.id).root).filter((node) => node.type === "image").map((node) => String(node.props.src))) {
+        expect(src.startsWith("/") && !src.startsWith("//"), src).toBe(true);
+        expect(existsSync(path.join(process.cwd(), "public", src)), src).toBe(true);
+      }
     }
   });
 });
