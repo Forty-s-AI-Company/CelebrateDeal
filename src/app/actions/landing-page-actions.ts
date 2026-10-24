@@ -95,6 +95,8 @@ function failure(error: unknown): LandingPageActionState {
     if (error.message === "landing_page_webinar_steps_required") return { status: "error", message: "Webinar 必須各有一個報名頁、感謝頁與播放頁，請先補齊必要步驟再發布。" };
     if (error.message === "landing_page_webinar_resources_required") return { status: "error", message: "Webinar 尚未具備可發布的資源。請選擇同專案的報名表與 Live，確認 Live 使用相同表單，且來源影片已處理完成。" };
     if (error.message === "landing_page_webinar_schedule_required") return { status: "error", message: "請先設定 Webinar 的開始與結束時間，再重新發布。" };
+    if (error.message === "landing_page_audience_live_requires_project") return { status: "error", message: "這個名單型一頁式網站綁定了直播，直播要等所屬專案發布後才能公開。請先移除直播綁定，或先發布專案，再發布網站。" };
+    if (error.message === "landing_page_lead_form_retry") return { status: "error", message: "建立名單表單時剛好與另一個操作衝突，網站尚未發布。請再按一次發布。" };
     return { status: "error", message: "請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。" };
   }
   return { status: "error", message: "暫時無法完成操作；內容仍保留，請稍後再試。" };
@@ -147,7 +149,7 @@ export async function landingPageAction(
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再發布。" };
       const published = await publishLandingPage(id, expectedRevision);
-      return successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published);
+      return { ...await successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published), formId: published.formId };
     }
 
     if (command === "unpublish") {
