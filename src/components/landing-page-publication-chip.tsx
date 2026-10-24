@@ -42,7 +42,7 @@ export function PublicationChip({ published, publication, slug, onManage, action
   const state = publicationChipState(published, publication);
   return <div ref={root} className="relative">
     <button type="button" aria-expanded={open} aria-controls={id} aria-label={`發布狀態：${state.label}`} title="查看發布狀態" onClick={() => setOpen((value) => !value)} className={`inline-flex h-8 max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${toneClass[state.tone]}`}>
-      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${dotClass[state.tone]}`} /><span className="truncate">{state.label}</span><ChevronDown size={14} aria-hidden className="shrink-0" />
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${dotClass[state.tone]}`} /><span className="truncate max-sm:sr-only">{state.label}</span><ChevronDown size={14} aria-hidden className="shrink-0" />
     </button>
     {open ? <div id={id} role="region" aria-label="公開網址狀態" className="absolute top-10 right-0 z-50 w-80 max-w-[calc(100vw-1.5rem)] rounded-xl border border-slate-200 bg-white p-4 text-left text-sm text-slate-800 shadow-xl">
       <p className="font-bold text-slate-950">{published ? "這個網站已發布" : "目前是草稿"}</p>

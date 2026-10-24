@@ -12,8 +12,8 @@ type IconComponent = ComponentType<{ size?: number; "aria-hidden"?: boolean; cla
 
 const iconButton = "inline-flex h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent aria-pressed:bg-blue-50 aria-pressed:text-blue-800";
 
-function ToolbarButton({ label, icon: Icon, onClick, disabled, pressed, showLabel = false, labelClassName = "hidden xl:inline" }: { label: string; icon: IconComponent; onClick: () => void; disabled?: boolean; pressed?: boolean; showLabel?: boolean; labelClassName?: string }) {
-  return <button type="button" aria-label={label} title={label} aria-pressed={pressed} disabled={disabled} onClick={onClick} className={iconButton}>
+function ToolbarButton({ label, icon: Icon, onClick, disabled, pressed, showLabel = false, labelClassName = "hidden xl:inline", className = "" }: { label: string; icon: IconComponent; onClick: () => void; disabled?: boolean; pressed?: boolean; showLabel?: boolean; labelClassName?: string; className?: string }) {
+  return <button type="button" aria-label={label} title={label} aria-pressed={pressed} disabled={disabled} onClick={onClick} className={`${iconButton} ${className}`}>
     <Icon size={18} aria-hidden />{showLabel ? <span className={labelClassName}>{label}</span> : null}
   </button>;
 }
@@ -62,7 +62,7 @@ export function FunnelEditorToolbar({ chrome, history, views, view, onToggleView
   const saveState = chrome?.saveState ?? "saved";
   return <header aria-label="編輯器工具列" className="relative z-40 flex h-14 shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-2 shadow-sm sm:gap-2 sm:px-3">
     <div className="flex shrink-0 items-center gap-0.5">
-      {chrome ? <ToolbarButton label="返回管理頁" icon={ArrowLeft} onClick={chrome.onExit} /> : null}
+      {chrome ? <ToolbarButton label="返回管理頁" icon={ArrowLeft} onClick={chrome.onExit} className="max-sm:hidden" /> : null}
       {history ? <>
         <ToolbarButton label="復原" icon={Undo2} disabled={previewing || !history.canUndo} onClick={history.onUndo} />
         <ToolbarButton label="重做" icon={Redo2} disabled={previewing || !history.canRedo} onClick={history.onRedo} />
@@ -70,7 +70,7 @@ export function FunnelEditorToolbar({ chrome, history, views, view, onToggleView
       {views.length ? <span aria-hidden className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" /> : null}
       {views.includes("popups") ? <ToolbarButton label="彈出視窗" icon={SquareStack} showLabel pressed={view === "popups"} disabled={previewing} onClick={() => onToggleView("popups")} /> : null}
       {views.includes("page") ? <ToolbarButton label="頁面設定" icon={Settings} showLabel pressed={view === "page"} disabled={previewing} onClick={() => onToggleView("page")} /> : null}
-      {views.includes("versions") ? <ToolbarButton label="版本紀錄" icon={History} showLabel labelClassName="hidden 2xl:inline" pressed={view === "versions"} disabled={previewing} onClick={() => onToggleView("versions")} /> : null}
+      {views.includes("versions") ? <ToolbarButton label="版本紀錄" icon={History} showLabel labelClassName="hidden 2xl:inline" className="max-sm:hidden" pressed={view === "versions"} disabled={previewing} onClick={() => onToggleView("versions")} /> : null}
     </div>
     <div className="min-w-0 flex-1 px-1">
       {previewing ? <p className="truncate text-center text-sm font-bold text-slate-900">預覽模式：顯示目前編輯中的內容（含未儲存變更）</p> : <Breadcrumb crumbs={crumbs} context={context} title={chrome?.title ?? "編輯頁面"} onSelect={onSelectCrumb} />}
@@ -83,8 +83,8 @@ export function FunnelEditorToolbar({ chrome, history, views, view, onToggleView
       </div> : null}
       {onTogglePreview ? <ToolbarButton label={previewing ? "返回編輯" : "預覽"} icon={previewing ? Pencil : Eye} showLabel labelClassName="hidden md:inline" pressed={previewing} onClick={onTogglePreview} /> : null}
       {chrome ? <>
-        <button type="button" disabled={saveState !== "dirty" || chrome.saveBlocked} onClick={chrome.onSave} title={chrome.saveBlocked && saveState === "dirty" ? "請先修正設定再儲存" : "儲存（Ctrl+S）"} className="inline-flex h-9 min-w-[4.5rem] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-700 px-3 text-sm font-bold text-white transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:bg-blue-100 disabled:text-blue-800">{saveLabel(saveState)}</button>
-        <button type="button" onClick={chrome.onExit} className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-3 text-sm font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">離開</button>
+        <button type="button" disabled={saveState !== "dirty" || chrome.saveBlocked} onClick={chrome.onSave} title={chrome.saveBlocked && saveState === "dirty" ? "請先修正設定再儲存" : "儲存（Ctrl+S）"} className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-700 px-2.5 sm:min-w-[4.5rem] sm:px-3 text-sm font-bold text-white transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:bg-blue-100 disabled:text-blue-800">{saveLabel(saveState)}</button>
+        <button type="button" onClick={chrome.onExit} className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-2.5 sm:px-3 text-sm font-bold text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">離開</button>
         <span role="status" className="sr-only">{saveAnnouncement(saveState)}</span>
       </> : null}
     </div>
