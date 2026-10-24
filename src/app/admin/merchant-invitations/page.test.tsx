@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ requireFinanceAdmin: vi.fn(), recent: vi.fn(), actionState: null as unknown }));
 
 vi.mock("@/lib/auth", () => ({ requireFinanceAdmin: mocks.requireFinanceAdmin }));
-vi.mock("@/lib/merchant-registration-invite-records", () => ({ recentMerchantInvitations: mocks.recent }));
+vi.mock("@/lib/merchant-registration-invite-records", () => ({ recentMerchantInvitations: mocks.recent, MERCHANT_INVITE_ACTIVE_LIMIT: 500, MERCHANT_INVITE_HISTORY_LIMIT: 30 }));
 vi.mock("@/app/actions/merchant-invitation-actions", () => ({ createMerchantInvitationAction: vi.fn(), revokeMerchantInvitationAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="synthetic" /> }));
 vi.mock("react", async (importOriginal) => {
@@ -30,7 +30,7 @@ beforeEach(() => {
   mocks.actionState = null;
   vi.stubEnv("REGISTRATION_MODE", "");
   mocks.requireFinanceAdmin.mockResolvedValue(admin());
-  mocks.recent.mockResolvedValue([]);
+  mocks.recent.mockResolvedValue({ items: [], activeTruncated: false });
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -74,13 +74,16 @@ describe("/admin/merchant-invitations", () => {
   });
 
   it("lists masked invitations with status and a revoke form only for pending ones", async () => {
-    mocks.recent.mockResolvedValue([
+    mocks.recent.mockResolvedValue({ activeTruncated: false, items: [
       { jti: "jti-registered-000001", createdAt: new Date("2026-10-24T02:00:00.000Z"), maskedEmail: "d***@example.test", expiresAt: "2026-11-07T02:00:00.000Z", status: "registered" },
       { jti: "jti-pending-0000000001", createdAt: new Date("2026-10-24T03:00:00.000Z"), maskedEmail: "p***@example.test", expiresAt: "2099-01-01T00:00:00.000Z", status: "pending" },
       { jti: "jti-revoked-0000000001", createdAt: new Date("2026-10-24T04:00:00.000Z"), maskedEmail: "r***@example.test", expiresAt: "2026-11-07T04:00:00.000Z", status: "revoked" },
       { jti: "jti-expired-0000000001", createdAt: new Date("2026-10-01T02:00:00.000Z"), maskedEmail: null, expiresAt: null, status: "expired" },
-    ]);
+    ] });
     const html = await render();
+    expect(html).toContain("近 14 天內產生、可能仍有效的邀請全部列出，另附最近 30 筆較早的紀錄");
+    expect(html).toContain("撤銷後請確認狀態不是「已註冊」");
+    expect(html).not.toContain("超過 500 筆");
     const row = (status: string) => html.slice(html.indexOf(`data-invitation-status="${status}"`), html.indexOf("</tr>", html.indexOf(`data-invitation-status="${status}"`)));
     expect(row("registered")).toContain("d***@example.test");
     expect(row("registered")).toContain("已註冊");
@@ -95,6 +98,12 @@ describe("/admin/merchant-invitations", () => {
     expect(row("expired")).toContain("已過期");
     expect(row("expired")).toContain("—");
     expect(html.match(/name="jti"/gu)).toHaveLength(1);
+  });
+
+  it("warns when more invitations may still be valid than the page lists", async () => {
+    mocks.recent.mockResolvedValue({ items: [], activeTruncated: true });
+    const html = await render();
+    expect(html).toContain("仍可能有效的邀請超過 500 筆，這裡只列出最新的 500 筆");
   });
 
   it("confirms a revocation and explains an unknown one", async () => {

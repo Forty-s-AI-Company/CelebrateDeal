@@ -16,7 +16,7 @@ const policy = merchantRegistrationPolicyVersions();
 function form(extra: Record<string, string | undefined> = {}) { const data = new FormData(); for (const [k,v] of Object.entries({ name: "Owner", workspaceName: "Workspace", email: "Owner@Example.test", password: "  synthetic password  ", acceptPolicies: "on", policyVersion: policy.consentVersion, ...extra })) if (v !== undefined) data.set(k,v); return data; }
 beforeEach(() => {
  vi.resetAllMocks(); mocks.limit.mockResolvedValue(null); mocks.hash.mockResolvedValue("synthetic-hash"); mocks.user.mockResolvedValue({id:"user-1"}); mocks.vendor.mockResolvedValue({id:"vendor-1"}); mocks.session.mockResolvedValue({token:"synthetic-session",expiresAt:new Date("2026-12-01")});
- mocks.transaction.mockImplementation(async (fn) => fn({user:{create:mocks.user},vendor:{create:mocks.vendor},vendorMember:{create:mocks.member},userOnboardingPreference:{create:mocks.preference},userPolicyConsent:{create:mocks.consent},auditLog:{create:mocks.audit}}));
+ mocks.transaction.mockImplementation(async (fn) => fn({user:{create:mocks.user},vendor:{create:mocks.vendor},vendorMember:{create:mocks.member},userOnboardingPreference:{create:mocks.preference},userPolicyConsent:{create:mocks.consent},auditLog:{create:mocks.audit,findFirst:mocks.revoked}}));
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 describe("workspace registration boundaries (REGISTRATION_MODE=open keeps the original behaviour)", () => {
@@ -145,6 +145,19 @@ describe("invite-only registration (closed beta default)", () => {
       select: { id: true },
     });
     noWrites();
+  });
+
+  it("re-checks revocation inside the transaction before creating the user", async () => {
+    const invite = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    // Not revoked at the first check; revoked by the time the transaction starts.
+    mocks.revoked.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "audit-revoked" });
+    await expect(registerAction(form({ invite: invite.token }))).rejects.toThrow(/^redirect:\/register\?error=invite_revoked$/u);
+    expect(mocks.revoked).toHaveBeenCalledTimes(2);
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.user).not.toHaveBeenCalled();
+    expect(mocks.vendor).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+    expect(mocks.session).not.toHaveBeenCalled();
   });
 
   it("does not query revocations for an invalid token", async () => {

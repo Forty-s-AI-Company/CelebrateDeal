@@ -49,6 +49,19 @@ async function resolveRegistrationInvite(formData: FormData) {
   return { inviteOnly, invite, retryQuery };
 }
 
+class InviteRevokedError extends Error {}
+
+/** Re-checked inside the provisioning transaction, right before any insert. */
+async function assertInviteNotRevoked(invite: { jti: string } | null, tx: Parameters<typeof isMerchantRegistrationInviteRevoked>[1]) {
+  if (!invite || await isMerchantRegistrationInviteRevoked(invite.jti, tx)) throw new InviteRevokedError();
+}
+
+function transactionFailurePath(error: unknown, failure: (error: string) => string) {
+  if (error instanceof InviteRevokedError) return "/register?error=invite_revoked";
+  const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+  return failure(duplicate ? "exists" : "temporarily_unavailable");
+}
+
 export async function registerAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const { inviteOnly, invite, retryQuery } = await resolveRegistrationInvite(formData);
@@ -84,6 +97,8 @@ export async function registerAction(formData: FormData) {
   try {
     // Ownership, onboarding state and audit become visible together or roll back together.
     created = await getDb().$transaction(async (tx) => {
+      // Narrows (does not close) the window between the first check and a revocation.
+      if (inviteOnly) await assertInviteNotRevoked(usedInvite, tx);
       const user = await tx.user.create({ data: { name: input.name, email: input.email, passwordHash } });
       const vendor = await tx.vendor.create({ data: { name: input.workspaceName, slug: `${slugBase}-${randomUUID()}`, email: input.email, passwordHash } });
       await tx.vendorMember.create({ data: { vendorId: vendor.id, userId: user.id, role: "owner", status: "active" } });
@@ -94,8 +109,7 @@ export async function registerAction(formData: FormData) {
       return { userId: user.id, vendorId: vendor.id };
     });
   } catch (error) {
-    const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
-    redirect(failure(duplicate ? "exists" : "temporarily_unavailable"));
+    redirect(transactionFailurePath(error, failure));
   }
   try {
     const session = await createUserSession({ ...created, ipAddress: incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: incoming.get("user-agent") });

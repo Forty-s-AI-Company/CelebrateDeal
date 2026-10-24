@@ -7,7 +7,12 @@ import { EmptyState, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
 import { formatInvitationTime, MERCHANT_INVITATIONS_PATH } from "@/lib/merchant-invitation-admin";
 import { MERCHANT_REGISTRATION_INVITE_TTL_DAYS } from "@/lib/merchant-registration-invite";
-import { recentMerchantInvitations, type MerchantInvitationListItem } from "@/lib/merchant-registration-invite-records";
+import {
+  MERCHANT_INVITE_ACTIVE_LIMIT,
+  MERCHANT_INVITE_HISTORY_LIMIT,
+  recentMerchantInvitations,
+  type MerchantInvitationListItem,
+} from "@/lib/merchant-registration-invite-records";
 import { recentMfaStatus } from "@/lib/recent-mfa";
 import { registrationMode } from "@/lib/registration-mode";
 
@@ -27,7 +32,7 @@ export default async function AdminMerchantInvitationsPage({ searchParams }: { s
   const params = await searchParams;
   const mode = registrationMode();
   const stepUpStatus = recentMfaStatus({ user, session });
-  const invitations = await recentMerchantInvitations();
+  const { items: invitations, activeTruncated } = await recentMerchantInvitations();
   const message = params.revoked ? "邀請已撤銷，這個連結不能再用來註冊。" : params.error ? ERRORS[params.error] ?? ERRORS.revoke_not_found : null;
 
   return (
@@ -46,7 +51,8 @@ export default async function AdminMerchantInvitationsPage({ searchParams }: { s
       <MerchantInvitationForm csrfField={<CsrfField />} />
       <section aria-labelledby="recent-merchant-invitations" className="mt-8">
         <h2 id="recent-merchant-invitations" className="mb-1 text-lg font-semibold text-slate-950">最近產生的邀請</h2>
-        <p className="mb-3 text-sm text-slate-600">為保護個資，這裡只顯示遮罩後的 Email。尚未註冊的邀請可以撤銷；已建立的帳號不受影響。</p>
+        <p className="mb-3 text-sm text-slate-600">{`近 ${MERCHANT_REGISTRATION_INVITE_TTL_DAYS} 天內產生、可能仍有效的邀請全部列出，另附最近 ${MERCHANT_INVITE_HISTORY_LIMIT} 筆較早的紀錄。為保護個資，只顯示遮罩後的 Email。尚未註冊的邀請可以撤銷；撤銷擋不住已送出的註冊，撤銷後請確認狀態不是「已註冊」。`}</p>
+        {activeTruncated ? <p role="alert" className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{`仍可能有效的邀請超過 ${MERCHANT_INVITE_ACTIVE_LIMIT} 筆，這裡只列出最新的 ${MERCHANT_INVITE_ACTIVE_LIMIT} 筆；較早的邀請無法在此撤銷，請聯絡工程端。`}</p> : null}
         {invitations.length === 0 ? <EmptyState title="還沒有產生過邀請" description="產生的邀請會記錄在稽核紀錄，並列在這裡。" /> : (
           <div className="overflow-x-auto rounded-lg border border-border bg-white">
             <table className="w-full min-w-[640px] text-left text-sm">

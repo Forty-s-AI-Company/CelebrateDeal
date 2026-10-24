@@ -50,7 +50,7 @@ describe("merchant invitation audit records (PostgreSQL)", () => {
     } });
     registrationAuditIds.push(registration.id);
 
-    const listed = await recentMerchantInvitations(new Date());
+    const { items: listed } = await recentMerchantInvitations(new Date());
     const status = Object.fromEntries(listed.filter((row) => jtis.includes(row.jti)).map((row) => [row.jti, row.status]));
     expect(status).toEqual({ [registered]: "registered", [revoked]: "revoked", [pending]: "pending", [expired]: "expired" });
     await expect(isMerchantRegistrationInviteRevoked(revoked)).resolves.toBe(true);

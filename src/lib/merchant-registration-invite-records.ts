@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { maskEmailRecipient } from "@/lib/email-delivery-pii";
-import { normalizeMerchantRegistrationEmail } from "@/lib/merchant-registration-invite";
+import { MERCHANT_REGISTRATION_INVITE_TTL_MS, normalizeMerchantRegistrationEmail } from "@/lib/merchant-registration-invite";
 import { MERCHANT_INVITATION_AUDIT_ACTION, MERCHANT_INVITATION_REVOKED_AUDIT_ACTION } from "@/lib/merchant-invitation-admin";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
@@ -13,8 +13,20 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
  */
 export const MERCHANT_INVITE_AUDIT_TARGET_TYPE = "MerchantRegistrationInvite";
 const EMAIL_HASH_PURPOSE = "merchant-invite-email-v1";
-const RECENT_LIMIT = 30;
+/** Older, already-expired invitations shown as history. */
+export const MERCHANT_INVITE_HISTORY_LIMIT = 30;
+/** Safety bound for invitations that may still be valid (created within one TTL). */
+export const MERCHANT_INVITE_ACTIVE_LIMIT = 500;
 
+/**
+ * Stored on each creation entry so a later question such as "was this address
+ * already invited?" or "which invitation went to this address?" can be
+ * answered by hashing the address the admin types, without ever keeping the
+ * plaintext in the append-only audit log. Nothing reads it yet. It is keyed
+ * (not a bare SHA-256) so the stored value cannot be checked against guessed
+ * addresses without the deployment secret, which in turn requires the CSRF
+ * key-separation fix (PR #485) to be deployed.
+ */
 export function merchantInviteEmailHash(email: string) {
   return createHmac("sha256", deriveSensitiveDataKey(EMAIL_HASH_PURPOSE))
     .update(normalizeMerchantRegistrationEmail(email))
@@ -58,16 +70,29 @@ export type MerchantInvitationListItem = {
   status: "registered" | "revoked" | "expired" | "pending";
 };
 
-/** Recent invitations with registration (by jti), revocation and expiry status. */
-export async function recentMerchantInvitations(now = new Date(), db: Pick<Db, "auditLog"> = getDb()): Promise<MerchantInvitationListItem[]> {
-  const entries = await db.auditLog.findMany({
-    where: { action: MERCHANT_INVITATION_AUDIT_ACTION, vendorId: null, targetType: MERCHANT_INVITE_AUDIT_TARGET_TYPE },
-    orderBy: { createdAt: "desc" },
-    take: RECENT_LIMIT,
-    select: { targetId: true, createdAt: true, after: true },
-  });
+export type MerchantInvitationList = {
+  items: MerchantInvitationListItem[];
+  /** True when more than MERCHANT_INVITE_ACTIVE_LIMIT invitations may still be valid. */
+  activeTruncated: boolean;
+};
+
+/**
+ * Every invitation created within one TTL (all that can still be valid, so all
+ * revocable ones are listed), then the latest older ones as history; each with
+ * registration (by jti), revocation and expiry status.
+ */
+export async function recentMerchantInvitations(now = new Date(), db: Pick<Db, "auditLog"> = getDb()): Promise<MerchantInvitationList> {
+  const base = { action: MERCHANT_INVITATION_AUDIT_ACTION, vendorId: null, targetType: MERCHANT_INVITE_AUDIT_TARGET_TYPE };
+  const windowStart = new Date(now.getTime() - MERCHANT_REGISTRATION_INVITE_TTL_MS);
+  const select = { targetId: true, createdAt: true, after: true } as const;
+  const [active, history] = await Promise.all([
+    db.auditLog.findMany({ where: { ...base, createdAt: { gte: windowStart } }, orderBy: { createdAt: "desc" }, take: MERCHANT_INVITE_ACTIVE_LIMIT + 1, select }),
+    db.auditLog.findMany({ where: { ...base, createdAt: { lt: windowStart } }, orderBy: { createdAt: "desc" }, take: MERCHANT_INVITE_HISTORY_LIMIT, select }),
+  ]);
+  const activeTruncated = active.length > MERCHANT_INVITE_ACTIVE_LIMIT;
+  const entries = [...active.slice(0, MERCHANT_INVITE_ACTIVE_LIMIT), ...history];
   const invitations = entries.flatMap((entry) => entry.targetId ? [{ ...entry, jti: entry.targetId }] : []);
-  if (invitations.length === 0) return [];
+  if (invitations.length === 0) return { items: [], activeTruncated };
   const jtis = invitations.map((invitation) => invitation.jti);
   const oldest = invitations.reduce((min, invitation) => invitation.createdAt < min ? invitation.createdAt : min, invitations[0]!.createdAt);
   const [revocations, registrations] = await Promise.all([
@@ -86,10 +111,11 @@ export async function recentMerchantInvitations(now = new Date(), db: Pick<Db, "
     const invite = entry.after && typeof entry.after === "object" && !Array.isArray(entry.after) ? (entry.after as Record<string, unknown>).registrationInvite : null;
     return readString(invite, "jti");
   }));
-  return invitations.map((invitation) => {
+  const items = invitations.map((invitation): MerchantInvitationListItem => {
     const expiresAt = readString(invitation.after, "expiresAt");
     const expired = expiresAt ? new Date(expiresAt) <= now : false;
     const status = registered.has(invitation.jti) ? "registered" : revoked.has(invitation.jti) ? "revoked" : expired ? "expired" : "pending";
     return { jti: invitation.jti, createdAt: invitation.createdAt, maskedEmail: readString(invitation.after, "maskedEmail"), expiresAt, status };
   });
+  return { items, activeTruncated };
 }
