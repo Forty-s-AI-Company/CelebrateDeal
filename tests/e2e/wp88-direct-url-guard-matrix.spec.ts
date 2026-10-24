@@ -80,7 +80,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
 
   // These counts are intentionally exact. A new protected page must update
   // this matrix, so it cannot silently evade direct-URL review.
-  expect(sourceFiles).toHaveLength(96);
+  expect(sourceFiles).toHaveLength(97);
   expect(familyCounts).toEqual({
     vendorContext: 7,
     vendorManagerMember: 2,
@@ -89,7 +89,7 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     vendorManager: 56,
     vendorFinance: 12,
     authenticated: 1,
-    platformFinance: 13,
+    platformFinance: 14,
   });
   const courseCommunityPage=path.join(workspaceRoot,"src","app","(app)","products","[id]","community","page.tsx");
   expect(sourceFiles).toContain(courseCommunityPage);
@@ -98,6 +98,10 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
   const vendorFeaturesPage = path.join(workspaceRoot, "src", "app", "admin", "vendor-features", "page.tsx");
   expect(sourceFiles).toContain(vendorFeaturesPage);
   expect(guardFor(readFileSync(vendorFeaturesPage, "utf8"))).toBe("platformFinance");
+  // Closed-beta merchant invitations are platform-admin only.
+  const merchantInvitationsPage = path.join(workspaceRoot, "src", "app", "admin", "merchant-invitations", "page.tsx");
+  expect(sourceFiles).toContain(merchantInvitationsPage);
+  expect(guardFor(readFileSync(merchantInvitationsPage, "utf8"))).toBe("platformFinance");
 
   const suffix = randomUUID().replace(/-/g, "");
   const vendor = await db.vendor.create({
@@ -179,10 +183,17 @@ test("WP-88 verifies every guarded page belongs to a browser-proven direct-URL g
     await expect(platformSession.page).toHaveURL(/\/admin\/billing\/dashboard$/);
     expect(platformResponse?.status()).toBe(200);
     await expect(platformSession.page.getByRole("heading", { name: "財務總覽" })).toBeVisible();
+    const invitationsResponse = await platformSession.page.goto("/admin/merchant-invitations");
+    await expect(platformSession.page).toHaveURL(/\/admin\/merchant-invitations$/);
+    expect(invitationsResponse?.status()).toBe(200);
+    await expect(platformSession.page.getByRole("heading", { name: "商家邀請", exact: true })).toBeVisible();
 
     await ownerSession.page.goto("/admin/billing/dashboard");
     await expect(ownerSession.page).toHaveURL(/\/dashboard$/);
     await expect(ownerSession.page.getByRole("heading", { name: "財務總覽" })).toHaveCount(0);
+    await ownerSession.page.goto("/admin/merchant-invitations");
+    await expect(ownerSession.page).toHaveURL(/\/dashboard$/);
+    await expect(ownerSession.page.getByRole("heading", { name: "商家邀請", exact: true })).toHaveCount(0);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
     await db.vendor.deleteMany({ where: { id: vendor.id } });
