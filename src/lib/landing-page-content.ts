@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** The persisted format revision for Puck-authored landing page content. */
+/** The persisted format revision of legacy (pre-PageDocument) landing page content. New pages use PageDocument; legacy drafts open converted in the editor. */
 export const LANDING_PAGE_SCHEMA_VERSION = 1 as const;
 export const LANDING_PAGE_MAX_NODES = 120;
 export const LANDING_PAGE_MAX_DEPTH = 6;
@@ -133,7 +133,7 @@ const RootSchema = z.object({ props: z.object({
   style: LandingPageStyleSchema.optional(),
 }).strict().optional(), readOnly: z.record(z.string(), z.boolean()).optional() }).strict();
 
-export type LandingPagePuckData = {
+export type LandingPageLegacyData = {
   root: z.infer<typeof RootSchema>;
   content: LandingPageComponentData[];
 };
@@ -149,7 +149,7 @@ export const LandingPageContentSchema = z.object({
 
 export type LandingPageContent = {
   schemaVersion: typeof LANDING_PAGE_SCHEMA_VERSION;
-  data: LandingPagePuckData;
+  data: LandingPageLegacyData;
 };
 
 export type LandingPageFormReference = { id: string; slug: string; name: string };

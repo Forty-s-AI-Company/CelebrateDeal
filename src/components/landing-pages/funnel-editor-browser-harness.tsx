@@ -31,7 +31,7 @@ export function FunnelEditorBrowserHarness() {
     <output data-testid="persistence-revision">{revision}</output>
     <output data-testid="change-count">{changes}</output>
     <output data-testid="parent-document">{JSON.stringify(document)}</output>
-    <StrictMode><WorkspaceEditor content={document} pending={disabled} revision={revision} commerceProducts={[]} forms={[]} onValidityChange={() => undefined} onLegacyChange={() => undefined} onDocumentChange={(next) => {
+    <StrictMode><WorkspaceEditor content={document} pending={disabled} revision={revision} commerceProducts={[]} onDocumentChange={(next) => {
       // Exercise an outer parent's rejection before it acknowledges a draft.
       if (rejectChanges) return false;
       if (!("root" in next)) throw new Error("Expected a synthetic PageDocument");
@@ -56,7 +56,7 @@ function FunnelFlowBrowserHarness() {
     <button onClick={() => setDisabled((value) => !value)}>切換唯讀</button>
     <output data-testid="flow-document">{JSON.stringify(state)}</output>
     <output data-testid="change-count">{changes}</output>
-    <StrictMode><WorkspaceEditor content={state} pending={disabled} revision={1} commerceProducts={[]} forms={[]} onValidityChange={() => undefined} onLegacyChange={() => undefined} onDocumentChange={(next) => {
+    <StrictMode><WorkspaceEditor content={state} pending={disabled} revision={1} commerceProducts={[]} onDocumentChange={(next) => {
       if (rejectChanges) return false;
       if (!("pages" in next)) throw new Error("Expected synthetic multi-step flow");
       setChanges((count) => count + 1);

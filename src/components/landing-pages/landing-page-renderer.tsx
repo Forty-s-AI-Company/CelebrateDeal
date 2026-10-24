@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { LandingPageLink } from "@/components/landing-page-link";
 import { LandingPageCarousel, LandingPageCountdown } from "./landing-page-interactive-blocks";
-import type { LandingPageAction, LandingPageContent, LandingPagePuckData, LandingPageRenderContext } from "@/lib/landing-page-content";
+import type { LandingPageAction, LandingPageContent, LandingPageLegacyData, LandingPageRenderContext } from "@/lib/landing-page-content";
 
 const spacing = { none: "", sm: "p-3", md: "p-5", lg: "p-8", xl: "p-12" } as const;
 const width = { sm: "max-w-xl", md: "max-w-3xl", lg: "max-w-5xl", xl: "max-w-6xl", full: "max-w-none" } as const;
@@ -10,7 +10,7 @@ const radius = { none: "", sm: "rounded", md: "rounded-xl", lg: "rounded-2xl", f
 const fontSize = { sm: "text-sm", base: "text-base", lg: "text-lg", xl: "text-xl", "2xl": "text-2xl", "4xl": "text-4xl" } as const;
 const fontWeight = { normal: "font-normal", medium: "font-medium", bold: "font-bold", black: "font-black" } as const;
 
-type Block = LandingPagePuckData["content"][number];
+type Block = LandingPageLegacyData["content"][number];
 
 function classes(style: Block["props"]["style"]) {
   if (!style) return "";
@@ -128,7 +128,7 @@ function LandingPageBlock({ block, context }: { block: Block; context: LandingPa
   }
 }
 
-/** Server-safe public renderer. It has no dependency on Puck's editor or drag-and-drop runtime. */
+/** Server-safe public renderer for legacy (schema v1) pages; published legacy versions keep rendering here until republished. */
 export function LandingPageRenderer({ content, context }: { content: LandingPageContent; context: LandingPageRenderContext }) {
   const rootStyle = content.data.root.props?.style;
   return <main className={`mx-auto min-h-screen w-full max-w-6xl space-y-12 bg-white px-4 py-8 text-slate-950 sm:px-6 md:space-y-16 ${classes(rootStyle)}`} style={styleValues(rootStyle)}><NestedBlocks blocks={content.data.content} context={context} /></main>;

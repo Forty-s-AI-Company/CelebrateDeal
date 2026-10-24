@@ -6,15 +6,12 @@ import {
   PageDocumentSchema,
   createEmptyPageDocument,
   deserializePageDocument,
-  landingPageContentToPageDocument,
-  pageDocumentToLandingPageContent,
   parsePageDocument,
   serializePageDocument,
   type FunnelNode,
   type PageDocument,
 } from "@/lib/funnel-page-document";
 import { createFunnelFlow } from "@/lib/funnel-flow";
-import { createLandingPageContent } from "@/lib/landing-page-content";
 
 function node(type: FunnelNode["type"], id: string, children?: FunnelNode[]): FunnelNode {
   return { schemaVersion: 1, id, type, props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, ...(children ? { children } : {}) } as FunnelNode;
@@ -97,16 +94,5 @@ describe("Funnel PageDocument v1", () => {
     expect(parsePageDocument(document)).toBeNull();
     document.root[0]!.attributes = { dangerouslySetInnerHTML: "x" };
     expect(parsePageDocument(document)).toBeNull();
-  });
-
-  it("可將既有 LandingPageContent 轉為可編輯節點並轉回", () => {
-    const legacy = createLandingPageContent("webinar", "form_123");
-    const document = landingPageContentToPageDocument(legacy, { id: "legacy_1" });
-    expect(document).not.toBeNull();
-    expect(document?.root.every((section) => section.type === "section")).toBe(true);
-    expect(document?.root.some((section) => section.children?.[0]?.children?.[0]?.children?.length)).toBe(true);
-    const roundTrip = document ? pageDocumentToLandingPageContent(document) : null;
-    expect(roundTrip?.schemaVersion).toBe(1);
-    expect(roundTrip?.data.content.length).toBeGreaterThan(0);
   });
 });

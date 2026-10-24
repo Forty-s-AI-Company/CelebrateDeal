@@ -12,7 +12,7 @@ import { pageDocumentHasCommerce } from "@/lib/funnel-registration-surface";
  * document request.
  */
 
-/** Existing Puck documents remain readable while new Funnel documents roll out additively. */
+/** Legacy (schema v1) documents remain readable: published legacy versions render until republished, and legacy drafts open converted in the editor. */
 export type LandingPageStoredContent = LandingPageContent | PageDocument | FunnelStepPages;
 
 export const MAX_LANDING_PAGE_SLUG_LENGTH = 100;

@@ -169,3 +169,13 @@ describe("dual publication feedback", () => {
     expect(mocks.publication).not.toHaveBeenCalled();
   });
 });
+
+describe("live and form binding errors", () => {
+  it("explains a registration button that does not use the bound live's form", async () => {
+    mocks.save.mockRejectedValueOnce(new errorTypes.Input("landing_page_live_form_mismatch"));
+    const result = await landingPageAction({ status: "success", message: "" }, form({ operation: "save", id: "page-1", revision: "2", name: "頁面", slug: "page", content: "{}" }));
+    expect(result).toEqual({ status: "error", message: "這個頁面已綁定活動場次，所有報名按鈕都必須使用該場次的報名表。請把按鈕改成該場次的報名表，或在頁面設定改選場次後再試。" });
+    mocks.publish.mockRejectedValueOnce(new errorTypes.Input("landing_page_live_form_mismatch"));
+    expect((await landingPageAction({ status: "success", message: "" }, form({ operation: "publish", id: "page-1", revision: "2" }))).message).toContain("所有報名按鈕都必須使用該場次的報名表");
+  });
+});

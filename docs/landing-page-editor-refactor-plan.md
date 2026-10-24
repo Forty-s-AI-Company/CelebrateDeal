@@ -26,7 +26,7 @@
 | 版型區塊 | 依類別（Opt-in forms、Features、Page footers、Team、Welcome、Price plans、Page headers、Testimonials）分組，點進去看縮圖清單 | 單一長清單，只有文字說明，沒有縮圖 | 中 |
 | 畫布互動 | 直接在畫布上點文字編輯、hover 外框與浮動工具（移動／複製／刪除）、拖放有插入指示 | 點選後到左欄表單改文字；拖放沒有插入位置提示 | **大** |
 | 渲染品質 | 模板有真實圖片、標題有明確字級層次 | 模板主視覺全是破圖（`/placeholder.svg` 404）；H1 與內文字級差不多 | 中（破圖由 PR「問題 1」修） |
-| 舊系統 | — | 仍留有 Puck 編輯器（`landing-page-editor.tsx`、`landing-page-puck-config.tsx`、`workspace-editor.tsx`） | 技術債 |
+| 舊系統 | — | ~~仍留有 Puck 編輯器（`landing-page-editor.tsx`、`landing-page-puck-config.tsx`、`workspace-editor.tsx`）~~ R4 已移除；舊版頁面改由轉換器以新版編輯器開啟 | 已處理 |
 
 資料模型 `PageDocument`（節點樹、`funnel-page-history` 指令與復原、彈出視窗、`flow` 步驟）結構健全，**本次重構不改資料格式、不需要 migration**，以替換編輯器介面與互動為主。
 
@@ -53,6 +53,16 @@
 ### R4 清理
 - 確認無引用後移除 Puck 舊編輯器與相關設定、測試。
 - 文件與 QA 腳本更新。
+
+**完成紀錄（分支 `ai/landing-page-editor-r4-remove-puck`）**
+- 新增純函式轉換器 `src/lib/legacy-landing-page-converter.ts`：舊版 `LandingPageContent`（schema v1）的 17 種區塊各自對應到 Section › Row 與新版元件；文字、連結、報名表與直播綁定都保留，節點 ID 由舊版區塊 ID 決定性推導（重開同一份草稿 ID 不變），輸出一律通過 `parsePageDocument`。沒有對應設定的項目（例如 YouTube 內嵌、輪播內放圖片、倒數到期處理、字重、兩欄比例）列入轉換報告，內容不靜默丟棄；舊版本來就不顯示的欄位保留為隱藏內容。
+- 編輯器開啟舊版頁面時，在瀏覽器端轉換並顯示說明「這是舊版頁面，已轉換成新版編輯器格式；儲存後會以新版格式保存。舊版內容在你儲存前不會被改動。」與轉換報告。儲存沿用既有 save action，伺服器端驗證不變；**不需要 migration**；`PageDocument` JSON 契約新增 `registration` 動作，已登記在 `docs/codex-goal/PRISMA_INVARIANTS.md`。
+- 已發布的舊版版本在重新發布前，公開頁仍由 `landing-page-renderer.tsx` 渲染（以快照測試固定輸出）。
+- 報名按鈕改用新的節點動作 `{ type: "registration", formId, useBoundLive }`：只存表單 id，公開 slug 與目前綁定的直播在渲染時由伺服器記錄解析；伺服器在儲存、發布與公開載入時照舊驗證表單（同 vendor＋project、啟用中）。新版編輯器的按鈕動作也可選「開啟報名表」。這類按鈕沿用舊版的 UTM、推薦碼與來源頁（`lp`）參數；既有的「開啟網址」`/form/...` 連結維持原本的渲染方式不變（owner 決定）。
+- 轉換後尚未編輯的舊版頁面，仍可直接發布、取消發布、複製、刪除與還原版本（這些動作不送出內容）；無法轉換的頁面也能取消發布或刪除。
+- 移除 `landing-page-editor.tsx`、`landing-page-puck-config.tsx`、`WorkspaceEditor` 的舊版分支，以及未被使用、會遺失內容的舊轉接器 `landingPageContentToPageDocument`／`pageDocumentToLandingPageContent`。
+- 解除安裝 `@puckeditor/core`；`happy-dom` 改為明確的 devDependency（測試環境需要），移除只為 Puck 加的 `overrides.happy-dom`。`npm audit --omit=dev --audit-level=high` 為 0。
+- 已知差異：舊版倒數「依直播開播時間」轉為固定時間；新版倒數不支援到期訊息／隱藏按鈕／轉址；YouTube／Vimeo 改為連結；主視覺背景圖改為一般圖片。以上都會出現在轉換報告。
 
 ## 3. 擁有者決定的產品規則
 
