@@ -2,7 +2,7 @@ import type { PaymentWebhookEventType } from "@/lib/payment-webhook-invariants";
 import type { FormSubmissionVerificationStatus } from "@prisma/client";
 import type { CommerceOrderStatus } from "@/lib/commerce-order-domain";
 import type { FunnelExperiment } from "@/lib/funnel-operations";
-import type { FunnelGoal, FunnelStepType } from "@/lib/funnel-flow";
+import { FUNNEL_STEP_GROUPS, getFunnelStepCatalog, isFunnelStepTypeAddableForGoal, type FunnelGoal, type FunnelStepGroup, type FunnelStepType } from "@/lib/funnel-flow";
 
 // 僅顯示層對照；儲存、路由與 API 使用原本的識別值。
 export const funnelTabKeys = ["Configuration", "Automation Rules", "A/B test", "Stats", "Leads", "Sales", "Deadline settings"] as const;
@@ -19,6 +19,18 @@ export const funnelStepLabels = {
   info_page: "資訊頁", contact_us_page: "聯絡我們", webinar_registration_page: "線上講座報名頁",
   webinar_thank_you_page: "線上講座感謝頁", webinar_broadcast_page: "線上講座播放頁", inactive_page: "停用頁",
 } satisfies Record<FunnelStepType, string>;
+const funnelStepGroupLabels = { sales: "銷售", audience: "名單", general: "資訊", webinar: "線上講座", system: "系統" } satisfies Record<FunnelStepGroup, string>;
+type AddableStepType = Exclude<FunnelStepType, "inactive_page">;
+
+/** 新增步驟選單：依步驟目錄的群組，只列出這個網站目標可新增的類型（伺服器端套用同一規則）。 */
+export function addableStepTypeOptions(goal: FunnelGoal): Array<{ group: FunnelStepGroup; label: string; items: Array<{ value: AddableStepType; label: string }> }> {
+  const catalog = getFunnelStepCatalog().filter((step) => isFunnelStepTypeAddableForGoal(goal, step.type));
+  return FUNNEL_STEP_GROUPS.flatMap((group) => {
+    const items = catalog.filter((step) => step.group === group).map((step) => ({ value: step.type as AddableStepType, label: funnelStepLabels[step.type] }));
+    return items.length ? [{ group, label: funnelStepGroupLabels[group], items }] : [];
+  });
+}
+
 export const experimentStatusLabels = { draft: "草稿", running: "進行中", stopped: "已停止", winner: "已選定勝出組別" } satisfies Record<FunnelExperiment["status"], string>;
 export const experimentArmLabels = { control: "對照組", variant: "測試組" } satisfies Record<NonNullable<FunnelExperiment["winner"]>, string>;
 

@@ -36,8 +36,18 @@ export function pageDocumentRendersRegistrationForm(document: PageNodes): boolea
 
 /** Any purchase surface: a commerce binding, a payment block or a checkout-contact form. */
 export function pageDocumentHasCommerce(document: PageNodes & { commerce?: unknown }): boolean {
-  return Boolean(document.commerce) || someNode(document, (node) => getFunnelNodeDefinition(node.type).category === "payment"
-    || (node.type === "form" && node.props.variant === "checkout-contact"));
+  return pageDocumentCommerceKinds(document).length > 0;
+}
+
+export type PageDocumentCommerceKind = "binding" | "payment" | "checkout_form";
+
+/** The kinds of purchase surface on a page, in a stable order; empty when it has none. */
+export function pageDocumentCommerceKinds(document: PageNodes & { commerce?: unknown }): PageDocumentCommerceKind[] {
+  const kinds: PageDocumentCommerceKind[] = [];
+  if (document.commerce) kinds.push("binding");
+  if (someNode(document, (node) => getFunnelNodeDefinition(node.type).category === "payment")) kinds.push("payment");
+  if (someNode(document, (node) => node.type === "form" && node.props.variant === "checkout-contact")) kinds.push("checkout_form");
+  return kinds;
 }
 
 function stringProp(props: Record<string, unknown>, keys: string[], fallback = "") {

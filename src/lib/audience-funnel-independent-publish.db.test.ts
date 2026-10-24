@@ -20,7 +20,8 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }))
 
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createFunnelFlow, type FunnelGoal } from "@/lib/funnel-flow";
-import { createFunnelStepPages } from "@/lib/funnel-step-pages";
+import { createFunnelStepPages, parseFunnelStepPages } from "@/lib/funnel-step-pages";
+import { publicLandingPageCandidateWhere } from "@/lib/public-landing-page-eligibility";
 import { applyFunnelTemplateChange } from "@/lib/funnel-template-transaction";
 import type { PageDocument } from "@/lib/funnel-page-document";
 import { deleteLandingPage, getLandingPagePublicationStatus, LandingPageConflictError, loadPublicLandingPage, publishLandingPage, saveLandingPageDraft, unpublishLandingPage } from "@/lib/landing-page-service";
@@ -315,6 +316,46 @@ describe("structural limits of independent publication (PostgreSQL)", () => {
     await db.salesProject.update({ where: { id: tenant.projectId }, data: { status: "published", publishedAt: new Date() } });
     expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(200);
     expect(await resolvePublishedFunnelCheckout({ slug: page.slug, stepId: "order_form" })).toMatchObject({ vendorId: tenant.vendorId });
+  });
+
+  it.each(["commerce binding", "payment element"] as const)("keeps an audience-only Funnel with a %s closed although the SQL gate admits it", async (surface) => {
+    const tenant = await createTenant(surface.replace(" ", "-"));
+    const db = getDb();
+    const product = await db.product.create({ data: { vendorId: tenant.vendorId, name: "合成實體商品", slug: `synthetic-${randomUUID()}`, priceCents: 1200, inventory: 5 } });
+    await db.salesProjectProduct.create({ data: { vendorId: tenant.vendorId, projectId: tenant.projectId, productId: product.id } });
+    const content = funnelContent("audience");
+    const optIn = structuredClone(content.pages.opt_in!);
+    if (surface === "commerce binding") {
+      Object.assign(optIn, { commerce: { schemaVersion: 1, productId: product.id, formMode: "single" } });
+    } else {
+      const row = optIn.root[0]!.children![0]!;
+      row.children = [...(row.children ?? []), { schemaVersion: 1, id: "pay_button", type: "payment_button", props: { label: "立即付款" }, style: {}, overrides: {}, visible: true, actions: [], attributes: {} }];
+    }
+    const withCommerce = { ...content, pages: { ...content.pages, opt_in: optIn } };
+    // Every step is a lead or general step: only the page content carries the purchase surface.
+    expect(withCommerce.flow.steps.map((step) => step.type)).toEqual(["opt_in_page", "opt_in_thank_you_page", "inactive_page"]);
+    const page = await db.landingPage.create({ data: { vendorId: tenant.vendorId, projectId: tenant.projectId, name: "合成名單網站", slug: `aud-${randomUUID()}`, draftContent: withCommerce as unknown as Prisma.InputJsonValue } });
+    const version = await db.landingPageVersion.create({ data: { vendorId: tenant.vendorId, pageId: page.id, version: 1, content: withCommerce as unknown as Prisma.InputJsonValue } });
+    await db.landingPage.update({ where: { id: page.id }, data: { status: "published", publishedVersionId: version.id, publishedAt: new Date() } });
+    // The stored version must be a valid document, so the closure below comes from the gate, not from parsing.
+    expect(parseFunnelStepPages(version.content)).not.toBeNull();
+
+    // The SQL pre-filter cannot see per-page commerce and lets the page through,
+    // so the proxy's pre-stream check passes it on to the page ...
+    expect(await db.landingPage.count({ where: publicLandingPageCandidateWhere(page.slug) })).toBe(1);
+    expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(200);
+    // ... whose loader (and therefore notFound(), HTTP 404) and runtime keep it closed while the project is unpublished.
+    const reasons: string[] = [];
+    expect(await loadPublicLandingPage(page.slug, (reason) => reasons.push(reason))).toBeNull();
+    expect(reasons).toEqual(["invalid_content"]);
+    expect(await resolvePublicFunnelRuntime({ pageId: page.id, requestedStepId: "opt_in", visitorId: `synthetic-visitor-${randomUUID()}` })).toBeNull();
+    expect(await resolvePublishedFunnelCheckout({ slug: page.slug, stepId: "opt_in" })).toBeNull();
+
+    // The merchant is told which page keeps it behind the project.
+    actAs(tenant);
+    const status = await getLandingPagePublicationStatus(page.id);
+    expect(status.available).toBe(false);
+    expect(status.message).toContain(`頁面『名單頁』含${surface === "commerce binding" ? "商品結帳設定" : "付款元件"}`);
   });
 
   it("closes an audience Funnel when its project is archived", async () => {
