@@ -1,5 +1,13 @@
 import { expect, it } from "vitest";
-import { landingPageEditorHref } from "./landing-page-editor-href";
+import { isLandingPageEditorPath, landingPageEditorHref } from "./landing-page-editor-href";
+
+it("recognises only the full-screen editor route", () => {
+  expect(isLandingPageEditorPath(landingPageEditorHref("page-1"))).toBe(true);
+  expect(isLandingPageEditorPath("/landing-pages/page%201/edit/")).toBe(true);
+  for (const pathname of ["/landing-pages", "/landing-pages/page-1", "/landing-pages/page-1/operations", "/landing-pages/page-1/edit/extra", "/lp/demo/edit", null, undefined]) {
+    expect(isLandingPageEditorPath(pathname)).toBe(false);
+  }
+});
 
 it("builds the full-screen editor URL with an optional encoded step", () => {
   expect(landingPageEditorHref("page-1")).toBe("/landing-pages/page-1/edit");

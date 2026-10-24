@@ -9,6 +9,7 @@ import {
   writeSuppression,
   type Announcement,
 } from "@/lib/announcement-feed";
+import { isLandingPageEditorPath } from "@/lib/landing-page-editor-href";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -230,6 +231,9 @@ export function AnnouncementCenter({ feed = ANNOUNCEMENT_FEED }: { feed?: readon
   };
 
   const selectedAnnouncement = announcements.find(({ id }) => id === selectedId) ?? latestAnnouncement;
+
+  // The full-screen editor route owns the whole viewport; the floating launcher would cover its canvas.
+  if (isLandingPageEditorPath(pathname)) return null;
 
   return (
     <>

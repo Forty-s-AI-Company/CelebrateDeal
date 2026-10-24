@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, Copy, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, Copy, Monitor, Smartphone, Trash2 } from "lucide-react";
+import { funnelDeviceVisibilityCommand, funnelNodeVisibility, type FunnelDevice } from "@/lib/funnel-node-visibility";
 import { FunnelElementInspector } from "./funnel-element-inspector";
 import { FunnelCommerceSettings } from "./funnel-commerce-settings";
 import { funnelNodeLabel } from "./funnel-editor-library";
@@ -25,20 +26,37 @@ export function PanelHeader({ title, backLabel = "返回", onBack, actions, subt
   </div>;
 }
 
+/** EDT-RESP-001: 桌機顯示／手機顯示, stored as per-device overrides of the existing model. */
+export function DeviceVisibilityToggles({ node, viewport, disabled, onCommand }: { node: FunnelNode; viewport: FunnelDevice; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
+  const visibility = funnelNodeVisibility(node);
+  const devices: ReadonlyArray<{ id: FunnelDevice; label: string; icon: typeof Monitor }> = [{ id: "desktop", label: "桌機顯示", icon: Monitor }, { id: "mobile", label: "手機顯示", icon: Smartphone }];
+  return <fieldset data-funnel-device-visibility className="mb-4 grid gap-2 rounded-lg border border-slate-200 p-3">
+    <legend className="px-1 text-sm font-bold text-slate-900">裝置顯示</legend>
+    <div className="grid grid-cols-2 gap-2">
+      {devices.map(({ id, label, icon: Icon }) => <label key={id} className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-sm font-semibold ${viewport === id ? "border-blue-300 bg-blue-50 text-blue-900" : "border-slate-200 text-slate-700"}`}>
+        <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-blue-700" disabled={disabled} checked={visibility[id]} onChange={(event) => { const command = funnelDeviceVisibilityCommand(node, id, event.currentTarget.checked); if (command) onCommand(command); }} />
+        <Icon size={15} aria-hidden />{label}
+      </label>)}
+    </div>
+    {!visibility.desktop || !visibility.mobile ? <p className="text-xs leading-5 text-slate-600">隱藏的元件在編輯畫布上以斜線標示，預覽與公開頁面不會顯示。</p> : null}
+  </fieldset>;
+}
+
 /** EDT-INT-001: the selected node's settings replace the library in the left panel. */
-export function NodeSettingsPanel({ node, path, disabled, popups, stepIds, stepNames, onCommand, onBack, onDelete }: {
-  node: FunnelNode; path: readonly FunnelNode[]; disabled: boolean; popups: PageDocument["popups"];
+export function NodeSettingsPanel({ node, path, disabled, viewport, popups, stepIds, stepNames, onCommand, onBack, onDuplicate, onDelete }: {
+  node: FunnelNode; path: readonly FunnelNode[]; disabled: boolean; viewport: FunnelDevice; popups: PageDocument["popups"];
   stepIds?: readonly string[]; stepNames?: Readonly<Record<string, string>>;
-  onCommand: (command: FunnelPageCommand) => void; onBack: () => void; onDelete: () => void;
+  onCommand: (command: FunnelPageCommand) => void; onBack: () => void; onDuplicate: () => void; onDelete: () => void;
 }) {
   const label = funnelNodeLabel(node.type);
   return <div data-funnel-node-settings={node.type}>
     <PanelHeader title={label} backLabel="返回（取消選取）" onBack={onBack} subtitle={path.length > 1 ? path.map((item) => funnelNodeLabel(item.type)).join(" › ") : undefined} actions={<>
       <button type="button" aria-label={`上移${label}`} title="上移" disabled={disabled} className={iconAction} onClick={() => onCommand({ type: "move_up", nodeId: node.id })}><ArrowUp size={17} aria-hidden /></button>
       <button type="button" aria-label={`下移${label}`} title="下移" disabled={disabled} className={iconAction} onClick={() => onCommand({ type: "move_down", nodeId: node.id })}><ArrowDown size={17} aria-hidden /></button>
-      <button type="button" aria-label={`複製${label}`} title="複製" disabled={disabled} className={iconAction} onClick={() => onCommand({ type: "duplicate", nodeId: node.id })}><Copy size={17} aria-hidden /></button>
+      <button type="button" aria-label={`複製${label}`} title="複製" disabled={disabled} className={iconAction} onClick={onDuplicate}><Copy size={17} aria-hidden /></button>
       <button type="button" aria-label={`刪除${label}`} title="刪除（Delete）" disabled={disabled} className={`${iconAction} text-red-600 hover:bg-red-50 hover:text-red-700`} onClick={onDelete}><Trash2 size={17} aria-hidden /></button>
     </>} />
+    <DeviceVisibilityToggles node={node} viewport={viewport} disabled={disabled} onCommand={onCommand} />
     <FunnelElementInspector key={node.id} node={node} disabled={disabled} popupIds={popups.map((popup) => popup.id)} popupNames={Object.fromEntries(popups.map((popup) => [popup.id, popup.name]))} stepIds={stepIds} stepNames={stepNames} onCommand={onCommand} />
   </div>;
 }

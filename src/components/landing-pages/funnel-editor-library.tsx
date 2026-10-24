@@ -9,11 +9,11 @@ import {
 } from "lucide-react";
 import { getFunnelNodeDefinition, type FunnelNodeType } from "@/lib/funnel-page-document";
 import { FUNNEL_BLOCK_CATEGORY_METADATA, getFunnelBlocksByCategory, type FunnelBlockCategory } from "@/lib/funnel-block-library";
+import { beginFunnelDrag, endFunnelDrag } from "./funnel-editor-drag";
 
 type IconComponent = ComponentType<{ size?: number; "aria-hidden"?: boolean; className?: string }>;
 
-export const FUNNEL_ELEMENT_DRAG_TYPE = "application/x-celebratedeal-funnel-element";
-export const FUNNEL_BLOCK_DRAG_TYPE = "application/x-celebratedeal-funnel-block";
+export { FUNNEL_BLOCK_DRAG_TYPE, FUNNEL_ELEMENT_DRAG_TYPE } from "./funnel-editor-drag";
 
 /** Editor palette: visible label and icon per node type (EDT-EL-001). */
 export const FUNNEL_PALETTE: ReadonlyArray<{ type: FunnelNodeType; label: string; icon: IconComponent }> = [
@@ -52,7 +52,7 @@ function PaletteTile({ item, disabled, onAdd }: { item: (typeof FUNNEL_PALETTE)[
   const unavailable = capability.status !== "available" && definition.category !== "payment";
   const Icon = item.icon;
   return <button type="button" data-palette-type={item.type} draggable={!disabled && !unavailable} disabled={disabled || unavailable} title={unavailable ? capability.reason : `點擊加入或拖曳到畫布：${item.label}`}
-    onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData(FUNNEL_ELEMENT_DRAG_TYPE, item.type); }} onClick={() => onAdd(item.type)}
+    onDragStart={(event) => beginFunnelDrag(event, { kind: "element", nodeType: item.type })} onDragEnd={endFunnelDrag} onClick={() => onAdd(item.type)}
     className="flex min-h-[4.75rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-transparent bg-slate-100 p-2 text-center text-slate-700 transition-colors hover:border-blue-400 hover:bg-white hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:hover:border-transparent">
     <span className="grid h-8 w-8 place-items-center rounded-md bg-white text-slate-600 shadow-sm"><Icon size={18} aria-hidden /></span>
     <span className="text-xs font-semibold leading-4">{item.label}</span>
@@ -101,7 +101,7 @@ export function BlockLibrary({ disabled, onAdd }: { disabled: boolean; onAdd: (t
   const meta = FUNNEL_BLOCK_CATEGORY_METADATA[category];
   return <div className="grid gap-3">
     <div className="flex items-center gap-2"><button type="button" onClick={() => setCategory(null)} className="inline-flex min-h-9 cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"><ChevronLeft size={16} aria-hidden />返回</button><h3 className="text-sm font-bold text-slate-900">{meta.label}</h3></div>
-    {getFunnelBlocksByCategory(category).map((block) => <button key={block.id} type="button" draggable={!disabled} disabled={disabled} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData(FUNNEL_BLOCK_DRAG_TYPE, block.id); }} onClick={() => onAdd(block.id)} className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60">
+    {getFunnelBlocksByCategory(category).map((block) => <button key={block.id} type="button" draggable={!disabled} disabled={disabled} onDragStart={(event) => beginFunnelDrag(event, { kind: "block", templateId: block.id, nodeType: "section" })} onDragEnd={endFunnelDrag} onClick={() => onAdd(block.id)} className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60">
       <span className="block text-sm font-bold text-slate-800">{block.label}</span>
       <span className="mt-1 block text-xs leading-5 text-slate-500">{block.description}</span>
       {block.capability ? <span className="mt-1 block text-[10px] font-semibold text-amber-700">付款需綁定商品；部分功能有限制</span> : null}
