@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { totpCodeForTimestamp } from "../../src/lib/mfa";
 import { hashPassword } from "../../src/lib/password";
+import { createMerchantRegistrationInvite } from "../../src/lib/merchant-registration-invite";
 
 const db = new PrismaClient();
 const password = "A11y-Test-Password-123!";
@@ -412,8 +413,11 @@ test("dynamic owner and public commerce routes have no blocking axe violations",
 
 test("registration, policy and support public routes have no blocking axe violations (F-126)", async ({ page }) => {
   test.setTimeout(90_000);
+  // Invite mode is the default: cover the invite-only notice and the invited form.
+  const invite = createMerchantRegistrationInvite({ email: `a11y-invite-${randomUUID()}@example.test` }).token;
   const routes = [
     "/register",
+    `/register?invite=${encodeURIComponent(invite)}`,
     "/policies",
     "/policies/terms",
     "/policies/privacy",

@@ -1,17 +1,24 @@
 import {randomUUID} from "node:crypto";
 import {test,expect} from "@playwright/test";
 import {PrismaClient} from "@prisma/client";
+import {createMerchantRegistrationInvite} from "../../src/lib/merchant-registration-invite";
 const db=new PrismaClient();
 test.use({trace:"off",screenshot:"off",video:"off"});test.setTimeout(180_000);
 test.afterAll(async()=>db.$disconnect());
 for(const width of [1440,390])test(`registration and questionnaire round trip at ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:1000});const email=`onboarding-${randomUUID()}@example.test`;const password="  SyntheticBrowserPassword123!  ";
  try{
-  await page.goto('/login');await page.getByRole('link',{name:'建立商家工作區'}).click();await expect(page).toHaveURL(/\/register$/u);
-  await page.locator('input[name="name"]').fill('Synthetic owner');await page.locator('input[name="workspaceName"]').fill('Synthetic browser workspace');await page.locator('input[name="email"]').fill(email);await page.locator('input[name="password"]').fill(password);
+  // Closed beta (REGISTRATION_MODE unset = invite): the login entry leads to the invite-only notice, no form.
+  await page.goto('/login');await page.getByRole('link',{name:'受邀商家註冊'}).click();await expect(page).toHaveURL(/\/register$/u);
+  await expect(page.getByRole('heading',{name:'受邀商家註冊'})).toBeVisible();await expect(page.getByText('封測期間僅限受邀商家註冊。請使用平台寄給你的邀請連結。')).toBeVisible();await expect(page.locator('input[name="password"]')).toHaveCount(0);
+  // The test process signs with the same synthetic CSRF_SECRET as the loopback server (playwright.config.ts).
+  const {token}=createMerchantRegistrationInvite({email});
+  await page.goto(`/register?invite=${encodeURIComponent(token)}`);
+  await expect(page.locator('input[name="email"]')).toHaveValue(email);await expect(page.locator('input[name="email"]')).toHaveAttribute('readonly','');
+  await page.locator('input[name="name"]').fill('Synthetic owner');await page.locator('input[name="workspaceName"]').fill('Synthetic browser workspace');await page.locator('input[name="password"]').fill(password);
   await expect(page.getByRole('heading',{name:'建立你的商家帳號'})).toBeVisible();
   // F-114: the native required checkbox blocks submission until consent is given.
-  await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/register$/u);
+  await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/register\?invite=/u);
   await expect(page.getByRole('link',{name:'使用條款'})).toHaveAttribute('href','/policies/terms');await expect(page.getByRole('link',{name:'隱私通知'})).toHaveAttribute('href','/policies/privacy');
   await page.getByRole('checkbox',{name:/我已閱讀並同意/u}).check();
   await page.locator('form').getByRole('button').click();await expect(page).toHaveURL(/\/welcome$/u);

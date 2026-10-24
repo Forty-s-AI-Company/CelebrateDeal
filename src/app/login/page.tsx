@@ -3,6 +3,7 @@ import { loginAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { PublicResourceLinks } from "@/components/public-policy";
+import { registrationMode } from "@/lib/registration-mode";
 import { safeInternalPath } from "@/lib/safe-internal-path";
 
 const errorMessages: Record<string, string> = {
@@ -23,6 +24,8 @@ export default async function LoginPage({
   // Only an invitation acceptance link may ride through sign-in (#462 M1).
   const safeNext = safeInternalPath(params.next);
   const invitationNext = safeNext?.startsWith("/invitations/accept") ? safeNext : undefined;
+  // Closed beta: /register shows the invite-only notice unless registration is open.
+  const inviteOnlyRegistration = registrationMode() === "invite";
 
   return (
     <main className="grid min-h-screen place-items-center bg-background px-4">
@@ -67,7 +70,9 @@ export default async function LoginPage({
           <p className="mb-3 text-center text-xs font-semibold text-slate-500">公開資訊與客服</p>
           <PublicResourceLinks compact />
         </div>
-        <p className="mt-4 text-center text-sm text-slate-600">第一次使用？ <Link href="/register" className="font-semibold text-primary hover:underline">建立商家工作區</Link></p>
+        {inviteOnlyRegistration
+          ? <p className="mt-4 text-center text-sm text-slate-600">封測期間僅限受邀商家。 <Link href="/register" className="font-semibold text-primary hover:underline">受邀商家註冊</Link></p>
+          : <p className="mt-4 text-center text-sm text-slate-600">第一次使用？ <Link href="/register" className="font-semibold text-primary hover:underline">建立商家工作區</Link></p>}
       </section>
     </main>
   );
