@@ -520,3 +520,32 @@ describe("getEnvCheckReport", () => {
     );
   });
 });
+
+describe("REGISTRATION_MODE preflight", () => {
+  const key = envKey("REGISTRATION", "MODE");
+
+  it.each([undefined, "", "  ", "invite", " INVITE "])("treats %j as the invite-only default and passes", (value) => {
+    const env = configuredEnv();
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+    const report = getEnvCheckReport(env);
+    expect(report.ok).toBe(true);
+    expect(check(report, key, "pass")?.message).toBe("商家註冊僅限平台邀請（封測預設）");
+    expect(ProductionEnvSchema.safeParse(env).success).toBe(true);
+  });
+
+  it("accepts open but warns a deployment that verification and bot protection must exist first", () => {
+    const env = { ...configuredEnv(), [key]: "open" };
+    const report = getEnvCheckReport(env);
+    expect(report.ok).toBe(true);
+    expect(check(report, key, "warning")?.message).toContain("Email 驗證與 Turnstile");
+    expect(check(getEnvCheckReport({ ...env, NODE_ENV: "development" }), key, "pass")?.message).toBe("本機開放任何人註冊商家");
+  });
+
+  it("fails preflight on an unknown value instead of silently guessing", () => {
+    const report = getEnvCheckReport({ ...configuredEnv(), [key]: "public" });
+    expect(report.ok).toBe(false);
+    expect(check(report, key, "fail")?.message).toContain("只能是 invite 或 open");
+    expect(report.checks.filter((item) => item.key === key)).toHaveLength(1);
+  });
+});

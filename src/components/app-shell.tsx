@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UsersRound, WalletCards } from "lucide-react";
+import { Ban, Banknote, BarChart3, Bell, Bot, Boxes, CalendarCheck, ClipboardList, Cloud, CreditCard, Gauge, GitCompareArrows, Handshake, Headphones, Lock, LogOut, PackageCheck, Palette, PlaySquare, Radio, ReceiptText, Rocket, ScrollText, Settings2, Shield, Tags, UserPlus, UsersRound, WalletCards } from "lucide-react";
 import { PublicResourceLinks } from "@/components/public-policy";
 import { logoutAction } from "@/app/actions";
 import { AppShellMobileNav } from "@/components/app-shell-mobile-nav";
@@ -90,6 +90,7 @@ const navGroups = [
       { href: "/admin/billing/webhooks", label: "系統通知對帳", icon: ReceiptText, adminOnly: true },
       { href: "/admin/support-cases", label: "退款客服交接", icon: Headphones, adminOnly: true },
       { href: "/admin/vendor-features", label: "商家封測模組", icon: Settings2, adminOnly: true },
+      { href: "/admin/merchant-invitations", label: "商家邀請", icon: UserPlus, adminOnly: true },
       { href: "/admin/cloudflare/videos", label: "Stream 檢查", icon: Cloud, adminOnly: true },
       { href: "/mfa/setup", label: "MFA 安全設定", icon: Lock, adminOnly: true },
     ],

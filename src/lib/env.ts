@@ -10,6 +10,7 @@ import {
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
   LIVE_CHAT_INGRESS_SECRET_MIN_LENGTH,
 } from "@/lib/request-client-ip";
+import { REGISTRATION_MODES } from "@/lib/registration-mode";
 
 const RequiredUrl = z.string().url();
 const OptionalSecret = z.string().optional();
@@ -67,6 +68,12 @@ export const ProductionEnvSchema = z.object({
   SENTRY_AUTH_TOKEN: OptionalSecret,
   NEXT_PUBLIC_POSTHOG_KEY: OptionalSecret,
   NEXT_PUBLIC_POSTHOG_HOST: RequiredUrl.optional(),
+  // Unset or blank = invite (closed beta). Any other value is a typo and fails
+  // preflight; the runtime also treats it as invite.
+  REGISTRATION_MODE: z.preprocess(
+    (value) => typeof value === "string" ? value.trim().toLowerCase() || undefined : value,
+    z.enum(REGISTRATION_MODES, { message: "REGISTRATION_MODE 只能是 invite 或 open；未設定＝invite" }).optional(),
+  ),
 });
 
 export type EnvCheck = {
@@ -123,6 +130,21 @@ function liveChatIngressSecretDeploymentCheck(env: NodeJS.ProcessEnv): EnvCheck 
       ? "已設定至少 32 字元的直播入口 proof secret"
       : "Preview／Production 必須設定至少 32 字元的 LIVE_CHAT_INGRESS_SECRET",
   };
+}
+
+function registrationModeChecks(env: NodeJS.ProcessEnv, deploymentSecurityRequired: boolean): EnvCheck[] {
+  const value = env.REGISTRATION_MODE?.trim().toLowerCase();
+  if (value && !(REGISTRATION_MODES as readonly string[]).includes(value)) return []; // the schema reports it
+  if (value === "open") {
+    return [{
+      key: "REGISTRATION_MODE",
+      status: deploymentSecurityRequired ? "warning" : "pass",
+      message: deploymentSecurityRequired
+        ? "已開放任何人註冊商家；開放前必須完成商家 Email 驗證與 Turnstile 機器人防護"
+        : "本機開放任何人註冊商家",
+    }];
+  }
+  return [{ key: "REGISTRATION_MODE", status: "pass", message: "商家註冊僅限平台邀請（封測預設）" }];
 }
 
 function requiresDeploymentSecurity(env: NodeJS.ProcessEnv) {
@@ -340,6 +362,8 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
       message: `${env.PAYMENT_PROVIDER} provider 必須設定 ECPAY_WEBHOOK_SECRET`,
     });
   }
+
+  checks.push(...registrationModeChecks(env, deploymentSecurityRequired));
 
   checks.push(...productionPaymentProviderChecks(env));
   checks.push(...databasePoolChecks(env));
