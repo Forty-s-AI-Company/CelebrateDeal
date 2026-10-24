@@ -56,9 +56,10 @@
 
 **完成紀錄（分支 `ai/landing-page-editor-r4-remove-puck`）**
 - 新增純函式轉換器 `src/lib/legacy-landing-page-converter.ts`：舊版 `LandingPageContent`（schema v1）的 17 種區塊各自對應到 Section › Row 與新版元件；文字、連結、報名表與直播綁定都保留，節點 ID 由舊版區塊 ID 決定性推導（重開同一份草稿 ID 不變），輸出一律通過 `parsePageDocument`。沒有對應設定的項目（例如 YouTube 內嵌、輪播內放圖片、倒數到期處理、字重、兩欄比例）列入轉換報告，內容不靜默丟棄；舊版本來就不顯示的欄位保留為隱藏內容。
-- 編輯器開啟舊版頁面時，在瀏覽器端轉換並顯示說明「這是舊版頁面，已轉換成新版編輯器格式；儲存後會以新版格式保存。舊版內容在你儲存前不會被改動。」與轉換報告。儲存沿用既有 save action，伺服器端驗證不變；**不需要 migration，資料契約不變**（`PageDocument` 本來就是可儲存格式）。
+- 編輯器開啟舊版頁面時，在瀏覽器端轉換並顯示說明「這是舊版頁面，已轉換成新版編輯器格式；儲存後會以新版格式保存。舊版內容在你儲存前不會被改動。」與轉換報告。儲存沿用既有 save action，伺服器端驗證不變；**不需要 migration**；`PageDocument` JSON 契約新增 `registration` 動作，已登記在 `docs/codex-goal/PRISMA_INVARIANTS.md`。
 - 已發布的舊版版本在重新發布前，公開頁仍由 `landing-page-renderer.tsx` 渲染（以快照測試固定輸出）。
-- 新版渲染器的 `/form/...` 報名表連結沿用舊版的 UTM、推薦碼與來源頁（`lp`）參數，避免轉換後的報名按鈕失去歸因。
+- 報名按鈕改用新的節點動作 `{ type: "registration", formId, useBoundLive }`：只存表單 id，公開 slug 與目前綁定的直播在渲染時由伺服器記錄解析；伺服器在儲存、發布與公開載入時照舊驗證表單（同 vendor＋project、啟用中）。新版編輯器的按鈕動作也可選「開啟報名表」。這類按鈕沿用舊版的 UTM、推薦碼與來源頁（`lp`）參數；既有的「開啟網址」`/form/...` 連結維持原本的渲染方式不變（owner 決定）。
+- 轉換後尚未編輯的舊版頁面，仍可直接發布、取消發布、複製、刪除與還原版本（這些動作不送出內容）；無法轉換的頁面也能取消發布或刪除。
 - 移除 `landing-page-editor.tsx`、`landing-page-puck-config.tsx`、`WorkspaceEditor` 的舊版分支，以及未被使用、會遺失內容的舊轉接器 `landingPageContentToPageDocument`／`pageDocumentToLandingPageContent`。
 - 解除安裝 `@puckeditor/core`；`happy-dom` 改為明確的 devDependency（測試環境需要），移除只為 Puck 加的 `overrides.happy-dom`。`npm audit --omit=dev --audit-level=high` 為 0。
 - 已知差異：舊版倒數「依直播開播時間」轉為固定時間；新版倒數不支援到期訊息／隱藏按鈕／轉址；YouTube／Vimeo 改為連結；主視覺背景圖改為一般圖片。以上都會出現在轉換報告。

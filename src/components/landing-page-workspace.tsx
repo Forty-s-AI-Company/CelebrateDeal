@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspaceEditor, type WorkspaceEditorContent } from "@/components/landing-pages/workspace-editor";
 import { LegacyConversionNotice } from "@/components/landing-pages/legacy-conversion-notice";
+import { FunnelRegistrationLinkProvider } from "@/components/landing-pages/funnel-registration-links";
+import type { FunnelRegistrationLinks } from "@/lib/funnel-registration-action";
 import { FunnelPageDocumentRenderer, type FunnelViewport } from "@/components/landing-pages/funnel-page-document-renderer";
 import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-preview";
 import { panelControl } from "@/components/landing-pages/funnel-editor-panels";
@@ -78,16 +80,28 @@ function openStoredContent(page: PageInput, forms: LandingPageRenderContext["for
 }
 
 const legacyFailed = (legacy: LegacyOpening | undefined) => Boolean(legacy && "failed" in legacy);
+/** True while a converted legacy page shows exactly the conversion and nothing the merchant edited. */
+const pristineConversion = (legacy: LegacyOpening | undefined, snapshot: string, converted: string | null) => Boolean(legacy && "issues" in legacy) && snapshot === converted;
 function legacyNotice(legacy: LegacyOpening | undefined, published: boolean) {
   return legacy && "issues" in legacy ? <LegacyConversionNotice issues={legacy.issues} published={published} /> : undefined;
 }
-function LegacyConversionFailure({ onExit }: { onExit: () => void }) {
+const DELETE_CONFIRMATION = "確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。";
+
+/** The page cannot be edited, but it can still be taken offline or removed (these never send content). */
+function LegacyConversionFailure({ published, pending, onRun, onExit, toast }: { published: boolean; pending: boolean; onRun: (operation: string) => void; onExit: () => void; toast: React.ReactNode }) {
+  const action = "min-h-10 cursor-pointer rounded-lg border px-4 font-semibold disabled:cursor-not-allowed disabled:opacity-40";
   return <main className="grid min-h-dvh place-items-center bg-slate-100 p-6">
     <div role="alert" className="max-w-lg rounded-xl border border-red-200 bg-white p-6 text-sm leading-6 text-slate-800 shadow-sm">
       <h1 className="text-base font-bold text-red-800">無法開啟這個舊版頁面</h1>
       <p className="mt-2">這個舊版頁面無法自動轉換成新版編輯器格式，原本的內容沒有被改動，公開頁也維持原樣。請聯絡客服協助轉換。</p>
-      <button type="button" onClick={onExit} className="mt-4 min-h-10 cursor-pointer rounded-lg bg-slate-900 px-4 font-semibold text-white hover:bg-slate-700">返回管理頁</button>
+      <p className="mt-2">在轉換完成前，你仍可以取消發布或刪除這個一頁式網站。</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" onClick={onExit} className="min-h-10 cursor-pointer rounded-lg bg-slate-900 px-4 font-semibold text-white hover:bg-slate-700">返回管理頁</button>
+        {published ? <button type="button" disabled={pending} onClick={() => onRun("unpublish")} className={`${action} border-slate-300 bg-white text-slate-700 hover:bg-slate-50`}>取消發布</button> : null}
+        <button type="button" disabled={pending} onClick={() => { if (window.confirm(DELETE_CONFIRMATION)) onRun("delete"); }} className={`${action} border-red-200 bg-white text-red-700 hover:bg-red-50`}>刪除一頁式網站</button>
+      </div>
     </div>
+    {toast}
   </main>;
 }
 
@@ -140,6 +154,8 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const snapshot = useMemo(() => workspaceSnapshot({ content, name, slug, formId, liveId }), [content, name, slug, formId, liveId]);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => page ? workspaceSnapshot({ ...initial, content: initial.storedContent }) : null);
   const dirty = snapshot !== savedSnapshot;
+  // A legacy page opens with conversion-only "changes"; they must not block actions that never send content.
+  const [convertedSnapshot] = useState(() => initial.legacy && "issues" in initial.legacy ? workspaceSnapshot(initial) : null);
   const [valid, setValid] = useState(initial.valid);
   const [notice, setNotice] = useState<Notice | null>(null);
   // An action result overrides the server diagnosis until the server sends a newer one.
@@ -227,11 +243,16 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   }
   const saveBlocked = pending || !valid || !name.trim() || !slug.trim();
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
+  // Registration buttons resolve the form slug and the currently selected live at render time.
+  const selectedLive = lives.find((live) => live.id === liveId);
+  const registrationLinks = useMemo<FunnelRegistrationLinks>(() => ({ forms, ...(selectedLive ? { live: selectedLive } : {}) }), [forms, selectedLive]);
   const settings = <WorkspaceSettingsFields name={name} slug={slug} formId={formId} liveId={liveId} forms={forms} lives={lives} disabled={pending} onName={setName} onSlug={setSlug} onForm={setFormId} onLive={setLiveId}>
     <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); }} />
   </WorkspaceSettingsFields>;
-  const versions = page?.versions.length ? <VersionHistory versions={page.versions} selected={selectedVersion} disabled={pending || dirty} dirty={dirty} onSelect={setVersion} onRestore={() => run("rollback")} /> : undefined;
-  const legacyActions = page && !managementHref ? <LegacyPublishActions published={published} disabled={pending || dirty} onRun={run} /> : undefined;
+  // Publish, unpublish, duplicate, delete and restore act on the stored draft; only real edits make them misleading.
+  const editedSinceSave = dirty && !pristineConversion(legacy, snapshot, convertedSnapshot);
+  const versions = page?.versions.length ? <VersionHistory versions={page.versions} selected={selectedVersion} disabled={pending || editedSinceSave} dirty={editedSinceSave} onSelect={setVersion} onRestore={() => run("rollback")} /> : undefined;
+  const legacyActions = page && !managementHref ? <LegacyPublishActions published={published} disabled={pending || editedSinceSave} onRun={run} /> : undefined;
   const chrome: FunnelEditorChrome = {
     title: name, saveState: saveStateFor(pendingOperation, dirty), saveBlocked, onSave: save, onExit: exitEditor,
     status: page ? <PublicationChip published={published} publication={publication} slug={slug} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
@@ -239,10 +260,13 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     renderPreview: (viewport) => <CurrentWorkspacePreview content={content} slug={slug} resource={webinarResource} viewport={viewport} commerceProducts={commerceProducts} />,
     notice: legacyNotice(legacy, published),
   };
-  if (legacyFailed(legacy)) return <LegacyConversionFailure onExit={() => router.push(exitHref)} />;
+  const toast = notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${notice.tone === "error" ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>{notice.text}{notice.tone === "error" ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={() => setNotice(null)}>關閉</button> : null}</p> : null;
+  if (legacyFailed(legacy)) return <LegacyConversionFailure published={published} pending={pending} onRun={run} onExit={() => router.push(exitHref)} toast={toast} />;
   return <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-100">
-    <div className="min-h-0 flex-1"><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={pending} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></div>
-    {notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${notice.tone === "error" ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>{notice.text}{notice.tone === "error" ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={() => setNotice(null)}>關閉</button> : null}</p> : null}
+    <FunnelRegistrationLinkProvider value={registrationLinks}>
+      <div className="min-h-0 flex-1"><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={pending} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></div>
+    </FunnelRegistrationLinkProvider>
+    {toast}
     {exitPrompt ? <UnsavedChangesDialog saving={pendingOperation === "save" || pendingOperation === "create"} saveBlocked={saveBlocked && !pending} onCancel={() => setExitPrompt(false)} onDiscard={() => { setExitPrompt(false); router.push(exitHref); }} onSave={() => { setExitQueued(true); save(); }} /> : null}
   </div>;
 }
@@ -276,7 +300,7 @@ function LegacyPublishActions({ published, disabled, onRun }: { published: boole
     <button type="button" disabled={disabled} onClick={() => onRun("publish")} className={button}>發布已儲存草稿</button>
     {published ? <button type="button" disabled={disabled} onClick={() => onRun("unpublish")} className={button}>取消發布</button> : null}
     <button type="button" disabled={disabled} onClick={() => onRun("duplicate")} className={button}>複製頁面</button>
-    <button type="button" disabled={disabled} onClick={() => { if (window.confirm("確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) onRun("delete"); }} className={`${button} border-red-200 text-red-700 hover:bg-red-50`}>刪除一頁式網站</button>
+    <button type="button" disabled={disabled} onClick={() => { if (window.confirm(DELETE_CONFIRMATION)) onRun("delete"); }} className={`${button} border-red-200 text-red-700 hover:bg-red-50`}>刪除一頁式網站</button>
   </div>;
 }
 

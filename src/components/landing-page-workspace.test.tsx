@@ -164,7 +164,16 @@ describe("opening a legacy page", () => {
     return content;
   };
   const forms = [{ id: "form_1", slug: "webinar-signup", name: "講座報名" }];
-  const lives = [{ id: "live_1", slug: "autumn", title: "秋季直播", status: "scheduled" as const, formId: "form_1", scheduledAt: "2030-05-01T12:00:00.000Z" }];
+  const lives = [
+    { id: "live_1", slug: "autumn", title: "秋季直播", status: "scheduled" as const, formId: "form_1", scheduledAt: "2030-05-01T12:00:00.000Z" },
+    { id: "live_2", slug: "winter", title: "冬季直播", status: "scheduled" as const, formId: "form_1", scheduledAt: "2030-12-01T12:00:00.000Z" },
+  ];
+  const chip = (container: HTMLElement) => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.getAttribute("aria-label")?.startsWith("發布狀態："))!;
+  const heroLink = (container: HTMLElement) => container.querySelector('[data-funnel-node-id="hero-cta"] a')?.getAttribute("href");
+  async function choose(select: HTMLSelectElement, value: string) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(select, value); select.dispatchEvent(new Event("change", { bubbles: true })); });
+  }
   function legacyWorkspace(content: unknown = legacyContent(), status: "draft" | "published" = "published") {
     return <LandingPageWorkspace page={{ id: "page1", name: "舊版講座頁", slug: "legacy-webinar", status, revision: 7, content: content as never, formId: "form_1", liveId: "live_1", versions: [{ version: 2 }] }} forms={forms} lives={lives} csrfName="csrf" csrfToken="synthetic" />;
   }
@@ -184,6 +193,47 @@ describe("opening a legacy page", () => {
     // Stored format differs from what is shown, so saving is offered; nothing was sent.
     expect(button(container, "儲存").disabled).toBe(false);
     expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it("resolves registration buttons from the project forms and follows a re-bound live", async () => {
+    const container = await mount(legacyWorkspace());
+    expect(heroLink(container)).toBe("/form/webinar-signup?liveId=live_1");
+    await click(button(container, "頁面設定"));
+    await choose(container.querySelector<HTMLSelectElement>('select[aria-label="活動場次"]')!, "live_2");
+    expect(heroLink(container)).toBe("/form/webinar-signup?liveId=live_2");
+    await choose(container.querySelector<HTMLSelectElement>('select[aria-label="活動場次"]')!, "");
+    expect(heroLink(container)).toBe("/form/webinar-signup");
+  });
+
+  it("keeps unpublish, duplicate, delete and version restore available before the first save", async () => {
+    mocks.action.mockResolvedValue({ status: "success", message: "已取消發布；歷史版本與草稿都仍保留。", id: "page1", revision: 8 });
+    const container = await mount(legacyWorkspace());
+    await click(chip(container));
+    const region = container.querySelector<HTMLElement>('[aria-label="公開網址狀態"]')!;
+    for (const name of ["發布已儲存草稿", "取消發布", "複製頁面", "刪除一頁式網站"]) expect(button(region, name).disabled).toBe(false);
+    expect(region.textContent).not.toContain("請先儲存變更再發布或管理。");
+    await click(button(region, "取消發布"));
+    expect(mocks.action).toHaveBeenCalledOnce();
+    expect((mocks.action.mock.calls[0]![1] as FormData).get("operation")).toBe("unpublish");
+    // The conversion is still unsaved: leaving still asks first.
+    expect(button(container, "儲存").disabled).toBe(false);
+  });
+
+  it("blocks those actions again once the merchant really edits the converted page", async () => {
+    const container = await mount(legacyWorkspace());
+    await click(button(container, "區段"));
+    await click(chip(container));
+    const region = container.querySelector<HTMLElement>('[aria-label="公開網址狀態"]')!;
+    expect(button(region, "取消發布").disabled).toBe(true);
+    expect(region.textContent).toContain("請先儲存變更再發布或管理。");
+    await click(button(container, "版本紀錄"));
+    expect(button(container, "還原此版本為草稿").disabled).toBe(true);
+  });
+
+  it("enables version restore for an unedited conversion", async () => {
+    const container = await mount(legacyWorkspace());
+    await click(button(container, "版本紀錄"));
+    expect(button(container, "還原此版本為草稿").disabled).toBe(false);
   });
 
   it("leaving without saving discards the conversion and keeps the legacy draft", async () => {
@@ -208,7 +258,9 @@ describe("opening a legacy page", () => {
     expect(saved).not.toBeNull();
     expect(saved!.id).toBe("page1");
     expect(saved!.root.map((node) => node.id)).toEqual(["hero", "benefits", "speaker", "agenda", "faq", "register", "timer"]);
-    expect(JSON.stringify(saved)).toContain("/form/webinar-signup?liveId=live_1");
+    // Buttons stay bound to the form record; the slug and live are resolved at render time.
+    expect(JSON.stringify(saved)).toContain('{"type":"registration","formId":"form_1","useBoundLive":true}');
+    expect(JSON.stringify(saved)).not.toContain("webinar-signup");
     expect(container.querySelector('[aria-label="舊版頁面轉換說明"]')).toBeNull();
     expect(button(container, "已儲存").disabled).toBe(true);
   });
@@ -222,6 +274,31 @@ describe("opening a legacy page", () => {
     await click(button(container, "返回管理頁"));
     expect(mocks.action).not.toHaveBeenCalled();
     expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
+  });
+
+  it("still lets the merchant unpublish or delete a page it cannot convert", async () => {
+    const plans = Array.from({ length: 6 }, (_, index) => ({ name: `方案${index}`, price: "NT$ 1", features: Array.from({ length: 20 }, (_, feature) => `特色${feature}`), label: "標籤", description: "說明", action: { type: "external", href: "https://example.com" } }));
+    const oversized = { schemaVersion: 1, data: { root: {}, content: Array.from({ length: 24 }, (_, index) => ({ type: "Pricing", props: { id: `p${index}`, title: "方案", plans } })) } };
+    mocks.action.mockResolvedValueOnce({ status: "success", message: "已取消發布；歷史版本與草稿都仍保留。", id: "page1", revision: 8 });
+    const container = await mount(legacyWorkspace(oversized, "published"));
+    await click(button(container, "取消發布"));
+    expect((mocks.action.mock.calls[0]![1] as FormData).get("operation")).toBe("unpublish");
+    expect(container.textContent).toContain("已取消發布");
+    expect(container.querySelector("button[disabled]")).toBeNull();
+    // Unpublished now: only delete remains, and it asks for confirmation first.
+    expect(Array.from(container.querySelectorAll("button")).some((item) => item.textContent === "取消發布")).toBe(false);
+    const confirm = vi.fn().mockReturnValueOnce(false);
+    Object.defineProperty(window, "confirm", { value: confirm, configurable: true, writable: true });
+    await click(button(container, "刪除一頁式網站"));
+    expect(mocks.action).toHaveBeenCalledOnce();
+    confirm.mockReturnValueOnce(true);
+    mocks.action.mockResolvedValueOnce({ status: "success", message: "Funnel 與草稿已刪除。", id: "page1" });
+    await click(button(container, "刪除一頁式網站"));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect((mocks.action.mock.calls[1]![1] as FormData).get("operation")).toBe("delete");
+    expect((mocks.action.mock.calls[1]![1] as FormData).get("revision")).toBe("8");
+    expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
+    Reflect.deleteProperty(window, "confirm");
   });
 });
 
