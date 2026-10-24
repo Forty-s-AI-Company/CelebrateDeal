@@ -3,6 +3,26 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:
 const ENVELOPE_VERSION = "v1";
 export const MINIMUM_ENCRYPTION_SECRET_BYTES = 32;
 
+/** Every KDF input begins with this tag; see deriveKeyFromRootSecret. */
+export const SENSITIVE_DATA_KDF_PREFIX = "CelebrateDeal:";
+
+/**
+ * KDF: HMAC-SHA256(root, "CelebrateDeal:" + purpose).
+ *
+ * The output must stay byte-identical: MFA secrets, PII envelopes and hash
+ * indexes already in the database depend on it.
+ *
+ * Invariant: the root secret is used ONLY here. Never HMAC any other value —
+ * above all attacker-controlled input such as a cookie — with the root secret
+ * directly, or that HMAC becomes an oracle that reveals derived keys. Callers
+ * that need a MAC derive their own purpose key first and HMAC under that key.
+ */
+export function deriveKeyFromRootSecret(rootSecret: string, purpose: string) {
+  return createHmac("sha256", rootSecret)
+    .update(`${SENSITIVE_DATA_KDF_PREFIX}${purpose}`)
+    .digest();
+}
+
 export function deriveSensitiveDataKey(purpose: string) {
   const seed = process.env.CSRF_SECRET?.trim() || process.env.JOB_SECRET?.trim();
   if (!seed) {
@@ -13,9 +33,7 @@ export function deriveSensitiveDataKey(purpose: string) {
   }
 
   // 同一個部署密鑰依用途衍生不同金鑰，避免 MFA、Stream 等資料共用密文域。
-  return createHmac("sha256", seed)
-    .update(`CelebrateDeal:${purpose}`)
-    .digest();
+  return deriveKeyFromRootSecret(seed, purpose);
 }
 
 export function encryptSensitiveValue(value: string, purpose: string) {

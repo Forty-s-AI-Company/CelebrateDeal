@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { AUTH_COOKIE } from "@/lib/auth";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
+import { deriveKeyFromRootSecret } from "@/lib/sensitive-data";
 
 export { CSRF_FIELD_NAME };
 
@@ -16,12 +17,25 @@ function csrfSecret() {
   return process.env.JOB_SECRET?.trim() || "development-csrf-secret";
 }
 
-function sign(value: string) {
+// CSRF_SECRET is also the sensitive-data KDF root, and the session cookie is
+// attacker-controlled. HMAC(root, cookie) would therefore let anyone read
+// derived keys (e.g. cookie "CelebrateDeal:mfa-encryption"). CSRF MACs use a
+// key derived under their own purpose, and every message carries a tag so the
+// fingerprint and token MACs cannot stand in for each other.
+const CSRF_KEY_PURPOSE = "csrf-hmac-v1";
+const FINGERPRINT_TAG = "csrf-fp:v1:";
+const TOKEN_TAG = "csrf-token:v1:";
+
+function csrfKey() {
   const secret = csrfSecret();
   if (!secret) {
     throw new Error("CSRF_SECRET must be configured in production.");
   }
-  return createHmac("sha256", secret).update(value).digest("base64url");
+  return deriveKeyFromRootSecret(secret, CSRF_KEY_PURPOSE);
+}
+
+function sign(tag: typeof FINGERPRINT_TAG | typeof TOKEN_TAG, value: string) {
+  return createHmac("sha256", csrfKey()).update(`${tag}${value}`).digest("base64url");
 }
 
 function safeEqual(left: string, right: string) {
@@ -33,7 +47,7 @@ function safeEqual(left: string, right: string) {
 async function sessionFingerprint() {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(AUTH_COOKIE)?.value ?? "anonymous";
-  return sign(sessionToken).slice(0, 32);
+  return sign(FINGERPRINT_TAG, sessionToken).slice(0, 32);
 }
 
 function originFrom(value: string | null) {
@@ -78,7 +92,7 @@ export async function getCsrfToken() {
   const nonce = randomBytes(24).toString("base64url");
   const fingerprint = await sessionFingerprint();
   const body = `${issuedAt}.${nonce}.${fingerprint}`;
-  return `${body}.${sign(body)}`;
+  return `${body}.${sign(TOKEN_TAG, body)}`;
 }
 
 export async function verifyCsrfToken(token: string | null | undefined) {
@@ -97,7 +111,7 @@ export async function verifyCsrfToken(token: string | null | undefined) {
   if (fingerprint !== await sessionFingerprint()) return false;
 
   const body = `${issuedAtValue}.${nonce}.${fingerprint}`;
-  return safeEqual(sign(body), signature);
+  return safeEqual(sign(TOKEN_TAG, body), signature);
 }
 
 export async function assertServerActionSecurity(formData: FormData) {

@@ -13,6 +13,7 @@ vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers(requestContext.headerValues)),
 }));
 
+import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import {
   assertServerActionOrigin,
   assertServerActionSecurity,
@@ -26,10 +27,29 @@ function setRequestContext(headerValues: Record<string, string> = {}, sessionVal
   requestContext.sessionValue = sessionValue;
 }
 
+// Independent re-statement of the CSRF construction: a purpose key derived
+// from the root secret, then tagged messages under that key. The root secret
+// itself never touches the (attacker-controlled) session cookie value.
+function expectedCsrfKey() {
+  return createHmac("sha256", process.env.CSRF_SECRET ?? "").update("CelebrateDeal:csrf-hmac-v1").digest();
+}
+
+function expectedFingerprint(sessionValue: string) {
+  return createHmac("sha256", expectedCsrfKey()).update(`csrf-fp:v1:${sessionValue}`).digest("base64url").slice(0, 32);
+}
+
 function signedCsrfValue(issuedAt: number, nonce = "nonce-a", fingerprint = "fingerprint-a") {
   const body = `${issuedAt}.${nonce}.${fingerprint}`;
-  const signature = createHmac("sha256", process.env.CSRF_SECRET ?? "").update(body).digest("base64url");
+  const signature = createHmac("sha256", expectedCsrfKey()).update(`csrf-token:v1:${body}`).digest("base64url");
   return `${body}.${signature}`;
+}
+
+// The pre-fix construction: HMAC(root secret, cookie) and HMAC(root secret, body).
+function legacyCsrfValue(issuedAt: number, sessionValue: string, nonce = "nonce-legacy") {
+  const root = process.env.CSRF_SECRET ?? "";
+  const fingerprint = createHmac("sha256", root).update(sessionValue).digest("base64url").slice(0, 32);
+  const body = `${issuedAt}.${nonce}.${fingerprint}`;
+  return `${body}.${createHmac("sha256", root).update(body).digest("base64url")}`;
 }
 
 beforeEach(() => {
@@ -141,6 +161,61 @@ describe("CSRF tokens", () => {
     for (const changedValue of changedValues) {
       await expect(verifyCsrfToken(changedValue)).resolves.toBe(false);
     }
+  });
+});
+
+describe("CSRF key separation from the sensitive-data KDF", () => {
+  const PURPOSES = [
+    "mfa-encryption",
+    "mfa-recovery-code-authentication",
+    "commerce-order-buyer",
+    "commerce-order-identity-fingerprint",
+    "form-submission-email-verification",
+    "form-submission-chat-session",
+    "student-portal-access-token-v1",
+    "merchant-registration-invite",
+    "csrf-hmac-v1",
+  ];
+
+  it.each(PURPOSES)("does not reveal any part of the %s key through a crafted session cookie", async (purpose) => {
+    setRequestContext({ host: "request.example.test" }, `CelebrateDeal:${purpose}`);
+    const derivedKey = deriveSensitiveDataKey(purpose).toString("base64url");
+    const [, , fingerprint, signature] = (await getCsrfToken()).split(".");
+
+    expect(fingerprint).toHaveLength(32);
+    expect(derivedKey.startsWith(fingerprint)).toBe(false);
+    expect(derivedKey.includes(fingerprint.slice(0, 16))).toBe(false);
+    expect(derivedKey.includes(signature.slice(0, 16))).toBe(false);
+  });
+
+  it("derives its MAC key from the KDF under its own purpose and tags every message", async () => {
+    const sessionValue = "CelebrateDeal:mfa-encryption";
+    setRequestContext({ host: "request.example.test" }, sessionValue);
+
+    expect(expectedCsrfKey().equals(deriveSensitiveDataKey("csrf-hmac-v1"))).toBe(true);
+    const csrfValue = await getCsrfToken();
+    const [issuedAt, nonce, fingerprint] = csrfValue.split(".");
+    expect(fingerprint).toBe(expectedFingerprint(sessionValue));
+    expect(csrfValue).toBe(signedCsrfValue(Number(issuedAt), nonce, fingerprint));
+  });
+
+  it("keeps working with the non-production development fallback secret", async () => {
+    vi.stubEnv("CSRF_SECRET", "");
+    vi.stubEnv("JOB_SECRET", "");
+
+    await expect(verifyCsrfToken(await getCsrfToken())).resolves.toBe(true);
+  });
+
+  it("rejects a token minted with the pre-fix construction without throwing", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-25T12:00:00.000Z"));
+    const stale = legacyCsrfValue(Date.now() - 60_000, "session-a");
+    const formData = new FormData();
+    formData.set(CSRF_FIELD_NAME, stale);
+    setRequestContext({ host: "request.example.test", origin: "https://configured.example.test" });
+
+    await expect(verifyCsrfToken(stale)).resolves.toBe(false);
+    await expect(assertServerActionSecurity(formData)).rejects.toThrow("Invalid CSRF token.");
   });
 });
 
