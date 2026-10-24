@@ -63,7 +63,7 @@ function editorPreviewStatus(): PopupTriggerEligibility {
     status: "available",
     executable: true,
     canTrigger: true,
-    reason: "編輯器預覽可立即顯示指定 Popup",
+    reason: "編輯器預覽可立即顯示指定彈出視窗",
     delayMs: 0,
   };
 }
@@ -101,7 +101,7 @@ export function getFunnelPopupExitIntentStatus(popup: FunnelPopup): PopupTrigger
 
 export function registerDesktopExitIntent(onExit: () => void): { status: PopupTriggerEligibility; cancel: () => void } {
   const desktop = window.innerWidth >= 768;
-  if (!desktop) return { status: { trigger: "exit_intent", status: "disabled", executable: false, canTrigger: false, reason: "行動裝置不支援 Exit Intent" }, cancel: () => undefined };
+  if (!desktop) return { status: { trigger: "exit_intent", status: "disabled", executable: false, canTrigger: false, reason: "行動裝置不支援離開意圖" }, cancel: () => undefined };
   let fired = false;
   const listener = (event: MouseEvent) => {
     if (fired || event.clientY > 0) return;
@@ -110,7 +110,7 @@ export function registerDesktopExitIntent(onExit: () => void): { status: PopupTr
     window.removeEventListener("mouseout", listener);
   };
   window.addEventListener("mouseout", listener);
-  return { status: { trigger: "exit_intent", status: "available", executable: true, canTrigger: true, reason: "桌機 Exit Intent 已啟用" }, cancel: () => window.removeEventListener("mouseout", listener) };
+  return { status: { trigger: "exit_intent", status: "available", executable: true, canTrigger: true, reason: "桌機離開意圖已啟用" }, cancel: () => window.removeEventListener("mouseout", listener) };
 }
 
 function popupStyle(popup: FunnelPopup): CSSProperties {
@@ -134,7 +134,7 @@ function popupDocument(document: PageDocument, popup: FunnelPopup): PageDocument
 }
 
 function statusLabel(status: PopupTriggerEligibility): string {
-  if (status.status === "unverified") return `Exit intent：unverified（${status.reason}）`;
+  if (status.status === "unverified") return `離開意圖：unverified（${status.reason}）`;
   return status.status === "disabled" ? `彈出視窗：${status.reason}` : status.reason;
 }
 

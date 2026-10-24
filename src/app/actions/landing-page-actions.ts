@@ -178,7 +178,7 @@ export async function landingPageAction(
       const result = await deleteLandingPage(id, expectedRevision);
       return success(
         result.archived
-          ? "這個 Funnel 已發布過或已有造訪紀錄，已改為封存：公開網址不再開啟，造訪與名單來源紀錄會保留。"
+          ? "這個一頁式網站已發布過或已有造訪紀錄，已改為封存：公開網址不再開啟，造訪與名單來源紀錄會保留。"
           : "Funnel 與草稿已刪除。",
         result,
       );

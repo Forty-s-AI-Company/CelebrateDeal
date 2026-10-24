@@ -331,7 +331,7 @@ export function applyFunnelPageCommand(document: PageDocument, command: FunnelPa
 
 export function createFunnelPageHistory(document: PageDocument): FunnelPageHistory {
   const parsed = parsePageDocument(document);
-  if (!parsed) throw new Error("無法建立不符合規格的 Funnel history");
+  if (!parsed) throw new Error("無法建立不符合規格的一頁式網站編輯歷程");
   return { present: parsed, past: [], future: [] };
 }
 

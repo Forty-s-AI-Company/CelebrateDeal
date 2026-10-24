@@ -116,7 +116,7 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await expect(page.getByRole("textbox", { name: "額外同意條款（選填）", exact: true })).toHaveValue(agreement);
   await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click();
   await expect(page.getByRole("link", { name: /查看公開頁/u })).toBeVisible();
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.getByRole("button", { name: "預覽", exact: true }).click();
   await expect(page.locator('[data-render-mode="preview"]:visible')).toBeVisible();
   await expect(page.getByRole("button", { name: "前往安全結帳（預覽不收款）", exact: true })).toBeDisabled();
   await expect(page.locator('[data-funnel-renderer] a[href$="/checkout"]')).toHaveCount(0);

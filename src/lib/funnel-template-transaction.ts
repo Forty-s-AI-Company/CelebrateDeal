@@ -291,7 +291,7 @@ export function changeFunnelTemplate(document: PageDocument, options: FunnelTemp
     nextPopupCount: candidate.popups.length,
     settingsStrategy,
     preservedMetadata: ["id", "name", "revision"],
-    warning: "套用模板會替換目前畫布與 Popup；既有節點內容不會自動合併。請確認後繼續。",
+    warning: "套用模板會替換目前畫布與彈出視窗；既有節點內容不會自動合併。請確認後繼續。",
   };
 
   if (options.confirm !== true) {

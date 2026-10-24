@@ -74,7 +74,7 @@ async function createGoal(page: Page, goal: Goal) {
 
   await management.getByRole("button", { name: "編輯頁面", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
-  await expect(page.getByLabel("Funnel 編輯器工具列", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("一頁式網站編輯器工具列", { exact: true })).toBeVisible();
   return { slug, pageId };
 }
 
@@ -82,10 +82,10 @@ for (const { goal } of goals) {
   test(`四 Goal：${goal} 依序經過管理、模板與單頁編輯器`, async ({ page }) => {
     await login(page);
     const { slug, pageId } = await createGoal(page, goal);
-    const toolbar = page.getByLabel("Funnel 編輯器工具列", { exact: true });
+    const toolbar = page.getByLabel("一頁式網站編輯器工具列", { exact: true });
 
-    await expect(toolbar.getByRole("button", { name: "Save", exact: true })).toBeVisible();
-    await toolbar.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(toolbar.getByRole("button", { name: "儲存", exact: true })).toBeVisible();
+    await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: /草稿已儲存|已儲存/u }).first()).toBeVisible();
     await expect.poll(async () => (await db.landingPage.findUnique({ where: { id: pageId }, select: { slug: true } }))?.slug).toBe(slug);
 
@@ -109,7 +109,7 @@ for (const { goal } of goals) {
       await expect(page.getByRole("link", { name: /查看公開頁/u })).toHaveCount(0);
     }
 
-    const remove = page.getByRole("button", { name: "刪除 Funnel", exact: true });
+    const remove = page.getByRole("button", { name: "刪除一頁式網站", exact: true });
     page.once("dialog", (dialog) => dialog.accept());
     await remove.click();
     await expect(page).toHaveURL(/\/landing-pages$/u);

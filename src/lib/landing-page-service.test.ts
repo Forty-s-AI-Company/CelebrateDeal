@@ -269,7 +269,7 @@ describe("merchant publication diagnosis", () => {
 
   it("reports an unpublished Funnel separately from its published project", async () => {
     database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
-    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "Funnel 尚未發布，公開網址目前無法開啟。" });
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。" });
     expect(mocks.findMany).not.toHaveBeenCalled();
   });
 
@@ -277,7 +277,7 @@ describe("merchant publication diagnosis", () => {
     database.salesProject.findFirst.mockResolvedValue({ status: "published", publishedAt: now, primaryFlow: "live" });
     mocks.findFirst.mockResolvedValueOnce(page({ status: "published" }));
     mocks.findMany.mockResolvedValueOnce([page({ publishedAt: now, publishedVersion: null })]);
-    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "Funnel 發布版本不存在或不一致，請重新發布。" });
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "一頁式網站發布版本不存在或不一致，請重新發布。" });
   });
 
   it("names a disabled registration form as the public 404 reason", async () => {
@@ -304,7 +304,7 @@ describe("merchant publication diagnosis", () => {
     mocks.findFirst.mockResolvedValueOnce(page({ status: "published" }));
     const content = createFunnelStepPages(createFunnelFlow({ id: "flow_available", name: "合成名單", goal: "audience", domain: "audience" })!)!;
     mocks.findMany.mockResolvedValueOnce([page({ publishedAt: now, publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null } })]);
-    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: true, message: "專案與 Funnel 均已發布，公開頁目前可開啟。" });
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: true, message: "專案與一頁式網站均已發布，公開頁目前可開啟。" });
   });
 
   describe("published Funnel availability", () => {

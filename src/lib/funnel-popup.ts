@@ -199,25 +199,25 @@ export function bindFunnelPopupToPage(document: PageDocument, popupId: string, p
 export function validatePopupTrigger(popup: FunnelPopup, trigger: PopupTrigger): PopupTriggerEligibility {
   const parsed = FunnelPopupSchema.safeParse(popup);
   if (!parsed.success) {
-    return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "Popup 設定無法通過驗證" };
+    return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "彈出視窗設定無法通過驗證" };
   }
   const current = parsed.data;
   if (trigger === "automatic_delay") {
     if (!current.settings.openAutomatically) {
-      return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "Popup 未啟用自動顯示" };
+      return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "彈出視窗未啟用自動顯示" };
     }
     return {
       trigger,
       status: "available",
       executable: true,
       canTrigger: true,
-      reason: "可依設定延遲顯示 Popup",
+      reason: "可依設定延遲顯示彈出視窗",
       delayMs: current.settings.automaticDelaySeconds * 1000,
     };
   }
 
   if (!current.settings.openOnExitIntent) {
-    return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "Popup 未啟用離開意圖" };
+    return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "彈出視窗未啟用離開意圖" };
   }
   return {
     trigger,
@@ -232,7 +232,7 @@ export function validatePopupTrigger(popup: FunnelPopup, trigger: PopupTrigger):
 export function getFunnelPopupTriggerEligibility(document: PageDocument, popupId: string, trigger: PopupTrigger): PopupTriggerEligibility {
   const parsed = parsePageDocument(document);
   const popup = parsed ? getPopup(parsed, popupId) : null;
-  if (!popup) return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "找不到指定 Popup" };
+  if (!popup) return { trigger, status: "disabled", executable: false, canTrigger: false, reason: "找不到指定彈出視窗" };
   return validatePopupTrigger(popup, trigger);
 }
 

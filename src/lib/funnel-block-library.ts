@@ -269,10 +269,10 @@ function nextInstanceId(templateId: string): string {
 /** Instantiate a fresh block. Unknown IDs fail explicitly so the picker cannot silently insert an empty block. */
 export function instantiateBlock(templateId: string): FunnelNode {
   const template = FUNNEL_BLOCK_REGISTRY[templateId];
-  if (!template) throw new Error(`找不到 Funnel block：${templateId}`);
+  if (!template) throw new Error(`找不到一頁式網站區塊：${templateId}`);
   const result = template.factory(nextInstanceId(templateId));
   const valid = parsePageDocument({ schemaVersion: 1, id: "block-preview", name: template.label, root: [result], popups: [], settings: {} });
-  if (!valid) throw new Error(`Funnel block 無法通過 PageDocument 驗證：${templateId}`);
+  if (!valid) throw new Error(`一頁式網站區塊 無法通過 PageDocument 驗證：${templateId}`);
   return result;
 }
 

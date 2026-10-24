@@ -24,7 +24,7 @@ function currentPublishedVersion(version: string, page?: PageInput): string {
 }
 function starterDocument(goal: FunnelGoal = "custom"): PageDocument {
   const leaf = (id: string, type: FunnelNode["type"], props: Record<string, unknown>): FunnelNode => ({ schemaVersion: 1, id, type, props, style: {}, overrides: {}, visible: true, actions: [], attributes: {} });
-  const document = createEmptyPageDocument("funnel-page", "新的 Funnel 頁面");
+  const document = createEmptyPageDocument("funnel-page", "新的一頁式網站頁面");
   if (goal === "custom" || goal === "webinar") return document;
   const copy = goal === "audience" ? { headline: "加入名單，取得最新消息", text: "留下 Email，我們會把重要內容寄給你。", button: "加入名單" } : { headline: "完成你的訂購", text: "確認方案內容，再前往安全的付款流程。", button: "選擇方案" };
   document.root = [{ schemaVersion: 1, id: "section_main", type: "section", props: {}, style: { padding: 32 }, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "row_main", type: "row", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [{ schemaVersion: 1, id: "column_main", type: "columns_2", props: {}, style: {}, overrides: {}, visible: true, actions: [], attributes: {}, children: [leaf("headline_main", "headline", { text: copy.headline, level: "h1" }), leaf("text_main", "text", { text: copy.text }), leaf("button_main", "button", { label: copy.button })] }] }] }];
@@ -43,7 +43,7 @@ function saveStateLabel(dirty: boolean, stepPending: boolean) {
 function WorkspacePreview({ content, forms, live, commerceProducts, viewport }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"]; commerceProducts: FunnelCommerceProduct[]; viewport: "desktop" | "mobile" }) {
   if (isFunnelStepPages(content)) {
     const active = getActiveFunnelStepPage(content);
-    return active ? <><FunnelPageDocumentRenderer document={active.page} commerce={commerceViewForBinding(active.page.commerce, commerceProducts)} viewport={viewport} mode="preview" />{active.page.popups.filter((popup) => !popup.pageId || popup.pageId === active.page.id).map((popup) => <FunnelPopupPreview key={popup.id} document={active.page} popupId={popup.id} viewport={viewport} />)}</> : <p role="alert">無法預覽目前 Funnel step。</p>;
+    return active ? <><FunnelPageDocumentRenderer document={active.page} commerce={commerceViewForBinding(active.page.commerce, commerceProducts)} viewport={viewport} mode="preview" />{active.page.popups.filter((popup) => !popup.pageId || popup.pageId === active.page.id).map((popup) => <FunnelPopupPreview key={popup.id} document={active.page} popupId={popup.id} viewport={viewport} />)}</> : <p role="alert">無法預覽目前一頁式網站步驟。</p>;
   }
   if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
@@ -65,7 +65,7 @@ function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderC
   }
   return {
     content, published: page?.status === "published",
-    name: page?.name ?? config?.name ?? "新的 Funnel 頁面", slug: page?.slug ?? config?.slug ?? "",
+    name: page?.name ?? config?.name ?? "新的一頁式網站頁面", slug: page?.slug ?? config?.slug ?? "",
     formId: page?.formId ?? forms[0]?.id ?? "", liveId: page?.liveId ?? "",
     revision: page?.revision ?? 1, valid: Boolean(page?.content ?? true),
     version: String(page?.versions[0]?.version ?? ""),
@@ -180,26 +180,26 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
   const blocked = workspaceBlocked({ pending, stepPending, valid, name, slug });
   return <div className="fixed inset-0 z-[100] flex min-h-0 flex-col overflow-hidden bg-slate-100">
-    <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="Funnel 編輯器工具列">
+    <header className="z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm md:px-5" aria-label="一頁式網站編輯器工具列">
       <button type="button" onClick={exitEditor} className={secondaryButtonClass}>← {returnHref ? "返回頁面設定" : "返回"}</button>
       <div className="hidden h-8 w-px bg-slate-200 sm:block" />
       <p className="mr-auto min-w-0 truncate text-sm font-bold text-slate-900">{name}</p>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>Undo</button>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "redo" }))}>Redo</button>
-      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} title={supportsFunnelCommands(content) ? "管理本頁 Popups" : "舊版頁面需先轉換後使用 Popup"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>Popups</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "undo" }))}>復原</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "redo" }))}>重做</button>
+      <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} title={supportsFunnelCommands(content) ? "管理本頁彈出視窗" : "舊版頁面需先轉換後使用彈出視窗"} onClick={() => document.getElementById("funnel-popups-tab")?.click()}>彈出視窗</button>
       <button type="button" aria-pressed={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); document.getElementById("funnel-page-settings-tab")?.click(); }} className={secondaryButtonClass}>頁面設定</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("desktop"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "desktop" })); }}>桌機</button>
       <button type="button" disabled={!supportsFunnelCommands(content)} className={secondaryButtonClass} onClick={() => { setPreviewViewport("mobile"); window.dispatchEvent(new CustomEvent("celebratedeal:funnel-command", { detail: "mobile" })); }}>手機</button>
-      <button type="button" disabled={pending || !valid} onClick={() => setPreview((value) => !value)} className={secondaryButtonClass}>{preview ? "返回編輯" : "Preview"}</button>
-      <button type="button" disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "儲存中…" : "Save"}</button>
-      <button type="button" onClick={exitEditor} className="min-h-10 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Exit</button>
+      <button type="button" disabled={pending || !valid} onClick={() => setPreview((value) => !value)} className={secondaryButtonClass}>{preview ? "返回編輯" : "預覽"}</button>
+      <button type="button" disabled={blocked} onClick={() => run(page ? "save" : "create")} className="min-h-10 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-40">{pending ? "儲存中…" : "儲存"}</button>
+      <button type="button" onClick={exitEditor} className="min-h-10 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">離開</button>
       <span role="status" className={`w-full text-right text-xs font-semibold sm:w-auto ${dirty || stepPending ? "text-amber-700" : "text-emerald-700"}`}>{saveStateLabel(dirty, stepPending)}</span>
     </header>
     <div className="min-h-0 flex-1 overflow-auto p-3 md:p-5">
     <section aria-labelledby="landing-page-settings" className={`${settingsOpen ? "block" : "hidden"} mb-5 rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6`}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Page setup</p><h2 id="landing-page-settings" className="mt-1 text-lg font-bold tracking-tight text-slate-950">頁面設定</h2><p className="mt-1 text-sm text-slate-500">先確認頁面資訊，再開始編排招生內容。</p></div>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "Funnel 已發布（公開狀態見下方）" : "草稿頁面") : "新頁面"}</span>
+        <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">基本設定</p><h2 id="landing-page-settings" className="mt-1 text-lg font-bold tracking-tight text-slate-950">頁面設定</h2><p className="mt-1 text-sm text-slate-500">先確認頁面資訊，再開始編排招生內容。</p></div>
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">{page ? (published ? "一頁式網站已發布（公開狀態見下方）" : "草稿頁面") : "新頁面"}</span>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="grid min-w-0 content-start gap-0.5 text-sm font-medium text-slate-700">頁面名稱<input disabled={pending} aria-label="頁面名稱" className={inputClass} value={name} maxLength={160} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></label>
@@ -223,8 +223,8 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
         <button disabled={blocked || dirty} onClick={() => run("publish")} className={secondaryButtonClass}>發布已儲存草稿</button>
         <button disabled={pending || stepPending || dirty} onClick={() => run("duplicate")} className={secondaryButtonClass}>複製頁面</button>
         <button disabled={pending || stepPending || dirty} onClick={() => {
-          if (window.confirm("確定要移除這個 Funnel 嗎？曾發布或已有造訪紀錄的 Funnel 會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) run("delete");
-        }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除 Funnel</button>
+          if (window.confirm("確定要移除這個一頁式網站嗎？曾發布或已有造訪紀錄的一頁式網站會改為封存：公開網址停止開啟，造訪與名單來源紀錄保留；從未發布的草稿會永久刪除。")) run("delete");
+        }} className={`${secondaryButtonClass} border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50`}>刪除一頁式網站</button>
         {published ? <><a href={`/lp/${slug}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>查看公開頁 ↗</a><button disabled={pending || stepPending || dirty} onClick={() => run("unpublish")} className={secondaryButtonClass}>取消發布</button></> : null}
         {page.versions.length ? <><select aria-label="歷史發布版本" className={secondaryButtonClass} value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>{page.versions.map((v) => <option key={v.version} value={v.version}>版本 {v.version}</option>)}</select><button disabled={pending || stepPending || dirty || !selectedVersion} onClick={() => run("rollback")} className={secondaryButtonClass}>還原此版本為草稿</button></> : null}
       </> : <button disabled={pending} className={secondaryButtonClass} onClick={() => updateContent(createEmptyPageDocument("funnel-page", name))}>使用空白頁</button>}

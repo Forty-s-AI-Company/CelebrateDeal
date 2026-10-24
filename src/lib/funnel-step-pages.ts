@@ -176,7 +176,7 @@ function fromFlowMutation(
   const error = synchronize(next, state.flow);
   if (error) return failure(state, error);
   const valid = validStore(next);
-  return valid ? success(valid) : failure(state, "同步後的 Funnel steps 與頁面快照不符合規格，已回復原狀");
+  return valid ? success(valid) : failure(state, "同步後的一頁式網站步驟 與頁面快照不符合規格，已回復原狀");
 }
 
 /** Creates one independently serializable page snapshot for every step, including the system inactive page. */
@@ -213,7 +213,7 @@ export function parseFunnelStepPages(value: unknown): FunnelStepPages | null {
 
 export function serializeFunnelStepPages(state: FunnelStepPages): string {
   const valid = parseFunnelStepPages(state);
-  if (!valid) throw new Error("無法序列化不符合規格的 Funnel step pages");
+  if (!valid) throw new Error("無法序列化不符合規格的一頁式網站步驟頁面");
   return JSON.stringify(valid);
 }
 
@@ -225,7 +225,7 @@ export function deserializeFunnelStepPages(serialized: string): FunnelStepPages 
 /** A pure selection transaction. The inactive page is intentionally selectable but non-editable. */
 export function switchFunnelStep(state: FunnelStepPages, stepId: string): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕切換");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕切換");
   if (!valid.flow.steps.some((step) => step.id === stepId)) return failure(valid, "找不到指定步驟");
   return success({ ...valid, activeStepId: stepId });
 }
@@ -241,7 +241,7 @@ export function getActiveFunnelStepPage(state: FunnelStepPages): FunnelStepPageS
 /** Replaces only one selected PageDocument while retaining its step-owned document identity. */
 export function replaceFunnelStepPage(state: FunnelStepPages, stepId: string, page: PageDocument, templateId?: string): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕儲存頁面");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕儲存頁面");
   const step = valid.flow.steps.find((item) => item.id === stepId);
   if (!step) return failure(valid, "找不到指定步驟");
   if (step.isSystem) return failure(valid, "停用頁由系統管理，不能覆寫內容");
@@ -258,12 +258,12 @@ export function replaceFunnelStepPage(state: FunnelStepPages, stepId: string, pa
   }
   next.pages[stepId] = snapshot;
   const parsed = parseFunnelStepPages(next);
-  return parsed ? success(parsed) : failure(valid, "頁面包含與其他 Funnel step 重複的 ID 或失效動作，已回復原狀");
+  return parsed ? success(parsed) : failure(valid, "頁面包含與其他一頁式網站步驟 重複的 ID 或失效動作，已回復原狀");
 }
 
 export function addFunnelStepPage(state: FunnelStepPages, input: FunnelStepInput, index?: number): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕新增步驟");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕新增步驟");
   return fromFlowMutation(valid, addFunnelStep(valid.flow, input, index), (next) => {
     const added = next.flow.steps.find((step) => !valid.flow.steps.some((old) => old.id === step.id));
     if (!added) return "找不到新增後的步驟";
@@ -327,7 +327,7 @@ function allPopupIds(state: FunnelStepPages): Set<string> {
 
 export function duplicateFunnelStepPage(state: FunnelStepPages, stepId: string, input: Pick<FunnelStepInput, "id" | "name" | "path">): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕複製步驟");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕複製步驟");
   const source = valid.flow.steps.find((step) => step.id === stepId);
   return fromFlowMutation(valid, duplicateFunnelStep(valid.flow, stepId, input), (next) => {
     if (!source) return "找不到要複製的步驟";
@@ -344,13 +344,13 @@ export function duplicateFunnelStepPage(state: FunnelStepPages, stepId: string, 
 
 export function moveFunnelStepPage(state: FunnelStepPages, stepId: string, toIndex: number): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕移動步驟");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕移動步驟");
   return fromFlowMutation(valid, moveFunnelStep(valid.flow, stepId, toIndex), () => null);
 }
 
 export function removeFunnelStepPage(state: FunnelStepPages, stepId: string): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕移除步驟");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕移除步驟");
   return fromFlowMutation(valid, removeFunnelStep(valid.flow, stepId), (next) => {
     delete next.pages[stepId];
     if (next.activeStepId === stepId) next.activeStepId = next.flow.steps.find((step) => !step.isSystem)?.id ?? "inactive";
@@ -360,7 +360,7 @@ export function removeFunnelStepPage(state: FunnelStepPages, stepId: string): Fu
 
 export function renameFunnelStepPage(state: FunnelStepPages, stepId: string, name: string): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕重新命名步驟");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕重新命名步驟");
   return fromFlowMutation(valid, renameFunnelStep(valid.flow, stepId, name), (next) => {
     const step = next.flow.steps.find((item) => item.id === stepId);
     const page = next.pages[stepId];
@@ -373,7 +373,7 @@ export function renameFunnelStepPage(state: FunnelStepPages, stepId: string, nam
 /** Updates the public step URL while retaining every independently stored page snapshot. */
 export function setFunnelStepPathPage(state: FunnelStepPages, stepId: string, path: string): FunnelStepPageMutationResult {
   const valid = parseFunnelStepPages(state);
-  if (!valid) return failure(state, "Funnel step pages 資料無法通過驗證，拒絕修改 URL Path");
+  if (!valid) return failure(state, "一頁式網站步驟頁面 資料無法通過驗證，拒絕修改 URL Path");
   return fromFlowMutation(valid, setFunnelStepPath(valid.flow, stepId, path), () => null);
 }
 

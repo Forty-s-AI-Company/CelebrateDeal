@@ -31,9 +31,9 @@ test("owner saves template, flow and popup through actual workspace and reloads 
     const initial = content.flow.steps.length;
     await page.getByRole("button", { name: "＋ 新增步驟", exact: true }).click();
     await expect(page.getByRole("button", { name: "流程 復原", exact: true })).toBeEnabled();
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "儲存", exact: true }).click();
     await expect.poll(async () => (await read()).flow.steps.length).toBe(initial + 1);
-    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "儲存", exact: true })).toBeEnabled();
     await page.reload();
     await expect(page.getByLabel("網站步驟", { exact: true })).toBeVisible();
     await page.getByLabel("網站步驟", { exact: true }).getByRole("button", { name: "套用模板", exact: true }).first().click();
@@ -46,7 +46,7 @@ test("owner saves template, flow and popup through actual workspace and reloads 
     await page.getByRole("button", { name: "套用動作", exact: true }).click();
     await page.getByRole("button", { name: "彈出視窗", exact: true }).last().click();
     await page.getByRole("button", { name: "＋ 新增", exact: true }).click();
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "儲存", exact: true }).click();
     await expect.poll(async () => { const draft = await read(); return draft.pages[draft.activeStepId].popups.length; }).toBe(1);
     const saved = await read();
     expect(saved.pages[saved.activeStepId].root.length).toBeGreaterThan(0);
