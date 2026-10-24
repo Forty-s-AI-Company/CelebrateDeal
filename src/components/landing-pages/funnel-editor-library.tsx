@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   AudioLines, BadgeDollarSign, Box, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, CircleHelp, CirclePlus, ClipboardList, Code, Columns2, Columns3, Columns4,
   CreditCard, FileCheck2, FileText, GalleryHorizontal, Heading, House, Image as ImageIcon, LayoutTemplate, List, ListChecks, ListOrdered, Menu, MessageSquareQuote, Minus,
   MousePointerClick, Package, PanelBottom, PanelTop, Rows3, Search, Share2, ShieldCheck, ShoppingCart, SquareCheck, TextCursorInput, ThumbsUp, Ticket, Timer,
   Truck, Type, UserRound, Users, Video, Wallet,
 } from "lucide-react";
-import { getFunnelNodeDefinition, type FunnelNodeType } from "@/lib/funnel-page-document";
-import { FUNNEL_BLOCK_CATEGORY_METADATA, getFunnelBlocksByCategory, type FunnelBlockCategory } from "@/lib/funnel-block-library";
+import { getFunnelNodeDefinition, type FunnelNodeType, type PageDocument } from "@/lib/funnel-page-document";
+import { FUNNEL_BLOCK_CATEGORY_METADATA, getFunnelBlocksByCategory, listFunnelBlockCategories, previewFunnelBlockDocument, type FunnelBlockCategory, type FunnelBlockTemplate } from "@/lib/funnel-block-library";
 import { beginFunnelDrag, endFunnelDrag } from "./funnel-editor-drag";
+import { FunnelPageDocumentRenderer } from "./funnel-page-document-renderer";
 
 type IconComponent = ComponentType<{ size?: number; "aria-hidden"?: boolean; className?: string }>;
 
@@ -87,30 +88,75 @@ const blockIcons: Record<FunnelBlockCategory, IconComponent> = {
   welcome: House, price_plans: CircleDollarSign, page_headers: PanelTop, testimonials: MessageSquareQuote,
 };
 
-/** Blocks tab: category list first, then that category's blocks (EDT-BLK-001). */
-export function BlockLibrary({ disabled, onAdd }: { disabled: boolean; onAdd: (templateId: string) => void }) {
+/** Width of the virtual desktop canvas a thumbnail is rendered at before scaling down. */
+export const FUNNEL_BLOCK_THUMBNAIL_CANVAS_WIDTH = 1040;
+const THUMBNAIL_MAX_HEIGHT = 240;
+
+/**
+ * Real renderer output in preview mode, scaled down. The document is built
+ * from the template ID only (no clock or random IDs), so it renders the same
+ * on the server and in the browser. The preview is inert: its links, buttons
+ * and inputs are neither focusable nor clickable; the overlay button adds it.
+ */
+function BlockThumbnail({ block, settings, disabled, onAdd }: { block: FunnelBlockTemplate; settings?: PageDocument["settings"]; disabled: boolean; onAdd: (templateId: string) => void }) {
+  const document = useMemo(() => previewFunnelBlockDocument(block.id, settings), [block.id, settings]);
+  const frame = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ scale: 0.25, height: 150 });
+  useEffect(() => {
+    const frameElement = frame.current;
+    const contentElement = content.current;
+    if (!frameElement || !contentElement) return;
+    const measure = () => {
+      const scale = frameElement.clientWidth / FUNNEL_BLOCK_THUMBNAIL_CANVAS_WIDTH;
+      if (!scale) return;
+      const height = Math.min(Math.round(contentElement.scrollHeight * scale), THUMBNAIL_MAX_HEIGHT);
+      setBox((current) => current.scale === scale && current.height === height ? current : { scale, height: height || current.height });
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(frameElement);
+    observer.observe(contentElement);
+    return () => observer.disconnect();
+  }, [document]);
+  return <li data-funnel-block-thumbnail={block.id} className="group relative rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition-colors hover:border-blue-400 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-blue-400">
+    <div ref={frame} aria-hidden inert className="pointer-events-none relative overflow-hidden rounded-lg border border-slate-100 bg-white" style={{ height: box.height }}>
+      <div ref={content} className="absolute top-0 left-0 origin-top-left" style={{ width: FUNNEL_BLOCK_THUMBNAIL_CANVAS_WIDTH, transform: `scale(${box.scale})` }}>
+        <FunnelPageDocumentRenderer document={document} viewport="desktop" mode="preview" landmark={false} />
+      </div>
+    </div>
+    <p className="mt-2 px-1 text-sm font-bold text-slate-800">{block.label}</p>
+    <p className="px-1 text-xs leading-5 text-slate-600">{block.description}</p>
+    {block.capability ? <p className="px-1 text-[11px] font-semibold text-amber-800">付款需綁定商品；部分功能有限制</p> : null}
+    <button type="button" aria-label={`加入區塊：${block.label}`} title="點擊加入，或拖曳到畫布上的位置" draggable={!disabled} disabled={disabled}
+      onDragStart={(event) => beginFunnelDrag(event, { kind: "block", templateId: block.id, nodeType: "section" })} onDragEnd={endFunnelDrag} onClick={() => onAdd(block.id)}
+      className="absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-none disabled:cursor-not-allowed" />
+  </li>;
+}
+
+/** Blocks tab: category list first, then that category's thumbnails (EDT-BLK-001). */
+export function BlockLibrary({ disabled, settings, onAdd }: { disabled: boolean; settings?: PageDocument["settings"]; onAdd: (templateId: string) => void }) {
   const [category, setCategory] = useState<FunnelBlockCategory | null>(null);
-  const available = (Object.keys(FUNNEL_BLOCK_CATEGORY_METADATA) as FunnelBlockCategory[]).filter((id) => getFunnelBlocksByCategory(id).length > 0);
-  if (!category) return <ul className="grid gap-1" aria-label="版型區塊分類">{available.map((id) => {
-    const Icon = blockIcons[id];
-    const meta = FUNNEL_BLOCK_CATEGORY_METADATA[id];
-    return <li key={id}><button type="button" onClick={() => setCategory(id)} className="flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
-      <Icon size={18} aria-hidden className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1">{meta.label}<span className="block truncate text-xs font-normal text-slate-500">{meta.description}</span></span><ChevronRight size={16} aria-hidden className="text-slate-400" />
+  if (!category) return <ul className="grid gap-1" aria-label="版型區塊分類">{listFunnelBlockCategories().map((meta) => {
+    const Icon = blockIcons[meta.id];
+    return <li key={meta.id}><button type="button" onClick={() => setCategory(meta.id)} className="flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+      <Icon size={18} aria-hidden className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1">{meta.label}<span className="block truncate text-xs font-normal text-slate-600">{meta.description}</span></span>
+      <span className="text-xs font-normal text-slate-600">{meta.variantCount} 款</span><ChevronRight size={16} aria-hidden className="text-slate-500" />
     </button></li>;
   })}</ul>;
   const meta = FUNNEL_BLOCK_CATEGORY_METADATA[category];
   return <div className="grid gap-3">
     <div className="flex items-center gap-2"><button type="button" onClick={() => setCategory(null)} className="inline-flex min-h-9 cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"><ChevronLeft size={16} aria-hidden />返回</button><h3 className="text-sm font-bold text-slate-900">{meta.label}</h3></div>
-    {getFunnelBlocksByCategory(category).map((block) => <button key={block.id} type="button" draggable={!disabled} disabled={disabled} onDragStart={(event) => beginFunnelDrag(event, { kind: "block", templateId: block.id, nodeType: "section" })} onDragEnd={endFunnelDrag} onClick={() => onAdd(block.id)} className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60">
-      <span className="block text-sm font-bold text-slate-800">{block.label}</span>
-      <span className="mt-1 block text-xs leading-5 text-slate-500">{block.description}</span>
-      {block.capability ? <span className="mt-1 block text-[10px] font-semibold text-amber-700">付款需綁定商品；部分功能有限制</span> : null}
-    </button>)}
+    <p className="text-xs leading-5 text-slate-600">點擊縮圖加入頁面底部，或拖曳到畫布上的指定位置。加入後每個文字、圖片與按鈕都能個別編輯。</p>
+    <ul className="grid gap-3" aria-label={`${meta.label}版型`}>
+      {getFunnelBlocksByCategory(category).map((block) => <BlockThumbnail key={block.id} block={block} settings={settings} disabled={disabled} onAdd={onAdd} />)}
+    </ul>
   </div>;
 }
 
 /** Left panel default view: 元件 / 版型區塊 tabs. */
-export function EditorLibrary({ disabled, onAddElement, onAddBlock }: { disabled: boolean; onAddElement: (type: FunnelNodeType) => void; onAddBlock: (templateId: string) => void }) {
+export function EditorLibrary({ disabled, settings, onAddElement, onAddBlock }: { disabled: boolean; settings?: PageDocument["settings"]; onAddElement: (type: FunnelNodeType) => void; onAddBlock: (templateId: string) => void }) {
   const [tab, setTab] = useState<"elements" | "blocks">("elements");
   const tabClass = (active: boolean) => `min-h-9 flex-1 cursor-pointer rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${active ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-900"}`;
   return <div className="grid gap-4">
@@ -119,7 +165,7 @@ export function EditorLibrary({ disabled, onAddElement, onAddBlock }: { disabled
       <button type="button" role="tab" id="funnel-library-blocks-tab" aria-controls="funnel-library-panel" aria-selected={tab === "blocks"} onClick={() => setTab("blocks")} className={tabClass(tab === "blocks")}>版型區塊</button>
     </div>
     <div id="funnel-library-panel" role="tabpanel" aria-labelledby={tab === "elements" ? "funnel-library-elements-tab" : "funnel-library-blocks-tab"}>
-      {tab === "elements" ? <ElementLibrary disabled={disabled} onAdd={onAddElement} /> : <BlockLibrary disabled={disabled} onAdd={onAddBlock} />}
+      {tab === "elements" ? <ElementLibrary disabled={disabled} onAdd={onAddElement} /> : <BlockLibrary disabled={disabled} settings={settings} onAdd={onAddBlock} />}
     </div>
   </div>;
 }
