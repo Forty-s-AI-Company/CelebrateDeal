@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), consent: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn() }));
+const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), consent: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn(), revoked: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ set: mocks.set, delete: mocks.delete }) }));
 vi.mock("@/lib/auth", () => ({ AUTH_COOKIE: "auth", LEGACY_VENDOR_COOKIE: "legacy", createUserSession: mocks.session, sessionCookieOptions: () => ({ httpOnly: true }) }));
@@ -7,7 +7,8 @@ vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "http://127.0.0.1:31
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limit }));
 vi.mock("@/lib/password", () => ({ hashPasswordAsync: mocks.hash }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction }) }));
+// auditLog.findFirst is the revocation lookup; it resolves undefined (not revoked) unless a test says otherwise.
+vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction, auditLog: { findFirst: mocks.revoked } }) }));
 import { registerAction } from "./registration-actions";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { createMerchantRegistrationInvite } from "@/lib/merchant-registration-invite";
@@ -132,5 +133,47 @@ describe("invite-only registration (closed beta default)", () => {
     const { token } = createMerchantRegistrationInvite({ email: "owner@example.test" });
     await expect(registerAction(form({ invite: token }))).rejects.toThrow("csrf");
     noWrites();
+    expect(mocks.revoked).not.toHaveBeenCalled();
+  });
+
+  it("rejects a validly signed but revoked invitation without writing", async () => {
+    const invite = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    mocks.revoked.mockResolvedValue({ id: "audit-revoked" });
+    await expect(registerAction(form({ invite: invite.token }))).rejects.toThrow(/^redirect:\/register\?error=invite_revoked$/u);
+    expect(mocks.revoked).toHaveBeenCalledWith({
+      where: { targetType: "MerchantRegistrationInvite", targetId: invite.jti, action: "merchant_registration_invite_revoked", vendorId: null },
+      select: { id: true },
+    });
+    noWrites();
+  });
+
+  it("does not query revocations for an invalid token", async () => {
+    await expect(registerAction(form({ invite: "garbage" }))).rejects.toThrow("error=invite_required");
+    expect(mocks.revoked).not.toHaveBeenCalled();
+  });
+});
+
+describe("invitation recording in open mode (n-3)", () => {
+  const SECRET = "synthetic-registration-invite-secret-32-bytes";
+  const consentOnly = { policyConsent: { termsVersion: policy.termsVersion, privacyVersion: policy.privacyVersion } };
+  beforeEach(() => {
+    vi.stubEnv("CSRF_SECRET", SECRET);
+    vi.stubEnv("REGISTRATION_MODE", "open");
+  });
+
+  it("records the jti of a valid matching invitation even when registration is open", async () => {
+    const invite = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    await expect(registerAction(form({ invite: invite.token }))).rejects.toThrow("redirect:/welcome");
+    expect(mocks.audit).toHaveBeenCalledWith({ data: expect.objectContaining({ after: { ...consentOnly, registrationInvite: { jti: invite.jti } } }) });
+  });
+
+  it("registers without recording a revoked or non-matching invitation", async () => {
+    const other = createMerchantRegistrationInvite({ email: "someone-else@example.test" });
+    await expect(registerAction(form({ invite: other.token }))).rejects.toThrow("redirect:/welcome");
+    const revoked = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    mocks.revoked.mockResolvedValue({ id: "audit-revoked" });
+    await expect(registerAction(form({ invite: revoked.token }))).rejects.toThrow("redirect:/welcome");
+    for (const call of mocks.audit.mock.calls) expect(call[0]).toEqual({ data: expect.objectContaining({ after: consentOnly }) });
+    expect(mocks.audit).toHaveBeenCalledTimes(2);
   });
 });

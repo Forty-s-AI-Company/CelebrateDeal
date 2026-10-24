@@ -1,50 +1,34 @@
+import { revokeMerchantInvitationAction } from "@/app/actions/merchant-invitation-actions";
 import { CsrfField } from "@/components/csrf-field";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { MerchantInvitationForm } from "@/components/merchant-invitation-form";
+import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { requireFinanceAdmin } from "@/lib/auth";
-import { getDb } from "@/lib/db";
-import { formatInvitationTime, MERCHANT_INVITATION_AUDIT_ACTION } from "@/lib/merchant-invitation-admin";
+import { formatInvitationTime, MERCHANT_INVITATIONS_PATH } from "@/lib/merchant-invitation-admin";
 import { MERCHANT_REGISTRATION_INVITE_TTL_DAYS } from "@/lib/merchant-registration-invite";
+import { recentMerchantInvitations, type MerchantInvitationListItem } from "@/lib/merchant-registration-invite-records";
+import { recentMfaStatus } from "@/lib/recent-mfa";
 import { registrationMode } from "@/lib/registration-mode";
 
-const RECENT_LIMIT = 30;
+const STATUS_LABELS: Record<MerchantInvitationListItem["status"], string> = {
+  registered: "已註冊",
+  revoked: "已撤銷",
+  expired: "已過期",
+  pending: "尚未註冊",
+};
 
-type InvitationAuditAfter = { email?: unknown; expiresAt?: unknown; note?: unknown };
+const ERRORS: Record<string, string> = {
+  revoke_not_found: "找不到這個邀請，未做任何變更。",
+};
 
-function readAfter(value: unknown) {
-  const after = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as InvitationAuditAfter;
-  return {
-    email: typeof after.email === "string" ? after.email : null,
-    expiresAt: typeof after.expiresAt === "string" ? after.expiresAt : null,
-    note: typeof after.note === "string" ? after.note : null,
-  };
-}
-
-/** Recent invitations from their audit entries, with a status read at request time. */
-async function recentInvitations(now = new Date()) {
-  const db = getDb();
-  const entries = await db.auditLog.findMany({
-    where: { action: MERCHANT_INVITATION_AUDIT_ACTION, vendorId: null },
-    orderBy: { createdAt: "desc" },
-    take: RECENT_LIMIT,
-    select: { id: true, createdAt: true, after: true },
-  });
-  const invitations = entries.map((entry) => ({ id: entry.id, createdAt: entry.createdAt, ...readAfter(entry.after) }));
-  const emails = [...new Set(invitations.flatMap((invitation) => invitation.email ? [invitation.email] : []))];
-  const registered = new Set(emails.length > 0
-    ? (await db.user.findMany({ where: { email: { in: emails } }, select: { email: true } })).map((user) => user.email)
-    : []);
-  return invitations.map((invitation) => {
-    const expired = invitation.expiresAt ? new Date(invitation.expiresAt) <= now : false;
-    const status = invitation.email && registered.has(invitation.email) ? "已註冊" : expired ? "已過期" : "尚未註冊";
-    return { ...invitation, status };
-  });
-}
-
-export default async function AdminMerchantInvitationsPage() {
-  await requireFinanceAdmin();
+export default async function AdminMerchantInvitationsPage({ searchParams }: { searchParams: Promise<{ revoked?: string; error?: string }> }) {
+  const { user, session } = await requireFinanceAdmin();
+  const params = await searchParams;
   const mode = registrationMode();
-  const invitations = await recentInvitations();
+  const stepUpStatus = recentMfaStatus({ user, session });
+  const invitations = await recentMerchantInvitations();
+  const message = params.revoked ? "邀請已撤銷，這個連結不能再用來註冊。" : params.error ? ERRORS[params.error] ?? ERRORS.revoke_not_found : null;
 
   return (
     <>
@@ -57,9 +41,12 @@ export default async function AdminMerchantInvitationsPage() {
           ? "目前註冊模式：僅限受邀（REGISTRATION_MODE=invite）。沒有邀請連結的人無法建立商家帳號。"
           : "目前註冊模式：開放註冊（REGISTRATION_MODE=open）。任何人都能註冊，邀請連結仍可使用但不是必要。"}
       </p>
+      <div className="mb-4"><StepUpMfaNotice status={stepUpStatus} nextPath={MERCHANT_INVITATIONS_PATH} operation="產生或撤銷商家邀請" /></div>
+      {message ? <p role={params.revoked ? "status" : "alert"} className={`mb-4 rounded-md px-3 py-2 text-sm ${params.revoked ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{message}</p> : null}
       <MerchantInvitationForm csrfField={<CsrfField />} />
       <section aria-labelledby="recent-merchant-invitations" className="mt-8">
-        <h2 id="recent-merchant-invitations" className="mb-3 text-lg font-semibold text-slate-950">最近產生的邀請</h2>
+        <h2 id="recent-merchant-invitations" className="mb-1 text-lg font-semibold text-slate-950">最近產生的邀請</h2>
+        <p className="mb-3 text-sm text-slate-600">為保護個資，這裡只顯示遮罩後的 Email。尚未註冊的邀請可以撤銷；已建立的帳號不受影響。</p>
         {invitations.length === 0 ? <EmptyState title="還沒有產生過邀請" description="產生的邀請會記錄在稽核紀錄，並列在這裡。" /> : (
           <div className="overflow-x-auto rounded-lg border border-border bg-white">
             <table className="w-full min-w-[640px] text-left text-sm">
@@ -69,17 +56,32 @@ export default async function AdminMerchantInvitationsPage() {
                   <th scope="col" className="px-3 py-2 font-semibold">產生時間</th>
                   <th scope="col" className="px-3 py-2 font-semibold">有效期限</th>
                   <th scope="col" className="px-3 py-2 font-semibold">狀態</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">備註</th>
+                  <th scope="col" className="px-3 py-2 font-semibold"><span className="sr-only">操作</span></th>
                 </tr>
               </thead>
               <tbody>
                 {invitations.map((invitation) => (
-                  <tr key={invitation.id} className="border-t border-border">
-                    <td className="break-all px-3 py-2 text-slate-900">{invitation.email ?? "—"}</td>
+                  <tr key={invitation.jti} className="border-t border-border" data-invitation-status={invitation.status}>
+                    <td className="break-all px-3 py-2 text-slate-900">{invitation.maskedEmail ?? "—"}</td>
                     <td className="px-3 py-2 text-slate-700">{formatInvitationTime(invitation.createdAt)}</td>
                     <td className="px-3 py-2 text-slate-700">{invitation.expiresAt ? formatInvitationTime(invitation.expiresAt) : "—"}</td>
-                    <td className="px-3 py-2 text-slate-700">{invitation.status}</td>
-                    <td className="px-3 py-2 text-slate-600">{invitation.note ?? ""}</td>
+                    <td className="px-3 py-2 text-slate-700">{STATUS_LABELS[invitation.status]}</td>
+                    <td className="px-3 py-2">
+                      {invitation.status === "pending" ? (
+                        <form action={revokeMerchantInvitationAction}>
+                          <CsrfField />
+                          <input type="hidden" name="jti" value={invitation.jti} />
+                          <FormSubmitButton
+                            className="min-h-11 rounded-md border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50"
+                            pendingChildren="撤銷中…"
+                            pendingMessage="正在撤銷邀請，請勿重複送出。"
+                            aria-label={`撤銷 ${invitation.maskedEmail ?? ""} 的邀請`}
+                          >
+                            撤銷
+                          </FormSubmitButton>
+                        </form>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>

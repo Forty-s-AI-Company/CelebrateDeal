@@ -13,6 +13,7 @@ import { PASSWORD_INPUT_LIMIT, validateNewPassword } from "@/lib/password-policy
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { merchantRegistrationInviteMatchesEmail, verifyMerchantRegistrationInvite } from "@/lib/merchant-registration-invite";
+import { isMerchantRegistrationInviteRevoked } from "@/lib/merchant-registration-invite-records";
 import { registrationMode } from "@/lib/registration-mode";
 
 const RegistrationInput = z.object({
@@ -31,14 +32,27 @@ const RegistrationInput = z.object({
  * platform invitation for the submitted email; the token is re-verified here
  * and never trusted from the page. Without one nothing is written.
  */
+/**
+ * The submitted invitation, re-verified on the server. In invite mode a
+ * missing, invalid or revoked token ends the request before anything else.
+ */
+async function resolveRegistrationInvite(formData: FormData) {
+  const inviteOnly = registrationMode() === "invite";
+  const inviteToken = formData.get("invite");
+  const verified = verifyMerchantRegistrationInvite(inviteToken);
+  if (inviteOnly && !verified) redirect("/register?error=invite_required");
+  // A platform admin may have revoked a still-valid token (one indexed audit lookup).
+  const invite = verified && !await isMerchantRegistrationInviteRevoked(verified.jti) ? verified : null;
+  if (inviteOnly && !invite) redirect("/register?error=invite_revoked");
+  // Errors keep a usable invitation in the URL so the invited person can retry.
+  const retryQuery = invite && typeof inviteToken === "string" ? `&invite=${encodeURIComponent(inviteToken)}` : "";
+  return { inviteOnly, invite, retryQuery };
+}
+
 export async function registerAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const inviteOnly = registrationMode() === "invite";
-  const inviteToken = inviteOnly ? formData.get("invite") : null;
-  const invite = inviteOnly ? verifyMerchantRegistrationInvite(inviteToken) : null;
-  if (inviteOnly && !invite) redirect("/register?error=invite_required");
-  // Errors keep a verified invitation in the URL so the invited person can retry.
-  const failure = (error: string) => `/register?error=${error}${invite && typeof inviteToken === "string" ? `&invite=${encodeURIComponent(inviteToken)}` : ""}`;
+  const { inviteOnly, invite, retryQuery } = await resolveRegistrationInvite(formData);
+  const failure = (error: string) => `/register?error=${error}${retryQuery}`;
   // F-114: the merchant must accept the terms and privacy policy. The stored
   // versions are the server's current ones; the form echoes the version it
   // displayed so a stale page cannot record consent to a newer text.
@@ -49,7 +63,10 @@ export async function registerAction(formData: FormData) {
   if (!parsed.success) redirect(failure("invalid"));
   const input = parsed.data;
   // The page shows the invited address read-only; any other address is a tampered form.
-  if (invite && !merchantRegistrationInviteMatchesEmail(invite, input.email)) redirect(failure("invite_mismatch"));
+  const inviteMatches = invite ? merchantRegistrationInviteMatchesEmail(invite, input.email) : false;
+  if (inviteOnly && !inviteMatches) redirect(failure("invite_mismatch"));
+  // Recorded whenever a valid, unrevoked invitation for this email was used, whatever the mode.
+  const usedInvite = invite && inviteMatches ? invite : null;
   const passwordPolicy = validateNewPassword(input.password, { email: input.email });
   // Length failures keep the existing "invalid" copy, which states the minimum.
   if (!passwordPolicy.ok) redirect(failure(passwordPolicy.reason === "short" || passwordPolicy.reason === "long" ? "invalid" : passwordPolicy.reason));
@@ -73,7 +90,7 @@ export async function registerAction(formData: FormData) {
       await tx.userOnboardingPreference.create({ data: { userId: user.id, vendorId: vendor.id, questionnaireStep: 0, taskPanelCollapsed: true } });
       await tx.userPolicyConsent.create({ data: { userId: user.id, vendorId: vendor.id, context: "merchant_registration", termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion } });
       await tx.auditLog.create({ data: { vendorId: vendor.id, actorId: user.id, actorLabel: "owner", action: "registration_completed", targetType: "User", targetId: user.id,
-        after: { policyConsent: { termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion }, ...(invite ? { registrationInvite: { jti: invite.jti } } : {}) } } });
+        after: { policyConsent: { termsVersion: policyVersions.termsVersion, privacyVersion: policyVersions.privacyVersion }, ...(usedInvite ? { registrationInvite: { jti: usedInvite.jti } } : {}) } } });
       return { userId: user.id, vendorId: vendor.id };
     });
   } catch (error) {

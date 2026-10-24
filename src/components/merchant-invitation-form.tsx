@@ -3,7 +3,7 @@
 import { useActionState, useState, type ReactNode } from "react";
 import { createMerchantInvitationAction } from "@/app/actions/merchant-invitation-actions";
 import { FormSubmitButton } from "@/components/form-submit-button";
-import { formatInvitationTime, MERCHANT_INVITATION_NOTE_MAX_LENGTH, type MerchantInvitationActionState } from "@/lib/merchant-invitation-admin";
+import { formatInvitationTime, type MerchantInvitationActionState } from "@/lib/merchant-invitation-admin";
 
 const inputClassName = "mt-1 block min-h-11 w-full rounded-md border border-border bg-white px-3 text-sm";
 const initialState: MerchantInvitationActionState = { status: "idle" };
@@ -37,10 +37,6 @@ export function MerchantInvitationForm({ csrfField }: { csrfField: ReactNode }) 
         <label className="text-sm font-semibold text-slate-700">
           受邀商家的 Email
           <input name="email" type="email" required maxLength={320} autoComplete="off" spellCheck={false} className={inputClassName} />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          備註（選填，只記錄在稽核紀錄）
-          <input name="note" maxLength={MERCHANT_INVITATION_NOTE_MAX_LENGTH} className={inputClassName} />
         </label>
         <div>
           <FormSubmitButton

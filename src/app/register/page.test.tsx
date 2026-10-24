@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="synthetic" /> }));
 vi.mock("@/app/actions/registration-actions", () => ({ registerAction: vi.fn() }));
+const db = vi.hoisted(() => ({ findUser: vi.fn(), findRevocation: vi.fn() }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ user: { findUnique: db.findUser }, auditLog: { findFirst: db.findRevocation } }) }));
 
 import RegisterPage from "./page";
 import LoginPage from "../login/page";
@@ -19,6 +21,8 @@ async function render(searchParams: Record<string, string | string[]>) {
 beforeEach(() => {
   vi.stubEnv("CSRF_SECRET", "synthetic-register-page-secret-at-least-32-bytes");
   vi.stubEnv("REGISTRATION_MODE", "");
+  db.findUser.mockReset().mockResolvedValue(null);
+  db.findRevocation.mockReset().mockResolvedValue(null);
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -73,14 +77,47 @@ describe("/register in invite mode (default)", () => {
     expect(exists).toContain("這個 Email 已註冊，請直接登入。");
     expect(exists).toContain('name="invite"');
   });
+
+  it("explains a revoked invitation instead of rendering the form", async () => {
+    const invite = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    db.findRevocation.mockResolvedValue({ id: "audit-revoked" });
+    const html = await render({ invite: invite.token });
+    expect(html).toContain("這個邀請連結已被平台撤銷，請聯絡平台重新取得。");
+    expect(html).not.toContain("<form");
+    expect(db.findRevocation).toHaveBeenCalledWith({
+      where: { targetType: "MerchantRegistrationInvite", targetId: invite.jti, action: "merchant_registration_invite_revoked", vendorId: null },
+      select: { id: true },
+    });
+    expect(db.findUser).not.toHaveBeenCalled();
+    db.findRevocation.mockResolvedValue(null);
+    expect(await render({ error: "invite_revoked" })).toContain("這個邀請連結已被平台撤銷");
+  });
+
+  it("does not look anything up for an invalid token", async () => {
+    await render({ invite: "garbage" });
+    expect(db.findRevocation).not.toHaveBeenCalled();
+    expect(db.findUser).not.toHaveBeenCalled();
+  });
+
+  it("sends the holder of an invitation whose email already has an account to login", async () => {
+    const { token } = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    db.findUser.mockResolvedValue({ id: "user-1" });
+    const html = await render({ invite: token });
+    expect(db.findUser).toHaveBeenCalledWith({ where: { email: "owner@example.test" }, select: { id: true } });
+    expect(html).toContain("你已經有帳號了");
+    expect(html).toMatch(/<a [^>]*href="\/login"[^>]*>前往登入<\/a>/u);
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain("owner@example.test");
+  });
 });
 
 describe("/register in open mode", () => {
   beforeEach(() => vi.stubEnv("REGISTRATION_MODE", "open"));
 
-  it("renders the original editable form and ignores any invite parameter", async () => {
-    const { token } = createMerchantRegistrationInvite({ email: "owner@example.test" });
-    for (const params of [{}, { invite: token }, { invite: "garbage" }] as Array<Record<string, string>>) {
+  it("renders the original editable form when there is no usable invitation", async () => {
+    const revoked = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    for (const params of [{}, { invite: "garbage" }, { invite: revoked.token }] as Array<Record<string, string>>) {
+      db.findRevocation.mockResolvedValue(params.invite === revoked.token ? { id: "audit-revoked" } : null);
       const html = await render(params);
       expect(html).toContain("建立你的商家帳號");
       expect(html).toMatch(/<input type="email" required="" maxLength="320" autoComplete="email"[^>]*name="email"\/>/u);
@@ -89,6 +126,14 @@ describe("/register in open mode", () => {
       expect(html).not.toContain(INVITE_ONLY);
       expect(html).not.toContain("你已受邀加入");
     }
+  });
+
+  it("still prefills a valid invitation so its use is recorded", async () => {
+    const { token } = createMerchantRegistrationInvite({ email: "owner@example.test" });
+    const html = await render({ invite: token });
+    expect(html).toContain('data-registration-mode="open"');
+    expect(html).toMatch(/<input type="email" required="" readOnly=""[^>]*name="email" value="owner@example.test"\/>/u);
+    expect(html).toContain(`<input type="hidden" name="invite" value="${token}"/>`);
   });
 });
 

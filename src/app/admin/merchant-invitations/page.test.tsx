@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireFinanceAdmin: vi.fn(), auditFindMany: vi.fn(), userFindMany: vi.fn(), actionState: null as unknown }));
+const mocks = vi.hoisted(() => ({ requireFinanceAdmin: vi.fn(), recent: vi.fn(), actionState: null as unknown }));
 
 vi.mock("@/lib/auth", () => ({ requireFinanceAdmin: mocks.requireFinanceAdmin }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ auditLog: { findMany: mocks.auditFindMany }, user: { findMany: mocks.userFindMany } }) }));
-vi.mock("@/app/actions/merchant-invitation-actions", () => ({ createMerchantInvitationAction: vi.fn() }));
+vi.mock("@/lib/merchant-registration-invite-records", () => ({ recentMerchantInvitations: mocks.recent }));
+vi.mock("@/app/actions/merchant-invitation-actions", () => ({ createMerchantInvitationAction: vi.fn(), revokeMerchantInvitationAction: vi.fn() }));
 vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="synthetic" /> }));
 vi.mock("react", async (importOriginal) => {
   const react = await importOriginal<typeof import("react")>();
@@ -17,17 +17,20 @@ vi.mock("react", async (importOriginal) => {
 
 import AdminMerchantInvitationsPage from "./page";
 
-async function render() {
-  return renderToStaticMarkup(await AdminMerchantInvitationsPage());
+async function render(searchParams: Record<string, string> = {}) {
+  return renderToStaticMarkup(await AdminMerchantInvitationsPage({ searchParams: Promise.resolve(searchParams) }));
+}
+
+function admin(mfaVerifiedAt: Date | null = new Date()) {
+  return { user: { id: "admin-1", mfaFactor: { id: "mfa-1" } }, session: { mfaVerifiedAt }, isPlatformAdmin: true };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.actionState = null;
   vi.stubEnv("REGISTRATION_MODE", "");
-  mocks.requireFinanceAdmin.mockResolvedValue({ user: { id: "admin-1" }, isPlatformAdmin: true });
-  mocks.auditFindMany.mockResolvedValue([]);
-  mocks.userFindMany.mockResolvedValue([]);
+  mocks.requireFinanceAdmin.mockResolvedValue(admin());
+  mocks.recent.mockResolvedValue([]);
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -35,11 +38,10 @@ describe("/admin/merchant-invitations", () => {
   it("runs the platform-admin guard before reading anything", async () => {
     mocks.requireFinanceAdmin.mockRejectedValue(new Error("redirect:/dashboard"));
     await expect(render()).rejects.toThrow("redirect:/dashboard");
-    expect(mocks.auditFindMany).not.toHaveBeenCalled();
-    expect(mocks.userFindMany).not.toHaveBeenCalled();
+    expect(mocks.recent).not.toHaveBeenCalled();
   });
 
-  it("renders the invite form, the current mode and an empty history", async () => {
+  it("renders the invite form, the current mode and an empty history without a note field", async () => {
     const html = await render();
     expect(html).toContain("商家邀請");
     expect(html).toContain("14 天內有效");
@@ -47,18 +49,21 @@ describe("/admin/merchant-invitations", () => {
     expect(html).toContain('data-registration-mode="invite"');
     expect(html).toContain("目前註冊模式：僅限受邀");
     expect(html).toContain('name="email"');
-    expect(html).toContain('name="note"');
+    expect(html).not.toContain('name="note"');
     expect(html).toContain('name="_csrf"');
     expect(html).toContain("產生邀請連結");
     expect(html).toContain("還沒有產生過邀請");
+    expect(html).not.toContain("需要驗證");
     expect(html).not.toContain("data-invitation-result");
-    expect(mocks.auditFindMany).toHaveBeenCalledWith({
-      where: { action: "merchant_registration_invite_created", vendorId: null },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      select: { id: true, createdAt: true, after: true },
-    });
-    expect(mocks.userFindMany).not.toHaveBeenCalled();
+  });
+
+  it("asks for a fresh MFA verification when the step-up window has passed", async () => {
+    mocks.requireFinanceAdmin.mockResolvedValue(admin(new Date(Date.now() - 20 * 60_000)));
+    const html = await render();
+    expect(html).toContain("需要驗證");
+    expect(html).toContain("產生或撤銷商家邀請前，請先輸入手機上的驗證碼");
+    expect(html).toContain("/mfa/verify?reason=step_up");
+    expect(html).toContain("next=%2Fadmin%2Fmerchant-invitations");
   });
 
   it("states when registration is open", async () => {
@@ -68,23 +73,35 @@ describe("/admin/merchant-invitations", () => {
     expect(html).toContain("目前註冊模式：開放註冊");
   });
 
-  it("lists recent invitations with their registration status from audit entries", async () => {
-    mocks.auditFindMany.mockResolvedValue([
-      { id: "a1", createdAt: new Date("2026-10-24T02:00:00.000Z"), after: { email: "done@example.test", expiresAt: "2026-11-07T02:00:00.000Z", note: "第一批" } },
-      { id: "a2", createdAt: new Date("2026-10-01T02:00:00.000Z"), after: { email: "late@example.test", expiresAt: "2026-10-15T02:00:00.000Z" } },
-      { id: "a3", createdAt: new Date("2026-10-24T03:00:00.000Z"), after: { email: "pending@example.test", expiresAt: "2099-01-01T00:00:00.000Z" } },
-      { id: "a4", createdAt: new Date("2026-10-24T04:00:00.000Z"), after: ["unexpected"] },
+  it("lists masked invitations with status and a revoke form only for pending ones", async () => {
+    mocks.recent.mockResolvedValue([
+      { jti: "jti-registered-000001", createdAt: new Date("2026-10-24T02:00:00.000Z"), maskedEmail: "d***@example.test", expiresAt: "2026-11-07T02:00:00.000Z", status: "registered" },
+      { jti: "jti-pending-0000000001", createdAt: new Date("2026-10-24T03:00:00.000Z"), maskedEmail: "p***@example.test", expiresAt: "2099-01-01T00:00:00.000Z", status: "pending" },
+      { jti: "jti-revoked-0000000001", createdAt: new Date("2026-10-24T04:00:00.000Z"), maskedEmail: "r***@example.test", expiresAt: "2026-11-07T04:00:00.000Z", status: "revoked" },
+      { jti: "jti-expired-0000000001", createdAt: new Date("2026-10-01T02:00:00.000Z"), maskedEmail: null, expiresAt: null, status: "expired" },
     ]);
-    mocks.userFindMany.mockResolvedValue([{ email: "done@example.test" }]);
     const html = await render();
-    expect(mocks.userFindMany).toHaveBeenCalledWith({ where: { email: { in: ["done@example.test", "late@example.test", "pending@example.test"] } }, select: { email: true } });
-    const row = (email: string) => html.slice(html.indexOf(email), html.indexOf("</tr>", html.indexOf(email)));
-    expect(row("done@example.test")).toContain("已註冊");
-    expect(row("done@example.test")).toContain("第一批");
-    expect(row("done@example.test")).toContain("2026/10/24 10:00");
-    expect(row("late@example.test")).toContain("已過期");
-    expect(row("pending@example.test")).toContain("尚未註冊");
-    expect(html).toContain("—");
+    const row = (status: string) => html.slice(html.indexOf(`data-invitation-status="${status}"`), html.indexOf("</tr>", html.indexOf(`data-invitation-status="${status}"`)));
+    expect(row("registered")).toContain("d***@example.test");
+    expect(row("registered")).toContain("已註冊");
+    expect(row("registered")).toContain("2026/10/24 10:00");
+    expect(row("registered")).not.toContain("撤銷");
+    expect(row("pending")).toContain("尚未註冊");
+    expect(row("pending")).toContain('name="jti" value="jti-pending-0000000001"');
+    expect(row("pending")).toContain('name="_csrf"');
+    expect(row("pending")).toContain("撤銷 p***@example.test 的邀請");
+    expect(row("revoked")).toContain("已撤銷");
+    expect(row("revoked")).not.toContain('name="jti"');
+    expect(row("expired")).toContain("已過期");
+    expect(row("expired")).toContain("—");
+    expect(html.match(/name="jti"/gu)).toHaveLength(1);
+  });
+
+  it("confirms a revocation and explains an unknown one", async () => {
+    expect(await render({ revoked: "1" })).toContain("邀請已撤銷，這個連結不能再用來註冊。");
+    const error = await render({ error: "revoke_not_found" });
+    expect(error).toContain('role="alert"');
+    expect(error).toContain("找不到這個邀請，未做任何變更。");
   });
 
   it("shows a generated link with its expiry and a copy button", async () => {

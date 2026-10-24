@@ -341,6 +341,8 @@ export async function requireFinanceAdmin() {
 
   return {
     user: auth.user,
+    // Exposed so platform mutations can demand a recent MFA step-up (requireRecentMfa).
+    session: auth.session,
     vendor: auth.vendor,
     member: { id: auth.user.id, role: "platform_admin" } as FinanceActor,
     isPlatformAdmin: true,

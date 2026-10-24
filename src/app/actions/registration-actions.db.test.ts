@@ -57,6 +57,16 @@ describe("registration PostgreSQL and real password/session integration",()=>{
   const user=await db.user.findUniqueOrThrow({where:{email}});const audit=await db.auditLog.findFirstOrThrow({where:{actorId:user.id,action:"registration_completed"}});
   expect(audit.after).toMatchObject({registrationInvite:{jti:invite.jti}});expect(JSON.stringify(audit)).not.toContain(invite.token.split(".")[2]);
  });
+ it("rejects a revoked invitation through the indexed audit lookup without writing",async()=>{
+  const invite=createMerchantRegistrationInvite({email});
+  await db.auditLog.create({data:{vendorId:null,actorId:null,actorLabel:"platform_admin",action:"merchant_registration_invite_revoked",targetType:"MerchantRegistrationInvite",targetId:invite.jti}});
+  try{
+   await expect(registerAction(form(undefined,{invite:invite.token}))).rejects.toThrow(/^redirect:\/register\?error=invite_revoked$/u);
+   expect(await db.user.count({where:{email}})).toBe(0);expect(await db.vendor.count({where:{email}})).toBe(0);expect(runtime.cookies.has(AUTH_COOKIE)).toBe(false);
+   // Another invitation for the same address is unaffected.
+   await expect(registerAction(form())).rejects.toThrow("redirect:/welcome");
+  }finally{await db.auditLog.deleteMany({where:{targetType:"MerchantRegistrationInvite",targetId:invite.jti}});}
+ });
  it("registers without an invitation only when REGISTRATION_MODE=open",async()=>{
   vi.stubEnv("REGISTRATION_MODE","open");
   await expect(registerAction(form(undefined,{invite:undefined}))).rejects.toThrow("redirect:/welcome");

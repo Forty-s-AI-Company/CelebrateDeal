@@ -1,6 +1,7 @@
-/** Shared between the admin page, its client form and its Server Action. */
+/** Shared between the admin page, its client form and its Server Actions (no server-only imports). */
 export const MERCHANT_INVITATION_AUDIT_ACTION = "merchant_registration_invite_created";
-export const MERCHANT_INVITATION_NOTE_MAX_LENGTH = 200;
+export const MERCHANT_INVITATION_REVOKED_AUDIT_ACTION = "merchant_registration_invite_revoked";
+export const MERCHANT_INVITATIONS_PATH = "/admin/merchant-invitations";
 
 export type MerchantInvitationActionState =
   | { status: "idle" }

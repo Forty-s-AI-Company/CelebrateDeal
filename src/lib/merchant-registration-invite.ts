@@ -24,7 +24,9 @@ export const MERCHANT_REGISTRATION_INVITE_TTL_MS = MERCHANT_REGISTRATION_INVITE_
 export const MERCHANT_REGISTRATION_INVITE_MAX_LENGTH = 1_024;
 
 const TOKEN_VERSION = "mri1";
-const KEY_PURPOSE = "merchant-registration-invite";
+// v2: a fresh purpose label, never used before the CSRF key-separation fix, so
+// no key derived under the earlier label can sign invitations.
+const KEY_PURPOSE = "merchant-registration-invite-v2";
 const PAYLOAD = /^[A-Za-z0-9_-]{1,900}$/u;
 const SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;
 const JTI = /^[A-Za-z0-9_-]{16,64}$/u;
