@@ -215,7 +215,7 @@ test("public published calendar books an actual slot and queues tenant-bound Sch
     const deniedPage = await publishedCalendar(foreignCalendar.id), publicPage = await publishedCalendar(calendar.id);
     const buyer = await buyerContext.newPage();
     await buyer.goto(`/lp/${deniedPage.slug}`);
-    await expect(buyer.getByText("尚未綁定行事曆事件，或事件不屬於此 Funnel 的公開專案；預約功能已停用。", { exact: true })).toBeVisible();
+    await expect(buyer.getByText("尚未綁定行事曆事件，或事件不屬於此一頁式網站的公開專案；預約功能已停用。", { exact: true })).toBeVisible();
     await expect(buyer.getByRole("button", { name: "送出預約", exact: true })).toHaveCount(0);
     expect(await db.consultationBooking.count({ where: { vendorId: shop.id } })).toBe(0);
     await buyer.goto(`/lp/${publicPage.slug}`);

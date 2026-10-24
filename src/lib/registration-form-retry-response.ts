@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { trustedRequestOrigin } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { independentFunnelBindsForm } from "@/lib/funnel-runtime";
 import { registrationAttribution } from "@/lib/registration-attribution";
 import { parseRegistrationFormFields, REGISTRATION_FORM_RESERVED_FIELDS } from "@/lib/registration-form-fields";
 import {
@@ -47,12 +48,15 @@ export async function clearRegistrationRetry(request: Request, response: NextRes
   response.cookies.set(name, "", { ...registrationRetryCookieOptions(secure), maxAge: 0 });
 }
 /** Re-reads the form from the database: tenant, allowed fields and size budget come from the server record. */
-async function eligibleDraftForm(formId: string) {
+async function eligibleDraftForm(formId: string, landingPageId: string | undefined) {
   if (!formId || formId.length > 128) return null;
   const db = getDb();
   const form = await db.registrationForm.findUnique({ where: { id: formId }, select: { id: true, isActive: true, fields: true, projectId: true, vendorId: true } });
   if (!form?.isActive) return null;
-  if (form.projectId && !await db.salesProject.findFirst({ where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } }, select: { id: true } })) return null;
+  // An unpublished project's form is public only through its bound audience Funnel.
+  if (form.projectId
+    && !await db.salesProject.findFirst({ where: { id: form.projectId, vendorId: form.vendorId, status: "published", publishedAt: { not: null } }, select: { id: true } })
+    && !await independentFunnelBindsForm({ pageId: landingPageId, formId: form.id, vendorId: form.vendorId, projectId: form.projectId })) return null;
   const fields = parseRegistrationFormFields(form.fields);
   if (!fields.success) return null;
   return {
@@ -105,7 +109,7 @@ export async function registrationRetryResponse(request: Request, data: FormData
     // keep creating ciphertext rows.
     const limited = await checkRateLimit(request, "registration-retry-draft", 10, 60_000);
     if (!limited && data) {
-      const form = await eligibleDraftForm(stringField(data, "formId") ?? "");
+      const form = await eligibleDraftForm(stringField(data, "formId") ?? "", stringField(data, "landingPageId"));
       const answers: Record<string, string> = {};
       let valid = Boolean(form);
       for (const [key, value] of data.entries()) {
