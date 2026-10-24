@@ -71,21 +71,21 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "模板已套用" })).toBeVisible();
   await page.getByRole("button", { name: "編輯頁面", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
-  const editorPath = new URL(page.url()).pathname;
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/edit\\?step=`, "u"));
+  const toolbar = page.getByLabel("編輯器工具列", { exact: true });
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await page.getByRole("combobox", { name: "預設報名表", exact: true }).selectOption(fixture.form.id);
   await page.getByRole("combobox", { name: "活動場次", exact: true }).selectOption(fixture.live.id);
   const draftBefore = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } });
-  await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
+  await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
   // Confirm this actual save was acknowledged in both the database and UI
   // before testing navigation. No sleep or relaxed URL assertion is used.
   await expect.poll(async () => {
     const saved = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true, draftFormId: true, draftLiveId: true } });
     return { revision: saved.revision, formId: saved.draftFormId, liveId: saved.draftLiveId };
   }).toEqual({ revision: draftBefore.revision + 1, formId: fixture.form.id, liveId: fixture.live.id });
-  await expect(page.getByRole("button", { name: "儲存草稿", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: /返回頁面設定$/u }).click();
+  await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
+  await toolbar.getByRole("button", { name: "返回管理頁", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${operationsPath.replaceAll("/", "\\/")}\\?step=`, "u"));
   await page.getByRole("button", { name: "網站設定", exact: true }).click();
   const panel = page.getByRole("region", { name: "一頁式網站管理", exact: true });
@@ -150,10 +150,9 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await expect(panel.getByLabel("對照組權重", { exact: true })).toHaveValue("60");
   await expect(panel.getByLabel("測試組權重", { exact: true })).toHaveValue("40");
 
-  await page.goto(editorPath);
-  await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click();
-  await expect(page.getByRole("link", { name: /查看公開頁/u })).toBeVisible();
-  await page.goto(operationsPath);
+  // The saved editor draft is published from the management page header.
+  await panel.getByRole("button", { name: "發布", exact: true }).click();
+  await expect(panel.getByRole("button", { name: /^發布狀態：(已發布|公開網址無法開啟)/u })).toBeVisible();
   await panel.getByRole("button", { name: "A/B 測試", exact: true }).click();
   await panel.getByRole("button", { name: "開始實驗", exact: true }).click();
   await saveSettings();

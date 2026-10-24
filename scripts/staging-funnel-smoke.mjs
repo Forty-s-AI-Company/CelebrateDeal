@@ -5,7 +5,7 @@ import { validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./stagin
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 
 const ALIAS = "celebrate-deal-staging.carry-digital-nomad.in.net";
-const FUNNEL_PATH = /^\/landing-pages\/[a-z0-9]+(?:\/operations)?$/u;
+const FUNNEL_PATH = /^\/landing-pages\/[a-z0-9]+(?:\/operations|\/edit)?$/u;
 const PUBLIC_PATH = /^\/lp\/staging-synthetic-[a-f0-9]{12}(?:\/[^/?#]+)?$/u;
 
 function receipt(sourceSha) {
@@ -79,7 +79,7 @@ export function classifyFunnelRequest(request, allowedFunnelPath = null) {
   if (request.method() === "POST" && url.pathname === "/projects/new") return "PROJECT_CREATE";
   if (request.method() === "POST" && request.headers()["next-action"]
     && (url.pathname === "/landing-pages/new" || (allowedFunnelPath && FUNNEL_PATH.test(url.pathname)
-      && [allowedFunnelPath, `${allowedFunnelPath}/operations`].includes(url.pathname)))) return "FUNNEL_WRITE";
+      && [allowedFunnelPath, `${allowedFunnelPath}/operations`, `${allowedFunnelPath}/edit`].includes(url.pathname)))) return "FUNNEL_WRITE";
   return "BLOCK";
 }
 
@@ -190,7 +190,7 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       try {
         const url = new URL(request.url());
         return editorNavigationStarted && request.method() === "GET" && url.hostname === ALIAS
-          && allowedFunnelPath !== null && url.pathname === allowedFunnelPath;
+          && allowedFunnelPath !== null && url.pathname === `${allowedFunnelPath}/edit`;
       } catch { return false; }
     };
     page.on("request", (request) => { if (isOperationsGet(request)) result.operationsGetRequests += 1; });
@@ -276,8 +276,8 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     if (!await visible(page.getByRole("status").filter({ hasText: "模板已套用" }))) { result.reason = "TEMPLATE_FAILED"; return result; }
     result.template = true;
     editorNavigationStarted = true;
-    await page.getByRole("button", { name: "Edit Page", exact: true }).click({ timeout: 10_000 });
-    try { await page.waitForURL((url) => url.pathname === funnelPath, { timeout: 15_000 }); }
+    await page.getByRole("button", { name: "編輯頁面", exact: true }).click({ timeout: 10_000 });
+    try { await page.waitForURL((url) => url.pathname === `${funnelPath}/edit`, { timeout: 15_000 }); }
     catch {
       result.editorNavigation = funnelEditorNavigationKind({
         dialogs: result.editorDialogs, requests: result.editorGetRequests,
@@ -287,20 +287,27 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       return result;
     }
     result.editorNavigation = "ROUTE_REACHED";
-    if (!await visible(page.getByRole("button", { name: "儲存草稿", exact: true }))) {
+    const toolbar = page.getByLabel("編輯器工具列", { exact: true });
+    if (!await visible(toolbar)) {
       result.reason = "EDITOR_NOT_READY";
       return result;
     }
     result.editorNavigation = "EDITOR_READY";
 
     result.stage = "SAVE";
-    await page.getByRole("button", { name: "儲存草稿", exact: true }).click({ timeout: 10_000 });
+    // Save stays disabled until the canvas changes, so add one synthetic section first.
+    await page.getByRole("button", { name: "區段", exact: true }).click({ timeout: 10_000 });
+    await toolbar.getByRole("button", { name: "儲存", exact: true }).click({ timeout: 10_000 });
     if (!await visible(page.getByRole("status").filter({ hasText: "草稿已儲存" }))
-      || !await visible(page.getByRole("button", { name: "發布已儲存草稿", exact: true }))) { result.reason = "SAVE_FAILED"; return result; }
+      || !await visible(toolbar.getByRole("button", { name: "已儲存", exact: true }))) { result.reason = "SAVE_FAILED"; return result; }
     result.draft = true;
     result.stage = "PUBLISH";
-    await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click({ timeout: 10_000 });
-    if (!await visible(page.getByRole("link", { name: /查看公開頁/u }))) { result.reason = "PUBLISH_FAILED"; return result; }
+    // Publishing lives on the management page header, not in the editor.
+    await toolbar.getByRole("button", { name: "離開", exact: true }).click({ timeout: 10_000 });
+    try { await page.waitForURL((url) => url.pathname === `${funnelPath}/operations`, { timeout: 15_000 }); }
+    catch { result.reason = "PUBLISH_FAILED"; return result; }
+    await page.getByRole("button", { name: "發布", exact: true }).click({ timeout: 10_000 });
+    if (!await visible(page.getByRole("button", { name: /^發布狀態：(已發布|公開網址無法開啟)/u }))) { result.reason = "PUBLISH_FAILED"; return result; }
     result.published = true;
     }
 

@@ -54,16 +54,21 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "模板已套用" })).toBeVisible();
   await page.getByRole("button", { name: "編輯頁面", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/edit\\?step=`, "u"));
+  const toolbar = page.getByLabel("編輯器工具列", { exact: true });
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await expect(page.getByLabel("頁面名稱")).toBeVisible();
   await page.getByLabel("活動場次").selectOption(fixture.live.id);
   await expect(page.getByText("正在載入編輯器…", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: screenshotPath(testInfo, "landing-page-editor.png"), fullPage: true });
-  await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}\\?step=`, "u"));
-  await expect(page.getByRole("button", { name: "發布已儲存草稿" })).toBeEnabled();
-  await page.getByRole("button", { name: "發布已儲存草稿" }).click();
+  await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(toolbar.getByRole("button", { name: "已儲存", exact: true })).toBeDisabled();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/edit\\?step=`, "u"));
+  // Publishing happens on the management page (systeme.io parity).
+  await toolbar.getByRole("button", { name: "離開", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/operations\\?step=`, "u"));
+  await expect(page.getByRole("button", { name: "發布", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "發布", exact: true }).click();
 
   await expect.poll(async () => await db.landingPage.findUnique({
     where: { id: pageId },
@@ -89,9 +94,12 @@ test("owner creates, edits, publishes and reloads a structured Funnel page", asy
 
   // Saving a later draft must not mutate the immutable public version.
   // Wait for the refreshed published UI, not only the earlier database write.
-  await expect(page.getByRole("link", { name: /查看公開頁/u })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^發布狀態：(已發布|公開網址無法開啟)/u })).toBeVisible();
+  await page.getByRole("button", { name: "編輯頁面", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${pageId}/edit\\?step=`, "u"));
+  await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await page.getByLabel("頁面名稱").fill(`${pageName} 草稿更新`);
-  await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
+  await toolbar.getByRole("button", { name: "儲存", exact: true }).click();
   await expect.poll(async () => await db.landingPage.findUnique({
     where: { id: pageId },
     select: { name: true, publishedVersionId: true },
