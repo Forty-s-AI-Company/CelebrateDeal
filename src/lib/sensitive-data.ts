@@ -4,10 +4,11 @@ const ENVELOPE_VERSION = "v1";
 export const MINIMUM_ENCRYPTION_SECRET_BYTES = 32;
 
 /** Every KDF input begins with this tag; see deriveKeyFromRootSecret. */
-export const SENSITIVE_DATA_KDF_PREFIX = "CelebrateDeal:";
+const SENSITIVE_DATA_KDF_PREFIX = "CelebrateDeal:";
+const CSRF_MAC_KEY_PURPOSE = "csrf-hmac-v1";
 
 /**
- * KDF: HMAC-SHA256(root, "CelebrateDeal:" + purpose).
+ * KDF: HMAC-SHA256(root, "CelebrateDeal:" + purpose). Module-private on purpose.
  *
  * The output must stay byte-identical: MFA secrets, PII envelopes and hash
  * indexes already in the database depend on it.
@@ -17,10 +18,20 @@ export const SENSITIVE_DATA_KDF_PREFIX = "CelebrateDeal:";
  * directly, or that HMAC becomes an oracle that reveals derived keys. Callers
  * that need a MAC derive their own purpose key first and HMAC under that key.
  */
-export function deriveKeyFromRootSecret(rootSecret: string, purpose: string) {
+function deriveKeyFromRootSecret(rootSecret: string, purpose: string) {
   return createHmac("sha256", rootSecret)
     .update(`${SENSITIVE_DATA_KDF_PREFIX}${purpose}`)
     .digest();
+}
+
+/**
+ * The CSRF MAC key: the KDF output for purpose "csrf-hmac-v1" under the CSRF
+ * root secret. It takes the root explicitly because CSRF keeps its own
+ * non-production fallback secret, which is shorter than the 32-byte minimum
+ * deriveSensitiveDataKey enforces. Only src/lib/csrf.ts may import this.
+ */
+export function deriveCsrfMacKey(rootSecret: string) {
+  return deriveKeyFromRootSecret(rootSecret, CSRF_MAC_KEY_PURPOSE);
 }
 
 export function deriveSensitiveDataKey(purpose: string) {

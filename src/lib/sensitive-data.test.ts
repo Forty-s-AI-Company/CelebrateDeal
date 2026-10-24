@@ -55,6 +55,7 @@ describe("deriveSensitiveDataKey compatibility", () => {
     ["team-funnel-attribution-cookie", "fd844965ebae71c2d9cbae99dae5413942357b5471f11e7a6bb4b32968c7450c"],
     ["public-checkout-admission", "23ab20a36125cd00c78d464aa9a06fc0cdcdc59c333ad3616567cbeb7bd79b78"],
     ["merchant-registration-invite", "a1aa5eb2c893bc38e1efe443a2842721b2c8baaffa780b202df37d1325768d92"],
+    ["merchant-registration-invite-v2", "9e2ff4671f0dd4759a0905a0d9bfdbc1a9fa1b8dcb41fa8571f404f2e71ed9cf"],
   ];
 
   it.each(GOLDEN_KEYS)("keeps the %s key byte-identical", (purpose, expectedHex) => {

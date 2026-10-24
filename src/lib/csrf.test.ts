@@ -13,7 +13,7 @@ vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers(requestContext.headerValues)),
 }));
 
-import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { deriveCsrfMacKey, deriveSensitiveDataKey } from "@/lib/sensitive-data";
 import {
   assertServerActionOrigin,
   assertServerActionSecurity,
@@ -174,18 +174,23 @@ describe("CSRF key separation from the sensitive-data KDF", () => {
     "form-submission-chat-session",
     "student-portal-access-token-v1",
     "merchant-registration-invite",
+    "merchant-registration-invite-v2",
     "csrf-hmac-v1",
   ];
 
-  it.each(PURPOSES)("does not reveal any part of the %s key through a crafted session cookie", async (purpose) => {
-    setRequestContext({ host: "request.example.test" }, `CelebrateDeal:${purpose}`);
-    const derivedKey = deriveSensitiveDataKey(purpose).toString("base64url");
-    const [, , fingerprint, signature] = (await getCsrfToken()).split(".");
+  it.each(PURPOSES)("does not hand out the %s key prefix through a crafted session cookie", async (purpose) => {
+    const cookieValue = `CelebrateDeal:${purpose}`;
+    setRequestContext({ host: "request.example.test" }, cookieValue);
+    const derivedKeyPrefix = deriveSensitiveDataKey(purpose).toString("base64url").slice(0, 32);
+    const legacyFingerprint = createHmac("sha256", process.env.CSRF_SECRET ?? "")
+      .update(cookieValue).digest("base64url").slice(0, 32);
+    const [, , fingerprint] = (await getCsrfToken()).split(".");
 
+    // Sanity: the pre-fix construction really did hand out the derived key prefix.
+    expect(legacyFingerprint).toBe(derivedKeyPrefix);
     expect(fingerprint).toHaveLength(32);
-    expect(derivedKey.startsWith(fingerprint)).toBe(false);
-    expect(derivedKey.includes(fingerprint.slice(0, 16))).toBe(false);
-    expect(derivedKey.includes(signature.slice(0, 16))).toBe(false);
+    expect(fingerprint).not.toBe(legacyFingerprint);
+    expect(fingerprint).toBe(expectedFingerprint(cookieValue));
   });
 
   it("derives its MAC key from the KDF under its own purpose and tags every message", async () => {
@@ -193,6 +198,7 @@ describe("CSRF key separation from the sensitive-data KDF", () => {
     setRequestContext({ host: "request.example.test" }, sessionValue);
 
     expect(expectedCsrfKey().equals(deriveSensitiveDataKey("csrf-hmac-v1"))).toBe(true);
+    expect(deriveCsrfMacKey(process.env.CSRF_SECRET ?? "").equals(expectedCsrfKey())).toBe(true);
     const csrfValue = await getCsrfToken();
     const [issuedAt, nonce, fingerprint] = csrfValue.split(".");
     expect(fingerprint).toBe(expectedFingerprint(sessionValue));

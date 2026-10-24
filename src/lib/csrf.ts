@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { AUTH_COOKIE } from "@/lib/auth";
 import { CSRF_FIELD_NAME } from "@/lib/csrf-constants";
-import { deriveKeyFromRootSecret } from "@/lib/sensitive-data";
+import { deriveCsrfMacKey } from "@/lib/sensitive-data";
 
 export { CSRF_FIELD_NAME };
 
@@ -19,10 +19,9 @@ function csrfSecret() {
 
 // CSRF_SECRET is also the sensitive-data KDF root, and the session cookie is
 // attacker-controlled. HMAC(root, cookie) would therefore let anyone read
-// derived keys (e.g. cookie "CelebrateDeal:mfa-encryption"). CSRF MACs use a
-// key derived under their own purpose, and every message carries a tag so the
+// derived keys (e.g. cookie "CelebrateDeal:mfa-encryption"). CSRF MACs use
+// deriveCsrfMacKey (KDF purpose "csrf-hmac-v1"), and every message carries a tag so the
 // fingerprint and token MACs cannot stand in for each other.
-const CSRF_KEY_PURPOSE = "csrf-hmac-v1";
 const FINGERPRINT_TAG = "csrf-fp:v1:";
 const TOKEN_TAG = "csrf-token:v1:";
 
@@ -31,7 +30,7 @@ function csrfKey() {
   if (!secret) {
     throw new Error("CSRF_SECRET must be configured in production.");
   }
-  return deriveKeyFromRootSecret(secret, CSRF_KEY_PURPOSE);
+  return deriveCsrfMacKey(secret);
 }
 
 function sign(tag: typeof FINGERPRINT_TAG | typeof TOKEN_TAG, value: string) {
