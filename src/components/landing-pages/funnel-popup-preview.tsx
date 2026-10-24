@@ -312,7 +312,7 @@ function FunnelPopupPreviewOverlay({
             <span aria-hidden="true">×</span>
           </button>
         ) : null}
-        <FunnelPageDocumentRenderer document={content} commerce={commerce} publicSurface={publicSurface} viewport={viewport} mode="preview" className="min-h-0" />
+        <FunnelPageDocumentRenderer document={content} commerce={commerce} publicSurface={publicSurface} viewport={viewport} mode="preview" className="min-h-0" landmark={false} />
         {exitStatus ? <p data-funnel-popup-exit-intent-status={exitStatus.status} className="mt-3 text-xs text-amber-700">{statusLabel(exitStatus)}</p> : null}
       </div>
     </div>

@@ -234,6 +234,8 @@ const PageSettingsSchema = z.object({
     bodyFont: safeCssToken.default("system-ui"), headingFont: safeCssToken.default("system-ui"),
     bodySize: z.number().finite().min(8).max(120).default(16), bodyLineHeight: z.number().finite().min(0.5).max(5).default(1.5),
     linkColor: safeColor.default("#2563eb"), textColor: safeColor.default("#0f172a"), alignment: z.enum(["left", "center", "right"]).default("left"),
+    // R3: optional so documents saved before it parse to the exact same value; renderer falls back to textColor.
+    headingColor: safeColor.optional(),
   }).strict().default({ bodyFont: "system-ui", headingFont: "system-ui", bodySize: 16, bodyLineHeight: 1.5, linkColor: "#2563eb", textColor: "#0f172a", alignment: "left" }),
   language: z.enum(["zh-TW", "en", "fr", "es", "it", "pt", "de", "nl", "ru", "ja", "ar", "tr", "sv", "ro", "cs", "hu", "sk", "da", "id", "pl", "el", "sr", "hi", "no", "th", "sl", "uk", "sq"]).default("zh-TW"),
   background: z.object({ color: safeColor.default("white"), imageUrl: safeHref.optional(), blur: z.number().finite().min(0).max(100).default(0) }).strict().default({ color: "white", blur: 0 }),
