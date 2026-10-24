@@ -9,7 +9,7 @@ import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
  * There is no invitation table: a platform admin generates a link and sends it
  * by hand. The token is `mri1.<base64url(JSON payload)>.<HMAC-SHA256>`, signed
  * with a key derived for this purpose only from the deployment secret
- * (`deriveSensitiveDataKey`, CSRF_SECRET or JOB_SECRET), so it never shares a
+ * (`deriveSensitiveDataKey`, the sensitive-data KDF root), so it never shares a
  * key with CSRF, MFA or other tokens. The signature is checked in constant
  * time before the payload is parsed.
  *
