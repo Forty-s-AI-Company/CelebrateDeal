@@ -15,9 +15,8 @@ import { FunnelSurvey } from "./funnel-survey";
 import { SandboxedHtml } from "./sandboxed-html";
 import { InlineEditableText } from "./funnel-inline-editable";
 
-const CommerceRenderContext = createContext<{ binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView }>({});
-
 import {
+  createEmptyPageDocument,
   getFunnelNodeDefinition,
   parsePageDocument,
   type FunnelNode,
@@ -25,6 +24,20 @@ import {
   type FunnelNodeStyle,
   type PageDocument,
 } from "@/lib/funnel-page-document";
+import {
+  funnelButtonDefaults,
+  funnelHeadingLevel,
+  funnelLayoutTokens,
+  funnelPageTypographyStyle,
+  funnelTypographyDefaults,
+  funnelTypographyKind,
+  resolveFunnelTypography,
+  type FunnelTypographyTokens,
+} from "@/lib/funnel-typography";
+
+const CommerceRenderContext = createContext<{ binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView }>({});
+/** Page typography for this render; every surface reads the same tokens (editor, preview, public). */
+const TypographyContext = createContext<FunnelTypographyTokens>(resolveFunnelTypography(createEmptyPageDocument().settings, "desktop"));
 
 export type FunnelViewport = "desktop" | "mobile";
 export type FunnelRenderMode = "editor" | "preview";
@@ -56,6 +69,8 @@ export type FunnelPageDocumentRendererProps = {
   publicSurface?: boolean;
   commerce?: FunnelCommerceView;
   consultation?: { csrfToken: string; events: Array<{ id: string; title: string; description: string | null; timezone: string; durationMinutes: number; intakeFormFields: unknown }> };
+  /** Render the page root as `<main>` (default). Thumbnails and nested previews pass false to avoid extra landmarks. */
+  landmark?: boolean;
 };
 
 export type FunnelSubmissionContext = {
@@ -183,7 +198,7 @@ function percentageOrToken(value: unknown): string | number | undefined {
   return safe;
 }
 
-function nodeStyle(style: FunnelNodeStyle, viewport: FunnelViewport): CSSProperties {
+function nodeStyle(style: FunnelNodeStyle): CSSProperties {
   const result: CSSProperties = {};
   const fontSize = pxOrToken(style.fontSize);
   const lineHeight = cssToken(style.lineHeight);
@@ -194,8 +209,6 @@ function nodeStyle(style: FunnelNodeStyle, viewport: FunnelViewport): CSSPropert
   const margin = pxOrToken(style.margin);
   const borderWidth = pxOrToken(style.borderWidth);
   const borderRadius = pxOrToken(style.borderRadius);
-  const imageWidth = percentageOrToken(style.imageWidth);
-  const imageHeight = pxOrToken(style.imageHeight);
   if (fontSize !== undefined) result.fontSize = fontSize;
   if (lineHeight !== undefined) result.lineHeight = lineHeight;
   if (letterSpacing !== undefined) result.letterSpacing = letterSpacing;
@@ -216,10 +229,43 @@ function nodeStyle(style: FunnelNodeStyle, viewport: FunnelViewport): CSSPropert
   if (borderRadius !== undefined) result.borderRadius = borderRadius;
   if (style.borderColor || borderWidth !== undefined) result.borderStyle = "solid";
   if (style.shadow && style.shadow !== "none") result.boxShadow = style.shadow === "soft" ? "0 1px 3px rgba(15, 23, 42, 0.12)" : style.shadow === "medium" ? "0 8px 24px rgba(15, 23, 42, 0.16)" : "0 16px 40px rgba(15, 23, 42, 0.2)";
-  if (viewport === "mobile" && imageWidth !== undefined) result.maxWidth = imageWidth;
-  if (imageHeight !== undefined) result.objectFit = "cover";
   return result;
 }
+
+/** Image sizing belongs on the `<img>` itself, not its wrapper. */
+function imageStyle(style: FunnelNodeStyle): CSSProperties {
+  // Inline-level so the inherited text alignment positions narrower images (avatars, logos).
+  const result: CSSProperties = { display: "inline-block", verticalAlign: "top", maxWidth: "100%", height: "auto" };
+  const width = percentageOrToken(style.imageWidth);
+  const height = pxOrToken(style.imageHeight);
+  const borderRadius = pxOrToken(style.borderRadius);
+  if (width !== undefined) result.width = width;
+  if (height !== undefined) { result.height = height; result.objectFit = "cover"; }
+  if (borderRadius !== undefined) result.borderRadius = borderRadius;
+  return result;
+}
+
+const BUTTON_WRAPPER_KEYS = new Set<string>(["width", "margin", "textAlign", "align", "direction"]);
+
+/** A button's visual style (colour, border, padding, type) styles the control; layout keys stay on the wrapper. */
+function splitButtonStyle(style: FunnelNodeStyle): { wrapper: FunnelNodeStyle; control: FunnelNodeStyle } {
+  const wrapper: Record<string, unknown> = {};
+  const control: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(style)) (BUTTON_WRAPPER_KEYS.has(key) ? wrapper : control)[key] = value;
+  return { wrapper: wrapper as FunnelNodeStyle, control: control as FunnelNodeStyle };
+}
+
+function buttonControlStyle(style: FunnelNodeStyle, tokens: FunnelTypographyTokens): CSSProperties {
+  const { control, wrapper } = splitButtonStyle(style);
+  return { ...funnelTypographyDefaults("button", tokens), ...funnelButtonDefaults(tokens), ...nodeStyle(control), ...(wrapper.width !== undefined ? { width: "100%" } : {}) };
+}
+
+/** Bounded numeric layout prop (row max width, gaps) or the fallback. */
+function layoutNumber(value: unknown, min: number, max: number, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+}
+
+const GRID_ALIGN: Record<NonNullable<FunnelNodeStyle["align"]>, CSSProperties["alignItems"]> = { start: "start", center: "center", end: "end", stretch: "stretch" };
 
 function resolveNode(node: FunnelNode, viewport: FunnelViewport): ResolvedNode {
   const override = node.overrides[viewport];
@@ -300,8 +346,9 @@ function capabilityMessage(node: FunnelNode): string {
   return "此元件目前尚未接上安全渲染器，內容仍可在編輯器中保留。";
 }
 
+/** Size, weight and colour are inherited from the surface's typography defaults (Tailwind preflight resets headings to `inherit`). */
 function HeadlineMarkup({ level, text }: { level: string; text: string }) {
-  const className = "font-bold tracking-tight";
+  const className = "whitespace-pre-line";
   switch (level) {
     case "h1": return <h1 className={className}>{text}</h1>;
     case "h3": return <h3 className={className}>{text}</h3>;
@@ -374,15 +421,27 @@ function selectDetail(event: MouseEvent<HTMLElement>): FunnelNodeSelectDetail {
   return { ...(Number.isInteger(itemIndex) ? { itemIndex } : {}), point: { x: event.clientX, y: event.clientY } };
 }
 
+/** Default (theme) style of a node's wrapper; the node's own style is merged on top and always wins. */
+function surfaceDefaults(node: FunnelNode, resolved: ResolvedNode, tokens: FunnelTypographyTokens): CSSProperties {
+  if (node.type === "section") return { padding: `0 ${funnelLayoutTokens(tokens.viewport).sectionGutter}px` };
+  if (node.type === "button") return {};
+  const kind = funnelTypographyKind(node, resolved.props);
+  return kind ? funnelTypographyDefaults(kind, tokens) : {};
+}
+
 function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectNode, children }: { node: FunnelNode; resolved: ResolvedNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string, detail?: FunnelNodeSelectDetail) => void; children: ReactNode }) {
+  const tokens = useContext(TypographyContext);
+  // A button's visuals belong to its control; a row's direction arranges its children, not its wrapper.
+  const ownStyle = node.type === "button" ? splitButtonStyle(resolved.style).wrapper : node.type === "row" ? { ...resolved.style, direction: undefined } : resolved.style;
+  const style = { ...surfaceDefaults(node, resolved, tokens), ...nodeStyle(ownStyle) };
   const editor = mode === "editor";
   const attributes = safeAttributes(node.attributes);
   // EDT-RESP-001: a node hidden on this device stays selectable in the editor, dimmed and striped.
   const hidden = editor && !resolved.visible;
-  const horizontal = editor && viewport === "desktop" && (node.type === "columns_2" || node.type === "columns_3" || node.type === "columns_4");
+  const horizontal = editor && ((viewport === "desktop" && (node.type === "columns_2" || node.type === "columns_3" || node.type === "columns_4")) || (node.type === "row" && resolved.style.direction === "row"));
   return <div {...attributes} data-funnel-node-id={node.id} data-funnel-node-type={node.type} data-funnel-selected={selectedNodeId === node.id ? "true" : "false"}
     data-funnel-axis={horizontal ? "horizontal" : undefined} data-funnel-hidden={hidden ? viewport : undefined}
-    className={editor ? `relative${hidden ? " opacity-60" : ""}` : ""} style={nodeStyle(resolved.style, viewport)}
+    className={editor ? `relative${hidden ? " opacity-60" : ""}` : ""} style={style}
     onClick={onSelectNode ? (event) => { event.stopPropagation(); onSelectNode(node.id, selectDetail(event)); } : undefined}>
     {children}
     {hidden ? <>
@@ -392,16 +451,13 @@ function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectN
   </div>;
 }
 
-type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
-function headingTag(level: string): HeadingTag {
-  return level === "h1" || level === "h3" || level === "h4" || level === "h5" || level === "h6" ? level : "h2";
-}
-
 // The switch is the explicit registry-to-markup boundary; keeping it together
 // makes unsupported element behaviour auditable in one place.
 // eslint-disable-next-line complexity
 function NodeRenderer({ node, viewport, mode, flow, submission, consultation, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; consultation?: FunnelPageDocumentRendererProps["consultation"]; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string, detail?: FunnelNodeSelectDetail) => void; inlineEditing?: FunnelInlineEditingBinding }): ReactNode {
   const commerceContext = useContext(CommerceRenderContext);
+  const tokens = useContext(TypographyContext);
+  const layout = funnelLayoutTokens(viewport);
   const resolved = resolveNode(node, viewport);
   if (!resolved.visible && mode !== "editor") return null;
   const editing = mode === "editor" && inlineEditing?.nodeId === node.id ? inlineEditing : undefined;
@@ -413,29 +469,44 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
     case "offer_price": case "payment_button": case "payment_method": case "physical_product": case "customer_type": case "agreement": case "order_bump": case "coupon": case "two_step_order_form": case "shipping_fees":
       return surface(<><FunnelCommerceElement type={node.type} {...commerceContext} interactive={publicSurface && mode !== "editor"} />{renderChildren()}</>);
     case "section": return surface(<section>{renderChildren()}</section>);
-    case "row": return surface(<div className="flex min-w-0 flex-col gap-4">{renderChildren()}</div>);
-    case "columns_2": return surface(<div className={`grid min-w-0 gap-4 ${viewport === "mobile" ? "grid-cols-1" : "grid-cols-2"}`}>{renderChildren()}</div>);
-    case "columns_3": return surface(<div className={`grid min-w-0 gap-4 ${viewport === "mobile" ? "grid-cols-1" : "grid-cols-3"}`}>{renderChildren()}</div>);
-    case "columns_4": return surface(<div className={`grid min-w-0 gap-4 ${viewport === "mobile" ? "grid-cols-1" : "grid-cols-4"}`}>{renderChildren()}</div>);
+    // Row: props.maxWidth centres the content column; props.gap spaces its children;
+    // style.direction "row" lays children side by side (wrapping on narrow screens).
+    case "row": {
+      const maxWidth = layoutNumber(props.maxWidth, 240, 1600, 0);
+      const horizontal = resolved.style.direction === "row";
+      const rowStyle: CSSProperties = { gap: layoutNumber(props.gap, 0, 160, layout.rowGap), ...(maxWidth ? { maxWidth, marginInline: "auto" } : {}), ...(horizontal ? { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" } : {}) };
+      return surface(<div className="flex w-full min-w-0 flex-col" style={rowStyle}>{renderChildren()}</div>);
+    }
+    case "columns_2": case "columns_3": case "columns_4": {
+      const count = node.type === "columns_2" ? 2 : node.type === "columns_3" ? 3 : 4;
+      const gridStyle: CSSProperties = { gap: layoutNumber(props.gap, 0, 160, layout.columnGap), gridTemplateColumns: viewport === "mobile" ? "minmax(0, 1fr)" : `repeat(${count}, minmax(0, 1fr))` };
+      if (resolved.style.align) gridStyle.alignItems = GRID_ALIGN[resolved.style.align];
+      return surface(<div className="grid min-w-0" style={gridStyle}>{renderChildren()}</div>);
+    }
     case "text": {
       const text = stringProp(props, ["text", "content", "body"], "文字內容");
       return surface(editing ? <InlineEditableText as="p" initial={text} multiline label="編輯文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <p className="whitespace-pre-line">{text}</p>);
     }
     case "headline": {
-      const level = stringProp(props, ["level"], "h2");
+      const level = funnelHeadingLevel(props.level);
       const text = stringProp(props, ["text", "content", "title"], "標題");
-      return surface(editing ? <InlineEditableText as={headingTag(level)} className="font-bold tracking-tight" initial={text} multiline={false} label="編輯標題" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <HeadlineMarkup level={level} text={text} />);
+      return surface(editing ? <InlineEditableText as={level} initial={text} multiline={false} label="編輯標題" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <HeadlineMarkup level={level} text={text} />);
     }
     case "bulleted_list": {
       const items = stringList(props.items).length ? stringList(props.items) : ["清單項目"];
-      return surface(<ul className="list-disc space-y-1 pl-5">{items.map((item, index) => editing?.itemIndex === index
+      return surface(<ul className="list-disc pl-[1.25em]" style={{ display: "grid", gap: "0.5em" }}>{items.map((item, index) => editing?.itemIndex === index
         ? <InlineEditableText key={`${node.id}-item-${index}-editing`} as="li" initial={item} multiline={false} label={`編輯清單第 ${index + 1} 項`} caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: item, items })} onCancel={editing.onCancel} />
         : <li key={`${node.id}-item-${index}`} data-funnel-list-item={mode === "editor" ? index : undefined}>{item}</li>)}</ul>);
     }
-    case "content_box": return surface(<div className="rounded-xl border border-slate-200 bg-white/70 p-4">{children.length ? renderChildren() : <p className="whitespace-pre-line">{stringProp(props, ["text", "content", "description", "title"], "內容區塊")}</p>}</div>);
+    case "content_box": {
+      // A box styled by its own node style (templates, blocks) draws nothing extra; an unstyled box keeps the default card.
+      const style = resolved.style;
+      const custom = style.padding !== undefined || style.backgroundColor !== undefined || style.borderWidth !== undefined || style.borderColor !== undefined || (style.shadow !== undefined && style.shadow !== "none");
+      return surface(<div className={`flex min-w-0 flex-col${custom ? "" : " rounded-xl border border-slate-200 bg-white/70 p-4"}`} style={{ gap: layoutNumber(props.gap, 0, 120, layout.boxGap) }}>{children.length ? renderChildren() : <p className="whitespace-pre-line">{stringProp(props, ["text", "content", "description", "title"], "內容區塊")}</p>}</div>);
+    }
     case "image": {
       const src = safeResourceUrl(props.src ?? props.imageUrl ?? props.url);
-      return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} className="h-auto max-w-full object-cover" />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm text-slate-500">{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
+      return surface(src ? <figure><img src={src} alt={stringProp(props, ["alt", "altText"])} style={imageStyle(resolved.style)} />{stringProp(props, ["caption"]) ? <figcaption className="mt-2 text-sm text-slate-600">{stringProp(props, ["caption"])}</figcaption> : null}</figure> : <UnsupportedNode node={node} message="圖片網址不安全或尚未設定。" />);
     }
     case "video": {
       const src = safeMediaSource(props);
@@ -454,17 +525,18 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const label = stringProp(props, ["ariaLabel", "title"], "表單");
       // Checkout layout forms are not lead forms: keep their editable children
       // visible, but collect buyer information only in the trusted checkout.
-      if (props.variant === "checkout-contact") return surface(<fieldset disabled>{renderChildren()}</fieldset>);
-      if (children.some((child) => getFunnelNodeDefinition(child.type).category === "payment")) return surface(<div aria-label={label}>{renderChildren()}</div>);
+      const stack = { display: "flex", flexDirection: "column", gap: layout.formGap } satisfies CSSProperties;
+      if (props.variant === "checkout-contact") return surface(<fieldset disabled style={stack}>{renderChildren()}</fieldset>);
+      if (children.some((child) => getFunnelNodeDefinition(child.type).category === "payment")) return surface(<div aria-label={label} style={stack}>{renderChildren()}</div>);
       const requireConsent = children.some((child) => child.type === "checkbox" && child.props.required === true);
       if (mode === "preview" && submission) return surface(<PublicSubmissionForm submission={submission} label={label} requireConsent={requireConsent} />);
       if (publicSurface) return surface(<UnsupportedNode node={node} message="此一頁式網站尚未綁定可公開使用的報名表，表單已停用。" />);
-      return surface(<form aria-label={label} onSubmit={(event) => event.preventDefault()}>{stringProp(props, ["title", "heading"]) ? <h3 className="mb-4 font-semibold">{stringProp(props, ["title", "heading"])}</h3> : null}{renderChildren()}</form>);
+      return surface(<form aria-label={label} onSubmit={(event) => event.preventDefault()} style={stack}>{stringProp(props, ["title", "heading"]) ? <h3 style={funnelTypographyDefaults("h3", tokens)}>{stringProp(props, ["title", "heading"])}</h3> : null}{renderChildren()}</form>);
     }
     case "form_input": {
       const label = stringProp(props, ["label", "title", "placeholder"], "欄位");
       const inputId = `${node.id}-input`;
-      return surface(<label className="block space-y-1" htmlFor={inputId}><span className="text-sm font-medium text-slate-700">{label}</span><input id={inputId} name={safeNodeName(node, props, node.id)} type={safeInputType(props.inputType ?? props.type)} placeholder={stringProp(props, ["placeholder"])} required={props.required === true} defaultValue={typeof props.defaultValue === "string" ? props.defaultValue : undefined} className="w-full rounded-lg border border-slate-500 px-3 py-2" /></label>);
+      return surface(<label className="block space-y-1.5" htmlFor={inputId}><span className="block text-[0.875em] font-semibold">{label}</span><input id={inputId} name={safeNodeName(node, props, node.id)} type={safeInputType(props.inputType ?? props.type)} placeholder={stringProp(props, ["placeholder"])} required={props.required === true} defaultValue={typeof props.defaultValue === "string" ? props.defaultValue : undefined} className="min-h-12 w-full rounded-lg border border-slate-500 bg-white px-3.5 py-2.5 text-slate-900 placeholder:text-slate-500" /></label>);
     }
     case "checkbox": {
       const label = stringProp(props, ["label", "text", "title"], "我同意上述內容");
@@ -500,7 +572,10 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
     }
     case "menu": {
       const items = safeMenuItems(props.items ?? props.links);
-      return surface(<nav aria-label={stringProp(props, ["ariaLabel", "title"], "頁面選單")}><ul className="flex flex-wrap gap-3">{(items.length ? items : [{ label: "尚未設定選單項目", href: null }]).map((item, index) => <li key={`${node.id}-menu-${index}`}>{item.href ? <a href={item.href} className="text-slate-700 underline-offset-2 hover:underline">{item.label}</a> : <span className="text-slate-500">{item.label}</span>}</li>)}</ul></nav>);
+      // Links use the page link colour unless the menu node sets its own text colour.
+      const linkStyle: CSSProperties = { color: resolved.style.color ? "inherit" : tokens.linkColor, fontWeight: 600 };
+      const justify = resolved.style.textAlign === "center" ? "center" : resolved.style.textAlign === "right" ? "flex-end" : undefined;
+      return surface(<nav aria-label={stringProp(props, ["ariaLabel", "title"], "頁面選單")}><ul className="flex flex-wrap gap-x-6 gap-y-2" style={justify ? { justifyContent: justify } : undefined}>{(items.length ? items : [{ label: "尚未設定選單項目", href: null }]).map((item, index) => <li key={`${node.id}-menu-${index}`}>{item.href ? <a href={item.href} style={linkStyle} className="underline-offset-4 hover:underline">{item.label}</a> : <span className="opacity-80">{item.label}</span>}</li>)}</ul></nav>);
     }
     case "faq": {
       const question = stringProp(props, ["question", "title", "label"], "常見問題");
@@ -518,7 +593,8 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const action = safeAction(source);
       const label = stringProp(props, ["label", "text", "title"], "立即行動");
       // A span, not the <button>/<a>: native buttons swallow Space/Enter and some browsers block editing inside them.
-      if (editing) return surface(<InlineEditableText as="span" className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950" initial={label} multiline={false} label="編輯按鈕文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: label })} onCancel={editing.onCancel} />);
+      const controlStyle = buttonControlStyle(resolved.style, tokens);
+      if (editing) return surface(<InlineEditableText as="span" style={controlStyle} initial={label} multiline={false} label="編輯按鈕文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: label })} onCancel={editing.onCancel} />);
       const sourceType = actionType(source);
       const popupId = sourceType === "show_popup" && source && typeof source === "object" && "popupId" in source && typeof source.popupId === "string" ? source.popupId : null;
       const nextStepId = sourceType === "next_step" && source && typeof source === "object" && "stepId" in source && typeof source.stepId === "string" ? source.stepId : null;
@@ -526,7 +602,8 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const nextStepHref = flow && nextStep ? `/lp/${flow.domain}/${nextStep.path}` : null;
       const submit = sourceType === "submit_form";
       const supportedButton = sourceType === null || sourceType === "none" || submit || Boolean(popupId);
-      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : nextStepHref ? <a href={nextStepHref} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950">{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{label}</button>);
+      const controlClass = "transition-[filter] hover:brightness-95 focus-visible:outline-offset-2";
+      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className={controlClass} style={controlStyle}>{label}</a> : nextStepHref ? <a href={nextStepHref} className={controlClass} style={controlStyle}>{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-60`} style={controlStyle}>{label}</button>);
     }
     case "horizontal_line": return surface(<hr className="border-slate-200" />);
     default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);
@@ -537,19 +614,35 @@ function UnsupportedNode({ node, message, children }: { node: FunnelNode; messag
   return <div data-funnel-capability={node.type} className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"><p className="font-semibold text-slate-800">{LABELS[node.type]}：目前無法在此預覽</p><p className="mt-1">{message}</p>{children ? <div className="mt-3">{children}</div> : null}</div>;
 }
 
-function pageStyle(document: PageDocument, viewport: FunnelViewport): CSSProperties {
-  const typography = document.settings.typography;
-  const result: CSSProperties = { color: color(typography.textColor), fontSize: `${typography.bodySize}px`, lineHeight: typography.bodyLineHeight, textAlign: typography.alignment, backgroundColor: color(document.settings.background.color) };
-  if (viewport === "mobile") result.fontSize = `${Math.min(typography.bodySize, 18)}px`;
-  return result;
+/**
+ * Only same-origin paths and plain HTTPS URLs without characters that could
+ * leave a CSS `url("…")` string are accepted for the page background.
+ */
+export function funnelBackgroundImageValue(value: unknown): string | undefined {
+  const href = safeResourceUrl(value);
+  if (!href || href.startsWith("#") || /["'()\\\s<>]/u.test(href)) return undefined;
+  return `url("${href}")`;
+}
+
+function pageStyle(document: PageDocument, tokens: FunnelTypographyTokens): CSSProperties {
+  return { ...funnelPageTypographyStyle(tokens), backgroundColor: color(document.settings.background.color) };
 }
 
 /** Shared renderer for the editor canvas and the safe public/preview surface. */
-export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, consultation, commerce, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing, className = "" }: FunnelPageDocumentRendererProps) {
+export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, consultation, commerce, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing, className = "", landmark = true }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
   const editing = mode === "editor" ? inlineEditing : undefined;
-  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={editing} />)}</main></CommerceRenderContext.Provider>;
+  const tokens = resolveFunnelTypography(parsed.settings, viewport);
+  const backgroundImage = funnelBackgroundImageValue(parsed.settings.background.imageUrl);
+  const blur = Math.min(Math.max(parsed.settings.background.blur, 0), 40);
+  const Root = landmark ? "main" : "div";
+  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><TypographyContext.Provider value={tokens}>
+    <Root data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full${backgroundImage ? " relative isolate" : ""} ${className}`.trim()} style={pageStyle(parsed, tokens)}>
+      {backgroundImage ? <div aria-hidden data-funnel-background className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"><div className="absolute bg-cover bg-center" style={{ backgroundImage, inset: blur ? `-${blur * 2}px` : 0, filter: blur ? `blur(${blur}px)` : undefined }} /></div> : null}
+      {parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={editing} />)}
+    </Root>
+  </TypographyContext.Provider></CommerceRenderContext.Provider>;
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;

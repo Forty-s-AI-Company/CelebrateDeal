@@ -59,7 +59,7 @@ const layout: readonly FunnelInspectorField[] = [content("ariaLabel", "輔助說
 const restricted = (capabilityNote: string): FunnelElementInspectorDefinition => ({ fields: [...designFields, ...advancedFields], capabilityNote });
 
 export const FUNNEL_ELEMENT_INSPECTOR_SCHEMA: Readonly<Record<FunnelNodeType, FunnelElementInspectorDefinition>> = {
-  text: { fields: [content("text", "文字內容", "textarea"), ...designFields, ...advancedFields] },
+  text: { fields: [content("text", "文字內容", "textarea"), { ...content("textStyle", "文字樣式", "select", "未設定時為內文；字級與行高依頁面設定自動計算。"), options: [{ value: "body", label: "內文" }, { value: "lead", label: "引言（較大）" }, { value: "small", label: "小字" }, { value: "eyebrow", label: "眉標" }] }, ...designFields, ...advancedFields] },
   headline: { fields: [content("text", "標題", "textarea"), { ...content("level", "標題層級", "select"), options: [{ value: "h1", label: "H1" }, { value: "h2", label: "H2" }, { value: "h3", label: "H3" }, { value: "h4", label: "H4" }] }, ...designFields, ...advancedFields] },
   bulleted_list: { fields: [content("items", "清單項目", "list", "每行一個項目。"), ...designFields, ...advancedFields] },
   content_box: { fields: [content("text", "預設內容", "textarea", "盒內沒有子元件時才會顯示。"), ...designFields, ...advancedFields] },

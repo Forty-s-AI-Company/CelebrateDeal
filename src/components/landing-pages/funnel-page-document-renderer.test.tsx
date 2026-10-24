@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
-import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
+import { FunnelPageDocumentRenderer, funnelBackgroundImageValue } from "@/components/landing-pages/funnel-page-document-renderer";
 import { FUNNEL_BLOCK_REGISTRY, instantiateBlock } from "@/lib/funnel-block-library";
 import { RegistrationRetryProvider } from "@/components/registration-retry-context";
 import { surveyLeadFormFields } from "@/lib/funnel-registration-surface";
@@ -246,5 +246,118 @@ it("posts the boundary's validated ref/share attribution in the native funnel fo
   // The funnel page itself stays the landingPageId; attribution never overrides it.
   expect(html).toContain('name="landingPageId" value="page-1"');
   expect(render()).toContain('name="referralCode" value=""');
+});
+
+function surfaceStyle(html: string, nodeId: string): string {
+  return new RegExp(`data-funnel-node-id="${nodeId}"[^>]*?style="([^"]*)"`, "u").exec(html)?.[1] ?? "";
+}
+
+describe("FunnelPageDocumentRenderer typography (R3)", () => {
+  const heading = (id: string, level: string, extra: Partial<FunnelNode> = {}) => node("headline", id, { props: { text: `標題 ${level}`, level }, ...extra });
+
+  it("gives H1–H4 a clear size hierarchy on desktop and scales down on mobile", () => {
+    const page = documentWith([heading("h1", "h1"), heading("h2", "h2"), heading("h3", "h3"), heading("h4", "h4"), node("text", "body", { props: { text: "內文" } })]);
+    const desktop = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} viewport="desktop" />);
+    const mobile = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} viewport="mobile" />);
+    expect(surfaceStyle(desktop, "h1")).toContain("font-size:48px");
+    expect(surfaceStyle(desktop, "h1")).toContain("font-weight:800");
+    expect(surfaceStyle(desktop, "h2")).toContain("font-size:36px");
+    expect(surfaceStyle(desktop, "h3")).toContain("font-size:24px");
+    expect(surfaceStyle(desktop, "h4")).toContain("font-size:20px");
+    expect(surfaceStyle(desktop, "body")).toContain("font-size:16px");
+    expect(surfaceStyle(mobile, "h1")).toContain("font-size:32px");
+    expect(surfaceStyle(mobile, "h2")).toContain("font-size:26px");
+    expect(desktop).toContain("<h1");
+  });
+
+  it("lets explicit node styles and device overrides win over the defaults", () => {
+    const page = documentWith([heading("custom", "h1", { style: { fontSize: 30, color: "#be185d", lineHeight: 1.1 }, overrides: { mobile: { style: { fontSize: 22 } } } })]);
+    const desktop = surfaceStyle(renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} viewport="desktop" />), "custom");
+    const mobile = surfaceStyle(renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} viewport="mobile" />), "custom");
+    expect(desktop).toContain("font-size:30px");
+    expect(desktop).not.toContain("font-size:48px");
+    expect(desktop).toContain("color:#be185d");
+    expect(desktop).toContain("line-height:1.1");
+    expect(desktop).toContain("font-weight:800");
+    expect(mobile).toContain("font-size:22px");
+  });
+
+  it("applies 頁面設定 typography (size, fonts, colours) to body and headings", () => {
+    const page = documentWith([heading("h1", "h1"), node("text", "lead", { props: { text: "引言", textStyle: "lead" } })]);
+    page.settings.typography = { ...page.settings.typography, bodySize: 18, bodyFont: "sans-tc", headingFont: "serif-tc", headingColor: "#1e3a8a", textColor: "#334155" };
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    const root = /data-funnel-renderer="[^"]*"[^>]*style="([^"]*)"/u.exec(html)?.[1] ?? "";
+    expect(root).toContain("font-size:18px");
+    expect(root).toContain("color:#334155");
+    expect(root).toContain("Noto Sans TC");
+    expect(surfaceStyle(html, "h1")).toContain("font-size:54px");
+    expect(surfaceStyle(html, "h1")).toContain("color:#1e3a8a");
+    expect(surfaceStyle(html, "h1")).toContain("Noto Serif TC");
+    expect(surfaceStyle(html, "lead")).toContain("font-size:22.5px");
+  });
+
+  it("renders identical content styles in editor and preview modes", () => {
+    const page = documentWith([heading("h1", "h1"), node("button", "cta", { props: { label: "報名" } })]);
+    const editor = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} mode="editor" />);
+    const preview = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} mode="preview" />);
+    expect(surfaceStyle(editor, "h1")).toBe(surfaceStyle(preview, "h1"));
+    const control = (html: string) => /<button[^>]*style="([^"]*)"/u.exec(html)?.[1];
+    expect(control(editor)).toBe(control(preview));
+  });
+
+  it("puts a button's colours on the control, not on its wrapper", () => {
+    const page = documentWith([node("button", "cta", { props: { label: "報名" }, style: { backgroundColor: "#1d4ed8", color: "#ffffff", borderRadius: 12, width: 100 } })]);
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    const control = /<button[^>]*style="([^"]*)"/u.exec(html)?.[1] ?? "";
+    expect(control).toContain("background-color:#1d4ed8");
+    expect(control).toContain("color:#ffffff");
+    expect(control).toContain("width:100%");
+    expect(surfaceStyle(html, "cta")).not.toContain("background-color");
+    expect(surfaceStyle(html, "cta")).toContain("width:100%");
+  });
+
+  it("lays out a horizontal row and honours row max width and column gap", () => {
+    const page: PageDocument = { ...createEmptyPageDocument("layout", "版面"), root: [node("section", "s", [node("row", "r", { props: { maxWidth: 960, gap: 12 }, style: { direction: "row" }, children: [node("text", "a"), node("columns_2", "c", { props: { gap: 40 }, children: [node("text", "b")] })] })])] };
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    expect(html).toMatch(/max-width:960px;margin-inline:auto;flex-direction:row/u);
+    expect(html).toContain("gap:40px");
+    expect(surfaceStyle(html, "r")).not.toContain("flex-direction");
+  });
+
+  it("renders a page background image only from safe URLs", () => {
+    expect(funnelBackgroundImageValue("/images/bg.png")).toBe('url("/images/bg.png")');
+    expect(funnelBackgroundImageValue("https://cdn.example.com/bg.png")).toBe('url("https://cdn.example.com/bg.png")');
+    expect(funnelBackgroundImageValue('https://cdn.example.com/a.png");color:red;("')).toBeUndefined();
+    expect(funnelBackgroundImageValue("javascript:alert(1)")).toBeUndefined();
+    expect(funnelBackgroundImageValue("http://insecure.example.com/a.png")).toBeUndefined();
+    const page = documentWith([node("text", "t")]);
+    page.settings.background = { color: "white", imageUrl: "/images/bg.png", blur: 4 };
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />);
+    expect(html).toContain("data-funnel-background");
+    expect(html).toContain("blur(4px)");
+  });
+
+  it("can render without a main landmark for thumbnails", () => {
+    const page = documentWith([node("text", "t")]);
+    expect(renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} landmark={false} />)).not.toContain("<main");
+    expect(renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} />)).toContain("<main");
+  });
+
+  it("still renders a document saved before R3", () => {
+    const legacy = {
+      schemaVersion: 1, id: "legacy_page", name: "舊頁面", revision: 3, popups: [],
+      settings: { typography: { bodyFont: "微軟正黑體", headingFont: "system-ui", bodySize: 16, bodyLineHeight: 1.5, linkColor: "#2563eb", textColor: "#0f172a", alignment: "left" }, language: "zh-TW", background: { color: "white", blur: 0 }, seo: { hideFromSearch: false }, tracking: { status: "disabled", reason: "追蹤碼與自訂程式碼需經安全整合後才可啟用", upgradeRequired: false }, affiliate: { status: "disabled", reason: "聯盟徽章尚未連接可驗證的方案資料", upgradeRequired: false } },
+      root: [node("section", "s", { style: { padding: 56 }, children: [node("row", "r", { props: { maxWidth: 1120 }, children: [
+        node("content_box", "box", { style: { padding: 24, borderRadius: 12 }, children: [heading("old_h1", "h1"), node("text", "old_text", { props: { text: "舊內容" } })] }),
+        node("button", "old_button", { props: { label: "舊按鈕" }, style: { borderRadius: 8 }, actions: [{ type: "open_url", href: "#top", newTab: false }] }),
+      ] })] })],
+    } as unknown as PageDocument;
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={legacy} />);
+    expect(html).not.toContain('role="alert"');
+    expect(html).toContain("舊內容");
+    expect(surfaceStyle(html, "old_h1")).toContain("font-size:48px");
+    expect(html).toContain("font-family:微軟正黑體");
+    expect(/<a[^>]*style="([^"]*)"/u.exec(html)?.[1]).toContain("border-radius:8px");
+  });
 });
 

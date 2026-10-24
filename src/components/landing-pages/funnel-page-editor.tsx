@@ -34,7 +34,7 @@ function nodeId(type: FunnelNodeType) {
 function newNode(type: FunnelNodeType): FunnelNode {
   const props: Record<string, unknown> = type === "text" ? { text: "新的文字內容" }
     : type === "headline" ? { text: "新的標題", level: "h2" }
-      : type === "image" ? { src: "/images/funnel-templates/low-barrier-lead-magnet.svg", alt: "" }
+      : type === "image" ? { src: "/placeholder.svg", alt: "" }
         : type === "button" ? { label: "立即行動" }
           : type === "bulleted_list" ? { items: ["第一個重點", "第二個重點"] }
             : {};
@@ -323,7 +323,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     if (leftView === "popups") return <PopupsPanel document={history.present} disabled={disabled} editingPopupId={editingPopupId} onReplace={replaceDocument} onEdit={editPopup} onPreview={setPreviewPopupId} onBack={backToCanvasPanel} />;
     if (leftView === "versions" && chrome?.versions) return <div><PanelHeader title="版本紀錄" onBack={backToCanvasPanel} />{chrome.versions}</div>;
     if (leftView === "node" && selected && path) return <NodeSettingsPanel node={selected} path={path} disabled={disabled} viewport={viewport} popups={history.present.popups} stepIds={resolvedStepIds} stepNames={resolvedStepNames} onCommand={commit} onBack={deselect} onDuplicate={duplicateSelected} onDelete={removeSelected} />;
-    return <EditorLibrary disabled={disabled} onAddElement={add} onAddBlock={addBlock} />;
+    return <EditorLibrary disabled={disabled} settings={history.present.settings} onAddElement={add} onAddBlock={addBlock} />;
   }
   function renderCanvas() {
     if (previewing && chrome?.renderPreview) return chrome.renderPreview(viewport);

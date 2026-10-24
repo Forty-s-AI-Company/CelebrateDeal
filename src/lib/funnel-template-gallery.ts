@@ -8,6 +8,7 @@ import {
   type PageDocument,
 } from "@/lib/funnel-page-document";
 import type { FunnelStepType } from "@/lib/funnel-flow";
+import { FUNNEL_ILLUSTRATIONS } from "@/lib/funnel-block-library";
 
 export const FUNNEL_TEMPLATE_GOALS = ["sell", "audience", "custom", "webinar"] as const;
 export type FunnelTemplateGoal = (typeof FUNNEL_TEMPLATE_GOALS)[number];
@@ -34,52 +35,95 @@ export type FunnelTemplateGalleryItem = {
   build: (prefix: string) => FunnelNode[];
 };
 
+/*
+ * Node IDs and types of every template are pinned by tests (saved documents
+ * and analytics refer to them). Design polish therefore only changes props
+ * and styles — never adds, removes or reorders nodes.
+ */
+type Style = FunnelNode["style"];
+const INK = "#0f172a";
+const BODY = "#334155";
+const MUTED = "#475569";
+const LINE = "#e2e8f0";
+const NIGHT_MUTED = "#cbd5e1";
+
 const node = (
   prefix: string,
   id: string,
   type: FunnelNodeType,
   props: Record<string, unknown> = {},
   children?: FunnelNode[],
-  style: FunnelNode["style"] = {},
+  style: Style = {},
   actions: FunnelNodeAction[] = [],
+  mobileStyle?: Style,
 ): FunnelNode => ({
   schemaVersion: 1,
   id: `${prefix}_${id}`,
   type,
   props,
   style,
-  overrides: {},
+  overrides: mobileStyle ? { mobile: { style: mobileStyle } } : {},
   visible: true,
   actions,
   attributes: {},
   ...(children ? { children } : {}),
 });
 
-const text = (prefix: string, id: string, value: string, style: FunnelNode["style"] = {}) =>
+const text = (prefix: string, id: string, value: string, style: Style = {}) =>
   node(prefix, id, "text", { text: value }, undefined, style);
-const headline = (prefix: string, id: string, value: string, level: "h1" | "h2" | "h3" = "h2") =>
-  node(prefix, id, "headline", { text: value, level });
-const button = (prefix: string, id: string, label: string, action: FunnelNodeAction) =>
-  node(prefix, id, "button", { label }, undefined, { borderRadius: 8 }, [action]);
-const image = (prefix: string, id: string, alt: string) =>
-  node(prefix, id, "image", { src: FUNNEL_PLACEHOLDER_IMAGE_SRC, alt, objectFit: "cover" }, undefined, { imageWidth: 100, borderRadius: 12 });
-const box = (prefix: string, id: string, children: FunnelNode[]) => node(prefix, id, "content_box", {}, children, { padding: 24, borderRadius: 12 });
-const columns = (prefix: string, id: string, children: FunnelNode[], count: 2 | 3 = 2) =>
-  node(prefix, id, count === 3 ? "columns_3" : "columns_2", { gap: 24 }, children);
-const section = (prefix: string, id: string, children: FunnelNode[], backgroundColor?: string) =>
-  node(prefix, id, "section", {}, [node(prefix, `${id}_row`, "row", { maxWidth: 1120 }, children)], { padding: 56, ...(backgroundColor ? { backgroundColor } : {}) });
-const list = (prefix: string, id: string, items: string[]) => node(prefix, id, "bulleted_list", { items });
+/** Small uppercase label above a headline (colour: page link colour unless given). */
+const eyebrow = (prefix: string, id: string, value: string, color?: string) =>
+  node(prefix, id, "text", { text: value, textStyle: "eyebrow" }, undefined, color ? { color } : {});
+const lead = (prefix: string, id: string, value: string, style: Style = {}) =>
+  node(prefix, id, "text", { text: value, textStyle: "lead" }, undefined, style);
+const small = (prefix: string, id: string, value: string, style: Style = {}) =>
+  node(prefix, id, "text", { text: value, textStyle: "small" }, undefined, style);
+const headline = (prefix: string, id: string, value: string, level: "h1" | "h2" | "h3" = "h2", style: Style = {}) =>
+  node(prefix, id, "headline", { text: value, level }, undefined, style);
+type ButtonTone = "amber" | "blue" | "dark";
+const BUTTON_TONES: Readonly<Record<ButtonTone, Style>> = { amber: { backgroundColor: "#f59e0b", color: INK }, blue: { backgroundColor: "#1d4ed8", color: "#ffffff" }, dark: { backgroundColor: INK, color: "#ffffff" } };
+const button = (prefix: string, id: string, label: string, action: FunnelNodeAction, tone: ButtonTone = "amber", extra: Style = {}) =>
+  node(prefix, id, "button", { label }, undefined, { ...BUTTON_TONES[tone], borderRadius: 10, ...extra }, [action]);
+const image = (prefix: string, id: string, alt: string, src: string = FUNNEL_PLACEHOLDER_IMAGE_SRC, style: Style = {}) =>
+  node(prefix, id, "image", { src, alt, objectFit: "cover" }, undefined, { imageWidth: 100, borderRadius: 20, ...style });
+
+type BoxVariant = "card" | "plain" | "dark" | "tint";
+const BOX_STYLES: Readonly<Record<BoxVariant, Style>> = {
+  card: { backgroundColor: "#ffffff", borderColor: LINE, borderWidth: 1, borderRadius: 16, padding: 28, shadow: "soft" },
+  plain: { padding: 0 },
+  dark: { backgroundColor: INK, color: "#ffffff", borderRadius: 20, padding: 36, shadow: "medium" },
+  tint: { backgroundColor: "#f8fafc", borderColor: LINE, borderWidth: 1, borderRadius: 16, padding: 28 },
+};
+const box = (prefix: string, id: string, children: FunnelNode[], variant: BoxVariant = "card", extra: Style = {}) =>
+  node(prefix, id, "content_box", { gap: variant === "plain" ? 18 : 12 }, children, { ...BOX_STYLES[variant], ...extra }, [], variant === "plain" ? undefined : { padding: 22 });
+const columns = (prefix: string, id: string, children: FunnelNode[], count: 2 | 3 = 2, align?: Style["align"]) =>
+  node(prefix, id, count === 3 ? "columns_3" : "columns_2", { gap: count === 3 ? 24 : 48 }, children, align ? { align } : {});
+
+type SectionOptions = { align?: "left" | "center"; paddingY?: number; paddingYMobile?: number; maxWidth?: number; color?: string; direction?: "row" };
+/** Section › Row with responsive padding; `direction: "row"` lays the row's children side by side (headers). */
+const section = (prefix: string, id: string, children: FunnelNode[], backgroundColor?: string, options: SectionOptions = {}) => {
+  const { align, paddingY = 88, paddingYMobile = 56, maxWidth = 1120, color, direction } = options;
+  const style: Style = { padding: `${paddingY}px 32px` };
+  if (backgroundColor) style.backgroundColor = backgroundColor;
+  if (color) style.color = color;
+  if (align) style.textAlign = align;
+  return node(prefix, id, "section", {}, [node(prefix, `${id}_row`, "row", { maxWidth, gap: 24 }, children, direction ? { direction } : {})], style, [], { padding: `${paddingYMobile}px 20px` });
+};
+const list = (prefix: string, id: string, items: string[], style: Style = {}) => node(prefix, id, "bulleted_list", { items }, undefined, style);
 
 const form = (prefix: string, id: string, heading: string, buttonLabel: string) => {
   const formId = `${prefix}_${id}`;
   return node(prefix, id, "form", { variant: "opt-in" }, [
-    text(prefix, `${id}_title`, heading, { fontSize: 24, lineHeight: 1.25 }),
+    text(prefix, `${id}_title`, heading, { fontSize: 22, lineHeight: 1.35, color: INK }),
     node(prefix, `${id}_name`, "form_input", { inputType: "text", label: "姓名", placeholder: "請輸入姓名" }),
     node(prefix, `${id}_email`, "form_input", { inputType: "email", label: "電子信箱", placeholder: "name@example.com" }),
     node(prefix, `${id}_consent`, "checkbox", { label: "我同意接收本活動相關資訊", required: true }),
-    button(prefix, `${id}_submit`, buttonLabel, { type: "submit_form", formId }),
-  ], { padding: 24, borderRadius: 12 });
+    button(prefix, `${id}_submit`, buttonLabel, { type: "submit_form", formId }, "amber", { width: 100 }),
+  ], { backgroundColor: "#ffffff", borderColor: LINE, borderWidth: 1, borderRadius: 18, padding: 32, shadow: "medium", textAlign: "left" }, [], { padding: 22 });
 };
+
+/** Page-level typography every gallery template starts with (editable in 頁面設定). */
+export const FUNNEL_TEMPLATE_TYPOGRAPHY = { textColor: BODY, headingColor: INK, linkColor: "#1d4ed8", bodyLineHeight: 1.7 } as const;
 
 const limitedPayment = {
   capabilityStatus: FUNNEL_CAPABILITIES.payment.status,
@@ -87,72 +131,79 @@ const limitedPayment = {
   disabled: true,
 };
 
+const checkoutForm: Style = { backgroundColor: "#ffffff", borderColor: LINE, borderWidth: 1, borderRadius: 18, padding: 32, shadow: "soft" };
 const checkout = (prefix: string, compact = false) => [
   section(prefix, "checkout", [columns(prefix, "checkout_columns", [
     node(prefix, "customer", "form", { variant: "checkout-contact" }, [
-      text(prefix, "customer_title", compact ? "聯絡資料" : "完成訂購資料", { fontSize: 28, lineHeight: 1.2 }),
+      text(prefix, "customer_title", compact ? "聯絡資料" : "完成訂購資料", { fontSize: 26, lineHeight: 1.3, color: INK }),
       node(prefix, "customer_name", "form_input", { inputType: "text", label: "姓名" }),
       node(prefix, "customer_email", "form_input", { inputType: "email", label: "電子信箱" }),
-      text(prefix, "customer_notice", "請前往安全結帳頁填寫聯絡資料與配送地址；此處僅展示版面，不收集訂購資料。"),
-    ]),
+      small(prefix, "customer_notice", "請前往安全結帳頁填寫聯絡資料與配送地址；此處僅展示版面，不收集訂購資料。", { color: MUTED }),
+    ], checkoutForm, [], { padding: 22 }),
     node(prefix, "order", "form", { variant: "checkout-summary", ...limitedPayment }, [
-      text(prefix, "order_title", "方案摘要", { fontSize: 28, lineHeight: 1.2 }),
-      text(prefix, "order_name", compact ? "你的精選方案" : "CelebrateDeal 成長方案"),
+      text(prefix, "order_title", "方案摘要", { fontSize: 26, lineHeight: 1.3, color: INK }),
+      lead(prefix, "order_name", compact ? "你的精選方案" : "CelebrateDeal 成長方案", { color: INK }),
       node(prefix, "order_price", "offer_price", limitedPayment),
       node(prefix, "payment_method", "payment_method", limitedPayment),
       node(prefix, "payment_button", "payment_button", { ...limitedPayment, label: "前往安全結帳" }),
-    ]),
-  ])], compact ? "white" : "#fff7ed"),
+    ], { ...checkoutForm, backgroundColor: compact ? "#f8fafc" : "#ffffff", shadow: compact ? "none" : "medium" }, [], { padding: 22 }),
+  ], 2, "start")], compact ? "white" : "#fff7ed", { paddingY: 72 }),
   section(prefix, "trust", [columns(prefix, "trust_columns", [
-    box(prefix, "support", [headline(prefix, "support_title", "有問題嗎？", "h3"), text(prefix, "support_text", "請先聯絡客服確認方案與付款方式。")]),
-    box(prefix, "promise", [headline(prefix, "promise_title", "安心確認", "h3"), text(prefix, "promise_text", "金額以安全結帳頁為準。只有付款服務確認成功後，訂單才會更新付款狀態。")]),
-  ])]),
+    box(prefix, "support", [headline(prefix, "support_title", "有問題嗎？", "h3"), text(prefix, "support_text", "請先聯絡客服確認方案與付款方式。")], "tint"),
+    box(prefix, "promise", [headline(prefix, "promise_title", "安心確認", "h3"), text(prefix, "promise_text", "金額以安全結帳頁為準。只有付款服務確認成功後，訂單才會更新付款狀態。")], "tint"),
+  ], 2)], undefined, { paddingY: 56, paddingYMobile: 40 }),
 ];
 
 const subscription = (prefix: string) => [
   section(prefix, "hero", [columns(prefix, "hero_columns", [
     box(prefix, "hero_copy", [
-      text(prefix, "eyebrow", "內容訂閱計畫"),
+      eyebrow(prefix, "eyebrow", "內容訂閱計畫", "#92400e"),
       headline(prefix, "hero_title", "讓好內容陪你持續成長", "h1"),
-      text(prefix, "hero_text", "每週整理實作方法、案例與行動清單，幫你穩定推進。"),
+      lead(prefix, "hero_text", "每週整理實作方法、案例與行動清單，幫你穩定推進。"),
       list(prefix, "hero_list", ["每週主題內容", "可重複使用的工作表", "會員限定交流"]),
-    ]),
+    ], "plain"),
     node(prefix, "plan", "form", { variant: "subscription-summary", ...limitedPayment }, [
-      text(prefix, "plan_title", "每月內容方案", { fontSize: 28, lineHeight: 1.2 }),
-      text(prefix, "plan_price", "NT$ 方案價格待設定"),
+      text(prefix, "plan_title", "每月內容方案", { fontSize: 26, lineHeight: 1.3, color: INK }),
+      lead(prefix, "plan_price", "NT$ 方案價格待設定", { color: INK }),
       node(prefix, "plan_offer", "offer_price", limitedPayment),
       node(prefix, "plan_payment", "payment_method", limitedPayment),
       node(prefix, "plan_button", "payment_button", { ...limitedPayment, label: "訂閱付款尚未啟用" }),
-    ]),
-  ])], "#fffbeb"),
+    ], { ...checkoutForm, shadow: "medium" }, [], { padding: 22 }),
+  ], 2, "center")], "#fffbeb", { paddingY: 104, paddingYMobile: 56 }),
   section(prefix, "bonus", [headline(prefix, "bonus_title", "訂閱加值內容"), columns(prefix, "bonus_columns", [
     box(prefix, "bonus_one", [headline(prefix, "bonus_one_title", "範本資料庫", "h3"), text(prefix, "bonus_one_text", "直接套用常見行銷與內容範本。")]),
     box(prefix, "bonus_two", [headline(prefix, "bonus_two_title", "每月回顧", "h3"), text(prefix, "bonus_two_text", "用簡單方法整理成果與下一步。")]),
-  ])]),
+  ], 2)], undefined, { align: "center", maxWidth: 960 }),
 ];
+
+const header = (prefix: string, brand: string, items: Array<{ label: string; href: string }>) =>
+  section(prefix, "header", [
+    headline(prefix, "brand", brand, "h2", { fontSize: 22, lineHeight: 1.3 }),
+    node(prefix, "menu", "menu", { items }, undefined, { color: BODY }),
+  ], "white", { paddingY: 20, paddingYMobile: 16, maxWidth: 1200, direction: "row" });
 
 const audiencePage = (prefix: string, variant: "volunteer" | "charity" | "environment") => {
   const copy = {
-    volunteer: { eyebrow: "志工招募", title: "一起把時間變成真正的改變", intro: "加入在地志工團隊，找到適合你的參與方式。", cta: "我要加入志工", theme: "#eff6ff" },
-    charity: { eyebrow: "公益活動", title: "每一次參與，都能讓社區更靠近希望", intro: "掌握近期活動與服務消息，一起支持需要被看見的人。", cta: "收到活動通知", theme: "#fdf2f8" },
-    environment: { eyebrow: "環境倡議", title: "守護土地，從今天的一個選擇開始", intro: "關注棲地、減塑與公民行動，把關心變成可持續的力量。", cta: "加入倡議名單", theme: "#ecfdf5" },
+    volunteer: { eyebrow: "志工招募", title: "一起把時間變成真正的改變", intro: "加入在地志工團隊，找到適合你的參與方式。", cta: "我要加入志工", theme: "#eff6ff", image: FUNNEL_ILLUSTRATIONS.heroCommunity },
+    charity: { eyebrow: "公益活動", title: "每一次參與，都能讓社區更靠近希望", intro: "掌握近期活動與服務消息，一起支持需要被看見的人。", cta: "收到活動通知", theme: "#fdf2f8", image: FUNNEL_ILLUSTRATIONS.heroCommunity },
+    environment: { eyebrow: "環境倡議", title: "守護土地，從今天的一個選擇開始", intro: "關注棲地、減塑與公民行動，把關心變成可持續的力量。", cta: "加入倡議名單", theme: "#ecfdf5", image: FUNNEL_ILLUSTRATIONS.heroNature },
   }[variant];
   return [
-    section(prefix, "header", [headline(prefix, "brand", "CelebrateDeal 公益行動", "h2"), node(prefix, "menu", "menu", { items: [{ label: "關於行動", href: "#about" }, { label: "參與方式", href: "#join" }, { label: "常見問題", href: "#faq" }] })]),
+    header(prefix, "CelebrateDeal 公益行動", [{ label: "關於行動", href: "#about" }, { label: "參與方式", href: "#join" }, { label: "常見問題", href: "#faq" }]),
     section(prefix, "hero", [columns(prefix, "hero_columns", [
-      box(prefix, "hero_copy", [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "hero_title", copy.title, "h1"), text(prefix, "hero_intro", copy.intro), image(prefix, "hero_image", `${copy.eyebrow}主視覺`)]),
+      box(prefix, "hero_copy", [eyebrow(prefix, "eyebrow", copy.eyebrow), headline(prefix, "hero_title", copy.title, "h1"), lead(prefix, "hero_intro", copy.intro), image(prefix, "hero_image", `${copy.eyebrow}主視覺`, copy.image, { imageHeight: 260 })], "plain"),
       form(prefix, "hero_form", "留下聯絡方式", copy.cta),
-    ])], copy.theme),
+    ], 2, "center")], copy.theme, { paddingY: 96, paddingYMobile: 56 }),
     section(prefix, "impact", [headline(prefix, "impact_title", "我們正在推進的事"), columns(prefix, "impact_columns", [
       box(prefix, "impact_one", [headline(prefix, "impact_one_title", "在地連結", "h3"), text(prefix, "impact_one_text", "串連社群夥伴，把資源送到真正需要的地方。")]),
       box(prefix, "impact_two", [headline(prefix, "impact_two_title", "透明行動", "h3"), text(prefix, "impact_two_text", "定期分享進度與成果，讓每份支持都有跡可循。")]),
       box(prefix, "impact_three", [headline(prefix, "impact_three_title", "長期陪伴", "h3"), text(prefix, "impact_three_text", "以可持續的方法累積影響，而非一次性的熱度。")]),
-    ], 3)]),
-    section(prefix, "faq", [headline(prefix, "faq_title", "常見問題"), node(prefix, "faq_list", "faq", { items: [
+    ], 3)], undefined, { align: "center" }),
+    section(prefix, "faq", [headline(prefix, "faq_title", "常見問題", "h2", { textAlign: "center" }), node(prefix, "faq_list", "faq", { items: [
       { question: "需要具備經驗嗎？", answer: "不需要，我們會依參與方式提供清楚說明。" },
       { question: "留下資料後會發生什麼？", answer: "你會收到活動資訊，不會觸發付款或正式寄信測試。" },
-    ] }, [])]),
-    section(prefix, "footer", [text(prefix, "footer_text", "© CelebrateDeal 公益行動。聯絡資訊與隱私說明皆可自行編輯。")]),
+    ] }, [])], "#f8fafc", { maxWidth: 760 }),
+    section(prefix, "footer", [small(prefix, "footer_text", "© CelebrateDeal 公益行動。聯絡資訊與隱私說明皆可自行編輯。", { color: NIGHT_MUTED })], INK, { align: "center", paddingY: 40, paddingYMobile: 32, color: "#ffffff" }),
   ];
 };
 
@@ -160,25 +211,25 @@ const legalPage = (prefix: string, kind: "privacy" | "terms") => {
   const privacy = kind === "privacy";
   return [section(prefix, "legal", [box(prefix, "legal_content", [
     headline(prefix, "legal_title", privacy ? "隱私權政策" : "服務條款", "h1"),
-    text(prefix, "legal_updated", "最後更新日期：請在發布前填寫"),
-    headline(prefix, "legal_scope_title", privacy ? "我們如何處理資料" : "服務使用範圍", "h2"),
+    small(prefix, "legal_updated", "最後更新日期：請在發布前填寫", { color: MUTED }),
+    headline(prefix, "legal_scope_title", privacy ? "我們如何處理資料" : "服務使用範圍", "h2", { fontSize: 24, margin: "16px 0 0" }),
     text(prefix, "legal_scope_text", privacy ? "此範本提供可編輯的基本章節，發布前應由負責人依實際資料流程與法規完成審閱。" : "此範本提供可編輯的基本章節，發布前應依實際服務內容與權利義務完成審閱。"),
-    headline(prefix, "legal_rights_title", privacy ? "你的權利" : "使用者責任", "h2"),
+    headline(prefix, "legal_rights_title", privacy ? "你的權利" : "使用者責任", "h2", { fontSize: 24, margin: "16px 0 0" }),
     text(prefix, "legal_rights_text", privacy ? "你可以聯絡服務提供者提出查詢、更正或刪除請求。請補上正式聯絡方式。" : "使用者應提供正確資料並遵守適用規範。請補上完整責任與終止條款。"),
-    headline(prefix, "legal_contact_title", "聯絡方式", "h2"),
+    headline(prefix, "legal_contact_title", "聯絡方式", "h2", { fontSize: 24, margin: "16px 0 0" }),
     text(prefix, "legal_contact_text", "請在發布前填入正式公司名稱、地址與聯絡管道。"),
-  ])])];
+  ], "plain")], undefined, { maxWidth: 760, paddingY: 72, paddingYMobile: 40 })];
 };
 
 const brandInfo = (prefix: string) => [
-  section(prefix, "header", [headline(prefix, "brand", "CelebrateDeal", "h2"), node(prefix, "menu", "menu", { items: [{ label: "品牌故事", href: "#story" }, { label: "服務原則", href: "#principles" }, { label: "聯絡我們", href: "#contact" }] })]),
-  section(prefix, "hero", [columns(prefix, "hero_columns", [box(prefix, "hero_copy", [headline(prefix, "hero_title", "讓值得慶祝的成果，被更多人看見", "h1"), text(prefix, "hero_text", "用清楚、可信任的資訊，介紹品牌使命與服務方式。")]), image(prefix, "hero_image", "品牌故事主視覺")])], "#f8fafc"),
+  header(prefix, "CelebrateDeal", [{ label: "品牌故事", href: "#story" }, { label: "服務原則", href: "#principles" }, { label: "聯絡我們", href: "#contact" }]),
+  section(prefix, "hero", [columns(prefix, "hero_columns", [box(prefix, "hero_copy", [headline(prefix, "hero_title", "讓值得慶祝的成果，被更多人看見", "h1"), lead(prefix, "hero_text", "用清楚、可信任的資訊，介紹品牌使命與服務方式。")], "plain"), image(prefix, "hero_image", "品牌故事主視覺", FUNNEL_ILLUSTRATIONS.heroWorkspace)], 2, "center")], "#f5f3ff", { paddingY: 104, paddingYMobile: 56 }),
   section(prefix, "principles", [headline(prefix, "principles_title", "我們重視的事"), columns(prefix, "principles_columns", [
     box(prefix, "principle_one", [headline(prefix, "principle_one_title", "清楚", "h3"), text(prefix, "principle_one_text", "重要資訊以自然、容易理解的方式呈現。")]),
     box(prefix, "principle_two", [headline(prefix, "principle_two_title", "負責", "h3"), text(prefix, "principle_two_text", "功能限制與資料用途都明確說明。")]),
     box(prefix, "principle_three", [headline(prefix, "principle_three_title", "同行", "h3"), text(prefix, "principle_three_text", "陪伴團隊把每個想法落實成下一步。")]),
-  ], 3)]),
-  section(prefix, "contact", [headline(prefix, "contact_title", "想進一步認識我們？"), button(prefix, "contact_button", "聯絡 CelebrateDeal", { type: "open_url", href: "#contact", newTab: false })]),
+  ], 3)], undefined, { align: "center" }),
+  section(prefix, "contact", [headline(prefix, "contact_title", "想進一步認識我們？", "h2", { color: "#ffffff" }), button(prefix, "contact_button", "聯絡 CelebrateDeal", { type: "open_url", href: "#contact", newTab: false })], INK, { align: "center", color: "#ffffff", maxWidth: 760 }),
 ];
 
 const availableReason = "可展開為獨立編輯的 CelebrateDeal 節點";
@@ -188,20 +239,20 @@ const webinarPage = (prefix: string, stage: "registration" | "thank-you" | "broa
   // 真正報名與播放能力仍由公開頁綁定的已驗證資源提供；模板只組合一般可編輯節點。
   if (stage === "registration") return [
     section(prefix, "hero", [columns(prefix, "hero_columns", [
-      box(prefix, "hero_copy", [text(prefix, "eyebrow", "CelebrateDeal 線上講堂"), headline(prefix, "title", "把模糊的想法，整理成能落地的行動", "h1"), text(prefix, "intro", "60 分鐘實作分享，帶你拆解方法、案例與下一步。"), list(prefix, "highlights", ["真實案例拆解", "現場提問交流", "課後行動清單"])]),
+      box(prefix, "hero_copy", [eyebrow(prefix, "eyebrow", "CelebrateDeal 線上講堂"), headline(prefix, "title", "把模糊的想法，整理成能落地的行動", "h1"), lead(prefix, "intro", "60 分鐘實作分享，帶你拆解方法、案例與下一步。"), list(prefix, "highlights", ["真實案例拆解", "現場提問交流", "課後行動清單"])], "plain"),
       form(prefix, "registration_form", "免費保留席次", "我要報名"),
-    ])], "#eff6ff"),
-    section(prefix, "speaker", [columns(prefix, "speaker_columns", [image(prefix, "speaker_image", "講者形象照"), box(prefix, "speaker_copy", [text(prefix, "speaker_eyebrow", "本場講者"), headline(prefix, "speaker_name", "林怡安｜內容策略顧問", "h2"), text(prefix, "speaker_intro", "擅長把複雜策略整理成團隊可以一起執行的清楚步驟。")])])]),
-    section(prefix, "agenda", [headline(prefix, "agenda_title", "這場分享會會帶走什麼？"), columns(prefix, "agenda_columns", [box(prefix, "agenda_one", [headline(prefix, "agenda_one_title", "看懂卡點", "h3"), text(prefix, "agenda_one_text", "用簡單框架找出轉換流程真正卡住的位置。")]), box(prefix, "agenda_two", [headline(prefix, "agenda_two_title", "帶走做法", "h3"), text(prefix, "agenda_two_text", "把概念變成明天就能開始的小步驟。")]), box(prefix, "agenda_three", [headline(prefix, "agenda_three_title", "持續優化", "h3"), text(prefix, "agenda_three_text", "建立能被團隊共同追蹤的迭代節奏。")])], 3)]),
+    ], 2, "center")], "#eff6ff", { paddingY: 104, paddingYMobile: 56 }),
+    section(prefix, "speaker", [columns(prefix, "speaker_columns", [image(prefix, "speaker_image", "講者形象照", FUNNEL_ILLUSTRATIONS.heroLearning), box(prefix, "speaker_copy", [eyebrow(prefix, "speaker_eyebrow", "本場講者"), headline(prefix, "speaker_name", "林怡安｜內容策略顧問", "h2"), lead(prefix, "speaker_intro", "擅長把複雜策略整理成團隊可以一起執行的清楚步驟。")], "plain")], 2, "center")]),
+    section(prefix, "agenda", [headline(prefix, "agenda_title", "這場分享會會帶走什麼？"), columns(prefix, "agenda_columns", [box(prefix, "agenda_one", [headline(prefix, "agenda_one_title", "看懂卡點", "h3"), text(prefix, "agenda_one_text", "用簡單框架找出轉換流程真正卡住的位置。")]), box(prefix, "agenda_two", [headline(prefix, "agenda_two_title", "帶走做法", "h3"), text(prefix, "agenda_two_text", "把概念變成明天就能開始的小步驟。")]), box(prefix, "agenda_three", [headline(prefix, "agenda_three_title", "持續優化", "h3"), text(prefix, "agenda_three_text", "建立能被團隊共同追蹤的迭代節奏。")])], 3)], "#f8fafc", { align: "center" }),
   ];
   if (stage === "thank-you") return [
-    section(prefix, "hero", [text(prefix, "eyebrow", "報名完成"), headline(prefix, "title", "席次已為你保留，接下來做三件小事", "h1"), text(prefix, "intro", "把活動放進行事曆，也記得查看收件匣中的參與資訊。")], "#ecfdf5"),
+    section(prefix, "hero", [eyebrow(prefix, "eyebrow", "報名完成", "#047857"), headline(prefix, "title", "席次已為你保留，接下來做三件小事", "h1"), lead(prefix, "intro", "把活動放進行事曆，也記得查看收件匣中的參與資訊。")], "#ecfdf5", { align: "center", maxWidth: 820, paddingY: 104, paddingYMobile: 56 }),
     section(prefix, "checklist", [columns(prefix, "checklist_columns", [box(prefix, "check_mail", [headline(prefix, "check_mail_title", "01｜確認 Email", "h3"), text(prefix, "check_mail_text", "活動連結與注意事項會寄到報名信箱。")]), box(prefix, "check_calendar", [headline(prefix, "check_calendar_title", "02｜記下時間", "h3"), text(prefix, "check_calendar_text", "預留不被打擾的學習時間，準時加入。")]), box(prefix, "check_question", [headline(prefix, "check_question_title", "03｜準備問題", "h3"), text(prefix, "check_question_text", "先記下最想解決的一個問題，現場會更有收穫。")])], 3)]),
-    section(prefix, "share", [headline(prefix, "share_title", "也想邀請夥伴一起參加？"), text(prefix, "share_text", "把活動頁分享給正在面對相同挑戰的朋友。"), button(prefix, "share_button", "返回活動資訊", { type: "open_url", href: "#top", newTab: false })]),
+    section(prefix, "share", [headline(prefix, "share_title", "也想邀請夥伴一起參加？"), lead(prefix, "share_text", "把活動頁分享給正在面對相同挑戰的朋友。"), button(prefix, "share_button", "返回活動資訊", { type: "open_url", href: "#top", newTab: false }, "dark")], "#f8fafc", { align: "center", maxWidth: 760 }),
   ];
   return [
-    section(prefix, "hero", [columns(prefix, "hero_columns", [box(prefix, "player", [text(prefix, "live_badge", "LIVE｜活動進行中"), headline(prefix, "title", "歡迎來到 CelebrateDeal 線上講堂", "h1"), text(prefix, "player_notice", "播放入口會依已綁定的 Webinar 場次與開放狀態顯示。")]), box(prefix, "session", [headline(prefix, "session_title", "本場重點", "h3"), list(prefix, "session_list", ["釐清目前最重要的目標", "拆解可執行的轉換路徑", "完成一份下一步行動清單"])])])], "#f8fafc"),
-    section(prefix, "notes", [columns(prefix, "notes_columns", [box(prefix, "notes_copy", [headline(prefix, "notes_title", "先把問題寫下來", "h2"), text(prefix, "notes_text", "觀看過程若有疑問，先記錄情境與期待結果，提問時會更容易得到具體建議。")]), box(prefix, "support", [headline(prefix, "support_title", "遇到播放問題？", "h3"), text(prefix, "support_text", "請先重新整理頁面並確認網路連線；仍無法觀看時，再聯絡主辦單位。")])])]),
+    section(prefix, "hero", [columns(prefix, "hero_columns", [box(prefix, "player", [eyebrow(prefix, "live_badge", "LIVE｜活動進行中", "#fbbf24"), headline(prefix, "title", "歡迎來到 CelebrateDeal 線上講堂", "h1", { color: "#ffffff" }), lead(prefix, "player_notice", "播放入口會依已綁定的 Webinar 場次與開放狀態顯示。", { color: NIGHT_MUTED })], "dark"), box(prefix, "session", [headline(prefix, "session_title", "本場重點", "h3"), list(prefix, "session_list", ["釐清目前最重要的目標", "拆解可執行的轉換路徑", "完成一份下一步行動清單"])])], 2, "stretch")], "#f8fafc", { paddingY: 72 }),
+    section(prefix, "notes", [columns(prefix, "notes_columns", [box(prefix, "notes_copy", [headline(prefix, "notes_title", "先把問題寫下來", "h2"), text(prefix, "notes_text", "觀看過程若有疑問，先記錄情境與期待結果，提問時會更容易得到具體建議。")], "plain"), box(prefix, "support", [headline(prefix, "support_title", "遇到播放問題？", "h3"), text(prefix, "support_text", "請先重新整理頁面並確認網路連線；仍無法觀看時，再聯絡主辦單位。")], "tint")], 2, "center")]),
   ];
 };
 
@@ -213,14 +264,15 @@ const courseLeadPage = (prefix: string, variant: "workbook" | "consultation" | "
     lesson: { title: "用一堂入門課，認識你的下一步", eyebrow: "課程體驗資訊", intro: "先了解主題、練習方式與適合對象，再決定是否參與完整課程。", cta: "索取體驗課資訊", theme: "#fff7ed", items: ["主題概念與常見誤區", "一個可以自行練習的任務", "完整課程的內容與適合對象"] },
   }[variant];
   const signup = form(prefix, "course_form", "留下聯絡方式", copy.cta);
+  const heroCopy = [eyebrow(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), lead(prefix, "intro", copy.intro)];
   return [
     section(prefix, "hero", variant === "workbook" ? [columns(prefix, "hero_columns", [
-      box(prefix, "hero_copy", [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)]), signup,
-    ])] : [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)], copy.theme),
+      box(prefix, "hero_copy", heroCopy, "plain"), signup,
+    ], 2, "center")] : heroCopy, copy.theme, variant === "workbook" ? { paddingY: 104, paddingYMobile: 56 } : { align: "center", maxWidth: 820, paddingY: 104, paddingYMobile: 56 }),
     section(prefix, "contents", [headline(prefix, "contents_title", variant === "consultation" ? "這次可以先討論什麼？" : "先了解這三件事"),
-      columns(prefix, "contents_columns", copy.items.map((item, index) => box(prefix, `topic_${index}`, [headline(prefix, `topic_title_${index}`, `${index + 1}｜${item}`, "h3") ])), 3)]),
-    ...(variant === "workbook" ? [] : [section(prefix, "signup", [signup])]),
-    section(prefix, "next", [headline(prefix, "next_title", "送出之後會發生什麼？"), text(prefix, "next_text", "請依完成頁指示確認後續聯繫方式。留下聯絡方式不代表已購買課程或完成諮詢預約；課程內容、時程與聯絡方式請由主辦單位確認。")]),
+      columns(prefix, "contents_columns", copy.items.map((item, index) => box(prefix, `topic_${index}`, [headline(prefix, `topic_title_${index}`, `${index + 1}｜${item}`, "h3", { fontSize: 20 }) ])), 3)], undefined, { align: "center" }),
+    ...(variant === "workbook" ? [] : [section(prefix, "signup", [signup], "#f8fafc", { maxWidth: 560 })]),
+    section(prefix, "next", [headline(prefix, "next_title", "送出之後會發生什麼？", "h2", { fontSize: 28 }), text(prefix, "next_text", "請依完成頁指示確認後續聯繫方式。留下聯絡方式不代表已購買課程或完成諮詢預約；課程內容、時程與聯絡方式請由主辦單位確認。", { color: MUTED })], undefined, { align: "center", maxWidth: 760, paddingY: 64, paddingYMobile: 40 }),
   ];
 };
 
@@ -232,18 +284,19 @@ const salesWebinarPage = (prefix: string, variant: "course" | "workshop" | "stra
   }[variant];
   // Webinar 的公開報名由既有專用表單處理；模板導向它，不另外渲染停用的通用表單。
   const signup = box(prefix, "webinar_signup", [
-    headline(prefix, "signup_title", "參加這場活動", "h2"),
-    text(prefix, "signup_text", "確認活動資訊後，前往報名表填寫資料。"),
-    button(prefix, "signup_button", copy.cta, { type: "open_url", href: "#webinar-registration", newTab: false }),
-  ]);
+    headline(prefix, "signup_title", "參加這場活動", "h2", { fontSize: 28 }),
+    text(prefix, "signup_text", "確認活動資訊後，前往報名表填寫資料。", { color: MUTED }),
+    button(prefix, "signup_button", copy.cta, { type: "open_url", href: "#webinar-registration", newTab: false }, "amber", { width: 100 }),
+  ], "card", { padding: 32, shadow: "medium", textAlign: "left" });
+  const heroCopy = [eyebrow(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), lead(prefix, "intro", copy.intro)];
   return [
     section(prefix, "hero", variant === "course" ? [columns(prefix, "hero_columns", [
-      box(prefix, "hero_copy", [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)]), signup,
-    ])] : [text(prefix, "eyebrow", copy.eyebrow), headline(prefix, "title", copy.title, "h1"), text(prefix, "intro", copy.intro)], copy.theme),
-    section(prefix, "agenda", [headline(prefix, "agenda_title", "本場內容"), list(prefix, "agenda_list", copy.agenda)]),
-    section(prefix, "speaker", [headline(prefix, "speaker_title", "講者與活動資訊"), text(prefix, "speaker_text", "請填入實際講者姓名、相關經驗與活動時間。報名前可先向主辦單位確認內容與參與方式。")]),
-    ...(variant === "course" ? [] : [section(prefix, "signup", [signup])]),
-    section(prefix, "participation", [headline(prefix, "participation_title", variant === "workshop" ? "參加前可以先準備" : "報名前先確認"), text(prefix, "participation_text", variant === "workshop" ? "先記下想處理的一個問題，並準備可操作的裝置。實作素材與需要的工具請依主辦單位公告為準。" : "本頁是活動報名，送出資料不代表購買課程。若活動中介紹付費方案，內容與費用需另行確認；報名狀態與觀看入口請依完成頁指示。")]),
+      box(prefix, "hero_copy", heroCopy, "plain"), signup,
+    ], 2, "center")] : heroCopy, copy.theme, variant === "course" ? { paddingY: 104, paddingYMobile: 56 } : { align: "center", maxWidth: 820, paddingY: 104, paddingYMobile: 56 }),
+    section(prefix, "agenda", [headline(prefix, "agenda_title", "本場內容"), list(prefix, "agenda_list", copy.agenda, { fontSize: 18 })], undefined, { maxWidth: 760 }),
+    section(prefix, "speaker", [headline(prefix, "speaker_title", "講者與活動資訊"), text(prefix, "speaker_text", "請填入實際講者姓名、相關經驗與活動時間。報名前可先向主辦單位確認內容與參與方式。")], "#f8fafc", { maxWidth: 760 }),
+    ...(variant === "course" ? [] : [section(prefix, "signup", [signup], undefined, { maxWidth: 560 })]),
+    section(prefix, "participation", [headline(prefix, "participation_title", variant === "workshop" ? "參加前可以先準備" : "報名前先確認", "h2", { fontSize: 28 }), text(prefix, "participation_text", variant === "workshop" ? "先記下想處理的一個問題，並準備可操作的裝置。實作素材與需要的工具請依主辦單位公告為準。" : "本頁是活動報名，送出資料不代表購買課程。若活動中介紹付費方案，內容與費用需另行確認；報名狀態與觀看入口請依完成頁指示。", { color: MUTED })], undefined, { maxWidth: 760, paddingY: 64, paddingYMobile: 40 }),
   ];
 };
 
@@ -308,7 +361,8 @@ export const FUNNEL_PLACEHOLDER_IMAGE_SRC = "/placeholder.svg";
 
 function buildTemplateDocument(template: FunnelTemplateGalleryItem, prefix: string, pageId?: string): PageDocument {
   const empty = createEmptyPageDocument(pageId ?? `${prefix}_page`, template.name);
-  const document = parsePageDocument({ ...empty, root: template.build(prefix) });
+  const settings = { ...empty.settings, typography: { ...empty.settings.typography, ...FUNNEL_TEMPLATE_TYPOGRAPHY } };
+  const document = parsePageDocument({ ...empty, settings, root: template.build(prefix) });
   if (!document) throw new Error(`一頁式網站模板無法通過 PageDocument 驗證：${template.id}`);
   return document;
 }

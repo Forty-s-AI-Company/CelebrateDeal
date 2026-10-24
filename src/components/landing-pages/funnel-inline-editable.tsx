@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useLayoutEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { sanitizeFunnelInlineText } from "@/lib/funnel-inline-text";
 
 /** Reads plain text from an editable element: text nodes, `<br>` and block breaks only. */
@@ -91,6 +91,8 @@ function supportsPlaintextOnly() {
 export type InlineEditableTextProps = {
   as: "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "span" | "li";
   className?: string;
+  /** Same inline style the rendered element uses, so editing never changes the look. */
+  style?: CSSProperties;
   /** Text shown when editing started; the element is uncontrolled while editing. */
   initial: string;
   multiline: boolean;
@@ -106,7 +108,7 @@ export type InlineEditableTextProps = {
  * blur commits once, Escape cancels, pasted or dropped content becomes plain
  * text and Shift+Enter adds a line break only where the node keeps them.
  */
-export function InlineEditableText({ as, className = "", initial, multiline, label, caret, onCommit, onCancel }: InlineEditableTextProps) {
+export function InlineEditableText({ as, className = "", style, initial, multiline, label, caret, onCommit, onCancel }: InlineEditableTextProps) {
   const ref = useRef<HTMLElement>(null);
   const finished = useRef(false);
   // Read once: later prop changes must not reset what is being typed.
@@ -153,7 +155,7 @@ export function InlineEditableText({ as, className = "", initial, multiline, lab
   return <Tag ref={(element: HTMLElement | null) => { ref.current = element; }}
     role="textbox" aria-label={label} aria-multiline={multiline}
     contentEditable={editableMode} suppressContentEditableWarning spellCheck data-funnel-inline-editing="true"
-    className={`${className} cursor-text rounded-sm outline-2 outline-offset-2 outline-blue-500 whitespace-pre-wrap`.trim()}
+    className={`${className} cursor-text rounded-sm outline-2 outline-offset-2 outline-blue-500 whitespace-pre-wrap`.trim()} style={style}
     onKeyDown={onKeyDown} onPaste={onPaste} onBlur={() => finish(true)}
     // External drops (HTML, files) never enter the editable; canvas drags ignore it too.
     onDragOver={(event: DragEvent) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "none"; }}

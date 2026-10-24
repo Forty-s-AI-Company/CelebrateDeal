@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" role="img" aria-label="線上學習示意插圖">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e0f2fe"/><stop offset="1" stop-color="#dbeafe"/></linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e3a8a"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
+  </defs>
+  <rect width="1200" height="900" rx="48" fill="url(#bg)"/>
+  <circle cx="200" cy="170" r="110" fill="#bae6fd"/>
+  <circle cx="1060" cy="760" r="120" fill="#bfdbfe"/>
+  <g transform="translate(230 170)">
+    <rect width="740" height="470" rx="28" fill="#0f172a"/>
+    <rect x="24" y="24" width="692" height="422" rx="16" fill="url(#screen)"/>
+    <circle cx="370" cy="235" r="76" fill="#ffffff" opacity="0.95"/>
+    <path d="M346 196v78l64-39z" fill="#1d4ed8"/>
+    <rect x="64" y="390" width="612" height="10" rx="5" fill="#93c5fd" opacity="0.5"/>
+    <rect x="64" y="390" width="260" height="10" rx="5" fill="#f59e0b"/>
+    <path d="M-60 470h860l-40 56H-20z" fill="#334155"/>
+  </g>
+  <g transform="translate(860 470) rotate(-8)">
+    <rect width="230" height="290" rx="20" fill="#ffffff"/>
+    <rect x="30" y="40" width="130" height="18" rx="9" fill="#0f172a"/>
+    <rect x="30" y="86" width="170" height="12" rx="6" fill="#cbd5e1"/>
+    <rect x="30" y="114" width="150" height="12" rx="6" fill="#cbd5e1"/>
+    <path d="M34 168l16 16 30-30" fill="none" stroke="#16a34a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="96" y="162" width="100" height="12" rx="6" fill="#cbd5e1"/>
+    <path d="M34 222l16 16 30-30" fill="none" stroke="#16a34a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="96" y="216" width="80" height="12" rx="6" fill="#cbd5e1"/>
+  </g>
+  <g transform="translate(120 560)">
+    <rect width="200" height="150" rx="18" fill="#f59e0b"/>
+    <rect x="16" y="16" width="168" height="118" rx="10" fill="#fef3c7"/>
+    <rect x="40" y="48" width="110" height="12" rx="6" fill="#d97706"/>
+    <rect x="40" y="76" width="80" height="12" rx="6" fill="#fbbf24"/>
+  </g>
+</svg>

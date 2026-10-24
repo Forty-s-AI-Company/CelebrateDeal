@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" role="img" aria-label="自然風景示意插圖">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d1fae5"/><stop offset="1" stop-color="#ecfdf5"/></linearGradient>
+  </defs>
+  <rect width="1200" height="900" rx="48" fill="url(#sky)"/>
+  <circle cx="860" cy="250" r="110" fill="#fde68a"/>
+  <path d="M0 620c180-120 340-150 520-80s360 60 680-60v420H0z" fill="#6ee7b7"/>
+  <path d="M0 720c220-90 420-110 640-40s360 40 560-20v240H0z" fill="#10b981"/>
+  <path d="M0 810c260-50 520-60 760-20s300 20 440 0v130H0z" fill="#047857"/>
+  <g transform="translate(250 430)">
+    <rect x="-8" y="60" width="16" height="140" rx="8" fill="#065f46"/>
+    <path d="M0 0c70 40 90 120 0 170C-90 120-70 40 0 0z" fill="#059669"/>
+  </g>
+  <g transform="translate(380 470) scale(0.75)">
+    <rect x="-8" y="60" width="16" height="140" rx="8" fill="#065f46"/>
+    <path d="M0 0c70 40 90 120 0 170C-90 120-70 40 0 0z" fill="#34d399"/>
+  </g>
+  <path d="M600 330c40-30 80-30 120 0M660 280c30-22 60-22 90 0" fill="none" stroke="#065f46" stroke-width="8" stroke-linecap="round"/>
+</svg>
