@@ -448,6 +448,18 @@ Current source inventory: 145 models and 99 forward migrations. Previous checkpo
 - `/api/form-submissions`：表單所屬專案未發布時，只接受經 `resolveTrustedFunnelSubmission` 重新解析成功的名單網站來源（已發布版本綁定此表單、沒有直播、有伺服器記錄的造訪），且來源頁的 vendor 與 project 必須等於表單的 vendor 與 project；其他情況維持 404 `Form not found`。限流與 Origin 檢查不變。原生表單重試草稿以 `independentFunnelBindsForm` 做同樣的綁定檢查。
 - 測試：`src/lib/audience-funnel-independent-publish.db.test.ts`（未發布專案的公開網址與名單寫入、報表、跨租戶與同商家跨專案、取消發布與封存、重複發布只有一張自動表單、發布失敗時自動表單回滾、改標籤的銷售頁與其結帳仍關閉、專案封存後關閉、其他目標仍關閉）、`src/lib/landing-page-service.test.ts`、`src/lib/funnel-runtime.test.ts`、`src/lib/public-landing-page-status.test.ts`、`src/lib/funnel-registration-surface.test.ts`、`src/components/landing-pages/funnel-page-document-renderer.test.tsx`。
 
+## 2026-10-24 名單型網站獨立發布上限與新增步驟限制（無 migration）
+
+- 沒有新增 model、欄位或 migration；目前仍為 154 models、124 forward migrations。只讀取既有的 `LandingPage`、`LandingPageVersion`、`SalesProject`、`PaymentMethodReference`、`VendorSubscription`／`BillingPlan`。
+- 獨立發布上限（#478 審查建議、owner 決定實作）：當 `publishLandingPage` 會讓頁面「只因名單型網站獨立發布而公開」時（內容通過 `isIndependentlyPublishedFunnel`、沒有綁定直播、所屬專案未發布），同一 vendor 已經這樣公開的其他頁面數量必須小於 `INDEPENDENT_AUDIENCE_PUBLISH_FREE_LIMIT`（3，`src/lib/independent-publish-limit.ts`），否則丟出 `landing_page_independent_publish_limit`，整個發布交易回滾（不建立版本、不建立自動名單表單）。計數範圍：`vendorId` 取自已驗證的編輯範圍、跨該 vendor 所有專案；只算 `status = published`、有 `publishedVersionId`、`archivedAt: null`、專案未發布也未封存、已發布版本通過 SQL 預篩（`independentAudienceVersionWhere`）且解析後通過 `isIndependentlyPublishedFunnel`、沒有直播的頁面。已發布專案內的頁面、草稿、取消發布與封存的頁面都不計。
+- 不受上限：該 vendor 有有效且已驗證的商家付款方式（沿用 `verifiedVendorPaymentMethodWhere`），或有 `status = active`、`startedAt <= now`、`endedAt` 為空或晚於現在、方案 `monthlyPriceCents > 0` 的 `VendorSubscription`。`pending_payment`、已結束或免費方案都不算。
+- 併發：計數前在同一交易內取 `pg_advisory_xact_lock(hashtextextended('landing-page-independent-publish:<vendorId>', 0))`，同一 vendor 的獨立發布依序執行；READ COMMITTED 下鎖後的計數看得到等待期間已提交的發布，不會超過上限。不同 vendor 不互相等待。
+- 既有頁面：上限只檢查新的獨立發布。已經以這種方式公開的頁面（含上線前發布、超過上限的頁面）不會被取消發布，重新發布也不佔新名額。已知取捨：已發布專案改回未發布時，其中的名單網站會直接變成獨立公開而可能超過上限；這不經過發布流程，不另外處理。
+- Email 驗證：商家帳號目前沒有已儲存的 Email 驗證訊號（`/register` 建立 `User` 時不寄驗證信，`User` 沒有 `emailVerifiedAt`；`/verify-registration` 是訪客報名確認），所以本次沒有 Email 驗證條件；若要加上需新增欄位（forward migration）與驗證信流程。
+- 發布狀態：`getLandingPagePublicationStatus` 對未發布、專案未發布的名單網站先跑同一個計數（唯讀，發布交易內會在鎖後重算），達上限時說明原因並附「發布所屬專案」「新增並驗證商家付款方式」（僅在 `funnel_binding` 開放時）「升級付費方案」連結；發布被擋時 action 也回傳同一份狀態。名單網站因內容需要專案發布時，訊息會逐一列出步驟與頁面（例如「步驟『感謝頁』屬於銷售流程」「頁面『名單頁』含付款元件」）。
+- 新增步驟：`funnelStepGroupsAddableForGoal` 是唯一規則（`audience`：名單、資訊；`sell`／`custom`：銷售、名單、資訊；`webinar`：再加 Webinar）。`addFunnelStep`（含 `save_steps` 的 `add` 指令）、`duplicateFunnelStep`、管理頁的新增步驟選單，以及 `createLandingPage`／`saveLandingPageDraft` 的整份儲存（`stepsAddedOutsideGoal`：與目前草稿比對 id＋type，新增的才拒絕，`landing_page_step_type_not_allowed`）都套用。`parseFunnelFlow` 不變，已含銷售步驟的名單網站仍可讀取與儲存，並維持需要專案發布。
+- 測試：`src/lib/audience-independent-publish-limit.db.test.ts`（第 4 個被擋且交易無殘留、取消發布與封存釋出名額、付費方案與已驗證付款方式不受限、待驗證／過期付款方式與免費／已結束方案不算、已發布專案的頁面不計、跨專案合計、4 個併發只成功 1 個、上線前的頁面維持公開且可重新發布、跨 vendor 互不影響）、`src/lib/audience-funnel-independent-publish.db.test.ts`（只有名單步驟但頁面含商品結帳設定或付款元件：SQL 預篩放行、loader／runtime 關閉、`resolvePublishedFunnelCheckout` 為 null、狀態訊息點名頁面）、`src/lib/landing-page-service.test.ts`、`src/app/actions/landing-page-actions.test.ts`、`src/lib/funnel-flow.test.ts`、`src/components/landing-pages/funnel-display-labels.test.ts`、`src/components/landing-pages/funnel-operations-panel-actions.test.tsx`。
+
 ## 2026-10-24 一頁式網站 R4：舊版頁面轉換與報名按鈕動作（無 migration）
 
 - 沒有新增 model、欄位或 migration；目前仍為 154 models、124 forward migrations。變更只在 `LandingPage.draftContent`／`LandingPageVersion.content` 的 JSON 契約。

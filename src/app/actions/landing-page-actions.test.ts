@@ -163,6 +163,27 @@ describe("dual publication feedback", () => {
     expect(result.publication?.message).toContain("一頁式網站尚未發布");
   });
 
+  it("explains the independent publication limit and attaches the scoped diagnosis with its links", async () => {
+    mocks.publish.mockRejectedValueOnce(new errorTypes.Input("landing_page_independent_publish_limit"));
+    const diagnosis = { available: false, message: "一頁式網站尚未發布。免費帳號最多可同時有 3 個…", projectHref: "/projects/project-1", missing: [{ label: "升級付費方案", href: "/billing/plans" }] };
+    mocks.publication.mockResolvedValueOnce(diagnosis);
+    const result = await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));
+    expect(result).toEqual({
+      status: "error",
+      message: "免費帳號最多可同時有 3 個不需發布專案就公開的名單型網站，目前已達上限，所以這個網站現在無法發布。發布所屬專案（專案內的網站不計入上限）、新增已驗證的付款方式或升級付費方案即可解除限制；也可以先取消發布其他名單型網站。",
+      publication: diagnosis,
+    });
+    expect(mocks.publication).toHaveBeenCalledWith("page-1");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("explains a sales step added to an audience Funnel", async () => {
+    mocks.save.mockRejectedValueOnce(new errorTypes.Input("landing_page_step_type_not_allowed"));
+    const result = await landingPageAction(idle, form({ operation: "save", id: "page-1", revision: "2", name: "頁面", slug: "page", content: "{}" }));
+    expect(result.message).toContain("建立名單網站只能新增名單或資訊步驟");
+    expect(result.message).toContain("名單感謝頁");
+  });
+
   it("does not diagnose when the publication write itself failed", async () => {
     mocks.publish.mockRejectedValueOnce(new errorTypes.Conflict());
     await landingPageAction(idle, form({ operation: "publish", id: "page-1", revision: "2" }));

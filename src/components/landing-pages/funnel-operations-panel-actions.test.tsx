@@ -71,6 +71,32 @@ describe("management page owns publishing", () => {
     expect(button(container, "重新發布")).toBeTruthy();
   });
 
+  it("shows the diagnosis a refused publish carries, such as the independent publication limit", async () => {
+    mocks.action.mockResolvedValue({
+      status: "error",
+      message: "免費帳號最多可同時有 3 個不需發布專案就公開的名單型網站，目前已達上限。",
+      publication: { available: false, message: "一頁式網站尚未發布。免費帳號最多可同時有 3 個…", projectHref: "/projects/p1", missing: [{ label: "升級付費方案", href: "/billing/plans" }] },
+    });
+    const { container } = await mount("draft");
+    await click(button(container, "發布"));
+    expect(container.querySelector("[role=status]")?.textContent).toContain("目前已達上限");
+    await click(button(container, "發布狀態：草稿"));
+    const region = container.querySelector("[aria-label=公開網址狀態]");
+    expect(region?.textContent).toContain("一頁式網站尚未發布。免費帳號最多可同時有 3 個");
+    expect(region?.querySelector("a[href='/billing/plans']")?.textContent).toBe("升級付費方案");
+    expect(button(container, "發布")).toBeTruthy();
+  });
+
+  it("offers only lead and general step types when adding a step to an audience Funnel", async () => {
+    const { container } = await mount("draft");
+    await click(button(container, "新增步驟"));
+    const select = Array.from(container.querySelectorAll("select")).find((item) => item.closest("label")?.textContent?.startsWith("類型"))!;
+    expect(Array.from(select.querySelectorAll("optgroup")).map((group) => group.label)).toEqual(["名單", "資訊"]);
+    const values = Array.from(select.querySelectorAll("option")).map((option) => option.value);
+    expect(values).toEqual(["opt_in_page", "opt_in_thank_you_page", "inline_form", "popup_form", "link_in_bio", "info_page", "contact_us_page"]);
+    expect(values).not.toContain("thank_you_page");
+  });
+
   it("offers unpublish, duplicate and delete from the overflow menu", async () => {
     mocks.action.mockResolvedValue({ status: "success", message: "已建立草稿副本。", id: "copy-1" });
     const { container } = await mount("published");

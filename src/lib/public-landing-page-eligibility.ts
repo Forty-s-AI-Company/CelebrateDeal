@@ -2,8 +2,8 @@ import type { Prisma } from "@prisma/client";
 import { parseLandingPageContent, type LandingPageContent } from "@/lib/landing-page-content";
 import { parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
 import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pages";
-import { getFunnelStepCatalog, type FunnelStepGroup } from "@/lib/funnel-flow";
-import { pageDocumentHasCommerce } from "@/lib/funnel-registration-surface";
+import { getFunnelStepCatalog, type FunnelStepGroup, type FunnelStepType } from "@/lib/funnel-flow";
+import { pageDocumentCommerceKinds, pageDocumentHasCommerce, type PageDocumentCommerceKind } from "@/lib/funnel-registration-surface";
 
 /**
  * Public-URL eligibility shared by the full public loader and the proxy's
@@ -95,14 +95,34 @@ export function publicFunnelProjectGateWhere(): Prisma.LandingPageWhereInput {
       { project: { is: PUBLISHED_SALES_PROJECT } },
       {
         project: { is: { status: { not: "archived" } } },
-        publishedVersion: {
-          is: {
-            content: { path: ["flow", "goal"], equals: INDEPENDENT_PUBLISH_FUNNEL_GOAL },
-            NOT: NON_INDEPENDENT_STEP_TYPES.map((type) => ({ content: { path: ["flow", "steps"], array_contains: [{ type }] } })),
-          },
-        },
+        publishedVersion: { is: independentAudienceVersionWhere() },
       },
     ],
+  };
+}
+
+/** SQL pre-filter of a version that may be public without its project: audience goal, lead-only steps. */
+export function independentAudienceVersionWhere(): Prisma.LandingPageVersionWhereInput {
+  return {
+    content: { path: ["flow", "goal"], equals: INDEPENDENT_PUBLISH_FUNNEL_GOAL },
+    NOT: NON_INDEPENDENT_STEP_TYPES.map((type) => ({ content: { path: ["flow", "steps"], array_contains: [{ type }] } })),
+  };
+}
+
+/**
+ * Published pages of a vendor that are public only through independent
+ * audience publication: not archived, project neither published nor archived,
+ * published version passing the SQL pre-filter. Callers re-check the parsed
+ * content with {@link isIndependentlyPublishedFunnel}.
+ */
+export function independentlyPublishedPageCandidatesWhere(vendorId: string): Prisma.LandingPageWhereInput {
+  return {
+    vendorId,
+    status: "published",
+    publishedVersionId: { not: null },
+    archivedAt: null,
+    project: { is: { status: { not: "archived" }, NOT: PUBLISHED_SALES_PROJECT } },
+    publishedVersion: { is: { vendorId, ...independentAudienceVersionWhere() } },
   };
 }
 
@@ -135,6 +155,37 @@ export function isIndependentlyPublishedFunnel(content: LandingPageStoredContent
   if (!isAudienceFunnel(content)) return false;
   if (content.flow.steps.some((step) => NON_INDEPENDENT_STEP_TYPES.includes(step.type))) return false;
   return !Object.values(content.pages).some((document) => pageDocumentHasCommerce(document));
+}
+
+export type IndependentPublishBlocker =
+  | { kind: "step"; stepId: string; stepName: string; stepType: FunnelStepType; group: FunnelStepGroup }
+  | { kind: "commerce"; stepId: string; stepName: string; commerce: PageDocumentCommerceKind[] };
+
+/**
+ * Why an audience Funnel cannot be public without its project, by step and
+ * page, in step order. Empty exactly when {@link isIndependentlyPublishedFunnel}
+ * holds; not meaningful for other goals.
+ */
+export function independentPublishBlockers(content: FunnelStepPages): IndependentPublishBlocker[] {
+  const groups = new Map(getFunnelStepCatalog().map((step) => [step.type, step.group]));
+  const blockers: IndependentPublishBlocker[] = [];
+  for (const step of content.flow.steps) {
+    const group = groups.get(step.type) ?? "sales";
+    if (!INDEPENDENT_STEP_GROUPS.has(group)) blockers.push({ kind: "step", stepId: step.id, stepName: step.name, stepType: step.type, group });
+  }
+  for (const step of content.flow.steps) {
+    const document = content.pages[step.id];
+    const commerce = document ? pageDocumentCommerceKinds(document) : [];
+    if (commerce.length) blockers.push({ kind: "commerce", stepId: step.id, stepName: step.name, commerce });
+  }
+  // Pages that no step references still reach the public renderer's checks.
+  const stepIds = new Set(content.flow.steps.map((step) => step.id));
+  for (const [pageKey, document] of Object.entries(content.pages)) {
+    if (stepIds.has(pageKey)) continue;
+    const commerce = pageDocumentCommerceKinds(document);
+    if (commerce.length) blockers.push({ kind: "commerce", stepId: pageKey, stepName: pageKey, commerce });
+  }
+  return blockers;
 }
 
 /** Code-side mirror of {@link publicFunnelProjectGateWhere} on parsed content; authoritative. */

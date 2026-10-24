@@ -19,6 +19,7 @@ import {
   type LandingPageActionState,
 } from "@/lib/landing-page-service";
 import type { FunnelStepPersistenceMutation } from "@/lib/funnel-step-pages";
+import { independentPublishLimitMessage } from "@/lib/independent-publish-limit";
 
 const MAX_CONTENT_BYTES = 128 * 1024;
 
@@ -98,6 +99,8 @@ function failure(error: unknown): LandingPageActionState {
     if (error.message === "landing_page_audience_live_requires_project") return { status: "error", message: "這個名單型一頁式網站綁定了直播，直播要等所屬專案發布後才能公開。請先移除直播綁定，或先發布專案，再發布網站。" };
     if (error.message === "landing_page_live_form_mismatch") return { status: "error", message: "這個頁面已綁定活動場次，所有報名按鈕都必須使用該場次的報名表。請把按鈕改成該場次的報名表，或在頁面設定改選場次後再試。" };
     if (error.message === "landing_page_lead_form_retry") return { status: "error", message: "建立名單表單時剛好與另一個操作衝突，網站尚未發布。請再按一次發布。" };
+    if (error.message === "landing_page_independent_publish_limit") return { status: "error", message: independentPublishLimitMessage() };
+    if (error.message === "landing_page_step_type_not_allowed") return { status: "error", message: "建立名單網站只能新增名單或資訊步驟，這次變更沒有儲存。銷售頁、訂單表單、加購頁與（銷售）感謝頁請建立在銷售網站中；名單的感謝頁請選「名單感謝頁」。" };
     return { status: "error", message: "請確認頁面內容與已選的報名表單、直播都屬於目前專案且可公開使用。" };
   }
   return { status: "error", message: "暫時無法完成操作；內容仍保留，請稍後再試。" };
@@ -115,6 +118,19 @@ const PUBLICATION_UNKNOWN = { available: false, message: "尚無法確認公開�
 async function successWithPublication(message: string, result: { id: string; revision?: number }): Promise<LandingPageActionState> {
   const publication = await getLandingPagePublicationStatus(result.id).catch(() => PUBLICATION_UNKNOWN);
   return { ...success(`${message}${publication.message}`, result), publication };
+}
+
+/** Publishes; a refusal by the independent publication limit carries the scoped diagnosis and its links. */
+async function publishWithDiagnosis(id: string, expectedRevision: number): Promise<LandingPageActionState> {
+  let published: Awaited<ReturnType<typeof publishLandingPage>>;
+  try {
+    published = await publishLandingPage(id, expectedRevision);
+  } catch (error) {
+    if (!(error instanceof LandingPageInputError && error.message === "landing_page_independent_publish_limit")) throw error;
+    const publication = await getLandingPagePublicationStatus(id).catch(() => undefined);
+    return { ...failure(error), ...(publication ? { publication } : {}) };
+  }
+  return { ...await successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published), formId: published.formId };
 }
 
 /**
@@ -149,8 +165,8 @@ export async function landingPageAction(
     if (command === "publish") {
       const expectedRevision = revision(formData);
       if (!id || !expectedRevision) return { status: "error", message: "頁面版本資訊不完整，請重新整理後再發布。" };
-      const published = await publishLandingPage(id, expectedRevision);
-      return { ...await successWithPublication(`Funnel 版本 v${published.version} 已儲存為發布版本。`, published), formId: published.formId };
+      // Awaited so that other publish errors still reach the shared mapping below.
+      return await publishWithDiagnosis(id, expectedRevision);
     }
 
     if (command === "unpublish") {
