@@ -5,6 +5,7 @@ import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/l
 import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
 import { FUNNEL_BLOCK_REGISTRY, instantiateBlock } from "@/lib/funnel-block-library";
 import { RegistrationRetryProvider } from "@/components/registration-retry-context";
+import { surveyLeadFormFields } from "@/lib/funnel-registration-surface";
 
 function node(type: FunnelNode["type"], id: string, extra: Partial<FunnelNode> | FunnelNode[] = {}): FunnelNode {
   const details = Array.isArray(extra) ? { children: extra } : extra;
@@ -181,6 +182,19 @@ describe("FunnelPageDocumentRenderer", () => {
     expect(html).toContain('name="name"');
     expect(html).toContain('name="email"');
     expect(html).not.toContain("未授權");
+  });
+
+  it("enables a public survey with the answer field an auto-created lead form adds for it", () => {
+    const page = documentWith([node("survey", "survey_pref", { props: { question: "偏好時段", options: ["上午", "下午"] } })]);
+    const fields = [
+      { key: "name", label: "姓名", type: "text" as const, required: true },
+      { key: "email", label: "Email", type: "email" as const, required: true },
+      ...surveyLeadFormFields(page, new Set(["name", "email"])),
+    ];
+    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} publicSurface submission={{ landingPageId: "page-1", form: { id: "form-1", submitLabel: "送出", successMessage: "已保存", fields } }} />);
+    expect(fields.map((field) => field.key)).toEqual(["name", "email", "survey_pref"]);
+    expect(html).toContain('name="survey_pref"');
+    expect(html).not.toContain("問卷尚未綁定已授權的表單欄位");
   });
 
   it("renders interactive content with explicit unavailable states", () => {

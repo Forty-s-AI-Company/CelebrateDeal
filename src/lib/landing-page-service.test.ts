@@ -13,7 +13,7 @@ const database = {
   landingPageVersion: { create: mocks.versionCreate, count: mocks.versionCount, findFirst: mocks.versionFindFirst },
   funnelVisit: { count: mocks.visitCount },
   funnelSubmission: { count: mocks.submissionCount },
-  registrationForm: { findMany: mocks.formFindMany, count: vi.fn() },
+  registrationForm: { findMany: mocks.formFindMany, findFirst: vi.fn(), count: vi.fn(), create: vi.fn() },
   live: { findFirst: mocks.liveFindFirst, findMany: vi.fn(), count: vi.fn() },
   consultationEvent: { findMany: vi.fn() },
   product: { findMany: vi.fn() },
@@ -39,13 +39,16 @@ import { publishSalesProjectAction } from "@/app/actions/sales-workspace-actions
 import { createFunnelFlow } from "./funnel-flow";
 import { createFunnelStepPages } from "./funnel-step-pages";
 import { defaultFunnelOperations } from "./funnel-operations";
+import { applyFunnelTemplateChange } from "./funnel-template-transaction";
+import type { PageDocument } from "./funnel-page-document";
+import { isIndependentlyPublishedFunnel, publicFunnelProjectGateWhere } from "./public-landing-page-eligibility";
 
 const now = new Date("2026-09-13T00:00:00.000Z");
 const document = { schemaVersion: 1, data: { root: {}, content: [] } };
 const page = (overrides: Record<string, unknown> = {}) => ({
   id: "page-1", vendorId: "vendor-1", projectId: "project-1", name: "秋季活動", slug: "fall-launch",
   draftContent: document, draftFormId: null, draftLiveId: null, operations: null, status: "draft", publishedVersionId: null,
-  revision: 2, publishedAt: null, updatedAt: now, ...overrides,
+  revision: 2, publishedAt: null, updatedAt: now, project: { status: "published", publishedAt: now }, ...overrides,
 });
 
 beforeEach(() => {
@@ -76,7 +79,7 @@ describe("landing page scoped mutations", () => {
   });
 
   it("發布 immutable snapshot，並以版本唯一鍵處理競爭", async () => {
-    await expect(publishLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1", revision: 3, version: 1 });
+    await expect(publishLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1", revision: 3, version: 1, formId: null });
     expect(mocks.versionCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ content: document }) }));
     mocks.transaction.mockRejectedValueOnce({ code: "P2002" });
     await expect(publishLandingPage("page-1", 2)).rejects.toBeInstanceOf(LandingPageConflictError);
@@ -361,5 +364,244 @@ describe("merchant publication diagnosis", () => {
       expect(normalized(fn.mock.calls[1]?.[0])).toEqual(normalized(fn.mock.calls[0]?.[0]));
     }
     expect(database.salesProject.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("independent audience Funnel publication (owner decision 2026-10-24)", () => {
+  const draftProject = { status: "draft", publishedAt: null };
+  const leadFields = [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }];
+  const leadForm = (id: string, fields: unknown = leadFields) => ({ id, slug: "lead", name: "名單", fields, submitLabel: "送出", successMessage: "收到" });
+  function funnelWithLeadForm(goal: "audience" | "sell" = "audience") {
+    const state = createFunnelStepPages(createFunnelFlow({ id: "flow_lead", name: "名單網站", goal, domain: "lead" })!)!;
+    const first = state.flow.steps.find((step) => !step.isSystem)!;
+    const applied = applyFunnelTemplateChange(state.pages[first.id] as PageDocument, { templateId: "audience" });
+    expect(applied.ok).toBe(true);
+    return { ...state, pages: { ...state.pages, [first.id]: applied.document } };
+  }
+  /** A sell Funnel whose merchant-declared goal was changed to audience. */
+  function relabelledSellFunnel() {
+    const sell = funnelWithLeadForm("sell");
+    return { ...sell, flow: { ...sell.flow, goal: "audience" as const } };
+  }
+  const surveyNode = { schemaVersion: 1 as const, id: "survey_pref", type: "survey" as const, props: { name: "preference", question: "偏好時段", options: ["上午", "下午"], required: true }, style: {}, overrides: {}, visible: true, actions: [], attributes: {} };
+  /** Adds a survey next to the lead form, or replaces the form when `surveyOnly`. */
+  function withSurvey(content: ReturnType<typeof funnelWithLeadForm>, surveyOnly = false) {
+    const first = content.flow.steps.find((step) => !step.isSystem)!;
+    const document = structuredClone(content.pages[first.id]!);
+    const columns = document.root[0]!.children![0]!.children![0]!;
+    columns.children = [...(columns.children ?? []).filter((node) => !surveyOnly || node.type !== "form"), surveyNode];
+    return { ...content, pages: { ...content.pages, [first.id]: document } };
+  }
+  const candidate = (content: unknown, version: Record<string, unknown> = {}, project: unknown = draftProject) => page({
+    status: "published", publishedVersionId: "version-1", publishedAt: now, project,
+    publishedVersion: { id: "version-1", vendorId: "vendor-1", pageId: "page-1", content, formId: null, liveId: null, live: null, ...version },
+  });
+
+  beforeEach(() => {
+    database.salesProject.findFirst.mockResolvedValue({ status: "draft", publishedAt: null, primaryFlow: "live" });
+    database.registrationForm.create.mockResolvedValue({ id: "form-lead" });
+    database.registrationForm.findFirst.mockResolvedValue(null);
+  });
+
+  it("serves an audience Funnel of an unpublished project, without a purchase surface", async () => {
+    const content = funnelWithLeadForm();
+    mocks.findMany.mockResolvedValueOnce([candidate(content, { formId: "form-1" })]);
+    mocks.formFindMany.mockResolvedValueOnce([leadForm("form-1")]);
+    const result = await loadPublicLandingPage("fall-launch");
+    expect(result).toMatchObject({ id: "page-1", submissionForm: { id: "form-1" } });
+    expect(mocks.publicCommerce).not.toHaveBeenCalled();
+    expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {
+      slug: "fall-launch", status: "published", publishedVersionId: { not: null }, archivedAt: null, ...publicFunnelProjectGateWhere(),
+    } }));
+    // Forms stay bound to the page's own tenant and project.
+    expect(mocks.formFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["form-1"] }, vendorId: "vendor-1", projectId: "project-1", isActive: true } }));
+  });
+
+  it.each(["sell", "webinar", "custom"] as const)("keeps a %s Funnel of an unpublished project closed even if the SQL gate were bypassed", async (goal) => {
+    const content = goal === "sell" ? funnelWithLeadForm("sell") : createFunnelStepPages(createFunnelFlow({ id: "flow_gate", name: "合成", goal, domain: "gate" })!)!;
+    mocks.findMany.mockResolvedValueOnce([candidate(content)]);
+    const reasons: string[] = [];
+    await expect(loadPublicLandingPage("fall-launch", (reason) => reasons.push(reason))).resolves.toBeNull();
+    expect(reasons).toEqual(["invalid_content"]);
+  });
+
+  it("keeps a sell Funnel relabelled as audience closed in an unpublished project", async () => {
+    const relabelled = relabelledSellFunnel();
+    expect(isIndependentlyPublishedFunnel(relabelled)).toBe(false);
+    mocks.findMany.mockResolvedValueOnce([candidate(relabelled)]);
+    const reasons: string[] = [];
+    await expect(loadPublicLandingPage("fall-launch", (reason) => reasons.push(reason))).resolves.toBeNull();
+    expect(reasons).toEqual(["invalid_content"]);
+  });
+
+  it("keeps an audience Funnel of an archived project closed", async () => {
+    mocks.findMany.mockResolvedValueOnce([candidate(funnelWithLeadForm(), {}, { status: "archived", publishedAt: null })]);
+    const reasons: string[] = [];
+    await expect(loadPublicLandingPage("fall-launch", (reason) => reasons.push(reason))).resolves.toBeNull();
+    expect(reasons).toEqual(["invalid_content"]);
+  });
+
+  it("keeps a live off an audience Funnel until the live's project is published", async () => {
+    mocks.findMany.mockResolvedValueOnce([candidate(funnelWithLeadForm(), { formId: "form-1", liveId: "live-1", live: { id: "live-1", slug: "launch", title: "直播", status: "scheduled", scheduledAt: now, formId: "form-1", vendorId: "vendor-1", projectId: "project-1", replayEnabled: false, replayAvailableUntil: null, videoId: null, video: null } })]);
+    mocks.formFindMany.mockResolvedValueOnce([leadForm("form-1")]);
+    const reasons: string[] = [];
+    await expect(loadPublicLandingPage("fall-launch", (reason) => reasons.push(reason))).resolves.toBeNull();
+    expect(reasons).toEqual(["live_requires_published_project"]);
+  });
+
+  it("publishes an audience Funnel without consulting project publication and binds a server-owned lead form", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), project: draftProject }));
+    mocks.formFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([leadForm("form-lead")]);
+    await expect(publishLandingPage("page-1", 2)).resolves.toEqual({ id: "page-1", revision: 3, version: 1, formId: "form-lead" });
+    expect(database.salesProject.findFirst).not.toHaveBeenCalled();
+    // The auto-created form is looked up by this page's own slug inside the tenant and project.
+    expect(mocks.formFindMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { vendorId: "vendor-1", projectId: "project-1", OR: [{ slug: "lead-auto-page-1" }, { slug: { startsWith: "lead-auto-page-1-" } }] } }));
+    expect(database.registrationForm.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1", name: "秋季活動｜名單表單（自動建立）", headline: "秋季活動", submitLabel: "開始了解", fields: leadFields, slug: "lead-auto-page-1" }),
+      select: { id: true },
+    });
+    expect(mocks.formFindMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: { vendorId: "vendor-1", projectId: "project-1", isActive: true, id: { in: ["form-lead"] } } }));
+    expect(mocks.versionCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "vendor-1", formId: "form-lead", liveId: null }) }));
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 },
+      data: expect.objectContaining({ status: "published", draftFormId: "form-lead", revision: { increment: 1 } }),
+    });
+  });
+
+  it("reuses this page's active auto-created form and never recreates a deactivated one", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() }));
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-auto", isActive: true }]).mockResolvedValueOnce([leadForm("form-auto")]);
+    await expect(publishLandingPage("page-1", 2)).resolves.toMatchObject({ formId: "form-auto" });
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() }));
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-auto", isActive: false }]);
+    await expect(publishLandingPage("page-1", 2)).resolves.toMatchObject({ formId: null });
+    expect(database.registrationForm.create).not.toHaveBeenCalled();
+  });
+
+  it("uses a suffixed slug when another tenant holds this page's auto slug, and asks for a retry on a race", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() }));
+    mocks.formFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([leadForm("form-lead")]);
+    database.registrationForm.findFirst.mockResolvedValueOnce({ id: "foreign-form" });
+    await publishLandingPage("page-1", 2);
+    expect(database.registrationForm.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ slug: expect.stringMatching(/^lead-auto-page-1-[0-9a-f]{12}$/u) }) }));
+
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() }));
+    mocks.formFindMany.mockResolvedValueOnce([]);
+    database.registrationForm.create.mockRejectedValueOnce({ code: "P2002" });
+    await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_lead_form_retry");
+  });
+
+  it("adds survey answer fields to the auto-created form so a survey-only page can collect leads", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: withSurvey(funnelWithLeadForm(), true) }));
+    mocks.formFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([leadForm("form-lead")]);
+    await publishLandingPage("page-1", 2);
+    expect(database.registrationForm.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      fields: [...leadFields, { key: "preference", label: "偏好時段", type: "text", required: true }],
+      submitLabel: "送出",
+    }) }));
+  });
+
+  it("refuses to publish a live-bound audience Funnel before its project is published", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), draftLiveId: "live-1", draftFormId: "form-1" }));
+    await expect(publishLandingPage("page-1", 2)).rejects.toThrow("landing_page_audience_live_requires_project");
+    expect(database.salesProject.findFirst).toHaveBeenCalledWith({ where: { id: "project-1", vendorId: "vendor-1" }, select: { status: true, publishedAt: true } });
+    expect(mocks.versionCreate).not.toHaveBeenCalled();
+  });
+
+  it("never replaces an existing form binding and never creates forms for other goals", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), draftFormId: "form-1" }));
+    mocks.formFindMany.mockResolvedValueOnce([leadForm("form-1")]);
+    await publishLandingPage("page-1", 2);
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm("sell") }));
+    await publishLandingPage("page-1", 2);
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: relabelledSellFunnel() }));
+    await publishLandingPage("page-1", 2);
+    expect(database.registrationForm.create).not.toHaveBeenCalled();
+    expect(mocks.versionCreate.mock.calls.map(([call]) => call.data.formId)).toEqual(["form-1", null, null]);
+    expect(mocks.updateMany.mock.calls.map(([call]) => call.data.draftFormId)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("keeps this page's auto-created form when an editor saves without a form", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), draftFormId: "form-auto" }));
+    database.registrationForm.findFirst.mockResolvedValueOnce({ id: "form-auto" });
+    mocks.formFindMany.mockResolvedValueOnce([leadForm("form-auto")]);
+    await saveLandingPageDraft({ id: "page-1", revision: 2, name: "秋季活動", slug: "fall-launch", formId: "", content: funnelWithLeadForm() });
+    expect(database.registrationForm.findFirst).toHaveBeenCalledWith({ where: { id: "form-auto", isActive: true, vendorId: "vendor-1", projectId: "project-1", OR: [{ slug: "lead-auto-page-1" }, { slug: { startsWith: "lead-auto-page-1-" } }] }, select: { id: true } });
+    expect(mocks.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ draftFormId: "form-auto" }) }));
+
+    // A merchant-chosen form is not protected: clearing it clears it.
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), draftFormId: "form-manual" }));
+    database.registrationForm.findFirst.mockResolvedValueOnce(null);
+    await saveLandingPageDraft({ id: "page-1", revision: 2, name: "秋季活動", slug: "fall-launch", formId: "", content: funnelWithLeadForm() });
+    expect(mocks.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ draftFormId: null }) }));
+  });
+
+  it("reports an unpublished audience Funnel without project prerequisites", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() }));
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result).toEqual({ available: false, message: "一頁式網站尚未發布，公開網址目前無法開啟。名單型網站發布後即可開啟，不需要先發布專案。", projectHref: "/projects/project-1", missing: [] });
+    expect(database.salesProjectProduct.count).not.toHaveBeenCalled();
+    expect(database.paymentMethodReference.count).not.toHaveBeenCalled();
+  });
+
+  it("states the live restriction for an unpublished live-bound audience Funnel", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm(), draftLiveId: "live-1" }));
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result).toMatchObject({ available: false, missing: [] });
+    expect(result.message).toContain("直播要等所屬專案發布後才能公開");
+    expect(result.message).not.toContain("發布後即可開啟");
+  });
+
+  it("reports an archived project and a relabelled sell Funnel without promising an open URL", async () => {
+    database.salesProject.findFirst.mockResolvedValueOnce({ status: "archived", publishedAt: null, primaryFlow: "live" });
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: funnelWithLeadForm() }));
+    await expect(getLandingPagePublicationStatus("page-1")).resolves.toMatchObject({ available: false, message: "所屬專案已封存，公開網址目前無法開啟。" });
+
+    mocks.findFirst.mockResolvedValueOnce(page({ draftContent: relabelledSellFunnel() }));
+    database.salesProjectProduct.count.mockResolvedValue(0); database.registrationForm.count.mockResolvedValue(0);
+    database.live.count.mockResolvedValue(0); database.consultationEvent.findMany.mockResolvedValue([]); database.paymentMethodReference.count.mockResolvedValue(0);
+    const relabelled = await getLandingPagePublicationStatus("page-1");
+    expect(relabelled.message).toContain("這個名單網站含有銷售、結帳或 Webinar 內容，需要所屬專案發布後才能公開。");
+    expect(relabelled.missing.length).toBeGreaterThan(0);
+  });
+
+  it("reports a published audience Funnel of an unpublished project as open", async () => {
+    const content = funnelWithLeadForm();
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published", publishedVersion: { content } }));
+    mocks.findMany.mockResolvedValueOnce([candidate(content, { formId: "form-1" })]);
+    mocks.formFindMany.mockResolvedValueOnce([leadForm("form-1")]);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result).toEqual({ available: true, message: "一頁式網站已發布，公開頁目前可開啟。", projectHref: "/projects/project-1", missing: [] });
+    expect(database.salesProjectProduct.count).not.toHaveBeenCalled();
+  });
+
+  it("warns when a published audience lead form has no bound registration form", async () => {
+    const content = funnelWithLeadForm();
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published", publishedVersion: { content } }));
+    mocks.findMany.mockResolvedValueOnce([candidate(content)]);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result.available).toBe(true);
+    expect(result.warnings?.map((warning) => warning.href)).toEqual(["/forms"]);
+  });
+
+  it("warns when a survey question is missing from the bound form", async () => {
+    const content = withSurvey(funnelWithLeadForm());
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published", publishedVersion: { content } }));
+    mocks.findMany.mockResolvedValueOnce([candidate(content, { formId: "form-1" })]);
+    mocks.formFindMany.mockResolvedValueOnce([leadForm("form-1")]);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result.warnings?.map((warning) => warning.label)).toEqual(["頁面上的問卷題目不在目前的名單表單欄位裡，訪客無法作答；請到報名管理為表單加入對應欄位。"]);
+  });
+
+  it.each(["sell", "webinar"] as const)("keeps the project gate message for a published %s Funnel", async (goal) => {
+    const content = goal === "sell" ? funnelWithLeadForm("sell") : createFunnelStepPages(createFunnelFlow({ id: "flow_gate", name: "合成", goal, domain: "gate" })!)!;
+    mocks.findFirst.mockResolvedValueOnce(page({ status: "published", publishedVersion: { content } }));
+    database.salesProjectProduct.count.mockResolvedValue(0); database.registrationForm.count.mockResolvedValue(0);
+    database.live.count.mockResolvedValue(0); database.consultationEvent.findMany.mockResolvedValue([]); database.paymentMethodReference.count.mockResolvedValue(0);
+    const result = await getLandingPagePublicationStatus("page-1");
+    expect(result.available).toBe(false);
+    expect(result.message).toMatch(/^專案尚未發布，公開網址目前無法開啟/u);
+    expect(result.missing.length).toBeGreaterThan(0);
+    expect(mocks.findMany).not.toHaveBeenCalled();
   });
 });
