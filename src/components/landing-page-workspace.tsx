@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { WorkspaceEditor } from "@/components/landing-pages/workspace-editor";
-import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
+import { WorkspaceEditor, type WorkspaceEditorContent } from "@/components/landing-pages/workspace-editor";
+import { LegacyConversionNotice } from "@/components/landing-pages/legacy-conversion-notice";
 import { FunnelPageDocumentRenderer, type FunnelViewport } from "@/components/landing-pages/funnel-page-document-renderer";
 import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-preview";
-import { FunnelEditorToolbar, type FunnelEditorView } from "@/components/landing-pages/funnel-editor-toolbar";
-import { PanelHeader, panelControl } from "@/components/landing-pages/funnel-editor-panels";
+import { panelControl } from "@/components/landing-pages/funnel-editor-panels";
 import type { FunnelEditorChrome, FunnelEditorSaveState } from "@/components/landing-pages/funnel-editor-chrome";
 import { UnsavedChangesDialog } from "@/components/landing-pages/unsaved-changes-dialog";
 import { PublicationChip } from "@/components/landing-page-publication-chip";
@@ -20,6 +19,7 @@ import { getActiveFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import { landingPageEditorHref } from "@/lib/landing-page-editor-href";
+import { convertParsedLegacyLandingPage, type LegacyConversionIssue } from "@/lib/legacy-landing-page-converter";
 
 import { FunnelWebinarSettings } from "@/components/landing-pages/funnel-webinar-settings";
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
@@ -38,7 +38,7 @@ function starterDocument(goal: FunnelGoal = "custom"): PageDocument {
 }
 function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
 function isFunnelStepPages(content: LandingPageStoredContent): content is FunnelStepPages { return "pages" in content && "activeStepId" in content && "flow" in content; }
-function isStructured(content: LandingPageStoredContent) { return isPageDocument(content) || isFunnelStepPages(content); }
+function isStructured(content: LandingPageStoredContent): content is WorkspaceEditorContent { return isPageDocument(content) || isFunnelStepPages(content); }
 function isWebinar(content: LandingPageStoredContent): content is FunnelStepPages {
   return isFunnelStepPages(content) && content.flow.goal === "webinar";
 }
@@ -47,30 +47,63 @@ function workspaceSnapshot(input: { content: LandingPageStoredContent; name: str
   return JSON.stringify([input.content, input.name, input.slug, input.formId, input.liveId]);
 }
 
-function WorkspacePreview({ content, forms, live, commerceProducts, viewport }: { content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"]; commerceProducts: FunnelCommerceProduct[]; viewport: FunnelViewport }) {
+function WorkspacePreview({ content, commerceProducts, viewport }: { content: WorkspaceEditorContent; commerceProducts: FunnelCommerceProduct[]; viewport: FunnelViewport }) {
   if (isFunnelStepPages(content)) {
     const active = getActiveFunnelStepPage(content);
     return active ? <><FunnelPageDocumentRenderer document={active.page} commerce={commerceViewForBinding(active.page.commerce, commerceProducts)} viewport={viewport} mode="preview" />{active.page.popups.filter((popup) => !popup.pageId || popup.pageId === active.page.id).map((popup) => <FunnelPopupPreview key={popup.id} document={active.page} popupId={popup.id} viewport={viewport} />)}</> : <p role="alert">無法預覽目前一頁式網站步驟。</p>;
   }
-  if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport={viewport} mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport={viewport} />)}</>;
-  return <LandingPageRenderer content={content} context={{ forms, live }} />;
+  return <><FunnelPageDocumentRenderer document={content} viewport={viewport} mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport={viewport} />)}</>;
 }
-function CurrentWorkspacePreview({ content, slug, resource, viewport, commerceProducts, forms, live }: {
-  content: LandingPageStoredContent; slug: string; resource: ReturnType<typeof resolveWebinarResource>;
-  viewport: FunnelViewport; commerceProducts: FunnelCommerceProduct[]; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
+function CurrentWorkspacePreview({ content, slug, resource, viewport, commerceProducts }: {
+  content: WorkspaceEditorContent; slug: string; resource: ReturnType<typeof resolveWebinarResource>;
+  viewport: FunnelViewport; commerceProducts: FunnelCommerceProduct[];
 }) {
   if (isWebinar(content)) return <FunnelWebinarExperience state={content} stepId={content.activeStepId} slug={slug} resource={resource} preview viewport={viewport} />;
-  return <WorkspacePreview content={content} commerceProducts={commerceProducts} viewport={viewport} forms={forms} live={live} />;
+  return <WorkspacePreview content={content} commerceProducts={commerceProducts} viewport={viewport} />;
 }
+
+type LegacyOpening = { issues: LegacyConversionIssue[] } | { failed: true };
+
+/**
+ * A legacy (pre-structured) draft opens as a converted PageDocument. The
+ * conversion lives only in editor state: the stored legacy draft is untouched
+ * until the merchant saves.
+ */
+function openStoredContent(page: PageInput, forms: LandingPageRenderContext["forms"], lives: Lives): { content: WorkspaceEditorContent; legacy?: LegacyOpening } {
+  const stored = page.content ?? starterDocument();
+  if (isStructured(stored)) return { content: stored };
+  const live = page.liveId ? lives.find((item) => item.id === page.liveId) : undefined;
+  const result = convertParsedLegacyLandingPage(stored, { id: page.id, name: page.name, forms, ...(live ? { live } : {}) });
+  return result.ok ? { content: result.document, legacy: { issues: result.issues } } : { content: starterDocument(), legacy: { failed: true } };
+}
+
+const legacyFailed = (legacy: LegacyOpening | undefined) => Boolean(legacy && "failed" in legacy);
+function legacyNotice(legacy: LegacyOpening | undefined, published: boolean) {
+  return legacy && "issues" in legacy ? <LegacyConversionNotice issues={legacy.issues} published={published} /> : undefined;
+}
+function LegacyConversionFailure({ onExit }: { onExit: () => void }) {
+  return <main className="grid min-h-dvh place-items-center bg-slate-100 p-6">
+    <div role="alert" className="max-w-lg rounded-xl border border-red-200 bg-white p-6 text-sm leading-6 text-slate-800 shadow-sm">
+      <h1 className="text-base font-bold text-red-800">無法開啟這個舊版頁面</h1>
+      <p className="mt-2">這個舊版頁面無法自動轉換成新版編輯器格式，原本的內容沒有被改動，公開頁也維持原樣。請聯絡客服協助轉換。</p>
+      <button type="button" onClick={onExit} className="mt-4 min-h-10 cursor-pointer rounded-lg bg-slate-900 px-4 font-semibold text-white hover:bg-slate-700">返回管理頁</button>
+    </div>
+  </main>;
+}
+
 // Optional persisted and create-flow inputs are normalized at this single boundary.
 // eslint-disable-next-line complexity
-function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"], config?: { goal?: FunnelGoal; name?: string; slug?: string; currency?: string }) {
-  let content = page?.content ?? starterDocument(config?.goal);
+function initialWorkspace(page: PageInput | undefined, forms: LandingPageRenderContext["forms"], lives: Lives, config?: { goal?: FunnelGoal; name?: string; slug?: string; currency?: string }) {
+  const opened = page ? openStoredContent(page, forms, lives) : { content: starterDocument(config?.goal) as WorkspaceEditorContent };
+  let content = opened.content;
   if (!page && isPageDocument(content) && config?.goal && config.name && config.slug) {
     content = createGoalFunnelStepPages({ id: "funnel_flow", name: config.name, goal: config.goal, domain: config.slug, currency: config.currency ?? "TWD" }) ?? content;
   }
   return {
-    content, published: page?.status === "published",
+    content, legacy: opened.legacy,
+    // The saved snapshot is what is stored: a converted legacy page starts with unsaved changes.
+    storedContent: (page?.content ?? content) as LandingPageStoredContent,
+    published: page?.status === "published",
     name: page?.name ?? config?.name ?? "新的一頁式網站頁面", slug: page?.slug ?? config?.slug ?? "",
     formId: page?.formId ?? forms[0]?.id ?? "", liveId: page?.liveId ?? "",
     revision: page?.revision ?? 1, valid: Boolean(page?.content ?? true),
@@ -87,23 +120,25 @@ type WorkspaceProps = { initialPublication?: LandingPagePublicationStatus; comme
 
 /**
  * Persistence owner of the full-screen editor: save/exit, page metadata,
- * version restore and the publication chip. Structured pages render the
- * shared toolbar inside the canvas editor; legacy pages get the same toolbar
- * around the legacy editor.
+ * version restore and the publication chip. The canvas editor renders the
+ * shared toolbar; legacy pages open converted, with a notice, and keep their
+ * stored legacy draft until the merchant saves.
  */
 export function LandingPageWorkspace({ initialPublication, page, forms, lives, csrfToken, csrfName, initialGoal, initialName, initialSlug, initialCurrency, webinarResources, commerceProducts: products, returnHref, managementHref }: WorkspaceProps) {
   const commerceProducts = products ?? [];
   const router = useRouter();
-  const [initial] = useState(() => initialWorkspace(page, forms, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
-  const [content, setContent] = useState<LandingPageStoredContent>(initial.content);
-  const contentRef = useRef<LandingPageStoredContent>(initial.content);
+  const [initial] = useState(() => initialWorkspace(page, forms, lives, { goal: initialGoal, name: initialName, slug: initialSlug, currency: initialCurrency }));
+  const [content, setContent] = useState<WorkspaceEditorContent>(initial.content);
+  const contentRef = useRef<WorkspaceEditorContent>(initial.content);
+  // Cleared once the converted page has been saved in the new format.
+  const [legacy, setLegacy] = useState(initial.legacy);
   const [name, setName] = useState(initial.name);
   const [slug, setSlug] = useState(initial.slug);
   const [formId, setFormId] = useState(initial.formId);
   const [liveId, setLiveId] = useState(initial.liveId);
   const [revision, setRevision] = useState(initial.revision);
   const snapshot = useMemo(() => workspaceSnapshot({ content, name, slug, formId, liveId }), [content, name, slug, formId, liveId]);
-  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => page ? workspaceSnapshot(initial) : null);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => page ? workspaceSnapshot({ ...initial, content: initial.storedContent }) : null);
   const dirty = snapshot !== savedSnapshot;
   const [valid, setValid] = useState(initial.valid);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -161,7 +196,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
         if (result.publication) setPublicationResult({ source: initialPublication, value: result.publication });
         if (operation === "publish") setPublished(true);
         if (operation === "unpublish") setPublished(false);
-        if (operation === "save" || operation === "create") setSavedSnapshot(sentSnapshot);
+        if (operation === "save" || operation === "create") { setSavedSnapshot(sentSnapshot); setLegacy(undefined); }
         if ((operation === "create" || operation === "duplicate") && result.id) router.push(landingPageEditorHref(result.id));
         // Restoring a historical snapshot intentionally starts a fresh editing
         // session. Ordinary save/publish must preserve current UI and history.
@@ -174,7 +209,7 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
       }
     });
   }
-  function updateContent(next: LandingPageStoredContent) {
+  function updateContent(next: WorkspaceEditorContent) {
     contentRef.current = next;
     setContent(next);
   }
@@ -191,7 +226,6 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     router.push(exitHref);
   }
   const saveBlocked = pending || !valid || !name.trim() || !slug.trim();
-  const selectedLive = lives.find((live) => live.id === liveId);
   const webinarResource = resolveWebinarResource(webinarResources, lives, liveId, formId);
   const settings = <WorkspaceSettingsFields name={name} slug={slug} formId={formId} liveId={liveId} forms={forms} lives={lives} disabled={pending} onName={setName} onSlug={setSlug} onForm={setFormId} onLive={setLiveId}>
     <WebinarWorkspaceSettings content={content} pending={pending} resources={webinarResources} lives={lives} liveId={liveId} onValidityChange={setValid} onChange={updateContent} onSelect={(id, form) => { setLiveId(id); if (form) setFormId(form); }} />
@@ -202,37 +236,15 @@ export function LandingPageWorkspace({ initialPublication, page, forms, lives, c
     title: name, saveState: saveStateFor(pendingOperation, dirty), saveBlocked, onSave: save, onExit: exitEditor,
     status: page ? <PublicationChip published={published} publication={publication} slug={slug} onManage={managementHref ? () => { if (dirty) setExitPrompt(true); else router.push(exitHref); } : undefined} actions={legacyActions} /> : null,
     pageSettings: settings, versions,
-    renderPreview: (viewport) => <CurrentWorkspacePreview content={content} slug={slug} resource={webinarResource} viewport={viewport} commerceProducts={commerceProducts} forms={forms} live={selectedLive} />,
+    renderPreview: (viewport) => <CurrentWorkspacePreview content={content} slug={slug} resource={webinarResource} viewport={viewport} commerceProducts={commerceProducts} />,
+    notice: legacyNotice(legacy, published),
   };
+  if (legacyFailed(legacy)) return <LegacyConversionFailure onExit={() => router.push(exitHref)} />;
   return <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-100">
-    {isStructured(content)
-      ? <div className="min-h-0 flex-1"><WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={selectedLive} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={updateContent} onLegacyChange={() => undefined} chrome={chrome} /></div>
-      : <LegacyWorkspaceShell chrome={chrome}>
-        <WorkspaceEditor content={content} commerceProducts={commerceProducts} forms={forms} live={selectedLive} pending={pending} revision={revision} onValidityChange={setValid} onDocumentChange={updateContent} onLegacyChange={(next) => { if (JSON.stringify(next) !== JSON.stringify(contentRef.current)) updateContent(next); }} />
-      </LegacyWorkspaceShell>}
+    <div className="min-h-0 flex-1"><WorkspaceEditor content={content} commerceProducts={commerceProducts} pending={pending} revision={revision} onDocumentChange={updateContent} chrome={chrome} /></div>
     {notice ? <p role={notice.tone === "error" ? "alert" : "status"} className={`fixed bottom-4 left-1/2 z-[150] max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg px-4 py-2 text-sm font-semibold shadow-lg ${notice.tone === "error" ? "bg-red-700 text-white" : "bg-slate-900 text-white"}`}>{notice.text}{notice.tone === "error" ? <button type="button" aria-label="關閉訊息" className="ml-3 cursor-pointer underline" onClick={() => setNotice(null)}>關閉</button> : null}</p> : null}
     {exitPrompt ? <UnsavedChangesDialog saving={pendingOperation === "save" || pendingOperation === "create"} saveBlocked={saveBlocked && !pending} onCancel={() => setExitPrompt(false)} onDiscard={() => { setExitPrompt(false); router.push(exitHref); }} onSave={() => { setExitQueued(true); save(); }} /> : null}
   </div>;
-}
-
-/** Legacy (pre-structured) pages keep their editor; only the shell is shared. */
-function LegacyWorkspaceShell({ chrome, children }: { chrome: FunnelEditorChrome; children: React.ReactNode }) {
-  const [view, setView] = useState<FunnelEditorView | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const views: FunnelEditorView[] = chrome.versions ? ["page", "versions"] : ["page"];
-  const toggle = (next: FunnelEditorView) => setView((current) => current === next ? null : next);
-  return <>
-    <FunnelEditorToolbar chrome={chrome} views={views} view={view} onToggleView={toggle} crumbs={[]} onSelectCrumb={() => undefined} previewing={previewing} onTogglePreview={() => setPreviewing((value) => !value)} />
-    <div className="flex min-h-0 flex-1">
-      {view && !previewing ? <aside aria-label="編輯面板" className="w-80 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4">
-        {view === "page" ? <><PanelHeader title="頁面設定" onBack={() => setView(null)} />{chrome.pageSettings}</> : <><PanelHeader title="版本紀錄" onBack={() => setView(null)} />{chrome.versions}</>}
-      </aside> : null}
-      <div className="min-w-0 flex-1 overflow-auto p-4">
-        {previewing ? chrome.renderPreview?.("desktop") : null}
-        <div className={previewing ? "hidden" : "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}>{children}</div>
-      </div>
-    </div>
-  </>;
 }
 
 function WorkspaceSettingsFields({ name, slug, formId, liveId, forms, lives, disabled, onName, onSlug, onForm, onLive, children }: { name: string; slug: string; formId: string; liveId: string; forms: LandingPageRenderContext["forms"]; lives: Lives; disabled: boolean; onName: (value: string) => void; onSlug: (value: string) => void; onForm: (value: string) => void; onLive: (value: string) => void; children?: React.ReactNode }) {

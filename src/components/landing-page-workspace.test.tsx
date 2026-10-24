@@ -2,7 +2,8 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createEmptyPageDocument, type PageDocument } from "@/lib/funnel-page-document";
+import { createEmptyPageDocument, parsePageDocument, type PageDocument } from "@/lib/funnel-page-document";
+import { createLandingPageContent } from "@/lib/landing-page-content";
 
 const mocks = vi.hoisted(() => ({ push: vi.fn(), action: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push, refresh: vi.fn() }) }));
@@ -152,6 +153,75 @@ describe("leaving with unsaved changes", () => {
     const dirty = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(dirty);
     expect(dirty.defaultPrevented).toBe(true);
+  });
+});
+
+describe("opening a legacy page", () => {
+  const legacyContent = () => {
+    const content = createLandingPageContent("webinar", "form_1");
+    // One block whose live-linked countdown needs the merchant's attention.
+    content.data.content.push({ type: "Countdown", props: { id: "timer", mode: "live_linked", expiredMessage: "報名已截止", expiredAction: "show_message" } } as never);
+    return content;
+  };
+  const forms = [{ id: "form_1", slug: "webinar-signup", name: "講座報名" }];
+  const lives = [{ id: "live_1", slug: "autumn", title: "秋季直播", status: "scheduled" as const, formId: "form_1", scheduledAt: "2030-05-01T12:00:00.000Z" }];
+  function legacyWorkspace(content: unknown = legacyContent(), status: "draft" | "published" = "published") {
+    return <LandingPageWorkspace page={{ id: "page1", name: "舊版講座頁", slug: "legacy-webinar", status, revision: 7, content: content as never, formId: "form_1", liveId: "live_1", versions: [{ version: 2 }] }} forms={forms} lives={lives} csrfName="csrf" csrfToken="synthetic" />;
+  }
+
+  it("shows the converted page with a notice and the conversion report, and writes nothing", async () => {
+    const container = await mount(legacyWorkspace());
+    const notice = container.querySelector<HTMLElement>('[aria-label="舊版頁面轉換說明"]')!;
+    expect(notice.textContent).toContain("這是舊版頁面，已轉換成新版編輯器格式；儲存後會以新版格式保存。舊版內容在你儲存前不會被改動。");
+    expect(notice.textContent).toContain("公開頁在你重新發布之前，仍會顯示舊版內容。");
+    expect(notice.textContent).toContain("轉換報告：");
+    expect(notice.textContent).toContain("倒數計時");
+    expect(notice.textContent).toContain("固定截止時間");
+    // The canvas is the structured editor showing the legacy content.
+    expect(container.querySelector("[data-funnel-page-editor]")).not.toBeNull();
+    expect(container.querySelector('[data-funnel-node-id="hero"]')).not.toBeNull();
+    expect(container.textContent).toContain("用一場直播，讓對的人認識你的價值");
+    // Stored format differs from what is shown, so saving is offered; nothing was sent.
+    expect(button(container, "儲存").disabled).toBe(false);
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it("leaving without saving discards the conversion and keeps the legacy draft", async () => {
+    const container = await mount(legacyWorkspace());
+    await click(button(container, "離開"));
+    await click(button(container.querySelector('[role="dialog"]')!, "不儲存離開"));
+    expect(mocks.action).not.toHaveBeenCalled();
+    expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
+  });
+
+  it("saves the converted PageDocument through the normal save action and then hides the notice", async () => {
+    mocks.action.mockResolvedValue({ status: "success", message: "草稿已儲存。", id: "page1", revision: 8 });
+    const container = await mount(legacyWorkspace());
+    await click(button(container, "儲存"));
+    expect(mocks.action).toHaveBeenCalledOnce();
+    const data = mocks.action.mock.calls[0]![1] as FormData;
+    expect(data.get("operation")).toBe("save");
+    expect(data.get("revision")).toBe("7");
+    expect(data.get("formId")).toBe("form_1");
+    expect(data.get("liveId")).toBe("live_1");
+    const saved = parsePageDocument(JSON.parse(String(data.get("content"))));
+    expect(saved).not.toBeNull();
+    expect(saved!.id).toBe("page1");
+    expect(saved!.root.map((node) => node.id)).toEqual(["hero", "benefits", "speaker", "agenda", "faq", "register", "timer"]);
+    expect(JSON.stringify(saved)).toContain("/form/webinar-signup?liveId=live_1");
+    expect(container.querySelector('[aria-label="舊版頁面轉換說明"]')).toBeNull();
+    expect(button(container, "已儲存").disabled).toBe(true);
+  });
+
+  it("refuses to open a legacy page it cannot convert, without touching it", async () => {
+    const plans = Array.from({ length: 6 }, (_, index) => ({ name: `方案${index}`, price: "NT$ 1", features: Array.from({ length: 20 }, (_, feature) => `特色${feature}`), label: "標籤", description: "說明", action: { type: "external", href: "https://example.com" } }));
+    const oversized = { schemaVersion: 1, data: { root: {}, content: Array.from({ length: 24 }, (_, index) => ({ type: "Pricing", props: { id: `p${index}`, title: "方案", plans } })) } };
+    const container = await mount(legacyWorkspace(oversized, "draft"));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("無法開啟這個舊版頁面");
+    expect(container.querySelector("[data-funnel-page-editor]")).toBeNull();
+    await click(button(container, "返回管理頁"));
+    expect(mocks.action).not.toHaveBeenCalled();
+    expect(mocks.push).toHaveBeenCalledWith("/landing-pages");
   });
 });
 

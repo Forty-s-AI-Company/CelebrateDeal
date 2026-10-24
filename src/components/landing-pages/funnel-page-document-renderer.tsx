@@ -5,6 +5,7 @@ import { useRegistrationRetry } from "@/components/registration-retry-context";
 
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
+import { LandingPageLink } from "@/components/landing-page-link";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
 import type { FunnelCommerceBinding, FunnelCommerceView } from "@/lib/funnel-commerce";
@@ -603,7 +604,9 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const submit = sourceType === "submit_form";
       const supportedButton = sourceType === null || sourceType === "none" || submit || Boolean(popupId);
       const controlClass = "transition-[filter] hover:brightness-95 focus-visible:outline-offset-2";
-      return surface(action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className={controlClass} style={controlStyle}>{label}</a> : nextStepHref ? <a href={nextStepHref} className={controlClass} style={controlStyle}>{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-60`} style={controlStyle}>{label}</button>);
+      // Hosted registration-form links carry the visitor's UTM / referral parameters and this page, like legacy landing pages did.
+      const formLink = action && !action.download && /^\/form\/[^/?#]+(?:[?#]|$)/u.test(action.href);
+      return surface(action && formLink ? <LandingPageLink href={action.href} pageId={submission?.landingPageId} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} className={controlClass} style={controlStyle}>{label}</LandingPageLink> : action ? <a href={action.href} target={action.newTab ? "_blank" : undefined} rel={action.newTab ? "noreferrer" : undefined} download={action.download} className={controlClass} style={controlStyle}>{label}</a> : nextStepHref ? <a href={nextStepHref} className={controlClass} style={controlStyle}>{label}</a> : <button type={submit ? "submit" : "button"} disabled={!supportedButton} aria-disabled={!supportedButton || undefined} onClick={popupId ? () => window.dispatchEvent(new CustomEvent("celebratedeal:show-popup", { detail: { popupId } })) : undefined} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-60`} style={controlStyle}>{label}</button>);
     }
     case "horizontal_line": return surface(<hr className="border-slate-200" />);
     default: return surface(<UnsupportedNode node={node} message={capabilityMessage(node)} />);

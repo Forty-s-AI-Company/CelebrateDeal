@@ -353,6 +353,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     <FunnelEditorToolbar chrome={chrome} history={historyControls} views={views} view={toolbarView} onToggleView={toggleView}
       crumbs={crumbs} context={editingPopup ? `彈出視窗：${editingPopup.name}` : undefined} onSelectCrumb={inspect}
       viewport={viewport} onViewport={setViewport} previewing={previewing} onTogglePreview={chrome?.renderPreview ? () => { setInlineEdit(null); setPreviewing((value) => !value); } : undefined} />
+    {chrome?.notice}
     <div className="relative flex min-h-0 flex-1">
       {previewing ? null : <EditorSidePanel collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>{renderPanel()}</EditorSidePanel>}
       <EditorCanvas previewing={previewing} disabled={disabled} viewport={viewport} popupName={editingPopup?.name} root={activeRoot} selectedId={selectedId} layoutKey={layoutKey} toolbar={renderNodeToolbar()}

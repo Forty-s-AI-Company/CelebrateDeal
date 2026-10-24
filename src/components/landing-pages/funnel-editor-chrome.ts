@@ -25,6 +25,8 @@ export type FunnelEditorChrome = {
   versions?: ReactNode;
   /** In-place preview of the current editor content. */
   renderPreview?: (viewport: FunnelViewport) => ReactNode;
+  /** Page-level notice shown between the toolbar and the canvas (for example a converted legacy page). */
+  notice?: ReactNode;
 };
 
 export type EditorShortcut = "undo" | "redo" | "save" | "delete" | "deselect";

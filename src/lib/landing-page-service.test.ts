@@ -41,6 +41,8 @@ import { createFunnelStepPages } from "./funnel-step-pages";
 import { defaultFunnelOperations } from "./funnel-operations";
 import { applyFunnelTemplateChange } from "./funnel-template-transaction";
 import type { PageDocument } from "./funnel-page-document";
+import { createLandingPageContent } from "./landing-page-content";
+import { convertParsedLegacyLandingPage } from "./legacy-landing-page-converter";
 import { isIndependentlyPublishedFunnel, publicFunnelProjectGateWhere } from "./public-landing-page-eligibility";
 
 const now = new Date("2026-09-13T00:00:00.000Z");
@@ -76,6 +78,24 @@ describe("landing page scoped mutations", () => {
     mocks.updateMany.mockResolvedValueOnce({ count: 0 });
     await expect(saveLandingPageDraft({ id: "page-1", revision: 2, name: "秋季活動", slug: "fall-launch", content: document })).rejects.toBeInstanceOf(LandingPageConflictError);
     expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 } }));
+  });
+
+  it("舊版草稿在編輯器轉換後，以既有儲存流程存成 PageDocument，且表單與直播仍走同租戶驗證", async () => {
+    const forms = [{ id: "form-1", slug: "fall-signup", name: "秋季報名" }];
+    const live = { id: "live-1", slug: "fall-live", title: "秋季直播", status: "scheduled" as const, formId: "form-1", scheduledAt: now.toISOString() };
+    const converted = convertParsedLegacyLandingPage(createLandingPageContent("webinar", "form-1"), { id: "page-1", forms, live });
+    if (!converted.ok) throw new Error(converted.reason);
+    // The stored draft is still the legacy document (see page()).
+    mocks.findFirst.mockResolvedValueOnce(page({ draftFormId: "form-1", draftLiveId: "live-1" }));
+    mocks.formFindMany.mockResolvedValueOnce([{ id: "form-1", slug: "fall-signup", name: "秋季報名", fields: [], submitLabel: "送出", successMessage: "完成" }]);
+    mocks.liveFindFirst.mockResolvedValueOnce({ id: "live-1", slug: "fall-live", title: "秋季直播", status: "scheduled", scheduledAt: now, formId: "form-1", replayEnabled: false, replayAvailableUntil: null, videoId: null, video: null });
+    await expect(saveLandingPageDraft({ id: "page-1", revision: 2, name: "秋季活動", slug: "fall-launch", formId: "form-1", liveId: "live-1", content: JSON.parse(JSON.stringify(converted.document)) })).resolves.toEqual({ id: "page-1", revision: 3 });
+    expect(mocks.formFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1", id: { in: ["form-1"] } }) }));
+    expect(mocks.liveFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "live-1", vendorId: "vendor-1", projectId: "project-1" }) }));
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: { id: "page-1", vendorId: "vendor-1", projectId: "project-1", revision: 2 },
+      data: expect.objectContaining({ draftContent: converted.document, draftFormId: "form-1", draftLiveId: "live-1", revision: { increment: 1 } }),
+    });
   });
 
   it("發布 immutable snapshot，並以版本唯一鍵處理競爭", async () => {
