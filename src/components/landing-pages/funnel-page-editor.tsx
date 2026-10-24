@@ -239,7 +239,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   const crumbs = path?.map((node) => ({ id: node.id, label: funnelNodeLabel(node.type) })) ?? [];
   const historyControls = { canUndo: !disabled && history.past.length > 0, canRedo: !disabled && history.future.length > 0, onUndo: () => stepHistory("undo"), onRedo: () => stepHistory("redo") };
   const toolbarView = leftView === "library" || leftView === "node" ? null : leftView;
-  return <section aria-label="頁面編輯器" className="flex h-full min-h-0 w-full flex-col bg-slate-100">
+  return <div data-funnel-page-editor className="flex h-full min-h-0 w-full flex-col bg-slate-100">
     <FunnelEditorToolbar chrome={chrome} history={historyControls} views={views} view={toolbarView} onToggleView={toggleView}
       crumbs={crumbs} context={editingPopup ? `彈出視窗：${editingPopup.name}` : undefined} onSelectCrumb={inspect}
       viewport={viewport} onViewport={setViewport} previewing={previewing} onTogglePreview={chrome?.renderPreview ? () => setPreviewing((value) => !value) : undefined} />
@@ -248,7 +248,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
       <EditorCanvas previewing={previewing} viewport={viewport} popupName={editingPopup?.name} onExitPopup={() => editPopup("")} onDeselect={deselect} onDropElement={add} onDropBlock={addBlock}>{renderCanvas()}</EditorCanvas>
     </div>
     {previewPopupId ? <FunnelPopupPreview document={history.present} commerce={commerceViewForBinding(history.present.commerce, commerceProducts)} popupId={previewPopupId} viewport={viewport} previewEnabled onTriggerStatus={() => undefined} /> : null}
-  </section>;
+  </div>;
 }
 
 const panelWidth = "w-[min(20rem,calc(100vw-3rem))] lg:w-80";
