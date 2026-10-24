@@ -3,7 +3,7 @@ import { useRegistrationRetry } from "@/components/registration-retry-context";
 
 /* eslint-disable @next/next/no-img-element */
 
-import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { RegistrationSubmissionFeedback } from "@/components/registration-submission-feedback";
 import { formSubmissionErrorMessage, FORM_SUBMISSION_VERIFICATION_MESSAGE, postRegistrationSubmission } from "@/lib/registration-submission-client";
 import type { RegistrationFormFieldSpec } from "@/lib/registration-form-fields";
@@ -13,6 +13,7 @@ import { ConsultationBookingBlock } from "@/components/funnel-blocks/consultatio
 import { FunnelDocumentCarousel } from "./funnel-document-carousel";
 import { FunnelSurvey } from "./funnel-survey";
 import { SandboxedHtml } from "./sandboxed-html";
+import { InlineEditableText } from "./funnel-inline-editable";
 
 const CommerceRenderContext = createContext<{ binding?: FunnelCommerceBinding; commerce?: FunnelCommerceView }>({});
 
@@ -28,13 +29,28 @@ import {
 export type FunnelViewport = "desktop" | "mobile";
 export type FunnelRenderMode = "editor" | "preview";
 
+/** Where a canvas click landed: the list entry (if any) and the pointer, for inline editing. */
+export type FunnelNodeSelectDetail = { itemIndex?: number; point?: { x: number; y: number } };
+
+/**
+ * Inline text editing of one node on the editor canvas. Honoured only in
+ * `mode="editor"`; preview and public renders never become editable.
+ */
+export type FunnelInlineEditingBinding = {
+  nodeId: string;
+  itemIndex?: number;
+  caret?: { x: number; y: number };
+  onCommit: (value: string, context: { previous: string; items?: string[] }) => void;
+  onCancel: () => void;
+};
+
 export type FunnelPageDocumentRendererProps = {
   document: PageDocument;
   viewport?: FunnelViewport;
   mode?: FunnelRenderMode;
   selectedNodeId?: string;
-  onSelectNode?: (nodeId: string) => void;
-  onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void;
+  onSelectNode?: (nodeId: string, detail?: FunnelNodeSelectDetail) => void;
+  inlineEditing?: FunnelInlineEditingBinding;
   className?: string;
   submission?: FunnelSubmissionContext;
   publicSurface?: boolean;
@@ -349,22 +365,49 @@ function PublicSubmissionForm({ submission, label, requireConsent }: { submissio
   </form>;
 }
 
-function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectNode, onMoveNode, children }: { node: FunnelNode; resolved: ResolvedNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void; children: ReactNode }) {
+const HIDDEN_STRIPES = "repeating-linear-gradient(135deg, rgba(71, 85, 105, 0.16) 0 6px, transparent 6px 12px)";
+
+function selectDetail(event: MouseEvent<HTMLElement>): FunnelNodeSelectDetail {
+  const target = event.target as Element | null;
+  const item = typeof target?.closest === "function" ? target.closest("[data-funnel-list-item]") : null;
+  const itemIndex = item && event.currentTarget.contains(item) ? Number(item.getAttribute("data-funnel-list-item")) : Number.NaN;
+  return { ...(Number.isInteger(itemIndex) ? { itemIndex } : {}), point: { x: event.clientX, y: event.clientY } };
+}
+
+function NodeSurface({ node, resolved, viewport, mode, selectedNodeId, onSelectNode, children }: { node: FunnelNode; resolved: ResolvedNode; viewport: FunnelViewport; mode: FunnelRenderMode; selectedNodeId?: string; onSelectNode?: (nodeId: string, detail?: FunnelNodeSelectDetail) => void; children: ReactNode }) {
   const editor = mode === "editor";
   const attributes = safeAttributes(node.attributes);
-  return <div {...attributes} draggable={editor && Boolean(onMoveNode)} onDragStart={onMoveNode ? (event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-celebratedeal-funnel-node", node.id); } : undefined} onDragOver={onMoveNode ? (event) => { if (event.dataTransfer.types.includes("application/x-celebratedeal-funnel-node")) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; } } : undefined} onDrop={onMoveNode ? (event) => { const sourceId = event.dataTransfer.getData("application/x-celebratedeal-funnel-node"); if (sourceId && sourceId !== node.id) { event.preventDefault(); event.stopPropagation(); onMoveNode(sourceId, node.id); } } : undefined} data-funnel-node-id={node.id} data-funnel-node-type={node.type} data-funnel-selected={selectedNodeId === node.id ? "true" : "false"} className={`${editor ? "relative cursor-grab rounded-sm transition-shadow hover:ring-1 hover:ring-amber-300" : ""} ${selectedNodeId === node.id ? "ring-2 ring-amber-500 ring-offset-2" : ""}`} style={nodeStyle(resolved.style, viewport)} onClick={onSelectNode ? (event) => { event.stopPropagation(); onSelectNode(node.id); } : undefined}>{children}</div>;
+  // EDT-RESP-001: a node hidden on this device stays selectable in the editor, dimmed and striped.
+  const hidden = editor && !resolved.visible;
+  const horizontal = editor && viewport === "desktop" && (node.type === "columns_2" || node.type === "columns_3" || node.type === "columns_4");
+  return <div {...attributes} data-funnel-node-id={node.id} data-funnel-node-type={node.type} data-funnel-selected={selectedNodeId === node.id ? "true" : "false"}
+    data-funnel-axis={horizontal ? "horizontal" : undefined} data-funnel-hidden={hidden ? viewport : undefined}
+    className={editor ? `relative${hidden ? " opacity-60" : ""}` : ""} style={nodeStyle(resolved.style, viewport)}
+    onClick={onSelectNode ? (event) => { event.stopPropagation(); onSelectNode(node.id, selectDetail(event)); } : undefined}>
+    {children}
+    {hidden ? <>
+      <span aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: HIDDEN_STRIPES }} />
+      <span className="pointer-events-none absolute top-1 left-1 rounded bg-slate-700 px-1.5 py-0.5 text-[11px] leading-4 font-semibold text-white">{viewport === "mobile" ? "手機版隱藏" : "桌機版隱藏"}</span>
+    </> : null}
+  </div>;
+}
+
+type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+function headingTag(level: string): HeadingTag {
+  return level === "h1" || level === "h3" || level === "h4" || level === "h5" || level === "h6" ? level : "h2";
 }
 
 // The switch is the explicit registry-to-markup boundary; keeping it together
 // makes unsupported element behaviour auditable in one place.
 // eslint-disable-next-line complexity
-function NodeRenderer({ node, viewport, mode, flow, submission, consultation, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; consultation?: FunnelPageDocumentRendererProps["consultation"]; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string) => void; onMoveNode?: (sourceNodeId: string, targetNodeId: string) => void }): ReactNode {
+function NodeRenderer({ node, viewport, mode, flow, submission, consultation, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing }: { node: FunnelNode; viewport: FunnelViewport; mode: FunnelRenderMode; flow?: PageDocument["flow"]; submission?: FunnelSubmissionContext; consultation?: FunnelPageDocumentRendererProps["consultation"]; publicSurface?: boolean; selectedNodeId?: string; onSelectNode?: (nodeId: string, detail?: FunnelNodeSelectDetail) => void; inlineEditing?: FunnelInlineEditingBinding }): ReactNode {
   const commerceContext = useContext(CommerceRenderContext);
   const resolved = resolveNode(node, viewport);
-  if (!resolved.visible) return null;
+  if (!resolved.visible && mode !== "editor") return null;
+  const editing = mode === "editor" && inlineEditing?.nodeId === node.id ? inlineEditing : undefined;
   const children = node.children ?? [];
-  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />);
-  const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode}>{content}</NodeSurface>;
+  const renderChildren = () => children.map((child) => <NodeRenderer key={child.id} node={child} viewport={viewport} mode={mode} flow={flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={inlineEditing} />);
+  const surface = (content: ReactNode) => <NodeSurface node={node} resolved={resolved} viewport={viewport} mode={mode} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode}>{content}</NodeSurface>;
   const props = resolved.props;
   switch (node.type) {
     case "offer_price": case "payment_button": case "payment_method": case "physical_product": case "customer_type": case "agreement": case "order_bump": case "coupon": case "two_step_order_form": case "shipping_fees":
@@ -374,12 +417,21 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
     case "columns_2": return surface(<div className={`grid min-w-0 gap-4 ${viewport === "mobile" ? "grid-cols-1" : "grid-cols-2"}`}>{renderChildren()}</div>);
     case "columns_3": return surface(<div className={`grid min-w-0 gap-4 ${viewport === "mobile" ? "grid-cols-1" : "grid-cols-3"}`}>{renderChildren()}</div>);
     case "columns_4": return surface(<div className={`grid min-w-0 gap-4 ${viewport === "mobile" ? "grid-cols-1" : "grid-cols-4"}`}>{renderChildren()}</div>);
-    case "text": return surface(<p className="whitespace-pre-line">{stringProp(props, ["text", "content", "body"], "文字內容")}</p>);
+    case "text": {
+      const text = stringProp(props, ["text", "content", "body"], "文字內容");
+      return surface(editing ? <InlineEditableText as="p" initial={text} multiline label="編輯文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <p className="whitespace-pre-line">{text}</p>);
+    }
     case "headline": {
       const level = stringProp(props, ["level"], "h2");
-      return surface(<HeadlineMarkup level={level} text={stringProp(props, ["text", "content", "title"], "標題")} />);
+      const text = stringProp(props, ["text", "content", "title"], "標題");
+      return surface(editing ? <InlineEditableText as={headingTag(level)} className="font-bold tracking-tight" initial={text} multiline={false} label="編輯標題" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: text })} onCancel={editing.onCancel} /> : <HeadlineMarkup level={level} text={text} />);
     }
-    case "bulleted_list": return surface(<ul className="list-disc space-y-1 pl-5">{(stringList(props.items).length ? stringList(props.items) : ["清單項目"]).map((item, index) => <li key={`${node.id}-item-${index}`}>{item}</li>)}</ul>);
+    case "bulleted_list": {
+      const items = stringList(props.items).length ? stringList(props.items) : ["清單項目"];
+      return surface(<ul className="list-disc space-y-1 pl-5">{items.map((item, index) => editing?.itemIndex === index
+        ? <InlineEditableText key={`${node.id}-item-${index}-editing`} as="li" initial={item} multiline={false} label={`編輯清單第 ${index + 1} 項`} caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: item, items })} onCancel={editing.onCancel} />
+        : <li key={`${node.id}-item-${index}`} data-funnel-list-item={mode === "editor" ? index : undefined}>{item}</li>)}</ul>);
+    }
     case "content_box": return surface(<div className="rounded-xl border border-slate-200 bg-white/70 p-4">{children.length ? renderChildren() : <p className="whitespace-pre-line">{stringProp(props, ["text", "content", "description", "title"], "內容區塊")}</p>}</div>);
     case "image": {
       const src = safeResourceUrl(props.src ?? props.imageUrl ?? props.url);
@@ -465,6 +517,8 @@ function NodeRenderer({ node, viewport, mode, flow, submission, consultation, pu
       const source: unknown = node.actions[0] ?? props.action;
       const action = safeAction(source);
       const label = stringProp(props, ["label", "text", "title"], "立即行動");
+      // A span, not the <button>/<a>: native buttons swallow Space/Enter and some browsers block editing inside them.
+      if (editing) return surface(<InlineEditableText as="span" className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-4 py-2 font-semibold text-slate-950" initial={label} multiline={false} label="編輯按鈕文字" caret={editing.caret} onCommit={(value) => editing.onCommit(value, { previous: label })} onCancel={editing.onCancel} />);
       const sourceType = actionType(source);
       const popupId = sourceType === "show_popup" && source && typeof source === "object" && "popupId" in source && typeof source.popupId === "string" ? source.popupId : null;
       const nextStepId = sourceType === "next_step" && source && typeof source === "object" && "stepId" in source && typeof source.stepId === "string" ? source.stepId : null;
@@ -491,10 +545,11 @@ function pageStyle(document: PageDocument, viewport: FunnelViewport): CSSPropert
 }
 
 /** Shared renderer for the editor canvas and the safe public/preview surface. */
-export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, consultation, commerce, publicSurface = false, selectedNodeId, onSelectNode, onMoveNode, className = "" }: FunnelPageDocumentRendererProps) {
+export function FunnelPageDocumentRenderer({ document, viewport = "desktop", mode = "preview", submission, consultation, commerce, publicSurface = false, selectedNodeId, onSelectNode, inlineEditing, className = "" }: FunnelPageDocumentRendererProps) {
   const parsed = parsePageDocument(document);
   if (!parsed) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">頁面內容不符合安全格式，暫時無法顯示。</div>;
-  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onMoveNode={onMoveNode} />)}</main></CommerceRenderContext.Provider>;
+  const editing = mode === "editor" ? inlineEditing : undefined;
+  return <CommerceRenderContext.Provider value={{ binding: parsed.commerce, commerce }}><main data-funnel-renderer data-viewport={viewport} data-render-mode={mode} className={`min-h-full w-full ${className}`.trim()} style={pageStyle(parsed, viewport)}>{parsed.root.map((node) => <NodeRenderer key={node.id} node={node} viewport={viewport} mode={mode} flow={parsed.flow} submission={submission} consultation={consultation} publicSurface={publicSurface} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} inlineEditing={editing} />)}</main></CommerceRenderContext.Provider>;
 }
 
 export const FunnelPageRenderer = FunnelPageDocumentRenderer;

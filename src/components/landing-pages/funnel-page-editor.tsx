@@ -2,13 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { FunnelPageDocumentRenderer, type FunnelViewport } from "./funnel-page-document-renderer";
+import { FunnelPageDocumentRenderer, type FunnelInlineEditingBinding, type FunnelNodeSelectDetail, type FunnelViewport } from "./funnel-page-document-renderer";
 import { FunnelPopupPreview } from "./funnel-popup-preview";
 import { FunnelEditorToolbar, type FunnelEditorView } from "./funnel-editor-toolbar";
-import { EditorLibrary, FUNNEL_BLOCK_DRAG_TYPE, FUNNEL_ELEMENT_DRAG_TYPE, funnelNodeLabel } from "./funnel-editor-library";
+import { EditorLibrary, funnelNodeLabel } from "./funnel-editor-library";
 import { NodeSettingsPanel, PageSettingsPanel, PanelHeader, PopupsPanel } from "./funnel-editor-panels";
 import { editorShortcutFor, type EditorShortcut, type FunnelEditorChrome } from "./funnel-editor-chrome";
+import { EditorCanvas, FunnelNodeToolbar, startNodeDrag } from "./funnel-editor-canvas-view";
+import { endFunnelDrag } from "./funnel-editor-drag";
 import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
+import { funnelDropCommand, type FunnelDragPayload, type FunnelDropTarget } from "@/lib/funnel-editor-canvas";
+import { funnelInlineField, funnelInlineTextCommand, isFunnelInlineEditable } from "@/lib/funnel-inline-text";
 import {
   createFunnelPageHistory,
   dispatchFunnelPageCommand,
@@ -58,15 +62,6 @@ function findFirstAccepting(nodes: FunnelNode[], type: FunnelNodeType): string |
   }
   return null;
 }
-function findNodeLocation(nodes: FunnelNode[], id: string, parentId: string | null = null): { node: FunnelNode; parentId: string | null; index: number } | null {
-  for (let index = 0; index < nodes.length; index += 1) {
-    const node = nodes[index]!;
-    if (node.id === id) return { node, parentId, index };
-    const nested = node.children ? findNodeLocation(node.children, id, node.id) : null;
-    if (nested) return nested;
-  }
-  return null;
-}
 function applyHistoryDirection(history: History, direction: "undo" | "redo") {
   if (direction === "undo") return undoFunnelPageHistory(history);
   return redoFunnelPageHistory(history);
@@ -107,8 +102,19 @@ export function FunnelPageEditor(props: Props) {
 }
 
 type LeftView = "library" | "node" | FunnelEditorView;
+type InlineEditState = { nodeId: string; itemIndex?: number; caret?: { x: number; y: number } };
 
-// The session owns history, selection, the left panel view and the canvas viewport.
+/** Selected node with its ancestry and position among its siblings. */
+function selectionContext(root: FunnelNode[], selectedId: string | undefined) {
+  const path = selectedId ? findPath(root, selectedId) : null;
+  const selected = path?.at(-1);
+  const selectedParent = path && path.length > 1 ? path.at(-2) : undefined;
+  const siblings = selected ? selectedParent?.children ?? root : [];
+  const selectedIndex = selected ? siblings.findIndex((node) => node.id === selected.id) : -1;
+  return { path, selected, selectedParent, siblings, selectedIndex };
+}
+
+// The session owns history, selection, inline editing, the left panel view and the canvas viewport.
 function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds, stepNames, chrome }: Props) {
   const [history, setHistory] = useState(() => createFunnelPageHistory(document));
   const historyRef = useRef(history);
@@ -119,17 +125,26 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   const [editingPopupId, setEditingPopupId] = useState<string>();
   const [collapsed, setCollapsed] = useState(initiallyCollapsed);
   const [previewing, setPreviewing] = useState(false);
+  const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const canvasRegion = useRef<HTMLDivElement>(null);
+  const canvasContainer = useRef<HTMLDivElement>(null);
 
   const editingPopup = history.present.popups.find((popup) => popup.id === editingPopupId);
   const activeRoot = editingPopup?.root ?? history.present.root;
-  const path = useMemo(() => selectedId ? findPath(activeRoot, selectedId) : null, [activeRoot, selectedId]);
-  const selected = path?.at(-1);
+  const { path, selected, selectedParent, siblings, selectedIndex } = useMemo(() => selectionContext(activeRoot, selectedId), [activeRoot, selectedId]);
   const canvasDocument = useMemo(() => editingPopup ? { ...history.present, root: editingPopup.root, popups: [] } : history.present, [editingPopup, history.present]);
+  const layoutKey = useMemo(() => ({ canvasDocument, viewport, inlineEdit }), [canvasDocument, viewport, inlineEdit]);
   const resolvedStepIds = stepIds ?? history.present.flow?.steps.map((step) => step.id);
   const resolvedStepNames = stepNames ?? Object.fromEntries((history.present.flow?.steps ?? []).map((step) => [step.id, step.name]));
   const views: FunnelEditorView[] = chrome?.versions ? ["popups", "page", "versions"] : ["popups", "page"];
 
   useEditorShortcuts((shortcut, event) => {
+    // While text is being edited on the canvas, keys belong to the text (Ctrl+S only stops the browser dialog).
+    if (inlineEdit) {
+      if (shortcut === "save") event.preventDefault();
+      return;
+    }
     if (shortcut === "save") {
       event.preventDefault();
       if (chrome && chrome.saveState === "dirty" && !chrome.saveBlocked) chrome.onSave();
@@ -145,52 +160,67 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   useEffect(() => {
     const command = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
-      if (detail === "undo" || detail === "redo") stepHistory(detail);
+      if ((detail === "undo" || detail === "redo") && !inlineEdit) stepHistory(detail);
       else if (detail === "desktop" || detail === "mobile") setViewport(detail);
     };
     window.addEventListener("celebratedeal:funnel-command", command);
     return () => window.removeEventListener("celebratedeal:funnel-command", command);
   });
 
-  function commit(command: FunnelPageCommand) {
-    if (disabled) return;
-    publishHistory(dispatchFunnelPageCommand(historyRef.current, command));
+  function announce(message: string) { setAnnouncement(message); }
+
+  /** Applies one command; true only when the document changed and the owner accepted it. */
+  function commit(command: FunnelPageCommand): boolean {
+    if (disabled) return false;
+    return publishHistory(dispatchFunnelPageCommand(historyRef.current, command));
   }
 
-  function publishHistory(next: History) {
-    if (next === historyRef.current) return;
+  function publishHistory(next: History): boolean {
+    if (next === historyRef.current) return false;
     // Keep callbacks outside React state updaters: Strict Mode may replay them.
     // The outer multi-page store may reject broken cross-page references.
     // Publish history only after acceptance, so rejected content never ghosts.
-    if (onChange(next.present) === false) return;
+    if (onChange(next.present) === false) return false;
     historyRef.current = next;
     setHistory(next);
+    return true;
+  }
+
+  function select(id: string | undefined) {
+    setInlineEdit(null);
+    setSelectedId(id);
   }
 
   function add(type: FunnelNodeType) {
     const node = newNode(type);
-    const selectedParent = selected && selected.children && getFunnelNodeDefinition(type).allowedParents.includes(selected.type) ? selected.id : null;
-    const parentId = type === "section" ? null : selectedParent ?? findFirstAccepting(activeRoot, type);
-    commit({ type: "add", node, parentId, popupId: editingPopup?.id ?? null });
-    setSelectedId(node.id);
+    const selectedParentId = selected && selected.children && getFunnelNodeDefinition(type).allowedParents.includes(selected.type) ? selected.id : null;
+    const parentId = type === "section" ? null : selectedParentId ?? findFirstAccepting(activeRoot, type);
+    if (commit({ type: "add", node, parentId, popupId: editingPopup?.id ?? null })) select(node.id);
   }
 
   function addBlock(templateId: string) {
     const block = instantiateBlock(templateId);
-    commit({ type: "add", node: block, parentId: null, popupId: editingPopup?.id ?? null });
-    setSelectedId(block.id);
+    if (commit({ type: "add", node: block, parentId: null, popupId: editingPopup?.id ?? null })) select(block.id);
   }
 
-  function moveNode(sourceNodeId: string, targetNodeId: string) {
-    const source = findNodeLocation(activeRoot, sourceNodeId);
-    const target = findNodeLocation(activeRoot, targetNodeId);
-    if (!source || !target) return;
-    const targetAccepts = Boolean(target.node.children) && getFunnelNodeDefinition(source.node.type).allowedParents.includes(target.node.type);
-    commit({ type: "move", nodeId: sourceNodeId, toParentId: targetAccepts ? target.node.id : target.parentId, index: targetAccepts ? target.node.children?.length : target.index });
+  /** EDT-INT-002: one drop, one history command; the dropped node becomes the selection. */
+  function dropOnCanvas(target: FunnelDropTarget, payload: FunnelDragPayload) {
+    let node: FunnelNode | undefined;
+    try {
+      node = payload.kind === "element" ? newNode(payload.nodeType) : payload.kind === "block" ? instantiateBlock(payload.templateId) : undefined;
+    } catch {
+      node = undefined;
+    }
+    const command = funnelDropCommand(target, payload, editingPopup?.id ?? null, node);
+    const label = funnelNodeLabel(payload.nodeType);
+    if (!command || !commit(command)) { announce(`無法把${label}放在這個位置`); return; }
+    select(payload.kind === "node" ? payload.nodeId : node!.id);
+    announce(payload.kind === "node" ? `已移動${label}` : `已加入${label}`);
   }
 
   function stepHistory(direction: "undo" | "redo") {
     if (disabled) return;
+    setInlineEdit(null);
     publishHistory(applyHistoryDirection(historyRef.current, direction));
   }
 
@@ -200,26 +230,85 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   }
 
   function inspect(id: string) {
-    setSelectedId(id);
+    select(id);
     setLeftView("node");
     setCollapsed(false);
   }
   function deselect() {
-    setSelectedId(undefined);
+    select(undefined);
     setLeftView("library");
   }
-  function removeSelected() {
-    if (!selectedId) return;
-    commit({ type: "delete", nodeId: selectedId });
-    deselect();
+
+  /** Double-click, a click on the already selected node, or the toolbar's 編輯文字 starts inline editing. */
+  function startInlineEdit(id: string, detail?: FunnelNodeSelectDetail): boolean {
+    const node = findPath(activeRoot, id)?.at(-1);
+    if (!node || disabled || previewing) return false;
+    const itemIndex = node.type === "bulleted_list" ? detail?.itemIndex : undefined;
+    if (!funnelInlineField(node.type, itemIndex)) return false;
+    setSelectedId(id);
+    setInlineEdit({ nodeId: id, itemIndex, caret: detail?.point });
+    return true;
   }
+
+  function selectFromCanvas(id: string, detail?: FunnelNodeSelectDetail) {
+    if (inlineEdit?.nodeId === id && inlineEdit.itemIndex === detail?.itemIndex) return;
+    if (id === selectedId && startInlineEdit(id, detail)) return;
+    inspect(id);
+  }
+
+  function inlineBinding(): FunnelInlineEditingBinding | undefined {
+    if (!inlineEdit || previewing) return undefined;
+    return {
+      nodeId: inlineEdit.nodeId,
+      itemIndex: inlineEdit.itemIndex,
+      caret: inlineEdit.caret,
+      onCommit: (value, context) => {
+        const node = findPath(activeRoot, inlineEdit.nodeId)?.at(-1);
+        const field = node ? funnelInlineField(node.type, inlineEdit.itemIndex) : null;
+        setInlineEdit(null);
+        if (!node || !field) return;
+        const command = funnelInlineTextCommand({ node, field, viewport, previous: context.previous, value, items: context.items });
+        if (command && commit(command)) announce(`已更新${funnelNodeLabel(node.type)}文字`);
+      },
+      onCancel: () => setInlineEdit(null),
+    };
+  }
+
+  function removeSelected() {
+    if (!selectedId || !selected) return;
+    const label = funnelNodeLabel(selected.type);
+    const removed = commit({ type: "delete", nodeId: selectedId });
+    deselect();
+    if (!removed) return;
+    announce(`已刪除${label}，可按 Ctrl+Z 復原`);
+    // The toolbar and settings that held focus are gone; keep keyboard users on the canvas.
+    canvasRegion.current?.focus({ preventScroll: true });
+  }
+  function moveSelected(direction: "up" | "down") {
+    if (!selected) return;
+    if (commit({ type: direction === "up" ? "move_up" : "move_down", nodeId: selected.id })) announce(`已${direction === "up" ? "上移" : "下移"}${funnelNodeLabel(selected.type)}`);
+  }
+  /** The copy lands right after the original and becomes the selection; focus stays on the clicked button. */
+  function duplicateSelected() {
+    if (!selected || selectedIndex < 0) return;
+    const label = funnelNodeLabel(selected.type);
+    const copyId = nodeId(selected.type);
+    if (commit({ type: "duplicate", nodeId: selected.id, newId: copyId, index: selectedIndex + 1 })) {
+      select(copyId);
+      announce(`已複製${label}，目前選取複本`);
+    } else announce(`無法複製${label}，請確認 HTML ID 沒有重複`);
+  }
+  function selectParentNode() {
+    if (selectedParent) inspect(selectedParent.id);
+  }
+
   function toggleView(view: FunnelEditorView) {
     setCollapsed(false);
     setLeftView((current) => current === view ? (selected ? "node" : "library") : view);
   }
   function backToCanvasPanel() { setLeftView(selected ? "node" : "library"); }
   function editPopup(popupId: string) {
-    setSelectedId(undefined);
+    select(undefined);
     setEditingPopupId(popupId || undefined);
     if (popupId) setLeftView("library");
   }
@@ -228,12 +317,28 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
     if (leftView === "page") return <PageSettingsPanel document={history.present} disabled={disabled} commerceEnabled={commerceEnabled} commerceProducts={commerceProducts} workspaceSettings={chrome?.pageSettings} onCommand={commit} onReplace={replaceDocument} onBack={backToCanvasPanel} />;
     if (leftView === "popups") return <PopupsPanel document={history.present} disabled={disabled} editingPopupId={editingPopupId} onReplace={replaceDocument} onEdit={editPopup} onPreview={setPreviewPopupId} onBack={backToCanvasPanel} />;
     if (leftView === "versions" && chrome?.versions) return <div><PanelHeader title="版本紀錄" onBack={backToCanvasPanel} />{chrome.versions}</div>;
-    if (leftView === "node" && selected && path) return <NodeSettingsPanel node={selected} path={path} disabled={disabled} popups={history.present.popups} stepIds={resolvedStepIds} stepNames={resolvedStepNames} onCommand={commit} onBack={deselect} onDelete={removeSelected} />;
+    if (leftView === "node" && selected && path) return <NodeSettingsPanel node={selected} path={path} disabled={disabled} viewport={viewport} popups={history.present.popups} stepIds={resolvedStepIds} stepNames={resolvedStepNames} onCommand={commit} onBack={deselect} onDuplicate={duplicateSelected} onDelete={removeSelected} />;
     return <EditorLibrary disabled={disabled} onAddElement={add} onAddBlock={addBlock} />;
   }
   function renderCanvas() {
     if (previewing && chrome?.renderPreview) return chrome.renderPreview(viewport);
-    return <FunnelPageDocumentRenderer document={canvasDocument} commerce={commerceViewForBinding(canvasDocument.commerce, commerceProducts)} viewport={viewport} mode="editor" selectedNodeId={selectedId} onMoveNode={moveNode} onSelectNode={inspect} />;
+    return <FunnelPageDocumentRenderer document={canvasDocument} commerce={commerceViewForBinding(canvasDocument.commerce, commerceProducts)} viewport={viewport} mode="editor" selectedNodeId={selectedId} onSelectNode={selectFromCanvas} inlineEditing={inlineBinding()} />;
+  }
+  function renderNodeToolbar() {
+    if (!selected || previewing) return undefined;
+    const node = selected;
+    return <FunnelNodeToolbar label={funnelNodeLabel(node.type)} disabled={disabled}
+      canMoveUp={selectedIndex > 0} canMoveDown={selectedIndex >= 0 && selectedIndex < siblings.length - 1} canSelectParent={Boolean(selectedParent)}
+      actions={{
+        onDragStart: (event) => { setInlineEdit(null); startNodeDrag(event, canvasContainer.current, node); },
+        onDragEnd: endFunnelDrag,
+        onMoveUp: () => moveSelected("up"),
+        onMoveDown: () => moveSelected("down"),
+        onDuplicate: duplicateSelected,
+        onDelete: removeSelected,
+        onSelectParent: selectParentNode,
+        onEditText: isFunnelInlineEditable(node.type) ? () => { startInlineEdit(node.id, { itemIndex: 0 }); } : undefined,
+      }} />;
   }
 
   const crumbs = path?.map((node) => ({ id: node.id, label: funnelNodeLabel(node.type) })) ?? [];
@@ -242,11 +347,13 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   return <div data-funnel-page-editor className="flex h-full min-h-0 w-full flex-col bg-slate-100">
     <FunnelEditorToolbar chrome={chrome} history={historyControls} views={views} view={toolbarView} onToggleView={toggleView}
       crumbs={crumbs} context={editingPopup ? `彈出視窗：${editingPopup.name}` : undefined} onSelectCrumb={inspect}
-      viewport={viewport} onViewport={setViewport} previewing={previewing} onTogglePreview={chrome?.renderPreview ? () => setPreviewing((value) => !value) : undefined} />
+      viewport={viewport} onViewport={setViewport} previewing={previewing} onTogglePreview={chrome?.renderPreview ? () => { setInlineEdit(null); setPreviewing((value) => !value); } : undefined} />
     <div className="relative flex min-h-0 flex-1">
       {previewing ? null : <EditorSidePanel collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>{renderPanel()}</EditorSidePanel>}
-      <EditorCanvas previewing={previewing} viewport={viewport} popupName={editingPopup?.name} onExitPopup={() => editPopup("")} onDeselect={deselect} onDropElement={add} onDropBlock={addBlock}>{renderCanvas()}</EditorCanvas>
+      <EditorCanvas previewing={previewing} disabled={disabled} viewport={viewport} popupName={editingPopup?.name} root={activeRoot} selectedId={selectedId} layoutKey={layoutKey} toolbar={renderNodeToolbar()}
+        regionRef={canvasRegion} containerRef={canvasContainer} onExitPopup={() => editPopup("")} onDeselect={deselect} onDrop={dropOnCanvas}>{renderCanvas()}</EditorCanvas>
     </div>
+    <p role="status" aria-live="polite" className="sr-only">{announcement}</p>
     {previewPopupId ? <FunnelPopupPreview document={history.present} commerce={commerceViewForBinding(history.present.commerce, commerceProducts)} popupId={previewPopupId} viewport={viewport} previewEnabled onTriggerStatus={() => undefined} /> : null}
   </div>;
 }
@@ -265,20 +372,4 @@ function EditorSidePanel({ collapsed, onToggle, children }: { collapsed: boolean
       {collapsed ? <PanelLeftOpen size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
     </button>
   </>;
-}
-
-/** Scrollable canvas: full width up to the page max width, or the 375px device frame. */
-function EditorCanvas({ previewing, viewport, popupName, onExitPopup, onDeselect, onDropElement, onDropBlock, children }: { previewing: boolean; viewport: FunnelViewport; popupName?: string; onExitPopup: () => void; onDeselect: () => void; onDropElement: (type: FunnelNodeType) => void; onDropBlock: (templateId: string) => void; children: React.ReactNode }) {
-  return <div role="region" aria-label={previewing ? "預覽畫面" : "編輯畫布"} className="min-w-0 flex-1 overflow-auto px-4 py-5 lg:px-8"
-    onClick={(event) => { if (!previewing && event.target === event.currentTarget) onDeselect(); }}
-    onDragOver={(event) => { if (!previewing && event.dataTransfer.types.some((type) => type === FUNNEL_ELEMENT_DRAG_TYPE || type === FUNNEL_BLOCK_DRAG_TYPE)) event.preventDefault(); }}
-    onDrop={(event) => {
-      if (previewing) return;
-      const type = event.dataTransfer.getData(FUNNEL_ELEMENT_DRAG_TYPE) as FunnelNodeType;
-      const blockId = event.dataTransfer.getData(FUNNEL_BLOCK_DRAG_TYPE);
-      if (type) { event.preventDefault(); onDropElement(type); } else if (blockId) { event.preventDefault(); onDropBlock(blockId); }
-    }}>
-    {popupName && !previewing ? <div className="mx-auto mb-3 flex max-w-[1440px] items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm"><span className="font-semibold text-violet-900">正在編輯彈出視窗：{popupName}</span><button type="button" className="min-h-9 cursor-pointer rounded-lg border border-violet-300 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-100" onClick={onExitPopup}>返回頁面畫布</button></div> : null}
-    <div className={`mx-auto min-h-full bg-white shadow-xl transition-[width] ${viewport === "mobile" ? "w-[375px] max-w-full overflow-hidden rounded-[2rem] border-[10px] border-slate-900" : "w-full max-w-[1440px]"}`}>{children}</div>
-  </div>;
 }
