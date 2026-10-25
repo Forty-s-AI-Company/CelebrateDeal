@@ -40,7 +40,7 @@ beforeEach(() => {
       id: "membership-owner",
       vendorMemberId: "member-owner",
       vendorMember: { user: { name: "Owner", email: "owner@example.com" } },
-      downlineRelationships: [],
+      uplineRelationships: [],
     }],
   }, {
     id: "team-2",
@@ -76,5 +76,40 @@ describe("TeamSettingsPage", () => {
     expect(html).toContain("這個指定會形成循環上下線關係，已拒絕儲存。");
     expect(html).toContain("上下線關係已更新，歷史關係已保留。");
     expect(html).not.toContain("Prisma");
+  });
+
+  it("preselects each member's own active upline (B's upline is A) and leaves A without upline", async () => {
+    mocks.salesTeamFindMany.mockResolvedValue([{
+      id: "team-1",
+      name: "北區夥伴",
+      slug: "north-partners",
+      memberships: [{
+        id: "membership-a",
+        vendorMemberId: "member-a",
+        vendorMember: { user: { name: "Alice", email: "a@example.com" } },
+        uplineRelationships: [],
+      }, {
+        id: "membership-b",
+        vendorMemberId: "member-b",
+        vendorMember: { user: { name: "Bob", email: "b@example.com" } },
+        uplineRelationships: [{ uplineMembershipId: "membership-a" }],
+      }],
+    }]);
+
+    const html = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({}) }));
+
+    expect(mocks.salesTeamFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: { memberships: expect.objectContaining({
+        include: expect.objectContaining({ uplineRelationships: { where: { endedAt: null }, select: { uplineMembershipId: true } } }),
+      }) },
+    }));
+    const forms = html.split("<form").filter((chunk) => chunk.includes('name="downlineMembershipId"'));
+    const formFor = (id: string) => forms.find((chunk) => chunk.includes(`name="downlineMembershipId" value="${id}"`)) ?? "";
+    // A has no upline: only the blank option is selected.
+    expect(formFor("membership-a")).toMatch(/<option value="" selected="">（無直接上線）<\/option>/);
+    expect(formFor("membership-a")).not.toMatch(/value="membership-b" selected/);
+    // B's upline is A: A is preselected and the blank option is not.
+    expect(formFor("membership-b")).toMatch(/<option value="membership-a" selected="">Alice<\/option>/);
+    expect(formFor("membership-b")).not.toMatch(/<option value="" selected/);
   });
 });
