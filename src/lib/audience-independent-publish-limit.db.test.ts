@@ -400,9 +400,10 @@ describe("merchant email verification gate on independent publication (PostgreSQ
     const page = await createDraftPage(tenant);
     actAs({ ...tenant, userId: coOwner.id });
     await rejectsUnverified(publishLandingPage(page.id, page.revision));
-    // Deactivating the founder does not hand the decision to the co-owner either.
+    // A founder who left the vendor no longer decides: any active verified owner does
+    // (documented fallback; deactivating an owner needs step-up MFA).
     await db.vendorMember.updateMany({ where: { vendorId: tenant.vendorId, userId: tenant.userId }, data: { status: "inactive" } });
-    await rejectsUnverified(publishLandingPage(page.id, page.revision));
+    await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ version: 1 });
   });
 
   it("does not let one vendor's verified founder verify another vendor", async () => {
@@ -416,7 +417,7 @@ describe("merchant email verification gate on independent publication (PostgreSQ
     await rejectsUnverified(publishLandingPage(page.id, page.revision));
   });
 
-  it("falls back to an active verified owner only for a vendor without a founding account", async () => {
+  it("falls back to an active verified owner for a vendor without an active founding account", async () => {
     const db = getDb();
     const suffix = randomUUID();
     const vendor = await db.vendor.create({ data: { name: "Synthetic fixture vendor", slug: `limit-fixture-${suffix}`, email: `limit-fixture-${suffix}@example.test`, passwordHash: "synthetic-only" } });

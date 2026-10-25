@@ -8,6 +8,7 @@ import {
   createMerchantEmailVerificationToken,
   MERCHANT_EMAIL_VERIFICATION_TTL_HOURS,
   merchantEmailVerificationUrl,
+  readMerchantEmailVerificationToken,
   verifyMerchantEmailVerificationToken,
 } from "@/lib/merchant-email-verification-token";
 
@@ -116,18 +117,24 @@ export function scheduleMerchantEmailVerification(input: { userId: string; vendo
 
 export type MerchantEmailVerificationConfirmation = { status: "verified" | "already_verified" | "invalid" };
 
+
 /**
- * Applies a verification link. The user id and address come only from the
- * signed token, and the final update is bound to both, so a link sent to an
+ * Applies a verification link. The token names the user; its MAC must match
+ * that user's current stored address (the token carries no address), and the
+ * final update stays bound to id and that address, so a link sent to an
  * earlier address, to another account or to a suspended account changes
  * nothing. Idempotent: opening a link again reports `already_verified`.
  */
 export async function confirmMerchantEmailVerification(token: unknown, now = new Date()): Promise<MerchantEmailVerificationConfirmation> {
-  const claim = verifyMerchantEmailVerificationToken(token, now);
-  if (!claim) return { status: "invalid" };
+  const candidate = readMerchantEmailVerificationToken(token, now);
+  if (!candidate) return { status: "invalid" };
   const db = getDb();
+  const user = await db.user.findUnique({ where: { id: candidate.userId }, select: { email: true, status: true, emailVerifiedAt: true } });
+  if (!user || user.status !== "active") return { status: "invalid" };
+  const claim = verifyMerchantEmailVerificationToken(token, user.email, now);
+  if (!claim) return { status: "invalid" };
   const updated = await db.user.updateMany({
-    where: { id: claim.userId, email: claim.email, status: "active", emailVerifiedAt: null },
+    where: { id: claim.userId, email: user.email, status: "active", emailVerifiedAt: null },
     data: { emailVerifiedAt: now },
   });
   if (updated.count === 1) {
@@ -141,8 +148,9 @@ export async function confirmMerchantEmailVerification(token: unknown, now = new
     }).catch(() => undefined);
     return { status: "verified" };
   }
+  // Nothing changed: already verified, or the account changed in between.
   const current = await db.user.findFirst({
-    where: { id: claim.userId, email: claim.email, status: "active" },
+    where: { id: claim.userId, email: user.email, status: "active" },
     select: { emailVerifiedAt: true },
   });
   return { status: current?.emailVerifiedAt ? "already_verified" : "invalid" };
@@ -150,25 +158,41 @@ export async function confirmMerchantEmailVerification(token: unknown, now = new
 
 type VendorVerificationReader = Pick<PrismaClient, "vendor" | "user" | "vendorMember">;
 
+export type VendorEmailVerificationState = {
+  verified: boolean;
+  /** The founding account that decides, when there is one; null means "any active verified owner". */
+  founder: { userId: string; email: string } | null;
+};
+
 /**
  * Whether the vendor counts as email-verified for abuse-sensitive actions.
  *
  * The vendor's founding account is the user whose address equals
  * `Vendor.email` (registration creates both with the same address, and both
- * columns are unique). When it exists, it alone decides: one verified mailbox
- * can verify at most one vendor, so inviting a verified co-owner into many
- * throwaway workspaces does not lift their limits. A vendor without such an
- * account (created outside /register) counts as verified when one of its
- * active owners is verified.
+ * columns are unique), provided it is still active and still an active member
+ * of the vendor. While it is, it alone decides: one verified mailbox verifies
+ * at most one vendor, so a verified co-owner invited into throwaway
+ * workspaces does not lift their limits. Otherwise (no such account, a
+ * suspended founder, or a founder who left the vendor) the vendor counts as
+ * verified when one of its active owners is verified. That fallback can be
+ * reached on purpose by deactivating the founder (owner step-up MFA and the
+ * per-recipient invitation limit make it costly); accepted for the beta.
  */
-export async function vendorOwnerEmailVerified(database: VendorVerificationReader, vendorId: string) {
+export async function vendorEmailVerificationState(database: VendorVerificationReader, vendorId: string): Promise<VendorEmailVerificationState> {
   const vendor = await database.vendor.findUnique({ where: { id: vendorId }, select: { email: true } });
-  if (!vendor) return false;
-  const founder = await database.user.findUnique({ where: { email: vendor.email }, select: { emailVerifiedAt: true } });
-  if (founder) return founder.emailVerifiedAt !== null;
+  if (!vendor) return { verified: false, founder: null };
+  const founder = await database.user.findFirst({
+    where: { email: vendor.email, status: "active", memberships: { some: { vendorId, status: "active" } } },
+    select: { id: true, email: true, emailVerifiedAt: true },
+  });
+  if (founder) return { verified: founder.emailVerifiedAt !== null, founder: { userId: founder.id, email: founder.email } };
   const verifiedOwner = await database.vendorMember.findFirst({
     where: { vendorId, role: "owner", status: "active", user: { status: "active", emailVerifiedAt: { not: null } } },
     select: { id: true },
   });
-  return Boolean(verifiedOwner);
+  return { verified: Boolean(verifiedOwner), founder: null };
+}
+
+export async function vendorOwnerEmailVerified(database: VendorVerificationReader, vendorId: string) {
+  return (await vendorEmailVerificationState(database, vendorId)).verified;
 }

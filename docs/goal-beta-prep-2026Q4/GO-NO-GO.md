@@ -17,11 +17,11 @@
 | 排程 | GitHub Actions 每 5 分鐘呼叫 staging，端點回 200（O-18 已於 10-25 切 alias，line-notifications 需在新部署上重新確認） | B2 證據 |
 | 封測功能閘門 | 六個模組伺服器端閘門已上，預設關閉；需 owner 逐商家在 `/admin/vendor-features` 開啟（O-23） | PR #465 |
 | 商家註冊 | **邀請制已完成**：`/register` 預設只接受平台管理員在 `/admin/merchant-invitations` 產生、綁定 Email 的簽章邀請連結（`REGISTRATION_MODE` 未設定＝invite）；owner 逐一寄出（O-25）。**商家 Email 驗證已實作**（`ai/merchant-email-verification`，migration `20261025120000_user_email_verified_at`）：註冊後寄 24 小時有效的驗證信，未驗證的商家不能做新的名單型網站獨立發布，既有帳號不被鎖住（O-27）。**Turnstile 程式已就緒，待 owner 建立金鑰（O-26）**；沒有 Turnstile 或寄信設定時，部署的 preflight 會拒絕 `REGISTRATION_MODE=open` | `ai/invite-only-registration`、`ai/merchant-email-verification` |
-| Production | `celebratedeal.carry-digital-nomad.in.net`（專案 `celebrate-deal`）仍是 2026-07-24 的 build，**刻意不更新**：資料庫 migration 需先完成 O-4 備份與還原演練、O-19 RLS 前置查詢、O-20 production migration 設定。Production 目前不服務封測商家，封測只用 staging | O-18 紀錄 |
+| Production | 2026-10-25 主對話已移除 2026-07-24 舊 build 的公開網址（`celebratedeal.carry-digital-nomad.in.net`、`celebrate-deal.vercel.app` 回 404），舊 preview／production 部署網址都在 Vercel Authentication 之後；唯一公開的程式端點是跑 master（含 #485）的 staging 網域。之後恢復任何公開網址前，該部署必須已含 #485，且不得在仍有 #485 前的公開部署時上線新的衍生金鑰用途。Production（專案 `celebrate-deal`）**刻意不更新**：資料庫 migration 需先完成 O-4 備份與還原演練、O-19 RLS 前置查詢、O-20 production migration 設定。Production 目前不服務封測商家，封測只用 staging | O-18 紀錄 |
 
 **11-01 前必須由 owner 完成（否則 No-Go 或縮小範圍）**
 
-1. ✅ O-18 已於 2026-10-25 完成：staging 固定網址指向 `dpl_2NRwSRDjhhXNGKX216BrKgzCwKQ7`（commit `585385cc`，tree 與 master `a9291147` 相同，含 #484、#485），smoke 通過；回滾選項 `dpl_FPzL7VRCHnCgeJQhmTdzHj6f4XYQ`。staging 只有 preview 部署，**之後每次合併都要再把 alias 指到 tree 與 master 相同的部署**；新 migration（例如 `20261025120000_user_email_verified_at`）要在切 alias 前以 `staging-migrate.yml`（先 `status` 再 `deploy`）套用到 staging。
+1. ✅ O-18 已於 2026-10-25 完成：staging 固定網址指向 `dpl_2NRwSRDjhhXNGKX216BrKgzCwKQ7`（commit `585385cc`，tree 與 master `a9291147` 相同，含 #484、#485），smoke 通過；回滾選項 `dpl_FPzL7VRCHnCgeJQhmTdzHj6f4XYQ`。staging 只有 preview 部署，**之後每次合併都要再把 alias 指到 tree 與 master 相同的部署**；新 migration（例如 `20261025120000_user_email_verified_at`）要在切 alias 前以 `staging-migrate.yml`（先 `status` 再 `deploy`）套用到 staging；這個 migration 尤其不能晚於程式：每個已登入的請求都會讀 `User.emailVerifiedAt`，程式先上線會讓所有登入頁出錯。Production 日後恢復時也一樣：先套用 migration，再部署這版程式。
 2. O-2 跑一筆 PayUni Sandbox 付款取樣本，10-30 再做 O-12 完整演練。
 3. O-3 平台管理員登記 TOTP；O-14 新增 QA TOTP secret。
 4. O-23 為每個封測商家開啟需要的模組。

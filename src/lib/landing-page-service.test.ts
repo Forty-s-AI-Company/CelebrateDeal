@@ -23,7 +23,7 @@ const database = {
   vendorSubscription: { findFirst: vi.fn() },
   // The vendor's founding account (same email as the vendor) is verified unless a test says otherwise.
   vendor: { findUnique: vi.fn(async () => ({ email: "owner@example.test", betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] })) },
-  user: { findUnique: vi.fn(async () => ({ emailVerifiedAt: new Date("2026-09-01T00:00:00.000Z") })) },
+  user: { findFirst: vi.fn(async () => ({ id: "user-1", email: "owner@example.test", emailVerifiedAt: new Date("2026-09-01T00:00:00.000Z") })) },
   vendorMember: { findFirst: vi.fn() },
   $executeRaw: vi.fn(),
 };

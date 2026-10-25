@@ -13,7 +13,7 @@ const ConfirmationForm = z.object({
 function redirectResult(request: Request, status: "verified" | "already_verified" | "invalid") {
   const url = new URL("/verify-email", getBrowserReturnAppUrl(request));
   url.searchParams.set("status", status);
-  return NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.redirect(url, { status: 303, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
 }
 
 /**

@@ -30,9 +30,9 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("SENTRY", "PROJECT")]: "test-project",
     [envKey("SENTRY", "AUTH", "TOKEN")]: "test-sentry-value",
     [envKey("RATE", "LIMIT", "PROVIDER")]: "cloudflare_waf",
-    // Cloudflare's documented always-pass Turnstile test keys.
-    [envKey("NEXT", "PUBLIC", "TURNSTILE", "SITE", "KEY")]: "1x00000000000000000000AA",
-    [envKey("TURNSTILE", "SECRET", "KEY")]: "1x0000000000000000000000000000000AA",
+    // Synthetic widget keys (not Cloudflare's public test keys, which deployments refuse).
+    [envKey("NEXT", "PUBLIC", "TURNSTILE", "SITE", "KEY")]: "0x4AAAAAAASyntheticSiteKey",
+    [envKey("TURNSTILE", "SECRET", "KEY")]: "0x4AAAAAAASyntheticSecretKeyValue",
   };
 }
 
@@ -591,6 +591,17 @@ describe("Turnstile preflight", () => {
     const report = getEnvCheckReport(env);
     expect(report.ok).toBe(true);
     expect(check(report, secret, "warning")?.message).toContain("未設定 Turnstile");
+  });
+
+  it("fails a Vercel deployment that uses Cloudflare's public test keys", () => {
+    for (const VERCEL_ENV of ["preview", "production"]) {
+      const env = { ...configuredEnv(), VERCEL_ENV, [site]: "1x00000000000000000000AA", [secret]: "1x0000000000000000000000000000000AA" };
+      const report = getEnvCheckReport(env);
+      expect(report.ok).toBe(false);
+      expect(check(report, secret, "fail")?.message).toContain("測試金鑰");
+    }
+    // Local and CI runs may use them.
+    expect(check(getEnvCheckReport({ ...configuredEnv(), [site]: "1x00000000000000000000AA", [secret]: "1x0000000000000000000000000000000AA" }), secret, "pass")).toBeDefined();
   });
 
   it.each([site, secret])("fails when only one key is set (%s missing)", (missing) => {

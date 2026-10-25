@@ -30,6 +30,7 @@ describe("POST /api/auth/email-verification/confirm", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(`https://app.example.test/verify-email?status=${status}`);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(mocks.confirm).toHaveBeenCalledWith("mev1.payload.signature");
   });
 

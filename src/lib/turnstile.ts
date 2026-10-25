@@ -1,3 +1,8 @@
+import { getCanonicalAppUrl } from "@/lib/app-url";
+import { TURNSTILE_ACTIONS, TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, type TurnstileAction } from "@/lib/turnstile-constants";
+
+export { TURNSTILE_ACTIONS, TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, type TurnstileAction };
+
 /**
  * Cloudflare Turnstile bot protection for merchant registration and the
  * verification-mail resend (owner decision 2026-10-25).
@@ -7,51 +12,94 @@
  * server at request time; the site key reaches the browser as a prop, so a
  * deployment can change it without a rebuild. When neither is set Turnstile is
  * disabled and the forms work without it (preflight warns, and refuses
- * `REGISTRATION_MODE=open` on a deployment). Exactly one of the two set is a
+ * `REGISTRATION_MODE=open` on a deployment). Exactly one of the two set, or
+ * Cloudflare's public test keys on a Vercel deployment, is a
  * misconfiguration: the check fails closed and preflight fails.
  *
  * Verification fails closed: a missing token, a rejected token, a network
- * error, a timeout or an unexpected response all refuse the request.
- * Cloudflare's documented test keys are used only in tests.
+ * error, a timeout, an unexpected response, a hostname outside this
+ * deployment or another form's action all refuse the request. Only
+ * Cloudflare's documented test secrets (which answer with a fixed hostname
+ * and no action) skip the hostname and action checks.
  */
 export const TURNSTILE_SITE_KEY_ENV = "NEXT_PUBLIC_TURNSTILE_SITE_KEY";
 export const TURNSTILE_SECRET_KEY_ENV = "TURNSTILE_SECRET_KEY";
+/** Optional comma-separated extra hostnames the widget may be solved on (e.g. the fixed staging or production domain). */
+export const TURNSTILE_ALLOWED_HOSTNAMES_ENV = "TURNSTILE_ALLOWED_HOSTNAMES";
 export const TURNSTILE_SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-export const TURNSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-/** Form field the widget fills. */
-export const TURNSTILE_RESPONSE_FIELD = "cf-turnstile-response";
 /** Cloudflare documents tokens of up to 2048 characters. */
 export const TURNSTILE_TOKEN_MAX_LENGTH = 2_048;
 const SITEVERIFY_TIMEOUT_MS = 5_000;
+/** Cloudflare's documented dummy site keys and secrets (e.g. 1x00000000000000000000AA, 2x0000000000000000000000000000000AA). */
+const CLOUDFLARE_TEST_KEY = /^[123]x0{20,31}[A-F]{2}$/u;
 
-export const TURNSTILE_ACTIONS = {
-  register: "merchant_register",
-  resendVerification: "merchant_verify_email_resend",
-} as const;
-export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_ACTIONS];
+export function isCloudflareTurnstileTestKey(value: string) {
+  return CLOUDFLARE_TEST_KEY.test(value);
+}
 
 function configuredValue(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 }
 
+function isVercelDeployment(env: NodeJS.ProcessEnv) {
+  return env.VERCEL_ENV === "preview" || env.VERCEL_ENV === "production";
+}
+
 export type TurnstileConfig =
   | { status: "disabled" }
-  | { status: "misconfigured" }
-  | { status: "enabled"; siteKey: string; secretKey: string };
+  | { status: "misconfigured"; reason: "partial" | "test_key_on_deployment" }
+  | { status: "enabled"; siteKey: string; secretKey: string; testSecret: boolean };
 
 export function getTurnstileConfig(env: NodeJS.ProcessEnv = process.env): TurnstileConfig {
   const siteKey = configuredValue(env[TURNSTILE_SITE_KEY_ENV]);
   const secretKey = configuredValue(env[TURNSTILE_SECRET_KEY_ENV]);
   if (!siteKey && !secretKey) return { status: "disabled" };
-  if (!siteKey || !secretKey) return { status: "misconfigured" };
-  return { status: "enabled", siteKey, secretKey };
+  if (!siteKey || !secretKey) return { status: "misconfigured", reason: "partial" };
+  // Public test keys always pass (or always fail); they protect nothing on a real deployment.
+  if (isVercelDeployment(env) && (isCloudflareTurnstileTestKey(siteKey) || isCloudflareTurnstileTestKey(secretKey))) {
+    return { status: "misconfigured", reason: "test_key_on_deployment" };
+  }
+  return { status: "enabled", siteKey, secretKey, testSecret: isCloudflareTurnstileTestKey(secretKey) };
 }
 
 /** The site key a form should render, or null when no widget is needed. */
 export function turnstileSiteKey(env: NodeJS.ProcessEnv = process.env) {
   const config = getTurnstileConfig(env);
   return config.status === "enabled" ? config.siteKey : null;
+}
+
+function hostOf(value: string | undefined) {
+  if (!value) return null;
+  try {
+    return new URL(value.includes("://") ? value : `https://${value}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hostnames a token may come from: the canonical app URL, this Vercel
+ * preview's own URL (the only non-canonical origin the app serves forms on),
+ * and any extra hosts in TURNSTILE_ALLOWED_HOSTNAMES. Never the request Host.
+ */
+export function turnstileAllowedHostnames(env: NodeJS.ProcessEnv = process.env) {
+  const hosts = new Set<string>();
+  try {
+    const canonical = hostOf(getCanonicalAppUrl(env));
+    if (canonical) hosts.add(canonical);
+  } catch {
+    // No canonical URL: only explicitly configured hosts remain.
+  }
+  if (env.VERCEL_ENV === "preview") {
+    const preview = hostOf(env.VERCEL_URL?.trim());
+    if (preview) hosts.add(preview);
+  }
+  for (const entry of (env[TURNSTILE_ALLOWED_HOSTNAMES_ENV] ?? "").split(",")) {
+    const host = hostOf(entry.trim() || undefined);
+    if (host) hosts.add(host);
+  }
+  return hosts;
 }
 
 export type TurnstileVerification =
@@ -71,9 +119,10 @@ export async function verifyTurnstileToken(input: {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: FetchLike;
 }): Promise<TurnstileVerification> {
-  const config = getTurnstileConfig(input.env);
+  const env = input.env ?? process.env;
+  const config = getTurnstileConfig(env);
   if (config.status === "disabled") return { ok: true, skipped: true };
-  // Half-configured: the widget cannot be trusted to render or verify.
+  // Half-configured or test keys on a deployment: nothing can be trusted.
   if (config.status === "misconfigured") return { ok: false, reason: "unavailable" };
   const token = typeof input.token === "string" ? input.token.trim() : "";
   if (!token || token.length > TURNSTILE_TOKEN_MAX_LENGTH) return { ok: false, reason: "missing" };
@@ -95,12 +144,15 @@ export async function verifyTurnstileToken(input: {
     return { ok: false, reason: "unavailable" };
   }
   if (!response.ok) return { ok: false, reason: "unavailable" };
-  const result = await response.json().catch(() => null) as { success?: unknown; action?: unknown } | null;
+  const result = await response.json().catch(() => null) as { success?: unknown; action?: unknown; hostname?: unknown } | null;
   if (!result || typeof result !== "object" || typeof result.success !== "boolean") return { ok: false, reason: "unavailable" };
   if (result.success !== true) return { ok: false, reason: "rejected" };
-  // A token solved on the other form carries the other action. Cloudflare's
-  // test secrets return no action, so only a present, different one refuses.
-  if (typeof result.action === "string" && result.action !== "" && result.action !== input.action) return { ok: false, reason: "rejected" };
+  // Test secrets answer with a fixed dummy hostname and no action.
+  if (config.testSecret) return { ok: true, skipped: false };
+  // A token solved on another site using the same widget, or on the other form, is refused.
+  const hostname = typeof result.hostname === "string" ? result.hostname.toLowerCase() : "";
+  if (!hostname || !turnstileAllowedHostnames(env).has(hostname)) return { ok: false, reason: "rejected" };
+  if (result.action !== input.action) return { ok: false, reason: "rejected" };
   return { ok: true, skipped: false };
 }
 

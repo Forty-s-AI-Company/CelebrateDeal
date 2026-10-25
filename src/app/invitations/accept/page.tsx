@@ -16,6 +16,7 @@ const errorMessages: Record<string, string> = {
   wrong_account: "目前登入的帳號不是受邀的 Email。請登出後以受邀帳號登入，再開啟邀請連結。",
   account_exists: "這個 Email 剛建立了帳號，請先登入後再開啟邀請連結。",
   last_owner: "接受後商家將沒有任何 owner，請先請其他 owner 處理。",
+  retry: "剛好有其他操作同時進行，邀請還沒有接受。請再按一次接受邀請。",
   ...PASSWORD_POLICY_MESSAGES,
   mismatch: "兩次輸入的密碼不一致。",
   consent_required: "請先閱讀並勾選同意使用條款與隱私通知。",

@@ -6,7 +6,7 @@ import { NativePostForm } from "@/components/native-post-form";
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import { getCurrentAuth } from "@/lib/auth";
 import { maskEmailRecipient } from "@/lib/email-delivery-pii";
-import { MERCHANT_EMAIL_VERIFICATION_TTL_HOURS, verifyMerchantEmailVerificationToken } from "@/lib/merchant-email-verification-token";
+import { MERCHANT_EMAIL_VERIFICATION_TTL_HOURS, readMerchantEmailVerificationToken } from "@/lib/merchant-email-verification-token";
 import { TURNSTILE_ACTIONS, TURNSTILE_ERROR_MESSAGES, turnstileSiteKey } from "@/lib/turnstile";
 
 export const dynamic = "force-dynamic";
@@ -44,14 +44,15 @@ export default async function VerifyEmailPage({ searchParams }: { searchParams: 
   const homeHref = auth?.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
 
   // A link from the email: show one confirm button. The POST does the update,
-  // so a mail scanner that only fetches the link verifies nothing.
+  // so a mail scanner that only fetches the link verifies nothing. The token
+  // holds no address and the page shows none; the POST checks the MAC
+  // against the account's stored address.
   if (typeof query.token === "string" && !query.status) {
-    const claim = verifyMerchantEmailVerificationToken(query.token);
-    if (claim) {
+    if (readMerchantEmailVerificationToken(query.token)) {
       return (
         <Shell>
           <h1 className="mt-2 text-3xl font-bold text-slate-950">確認你的 Email</h1>
-          <p className="mt-4 text-sm leading-6 text-slate-700">請按下按鈕，確認 <strong className="break-all">{maskEmailRecipient(claim.email)}</strong> 是你本人使用的 Email。</p>
+          <p className="mt-4 text-sm leading-6 text-slate-700">請按下按鈕，確認這封驗證信寄到的 Email 是你本人使用的信箱。</p>
           <NativePostForm
             action="/api/auth/email-verification/confirm"
             idleLabel="確認驗證 Email"

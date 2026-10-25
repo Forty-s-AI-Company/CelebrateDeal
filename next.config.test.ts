@@ -28,6 +28,19 @@ describe("isolated development build configuration", () => {
     expect(directive("frame-ancestors")).toBe("frame-ancestors 'none'");
   });
 
+  it("sends no Referer from the verification page and its confirm API, overriding the site-wide policy", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { default: config } = await import("./next.config");
+    const rules = await config.headers!();
+    const siteWide = rules.findIndex((rule) => rule.source === "/:path*");
+    for (const source of ["/verify-email", "/api/auth/email-verification/confirm"]) {
+      const index = rules.findIndex((rule) => rule.source === source);
+      // Next applies matching rules in order; the later one wins for the same key.
+      expect(index).toBeGreaterThan(siteWide);
+      expect(rules[index]!.headers).toEqual([{ key: "Referrer-Policy", value: "no-referrer" }]);
+    }
+  });
+
   it("isolates explicitly requested funnel QA builds inside the project", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FUNNEL_ELEMENTS_E2E", "true");

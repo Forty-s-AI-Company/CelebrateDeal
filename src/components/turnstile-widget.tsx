@@ -2,7 +2,7 @@
 
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, type TurnstileAction } from "@/lib/turnstile";
+import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, type TurnstileAction } from "@/lib/turnstile-constants";
 
 type TurnstileApi = {
   render: (container: HTMLElement, options: Record<string, unknown>) => string | undefined;

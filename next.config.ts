@@ -45,6 +45,10 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
         ],
       },
+      // Verification links carry a bearer token in the URL; never leak it in a
+      // Referer (later rules override the site-wide policy above).
+      { source: "/verify-email", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/api/auth/email-verification/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       {
         // Only the authenticated studio document may request capture permissions.
         source: "/lives/:id/presenter",

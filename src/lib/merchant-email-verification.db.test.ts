@@ -13,7 +13,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ "user-
 
 import { accountRateLimitKeyHash } from "@/lib/account-rate-limit";
 import { createMerchantEmailVerificationToken } from "@/lib/merchant-email-verification-token";
-import { confirmMerchantEmailVerification, sendMerchantEmailVerification, vendorOwnerEmailVerified } from "@/lib/merchant-email-verification";
+import { confirmMerchantEmailVerification, sendMerchantEmailVerification, vendorEmailVerificationState, vendorOwnerEmailVerified } from "@/lib/merchant-email-verification";
 import { acceptVendorMemberInvitation, createVendorMemberInvitation } from "@/lib/vendor-member-invitation";
 import { consumePasswordResetToken, createPasswordResetToken } from "@/lib/password-reset";
 
@@ -41,6 +41,9 @@ function linkToken(text: string) {
 beforeEach(() => {
   sent.length = 0;
   provider.mockClear();
+  // Signing secrets are stubbed here, never inherited from the shell.
+  vi.stubEnv("CSRF_SECRET", "synthetic-merchant-email-verification-db-32b");
+  vi.stubEnv("JOB_SECRET", "synthetic-merchant-email-verification-job");
   vi.stubEnv("RESEND_API_KEY", "synthetic-resend-key");
   vi.stubEnv("EMAIL_FROM", "CelebrateDeal <no-reply@example.test>");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
@@ -122,6 +125,9 @@ describe("sending merchant verification mail (PostgreSQL)", () => {
     expect(provider.mock.calls[0]![0]).toBe("https://api.resend.com/emails");
     expect(sent[0]).toMatchObject({ to: user.email, subject: "CelebrateDeal｜請驗證你的 Email" });
     const token = linkToken(sent[0]!.text);
+    // The link binds the address through its MAC only; it never carries it.
+    expect(token).not.toContain(user.email.split("@")[0]!);
+    expect(Buffer.from(token.split(".")[1]!, "base64url").toString("utf8")).not.toContain(user.email);
     const audit = await getDb().auditLog.findFirstOrThrow({ where: { targetId: user.id, action: "merchant_email_verification_sent" } });
     expect(audit.after).toMatchObject({ source: "resend" });
     expect(JSON.stringify(audit)).not.toContain(token.split(".")[2]!);
@@ -199,11 +205,28 @@ describe("other links the platform e-mailed also prove the mailbox (PostgreSQL)"
     expect((await getDb().user.findUniqueOrThrow({ where: { id: user.id } })).emailVerifiedAt).toBeInstanceOf(Date);
   });
 
-  it("decides vendor verification by the founding account", async () => {
+  it("decides vendor verification by the founding account while it is active and still a member", async () => {
     const { vendor, owner } = await createVendorWithOwner();
-    await expect(vendorOwnerEmailVerified(getDb(), vendor.id)).resolves.toBe(false);
+    await expect(vendorEmailVerificationState(getDb(), vendor.id)).resolves.toEqual({ verified: false, founder: { userId: owner.id, email: owner.email } });
     await getDb().user.update({ where: { id: owner.id }, data: { emailVerifiedAt: new Date() } });
     await expect(vendorOwnerEmailVerified(getDb(), vendor.id)).resolves.toBe(true);
     await expect(vendorOwnerEmailVerified(getDb(), "cuid_unknown_vendor")).resolves.toBe(false);
+  });
+
+  it.each([
+    ["suspended", { user: { status: "suspended" } }],
+    ["no longer a member", { membership: { status: "inactive" } }],
+  ] as const)("falls back to any active verified owner when the founder is %s", async (_label, change) => {
+    const { vendor, owner } = await createVendorWithOwner();
+    const coOwner = await createUser({ emailVerifiedAt: new Date() });
+    await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: coOwner.id, role: "owner", status: "active" } });
+    // While the founder is an active member, the co-owner's verification does not count.
+    await expect(vendorOwnerEmailVerified(getDb(), vendor.id)).resolves.toBe(false);
+    if ("user" in change) await getDb().user.update({ where: { id: owner.id }, data: change.user });
+    else await getDb().vendorMember.updateMany({ where: { vendorId: vendor.id, userId: owner.id }, data: change.membership });
+    await expect(vendorEmailVerificationState(getDb(), vendor.id)).resolves.toEqual({ verified: true, founder: null });
+    // Without a verified active owner the fallback stays closed.
+    await getDb().vendorMember.updateMany({ where: { vendorId: vendor.id, userId: coOwner.id }, data: { role: "support" } });
+    await expect(vendorOwnerEmailVerified(getDb(), vendor.id)).resolves.toBe(false);
   });
 });

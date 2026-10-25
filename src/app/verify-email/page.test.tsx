@@ -29,9 +29,9 @@ describe("/verify-email", () => {
     expect(html).toContain('action="/api/auth/email-verification/confirm"');
     expect(html).toContain('method="post"');
     expect(html).toContain(`name="token" value="${token}"`);
-    // The masked address only.
-    expect(html).toContain("o***@example.test");
-    expect(html).not.toContain("owner@example.test");
+    // Before the POST the page shows no address at all, not even masked.
+    expect(html).not.toContain("example.test");
+    expect(html).not.toContain("***@");
   });
 
   it("explains an invalid or expired link and offers login when signed out", async () => {

@@ -73,6 +73,7 @@ export const ProductionEnvSchema = z.object({
   // neither; see turnstileChecks.
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: OptionalSecret,
   TURNSTILE_SECRET_KEY: OptionalSecret,
+  TURNSTILE_ALLOWED_HOSTNAMES: OptionalSecret,
   // Unset or blank = invite (closed beta). Any other value is a typo and fails
   // preflight; the runtime also treats it as invite.
   REGISTRATION_MODE: z.preprocess(
@@ -162,7 +163,9 @@ function turnstileChecks(env: NodeJS.ProcessEnv): EnvCheck[] {
   const config = getTurnstileConfig(env);
   if (config.status === "enabled") return [{ key: "TURNSTILE_SECRET_KEY", status: "pass", message: "已設定 Turnstile 站點金鑰與伺服器金鑰；註冊與重新寄送驗證信會驗證真人" }];
   if (config.status === "misconfigured") {
-    return [{ key: "TURNSTILE_SECRET_KEY", status: "fail", message: "NEXT_PUBLIC_TURNSTILE_SITE_KEY 與 TURNSTILE_SECRET_KEY 必須同時設定；只設定一個時註冊與重新寄送驗證信會一律失敗" }];
+    return [{ key: "TURNSTILE_SECRET_KEY", status: "fail", message: config.reason === "test_key_on_deployment"
+      ? "Preview／Production 不可使用 Cloudflare 公開的 Turnstile 測試金鑰；請改用 Cloudflare 後台建立的 widget 金鑰"
+      : "NEXT_PUBLIC_TURNSTILE_SITE_KEY 與 TURNSTILE_SECRET_KEY 必須同時設定；只設定一個時註冊與重新寄送驗證信會一律失敗" }];
   }
   return [{ key: "TURNSTILE_SECRET_KEY", status: "warning", message: "未設定 Turnstile；註冊與重新寄送驗證信沒有機器人防護（邀請制可接受，開放公開註冊前必須設定）" }];
 }

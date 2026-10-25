@@ -33,6 +33,7 @@
   - 執行角色必須是表 owner 或可繼承 owner 權限。staging 已由主對話唯讀查證通過。
   - Production 需 owner 依 O-19 先跑前置查詢，回報「通過」後才能部署。
 - 失敗處理：`_prisma_migrations` 會留下 failed 紀錄，之後的 deploy 會被擋住。依 guards runbook §1.2 排除原因後，用 `migrate resolve --rolled-back` 再 deploy。不直接改 migration 檔。
+- **`20261025120000_user_email_verified_at` 必須先套用，再上程式**：每個已登入的請求都會讀 `User` 的全部欄位（包含新的 `emailVerifiedAt`），程式比 migration 先上線時，所有登入頁面都會出錯。staging：`staging-migrate.yml` 先跑 `mode = status`、再跑 `mode = deploy`，確認成功後才把 alias 切到新部署（O-18 流程）。Production：同樣先套用 migration（需先完成 O-4、O-19、O-20），之後才部署這版程式。這個欄位只新增、可為 NULL，舊程式在已套用 migration 的資料庫上照常運作，所以「先 migration、後程式」永遠安全。
 
 ### 排程 workflow 的觀察與暫停
 
@@ -78,6 +79,12 @@
 - 工程除錯只用合成資料或去識別化樣本。不索取客戶密碼、金流後台截圖。
 - 租戶隔離現況：應用層為主（F-026）。RLS 為縱深防禦，B1 唯讀查證 `anon`、`authenticated` 無 grant，非封測阻擋。
 - 若發現跨租戶外洩，直接視為 S0（見 (d)）。
+
+### 商家 Email 驗證的人工處理
+
+- 未驗證 Email 的商家不能做新的「不需發布專案就公開」名單型網站發布。決定權在商家的**創辦帳號**（Email 等於商家 Email、狀態 active、仍是該商家 active 成員的帳號）；創辦帳號停權或已離開商家時，改由「任一 active owner 已驗證」決定。
+- 創辦人收不到驗證信（被擋信、信箱打錯字以外的情況）時的人工處理：由創辦人本人或平台管理員在登入頁按「忘記密碼」，輸入創辦帳號的 Email 送出重設信。創辦人完成密碼重設後，帳號即視為已驗證（重設信也只寄到該信箱）。平台管理員不得代為開信或代設密碼，也不得直接改資料庫的 `emailVerifiedAt`。
+- 驗證信每個收件地址每小時最多 3 封（含註冊時那封）；客戶回報「一直收不到」時先請對方看垃圾郵件匣並等一小時，再走上面的密碼重設。
 
 ## (d) 告警與回報
 

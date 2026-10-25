@@ -115,7 +115,7 @@ export async function revokeVendorMemberInvitation(db: Db, input: { vendorId: st
 
 export type AcceptVendorMemberInvitationResult =
   | { ok: true; vendorId: string; userId: string; membershipId: string; createdAccount: boolean; role: string }
-  | { ok: false; reason: "invalid" | "login_required" | "wrong_account" | "account_exists" | "last_owner" };
+  | { ok: false; reason: "invalid" | "login_required" | "wrong_account" | "account_exists" | "last_owner" | "retry" };
 
 class AcceptAbort extends Error {
   constructor(readonly reason: Exclude<AcceptVendorMemberInvitationResult, { ok: true }>["reason"]) {
@@ -221,9 +221,11 @@ export async function acceptVendorMemberInvitation(
     if (error instanceof AcceptAbort) return { ok: false, reason: error.reason };
     if (typeof error === "object" && error !== null && "code" in error) {
       // P2002: an account for the address appeared concurrently. P2034: a
-      // concurrent owner change or a second acceptance of the same token.
+      // concurrent change (owner, account, or a second acceptance of the same
+      // token) made the transaction retry-worthy; nothing was written, so the
+      // invitee may simply try again (a used token then reports invalid).
       if (error.code === "P2002") return { ok: false, reason: "account_exists" };
-      if (error.code === "P2034") return { ok: false, reason: "invalid" };
+      if (error.code === "P2034") return { ok: false, reason: "retry" };
     }
     throw error;
   }
