@@ -66,24 +66,24 @@ enum ConsultationBookingStatus {
 }
 
 model Vendor {
-  id           String   @id @default(cuid())
-  name         String
-  slug         String   @unique
-  email        String   @unique
-  passwordHash String
-  logoUrl      String?
-  primaryColor String   @default("#2563eb")
-  ctaColor     String   @default("#f97316")
-  timezone     String   @default("Asia/Taipei")
-  supportEmail String?
-  senderName   String?
-  contactUrl   String?
+  id                    String   @id @default(cuid())
+  name                  String
+  slug                  String   @unique
+  email                 String   @unique
+  passwordHash          String
+  logoUrl               String?
+  primaryColor          String   @default("#2563eb")
+  ctaColor              String   @default("#f97316")
+  timezone              String   @default("Asia/Taipei")
+  supportEmail          String?
+  senderName            String?
+  contactUrl            String?
   /// 只控制商家後台可見模組；停用不會刪除既有業務資料。
   enabledFeatureModules String[] @default(["funnel_builder", "live_webinar", "affiliate_program", "tax_remuneration", "analytics_advanced"])
   /// 封測期間預設關閉、只能由平台管理員逐商家開啟的模組（F-001／F-002）；商家不能自行寫入。
   betaFeatureGrants     String[] @default([])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   members                          VendorMember[]
   memberInvitations                VendorMemberInvitation[]
@@ -121,7 +121,7 @@ model Vendor {
   affiliateCommissions             AffiliateCommission[]
   affiliateCommissionLedgerEntries AffiliateCommissionLedgerEntry[]
   affiliatePayouts                 AffiliatePayout[]
-  affiliatePayoutPolicy           MerchantAffiliatePayoutPolicy?
+  affiliatePayoutPolicy            MerchantAffiliatePayoutPolicy?
   courseCommissionAllocations      CourseCommissionAllocation[]
   courseCommissionLedgerEntries    CourseCommissionLedgerEntry[]
   coursePayouts                    CoursePayout[]
@@ -137,8 +137,8 @@ model Vendor {
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
   paymentMethodReferences          PaymentMethodReference[]
-  paymentMethodSetupIntents         PaymentMethodSetupIntent[]
-  payUniLiveProbe                   PayUniLiveProbe?
+  paymentMethodSetupIntents        PaymentMethodSetupIntent[]
+  payUniLiveProbe                  PayUniLiveProbe?
   paymentTransactions              PaymentTransaction[]
   inventoryReservations            InventoryReservation[]
   refundRecords                    RefundRecord[]
@@ -180,7 +180,7 @@ model Vendor {
   livePrivateChatMessages          LivePrivateChatMessage[]
   liveNotificationRules            LiveNotificationRule[]
   emailSuppressions                EmailSuppression[]
-  lineRichMenuDraft                 LineRichMenuDraft?
+  lineRichMenuDraft                LineRichMenuDraft?
   lineOfficialAccount              LineOfficialAccount?
   lineUserIdentities               LineUserIdentity[]
   lineLoginStates                  LineLoginState[]
@@ -191,42 +191,46 @@ model Vendor {
   buyerSupportOrderGrants          BuyerSupportOrderGrant[]
   consultationEvents               ConsultationEvent[]
   consultationBookings             ConsultationBooking[]
-  studentPortalAccessTokens         StudentPortalAccessToken[]
-  courseLessons CourseLesson[]
-  courseLessonProgress CourseLessonProgress[]
+  studentPortalAccessTokens        StudentPortalAccessToken[]
+  courseLessons                    CourseLesson[]
+  courseLessonProgress             CourseLessonProgress[]
 
-  learnerNotificationPreferences LearnerNotificationPreference[]
-  learnerNotificationDeliveries LearnerNotificationDelivery[]
+  learnerNotificationPreferences   LearnerNotificationPreference[]
+  learnerNotificationDeliveries    LearnerNotificationDelivery[]
   learnerNotificationVerifications LearnerNotificationVerification[]
 
-  learnerNotificationSourceEvents LearnerNotificationSourceEvent[]
-  merchantAffiliatePolicies MerchantAffiliatePolicy[]
-  merchantAffiliatePolicyState MerchantAffiliatePolicyState?
-  merchantAffiliateCheckoutSnapshots MerchantAffiliateCheckoutSnapshot[]
+  learnerNotificationSourceEvents     LearnerNotificationSourceEvent[]
+  merchantAffiliatePolicies           MerchantAffiliatePolicy[]
+  merchantAffiliatePolicyState        MerchantAffiliatePolicyState?
+  merchantAffiliateCheckoutSnapshots  MerchantAffiliateCheckoutSnapshot[]
   merchantAffiliateCheckoutRecipients MerchantAffiliateCheckoutRecipient[]
-  merchantAffiliateCounters MerchantAffiliateSalesCounter[]
-  merchantAffiliateCalculations MerchantAffiliateCalculation[]
-  merchantAffiliateProductRates MerchantAffiliateProductRate[]
+  merchantAffiliateCounters           MerchantAffiliateSalesCounter[]
+  merchantAffiliateCalculations       MerchantAffiliateCalculation[]
+  merchantAffiliateProductRates       MerchantAffiliateProductRate[]
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  name         String
-  passwordHash String
-  platformRole String    @default("none")
-  status       String    @default("active")
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  passwordHash    String
+  platformRole    String    @default("none")
+  status          String    @default("active")
+  lastLoginAt     DateTime?
+  /// Set only after the platform e-mailed a link to `email` and it was opened
+  /// (merchant verification link, accepted member invitation or password
+  /// reset). NULL = not verified; existing accounts were not backfilled.
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   supportCaseEventsReviewed SupportCaseEvent[]     @relation("SupportCaseEventPlatformActor")
   supportRefundsReviewed    SupportRefundHandoff[] @relation("SupportRefundReviewedBy")
 
   memberships                  VendorMember[]
   sessions                     UserSession[]
-  sentMemberInvitations        VendorMemberInvitation[] @relation("VendorMemberInvitationInvitedBy")
-  acceptedMemberInvitations    VendorMemberInvitation[] @relation("VendorMemberInvitationAcceptedBy")
+  sentMemberInvitations        VendorMemberInvitation[]      @relation("VendorMemberInvitationInvitedBy")
+  acceptedMemberInvitations    VendorMemberInvitation[]      @relation("VendorMemberInvitationAcceptedBy")
   passwordResetTokens          PasswordResetToken[]
   mfaFactor                    UserMfaFactor?
   recoveryCodes                UserRecoveryCode[]
@@ -396,54 +400,54 @@ model VendorMemberInvitation {
 }
 
 model TrackingSetting {
-  id                  String   @id @default(cuid())
-  vendorId            String   @unique
-  facebookPixelId     String?
+  id                           String   @id @default(cuid())
+  vendorId                     String   @unique
+  facebookPixelId              String?
   facebookAccessTokenEncrypted String?
-  facebookTestEventCode String?
-  credentialRevision Int @default(0)
-  tiktokPixelId       String?
-  googleTagManagerId  String?
-  enablePageView      Boolean  @default(true)
-  enableLeadEvent     Boolean  @default(true)
-  enablePurchaseEvent Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  facebookTestEventCode        String?
+  credentialRevision           Int      @default(0)
+  tiktokPixelId                String?
+  googleTagManagerId           String?
+  enablePageView               Boolean  @default(true)
+  enableLeadEvent              Boolean  @default(true)
+  enablePurchaseEvent          Boolean  @default(true)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 }
 
 /// Four-event server outbox. Tokens and plaintext browser/customer context are never stored here.
 model TrackingDelivery {
-  id                    String   @id @default(cuid())
-  vendorId              String
-  orderId               String?
-  eventName             String   @default("Purchase")
-  formId                String?
-  submissionId          String?
-  analyticsEventId      String?
-  bookingId             String?
-  contextEncrypted      String?
-  eventId               String
-  credentialRevision    Int
-  pixelId               String
-  testEventCode         String?
-  status                String   @default("queued")
-  attemptCount          Int      @default(0)
-  nextAttemptAt         DateTime @default(now())
-  leaseToken            String?
-  leaseExpiresAt        DateTime?
-  acceptedAt            DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  vendorId           String
+  orderId            String?
+  eventName          String    @default("Purchase")
+  formId             String?
+  submissionId       String?
+  analyticsEventId   String?
+  bookingId          String?
+  contextEncrypted   String?
+  eventId            String
+  credentialRevision Int
+  pixelId            String
+  testEventCode      String?
+  status             String    @default("queued")
+  attemptCount       Int       @default(0)
+  nextAttemptAt      DateTime  @default(now())
+  leaseToken         String?
+  leaseExpiresAt     DateTime?
+  acceptedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  order CommerceOrder? @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
+  vendor Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order  CommerceOrder? @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
 
-  form RegistrationForm? @relation(fields: [vendorId, formId], references: [vendorId, id], onDelete: Cascade)
-  submission FormSubmission? @relation(fields: [formId, submissionId], references: [formId, id], onDelete: Cascade)
-  analyticsEvent AnalyticsEvent? @relation(fields: [vendorId, analyticsEventId], references: [vendorId, id], onDelete: Cascade)
-  booking ConsultationBooking? @relation(fields: [vendorId, bookingId], references: [vendorId, id], onDelete: Cascade)
+  form           RegistrationForm?    @relation(fields: [vendorId, formId], references: [vendorId, id], onDelete: Cascade)
+  submission     FormSubmission?      @relation(fields: [formId, submissionId], references: [formId, id], onDelete: Cascade)
+  analyticsEvent AnalyticsEvent?      @relation(fields: [vendorId, analyticsEventId], references: [vendorId, id], onDelete: Cascade)
+  booking        ConsultationBooking? @relation(fields: [vendorId, bookingId], references: [vendorId, id], onDelete: Cascade)
 
   @@unique([vendorId, eventId])
   @@index([status, nextAttemptAt])
@@ -504,18 +508,18 @@ model VideoArchiveState {
 /// A community belongs to a specific purchased course. Compound keys keep
 /// replies/reactions from referencing another tenant or course at the DB layer.
 model CourseCommunityPost {
-  id              String   @default(cuid())
+  id              String                    @default(cuid())
   vendorId        String
   productId       String
   customerKeyHash String
   authorName      String
-  revision        Int @default(0)
+  revision        Int                       @default(0)
   body            String
-  createdAt       DateTime @default(now())
+  createdAt       DateTime                  @default(now())
   hiddenAt        DateTime?
-  isPinned        Boolean @default(false)
-  isAnnouncement  Boolean @default(false)
-  product         Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  isPinned        Boolean                   @default(false)
+  isAnnouncement  Boolean                   @default(false)
+  product         Product                   @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
   replies         CourseCommunityReply[]
   reactions       CourseCommunityReaction[]
 
@@ -524,14 +528,14 @@ model CourseCommunityPost {
 }
 
 model CourseCommunityReply {
-  id              String   @default(cuid())
+  id              String              @default(cuid())
   vendorId        String
   productId       String
   postId          String
   customerKeyHash String
   authorName      String
   body            String
-  createdAt       DateTime @default(now())
+  createdAt       DateTime            @default(now())
   hiddenAt        DateTime?
   post            CourseCommunityPost @relation(fields: [vendorId, productId, postId], references: [vendorId, productId, id], onDelete: Cascade)
 
@@ -544,7 +548,7 @@ model CourseCommunityReaction {
   productId       String
   postId          String
   customerKeyHash String
-  createdAt       DateTime @default(now())
+  createdAt       DateTime            @default(now())
   post            CourseCommunityPost @relation(fields: [vendorId, productId, postId], references: [vendorId, productId, id], onDelete: Cascade)
 
   @@id([vendorId, productId, postId, customerKeyHash])
@@ -592,12 +596,20 @@ model Product {
   deliveryConfig              ProductDeliveryConfig?
   automationVoucherGrants     AutomationVoucherGrant[]
   upsellProduct               Product?                        @relation("ProductUpsell", fields: [vendorId, upsellProductId], references: [vendorId, id], onDelete: Restrict)
-  upsellForProducts            Product[]                       @relation("ProductUpsell")
-  downsellProduct              Product?                        @relation("ProductDownsell", fields: [vendorId, downsellProductId], references: [vendorId, id], onDelete: Restrict)
-  downsellForProducts           Product[]                       @relation("ProductDownsell")
+  upsellForProducts           Product[]                       @relation("ProductUpsell")
+  downsellProduct             Product?                        @relation("ProductDownsell", fields: [vendorId, downsellProductId], references: [vendorId, id], onDelete: Restrict)
+  downsellForProducts         Product[]                       @relation("ProductDownsell")
   salesProjectLinks           SalesProjectProduct[]
 
   merchantAffiliateRates MerchantAffiliateProductRate[]
+  courseLessons          CourseLesson[]
+  communityPosts         CourseCommunityPost[]
+  courseLessonProgress   CourseLessonProgress[]
+
+  learnerNotificationPreferences LearnerNotificationPreference[]
+
+  learnerNotificationSourceEvents LearnerNotificationSourceEvent[]
+
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
   @@index([vendorId, commerceDomain, isActive])
@@ -605,13 +617,6 @@ model Product {
   @@index([vendorId, upsellProductId])
   @@index([vendorId, downsellProductId])
   @@index([imageAssetId])
-  courseLessons CourseLesson[]
-  communityPosts CourseCommunityPost[]
-  courseLessonProgress CourseLessonProgress[]
-
-  learnerNotificationPreferences LearnerNotificationPreference[]
-
-  learnerNotificationSourceEvents LearnerNotificationSourceEvent[]
 }
 
 model RegistrationForm {
@@ -644,10 +649,10 @@ model RegistrationForm {
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
 
-  vendor               Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  heroImageAsset       ImageAsset?      @relation("RegistrationFormHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
-  backgroundImageAsset ImageAsset?      @relation("RegistrationFormBackgroundImageAsset", fields: [vendorId, backgroundImageAssetId], references: [vendorId, id], onDelete: Restrict)
-  promoVideo           Video?           @relation("RegistrationFormPromoVideo", fields: [vendorId, promoVideoId], references: [vendorId, id], onDelete: Restrict)
+  vendor               Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  heroImageAsset       ImageAsset?          @relation("RegistrationFormHeroImageAsset", fields: [vendorId, heroImageAssetId], references: [vendorId, id], onDelete: Restrict)
+  backgroundImageAsset ImageAsset?          @relation("RegistrationFormBackgroundImageAsset", fields: [vendorId, backgroundImageAssetId], references: [vendorId, id], onDelete: Restrict)
+  promoVideo           Video?               @relation("RegistrationFormPromoVideo", fields: [vendorId, promoVideoId], references: [vendorId, id], onDelete: Restrict)
   submissions          FormSubmission[]
   lives                Live[]
   landingPages         LandingPage[]        @relation("LandingPageDraftForm")
@@ -744,9 +749,9 @@ model Live {
   description                    String?
   scheduledAt                    DateTime
   status                         String                   @default("draft")
-  startedAt                 DateTime?
-  endedAt                   DateTime?
-  replayAvailableUntil      DateTime?
+  startedAt                      DateTime?
+  endedAt                        DateTime?
+  replayAvailableUntil           DateTime?
   heroImageUrl                   String?
   heroImageAssetId               String?
   accentCopy                     String?
@@ -799,8 +804,8 @@ model Live {
   interactionResponses       LiveInteractionResponse[]
   notificationRules          LiveNotificationRule[]
   mediaSessions              LiveMediaSession[]
-  landingPages               LandingPage[]        @relation("LandingPageDraftLive")
-  landingPageVersions        LandingPageVersion[] @relation("LandingPageVersionLive")
+  landingPages               LandingPage[]                   @relation("LandingPageDraftLive")
+  landingPageVersions        LandingPageVersion[]            @relation("LandingPageVersionLive")
 
   @@unique([vendorId, id])
   @@index([heroImageAssetId])
@@ -1310,17 +1315,18 @@ model Affiliate {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  vendor          Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor          Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   clicks          AffiliateClick[]
   commissions     AffiliateCommission[]
   payouts         AffiliatePayout[]
   portalAccess    AffiliatePortalAccess?
-  payeeProfile   AffiliatePayeeProfile?
+  payeeProfile    AffiliatePayeeProfile?
   teamMemberships TeamMembership[]
 
-  merchantCheckoutSnapshots MerchantAffiliateCheckoutSnapshot[]
+  merchantCheckoutSnapshots  MerchantAffiliateCheckoutSnapshot[]
   merchantCheckoutRecipients MerchantAffiliateCheckoutRecipient[]
-  merchantSalesCounter MerchantAffiliateSalesCounter?
+  merchantSalesCounter       MerchantAffiliateSalesCounter?
+
   @@unique([vendorId, id])
 }
 
@@ -1330,12 +1336,13 @@ model AffiliatePortalAccess {
   vendorId       String
   affiliateId    String
   vendorMemberId String
-  active         Boolean @default(true)
-  revision       Int @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  affiliate      Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Cascade)
+  active         Boolean      @default(true)
+  revision       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  affiliate      Affiliate    @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Cascade)
   member         VendorMember @relation(fields: [vendorId, vendorMemberId], references: [vendorId, id], onDelete: Cascade)
+
   @@id([vendorId, affiliateId])
   @@index([vendorId, vendorMemberId, active])
 }
@@ -1768,25 +1775,25 @@ model PayoutItem {
 }
 
 model PaymentAccount {
-  id                      String   @id @default(cuid())
+  id                      String    @id @default(cuid())
   vendorId                String
-  mode                    String   @default("byo")
+  mode                    String    @default("byo")
   providerName            String
   accountLabel            String
-  status                  String   @default("pending")
+  status                  String    @default("pending")
   apiKeyRef               String?
   merchantIdRef           String?
-  bankAccountLegacyName   String?  @map("bankAccountName")
-  bankCodeLegacy          String?  @map("bankCode")
-  bankAccountLegacyNumber String?  @map("bankAccountNumber")
+  bankAccountLegacyName   String?   @map("bankAccountName")
+  bankCodeLegacy          String?   @map("bankCode")
+  bankAccountLegacyNumber String?   @map("bankAccountNumber")
   bankAccountEncrypted    String?
   /// F-073: last merchant self-service change of the payout bank account.
   bankAccountChangedAt    DateTime?
   /// F-073: a `pending_verification` account may receive payouts only from this time on.
   payoutEligibleAt        DateTime?
-  riskHoldEnabled         Boolean  @default(false)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  riskHoldEnabled         Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
@@ -1824,24 +1831,24 @@ model PaymentMethodReference {
 /// Server-owned consent and callback binding for one payment method setup.
 /// The provider nonce is stored only as a digest; no card or provider form data belongs here.
 model PaymentMethodSetupIntent {
-  id            String   @id @default(cuid())
-  vendorId      String
-  providerName  String
-  scopeType     String
-  teamId        String?
-  membershipId  String?
-  nonceHash     String
-  consentActorId String
-  consentVersion String
-  consentedAt   DateTime
-  status        String   @default("pending")
-  expiresAt     DateTime
-  consumedAt    DateTime?
+  id              String    @id @default(cuid())
+  vendorId        String
+  providerName    String
+  scopeType       String
+  teamId          String?
+  membershipId    String?
+  nonceHash       String
+  consentActorId  String
+  consentVersion  String
+  consentedAt     DateTime
+  status          String    @default("pending")
+  expiresAt       DateTime
+  consumedAt      DateTime?
   providerEventId String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor       Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   consentActor VendorMember @relation(fields: [vendorId, consentActorId], references: [vendorId, id], onDelete: Restrict)
 
   @@index([vendorId, status, expiresAt])
@@ -1850,25 +1857,25 @@ model PaymentMethodSetupIntent {
 /// One explicitly consented, one-time production-gateway verification on an
 /// isolated Preview tenant. The unique vendor key prevents another live run.
 model PayUniLiveProbe {
-  id                       String   @id @default(cuid())
-  vendorId                 String   @unique
-  setupIntentId            String   @unique
+  id                       String    @id @default(cuid())
+  vendorId                 String    @unique
+  setupIntentId            String    @unique
   paymentMethodReferenceId String?
-  secondOrderNumber        String   @unique
+  secondOrderNumber        String    @unique
   consentActorId           String
   consentVersion           String
   consentText              String
   consentedAt              DateTime
-  firstAmountCents         Int      @default(100)
-  secondAmountCents        Int      @default(100)
-  status                   String   @default("awaiting_setup")
+  firstAmountCents         Int       @default(100)
+  secondAmountCents        Int       @default(100)
+  status                   String    @default("awaiting_setup")
   dueAt                    DateTime?
   attemptedAt              DateTime?
   completedAt              DateTime?
   providerTradeNo          String?
   failureCode              String?
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
 
@@ -1890,26 +1897,26 @@ enum PaymentTransactionPurpose {
 }
 
 model PaymentTransaction {
-  id                     String    @id @default(cuid())
+  id                     String                    @id @default(cuid())
   vendorId               String
   purpose                PaymentTransactionPurpose @default(unclassified)
   providerName           String
   providerTradeNo        String?
   orderNumber            String?
-  paymentMode            String    @default("platform")
-  grossAmountCents       Int       @default(0)
-  gatewayFeeCents        Int       @default(0)
-  platformFeeCents       Int       @default(0)
-  netAmountCents         Int       @default(0)
-  currency               String    @default("TWD")
-  status                 String    @default("paid")
-  refundedAmountCents    Int       @default(0)
+  paymentMode            String                    @default("platform")
+  grossAmountCents       Int                       @default(0)
+  gatewayFeeCents        Int                       @default(0)
+  platformFeeCents       Int                       @default(0)
+  netAmountCents         Int                       @default(0)
+  currency               String                    @default("TWD")
+  status                 String                    @default("paid")
+  refundedAmountCents    Int                       @default(0)
   refundReason           String?
   refundedAt             DateTime?
-  occurredAt             DateTime  @default(now())
+  occurredAt             DateTime                  @default(now())
   metadata               Json?
   checkoutIdempotencyKey String?
-  createdAt              DateTime  @default(now())
+  createdAt              DateTime                  @default(now())
 
   vendor                      Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   refunds                     RefundRecord[]
@@ -1922,6 +1929,7 @@ model PaymentTransaction {
   supportRefundHandoffs       SupportRefundHandoff[]
 
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
+
   @@unique([vendorId, id])
   @@unique([vendorId, checkoutIdempotencyKey])
   /// F-050: PayUni callbacks resolve the tenant by provider order number.
@@ -1934,64 +1942,65 @@ model PaymentTransaction {
 /// Canonical, tenant-owned sales order. Buyer and shipping plaintext never
 /// belong in this model; only encrypted envelopes and safe display masks do.
 model CommerceOrder {
-  id                          String              @id @default(cuid())
-  vendorId                    String
-  automationCustomerKeyHash   String?
-  projectId                   String?
-  salesProject                SalesProject?       @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
-  orderNumber                 String
-  checkoutIdempotencyKey      String
-  checkoutIdentityHash        String
-  primaryPaymentTransactionId String?
+  id                              String              @id @default(cuid())
+  vendorId                        String
+  automationCustomerKeyHash       String?
+  projectId                       String?
+  salesProject                    SalesProject?       @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)
+  orderNumber                     String
+  checkoutIdempotencyKey          String
+  checkoutIdentityHash            String
+  primaryPaymentTransactionId     String?
   /// Server-owned marker for non-charging test checkout evidence.
-  isTestOrder                Boolean             @default(false)
-  status                      CommerceOrderStatus @default(pending_payment)
-  currency                    String              @default("TWD")
-  subtotalAmountCents         Int
-  totalAmountCents            Int
-  paidAmountCents             Int                 @default(0)
-  refundedAmountCents         Int                 @default(0)
-  buyerEncryptedEnvelope      String
+  isTestOrder                     Boolean             @default(false)
+  status                          CommerceOrderStatus @default(pending_payment)
+  currency                        String              @default("TWD")
+  subtotalAmountCents             Int
+  totalAmountCents                Int
+  paidAmountCents                 Int                 @default(0)
+  refundedAmountCents             Int                 @default(0)
+  buyerEncryptedEnvelope          String
   /// 原始 browser context 在 checkout 捕捉，以 vendor/order 綁定加密。
-  trackingContextEncrypted String?
-  buyerMaskedName             String
-  buyerMaskedEmail            String
-  buyerMaskedPhone            String?
-  shippingEncryptedEnvelope   String?
-  shippingMaskedSummary       String?
+  trackingContextEncrypted        String?
+  buyerMaskedName                 String
+  buyerMaskedEmail                String
+  buyerMaskedPhone                String?
+  shippingEncryptedEnvelope       String?
+  shippingMaskedSummary           String?
   invoiceType                     String?
   invoiceBuyerDisplay             String?
   invoiceRequestEncryptedEnvelope String?
-  paidAt                      DateTime?
-  failedAt                    DateTime?
-  refundedAt                  DateTime?
-  createdAt                   DateTime            @default(now())
-  updatedAt                   DateTime            @updatedAt
+  paidAt                          DateTime?
+  failedAt                        DateTime?
+  refundedAt                      DateTime?
+  createdAt                       DateTime            @default(now())
+  updatedAt                       DateTime            @updatedAt
 
-  vendor                    Vendor                              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  primaryPaymentTransaction PaymentTransaction?                 @relation("CommerceOrderPrimaryPayment", fields: [vendorId, primaryPaymentTransactionId], references: [vendorId, id], onDelete: Restrict)
-  items                     CommerceOrderItem[]
-  events                    CommerceOrderEvent[]
-  refunds                   CommerceOrderRefund[]
-  supportCases              SupportCase[]
-  supportRefundHandoffs     SupportRefundHandoff[]
-  buyerSupportOrderGrants   BuyerSupportOrderGrant[]
-  deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
-  electronicInvoice         ElectronicInvoice?
-  postPurchaseCreditsIssued PostPurchaseCredit[] @relation("PostPurchaseCreditSource")
-  postPurchaseCreditReceived PostPurchaseCredit? @relation("PostPurchaseCreditTarget")
-  trackingDeliveries        TrackingDelivery[]
+  vendor                     Vendor                              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  primaryPaymentTransaction  PaymentTransaction?                 @relation("CommerceOrderPrimaryPayment", fields: [vendorId, primaryPaymentTransactionId], references: [vendorId, id], onDelete: Restrict)
+  items                      CommerceOrderItem[]
+  events                     CommerceOrderEvent[]
+  refunds                    CommerceOrderRefund[]
+  supportCases               SupportCase[]
+  supportRefundHandoffs      SupportRefundHandoff[]
+  buyerSupportOrderGrants    BuyerSupportOrderGrant[]
+  deliverySnapshots          CommerceOrderItemDeliverySnapshot[]
+  electronicInvoice          ElectronicInvoice?
+  postPurchaseCreditsIssued  PostPurchaseCredit[]                @relation("PostPurchaseCreditSource")
+  postPurchaseCreditReceived PostPurchaseCredit?                 @relation("PostPurchaseCreditTarget")
+  trackingDeliveries         TrackingDelivery[]
 
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
+
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
   @@unique([vendorId, checkoutIdempotencyKey])
   @@unique([vendorId, primaryPaymentTransactionId])
+  @@unique([vendorId, primaryPaymentTransactionId, id])
   @@index([vendorId, status, createdAt])
   @@index([vendorId, projectId, status, createdAt])
   @@index([vendorId, isTestOrder, status, createdAt])
   @@index([vendorId, paidAt])
-  @@unique([vendorId, primaryPaymentTransactionId, id])
 }
 
 /// Immutable commercial terms captured at purchase time. Product fields remain
@@ -2067,11 +2076,11 @@ model CommerceOrderRefund {
   occurredAt            DateTime
   createdAt             DateTime                  @default(now())
 
-  vendor              Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  order               CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
-  paymentTransaction  PaymentTransaction?          @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
-  refundRecord        RefundRecord?                @relation("CommerceOrderRefundRecord", fields: [vendorId, refundRecordId], references: [vendorId, id], onDelete: Restrict)
-  supportHandoff      SupportRefundHandoff?        @relation("SupportRefundCompletion")
+  vendor                     Vendor                       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order                      CommerceOrder                @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
+  paymentTransaction         PaymentTransaction?          @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict)
+  refundRecord               RefundRecord?                @relation("CommerceOrderRefundRecord", fields: [vendorId, refundRecordId], references: [vendorId, id], onDelete: Restrict)
+  supportHandoff             SupportRefundHandoff?        @relation("SupportRefundCompletion")
   supportHandoffLinks        SupportRefundHandoffRefund[] @relation("CommerceRefundHandoffLinks")
   electronicInvoiceAllowance ElectronicInvoiceAllowance?
 
@@ -2145,6 +2154,7 @@ model ElectronicInvoiceAllowance {
   @@unique([vendorId, allowanceNumber])
   @@index([vendorId, electronicInvoiceId, issuedAt])
 }
+
 enum SupportCaseStatus {
   open
   in_progress
@@ -2279,10 +2289,10 @@ model BuyerSupportOrderGrant {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  vendor       Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  order        CommerceOrder      @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
-  casesCreated SupportCase[]      @relation("SupportCaseCreatedByBuyer")
-  events       SupportCaseEvent[] @relation("SupportCaseEventBuyerActor")
+  vendor              Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order               CommerceOrder        @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
+  casesCreated        SupportCase[]        @relation("SupportCaseCreatedByBuyer")
+  events              SupportCaseEvent[]   @relation("SupportCaseEventBuyerActor")
   postPurchaseCredits PostPurchaseCredit[]
 
   @@unique([vendorId, orderId])
@@ -2299,7 +2309,7 @@ model BuyerSupportOrderGrant {
 /// Usable only within 24h of the source's paidAt; when the target is paid the
 /// credit is superseded and the source's delivery is revoked (replace).
 model PostPurchaseCredit {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   vendorId            String
   sourceOrderId       String
   targetOrderId       String
@@ -2312,22 +2322,22 @@ model PostPurchaseCredit {
   offerDiscountCents  Int
   targetPriceCents    Int
   checkoutAmountCents Int
-  createdAt           DateTime @default(now())
+  createdAt           DateTime  @default(now())
   invalidatedAt       DateTime?
   releasedAt          DateTime?
   supersededAt        DateTime?
 
-  sourceOrder CommerceOrder @relation("PostPurchaseCreditSource", fields: [vendorId, sourceOrderId], references: [vendorId, id], onDelete: Restrict)
-  targetOrder CommerceOrder @relation("PostPurchaseCreditTarget", fields: [vendorId, targetOrderId], references: [vendorId, id], onDelete: Restrict)
-  buyerGrant BuyerSupportOrderGrant @relation(fields: [vendorId, sourceOrderId, buyerGrantId], references: [vendorId, orderId, id], onDelete: Restrict)
+  sourceOrder CommerceOrder          @relation("PostPurchaseCreditSource", fields: [vendorId, sourceOrderId], references: [vendorId, id], onDelete: Restrict)
+  targetOrder CommerceOrder          @relation("PostPurchaseCreditTarget", fields: [vendorId, targetOrderId], references: [vendorId, id], onDelete: Restrict)
+  buyerGrant  BuyerSupportOrderGrant @relation(fields: [vendorId, sourceOrderId, buyerGrantId], references: [vendorId, orderId, id], onDelete: Restrict)
 
   @@unique([vendorId, id])
+  @@unique([vendorId, targetOrderId])
   // Migration 20261017120000_post_purchase_credit_release also adds the
   // partial unique index "PostPurchaseCredit_vendorId_sourceOrderId_active_key"
   // on (vendorId, sourceOrderId) WHERE "releasedAt" IS NULL, which Prisma
   // cannot model: at most one unreleased credit per source order.
   @@index([vendorId, sourceOrderId])
-  @@unique([vendorId, targetOrderId])
 }
 
 /// Merchant-to-finance refund request. It never represents a provider refund;
@@ -2666,17 +2676,18 @@ model AffiliateCommission {
 
   /// Legacy flat commissions leave these fields null; new rows bind one
   /// checkout, immutable calculation and the same tenant's beneficiary.
-  merchantCheckoutId String?
+  merchantCheckoutId    String?
   merchantCalculationId String?
-  merchantRecipientId String?
-  merchantLevel Int?
-  merchantCalculation MerchantAffiliateCalculation? @relation(fields: [vendorId, merchantCheckoutId, merchantCalculationId], references: [vendorId, checkoutId, id], onDelete: Restrict)
-  merchantRecipient MerchantAffiliateCheckoutRecipient? @relation(fields: [vendorId, merchantCheckoutId, merchantRecipientId, affiliateId], references: [vendorId, checkoutId, id, affiliateId], onDelete: Restrict)
+  merchantRecipientId   String?
+  merchantLevel         Int?
+  merchantCalculation   MerchantAffiliateCalculation?       @relation(fields: [vendorId, merchantCheckoutId, merchantCalculationId], references: [vendorId, checkoutId, id], onDelete: Restrict)
+  merchantRecipient     MerchantAffiliateCheckoutRecipient? @relation(fields: [vendorId, merchantCheckoutId, merchantRecipientId, affiliateId], references: [vendorId, checkoutId, id, affiliateId], onDelete: Restrict)
+
   @@unique([vendorId, id])
   @@unique([vendorId, deduplicationKey])
+  @@unique([vendorId, merchantCalculationId, affiliateId])
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
-  @@unique([vendorId, merchantCalculationId, affiliateId])
 }
 
 /// Immutable accounting entries. Operational commission status remains separate
@@ -2792,7 +2803,7 @@ model AffiliatePayout {
   monthKey                String
   commissionAmountCents   Int       @default(0)
   adjustmentAmountCents   Int       @default(0)
-  heldAmountCents       Int @default(0)
+  heldAmountCents         Int       @default(0)
   finalAmountCents        Int       @default(0)
   /// Human-entered sanitized transfer/provider reference required before paid.
   outcomeReference        String?
@@ -2806,15 +2817,15 @@ model AffiliatePayout {
   payoutItemId            String?
   paidAt                  DateTime?
   /// Exact private exported snapshot and actual reported net; null is legacy.
-  remunerationSnapshotId String?
-  paidNetAmountCents Int?
+  remunerationSnapshotId  String?
+  paidNetAmountCents      Int?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
-  vendor    Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
-  remunerationSnapshots AffiliateRemunerationSnapshot[]
-  paidRemunerationSnapshot AffiliateRemunerationSnapshot? @relation("PaidAffiliateRemuneration", fields: [vendorId, affiliateId, id, remunerationSnapshotId], references: [vendorId, affiliateId, payoutId, id], onDelete: Restrict)
+  vendor                   Vendor                          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  affiliate                Affiliate                       @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  remunerationSnapshots    AffiliateRemunerationSnapshot[]
+  paidRemunerationSnapshot AffiliateRemunerationSnapshot?  @relation("PaidAffiliateRemuneration", fields: [vendorId, affiliateId, id, remunerationSnapshotId], references: [vendorId, affiliateId, payoutId, id], onDelete: Restrict)
 
   @@unique([vendorId, affiliateId, id])
   @@unique([vendorId, affiliateId, monthKey])
@@ -2825,56 +2836,58 @@ model AffiliatePayout {
 /// Private merchant payee data. Every edit invalidates classification approval;
 /// approval belongs to an exact revision, never a browser-declared tax status.
 model AffiliatePayeeProfile {
-  vendorId String
-  affiliateId String
-  revision Int @default(0)
-  bankEncrypted String
+  vendorId             String
+  affiliateId          String
+  revision             Int       @default(0)
+  bankEncrypted        String
   taxIdentityEncrypted String
-  recipientType String
-  nhiTreatment String
-  exemptionReference String?
-  invoiceReference String?
-  approvedRevision Int?
-  approvedByUserId String?
-  approvedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  recipientType        String
+  nhiTreatment         String
+  exemptionReference   String?
+  invoiceReference     String?
+  approvedRevision     Int?
+  approvedByUserId     String?
+  approvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  affiliate            Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+
   @@id([vendorId, affiliateId])
 }
 
 /// A signed quote snapshots the exact payable/profile/policy revision. A new
 /// refund or adjustment requires a new revision and signature before export.
 model AffiliateRemunerationSnapshot {
-  id String @id @default(cuid())
-  vendorId String
-  affiliateId String
-  payoutId String
-  revision Int
-  profileRevision Int
-  ruleVersion String
-  ledgerDigest String?
-  payoutPolicyRevision Int?
-  grossAmountCents Int
-  withholdingTaxCents Int
+  id                       String                       @id @default(cuid())
+  vendorId                 String
+  affiliateId              String
+  payoutId                 String
+  revision                 Int
+  profileRevision          Int
+  ruleVersion              String
+  ledgerDigest             String?
+  payoutPolicyRevision     Int?
+  grossAmountCents         Int
+  withholdingTaxCents      Int
   nhiSupplementaryTaxCents Int
-  bankFeeCents Int
-  netPayoutAmountCents Int
-  bankEncrypted String
-  taxIdentityEncrypted String
-  recipientType String
-  nhiTreatment String
-  exemptionReference String?
-  invoiceReference String?
-  status String @default("quoted")
-  signedByUserId String?
-  signedAt DateTime?
-  invalidatedAt DateTime?
-  exportedAt DateTime?
-  createdAt DateTime @default(now())
-  payout AffiliatePayout @relation(fields: [vendorId, affiliateId, payoutId], references: [vendorId, affiliateId, id], onDelete: Restrict)
-  exportReceipt AffiliateRemunerationExport?
-  paidPayouts AffiliatePayout[] @relation("PaidAffiliateRemuneration")
+  bankFeeCents             Int
+  netPayoutAmountCents     Int
+  bankEncrypted            String
+  taxIdentityEncrypted     String
+  recipientType            String
+  nhiTreatment             String
+  exemptionReference       String?
+  invoiceReference         String?
+  status                   String                       @default("quoted")
+  signedByUserId           String?
+  signedAt                 DateTime?
+  invalidatedAt            DateTime?
+  exportedAt               DateTime?
+  createdAt                DateTime                     @default(now())
+  payout                   AffiliatePayout              @relation(fields: [vendorId, affiliateId, payoutId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+  exportReceipt            AffiliateRemunerationExport?
+  paidPayouts              AffiliatePayout[]            @relation("PaidAffiliateRemuneration")
+
   @@unique([vendorId, affiliateId, payoutId, id])
   @@unique([vendorId, affiliateId, id])
   @@unique([vendorId, payoutId, revision])
@@ -2884,12 +2897,13 @@ model AffiliateRemunerationSnapshot {
 /// One immutable private export receipt per exact signed snapshot. Downloading
 /// a file records no transfer and never marks the merchant payout as paid.
 model AffiliateRemunerationExport {
-  snapshotId String @id
-  vendorId String
-  affiliateId String
+  snapshotId       String                        @id
+  vendorId         String
+  affiliateId      String
   exportedByUserId String
-  createdAt DateTime @default(now())
-  snapshot AffiliateRemunerationSnapshot @relation(fields: [vendorId, affiliateId, snapshotId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+  createdAt        DateTime                      @default(now())
+  snapshot         AffiliateRemunerationSnapshot @relation(fields: [vendorId, affiliateId, snapshotId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+
   @@unique([vendorId, affiliateId, snapshotId])
   @@index([vendorId, createdAt])
 }
@@ -2897,14 +2911,14 @@ model AffiliateRemunerationExport {
 /// Explicit merchant-selected fee; missing/disabled configuration blocks
 /// quotes and exports, with no guessed fee fallback.
 model MerchantAffiliatePayoutPolicy {
-  vendorId String @id
-  revision Int @default(0)
-  bankFeeCents Int
-  enabled Boolean @default(false)
+  vendorId        String   @id
+  revision        Int      @default(0)
+  bankFeeCents    Int
+  enabled         Boolean  @default(false)
   updatedByUserId String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  vendor          Vendor   @relation(fields: [vendorId], references: [id], onDelete: Restrict)
 }
 
 /// Merchant-owned course revenue-share snapshot. This is deliberately separate
@@ -3105,6 +3119,7 @@ model TeamMembership {
   paymentMethodReferences              PaymentMethodReference[]
 
   merchantAffiliateRecipients MerchantAffiliateCheckoutRecipient[]
+
   @@unique([teamId, vendorMemberId])
   @@unique([vendorId, affiliateId])
   @@unique([teamId, id])
@@ -3966,7 +3981,7 @@ model LandingPage {
   vendorId           String
   projectId          String
   name               String
-  slug               String   @unique
+  slug               String            @unique
   draftContent       Json
   draftFormId        String?
   draftLiveId        String?
@@ -3981,13 +3996,13 @@ model LandingPage {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  vendor           Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  project          SalesProject        @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
-  draftForm        RegistrationForm?   @relation("LandingPageDraftForm", fields: [vendorId, draftFormId], references: [vendorId, id], onDelete: Restrict)
-  draftLive        Live?               @relation("LandingPageDraftLive", fields: [vendorId, draftLiveId], references: [vendorId, id], onDelete: Restrict)
-  versions         LandingPageVersion[] @relation("LandingPageVersions")
-  publishedVersion LandingPageVersion? @relation("LandingPagePublishedVersion", fields: [vendorId, id, publishedVersionId], references: [vendorId, pageId, id], onDelete: Restrict)
-  funnelVisits     FunnelVisit[]
+  vendor            Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project           SalesProject         @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)
+  draftForm         RegistrationForm?    @relation("LandingPageDraftForm", fields: [vendorId, draftFormId], references: [vendorId, id], onDelete: Restrict)
+  draftLive         Live?                @relation("LandingPageDraftLive", fields: [vendorId, draftLiveId], references: [vendorId, id], onDelete: Restrict)
+  versions          LandingPageVersion[] @relation("LandingPageVersions")
+  publishedVersion  LandingPageVersion?  @relation("LandingPagePublishedVersion", fields: [vendorId, id, publishedVersionId], references: [vendorId, pageId, id], onDelete: Restrict)
+  funnelVisits      FunnelVisit[]
   funnelSubmissions FunnelSubmission[]
 
   @@unique([vendorId, id])
@@ -3998,15 +4013,15 @@ model LandingPage {
 }
 
 model FunnelVisit {
-  id           String   @id @default(cuid())
-  vendorId     String
-  pageId       String
-  stepId       String
+  id            String   @id @default(cuid())
+  vendorId      String
+  pageId        String
+  stepId        String
   logicalStepId String
-  visitorId    String
-  experimentId String?
-  arm          String?
-  createdAt    DateTime @default(now())
+  visitorId     String
+  experimentId  String?
+  arm           String?
+  createdAt     DateTime @default(now())
 
   vendor      Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   page        LandingPage        @relation(fields: [vendorId, pageId], references: [vendorId, id], onDelete: Restrict)
@@ -4099,20 +4114,19 @@ model StudentPortalAccessToken {
   @@index([vendorId, purpose, expiresAt])
 }
 
-
 /// Native curriculum belongs to exactly one vendor-qualified course product.
 model CourseLesson {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   vendorId        String
   productId       String
   chapterTitle    String
   title           String
   videoUrl        String?
-  durationSeconds Int      @default(0)
+  durationSeconds Int       @default(0)
   position        Int
   publishedAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   vendor   Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   product  Product                @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
@@ -4146,23 +4160,24 @@ model CourseLessonProgress {
 
 /// Preferences are scoped to the authenticated buyer and the purchased product.
 model LearnerNotificationPreference {
-  id String @id @default(cuid())
-  vendorId String
-  productId String
-  customerKeyHash String
-  channel String
-  enabled Boolean @default(false)
-  revision Int @default(1)
-  consentedAt DateTime?
+  id                           String                            @id @default(cuid())
+  vendorId                     String
+  productId                    String
+  customerKeyHash              String
+  channel                      String
+  enabled                      Boolean                           @default(false)
+  revision                     Int                               @default(1)
+  consentedAt                  DateTime?
   destinationEncryptedEnvelope String?
-  destinationKeyHash String?
-  destinationVerifiedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
-  deliveries LearnerNotificationDelivery[]
-  verifications LearnerNotificationVerification[]
+  destinationKeyHash           String?
+  destinationVerifiedAt        DateTime?
+  createdAt                    DateTime                          @default(now())
+  updatedAt                    DateTime                          @updatedAt
+  vendor                       Vendor                            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product                      Product                           @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  deliveries                   LearnerNotificationDelivery[]
+  verifications                LearnerNotificationVerification[]
+
   @@unique([vendorId, productId, id])
   @@unique([vendorId, customerKeyHash, productId, channel], map: "LearnerNotificationPreference_scope_channel_key")
   @@index([vendorId, productId, enabled], map: "LearnerNotificationPreference_product_enabled_idx")
@@ -4170,27 +4185,28 @@ model LearnerNotificationPreference {
 
 /// A durable event identity survives consent changes and provider response loss.
 model LearnerNotificationDelivery {
-  id String @id @default(cuid())
-  vendorId String
-  productId String
-  preferenceId String
-  event String
-  eventIdentity String
-  deduplicationKey String
-  consentRevision Int
-  payloadEncryptedEnvelope String
-  status String @default("queued")
-  attemptCount Int @default(0)
-  claimTokenHash String?
-  claimedAt DateTime?
-  nextAttemptAt DateTime? @default(now())
+  id                               String                        @id @default(cuid())
+  vendorId                         String
+  productId                        String
+  preferenceId                     String
+  event                            String
+  eventIdentity                    String
+  deduplicationKey                 String
+  consentRevision                  Int
+  payloadEncryptedEnvelope         String
+  status                           String                        @default("queued")
+  attemptCount                     Int                           @default(0)
+  claimTokenHash                   String?
+  claimedAt                        DateTime?
+  nextAttemptAt                    DateTime?                     @default(now())
   providerReceiptEncryptedEnvelope String?
-  lastErrorCode String?
-  dispatchedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  preference LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationDelivery_preference_fkey")
+  lastErrorCode                    String?
+  dispatchedAt                     DateTime?
+  createdAt                        DateTime                      @default(now())
+  updatedAt                        DateTime                      @updatedAt
+  vendor                           Vendor                        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  preference                       LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationDelivery_preference_fkey")
+
   @@unique([vendorId, id])
   @@unique([vendorId, deduplicationKey])
   @@index([status, nextAttemptAt])
@@ -4200,28 +4216,29 @@ model LearnerNotificationDelivery {
 
 /// Verification is bounded and attached to the same recipient/course consent revision.
 model LearnerNotificationVerification {
-  id String @id @default(cuid())
-  vendorId String
-  productId String
-  preferenceId String
-  consentRevision Int
-  tokenHash String @unique
-  destinationEncryptedEnvelope String
-  destinationKeyHash String
-  destinationRateKeyHash String?
-  deliveryTokenEncryptedEnvelope String?
-  deliveryStatus String @default("suppressed")
-  deliveryAttemptCount Int @default(0)
-  deliveryClaimTokenHash String?
-  deliveryNextAttemptAt DateTime?
+  id                               String                        @id @default(cuid())
+  vendorId                         String
+  productId                        String
+  preferenceId                     String
+  consentRevision                  Int
+  tokenHash                        String                        @unique
+  destinationEncryptedEnvelope     String
+  destinationKeyHash               String
+  destinationRateKeyHash           String?
+  deliveryTokenEncryptedEnvelope   String?
+  deliveryStatus                   String                        @default("suppressed")
+  deliveryAttemptCount             Int                           @default(0)
+  deliveryClaimTokenHash           String?
+  deliveryNextAttemptAt            DateTime?
   deliveryReceiptEncryptedEnvelope String?
-  deliveredAt DateTime?
-  attemptCount Int @default(0)
-  expiresAt DateTime
-  consumedAt DateTime?
-  createdAt DateTime @default(now())
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  preference LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationVerification_preference_fkey")
+  deliveredAt                      DateTime?
+  attemptCount                     Int                           @default(0)
+  expiresAt                        DateTime
+  consumedAt                       DateTime?
+  createdAt                        DateTime                      @default(now())
+  vendor                           Vendor                        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  preference                       LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationVerification_preference_fkey")
+
   @@index([vendorId, preferenceId, expiresAt], map: "LearnerNotificationVerification_scope_expiry_idx")
   @@index([vendorId, deliveryStatus, deliveryNextAttemptAt], map: "LearnerNotificationVerification_delivery_due_idx")
   @@index([vendorId, preferenceId, createdAt], map: "LearnerNotificationVerification_learner_window_idx")
@@ -4230,127 +4247,140 @@ model LearnerNotificationVerification {
 
 /// Domain facts commit atomically; bounded materialization resumes by preference ID.
 model LearnerNotificationSourceEvent {
- id String @id @default(cuid())
- vendorId String
- productId String
- event String
- eventIdentity String
- audienceCustomerKeyHash String?
- payloadEncryptedEnvelope String
- occurredAt DateTime
- availableAt DateTime @default(now())
- preferenceCursor String?
- completedAt DateTime?
- revision Int @default(1)
- failureCount Int @default(0)
- nextAttemptAt DateTime?
- lastErrorCode String?
- deadLetteredAt DateTime?
- createdAt DateTime @default(now())
- vendor Vendor @relation(fields:[vendorId],references:[id],onDelete:Cascade)
- product Product @relation(fields:[vendorId,productId],references:[vendorId,id],onDelete:Cascade)
- @@unique([vendorId,productId,event,eventIdentity],map:"LearnerNotificationSourceEvent_scope_key")
- @@index([vendorId,completedAt,createdAt,id],map:"LearnerNotificationSourceEvent_due_idx")
- @@index([vendorId,completedAt,availableAt,id],map:"LearnerNotificationSourceEvent_schedule_idx")
+  id                       String    @id @default(cuid())
+  vendorId                 String
+  productId                String
+  event                    String
+  eventIdentity            String
+  audienceCustomerKeyHash  String?
+  payloadEncryptedEnvelope String
+  occurredAt               DateTime
+  availableAt              DateTime  @default(now())
+  preferenceCursor         String?
+  completedAt              DateTime?
+  revision                 Int       @default(1)
+  failureCount             Int       @default(0)
+  nextAttemptAt            DateTime?
+  lastErrorCode            String?
+  deadLetteredAt           DateTime?
+  createdAt                DateTime  @default(now())
+  vendor                   Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product                  Product   @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, productId, event, eventIdentity], map: "LearnerNotificationSourceEvent_scope_key")
+  @@index([vendorId, completedAt, createdAt, id], map: "LearnerNotificationSourceEvent_due_idx")
+  @@index([vendorId, completedAt, availableAt, id], map: "LearnerNotificationSourceEvent_schedule_idx")
 }
 
 model MerchantAffiliatePolicy {
-  id String @id @default(cuid())
-  vendorId String
-  version Int
-  terms Json
-  createdAt DateTime @default(now())
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  activeStates MerchantAffiliatePolicyState[]
-  productRates MerchantAffiliateProductRate[]
+  id                String                              @id @default(cuid())
+  vendorId          String
+  version           Int
+  terms             Json
+  createdAt         DateTime                            @default(now())
+  vendor            Vendor                              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  activeStates      MerchantAffiliatePolicyState[]
+  productRates      MerchantAffiliateProductRate[]
   checkoutSnapshots MerchantAffiliateCheckoutSnapshot[]
+
   @@unique([vendorId, id])
   @@unique([vendorId, version])
 }
+
 model MerchantAffiliatePolicyState {
-  vendorId String @id
+  vendorId       String                   @id
   activePolicyId String?
-  revision Int @default(0)
-  updatedAt DateTime @updatedAt
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  activePolicy MerchantAffiliatePolicy? @relation(fields: [vendorId, activePolicyId], references: [vendorId, id], onDelete: Restrict)
+  revision       Int                      @default(0)
+  updatedAt      DateTime                 @updatedAt
+  vendor         Vendor                   @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  activePolicy   MerchantAffiliatePolicy? @relation(fields: [vendorId, activePolicyId], references: [vendorId, id], onDelete: Restrict)
 }
+
 model MerchantAffiliateProductRate {
-  vendorId String
-  policyId String
+  vendorId  String
+  policyId  String
   productId String
-  rateBps Int
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  policy MerchantAffiliatePolicy @relation(fields: [vendorId, policyId], references: [vendorId, id], onDelete: Restrict)
-  product Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+  rateBps   Int
+  vendor    Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  policy    MerchantAffiliatePolicy @relation(fields: [vendorId, policyId], references: [vendorId, id], onDelete: Restrict)
+  product   Product                 @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+
   @@id([policyId, productId])
   @@index([vendorId, productId])
 }
+
 /// Frozen in the same transaction as the canonical order and stock reservation.
 model MerchantAffiliateCheckoutSnapshot {
-  id String @id @default(cuid())
-  vendorId String
+  id                   String                               @id @default(cuid())
+  vendorId             String
   paymentTransactionId String
-  orderId String
-  policyId String?
-  fixedRateBps Int?
-  promoterAffiliateId String
-  currency String
-  grossAmountCents Int
-  lines Json
-  recipientTerms Json
-  createdAt DateTime @default(now())
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  payment PaymentTransaction @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict, map: "MerchantAffiliateCheckout_payment_fkey")
-  order CommerceOrder @relation(fields: [vendorId, paymentTransactionId, orderId], references: [vendorId, primaryPaymentTransactionId, id], onDelete: Restrict, map: "MerchantAffiliateCheckout_order_fkey")
-  policy MerchantAffiliatePolicy? @relation(fields: [vendorId, policyId], references: [vendorId, id], onDelete: Restrict)
-  promoter Affiliate @relation(fields: [vendorId, promoterAffiliateId], references: [vendorId, id], onDelete: Restrict)
-  recipients MerchantAffiliateCheckoutRecipient[]
-  calculation MerchantAffiliateCalculation?
+  orderId              String
+  policyId             String?
+  fixedRateBps         Int?
+  promoterAffiliateId  String
+  currency             String
+  grossAmountCents     Int
+  lines                Json
+  recipientTerms       Json
+  createdAt            DateTime                             @default(now())
+  vendor               Vendor                               @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  payment              PaymentTransaction                   @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict, map: "MerchantAffiliateCheckout_payment_fkey")
+  order                CommerceOrder                        @relation(fields: [vendorId, paymentTransactionId, orderId], references: [vendorId, primaryPaymentTransactionId, id], onDelete: Restrict, map: "MerchantAffiliateCheckout_order_fkey")
+  policy               MerchantAffiliatePolicy?             @relation(fields: [vendorId, policyId], references: [vendorId, id], onDelete: Restrict)
+  promoter             Affiliate                            @relation(fields: [vendorId, promoterAffiliateId], references: [vendorId, id], onDelete: Restrict)
+  recipients           MerchantAffiliateCheckoutRecipient[]
+  calculation          MerchantAffiliateCalculation?
+
   @@unique([vendorId, id])
   @@unique([vendorId, paymentTransactionId], map: "MerchantAffiliateCheckout_payment_key")
   @@unique([vendorId, orderId])
   @@unique([vendorId, paymentTransactionId, orderId], map: "MerchantAffiliateCheckout_payment_order_key")
 }
+
 model MerchantAffiliateCheckoutRecipient {
-  id String @id @default(cuid())
-  vendorId String
-  checkoutId String
-  affiliateId String
-  teamId String?
+  id               String                            @id @default(cuid())
+  vendorId         String
+  checkoutId       String
+  affiliateId      String
+  teamId           String?
   teamMembershipId String?
-  level Int
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  checkout MerchantAffiliateCheckoutSnapshot @relation(fields: [vendorId, checkoutId], references: [vendorId, id], onDelete: Restrict)
-  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
-  membership TeamMembership? @relation(fields: [vendorId, teamId, teamMembershipId], references: [vendorId, teamId, id], onDelete: Restrict)
-  commissions AffiliateCommission[]
+  level            Int
+  vendor           Vendor                            @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  checkout         MerchantAffiliateCheckoutSnapshot @relation(fields: [vendorId, checkoutId], references: [vendorId, id], onDelete: Restrict)
+  affiliate        Affiliate                         @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  membership       TeamMembership?                   @relation(fields: [vendorId, teamId, teamMembershipId], references: [vendorId, teamId, id], onDelete: Restrict)
+  commissions      AffiliateCommission[]
+
   @@unique([vendorId, checkoutId, level])
   @@unique([vendorId, checkoutId, affiliateId])
   @@unique([vendorId, checkoutId, id, affiliateId])
 }
+
 /// Only first successful payment increments this lifetime qualified counter.
 model MerchantAffiliateSalesCounter {
-  vendorId String
+  vendorId    String
   affiliateId String
-  quantity BigInt @default(0)
-  updatedAt DateTime @updatedAt
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  quantity    BigInt    @default(0)
+  updatedAt   DateTime  @updatedAt
+  vendor      Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  affiliate   Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+
   @@id([vendorId, affiliateId])
 }
+
 /// Includes zero-cent plans so replay never consumes tier quantity twice.
 model MerchantAffiliateCalculation {
-  id String @id @default(cuid())
-  vendorId String
-  checkoutId String
+  id                      String                            @id @default(cuid())
+  vendorId                String
+  checkoutId              String
   qualifiedQuantityBefore BigInt
-  qualifiedQuantityAfter BigInt
-  plan Json
-  createdAt DateTime @default(now())
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  checkout MerchantAffiliateCheckoutSnapshot @relation(fields: [vendorId, checkoutId], references: [vendorId, id], onDelete: Restrict)
-  commissions AffiliateCommission[]
+  qualifiedQuantityAfter  BigInt
+  plan                    Json
+  createdAt               DateTime                          @default(now())
+  vendor                  Vendor                            @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  checkout                MerchantAffiliateCheckoutSnapshot @relation(fields: [vendorId, checkoutId], references: [vendorId, id], onDelete: Restrict)
+  commissions             AffiliateCommission[]
+
   @@unique([vendorId, checkoutId])
   @@unique([vendorId, checkoutId, id])
 }
