@@ -3,20 +3,23 @@
  * and the partner portal. Pure module: safe for server guards, libraries and
  * client components alike.
  *
- * Back-office access is an allowlist. A `partner` membership (and any role
- * this list does not name) never becomes the current vendor context, so
- * every merchant guard, page, Server Action and API route that relies on the
- * session's vendor or member denies it by default. Partners use only the
- * partner portal, which authorizes by user and AffiliatePortalAccess.
+ * Only the `partner` role is kept out of the merchant back office. A partner
+ * membership never becomes the current vendor context, so every merchant
+ * guard, page, Server Action and API route that relies on the session's
+ * vendor or member denies it by default. Partners use only the partner
+ * portal, which authorizes by user and AffiliatePortalAccess.
+ *
+ * Every other role, including legacy or unknown ones, keeps the existing
+ * behaviour: it becomes the vendor context and each role-specific guard
+ * (manager, support, finance, owner) decides on its own. Roles stored in
+ * production have not been inventoried, so they are not locked out here.
  */
-export const VENDOR_BACKOFFICE_ROLES = ["owner", "admin", "accountant", "support"] as const;
-export type VendorBackofficeRole = (typeof VENDOR_BACKOFFICE_ROLES)[number];
-
 export const VENDOR_PARTNER_ROLE = "partner" as const;
 export const PARTNER_PORTAL_PATH = "/affiliate-portal";
 
-export function isVendorBackofficeRole(role: string | null | undefined): role is VendorBackofficeRole {
-  return typeof role === "string" && (VENDOR_BACKOFFICE_ROLES as readonly string[]).includes(role);
+/** Any membership role except `partner` may become the vendor context. */
+export function isVendorBackofficeRole(role: string | null | undefined): role is string {
+  return typeof role === "string" && !isVendorPartnerRole(role);
 }
 
 export function isVendorPartnerRole(role: string | null | undefined) {

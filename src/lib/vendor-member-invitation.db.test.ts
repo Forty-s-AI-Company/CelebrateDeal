@@ -129,6 +129,7 @@ afterEach(async () => {
   await db.auditLog.deleteMany({ where: { OR: [{ vendorId: { in: vendorIds } }, { actorId: { in: allUserIds } }] } });
   await db.affiliatePortalAccess.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.affiliate.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.video.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.vendorMemberInvitation.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.userPolicyConsent.deleteMany({ where: { userId: { in: allUserIds } } });
   await db.userSession.deleteMany({ where: { userId: { in: allUserIds } } });
@@ -466,6 +467,10 @@ describe("partner role (PostgreSQL)", () => {
     expect(session.vendorId).toBe(vendor.id);
     await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: null, member: null, partnerPortalOnly: true });
 
+    // A real video of this vendor, so the owner control below gets a 200.
+    const video = await getDb().video.create({ data: { vendorId: vendor.id, title: "Synthetic video", sourceType: "url", videoUrl: "https://example.test/synthetic.mp4", status: "ready" } });
+    const videoRequest = () => new Request(`https://app.example.test/api/media/videos/status?id=${video.id}`, { headers: { origin: "https://app.example.test", "x-celebratedeal-client": "web" } });
+
     // Every merchant guard, the back-office layout and representative routes refuse the partner.
     const refusals = {
       requireVendorContext: await outcome(() => requireVendorContext()),
@@ -478,7 +483,7 @@ describe("partner role (PostgreSQL)", () => {
       inviteAction: await outcome(() => createVendorMemberAction(inviteForm(`other-${randomUUID()}@example.test`, "admin"))),
       roleAction: await outcome(() => changeVendorMemberRoleAction((() => { const form = new FormData(); form.set("id", partnerMember!.id); form.set("role", "partner"); return form; })())),
       dashboardDetailsApi: await outcome(() => dashboardDetails(new Request("https://app.example.test/api/dashboard/details"))),
-      videoStatusApi: await outcome(() => videoStatus(new Request("https://app.example.test/api/media/videos/status?id=video-1", { headers: { origin: "https://app.example.test", "x-celebratedeal-client": "web" } }))),
+      videoStatusApi: await outcome(() => videoStatus(videoRequest())),
       remunerationExportApi: await outcome(() => exportRemuneration(new Request("https://app.example.test/api/affiliates/a/remuneration/s/export", { method: "POST" }), { params: Promise.resolve({ affiliateId: "a", snapshotId: "s" }) })),
     };
     expect(refusals).toEqual({
@@ -495,6 +500,12 @@ describe("partner role (PostgreSQL)", () => {
       videoStatusApi: "status:403",
       remunerationExportApi: "status:401",
     });
+    // Positive control: the same request succeeds for the vendor's owner, so the 403 is the partner role.
+    const partnerToken = state.token;
+    await signIn(owner.id, vendor.id);
+    expect(await outcome(() => videoStatus(videoRequest()))).toBe("status:200");
+    state.token = partnerToken;
+
     // Nothing was written by the refused actions.
     expect(await getDb().vendorMemberInvitation.count({ where: { vendorId: vendor.id, acceptedAt: null, revokedAt: null } })).toBe(0);
     expect(await membership(vendor.id, user.id)).toMatchObject({ role: "partner" });
@@ -509,13 +520,35 @@ describe("partner role (PostgreSQL)", () => {
     expect(portal).not.toContain('href="/dashboard"');
     expect(portal).toContain("登出");
 
-    // Deactivating the partner revokes the partner's session like any member's.
+    // Deactivating the partner revokes every session of the now membership-less
+    // account, including one that carries no vendor (an invitation sign-in).
+    const vendorlessSession = await getDb().userSession.create({ data: { userId: user.id, vendorId: null, tokenHash: createHash("sha256").update(randomUUID()).digest("hex"), expiresAt: new Date(Date.now() + 60 * 60_000) } });
     await signIn(owner.id, vendor.id);
     const deactivate = new FormData();
     deactivate.set("id", partnerMember!.id);
     deactivate.set("confirmation", user.email);
     await expect(deactivateVendorMemberAction(deactivate)).rejects.toThrow("updated=member_deactivated");
     expect(await getDb().userSession.findUniqueOrThrow({ where: { id: session.id } })).toMatchObject({ revokedAt: expect.any(Date) });
+    expect(await getDb().userSession.findUniqueOrThrow({ where: { id: vendorlessSession.id } })).toMatchObject({ revokedAt: expect.any(Date) });
+  });
+
+  it("keeps another tenant's sessions when the account still has an active membership there", async () => {
+    const a = await createVendor("revoke-a");
+    const b = await createVendor("revoke-b");
+    const person = await createUser("two-tenant-partner");
+    const partnerA = await getDb().vendorMember.create({ data: { vendorId: a.vendor.id, userId: person.id, role: "partner" } });
+    await getDb().vendorMember.create({ data: { vendorId: b.vendor.id, userId: person.id, role: "support" } });
+    const sessionFor = (vendorId: string | null) => getDb().userSession.create({ data: { userId: person.id, vendorId, tokenHash: createHash("sha256").update(randomUUID()).digest("hex"), expiresAt: new Date(Date.now() + 60 * 60_000) } });
+    const [inA, inB, none] = [await sessionFor(a.vendor.id), await sessionFor(b.vendor.id), await sessionFor(null)];
+
+    await signIn(a.owner.id, a.vendor.id);
+    const deactivate = new FormData();
+    deactivate.set("id", partnerA.id);
+    deactivate.set("confirmation", person.email);
+    await expect(deactivateVendorMemberAction(deactivate)).rejects.toThrow("updated=member_deactivated");
+
+    const revoked = async (id: string) => Boolean((await getDb().userSession.findUniqueOrThrow({ where: { id } })).revokedAt);
+    expect({ inA: await revoked(inA.id), inB: await revoked(inB.id), none: await revoked(none.id) }).toEqual({ inA: true, inB: false, none: false });
   });
 
   it("ranks partner below every staff role: downgrades reach it, nothing is raised from it", async () => {

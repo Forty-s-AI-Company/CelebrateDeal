@@ -258,8 +258,10 @@ describe("AppShell partner portal entry", () => {
     expect(portalLinks("support", true)).toEqual(["/support-cases", "/settings/security", "/affiliate-portal"]);
   });
 
-  it("never adds the portal for an unknown role or the platform administrator", () => {
-    expect(portalLinks("member", true)).toEqual([]);
+  it("adds only the portal for a legacy role with a grant, and nothing without a member or for the platform administrator", () => {
+    // Legacy roles keep their (empty) back-office navigation; the grant adds just the portal.
+    expect(portalLinks("member", false)).toEqual([]);
+    expect(portalLinks("member", true)).toEqual(["/affiliate-portal"]);
     expect(portalLinks(null, true)).toEqual([]);
     expect(portalLinks(null, true, true)).not.toContain("/affiliate-portal");
   });

@@ -73,9 +73,10 @@ function activeMemberships(user: UserWithMemberships) {
 }
 
 /**
- * Only a back-office membership can become the current vendor context. A
- * partner membership never does, so every guard and route that reads the
- * session's vendor or member denies partners without its own role check.
+ * A partner membership never becomes the current vendor context, so every
+ * guard and route that reads the session's vendor or member denies partners
+ * without its own role check. Every other role keeps the previous behaviour
+ * and is judged by the role-specific guards.
  */
 function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null) {
   const backoffice = activeMemberships(user).filter((membership) => isVendorBackofficeRole(membership.role));
@@ -85,7 +86,7 @@ function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null
   return selected ?? backoffice[0] ?? null;
 }
 
-/** No back-office membership, but at least one active partner membership. */
+/** At least one active partner membership and no active non-partner membership. */
 function isPartnerPortalOnly(user: UserWithMemberships, selected: unknown) {
   return !selected && !isPlatformAdmin(user) && activeMemberships(user).some((membership) => isVendorPartnerRole(membership.role));
 }
@@ -264,7 +265,7 @@ export async function requireAuth(options: { allowUnverifiedMfa?: boolean; nextP
 
 export async function requireVendorContext(nextPath?: string, fallbackPath = "/dashboard") {
   const auth = await requireAuth({ nextPath: nextPath ? safeMfaNextPath(nextPath, fallbackPath) : undefined });
-  // Defense in depth: getCurrentAuth never selects a non-back-office member.
+  // Defense in depth: getCurrentAuth never selects a partner member.
   if (!auth.vendor || !auth.member || !isVendorBackofficeRole(auth.member.role)) {
     redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : auth.partnerPortalOnly ? PARTNER_PORTAL_PATH : "/login?error=no_vendor");
   }

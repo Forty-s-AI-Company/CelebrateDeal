@@ -351,19 +351,12 @@ describe("requireVendorSupportMember", () => {
     },
   );
 
-  it("rejects a non-support accountant before returning support context", async () => {
-    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "accountant" }));
+  it.each(["accountant", "member"])("rejects a non-support %s before returning support context", async (memberRole) => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole }));
 
     await expect(requireVendorSupportContext()).rejects.toThrow(
       "redirect:/dashboard?error=insufficient_role",
     );
-  });
-
-  it("rejects an unknown member role before any vendor context exists", async () => {
-    // Back-office access is an allowlist: an unknown role never becomes the vendor context.
-    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "member" }));
-
-    await expect(requireVendorSupportContext()).rejects.toThrow("redirect:/login?error=no_vendor");
   });
 
   it("allows unenrolled support and challenges enabled support with a safe next path", async () => {
@@ -396,14 +389,11 @@ describe("requireVendorFinance", () => {
   );
 
   it("rejects a non-finance member before any tenant billing data is returned", async () => {
-    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "support" }));
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "member" }));
+
     await expect(requireVendorFinance("/billing/invoices")).rejects.toThrow(
       "redirect:/dashboard?error=insufficient_role",
     );
-
-    // An unknown role is refused one layer earlier: it never gets a vendor context.
-    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "member" }));
-    await expect(requireVendorFinance("/billing/invoices")).rejects.toThrow("redirect:/login?error=no_vendor");
   });
 
   it("keeps support outside tenant finance while preserving accountant access", async () => {
@@ -517,6 +507,23 @@ describe("vendor partner role boundary", () => {
 
     await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: "vendor-2" }, member: { id: "member-s", role: "support" }, partnerPortalOnly: false });
     await expect(requireVendorSupportContext()).resolves.toMatchObject({ vendor: { id: "vendor-2" } });
+  });
+
+  it.each(["member", "editor", "manager"])("keeps a legacy or unknown %s role as the vendor context for the role guards to judge", async (role) => {
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([membership("member-x", "vendor-1", role, "2026-01-01T00:00:00Z")], "vendor-1"));
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: "vendor-1" }, member: { role }, partnerPortalOnly: false });
+    await expect(requireVendorContext()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
+    await expect(requireVendorManagerContext()).rejects.toThrow("redirect:/dashboard?error=insufficient_role");
+  });
+
+  it("prefers a legacy role over a partner membership elsewhere", async () => {
+    mocks.findSession.mockResolvedValue(sessionWithMemberships([
+      membership("member-p", "vendor-1", "partner", "2026-01-01T00:00:00Z"),
+      membership("member-x", "vendor-2", "member", "2026-02-01T00:00:00Z"),
+    ], "vendor-1"));
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: { id: "vendor-2" }, member: { role: "member" }, partnerPortalOnly: false });
   });
 
   it("does not treat an inactive partner membership as portal-only", async () => {

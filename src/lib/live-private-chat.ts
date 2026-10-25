@@ -123,7 +123,7 @@ async function instructorScope(tx: Prisma.TransactionClient, input: Instructor, 
     orderBy: { createdAt: "asc" }, select: { id: true, vendorId: true, role: true } });
   // Match auth.chooseVendor for legacy sessions without a selected vendor.
   // Re-read the choice rather than letting the caller choose any membership.
-  // Partner memberships never become the vendor context there either.
+  // Partner memberships never become the vendor context there either (same rule as auth.chooseVendor).
   const backoffice = memberships.filter(candidate => isVendorBackofficeRole(candidate.role));
   const member = backoffice.find(candidate => candidate.vendorId === session.vendorId) ?? backoffice[0];
   if (!member || member.id !== input.memberId || member.vendorId !== input.vendorId || !["owner", "admin"].includes(member.role)) throw new LiveChatError("access_denied");

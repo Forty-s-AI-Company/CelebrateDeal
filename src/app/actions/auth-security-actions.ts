@@ -134,7 +134,7 @@ export async function loginAction(formData: FormData) {
   cookieStore.set(AUTH_COOKIE, token, sessionCookieOptions(expiresAt));
   cookieStore.delete(LEGACY_VENDOR_COOKIE);
   await writeAuditLog({
-    vendorId: auth.vendor?.id ?? null,
+    vendorId: login.sessionVendorId,
     actorId: auth.user.id,
     actorLabel: login.actorLabel,
     action: "login_success",

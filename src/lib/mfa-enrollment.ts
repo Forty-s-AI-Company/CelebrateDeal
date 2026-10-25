@@ -37,10 +37,19 @@ export type MfaEnrollmentStartResult = {
  * Server Actions and native POST routes share the same CSRF, session and
  * cookie state transition so a browser retry cannot change the security rules.
  */
+/**
+ * Platform administrators and partner-only accounts have no merchant
+ * security settings page (partners never open the back office), so their
+ * QR code and one-time recovery codes are shown on the standalone setup page.
+ */
+function mfaSettingsPath(auth: { isPlatformAdmin: boolean; partnerPortalOnly?: boolean }) {
+  return auth.isPlatformAdmin || auth.partnerPortalOnly ? "/mfa/setup" : "/settings/security";
+}
+
 export async function startMfaEnrollment(formData: FormData): Promise<MfaEnrollmentStartResult> {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  const destination = mfaSettingsPath(auth);
   if (auth.user.mfaFactor) return { destination, updated: "mfa_exists" };
 
   const cookieStore = await cookies();
@@ -62,7 +71,7 @@ export type MfaEnrollmentResult =
 export async function completeMfaEnrollment(formData: FormData): Promise<MfaEnrollmentResult> {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  const destination = mfaSettingsPath(auth);
   const code = typeof formData.get("code") === "string" ? String(formData.get("code")).trim() : "";
   const cookieStore = await cookies();
   const pending = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
@@ -114,5 +123,6 @@ export async function dismissMfaRecoveryCodes(formData: FormData) {
   cookieStore.delete(MFA_RECOVERY_COOKIE);
   const next = safeMfaReturnPath(formData.get("next"));
   // Keep return navigation behind the verification page, including recovery acknowledgement.
-  return { destination: next ? withMfaReturnPath("/mfa/verify", next) : auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security" };
+  if (next) return { destination: withMfaReturnPath("/mfa/verify", next) };
+  return { destination: auth.isPlatformAdmin ? "/mfa/verify" : mfaSettingsPath(auth) };
 }

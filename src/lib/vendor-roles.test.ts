@@ -4,19 +4,17 @@ import {
   isVendorPartnerRole,
   PARTNER_PORTAL_PATH,
   signedInHomePath,
-  VENDOR_BACKOFFICE_ROLES,
   vendorMemberRoleLabel,
 } from "@/lib/vendor-roles";
 import { VENDOR_MEMBER_ROLES } from "@/lib/vendor-member-invitation";
 
 describe("vendor role boundary", () => {
-  it("allows the merchant back office only for the four staff roles", () => {
-    expect([...VENDOR_BACKOFFICE_ROLES]).toEqual(["owner", "admin", "accountant", "support"]);
-    for (const role of VENDOR_BACKOFFICE_ROLES) expect(isVendorBackofficeRole(role)).toBe(true);
-    // Default deny: partner, legacy or unknown roles and missing values.
-    for (const role of ["partner", "member", "viewer", "manager", "platform_admin", "", "Owner", null, undefined]) {
-      expect(isVendorBackofficeRole(role)).toBe(false);
+  it("keeps only partner (and a missing role) out of the merchant back office", () => {
+    // Legacy and unknown roles keep the previous behaviour; role guards judge them.
+    for (const role of ["owner", "admin", "accountant", "support", "member", "editor", "manager", "viewer"]) {
+      expect(isVendorBackofficeRole(role)).toBe(true);
     }
+    for (const role of ["partner", null, undefined]) expect(isVendorBackofficeRole(role)).toBe(false);
   });
 
   it("recognizes only the exact partner role", () => {
