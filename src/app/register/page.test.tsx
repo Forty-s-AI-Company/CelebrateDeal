@@ -156,3 +156,29 @@ describe("/login registration entry", () => {
     expect(html).not.toContain("受邀商家註冊");
   });
 });
+
+describe("/register bot protection and verification notice", () => {
+  beforeEach(() => vi.stubEnv("REGISTRATION_MODE", "open"));
+
+  it("renders the Turnstile widget only when both keys are configured", async () => {
+    // Cloudflare's documented always-pass test keys.
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "1x00000000000000000000AA");
+    vi.stubEnv("TURNSTILE_SECRET_KEY", "1x0000000000000000000000000000000AA");
+    expect(await render({})).toContain("data-turnstile-widget");
+    vi.stubEnv("TURNSTILE_SECRET_KEY", "");
+    expect(await render({})).not.toContain("data-turnstile-widget");
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "");
+    expect(await render({})).not.toContain("data-turnstile-widget");
+  });
+
+  it("tells the merchant a verification email follows registration", async () => {
+    expect(await render({})).toContain("註冊後我們會寄一封驗證信到這個 Email");
+  });
+
+  it.each([
+    ["turnstile_failed", "請先完成「確認你是真人」的驗證，再重新送出。"],
+    ["turnstile_unavailable", "真人驗證服務暫時無法連線，請稍後再試。"],
+  ])("explains the %s error", async (error, message) => {
+    expect(await render({ error })).toContain(message);
+  });
+});

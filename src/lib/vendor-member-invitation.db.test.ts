@@ -370,7 +370,11 @@ describe("member invitation acceptance (PostgreSQL)", () => {
     const results = await Promise.all(Array.from({ length: 4 }, () => acceptVendorMemberInvitation(getDb(), { token: invitation.token, actorUserId: invitee.id })));
 
     expect(results.filter((result) => result.ok)).toHaveLength(1);
+    // Losers see "invalid" (token used) or a retryable serialization conflict, never a second success.
+    for (const result of results.filter((item) => !item.ok)) expect(["invalid", "retry"]).toContain((result as { reason: string }).reason);
     expect(await getDb().auditLog.count({ where: { vendorId: vendor.id, action: "accept_vendor_member_invitation" } })).toBe(1);
+    // Retrying after the winner reports the token as used.
+    await expect(acceptVendorMemberInvitation(getDb(), { token: invitation.token, actorUserId: invitee.id })).resolves.toEqual({ ok: false, reason: "invalid" });
   });
 
   it("enforces the stored invariants in the database", async () => {

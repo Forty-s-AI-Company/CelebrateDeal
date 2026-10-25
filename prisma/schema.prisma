@@ -217,6 +217,10 @@ model User {
   platformRole String    @default("none")
   status       String    @default("active")
   lastLoginAt  DateTime?
+  /// Set only after the platform e-mailed a link to `email` and it was opened
+  /// (merchant verification link, accepted member invitation or password
+  /// reset). NULL = not verified; existing accounts were not backfilled.
+  emailVerifiedAt DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

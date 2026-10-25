@@ -3,12 +3,14 @@ import type { NextConfig } from "next";
 
 const cspReportOnly = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.sentry.io https://*.posthog.com https://app.posthog.com",
+  // challenges.cloudflare.com: Turnstile on /register and /verify-email (script, iframe, siteverify calls from the widget).
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "media-src 'self' blob: https://videodelivery.net https://*.videodelivery.net https:",
-  "connect-src 'self' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://api.cloudflare.com https://*.payuni.com.tw https://sandbox-api.payuni.com.tw",
+  "frame-src 'self' https://challenges.cloudflare.com",
+  "connect-src 'self' https://*.sentry.io https://*.posthog.com https://app.posthog.com https://api.cloudflare.com https://challenges.cloudflare.com https://*.payuni.com.tw https://sandbox-api.payuni.com.tw",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self' https://api.payuni.com.tw https://sandbox-api.payuni.com.tw",
@@ -43,6 +45,10 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
         ],
       },
+      // Verification links carry a bearer token in the URL; never leak it in a
+      // Referer (later rules override the site-wide policy above).
+      { source: "/verify-email", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/api/auth/email-verification/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       {
         // Only the authenticated studio document may request capture permissions.
         source: "/lives/:id/presenter",

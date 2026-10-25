@@ -126,11 +126,12 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
 6. **根金鑰只能用在 KDF（domain separation）**：根金鑰（`CSRF_SECRET`，或退回時的 `JOB_SECRET`）只能出現在 `deriveKeyFromRootSecret()`，也就是 `HMAC(root, "CelebrateDeal:" + purpose)`。任何其他 HMAC／雜湊都必須先用自己的 purpose 衍生金鑰，再在該金鑰下計算，並在訊息前加固定標籤。**絕對不可直接用根金鑰 HMAC 攻擊者可控的輸入**（cookie、header、表單值、URL）：只要輸出會回到使用者手上，攻擊者送出 `CelebrateDeal:<purpose>` 就能讀到該用途的衍生金鑰。2026-10-25 前的 CSRF fingerprint 就是這個漏洞（`HMAC(CSRF_SECRET, session cookie)`），現已改為 CSRF 專用衍生金鑰（#485 時為 `csrf-hmac-v1`，2026-10-25 起為 `csrf-hmac:r2:…`，見第 7 點）＋`csrf-fp:v1:`／`csrf-token:v1:` 標籤；修正後部署時，既有 CSRF token（最長 2 小時）會失效，行為與 token 過期相同。`deriveSensitiveDataKey()` 的輸出不得改變，`src/lib/sensitive-data.test.ts` 以合成秘密的 golden 值鎖住既有用途；`src/lib/sensitive-data-root-key-boundary.test.ts` 確保通用 KDF helper 不外露，且只有 `csrf.ts` 使用 `deriveCsrfMacKey()`。
    - **修正前的曝露無法偵測**：任何人都可能已從公開頁取得各用途衍生金鑰的前 192 bits，且不會留下可辨識的紀錄，因此應視為可能已外洩。
    - **依用途輪替，絕不為此輪替根金鑰 `CSRF_SECRET`**（換根金鑰會讓所有密文失效，見第 1 點）。優先順序併入 keyring 工作 B04-03 追蹤：
-     1. 第 1 級：尚未正式使用的用途直接改名，例如商家邀請（先改為 `merchant-registration-invite-v2`，2026-10-25 再改為帶隨機後綴的名稱，見第 7 點）。
+     1. 第 1 級：尚未正式使用的用途直接改名，例如商家邀請（先改為 `merchant-registration-invite-v2`，2026-10-25 再改為帶隨機後綴的名稱，見第 7 點）。新用途一律用**不可猜的隨機後綴**（例如商家 Email 驗證連結用 `merchant-email-verification:r2:5a881e5879ba6156`，已登記在 `DERIVED_KEY_ROTATIONS`、沒有 legacy），不用 `-v1`、`-v2` 這類可預先猜到的名稱。
      2. 第 2 級：短效公開 bearer token，例如 `public-checkout-admission`、`form-submission-email-verification`、`form-submission-chat-session`、`form-submission-line-binding`。
      3. 第 3 級：長效連結，需要新舊兩版並行驗證，例如 `email-delivery-unsubscribe`、`student-portal-access-token-v1`、`automation-voucher-bearer-v1`、`team-funnel-attribution-cookie`。
      4. 第 4 級：加密與雜湊索引金鑰，需要 re-encrypt migration，先處理 MFA，再處理 PII。
    - 第 2～4 級（MFA）已於 2026-10-25 實作，見第 7 點。
+   - **不變量：只要還有任何公開部署在跑 #485 之前的程式，就不得上線新的用途字串**（詳見第 7 點）。2026-10-25 已移除舊 Production build 的公開網址（`celebratedeal.carry-digital-nomad.in.net`、`celebrate-deal.vercel.app` 回 404），舊 preview／production 部署網址都在 Vercel Authentication 之後（403／302），唯一公開的程式端點是跑 master（含 #485）的 staging 網域；之後恢復任何公開網址前，該部署必須已含 #485。
 
 7. **2026-10-25 依用途輪替（B04-03）**：新舊名稱、舊鑰停用日都集中在 `src/lib/derived-key-purposes.ts` 的 `DERIVED_KEY_ROTATIONS`（不 import 任何模組，讓 `sensitive-data.ts` 也能讀取；驗證與解密 helper 在 `src/lib/derived-key-rotation.ts`）。根金鑰不變，舊用途的衍生金鑰也不變（golden test 鎖住），所以既有密文與連結照常可讀。
 

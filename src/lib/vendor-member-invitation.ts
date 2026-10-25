@@ -115,7 +115,7 @@ export async function revokeVendorMemberInvitation(db: Db, input: { vendorId: st
 
 export type AcceptVendorMemberInvitationResult =
   | { ok: true; vendorId: string; userId: string; membershipId: string; createdAccount: boolean; role: string }
-  | { ok: false; reason: "invalid" | "login_required" | "wrong_account" | "account_exists" | "last_owner" };
+  | { ok: false; reason: "invalid" | "login_required" | "wrong_account" | "account_exists" | "last_owner" | "retry" };
 
 class AcceptAbort extends Error {
   constructor(readonly reason: Exclude<AcceptVendorMemberInvitationResult, { ok: true }>["reason"]) {
@@ -155,12 +155,16 @@ export async function acceptVendorMemberInvitation(
         if (!input.actorUserId) throw new AcceptAbort("login_required");
         if (input.actorUserId !== existing.id) throw new AcceptAbort("wrong_account");
         userId = existing.id;
+        // The platform e-mailed this token to the address and its owner opened
+        // it while signed in: proof of mailbox possession (bound to the address).
+        await tx.user.updateMany({ where: { id: existing.id, email: invitation.email, emailVerifiedAt: null }, data: { emailVerifiedAt: now } });
       } else {
         // A signed-in user cannot claim an invitation for another address.
         if (input.actorUserId) throw new AcceptAbort("wrong_account");
         if (!input.newAccount) throw new AcceptAbort("invalid");
         const user = await tx.user.create({
-          data: { email: invitation.email, name: input.newAccount.name || invitation.name, passwordHash: input.newAccount.passwordHash, status: "active" },
+          // Opening the e-mailed invitation link proves the mailbox, so the new account starts verified.
+          data: { email: invitation.email, name: input.newAccount.name || invitation.name, passwordHash: input.newAccount.passwordHash, status: "active", emailVerifiedAt: now },
           select: { id: true },
         });
         await tx.userPolicyConsent.create({
@@ -217,9 +221,11 @@ export async function acceptVendorMemberInvitation(
     if (error instanceof AcceptAbort) return { ok: false, reason: error.reason };
     if (typeof error === "object" && error !== null && "code" in error) {
       // P2002: an account for the address appeared concurrently. P2034: a
-      // concurrent owner change or a second acceptance of the same token.
+      // concurrent change (owner, account, or a second acceptance of the same
+      // token) made the transaction retry-worthy; nothing was written, so the
+      // invitee may simply try again (a used token then reports invalid).
       if (error.code === "P2002") return { ok: false, reason: "account_exists" };
-      if (error.code === "P2034") return { ok: false, reason: "invalid" };
+      if (error.code === "P2034") return { ok: false, reason: "retry" };
     }
     throw error;
   }

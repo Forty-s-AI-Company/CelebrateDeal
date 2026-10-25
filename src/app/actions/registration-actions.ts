@@ -15,6 +15,8 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { merchantRegistrationInviteMatchesEmail, verifyMerchantRegistrationInvite } from "@/lib/merchant-registration-invite";
 import { isMerchantRegistrationInviteRevoked } from "@/lib/merchant-registration-invite-records";
 import { registrationMode } from "@/lib/registration-mode";
+import { scheduleMerchantEmailVerification } from "@/lib/merchant-email-verification";
+import { TURNSTILE_ACTIONS, TURNSTILE_RESPONSE_FIELD, turnstileErrorCode, verifyTurnstileToken } from "@/lib/turnstile";
 
 const RegistrationInput = z.object({
   name: z.string().trim().min(2).max(120),
@@ -91,6 +93,14 @@ export async function registerAction(formData: FormData) {
   }
   const limited = await checkRateLimit(new Request(getCanonicalAppUrl(), { headers: forwarded }), "registration-source", 4, 15 * 60 * 1000);
   if (limited) redirect(failure(limited.status === 429 ? "rate_limited" : "temporarily_unavailable"));
+  // Bot protection (disabled only while no Turnstile key is configured). Any
+  // siteverify failure, including a network error, refuses before any write.
+  const turnstile = await verifyTurnstileToken({
+    token: formData.get(TURNSTILE_RESPONSE_FIELD),
+    action: TURNSTILE_ACTIONS.register,
+    remoteIp: incoming.get("cf-connecting-ip") ?? incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+  });
+  if (!turnstile.ok) redirect(failure(turnstileErrorCode(turnstile)));
   const passwordHash = await hashPasswordAsync(input.password);
   const slugBase = input.workspaceName.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80) || "workspace";
   let created: { userId: string; vendorId: string };
@@ -111,6 +121,9 @@ export async function registerAction(formData: FormData) {
   } catch (error) {
     redirect(transactionFailurePath(error, failure));
   }
+  // After the response: the link goes to the address just registered. An
+  // invite only shows that someone held the link, so this is always sent.
+  scheduleMerchantEmailVerification(created);
   try {
     const session = await createUserSession({ ...created, ipAddress: incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: incoming.get("user-agent") });
     const store = await cookies();

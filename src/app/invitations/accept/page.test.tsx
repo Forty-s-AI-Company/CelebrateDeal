@@ -100,6 +100,7 @@ describe("/invitations/accept", () => {
 
   it("renders fixed copy for result codes and ignores unknown ones", async () => {
     expect(await render({ token: "synthetic-token", error: "last_owner" })).toContain("沒有任何 owner");
+    expect(await render({ token: "synthetic-token", error: "retry" })).toContain("請再按一次接受邀請");
     expect(await render({ token: "synthetic-token", error: "<script>" })).toContain("無法接受邀請");
     expect(await render({ token: "synthetic-token", error: "short" })).toContain("密碼至少需要 8 個字元。");
     expect(await render({ token: "synthetic-token", error: "long" })).toContain("密碼最多 128 個字元。");

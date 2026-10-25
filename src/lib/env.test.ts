@@ -30,6 +30,9 @@ function configuredEnv(): NodeJS.ProcessEnv {
     [envKey("SENTRY", "PROJECT")]: "test-project",
     [envKey("SENTRY", "AUTH", "TOKEN")]: "test-sentry-value",
     [envKey("RATE", "LIMIT", "PROVIDER")]: "cloudflare_waf",
+    // Synthetic widget keys (not Cloudflare's public test keys, which deployments refuse).
+    [envKey("NEXT", "PUBLIC", "TURNSTILE", "SITE", "KEY")]: "0x4AAAAAAASyntheticSiteKey",
+    [envKey("TURNSTILE", "SECRET", "KEY")]: "0x4AAAAAAASyntheticSecretKeyValue",
   };
 }
 
@@ -534,12 +537,35 @@ describe("REGISTRATION_MODE preflight", () => {
     expect(ProductionEnvSchema.safeParse(env).success).toBe(true);
   });
 
-  it("accepts open but warns a deployment that verification and bot protection must exist first", () => {
+  it("accepts open on a deployment only with Turnstile and verification mail configured, and still warns", () => {
     const env = { ...configuredEnv(), [key]: "open" };
     const report = getEnvCheckReport(env);
     expect(report.ok).toBe(true);
-    expect(check(report, key, "warning")?.message).toContain("Email 驗證與 Turnstile");
+    expect(check(report, key, "warning")?.message).toContain("Turnstile 與商家 Email 驗證已啟用");
     expect(check(getEnvCheckReport({ ...env, NODE_ENV: "development" }), key, "pass")?.message).toBe("本機開放任何人註冊商家");
+  });
+
+  it.each([
+    ["production", { NODE_ENV: "production" }],
+    ["a Vercel preview", { NODE_ENV: "development", VERCEL_ENV: "preview" }],
+  ] as Array<[string, Partial<NodeJS.ProcessEnv>]>)("fails open registration on %s without Turnstile", (_label, deployment) => {
+    const env: NodeJS.ProcessEnv = { ...configuredEnv(), ...deployment, [key]: "open" };
+    delete env[envKey("NEXT", "PUBLIC", "TURNSTILE", "SITE", "KEY")];
+    delete env[envKey("TURNSTILE", "SECRET", "KEY")];
+    const report = getEnvCheckReport(env);
+    expect(report.ok).toBe(false);
+    expect(check(report, key, "fail")?.message).toContain("Turnstile");
+    // Locally open registration without Turnstile stays allowed.
+    expect(getEnvCheckReport({ ...env, NODE_ENV: "development", VERCEL_ENV: undefined }).checks.filter((item) => item.key === key && item.status === "fail")).toHaveLength(0);
+  });
+
+  it("fails open registration on a deployment when verification mail cannot be sent", () => {
+    const env: NodeJS.ProcessEnv = { ...configuredEnv(), [key]: "open" };
+    delete env[envKey("RESEND", "API", "KEY")];
+    const report = getEnvCheckReport(env);
+    expect(report.ok).toBe(false);
+    expect(check(report, key, "fail")?.message).toContain("驗證信寄送");
+    expect(check(report, key, "fail")?.message).not.toContain("Turnstile（");
   });
 
   it("fails preflight on an unknown value instead of silently guessing", () => {
@@ -547,5 +573,42 @@ describe("REGISTRATION_MODE preflight", () => {
     expect(report.ok).toBe(false);
     expect(check(report, key, "fail")?.message).toContain("只能是 invite 或 open");
     expect(report.checks.filter((item) => item.key === key)).toHaveLength(1);
+  });
+});
+
+describe("Turnstile preflight", () => {
+  const site = envKey("NEXT", "PUBLIC", "TURNSTILE", "SITE", "KEY");
+  const secret = envKey("TURNSTILE", "SECRET", "KEY");
+
+  it("passes when both keys are set", () => {
+    expect(check(getEnvCheckReport(configuredEnv()), secret, "pass")).toBeDefined();
+  });
+
+  it("warns, without failing the invite-only default, when neither key is set", () => {
+    const env = configuredEnv();
+    delete env[site];
+    delete env[secret];
+    const report = getEnvCheckReport(env);
+    expect(report.ok).toBe(true);
+    expect(check(report, secret, "warning")?.message).toContain("未設定 Turnstile");
+  });
+
+  it("fails a Vercel deployment that uses Cloudflare's public test keys", () => {
+    for (const VERCEL_ENV of ["preview", "production"]) {
+      const env = { ...configuredEnv(), VERCEL_ENV, [site]: "1x00000000000000000000AA", [secret]: "1x0000000000000000000000000000000AA" };
+      const report = getEnvCheckReport(env);
+      expect(report.ok).toBe(false);
+      expect(check(report, secret, "fail")?.message).toContain("測試金鑰");
+    }
+    // Local and CI runs may use them.
+    expect(check(getEnvCheckReport({ ...configuredEnv(), [site]: "1x00000000000000000000AA", [secret]: "1x0000000000000000000000000000000AA" }), secret, "pass")).toBeDefined();
+  });
+
+  it.each([site, secret])("fails when only one key is set (%s missing)", (missing) => {
+    const env = configuredEnv();
+    delete env[missing];
+    const report = getEnvCheckReport(env);
+    expect(report.ok).toBe(false);
+    expect(check(report, secret, "fail")?.message).toContain("必須同時設定");
   });
 });

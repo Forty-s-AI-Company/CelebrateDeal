@@ -21,6 +21,10 @@ const database = {
   salesProjectProduct: { count: vi.fn() },
   paymentMethodReference: { count: vi.fn(), findFirst: vi.fn() },
   vendorSubscription: { findFirst: vi.fn() },
+  // The vendor's founding account (same email as the vendor) is verified unless a test says otherwise.
+  vendor: { findUnique: vi.fn(async () => ({ email: "owner@example.test", betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] })) },
+  user: { findFirst: vi.fn(async () => ({ id: "user-1", email: "owner@example.test", emailVerifiedAt: new Date("2026-09-01T00:00:00.000Z") })) },
+  vendorMember: { findFirst: vi.fn() },
   $executeRaw: vi.fn(),
 };
 
@@ -30,7 +34,7 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(), assertServer
 
 vi.mock("@/lib/auth", () => ({ requireVendorManagerContext: mocks.manager }));
 vi.mock("@/lib/sales-project-scope", () => ({ requireEditableSalesProjectScope: mocks.editableScope, getSalesProjectScope: mocks.salesScope }));
-vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.transaction, vendor: { findUnique: async () => ({ betaFeatureGrants: ["courses", "billing", "funnel_binding", "consultation_booking", "browser_live", "danmaku"] }) } }) }));
+vi.mock("@/lib/db", () => ({ getDb: () => ({ ...database, $transaction: mocks.transaction }) }));
 vi.mock("@/lib/funnel-commerce-service", () => ({ listFunnelCommerceProducts: mocks.listCommerce, publicFunnelCommerceViews: mocks.publicCommerce, validateFunnelCommerceBindings: mocks.validateCommerce }));
 
 import {

@@ -77,6 +77,8 @@ export const DERIVED_KEY_ROTATIONS = Object.freeze({
   csrfMac: rotation("csrf-hmac", "csrf-hmac:r2:db862e72a7b9a462"),
   /** Merchant registration invites; none had been issued when this was rotated. */
   merchantRegistrationInvite: rotation("merchant-registration-invite", "merchant-registration-invite:r2:9ecb5a622edbf327"),
+  /** Merchant email verification links; introduced after #485 under this name only, so no legacy key. */
+  merchantEmailVerification: rotation("merchant-email-verification", "merchant-email-verification:r2:5a881e5879ba6156"),
   /** Keyed e-mail hash in invitation audit entries; nothing compares it yet. */
   merchantInviteEmailHash: rotation("merchant-invite-email", "merchant-invite-email:r2:bcaa6cb59eb97af3"),
   checkoutAdmission: rotation("public-checkout-admission", "public-checkout-admission:r2:9840cc8be0dee028"),

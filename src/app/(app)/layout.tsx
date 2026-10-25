@@ -1,6 +1,9 @@
 import { AppShell } from "@/components/app-shell";
+import { EmailVerificationBanner } from "@/components/email-verification-banner";
 import { requireVendorContext } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { maskEmailRecipient } from "@/lib/email-delivery-pii";
+import { vendorEmailVerificationState } from "@/lib/merchant-email-verification";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { enabledFeaturesForVendor } from "@/lib/vendor-feature-toggles";
 import { isCardBindingRequired } from "@/lib/feature-gates";
@@ -12,12 +15,30 @@ function verifiedPaymentMethodCount(vendorId: string, cardBindingRequired: boole
   return cardBindingRequired ? getDb().paymentMethodReference.count({ where: verifiedVendorPaymentMethodWhere(vendorId, new Date()) }) : Promise.resolve(1);
 }
 
+/**
+ * Mirrors the independent-publish gate (`vendorEmailVerificationState`):
+ * nothing while the vendor counts as verified. Otherwise the account whose
+ * verification counts (the founder, or any unverified viewer when there is no
+ * founder) gets the resend flow; everyone else learns who has to verify,
+ * masked. Legacy and new accounts alike keep full access.
+ */
+async function withEmailVerificationBanner(user: { id: string; emailVerifiedAt: Date | null }, vendorId: string, children: React.ReactNode) {
+  const state = await vendorEmailVerificationState(getDb(), vendorId);
+  if (state.verified) return children;
+  const canVerify = state.founder ? state.founder.userId === user.id : !user.emailVerifiedAt;
+  const banner = canVerify
+    ? <EmailVerificationBanner mode="self" />
+    : <EmailVerificationBanner mode="other" maskedFounderEmail={state.founder ? maskEmailRecipient(state.founder.email) : null} />;
+  return <>{banner}{children}</>;
+}
+
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { auth, vendor } = await requireVendorContext();
+  const content = await withEmailVerificationBanner(auth.user, vendor.id, children);
   // Only managers may receive project names and onboarding state in client props.
   const isManager = auth.member?.role === "owner" || auth.member?.role === "admin";
   if (!isManager) {
-    return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel="工作區">{children}</AppShell>;
+    return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel="工作區">{content}</AppShell>;
   }
 
   const activeSubscription = await getDb().vendorSubscription.findFirst({
@@ -63,5 +84,5 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const guideHidden = Boolean(preference?.guideDismissedAt || (preference?.taskPanelHiddenUntil && preference.taskPanelHiddenUntil > new Date()));
   const projectQuery = selectedProject ? `?projectId=${encodeURIComponent(selectedProject.id)}` : "";
   const onboardingTasks = guideHidden ? [] : taskProgress.tasks.filter((task) => cardBindingRequired || !task.key.includes("payment")).map((task) => ({ key: task.key, title: task.title, status: task.status, scopeKey: selectedProject?.id ?? "workspace", required: task.required, estimateMinutes: task.estimatedMinutes, impact: task.impact, href: task.key === "project_publish" && selectedProject ? `/projects/${encodeURIComponent(selectedProject.id)}` : task.key.includes("payment") ? "/billing/payment-methods" : task.key.includes("logo") || task.key.includes("profile") || task.key.includes("support") ? "/settings/brand" : task.key.includes("team") ? "/settings/team" : task.key.includes("product") || task.key.includes("price") ? `/products/new${projectQuery}` : task.key.includes("funnel") ? `/forms/new${projectQuery}` : task.key.includes("live") ? `/lives/new${projectQuery}` : task.key.includes("consultation") || task.key.includes("availability") ? "/consultations" : "/onboarding" }));
-  return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel={activeSubscription?.plan.name ?? "Free"} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{children}</AppShell>;
+  return <AppShell vendorName={vendor.name} memberRole={auth.member?.role ?? null} enabledModules={enabledFeaturesForVendor(vendor)} planLabel={activeSubscription?.plan.name ?? "Free"} projects={projects} selectedProjectId={selectedProject?.id ?? null} onboardingTasks={onboardingTasks} taskPanelCollapsed={preference?.taskPanelCollapsed ?? true} selectProject={selectSalesProjectAction} persistTaskPanelCollapsed={persistTaskPanelCollapsedAction}>{content}</AppShell>;
 }

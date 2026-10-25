@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), consent: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn(), revoked: vi.fn() }));
+const mocks = vi.hoisted(() => ({ security: vi.fn(), limit: vi.fn(), hash: vi.fn(), transaction: vi.fn(), user: vi.fn(), vendor: vi.fn(), member: vi.fn(), preference: vi.fn(), consent: vi.fn(), audit: vi.fn(), session: vi.fn(), set: vi.fn(), delete: vi.fn(), revoked: vi.fn(), schedule: vi.fn(), turnstile: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => ({ set: mocks.set, delete: mocks.delete }) }));
 vi.mock("@/lib/auth", () => ({ AUTH_COOKIE: "auth", LEGACY_VENDOR_COOKIE: "legacy", createUserSession: mocks.session, sessionCookieOptions: () => ({ httpOnly: true }) }));
@@ -7,6 +7,8 @@ vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "http://127.0.0.1:31
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.security }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.limit }));
 vi.mock("@/lib/password", () => ({ hashPasswordAsync: mocks.hash }));
+vi.mock("@/lib/merchant-email-verification", () => ({ scheduleMerchantEmailVerification: mocks.schedule }));
+vi.mock("@/lib/turnstile", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/turnstile")>(), verifyTurnstileToken: mocks.turnstile }));
 // auditLog.findFirst is the revocation lookup; it resolves undefined (not revoked) unless a test says otherwise.
 vi.mock("@/lib/db", () => ({ getDb: () => ({ $transaction: mocks.transaction, auditLog: { findFirst: mocks.revoked } }) }));
 import { registerAction } from "./registration-actions";
@@ -15,7 +17,7 @@ import { createMerchantRegistrationInvite } from "@/lib/merchant-registration-in
 const policy = merchantRegistrationPolicyVersions();
 function form(extra: Record<string, string | undefined> = {}) { const data = new FormData(); for (const [k,v] of Object.entries({ name: "Owner", workspaceName: "Workspace", email: "Owner@Example.test", password: "  synthetic password  ", acceptPolicies: "on", policyVersion: policy.consentVersion, ...extra })) if (v !== undefined) data.set(k,v); return data; }
 beforeEach(() => {
- vi.resetAllMocks(); mocks.limit.mockResolvedValue(null); mocks.hash.mockResolvedValue("synthetic-hash"); mocks.user.mockResolvedValue({id:"user-1"}); mocks.vendor.mockResolvedValue({id:"vendor-1"}); mocks.session.mockResolvedValue({token:"synthetic-session",expiresAt:new Date("2026-12-01")});
+ vi.resetAllMocks(); mocks.limit.mockResolvedValue(null); mocks.turnstile.mockResolvedValue({ ok: true, skipped: true }); mocks.hash.mockResolvedValue("synthetic-hash"); mocks.user.mockResolvedValue({id:"user-1"}); mocks.vendor.mockResolvedValue({id:"vendor-1"}); mocks.session.mockResolvedValue({token:"synthetic-session",expiresAt:new Date("2026-12-01")});
  mocks.transaction.mockImplementation(async (fn) => fn({user:{create:mocks.user},vendor:{create:mocks.vendor},vendorMember:{create:mocks.member},userOnboardingPreference:{create:mocks.preference},userPolicyConsent:{create:mocks.consent},auditLog:{create:mocks.audit,findFirst:mocks.revoked}}));
 });
 afterEach(() => { vi.unstubAllEnvs(); });
@@ -44,6 +46,24 @@ describe("workspace registration boundaries (REGISTRATION_MODE=open keeps the or
  it.each([{policyVersion:undefined},{policyVersion:"2020.01.01"},{policyVersion:`${policy.consentVersion}x`}])("rejects consent to a policy version the server is not publishing %j", async (input) => {
   await expect(registerAction(form(input))).rejects.toThrow("redirect:/register?error=policy_updated");
   expect(mocks.transaction).not.toHaveBeenCalled(); expect(mocks.consent).not.toHaveBeenCalled();
+ });
+ it("sends the verification email for the committed account after the transaction, before the session", async () => {
+  await expect(registerAction(form())).rejects.toThrow("redirect:/welcome");
+  expect(mocks.schedule).toHaveBeenCalledOnce();
+  expect(mocks.schedule).toHaveBeenCalledWith({ userId: "user-1", vendorId: "vendor-1" });
+  expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(mocks.schedule.mock.invocationCallOrder[0]!);
+  expect(mocks.schedule.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]!);
+ });
+ it("does not send a verification email when the transaction fails", async () => { mocks.transaction.mockRejectedValue({ code: "P2002" }); await expect(registerAction(form())).rejects.toThrow("error=exists"); expect(mocks.schedule).not.toHaveBeenCalled(); });
+ it("verifies the Turnstile token with the registration action and the client address", async () => {
+  await expect(registerAction(form({ "cf-turnstile-response": "synthetic-widget-token" }))).rejects.toThrow("redirect:/welcome");
+  expect(mocks.turnstile).toHaveBeenCalledWith({ token: "synthetic-widget-token", action: "merchant_register", remoteIp: null });
+  expect(mocks.turnstile.mock.invocationCallOrder[0]).toBeLessThan(mocks.hash.mock.invocationCallOrder[0]!);
+ });
+ it.each([["rejected", "turnstile_failed"], ["missing", "turnstile_failed"], ["unavailable", "turnstile_unavailable"]] as const)("refuses a %s Turnstile check before hashing or writing", async (reason, code) => {
+  mocks.turnstile.mockResolvedValue({ ok: false, reason });
+  await expect(registerAction(form())).rejects.toThrow(`redirect:/register?error=${code}`);
+  expect(mocks.hash).not.toHaveBeenCalled(); expect(mocks.transaction).not.toHaveBeenCalled(); expect(mocks.schedule).not.toHaveBeenCalled(); expect(mocks.session).not.toHaveBeenCalled();
  });
  it("recovers a committed account when session creation fails", async () => { mocks.session.mockRejectedValue(new Error("synthetic session failure")); await expect(registerAction(form())).rejects.toThrow("redirect:/login?registered=1"); expect(mocks.transaction).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce(); expect(mocks.set).not.toHaveBeenCalled(); });
  it("offers login recovery if cookie publication fails", async () => { mocks.set.mockImplementation(() => { throw new Error("synthetic cookie failure"); }); await expect(registerAction(form())).rejects.toThrow("redirect:/login?registered=1"); expect(mocks.transaction).toHaveBeenCalledOnce(); expect(mocks.session).toHaveBeenCalledOnce(); });

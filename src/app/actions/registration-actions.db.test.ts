@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const runtime=vi.hoisted(()=>({database:null as unknown,cookies:new Map<string,string>()}));
+const runtime=vi.hoisted(()=>({database:null as unknown,cookies:new Map<string,string>(),afterTasks:[] as Array<()=>Promise<unknown>|unknown>}));
+// Work deferred with after() is collected and run explicitly by the tests that need it.
+vi.mock("next/server",async(importOriginal)=>({...await importOriginal<typeof import("next/server")>(),after:(task:()=>unknown)=>{runtime.afterTasks.push(task);}}));
 vi.mock("@/lib/db",()=>({getDb:()=>runtime.database}));
 vi.mock("next/headers",()=>({headers:async()=>new Headers(),cookies:async()=>({get:(key:string)=>runtime.cookies.has(key)?{value:runtime.cookies.get(key)}:undefined,set:(key:string,value:string)=>runtime.cookies.set(key,value),delete:(key:string)=>runtime.cookies.delete(key)})}));
 vi.mock("next/navigation",()=>({redirect:(path:string)=>{throw new Error(`redirect:${path}`);}}));
@@ -13,15 +15,39 @@ import { loginAction, logoutAction } from "./auth-security-actions";
 import { AUTH_COOKIE } from "@/lib/auth";
 import { merchantRegistrationPolicyVersions } from "@/lib/public-policy-content";
 import { createMerchantRegistrationInvite } from "@/lib/merchant-registration-invite";
+import { confirmMerchantEmailVerification } from "@/lib/merchant-email-verification";
 const policy=merchantRegistrationPolicyVersions();
 const db=new PrismaClient();let email="";
 // Invite mode is the default; every form carries a valid invitation for its email unless a test overrides it.
 function form(password="SyntheticPassword123!",extra:Record<string,string|undefined>={}){const f=new FormData();for(const[k,v]of Object.entries({name:"Synthetic owner",workspaceName:"Synthetic workspace",email,password,acceptPolicies:"on",policyVersion:policy.consentVersion,invite:createMerchantRegistrationInvite({email}).token,...extra}))if(v!==undefined)f.set(k,v);return f;}
-beforeEach(()=>{vi.stubEnv("CSRF_SECRET","synthetic-registration-db-invite-secret-32b");vi.stubEnv("REGISTRATION_MODE","");runtime.database=db;runtime.cookies.clear();email=`registration-${randomUUID()}@example.test`;});
+beforeEach(()=>{vi.stubEnv("CSRF_SECRET","synthetic-registration-db-invite-secret-32b");vi.stubEnv("REGISTRATION_MODE","");runtime.database=db;runtime.cookies.clear();runtime.afterTasks.length=0;email=`registration-${randomUUID()}@example.test`;});
 afterEach(async()=>{runtime.database=db;const users=await db.user.findMany({where:{email},select:{id:true}});const vendors=await db.vendor.findMany({where:{email},select:{id:true}});await db.auditLog.deleteMany({where:{OR:[{actorId:{in:users.map(u=>u.id)}},{vendorId:{in:vendors.map(v=>v.id)}}]}});await db.vendor.deleteMany({where:{email}});await db.user.deleteMany({where:{email}});runtime.cookies.clear();});
 afterEach(()=>{vi.unstubAllEnvs();});
 afterAll(async()=>db.$disconnect());
 describe("registration PostgreSQL and real password/session integration",()=>{
+ it("e-mails a verification link through the provider after registering, and the link verifies the new owner",async()=>{
+  vi.stubEnv("RESEND_API_KEY","synthetic-resend-key");vi.stubEnv("EMAIL_FROM","CelebrateDeal <no-reply@example.test>");vi.stubEnv("NEXT_PUBLIC_APP_URL","http://127.0.0.1:31027");
+  const sent:Array<{to:string;text:string;subject:string}>=[];
+  const provider=vi.fn(async(url:string,init:RequestInit)=>{expect(url).toBe("https://api.resend.com/emails");sent.push(JSON.parse(String(init.body)));return Response.json({id:`synthetic-${sent.length}`});});
+  vi.stubGlobal("fetch",provider);
+  try{
+   await expect(registerAction(form())).rejects.toThrow("redirect:/welcome");
+   const user=await db.user.findUniqueOrThrow({where:{email}});expect(user.emailVerifiedAt).toBeNull();
+   // Nothing is sent inside the request; the after() task sends it.
+   expect(provider).not.toHaveBeenCalled();expect(runtime.afterTasks).toHaveLength(1);
+   for(const task of runtime.afterTasks.splice(0))await task();
+   expect(provider).toHaveBeenCalledOnce();expect(sent[0]).toMatchObject({to:email,subject:"CelebrateDeal｜請驗證你的 Email"});
+   const link=/http:\/\/127\.0\.0\.1:31027\/verify-email\?token=([A-Za-z0-9._-]+)/u.exec(sent[0]!.text)?.[1];expect(link).toBeDefined();
+   const audit=await db.auditLog.findFirstOrThrow({where:{targetId:user.id,action:"merchant_email_verification_sent"}});
+   expect(audit.vendorId).toBe((await db.vendor.findUniqueOrThrow({where:{email}})).id);expect(JSON.stringify(audit)).not.toContain(link!.split(".")[2]);
+   expect(await confirmMerchantEmailVerification(decodeURIComponent(link!))).toEqual({status:"verified"});
+   expect((await db.user.findUniqueOrThrow({where:{email}})).emailVerifiedAt).toBeInstanceOf(Date);
+  }finally{vi.unstubAllGlobals();}
+ });
+ it("an invitation alone does not verify the email",async()=>{
+  await expect(registerAction(form())).rejects.toThrow("redirect:/welcome");
+  expect((await db.user.findUniqueOrThrow({where:{email}})).emailVerifiedAt).toBeNull();
+ });
  it.each(["SyntheticPassword123!","  SyntheticPassword123!  "])("registers, logs out and logs back in with the same submitted password (%#)",async(password)=>{
   const data=form(password);await expect(registerAction(data)).rejects.toThrow("redirect:/welcome");
   const user=await db.user.findUniqueOrThrow({where:{email}});const vendor=await db.vendor.findUniqueOrThrow({where:{email}});
