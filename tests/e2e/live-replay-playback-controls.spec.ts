@@ -26,9 +26,14 @@ test("replay viewers can reach play/pause above the chat and tabs, and the timed
       sourceType: "url", status: "ready", durationSec: 1 } });
     const script = await db.interactionScript.create({ data: { vendorId: vendor.id, name: "合成回放腳本", status: "published",
       events: { create: { eventType: "product_spotlight", triggerSec: 0, title: "回放商品", productId: product.id } } } });
-    const live = await db.live.create({ data: { vendorId: vendor.id, videoId: video.id, interactionScriptId: script.id,
+    // A bound valid form turns on chat, reproducing the panels that covered the native controls.
+    const form = await db.registrationForm.create({ data: { vendorId: vendor.id, name: "合成表單", slug: `replay-form-${suffix}`,
+      headline: "合成報名", fields: [{ key: "name", label: "姓名", type: "text", required: true }, { key: "email", label: "Email", type: "email", required: true }] } });
+    const template = await db.messageTemplate.create({ data: { vendorId: vendor.id, name: "合成確認", channel: "email",
+      trigger: "registration_confirmed", subject: "{{live_title}} 報名成功", body: "{{name}} {{unsubscribe_url}}", isActive: true } });
+    const live = await db.live.create({ data: { vendorId: vendor.id, videoId: video.id, formId: form.id, messageTemplateId: template.id, interactionScriptId: script.id,
       title: "合成回放場次", slug: `replay-live-${suffix}`, scheduledAt: new Date(Date.now() - 60 * 60_000),
-      status: "live", streamMode: "vod", replayEnabled: true, chatEnabled: true,
+      status: "live", streamMode: "vod", replayEnabled: true,
       products: { create: { productId: product.id, isPinned: true } } } });
     await page.route("https://video.example.test/**", (route) => route.fulfill({ path: fixtureVideo, contentType: "video/mp4" }));
 
