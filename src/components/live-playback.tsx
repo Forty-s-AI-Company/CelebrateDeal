@@ -1129,8 +1129,36 @@ function playbackSourceStatus({
   return hasPlayableSource ? "ready" : "unavailable";
 }
 
+function canControlOverlayPlayback(hasVideo: boolean, admissionStatus: LiveAdmissionStatus) {
+  return hasVideo && admissionStatus === "admitted";
+}
+
 function HideDuringCheckout({ active, children }: { active: boolean; children: ReactNode }) {
   return active ? null : children;
+}
+
+function toggleVideoPlayback(videoRef: RefObject<HTMLVideoElement | null>) {
+  const video = videoRef.current;
+  if (!video) return;
+  if (video.paused) void video.play()?.catch(() => undefined);
+  else video.pause();
+}
+
+// The scripted overlay, chat and tab bar stack above the <video>, so its native
+// controls are unreachable. This button lives inside the overlay itself.
+export function PlaybackToggleButton({ videoRef, isPaused }: { videoRef: RefObject<HTMLVideoElement | null>; isPaused: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={() => toggleVideoPlayback(videoRef)}
+      aria-label={isPaused ? "播放影片" : "暫停影片"}
+      data-testid="live-playback-toggle"
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white px-4 text-sm font-black text-slate-950 shadow-lg shadow-black/30 hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+    >
+      {isPaused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
+      {isPaused ? "播放" : "暫停"}
+    </button>
+  );
 }
 
 export function PersistentMiniPlayerControls({
@@ -1152,12 +1180,7 @@ export function PersistentMiniPlayerControls({
   onMutedChange: (muted: boolean) => void;
   onToggleExpanded: () => void;
 }) {
-  const togglePlayback = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) void video.play();
-    else video.pause();
-  };
+  const togglePlayback = () => toggleVideoPlayback(videoRef);
   const toggleMuted = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -1347,6 +1370,9 @@ function LivePlaybackExperience({
   admissionStatus,
   scheduledMessages,
   onAdmissionInvalid,
+  playbackVideoRef,
+  isPlaybackPaused,
+  canControlPlayback,
 }: {
   live: LivePageData;
   currentSeconds: number;
@@ -1367,6 +1393,9 @@ function LivePlaybackExperience({
   admissionStatus: LiveAdmissionStatus;
   scheduledMessages: ScheduledRuntimeMessage[];
   onAdmissionInvalid: () => void;
+  playbackVideoRef: RefObject<HTMLVideoElement | null>;
+  isPlaybackPaused: boolean;
+  canControlPlayback: boolean;
 }) {
   const productsAvailable = Boolean(latestProductEvent && spotlightCardProduct);
   // A seek or a refreshed timeline can move before the timed offer. Keep the
@@ -1378,6 +1407,7 @@ function LivePlaybackExperience({
     <>
       <div className="relative z-10 flex min-h-[calc(100vh-72px)] flex-col justify-end p-4 pb-24">
         <div className="mb-3 flex flex-wrap items-center gap-2">
+          {canControlPlayback ? <PlaybackToggleButton videoRef={playbackVideoRef} isPaused={isPlaybackPaused} /> : null}
           <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur-md">{secondsLabel(currentSeconds)}</span>
           {live.accentCopy ? <span className="rounded-full bg-orange-700/95 px-3 py-1 text-xs font-bold shadow-lg shadow-orange-950/30">{live.accentCopy}</span> : null}
           {referralCode ? <span className="rounded-full bg-blue-500/90 px-3 py-1 text-xs font-bold">來源 {referralCode}</span> : null}
@@ -1719,6 +1749,8 @@ export function LivePlayback({ live }: { live: LivePageData }) {
     };
   }, [playableSource, playableUrl]);
 
+  const hasPlaybackVideo = !streamQuotaExhausted && isPlayableRuntime && Boolean(playableSource || live.videoUrl);
+
   function trackProgress(seconds: number) {
     const checkpoints = [30, 60, 120, 300, 600] as const;
     const checkpoint = checkpoints.find((value) => seconds >= value && !reportedProgress.has(value));
@@ -1768,7 +1800,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
           data-playback-source-state={playbackSourceState}
           className={persistentPlayerShellClass(isCheckoutOverlay, isMiniPlayerExpanded)}
         >
-          {!streamQuotaExhausted && isPlayableRuntime && (playableSource || live.videoUrl) ? (
+          {hasPlaybackVideo ? (
             <video
               ref={videoRef}
               className={playbackMedia.className}
@@ -1840,6 +1872,9 @@ export function LivePlayback({ live }: { live: LivePageData }) {
               admissionStatus={visibleAdmissionStatus}
               scheduledMessages={scheduledMessages}
               onAdmissionInvalid={refreshAdmission}
+              playbackVideoRef={videoRef}
+              isPlaybackPaused={isPlaybackPaused}
+              canControlPlayback={canControlOverlayPlayback(hasPlaybackVideo, visibleAdmissionStatus)}
             />
           ) : runtimeState === "waiting" ? (
             <LiveWaitingRoom live={live} countdownSeconds={waitingCountdownSeconds} />
