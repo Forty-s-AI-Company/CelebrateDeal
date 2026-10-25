@@ -30,7 +30,8 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
  const partnerContext=await browser.newContext(),outsiderContext=await browser.newContext();
  const partnerPage=await partnerContext.newPage(),outsiderPage=await outsiderContext.newPage();
  const statement=`/affiliate-portal/${vendor.slug}/${affiliate.id}`;
- async function login(target:typeof page,email:string){await target.goto(`${baseURL}/login`);await target.getByLabel("Email").fill(email);await target.getByLabel("密碼").fill(password);await target.getByRole("button",{name:"登入",exact:true}).click();await expect(target).toHaveURL(/\/dashboard$/);}
+ // Partners land on the partner portal; they never get the merchant back office.
+ async function login(target:typeof page,email:string,home:RegExp=/\/dashboard$/){await target.goto(`${baseURL}/login`);await target.getByLabel("Email").fill(email);await target.getByLabel("密碼").fill(password);await target.getByRole("button",{name:"登入",exact:true}).click();await expect(target).toHaveURL(home);}
  try{
   for(const context of [page.context(),partnerContext,outsiderContext])await context.route(url=>url.origin!==new URL(baseURL!).origin,route=>route.abort());
   await login(page,manager.email);await page.goto(`/affiliates/${affiliate.id}`);await page.getByRole("link",{name:"夥伴入口授權",exact:true}).click();
@@ -39,7 +40,8 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
   await page.getByLabel("授權成員",{exact:true}).selectOption(partner.memberships[0]!.id);await page.getByRole("button",{name:"儲存入口授權",exact:true}).click();
   await expect(page.locator('[role="status"]:not(.sr-only)')).toHaveText("夥伴入口授權已儲存。");
   expect(await db.affiliatePortalAccess.findUniqueOrThrow({where:{vendorId_affiliateId:{vendorId:vendor.id,affiliateId:affiliate.id}}})).toMatchObject({vendorMemberId:partner.memberships[0]!.id,active:true,revision:1});
-  await login(partnerPage,partner.email);await partnerPage.getByRole("button",{name:"開啟工作區與帳號選單",exact:true}).click();await partnerPage.getByRole("link",{name:"夥伴入口",exact:true}).click();
+  await login(partnerPage,partner.email,/\/affiliate-portal$/);await expect(partnerPage.getByRole("heading",{name:"夥伴入口",exact:true})).toBeVisible();
+  await partnerPage.goto("/dashboard");await expect(partnerPage).toHaveURL(/\/affiliate-portal$/);await partnerPage.goto(`/affiliates/${affiliate.id}`);await expect(partnerPage).toHaveURL(/\/affiliate-portal$/);
   await partnerPage.getByRole("link",{name:"合成夥伴商家 · 合成推廣合作",exact:true}).click();
   await expect(partnerPage.locator('[aria-label="佣金帳本淨額"]')).toHaveText(`帳本淨額：${formatCurrency(1000)}`);
   await expect(partnerPage.getByRole("link",{name:"推廣：合成不可公開場次",exact:true})).toHaveCount(0);
@@ -65,7 +67,7 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
   const refund={vendorId:vendor.id,affiliateCommissionId:commission.id,entryType:"refund" as const,providerName:"synthetic",eventIdentity:randomUUID(),amountCents:-400,occurredAt:new Date()};
   await db.$transaction(tx=>appendCommissionLedgerEntry(tx,refund));await db.$transaction(tx=>appendCommissionLedgerEntry(tx,refund));
   await partnerPage.reload();await expect(partnerPage.locator('[aria-label="佣金帳本淨額"]')).toHaveText(`帳本淨額：${formatCurrency(600)}`);
-  await login(outsiderPage,outsider.email);await outsiderPage.goto(statement);await expect(outsiderPage.getByRole("heading",{name:"合成推廣合作：佣金帳本",exact:true})).toHaveCount(0);
+  await login(outsiderPage,outsider.email,/\/affiliate-portal$/);await outsiderPage.goto(statement);await expect(outsiderPage.getByRole("heading",{name:"合成推廣合作：佣金帳本",exact:true})).toHaveCount(0);
   await outsiderPage.goto(`/affiliates/${affiliate.id}/access`);await expect(outsiderPage.getByRole("button",{name:"儲存入口授權",exact:true})).toHaveCount(0);
   await db.vendorMember.update({where:{id:partner.memberships[0]!.id},data:{status:"inactive"}});
   await page.reload();await expect(page.getByLabel("授權成員",{exact:true})).toHaveValue(partner.memberships[0]!.id);

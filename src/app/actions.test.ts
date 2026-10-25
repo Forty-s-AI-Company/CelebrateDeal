@@ -3285,6 +3285,20 @@ describe("sendPasswordResetSmokeAction", () => {
     });
   }
 
+  it("returns a partner-only account to the standalone setup page it can open", async () => {
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "user-p", email: "smoke@example.test", platformRole: "none" },
+      vendor: null,
+      member: null,
+      isPlatformAdmin: false,
+      partnerPortalOnly: true,
+    });
+    mocks.isAllowedSmokeTestRecipient.mockReturnValue(false);
+
+    await expect(sendPasswordResetSmokeAction(new FormData())).rejects.toThrow(/^redirect:\/mfa\/setup\?error=password_reset_smoke_(recipient|unavailable)$/u);
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
   it("does not create a reset token when the current account is not the configured test recipient", async () => {
     authenticatedSmokeRecipient();
     mocks.isAllowedSmokeTestRecipient.mockReturnValue(false);
@@ -3870,8 +3884,10 @@ describe("deactivateVendorMemberAction", () => {
     mocks.vendorMemberFindFirst.mockResolvedValueOnce(activeMember);
     mocks.vendorMemberUpdate.mockResolvedValueOnce(deactivatedMember);
     mocks.userSessionUpdateMany.mockResolvedValueOnce({ count: 2 });
+    // The account keeps another active membership elsewhere.
+    mocks.vendorMemberCount.mockResolvedValueOnce(1);
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      vendorMember: { update: mocks.vendorMemberUpdate },
+      vendorMember: { update: mocks.vendorMemberUpdate, count: mocks.vendorMemberCount },
       userSession: { updateMany: mocks.userSessionUpdateMany },
     }));
     const formData = deactivateVendorMemberFormData();
@@ -3916,6 +3932,23 @@ describe("deactivateVendorMemberAction", () => {
     );
     expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "Serializable",
+    });
+  });
+
+  it("revokes every session of an account left without any active membership", async () => {
+    mocks.vendorMemberFindFirst.mockResolvedValueOnce({ ...activeMember, role: "partner" });
+    mocks.vendorMemberUpdate.mockResolvedValueOnce({ ...activeMember, role: "partner", status: "inactive" });
+    mocks.vendorMemberCount.mockResolvedValueOnce(0);
+    mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      vendorMember: { update: mocks.vendorMemberUpdate, count: mocks.vendorMemberCount },
+      userSession: { updateMany: mocks.userSessionUpdateMany },
+    }));
+
+    await expect(deactivateVendorMemberAction(deactivateVendorMemberFormData())).rejects.toThrow("redirect:/settings/security?updated=member_deactivated");
+    expect(mocks.vendorMemberCount).toHaveBeenCalledWith({ where: { userId: activeMember.userId, status: "active", id: { not: activeMember.id } } });
+    expect(mocks.userSessionUpdateMany).toHaveBeenCalledWith({
+      where: { userId: activeMember.userId, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
     });
   });
 
@@ -6057,6 +6090,49 @@ describe("login for accounts without an active membership (#462 M1)", () => {
       expect(mocks.authenticateUser).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("login for a partner-only account", () => {
+  const partnerOnly = {
+    user: { id: "user-p", email: "partner@example.com", platformRole: "none", mfaFactor: null },
+    vendor: null,
+    member: null,
+    isPlatformAdmin: false,
+    partnerPortalOnly: true,
+    partnerVendorId: "vendor-1",
+  };
+
+  function partnerLogin(next?: string) {
+    const formData = loginFormData("partner@example.com", "test-fixture-password");
+    if (next) formData.set("next", next);
+    return formData;
+  }
+
+  it("signs in to the partner portal with a session bound to the partner vendor", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(partnerOnly);
+
+    await expect(loginAction(partnerLogin("/dashboard"))).rejects.toThrow(/^redirect:\/affiliate-portal$/u);
+    expect(mocks.createUserSession).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-p", vendorId: "vendor-1" }));
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "login_success", actorLabel: "partner", actorId: "user-p" }));
+    expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(expect.objectContaining({ action: "login_without_active_vendor" }));
+  });
+
+  it("verifies an enrolled partner's MFA before the portal", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue({ ...partnerOnly, user: { ...partnerOnly.user, mfaFactor: { id: "factor" } } });
+
+    await expect(loginAction(partnerLogin())).rejects.toThrow("redirect:/mfa/verify?next=%2Faffiliate-portal");
+  });
+
+  it("returns a partner with a pending invitation to that invitation only when asked", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(partnerOnly);
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(partnerLogin("/invitations/accept?token=abc"))).rejects.toThrow("redirect:/invitations/accept?token=abc");
+    await expect(loginAction(partnerLogin("/dashboard"))).rejects.toThrow(/^redirect:\/affiliate-portal$/u);
+  });
 });
 
 describe("MFA verification lock (#462 m3)", () => {

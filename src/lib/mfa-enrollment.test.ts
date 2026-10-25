@@ -165,4 +165,29 @@ describe("completeMfaEnrollment", () => {
     formData.set("next", "//outside.invalid");
     expect(await dismissMfaRecoveryCodes(formData)).toEqual({ destination: "/settings/security" });
   });
+
+  describe("partner-only accounts", () => {
+    beforeEach(() => {
+      mocks.requireAuth.mockResolvedValue({
+        user: { id: "owner-1", mfaFactor: null },
+        vendor: null,
+        member: null,
+        isPlatformAdmin: false,
+        partnerPortalOnly: true,
+      });
+    });
+
+    it("starts, completes and dismisses enrollment on the standalone setup page", async () => {
+      // Partners never open /settings/security, where QR codes and recovery codes live for staff.
+      await expect(startMfaEnrollment(new FormData())).resolves.toEqual({ destination: "/mfa/setup", updated: "mfa_started" });
+      await expect(completeMfaEnrollment(new FormData())).resolves.toMatchObject({ destination: "/mfa/setup" });
+      await expect(dismissMfaRecoveryCodes(new FormData())).resolves.toEqual({ destination: "/mfa/setup" });
+    });
+
+    it("still returns behind verification when a return path is requested", async () => {
+      const form = new FormData();
+      form.set("next", "/affiliate-portal");
+      await expect(dismissMfaRecoveryCodes(form)).resolves.toEqual({ destination: "/mfa/verify?next=%2Faffiliate-portal" });
+    });
+  });
 });
