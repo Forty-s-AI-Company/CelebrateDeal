@@ -146,6 +146,7 @@ const mocks = vi.hoisted(() => ({
   userCreate: vi.fn(),
   userFindUnique: vi.fn(),
   userMfaFactorUpdate: vi.fn(),
+  reencryptLegacyMfaSecret: vi.fn(),
   userRecoveryCodeCreateMany: vi.fn(),
   userRecoveryCodeDeleteMany: vi.fn(),
   userRecoveryCodeFindMany: vi.fn(),
@@ -245,6 +246,7 @@ vi.mock("@/lib/live-notification-delivery", async (importOriginal) => ({
   materializeLiveNotificationRules: mocks.materializeLiveNotificationRules,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/mfa-secret-rotation", () => ({ reencryptLegacyMfaSecret: mocks.reencryptLegacyMfaSecret }));
 vi.mock("@/lib/learner-live-notifications", () => ({ recordLearnerLiveStartedSources: mocks.recordLearnerLiveStartedSources }));
 vi.mock("@/lib/line-live-started", () => ({
   dispatchLiveStartedLineNotificationsSafely: mocks.dispatchLiveStartedLineNotificationsSafely,
@@ -3384,6 +3386,35 @@ describe("verifyMfaAction", () => {
       data: { lastUsedAt: expect.any(Date) },
     });
     expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+  });
+
+  it("re-stores a verified TOTP secret under the current key (B04-03 lazy rotation)", async () => {
+    mocks.reencryptLegacyMfaSecret.mockResolvedValueOnce("reencrypted");
+
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow("redirect:/admin/billing/dashboard");
+
+    expect(mocks.reencryptLegacyMfaSecret).toHaveBeenCalledWith(expect.anything(), {
+      userId: "admin-1",
+      secretEncrypted: "encrypted-totp-secret",
+    });
+    expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+  });
+
+  it("never blocks MFA sign-in when the lazy re-encryption fails", async () => {
+    mocks.reencryptLegacyMfaSecret.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(verifyMfaAction(mfaVerifyFormData())).rejects.toThrow("redirect:/admin/billing/dashboard");
+
+    expect(mocks.captureOperationalError).toHaveBeenCalledWith(expect.any(Error), { source: "mfa", operation: "lazy-reencrypt" });
+    expect(mocks.markCurrentSessionMfaVerified).toHaveBeenCalledOnce();
+  });
+
+  it("does not re-encrypt when the TOTP code is wrong", async () => {
+    mocks.verifyTotpCode.mockReturnValueOnce(false);
+
+    await expect(verifyMfaAction(mfaVerifyFormData("000000"))).rejects.toThrow(/redirect:\/mfa\/verify\?error=/u);
+
+    expect(mocks.reencryptLegacyMfaSecret).not.toHaveBeenCalled();
   });
 
   it("falls back when MFA next uses a backslash-prefixed external path", async () => {

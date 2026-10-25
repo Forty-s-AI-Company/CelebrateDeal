@@ -3,6 +3,7 @@ import {
   verifyPassword,
   verifyPasswordAsync,
 } from "@/lib/password";
+import { DERIVED_KEY_ROTATIONS, acceptedLegacyPurpose, recordLegacyDerivedKeyUse } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 const TOTP_DIGITS = 6;
@@ -10,8 +11,18 @@ const TOTP_PERIOD_SECONDS = 30;
 const TOTP_WINDOW = 1;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const RECOVERY_CODE_BYTES = 10;
-const RECOVERY_CODE_HASH_VERSION = "hmac-sha256-v1";
-const RECOVERY_CODE_HASH_PURPOSE = "mfa-recovery-code-authentication";
+// Rotated after #485 (tier 4). New hashes are v2 under the new key; v1 hashes
+// still verify under the legacy key. Codes are single-use, so a v1 hash leaves
+// the system when its code is used or the user regenerates the set.
+const RECOVERY_CODE_HASH_VERSION = "hmac-sha256-v2";
+const LEGACY_RECOVERY_CODE_HASH_VERSION = "hmac-sha256-v1";
+const RECOVERY_CODE_KEY = DERIVED_KEY_ROTATIONS.mfaRecoveryCode;
+// Rotated after #485 (tier 4). Ciphertext written now is "m2.<iv>.<tag>.<data>"
+// under the new key. The legacy "<iv>.<tag>.<data>" form (old key) is still
+// read for stored MFA secrets until scripts/reencrypt-mfa-secrets.ts has run
+// everywhere; the 15-minute setup and recovery-code cookies accept only m2.
+const MFA_CIPHERTEXT_VERSION = "m2";
+const MFA_ENCRYPTION_KEY = DERIVED_KEY_ROTATIONS.mfaEncryption;
 
 export const MFA_SETUP_COOKIE = "celebrate_mfa_setup";
 export const MFA_RECOVERY_COOKIE = "celebrate_mfa_recovery";
@@ -59,30 +70,36 @@ function base32Decode(input: string) {
   return Buffer.from(bytes);
 }
 
-function mfaKeyMaterial() {
-  return deriveSensitiveDataKey("mfa-encryption");
-}
-
 function encryptText(value: string) {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", mfaKeyMaterial(), iv);
+  const cipher = createCipheriv("aes-256-gcm", deriveSensitiveDataKey(MFA_ENCRYPTION_KEY.current), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return `${iv.toString("base64url")}.${tag.toString("base64url")}.${encrypted.toString("base64url")}`;
+  return `${MFA_CIPHERTEXT_VERSION}.${iv.toString("base64url")}.${tag.toString("base64url")}.${encrypted.toString("base64url")}`;
 }
 
-function decryptText(value: string) {
-  const [ivPart, tagPart, encryptedPart] = value.split(".");
-  if (!ivPart || !tagPart || !encryptedPart) {
-    throw new Error("Invalid encrypted MFA payload.");
-  }
-  const decipher = createDecipheriv("aes-256-gcm", mfaKeyMaterial(), Buffer.from(ivPart, "base64url"));
+function decryptParts(key: Buffer, ivPart: string, tagPart: string, encryptedPart: string) {
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivPart, "base64url"));
   decipher.setAuthTag(Buffer.from(tagPart, "base64url"));
   const decrypted = Buffer.concat([
     decipher.update(Buffer.from(encryptedPart, "base64url")),
     decipher.final(),
   ]);
   return decrypted.toString("utf8");
+}
+
+function decryptText(value: string, options: { allowLegacy: boolean }) {
+  const parts = value.split(".");
+  if (parts.length === 4 && parts[0] === MFA_CIPHERTEXT_VERSION && parts[1] && parts[2] && parts[3]) {
+    return decryptParts(deriveSensitiveDataKey(MFA_ENCRYPTION_KEY.current), parts[1], parts[2], parts[3]);
+  }
+  const legacyPurpose = options.allowLegacy ? acceptedLegacyPurpose(MFA_ENCRYPTION_KEY) : null;
+  if (legacyPurpose && parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+    const plaintext = decryptParts(deriveSensitiveDataKey(legacyPurpose), parts[0], parts[1], parts[2]);
+    recordLegacyDerivedKeyUse(MFA_ENCRYPTION_KEY.label);
+    return plaintext;
+  }
+  throw new Error("Invalid encrypted MFA payload.");
 }
 
 function totpCounter(timestamp = Date.now()) {
@@ -121,8 +138,25 @@ export function encryptMfaSecret(secret: string) {
   return encryptText(secret);
 }
 
+/** Reads a stored MFA secret in either the current or the legacy format. */
 export function decryptMfaSecret(secretEncrypted: string) {
-  return decryptText(secretEncrypted);
+  return decryptText(secretEncrypted, { allowLegacy: true });
+}
+
+/** True for a stored secret that is not yet in the current (m2) format. */
+export function mfaSecretNeedsReencryption(secretEncrypted: string) {
+  return !secretEncrypted.startsWith(`${MFA_CIPHERTEXT_VERSION}.`);
+}
+
+/**
+ * Re-encrypts a stored secret under the current key. The result is checked to
+ * decrypt back to the same secret before it is returned.
+ */
+export function reencryptMfaSecret(secretEncrypted: string) {
+  const secret = decryptMfaSecret(secretEncrypted);
+  const next = encryptText(secret);
+  if (decryptText(next, { allowLegacy: false }) !== secret) throw new Error("MFA re-encryption check failed.");
+  return next;
 }
 
 export function generateTotpUri({ email, secret }: { email: string; secret: string }) {
@@ -154,28 +188,43 @@ export function generateRecoveryCodes(count = 8) {
   return Array.from({ length: count }, () => rawRecoveryCode());
 }
 
-function recoveryCodeDigest(code: string) {
-  return createHmac("sha256", deriveSensitiveDataKey(RECOVERY_CODE_HASH_PURPOSE))
+function recoveryCodeDigest(code: string, purpose: string) {
+  return createHmac("sha256", deriveSensitiveDataKey(purpose))
     .update(normalizeCode(code))
     .digest();
 }
 
+/**
+ * The digest and the key purpose it was made with, or null for a hash that is
+ * not an HMAC hash (the older password-hash format). `purpose` is null for a
+ * v1 hash once the legacy key is retired, which then fails closed.
+ */
 function parseRecoveryCodeDigest(codeHash: string) {
   const [version, encodedDigest, unexpected] = codeHash.split(":");
-  if (version !== RECOVERY_CODE_HASH_VERSION || !encodedDigest || unexpected) return null;
+  const purpose = version === RECOVERY_CODE_HASH_VERSION
+    ? RECOVERY_CODE_KEY.current
+    : version === LEGACY_RECOVERY_CODE_HASH_VERSION ? acceptedLegacyPurpose(RECOVERY_CODE_KEY) : undefined;
+  if (purpose === undefined || !encodedDigest || unexpected) return null;
   if (!/^[A-Za-z0-9_-]{43}$/.test(encodedDigest)) return null;
   const digest = Buffer.from(encodedDigest, "base64url");
-  return digest.length === 32 ? digest : null;
+  return digest.length === 32 ? { digest, purpose } : null;
+}
+
+function matchesRecoveryCodeDigest(code: string, parsed: { digest: Buffer; purpose: string | null }) {
+  if (!parsed.purpose) return false;
+  const matches = timingSafeEqual(parsed.digest, recoveryCodeDigest(code, parsed.purpose));
+  if (matches && parsed.purpose !== RECOVERY_CODE_KEY.current) recordLegacyDerivedKeyUse(RECOVERY_CODE_KEY.label);
+  return matches;
 }
 
 export function hashRecoveryCode(code: string) {
-  return `${RECOVERY_CODE_HASH_VERSION}:${recoveryCodeDigest(code).toString("base64url")}`;
+  return `${RECOVERY_CODE_HASH_VERSION}:${recoveryCodeDigest(code, RECOVERY_CODE_KEY.current).toString("base64url")}`;
 }
 
 export function verifyRecoveryCode(code: string, codeHash: string) {
-  const expectedDigest = parseRecoveryCodeDigest(codeHash);
-  if (!expectedDigest) return verifyPassword(normalizeCode(code), codeHash);
-  return timingSafeEqual(expectedDigest, recoveryCodeDigest(code));
+  const parsed = parseRecoveryCodeDigest(codeHash);
+  if (!parsed) return verifyPassword(normalizeCode(code), codeHash);
+  return matchesRecoveryCodeDigest(code, parsed);
 }
 
 export async function hashRecoveryCodeAsync(code: string) {
@@ -183,9 +232,9 @@ export async function hashRecoveryCodeAsync(code: string) {
 }
 
 export async function verifyRecoveryCodeAsync(code: string, codeHash: string) {
-  const expectedDigest = parseRecoveryCodeDigest(codeHash);
-  if (!expectedDigest) return verifyPasswordAsync(normalizeCode(code), codeHash);
-  return timingSafeEqual(expectedDigest, recoveryCodeDigest(code));
+  const parsed = parseRecoveryCodeDigest(codeHash);
+  if (!parsed) return verifyPasswordAsync(normalizeCode(code), codeHash);
+  return matchesRecoveryCodeDigest(code, parsed);
 }
 
 export function serializePendingMfaSetup(secret: string, userId: string) {
@@ -197,7 +246,7 @@ export function parsePendingMfaSetup(
 ): { secret: string; userId: string; createdAt: number } | null {
   if (!payload) return null;
   try {
-    const parsed = JSON.parse(decryptText(payload)) as {
+    const parsed = JSON.parse(decryptText(payload, { allowLegacy: false })) as {
       secret?: string;
       userId?: string;
       createdAt?: number;
@@ -216,7 +265,7 @@ export function serializeRecoveryCodes(codes: string[]) {
 export function parseRecoveryCodes(payload: string | undefined | null) {
   if (!payload) return null;
   try {
-    const parsed = JSON.parse(decryptText(payload)) as { codes?: string[]; createdAt?: number };
+    const parsed = JSON.parse(decryptText(payload, { allowLegacy: false })) as { codes?: string[]; createdAt?: number };
     return Array.isArray(parsed.codes) ? parsed.codes : null;
   } catch {
     return null;
