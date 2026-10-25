@@ -14,6 +14,7 @@ import {
 } from "@/lib/mfa";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { checkAccountRateLimit } from "@/lib/account-rate-limit";
+import { accountSecurityPath } from "@/lib/vendor-roles";
 
 function formText(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -47,7 +48,8 @@ export async function regenerateMfaRecoveryCodes(
 ): Promise<MfaRecoveryRegenerationResult> {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  // The new one-time codes are shown only where this account can open its security page.
+  const destination = accountSecurityPath(auth);
   if (!auth.user.mfaFactor) return { ok: false, destination, error: "mfa_required" };
 
   const headerStore = await headers();

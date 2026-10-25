@@ -3285,6 +3285,20 @@ describe("sendPasswordResetSmokeAction", () => {
     });
   }
 
+  it("returns a partner-only account to the standalone setup page it can open", async () => {
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "user-p", email: "smoke@example.test", platformRole: "none" },
+      vendor: null,
+      member: null,
+      isPlatformAdmin: false,
+      partnerPortalOnly: true,
+    });
+    mocks.isAllowedSmokeTestRecipient.mockReturnValue(false);
+
+    await expect(sendPasswordResetSmokeAction(new FormData())).rejects.toThrow(/^redirect:\/mfa\/setup\?error=password_reset_smoke_(recipient|unavailable)$/u);
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
   it("does not create a reset token when the current account is not the configured test recipient", async () => {
     authenticatedSmokeRecipient();
     mocks.isAllowedSmokeTestRecipient.mockReturnValue(false);

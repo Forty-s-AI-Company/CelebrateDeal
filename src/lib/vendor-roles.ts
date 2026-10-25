@@ -26,6 +26,17 @@ export function isVendorPartnerRole(role: string | null | undefined) {
   return role === VENDOR_PARTNER_ROLE;
 }
 
+/**
+ * Where an account manages its own sign-in security (MFA setup, recovery
+ * codes, password-reset smoke test). Platform administrators and partner-only
+ * accounts have no merchant `/settings/security` (partners never open the back
+ * office), so they use the standalone `/mfa/setup` page, which shows the QR
+ * code and one-time recovery codes too.
+ */
+export function accountSecurityPath(auth: { isPlatformAdmin: boolean; partnerPortalOnly?: boolean }) {
+  return auth.isPlatformAdmin || auth.partnerPortalOnly ? "/mfa/setup" : "/settings/security";
+}
+
 /** Where a signed-in account lands by default: platform back office, merchant back office or partner portal. */
 export function signedInHomePath(auth: { isPlatformAdmin: boolean; partnerPortalOnly?: boolean }) {
   if (auth.isPlatformAdmin) return "/admin/billing/dashboard";

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountSecurityPath,
   isVendorBackofficeRole,
   isVendorPartnerRole,
   PARTNER_PORTAL_PATH,
@@ -29,6 +30,13 @@ describe("vendor role boundary", () => {
     }
     expect(vendorMemberRoleLabel("partner")).toBe("夥伴");
     expect(vendorMemberRoleLabel("legacy")).toBe("legacy");
+  });
+
+  it("sends each kind of account to the security page it can open", () => {
+    expect(accountSecurityPath({ isPlatformAdmin: true })).toBe("/mfa/setup");
+    expect(accountSecurityPath({ isPlatformAdmin: false, partnerPortalOnly: true })).toBe("/mfa/setup");
+    expect(accountSecurityPath({ isPlatformAdmin: false, partnerPortalOnly: false })).toBe("/settings/security");
+    expect(accountSecurityPath({ isPlatformAdmin: false })).toBe("/settings/security");
   });
 
   it("sends each kind of account to its own home", () => {

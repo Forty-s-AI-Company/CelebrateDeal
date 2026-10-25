@@ -15,7 +15,7 @@ import {
   revokeCurrentSession,
   sessionCookieOptions,
 } from "@/lib/auth";
-import { signedInHomePath } from "@/lib/vendor-roles";
+import { accountSecurityPath, signedInHomePath } from "@/lib/vendor-roles";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getLoginSourceLimit } from "@/lib/auth-rate-limits";
@@ -371,7 +371,7 @@ export async function regenerateRecoveryCodesAction(formData: FormData) {
 export async function sendPasswordResetSmokeAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  const destination = accountSecurityPath(auth);
   // Gate the action itself before token creation or any mail-provider work.
   if (!isPasswordResetSmokeEnabled()) redirect(`${destination}?error=password_reset_smoke_unavailable`);
   const headerStore = await headers();
