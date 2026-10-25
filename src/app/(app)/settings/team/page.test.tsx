@@ -49,7 +49,7 @@ beforeEach(() => {
       id: "membership-owner",
       vendorMemberId: "member-owner",
       vendorMember: { user: { name: "Owner", email: "owner@example.com" } },
-      downlineRelationships: [],
+      uplineRelationships: [],
       affiliate: null,
     }],
   }, {
@@ -83,7 +83,7 @@ function holderRow(id: string, affiliateId: string, status = "ACTIVE") {
 }
 
 function membership(id: string, email: string, affiliate: unknown = null) {
-  return { id, vendorMemberId: `member-${id}`, vendorMember: { user: { name: id, email } }, downlineRelationships: [], affiliate };
+  return { id, vendorMemberId: `member-${id}`, vendorMember: { user: { name: id, email } }, uplineRelationships: [], affiliate };
 }
 
 describe("TeamSettingsPage", () => {
@@ -198,5 +198,40 @@ describe("TeamSettingsPage", () => {
     expect(deactivated).toContain("並已一併解除推廣夥伴綁定");
     const takenInactive = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({ error: "affiliate_taken_inactive" }) }));
     expect(takenInactive).toContain("這位推廣夥伴綁定在已停用的成員紀錄上");
+  });
+
+  it("preselects each member's own active upline (B's upline is A) and leaves A without upline", async () => {
+    mocks.salesTeamFindMany.mockResolvedValue([{
+      id: "team-1",
+      name: "北區夥伴",
+      slug: "north-partners",
+      memberships: [{
+        id: "membership-a",
+        vendorMemberId: "member-a",
+        vendorMember: { user: { name: "Alice", email: "a@example.com" } },
+        uplineRelationships: [],
+      }, {
+        id: "membership-b",
+        vendorMemberId: "member-b",
+        vendorMember: { user: { name: "Bob", email: "b@example.com" } },
+        uplineRelationships: [{ uplineMembershipId: "membership-a" }],
+      }],
+    }]);
+
+    const html = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({}) }));
+
+    expect(mocks.salesTeamFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: { memberships: expect.objectContaining({
+        include: expect.objectContaining({ uplineRelationships: { where: { endedAt: null }, select: { uplineMembershipId: true } } }),
+      }) },
+    }));
+    const forms = html.split("<form").filter((chunk) => chunk.includes('name="downlineMembershipId"'));
+    const formFor = (id: string) => forms.find((chunk) => chunk.includes(`name="downlineMembershipId" value="${id}"`)) ?? "";
+    // A has no upline: only the blank option is selected.
+    expect(formFor("membership-a")).toMatch(/<option value="" selected="">（無直接上線）<\/option>/);
+    expect(formFor("membership-a")).not.toMatch(/value="membership-b" selected/);
+    // B's upline is A: A is preselected and the blank option is not.
+    expect(formFor("membership-b")).toMatch(/<option value="membership-a" selected="">Alice<\/option>/);
+    expect(formFor("membership-b")).not.toMatch(/<option value="" selected/);
   });
 });
