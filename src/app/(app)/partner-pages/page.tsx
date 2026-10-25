@@ -10,7 +10,7 @@ type TeamMembershipForShare = {
   teamId: string;
   vendorMemberId: string;
   vendorMember: { user: { name: string | null; email: string } };
-  downlineRelationships: Array<{ uplineMembershipId: string }>;
+  uplineRelationships: Array<{ uplineMembershipId: string }>;
 };
 
 type PartnerPageForShare = {
@@ -47,7 +47,7 @@ function buildLiveSharePages(
     ) return [];
 
     const targets = team.memberships
-      .filter((candidate) => candidate.id !== source.id && candidate.downlineRelationships.some((relationship) => relationship.uplineMembershipId === source.id))
+      .filter((candidate) => candidate.id !== source.id && candidate.uplineRelationships.some((relationship) => relationship.uplineMembershipId === source.id))
       .map((candidate) => ({
         membershipId: candidate.id,
         label: candidate.vendorMember.user.name || candidate.vendorMember.user.email,
@@ -81,7 +81,7 @@ export default async function PartnerPagesPage() {
             orderBy: { createdAt: "asc" },
             include: {
               vendorMember: { include: { user: { select: { name: true, email: true } } } },
-              downlineRelationships: { where: { endedAt: null }, select: { uplineMembershipId: true } },
+              uplineRelationships: { where: { endedAt: null }, select: { uplineMembershipId: true } },
             },
           },
         },
