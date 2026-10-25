@@ -31,14 +31,19 @@ const userIds: string[] = [];
 const planIds: string[] = [];
 const LIMIT_ERROR = "landing_page_independent_publish_limit";
 
-async function createTenant(label: string): Promise<Tenant> {
+/** The manager is the vendor's founding account (same email); verified unless `emailVerified` is false. */
+async function createTenant(label: string, { emailVerified = true } = {}): Promise<Tenant> {
   const db = getDb();
   const suffix = randomUUID();
+  const email = `limit-${suffix}@example.test`;
   const vendor = await db.vendor.create({
-    data: { name: `Synthetic limit ${label}`, slug: `limit-${label}-${suffix}`, email: `limit-${suffix}@example.test`, passwordHash: "synthetic-only" },
+    data: { name: `Synthetic limit ${label}`, slug: `limit-${label}-${suffix}`, email, passwordHash: "synthetic-only" },
   });
   vendorIds.push(vendor.id);
-  const user = await db.user.create({ data: { name: `Synthetic manager ${label}`, email: `limit-manager-${suffix}@example.test`, passwordHash: "synthetic-only" } });
+  const user = await db.user.create({ data: {
+    name: `Synthetic manager ${label}`, email, passwordHash: "synthetic-only", emailVerifiedAt: emailVerified ? new Date() : null,
+    memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } },
+  } });
   userIds.push(user.id);
   const project = await createProject(vendor.id);
   return { vendorId: vendor.id, userId: user.id, projectId: project.id };
@@ -317,5 +322,112 @@ describe("independent audience publication limit (PostgreSQL)", () => {
     const extra = await createDraftPage(other);
     actAs(other);
     await expect(publishLandingPage(extra.id, extra.revision)).resolves.toMatchObject({ version: 1 });
+  });
+});
+
+describe("merchant email verification gate on independent publication (PostgreSQL)", () => {
+  const UNVERIFIED_ERROR = "landing_page_independent_publish_email_unverified";
+
+  async function rejectsUnverified(promise: Promise<unknown>) {
+    const error = await promise.then(() => null, (reason: unknown) => reason);
+    expect(error).toBeInstanceOf(LandingPageInputError);
+    expect((error as Error).message).toBe(UNVERIFIED_ERROR);
+  }
+
+  function verifyFounder(tenant: Tenant) {
+    return getDb().user.update({ where: { id: tenant.userId }, data: { emailVerifiedAt: new Date() } });
+  }
+
+  it("gives an unverified vendor no independent publish, explains why, and applies the normal limit once verified", async () => {
+    const tenant = await createTenant("unverified", { emailVerified: false });
+    const page = await createDraftPage(tenant);
+    actAs(tenant);
+    const status = await getLandingPagePublicationStatus(page.id);
+    expect(status.available).toBe(false);
+    expect(status.message).toContain("註冊 Email 還沒有完成驗證");
+    expect(status.missing.map((link) => link.href)).toEqual(["/verify-email", `/projects/${tenant.projectId}`]);
+
+    await rejectsUnverified(publishLandingPage(page.id, page.revision));
+    // Nothing was written by the refused transaction.
+    expect(await getDb().landingPage.findUniqueOrThrow({ where: { id: page.id } })).toMatchObject({ status: "draft", publishedVersionId: null, draftFormId: null, revision: page.revision });
+    expect(await getDb().landingPageVersion.count({ where: { pageId: page.id } })).toBe(0);
+    expect(await getDb().registrationForm.count({ where: { vendorId: tenant.vendorId } })).toBe(0);
+    expect(await publicLandingPageStatus(`/lp/${page.slug}`)).toBe(404);
+
+    await verifyFounder(tenant);
+    await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ version: 1 });
+    await publish(tenant);
+    await publish(tenant);
+    const fourth = await createDraftPage(tenant);
+    actAs(tenant);
+    await rejectsWithLimit(publishLandingPage(fourth.id, fourth.revision));
+  });
+
+  it("also applies to a vendor with a paid plan", async () => {
+    const tenant = await createTenant("unverified-paid", { emailVerified: false });
+    await givePaidPlan(tenant);
+    const page = await createDraftPage(tenant);
+    actAs(tenant);
+    await rejectsUnverified(publishLandingPage(page.id, page.revision));
+  });
+
+  it("keeps already public pages of an unverified (legacy) vendor public and republishable, and leaves published projects alone", async () => {
+    const tenant = await createTenant("unverified-legacy", { emailVerified: false });
+    const legacy = await publishedBeforeLimit(tenant);
+    expect(await publicLandingPageStatus(`/lp/${legacy.slug}`)).toBe(200);
+    actAs(tenant);
+    await expect(publishLandingPage(legacy.id, legacy.revision)).resolves.toMatchObject({ version: 2 });
+    expect(await publicLandingPageStatus(`/lp/${legacy.slug}`)).toBe(200);
+
+    const fresh = await createDraftPage(tenant);
+    actAs(tenant);
+    await rejectsUnverified(publishLandingPage(fresh.id, fresh.revision));
+
+    // Pages inside a published project never use independent publication.
+    const publishedProject = await createProject(tenant.vendorId, true);
+    const inProject = await publish({ ...tenant, projectId: publishedProject.id });
+    expect(await getDb().landingPage.findUniqueOrThrow({ where: { id: inProject.id } })).toMatchObject({ status: "published" });
+  });
+
+  it("is decided by the founding account, so a verified co-owner cannot lift it", async () => {
+    const tenant = await createTenant("co-owner", { emailVerified: false });
+    const db = getDb();
+    const coOwner = await db.user.create({ data: {
+      name: "Synthetic verified co-owner", email: `limit-co-owner-${randomUUID()}@example.test`, passwordHash: "synthetic-only", emailVerifiedAt: new Date(),
+      memberships: { create: { vendorId: tenant.vendorId, role: "owner", status: "active" } },
+    } });
+    userIds.push(coOwner.id);
+    const page = await createDraftPage(tenant);
+    actAs({ ...tenant, userId: coOwner.id });
+    await rejectsUnverified(publishLandingPage(page.id, page.revision));
+    // Deactivating the founder does not hand the decision to the co-owner either.
+    await db.vendorMember.updateMany({ where: { vendorId: tenant.vendorId, userId: tenant.userId }, data: { status: "inactive" } });
+    await rejectsUnverified(publishLandingPage(page.id, page.revision));
+  });
+
+  it("does not let one vendor's verified founder verify another vendor", async () => {
+    const verified = await createTenant("verified-a");
+    const unverified = await createTenant("unverified-b", { emailVerified: false });
+    // The verified founder is also an owner of the second vendor.
+    await getDb().vendorMember.create({ data: { vendorId: unverified.vendorId, userId: verified.userId, role: "owner", status: "active" } });
+    await publish(verified);
+    const page = await createDraftPage(unverified);
+    actAs({ ...unverified, userId: verified.userId });
+    await rejectsUnverified(publishLandingPage(page.id, page.revision));
+  });
+
+  it("falls back to an active verified owner only for a vendor without a founding account", async () => {
+    const db = getDb();
+    const suffix = randomUUID();
+    const vendor = await db.vendor.create({ data: { name: "Synthetic fixture vendor", slug: `limit-fixture-${suffix}`, email: `limit-fixture-${suffix}@example.test`, passwordHash: "synthetic-only" } });
+    vendorIds.push(vendor.id);
+    const owner = await db.user.create({ data: { name: "Synthetic fixture owner", email: `limit-fixture-owner-${suffix}@example.test`, passwordHash: "synthetic-only", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } } });
+    userIds.push(owner.id);
+    const tenant = { vendorId: vendor.id, userId: owner.id, projectId: (await createProject(vendor.id)).id };
+    const page = await createDraftPage(tenant);
+    actAs(tenant);
+    await rejectsUnverified(publishLandingPage(page.id, page.revision));
+    await db.user.update({ where: { id: owner.id }, data: { emailVerifiedAt: new Date() } });
+    await expect(publishLandingPage(page.id, page.revision)).resolves.toMatchObject({ version: 1 });
   });
 });

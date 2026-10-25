@@ -43,7 +43,8 @@ async function createTenant(label: string): Promise<Tenant> {
     data: { name: `Synthetic audience ${label}`, slug: `audience-${label}-${suffix}`, email: `audience-${suffix}@example.test`, passwordHash: "synthetic-only" },
   });
   vendorIds.push(vendor.id);
-  const user = await db.user.create({ data: { name: `Synthetic manager ${label}`, email: `audience-manager-${suffix}@example.test`, passwordHash: "synthetic-only" } });
+  // The manager is the vendor's verified founding account (same email), which independent publication requires.
+  const user = await db.user.create({ data: { name: `Synthetic manager ${label}`, email: `audience-${suffix}@example.test`, passwordHash: "synthetic-only", emailVerifiedAt: new Date() } });
   userIds.push(user.id);
   // Draft project: none of its publication prerequisites exist.
   const project = await db.salesProject.create({

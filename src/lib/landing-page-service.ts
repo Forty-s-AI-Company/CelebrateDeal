@@ -38,7 +38,7 @@ import {
   type PublicLandingPageUnavailableReason,
 } from "@/lib/public-landing-page-eligibility";
 import { getFunnelStepCatalog, stepsAddedOutsideGoal } from "@/lib/funnel-flow";
-import { independentPublishAllowance, independentPublishLimitMessage, INDEPENDENT_PUBLISH_DISABLED_MESSAGE, lockIndependentPublishSlots } from "@/lib/independent-publish-limit";
+import { independentPublishAllowance, independentPublishLimitMessage, INDEPENDENT_PUBLISH_DISABLED_MESSAGE, INDEPENDENT_PUBLISH_EMAIL_UNVERIFIED_MESSAGE, lockIndependentPublishSlots } from "@/lib/independent-publish-limit";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { isCardBindingRequiredForVendor, isVendorFeatureEnabled } from "@/lib/feature-gates";
 import { canPublishSalesProject } from "@/lib/sales-workspace";
@@ -608,7 +608,9 @@ async function assertIndependentPublishAllowed(
   if (isPublishedSalesProject(project)) return;
   const allowance = await independentPublishAllowance(transaction, scope.vendorId, page.id);
   if (allowance.allowed) return;
-  throw new LandingPageInputError(allowance.disabled ? "landing_page_independent_publish_disabled" : "landing_page_independent_publish_limit");
+  throw new LandingPageInputError(allowance.disabled
+    ? "landing_page_independent_publish_disabled"
+    : allowance.emailUnverified ? "landing_page_independent_publish_email_unverified" : "landing_page_independent_publish_limit");
 }
 
 function contentFlow(content: LandingPageStoredContent | null | undefined) {
@@ -971,6 +973,9 @@ async function audienceFunnelPreflightStatus(
     const allowance = await independentPublishAllowance(db(), scope.vendorId, page.id);
     if (!allowance.allowed && allowance.disabled) {
       return { available: false, message: `一頁式網站尚未發布。${INDEPENDENT_PUBLISH_DISABLED_MESSAGE}`, projectHref, missing: [{ label: "發布所屬專案", href: projectHref }] };
+    }
+    if (!allowance.allowed && allowance.emailUnverified) {
+      return { available: false, message: `一頁式網站尚未發布。${INDEPENDENT_PUBLISH_EMAIL_UNVERIFIED_MESSAGE}`, projectHref, missing: [{ label: "驗證 Email", href: "/verify-email" }, { label: "發布所屬專案", href: projectHref }] };
     }
     if (!allowance.allowed) {
       return { available: false, message: `一頁式網站尚未發布。${independentPublishLimitMessage(allowance.used ?? undefined)}`, projectHref, missing: await independentPublishLimitLinks(scope.vendorId, projectHref) };

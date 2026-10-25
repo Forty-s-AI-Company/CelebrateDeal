@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { verifiedVendorPaymentMethodWhere } from "@/lib/payment-method-reference";
 import { parseFunnelStepPages } from "@/lib/funnel-step-pages";
 import { independentlyPublishedPageCandidatesWhere, isIndependentlyPublishedFunnel } from "@/lib/public-landing-page-eligibility";
+import { vendorOwnerEmailVerified } from "@/lib/merchant-email-verification";
 
 /**
  * Abuse guard for independent audience publication (owner decision
@@ -13,9 +14,9 @@ import { independentlyPublishedPageCandidatesWhere, isIndependentlyPublishedFunn
  * vendor payment method. Pages of a published project, unpublished pages and
  * archived pages never count. systeme.io limits free accounts to 3 funnels.
  *
- * Merchant accounts have no stored email-verification signal (registration
- * creates the User without one), so an "unverified email" rule cannot be
- * expressed without a migration; see docs/codex-goal/PRISMA_INVARIANTS.md.
+ * A vendor whose owner has not verified the account email gets no new
+ * independent publishes at all (owner decision 2026-10-25): throwaway accounts
+ * would otherwise multiply the free limit. See `vendorOwnerEmailVerified`.
  */
 export const INDEPENDENT_AUDIENCE_PUBLISH_FREE_LIMIT = 3;
 
@@ -40,6 +41,8 @@ export function independentPublishLimitMessage(used?: number) {
   return `免費帳號最多可同時有 ${INDEPENDENT_AUDIENCE_PUBLISH_FREE_LIMIT} 個不需發布專案就公開的名單型網站，${usage}，所以這個網站現在無法發布。發布所屬專案（專案內的網站不計入上限）、新增已驗證的付款方式或升級付費方案即可解除限制；也可以先取消發布其他名單型網站。`;
 }
 
+export const INDEPENDENT_PUBLISH_EMAIL_UNVERIFIED_MESSAGE = "這個商家的註冊 Email 還沒有完成驗證，所以目前無法發布「不需發布專案就公開」的名單型網站；已經公開的網站不受影響。請用註冊商家時的帳號登入，到「驗證 Email」頁面收信完成驗證（可重新寄送），或先發布所屬專案。";
+
 export const INDEPENDENT_PUBLISH_DISABLED_MESSAGE = "平台目前暫停「不需發布專案就公開」的名單型網站新發布，這個網站現在無法發布；已經公開的網站不受影響。請先發布所屬專案，專案發布後即可發布這個網站。";
 
 /** Candidates parsed per batch; per-page commerce can only be checked on parsed content. */
@@ -47,13 +50,15 @@ const SCAN_BATCH_SIZE = 25;
 /** Upper bound of candidates parsed per decision; reaching it without certainty fails closed. */
 const SCAN_MAX_CANDIDATES = 500;
 
-type LimitReader = Pick<PrismaClient, "landingPage" | "paymentMethodReference" | "vendorSubscription">;
+type LimitReader = Pick<PrismaClient, "landingPage" | "paymentMethodReference" | "vendorSubscription" | "vendor" | "user" | "vendorMember">;
 
 export type IndependentPublishAllowance = {
   /** Active paid plan or verified vendor payment method: no limit applies. */
   uncapped: boolean;
   /** The platform kill switch refuses new independent publishes. */
   disabled: boolean;
+  /** The vendor's owner has not verified the account email: no new independent publishes. */
+  emailUnverified: boolean;
   limit: number;
   /** Other pages of the vendor currently public through independent publication, when known exactly; null when the scan stopped early. */
   used: number | null;
@@ -136,13 +141,16 @@ export async function independentPublishAllowance(database: LimitReader, vendorI
   const disabled = isIndependentAudiencePublishDisabled();
   const self = await database.landingPage.findFirst({ where: { ...independentlyPublishedPageCandidatesWhere(vendorId), id: pageId }, select: candidateSelect });
   const alreadyCounted = Boolean(self && publicThroughIndependentPublication(self));
-  if (disabled) return { uncapped: false, disabled, limit, used: null, alreadyCounted, allowed: alreadyCounted };
-  if (await isIndependentPublishUncapped(database, vendorId, now)) return { uncapped: true, disabled, limit, used: null, alreadyCounted, allowed: true };
+  if (disabled) return { uncapped: false, disabled, emailUnverified: false, limit, used: null, alreadyCounted, allowed: alreadyCounted };
+  // Applies to paid vendors too; like the kill switch it never unpublishes
+  // anything, and a page that is already public may be republished.
+  if (!await vendorOwnerEmailVerified(database, vendorId)) return { uncapped: false, disabled, emailUnverified: true, limit, used: null, alreadyCounted, allowed: alreadyCounted };
+  if (await isIndependentPublishUncapped(database, vendorId, now)) return { uncapped: true, disabled, emailUnverified: false, limit, used: null, alreadyCounted, allowed: true };
   const others = await scanIndependentlyPublishedPages(database, vendorId, { exceptPageId: pageId, stopAt: limit });
   // A complete scan gives the exact count. An early stop already found `limit`
   // pages; hitting the scan bound below the limit is uncertain and fails closed.
   const atLimit = others.ids.length >= limit || !others.complete;
-  return { uncapped: false, disabled, limit, used: others.complete ? others.ids.length : null, alreadyCounted, allowed: alreadyCounted || !atLimit };
+  return { uncapped: false, disabled, emailUnverified: false, limit, used: others.complete ? others.ids.length : null, alreadyCounted, allowed: alreadyCounted || !atLimit };
 }
 
 /**
