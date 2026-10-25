@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Erro
 import { deactivateTeamMembershipAction, setTeamMembershipAffiliateAction, transferTeamMemberAction } from "./team-membership-actions";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
-import { accrueMerchantAffiliatePlan, freezeMerchantAffiliateCheckout, publishMerchantAffiliatePolicy } from "@/lib/merchant-affiliate-policy-service";
+import { accrueMerchantAffiliatePlan, freezeMerchantAffiliateCheckout, MerchantAffiliatePolicyConflict, publishMerchantAffiliatePolicy } from "@/lib/merchant-affiliate-policy-service";
 
 // Actual PostgreSQL writes; only the request/session boundary is synthetic.
 // Commission ledgers are append-only, so rows stay until the disposable
@@ -71,8 +71,8 @@ async function run(as: Tenant, action: (form: FormData) => Promise<unknown>, fie
 type CommissionRow = { merchantLevel: number | null; affiliateId: string | null; commissionAmountCents: number };
 const summary = (rows: CommissionRow[]) => rows.map(row => [row.merchantLevel, row.affiliateId, row.commissionAmountCents]);
 
-async function linkUpline(t: Tenant, uplineMembershipId: string, downlineMembershipId: string) {
-  await db.teamMembershipRelationship.create({ data: { teamId: t.team.id, uplineMembershipId, downlineMembershipId, effectiveAt: new Date("2026-01-01T00:00:00Z") } });
+async function linkUpline(t: Tenant, uplineMembershipId: string, downlineMembershipId: string, period: { effectiveAt?: Date; endedAt?: Date } = {}) {
+  await db.teamMembershipRelationship.create({ data: { teamId: t.team.id, uplineMembershipId, downlineMembershipId, effectiveAt: period.effectiveAt ?? new Date("2026-01-01T00:00:00Z"), endedAt: period.endedAt ?? null } });
 }
 
 /** Mirrors the checkout route: the verified referral code is frozen into the
@@ -272,5 +272,53 @@ describe("team membership affiliate binding on PostgreSQL", () => {
     expect(await bind(t, a.membership.id, null)).toBe("redirect:/settings/team?updated=affiliate_unbound");
     expect(await db.teamMembership.findUniqueOrThrow({ where: { id: a.membership.id } })).toMatchObject({ status: "INACTIVE", affiliateId: null });
     expect(await bind(t, b.membership.id, a.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+  });
+
+  it("keeps paying the uplines when the promoter's own member account is deactivated but the affiliate is active", async () => {
+    const t = await tenant(), a = await t.member("a"), b = await t.member("b");
+    await linkUpline(t, a.membership.id, b.membership.id);
+    for (const person of [a, b]) expect(await bind(t, person.membership.id, person.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    await publishMerchantAffiliatePolicy(db, t.actor, { terms: policy([{ level: 1, rateBps: 200 }]), expectedRevision: 0 });
+    await db.vendorMember.update({ where: { id: b.membership.vendorMemberId }, data: { status: "inactive" } });
+
+    const payment = await checkout(t, b.affiliate);
+    expect(summary((await pay(t, payment.id))!.commissions)).toEqual([[0, b.affiliate.id, 90], [1, a.affiliate.id, 18]]);
+  });
+
+  it.each(["status", "leftAt"] as const)("leaves a vacant level and continues upward when the upline membership has an inactive %s but an effective relationship", async (mode) => {
+    const t = await tenant(), g = await t.member("g"), a = await t.member("a"), b = await t.member("b");
+    await linkUpline(t, g.membership.id, a.membership.id);
+    await linkUpline(t, a.membership.id, b.membership.id);
+    for (const person of [g, a, b]) expect(await bind(t, person.membership.id, person.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    await publishMerchantAffiliatePolicy(db, t.actor, { terms: policy([{ level: 1, rateBps: 200 }, { level: 2, rateBps: 100 }]), expectedRevision: 0 });
+    // Written directly, bypassing the action that would end the relationships.
+    await db.teamMembership.update({ where: { id: a.membership.id }, data: mode === "status" ? { status: "INACTIVE" } : { leftAt: new Date() } }); // lifecycle check: leftAt >= joinedAt
+
+    const payment = await checkout(t, b.affiliate);
+    expect(summary((await pay(t, payment.id))!.commissions)).toEqual([[0, b.affiliate.id, 90], [2, g.affiliate.id, 9]]);
+  });
+
+  it("refuses the checkout when the downline has two effective upline relationships", async () => {
+    const t = await tenant(), a = await t.member("a"), c = await t.member("c"), b = await t.member("b");
+    await linkUpline(t, a.membership.id, b.membership.id);
+    // The partial unique index allows one open edge; a second edge with a future
+    // end date is still effective now, which is the inconsistency under test.
+    await linkUpline(t, c.membership.id, b.membership.id, { effectiveAt: new Date("2026-01-02T00:00:00Z"), endedAt: new Date("2099-01-01T00:00:00Z") });
+    for (const person of [a, c, b]) expect(await bind(t, person.membership.id, person.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    await publishMerchantAffiliatePolicy(db, t.actor, { terms: policy([{ level: 1, rateBps: 200 }]), expectedRevision: 0 });
+
+    await expect(checkout(t, b.affiliate)).rejects.toBeInstanceOf(MerchantAffiliatePolicyConflict);
+    expect(await db.merchantAffiliateCheckoutSnapshot.count({ where: { vendorId: t.vendor.id } })).toBe(0);
+  });
+
+  it("refuses the checkout when the upline chain forms a cycle", async () => {
+    const t = await tenant(), a = await t.member("a"), b = await t.member("b");
+    await linkUpline(t, a.membership.id, b.membership.id);
+    await linkUpline(t, b.membership.id, a.membership.id);
+    for (const person of [a, b]) expect(await bind(t, person.membership.id, person.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    await publishMerchantAffiliatePolicy(db, t.actor, { terms: policy([{ level: 1, rateBps: 200 }, { level: 2, rateBps: 100 }]), expectedRevision: 0 });
+
+    await expect(checkout(t, b.affiliate)).rejects.toBeInstanceOf(MerchantAffiliatePolicyConflict);
+    expect(await db.merchantAffiliateCheckoutSnapshot.count({ where: { vendorId: t.vendor.id } })).toBe(0);
   });
 });

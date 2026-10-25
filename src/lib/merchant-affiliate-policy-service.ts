@@ -138,7 +138,9 @@ function fixedRateTerms(rateBps: number) {
 
 /** Resolve a bounded, tenant-qualified chain without compressing missing levels. */
 async function frozenTeamRecipients(tx: Prisma.TransactionClient, input: { vendorId: string; affiliateId: string }, levelLimit: number, now: Date) {
-  const membership = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, affiliateId: input.affiliateId, status: "ACTIVE", vendorMember: { status: "active", user: { status: "active" } } }, select: { id: true, teamId: true } });
+  // The promoter's affiliate was already verified active with its signed click;
+  // member/user availability never cuts the uplines off a sale it may still make.
+  const membership = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, affiliateId: input.affiliateId, status: "ACTIVE", leftAt: null }, select: { id: true, teamId: true } });
   const recipients: Array<{ id: string; affiliateId: string; level: number; teamId: string | null; teamMembershipId: string | null }> = [{ id: randomUUID(), affiliateId: input.affiliateId, level: 0, teamId: membership?.teamId ?? null, teamMembershipId: membership?.id ?? null }];
   const memberships = new Set<string>(membership ? [membership.id] : []), affiliates = new Set([input.affiliateId]);
   let downline = membership?.id;
@@ -149,7 +151,7 @@ async function frozenTeamRecipients(tx: Prisma.TransactionClient, input: { vendo
     // Read the parent without availability filters so an unavailable upline
     // still links the chain upward. Only a parent outside this tenant/team is
     // an inconsistency; availability only decides whether this level is paid.
-    const parent = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, teamId: membership!.teamId, id: edges[0]!.uplineMembershipId }, select: { id: true, status: true, affiliateId: true, vendorMember: { select: { status: true, user: { select: { status: true } } } }, affiliate: { select: { vendorId: true, isActive: true } } } });
+    const parent = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, teamId: membership!.teamId, id: edges[0]!.uplineMembershipId }, select: { id: true, status: true, leftAt: true, affiliateId: true, vendorMember: { select: { status: true, user: { select: { status: true } } } }, affiliate: { select: { vendorId: true, isActive: true } } } });
     if (!parent) throw new MerchantAffiliatePolicyConflict("團隊上線目前無法確認。");
     memberships.add(parent.id); downline = parent.id;
     if (!parent.affiliateId) continue; // Keep this level's position; never compress a missing recipient.
@@ -157,7 +159,7 @@ async function frozenTeamRecipients(tx: Prisma.TransactionClient, input: { vendo
     affiliates.add(parent.affiliateId);
     // A deactivated affiliate, membership, member or user leaves this level
     // vacant (not compressed); the chain still continues to the next upline.
-    const available = parent.affiliate.isActive && parent.status === "ACTIVE" && parent.vendorMember.status === "active" && parent.vendorMember.user.status === "active";
+    const available = parent.affiliate.isActive && parent.status === "ACTIVE" && parent.leftAt === null && parent.vendorMember.status === "active" && parent.vendorMember.user.status === "active";
     if (!available) continue;
     recipients.push({ id: randomUUID(), affiliateId: parent.affiliateId, level, teamId: membership!.teamId, teamMembershipId: parent.id });
   }
