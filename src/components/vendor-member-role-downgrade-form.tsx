@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { downgradeRolesFor } from "@/lib/vendor-member-invitation";
+import { vendorMemberRoleLabel } from "@/lib/vendor-roles";
 
 /**
  * Owner-only control to lower a member's role at once (#462 m7). Raising a
@@ -24,7 +25,7 @@ export function VendorMemberRoleDowngradeForm({
       <input type="hidden" name="id" value={member.id} />
       <label className="sr-only" htmlFor={`downgrade-${member.id}`}>調降 {member.user.name} 的角色</label>
       <select id={`downgrade-${member.id}`} name="role" defaultValue={roles[0]} className="h-8 rounded-md border border-border bg-white px-2 text-xs">
-        {roles.map((role) => <option key={role} value={role}>{role}</option>)}
+        {roles.map((role) => <option key={role} value={role}>{vendorMemberRoleLabel(role)}</option>)}
       </select>
       <FormSubmitButton
         pendingChildren="調降中…"

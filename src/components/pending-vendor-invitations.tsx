@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { getDb } from "@/lib/db";
+import { vendorMemberRoleLabel } from "@/lib/vendor-roles";
 
 export type PendingVendorInvitation = { id: string; email: string; role: string; expiresAt: Date };
 
@@ -37,7 +38,7 @@ export function PendingVendorInvitations({
           <li key={invitation.id} className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="break-all font-semibold text-slate-900">{invitation.email}</p>
-              <p className="text-xs text-slate-500">{invitation.role} · {invitation.expiresAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })} 前有效</p>
+              <p className="text-xs text-slate-500">{vendorMemberRoleLabel(invitation.role)} · {invitation.expiresAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })} 前有效</p>
             </div>
             <form action={action}>
               {csrfField}

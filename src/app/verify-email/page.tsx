@@ -5,6 +5,7 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 import { NativePostForm } from "@/components/native-post-form";
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import { getCurrentAuth } from "@/lib/auth";
+import { signedInHomePath } from "@/lib/vendor-roles";
 import { maskEmailRecipient } from "@/lib/email-delivery-pii";
 import { MERCHANT_EMAIL_VERIFICATION_TTL_HOURS, readMerchantEmailVerificationToken } from "@/lib/merchant-email-verification-token";
 import { TURNSTILE_ACTIONS, TURNSTILE_ERROR_MESSAGES, turnstileSiteKey } from "@/lib/turnstile";
@@ -41,7 +42,7 @@ const PRIMARY_BUTTON = "inline-flex min-h-11 w-full items-center justify-center 
 export default async function VerifyEmailPage({ searchParams }: { searchParams: Promise<{ token?: string | string[]; status?: string; error?: string }> }) {
   const query = await searchParams;
   const auth = await getCurrentAuth();
-  const homeHref = auth?.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
+  const homeHref = auth ? signedInHomePath(auth) : "/dashboard";
 
   // A link from the email: show one confirm button. The POST does the update,
   // so a mail scanner that only fetches the link verifies nothing. The token

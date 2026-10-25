@@ -316,8 +316,16 @@ export async function deactivateVendorMemberAction(formData: FormData) {
           where: { id: member.id, vendorId: auth.vendor.id, status: "active", role: member.role },
           data: { status: "inactive", deactivatedAt: new Date() },
         });
+        // A session records at most one vendor, and some carry none (invitation
+        // sign-ins) or another tenant's (a partner whose portal spans vendors).
+        // When the account keeps no other active membership, nothing it signed
+        // in with may survive, so revoke by user. Otherwise only this vendor's
+        // sessions end; the account still legitimately uses its other memberships.
+        const otherActiveMemberships = await tx.vendorMember.count({
+          where: { userId: member.userId, status: "active", id: { not: member.id } },
+        });
         await tx.userSession.updateMany({
-          where: { userId: member.userId, vendorId: auth.vendor.id, revokedAt: null },
+          where: { userId: member.userId, ...(otherActiveMemberships === 0 ? {} : { vendorId: auth.vendor.id }), revokedAt: null },
           data: { revokedAt: new Date() },
         });
         return saved;

@@ -70,3 +70,22 @@ export async function listAffiliatePortalAccess(db: Database, actor: {userId:str
   return {entries:rows.slice(0,20).map(row=>({affiliateId:row.affiliateId,affiliateName:row.affiliate.name,vendorSlug:row.member.vendor.slug,vendorName:row.member.vendor.name})),nextCursor:rows.length>20?`${rows[19]!.vendorId}.${rows[19]!.affiliateId}`:null};
  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
 }
+
+/** Whether the current member of the current vendor holds at least one valid
+ * portal grant: the same definition of "valid" as the portal listing above
+ * (active grant, active affiliate, active member and user), additionally bound
+ * to the session's vendor and member. Used only to show the portal link. */
+export async function hasActiveAffiliatePortalAccess(db: Pick<PrismaClient, "affiliatePortalAccess">, scope: { vendorId: string; vendorMemberId: string; userId: string }) {
+  if (![scope.vendorId, scope.vendorMemberId, scope.userId].every(value => id.safeParse(value).success)) return false;
+  const access = await db.affiliatePortalAccess.findFirst({
+    where: {
+      vendorId: scope.vendorId,
+      vendorMemberId: scope.vendorMemberId,
+      active: true,
+      affiliate: { isActive: true },
+      member: { userId: scope.userId, status: "active", user: { status: "active" } },
+    },
+    select: { affiliateId: true },
+  });
+  return Boolean(access);
+}

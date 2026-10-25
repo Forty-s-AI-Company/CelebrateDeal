@@ -1,4 +1,5 @@
 import { safeMfaReturnPath, withMfaReturnPath } from "@/lib/mfa-return-path";
+import { accountSecurityPath } from "@/lib/vendor-roles";
 import { cookies } from "next/headers";
 import { requireAuth, markCurrentSessionMfaVerified } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
@@ -40,7 +41,7 @@ export type MfaEnrollmentStartResult = {
 export async function startMfaEnrollment(formData: FormData): Promise<MfaEnrollmentStartResult> {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  const destination = accountSecurityPath(auth);
   if (auth.user.mfaFactor) return { destination, updated: "mfa_exists" };
 
   const cookieStore = await cookies();
@@ -62,7 +63,7 @@ export type MfaEnrollmentResult =
 export async function completeMfaEnrollment(formData: FormData): Promise<MfaEnrollmentResult> {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  const destination = accountSecurityPath(auth);
   const code = typeof formData.get("code") === "string" ? String(formData.get("code")).trim() : "";
   const cookieStore = await cookies();
   const pending = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
@@ -114,5 +115,6 @@ export async function dismissMfaRecoveryCodes(formData: FormData) {
   cookieStore.delete(MFA_RECOVERY_COOKIE);
   const next = safeMfaReturnPath(formData.get("next"));
   // Keep return navigation behind the verification page, including recovery acknowledgement.
-  return { destination: next ? withMfaReturnPath("/mfa/verify", next) : auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security" };
+  if (next) return { destination: withMfaReturnPath("/mfa/verify", next) };
+  return { destination: auth.isPlatformAdmin ? "/mfa/verify" : accountSecurityPath(auth) };
 }
