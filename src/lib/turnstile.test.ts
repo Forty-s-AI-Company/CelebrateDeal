@@ -11,6 +11,10 @@ function siteverify(body: unknown, init: ResponseInit = { status: 200 }) {
 }
 
 describe("Turnstile configuration", () => {
+  it("uses action names Cloudflare accepts (up to 32 of A-Z a-z 0-9 _ -)", () => {
+    for (const action of Object.values(TURNSTILE_ACTIONS)) expect(action).toMatch(/^[A-Za-z0-9_-]{1,32}$/u);
+  });
+
   it("is disabled when neither key is set and misconfigured when only one is", () => {
     expect(getTurnstileConfig({ NODE_ENV: "test" })).toEqual({ status: "disabled" });
     expect(getTurnstileConfig({ NODE_ENV: "test", NEXT_PUBLIC_TURNSTILE_SITE_KEY: "  " })).toEqual({ status: "disabled" });

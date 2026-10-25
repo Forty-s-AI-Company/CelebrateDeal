@@ -26,7 +26,7 @@ const SITEVERIFY_TIMEOUT_MS = 5_000;
 
 export const TURNSTILE_ACTIONS = {
   register: "merchant_register",
-  resendVerification: "merchant_email_verification_resend",
+  resendVerification: "merchant_verify_email_resend",
 } as const;
 export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_ACTIONS];
 

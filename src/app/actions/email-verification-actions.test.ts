@@ -30,7 +30,7 @@ describe("resending the merchant verification email", () => {
   it("sends to the signed-in user only, whatever the form says", async () => {
     await expect(resendMerchantEmailVerificationAction(form({ userId: "someone-else", email: "attacker@example.test", "cf-turnstile-response": "widget-token" }))).rejects.toThrow("redirect:/verify-email?status=sent");
     expect(mocks.auth).toHaveBeenCalledWith({ nextPath: "/verify-email" });
-    expect(mocks.turnstile).toHaveBeenCalledWith({ token: "widget-token", action: "merchant_email_verification_resend", remoteIp: "203.0.113.9" });
+    expect(mocks.turnstile).toHaveBeenCalledWith({ token: "widget-token", action: "merchant_verify_email_resend", remoteIp: "203.0.113.9" });
     expect(mocks.send).toHaveBeenCalledWith({ userId: "user-1", vendorId: "vendor-1", source: "resend" });
   });
 
