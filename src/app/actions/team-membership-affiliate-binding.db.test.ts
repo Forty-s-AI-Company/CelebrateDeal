@@ -9,7 +9,7 @@ vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: async () => undefined
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
 
-import { setTeamMembershipAffiliateAction } from "./team-membership-actions";
+import { deactivateTeamMembershipAction, setTeamMembershipAffiliateAction, transferTeamMemberAction } from "./team-membership-actions";
 import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { accrueMerchantAffiliatePlan, freezeMerchantAffiliateCheckout, publishMerchantAffiliatePolicy } from "@/lib/merchant-affiliate-policy-service";
@@ -56,6 +56,20 @@ async function bind(as: Tenant, membershipId: string, affiliateId: string | null
     (error: Error) => error.message,
   );
 }
+
+/** Runs a redirecting action as the given owner and returns the redirect target. */
+async function run(as: Tenant, action: (form: FormData) => Promise<unknown>, fields: Record<string, string>) {
+  runtime.auth = as.auth;
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.set(key, value);
+  return action(form).then(
+    () => { throw new Error("action must redirect"); },
+    (error: Error) => error.message,
+  );
+}
+
+type CommissionRow = { merchantLevel: number | null; affiliateId: string | null; commissionAmountCents: number };
+const summary = (rows: CommissionRow[]) => rows.map(row => [row.merchantLevel, row.affiliateId, row.commissionAmountCents]);
 
 async function linkUpline(t: Tenant, uplineMembershipId: string, downlineMembershipId: string) {
   await db.teamMembershipRelationship.create({ data: { teamId: t.team.id, uplineMembershipId, downlineMembershipId, effectiveAt: new Date("2026-01-01T00:00:00Z") } });
@@ -167,13 +181,96 @@ describe("team membership affiliate binding on PostgreSQL", () => {
     });
     const after = await checkout(t, b.affiliate);
 
-    const summary = (rows: Array<{ merchantLevel: number | null; affiliateId: string | null; commissionAmountCents: number }>) =>
-      rows.map(row => [row.merchantLevel, row.affiliateId, row.commissionAmountCents]);
     // A checkout frozen before the change keeps its original beneficiaries.
     expect(summary((await pay(t, frozenBefore.id))!.commissions)).toEqual([[0, b.affiliate.id, 90], [1, a.affiliate.id, 18], [2, g.affiliate.id, 9]]);
     // The new checkout leaves level 1 empty; G stays at level 2.
     expect(summary((await pay(t, after.id))!.commissions)).toEqual([[0, b.affiliate.id, 90], [2, g.affiliate.id, 9]]);
     const snapshot = await db.merchantAffiliateCheckoutSnapshot.findFirstOrThrow({ where: { vendorId: t.vendor.id, paymentTransactionId: after.id }, include: { recipients: { orderBy: { level: "asc" } } } });
     expect(snapshot.recipients.map(row => [row.level, row.affiliateId])).toEqual([[0, b.affiliate.id], [2, g.affiliate.id]]);
+  });
+
+  it.each(["affiliate", "member", "user"] as const)("leaves level 1 vacant and still pays level 2 when the upline %s is deactivated", async (mode) => {
+    const t = await tenant(), g = await t.member("g"), a = await t.member("a"), b = await t.member("b");
+    await linkUpline(t, g.membership.id, a.membership.id);
+    await linkUpline(t, a.membership.id, b.membership.id);
+    for (const person of [g, a, b]) expect(await bind(t, person.membership.id, person.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    await publishMerchantAffiliatePolicy(db, t.actor, { terms: policy([{ level: 1, rateBps: 200 }, { level: 2, rateBps: 100 }]), expectedRevision: 0 });
+
+    // The membership and its relationships stay ACTIVE; only availability changes.
+    const vendorMember = await db.vendorMember.findUniqueOrThrow({ where: { id: a.membership.vendorMemberId } });
+    if (mode === "affiliate") await db.affiliate.update({ where: { id: a.affiliate.id }, data: { isActive: false } });
+    if (mode === "member") await db.vendorMember.update({ where: { id: vendorMember.id }, data: { status: "inactive" } });
+    if (mode === "user") await db.user.update({ where: { id: vendorMember.userId }, data: { status: "disabled" } });
+
+    const payment = await checkout(t, b.affiliate);
+    expect(summary((await pay(t, payment.id))!.commissions)).toEqual([[0, b.affiliate.id, 90], [2, g.affiliate.id, 9]]);
+    expect(await db.teamMembership.findUniqueOrThrow({ where: { id: a.membership.id } })).toMatchObject({ status: "ACTIVE", affiliateId: a.affiliate.id });
+  });
+
+  it("moves the binding with a transferred member under the real unique index and keeps frozen checkouts", async () => {
+    const t = await tenant(), u = await t.member("u"), a = await t.member("a");
+    const otherTeam = await db.salesTeam.create({ data: { vendorId: t.vendor.id, name: "Synthetic second team", slug: randomUUID() } });
+    await linkUpline(t, u.membership.id, a.membership.id);
+    for (const person of [u, a]) expect(await bind(t, person.membership.id, person.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    await publishMerchantAffiliatePolicy(db, t.actor, { terms: policy([{ level: 1, rateBps: 200 }]), expectedRevision: 0 });
+    const frozen = await checkout(t, a.affiliate);
+
+    expect(await run(t, transferTeamMemberAction, { sourceTeamId: t.team.id, targetTeamId: otherTeam.id, membershipId: a.membership.id })).toBe("redirect:/settings/team?updated=member_transferred");
+    const moved = await db.teamMembership.findFirstOrThrow({ where: { teamId: otherTeam.id, vendorMemberId: a.membership.vendorMemberId } });
+    expect(moved).toMatchObject({ status: "ACTIVE", affiliateId: a.affiliate.id });
+    expect(await db.teamMembership.findUniqueOrThrow({ where: { id: a.membership.id } })).toMatchObject({ status: "INACTIVE", affiliateId: null });
+    expect(await db.auditLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, targetId: moved.id, action: "transfer_team_member" } })).toMatchObject({
+      before: { sourceMembershipId: a.membership.id, sourceAffiliateId: a.affiliate.id, targetMembershipId: null, targetAffiliateId: null },
+      after: { sourceMembershipId: a.membership.id, targetMembershipId: moved.id, affiliateId: a.affiliate.id },
+    });
+
+    // The checkout frozen before the move still pays the original upline.
+    expect(summary((await pay(t, frozen.id))!.commissions)).toEqual([[0, a.affiliate.id, 90], [1, u.affiliate.id, 18]]);
+    // A new checkout follows the new team, where A has no upline.
+    expect(summary((await pay(t, (await checkout(t, a.affiliate)).id))!.commissions)).toEqual([[0, a.affiliate.id, 90]]);
+
+    // Moving back reactivates the original record and reclaims the binding.
+    expect(await run(t, transferTeamMemberAction, { sourceTeamId: otherTeam.id, targetTeamId: t.team.id, membershipId: moved.id })).toBe("redirect:/settings/team?updated=member_transferred");
+    expect(await db.teamMembership.findUniqueOrThrow({ where: { id: a.membership.id } })).toMatchObject({ status: "ACTIVE", affiliateId: a.affiliate.id });
+    expect(await db.teamMembership.findUniqueOrThrow({ where: { id: moved.id } })).toMatchObject({ status: "INACTIVE", affiliateId: null });
+    expect(await db.auditLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, targetId: a.membership.id, action: "transfer_team_member" } })).toMatchObject({
+      before: { sourceMembershipId: moved.id, sourceAffiliateId: a.affiliate.id, targetMembershipId: a.membership.id, targetAffiliateId: null },
+    });
+  });
+
+  it("rebinds an already bound membership to another affiliate and frees the previous one", async () => {
+    const t = await tenant(), a = await t.member("a"), b = await t.member("b"), spare = await t.member("spare");
+
+    expect(await bind(t, a.membership.id, a.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    expect(await bind(t, a.membership.id, spare.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+    expect(await db.teamMembership.findUniqueOrThrow({ where: { id: a.membership.id } })).toMatchObject({ affiliateId: spare.affiliate.id });
+    const rebinds = await db.auditLog.findMany({ where: { vendorId: t.vendor.id, targetId: a.membership.id, action: "bind_team_membership_affiliate" } });
+    expect(rebinds.map(row => [(row.before as { affiliateId: string | null }).affiliateId, (row.after as { affiliateId: string | null }).affiliateId])).toEqual(expect.arrayContaining([
+      [null, a.affiliate.id],
+      [a.affiliate.id, spare.affiliate.id],
+    ]));
+    expect(rebinds).toHaveLength(2);
+    expect(await bind(t, a.membership.id, spare.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_unchanged");
+    expect(await bind(t, b.membership.id, a.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+  });
+
+  it("releases the binding on deactivation and only allows releasing a stale binding on an inactive record", async () => {
+    const t = await tenant(), a = await t.member("a"), b = await t.member("b");
+    expect(await bind(t, a.membership.id, a.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
+
+    expect(await run(t, deactivateTeamMembershipAction, { teamId: t.team.id, membershipId: a.membership.id })).toBe("redirect:/settings/team?updated=member_deactivated");
+    expect(await db.teamMembership.findUniqueOrThrow({ where: { id: a.membership.id } })).toMatchObject({ status: "INACTIVE", affiliateId: null });
+    expect(await db.auditLog.findFirstOrThrow({ where: { vendorId: t.vendor.id, targetId: a.membership.id, action: "deactivate_team_membership" } })).toMatchObject({
+      before: { status: "ACTIVE", affiliateId: a.affiliate.id },
+      after: { status: "INACTIVE", affiliateId: null },
+    });
+
+    // A stale binding on an inactive record (e.g. written before this release rule).
+    await db.teamMembership.update({ where: { id: a.membership.id }, data: { affiliateId: a.affiliate.id } });
+    expect(await bind(t, b.membership.id, a.affiliate.id)).toBe("redirect:/settings/team?error=affiliate_taken_inactive");
+    expect(await bind(t, a.membership.id, b.affiliate.id)).toBe("redirect:/settings/team?error=membership_invalid");
+    expect(await bind(t, a.membership.id, null)).toBe("redirect:/settings/team?updated=affiliate_unbound");
+    expect(await db.teamMembership.findUniqueOrThrow({ where: { id: a.membership.id } })).toMatchObject({ status: "INACTIVE", affiliateId: null });
+    expect(await bind(t, b.membership.id, a.affiliate.id)).toBe("redirect:/settings/team?updated=affiliate_bound");
   });
 });

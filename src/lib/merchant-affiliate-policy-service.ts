@@ -146,12 +146,19 @@ async function frozenTeamRecipients(tx: Prisma.TransactionClient, input: { vendo
     const edges = await tx.teamMembershipRelationship.findMany({ where: { teamId: membership!.teamId, downlineMembershipId: downline, effectiveAt: { lte: now }, OR: [{ endedAt: null }, { endedAt: { gt: now } }] }, take: 2, select: { uplineMembershipId: true } });
     if (!edges.length) break;
     if (edges.length !== 1 || memberships.has(edges[0]!.uplineMembershipId)) throw new MerchantAffiliatePolicyConflict("團隊上線關係不一致。");
-    const parent = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, teamId: membership!.teamId, id: edges[0]!.uplineMembershipId, status: "ACTIVE", vendorMember: { status: "active", user: { status: "active" } } }, select: { id: true, affiliateId: true, affiliate: { select: { vendorId: true, isActive: true } } } });
+    // Read the parent without availability filters so an unavailable upline
+    // still links the chain upward. Only a parent outside this tenant/team is
+    // an inconsistency; availability only decides whether this level is paid.
+    const parent = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, teamId: membership!.teamId, id: edges[0]!.uplineMembershipId }, select: { id: true, status: true, affiliateId: true, vendorMember: { select: { status: true, user: { select: { status: true } } } }, affiliate: { select: { vendorId: true, isActive: true } } } });
     if (!parent) throw new MerchantAffiliatePolicyConflict("團隊上線目前無法確認。");
     memberships.add(parent.id); downline = parent.id;
     if (!parent.affiliateId) continue; // Keep this level's position; never compress a missing recipient.
-    if (parent.affiliate?.vendorId !== input.vendorId || !parent.affiliate.isActive || affiliates.has(parent.affiliateId)) throw new MerchantAffiliatePolicyConflict("團隊受益人不一致。");
+    if (parent.affiliate?.vendorId !== input.vendorId || affiliates.has(parent.affiliateId)) throw new MerchantAffiliatePolicyConflict("團隊受益人不一致。");
     affiliates.add(parent.affiliateId);
+    // A deactivated affiliate, membership, member or user leaves this level
+    // vacant (not compressed); the chain still continues to the next upline.
+    const available = parent.affiliate.isActive && parent.status === "ACTIVE" && parent.vendorMember.status === "active" && parent.vendorMember.user.status === "active";
+    if (!available) continue;
     recipients.push({ id: randomUUID(), affiliateId: parent.affiliateId, level, teamId: membership!.teamId, teamMembershipId: parent.id });
   }
   return recipients;

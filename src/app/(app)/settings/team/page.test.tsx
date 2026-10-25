@@ -70,6 +70,18 @@ function teamWith(memberships: unknown[]) {
   return [{ id: "team-1", name: "北區夥伴", slug: "north-partners", memberships }];
 }
 
+function holderRow(id: string, affiliateId: string, status = "ACTIVE") {
+  return {
+    id,
+    affiliateId,
+    status,
+    leftAt: status === "ACTIVE" ? null : new Date("2026-10-01T00:00:00Z"),
+    team: { name: "北區夥伴" },
+    vendorMember: { user: { name: `name-${id}`, email: `${id}@example.com` } },
+    affiliate: { name: `aff-${affiliateId}`, code: affiliateId.toUpperCase() },
+  };
+}
+
 function membership(id: string, email: string, affiliate: unknown = null) {
   return { id, vendorMemberId: `member-${id}`, vendorMember: { user: { name: id, email } }, downlineRelationships: [], affiliate };
 }
@@ -104,7 +116,7 @@ describe("TeamSettingsPage", () => {
     const html = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({}) }));
 
     expect(html).toContain("一鍵綁定");
-    expect(html).toContain("推廣夥伴「Alice 推廣」（ALICE）的聯絡 Email 與這位成員相同。");
+    expect(html).toContain("推廣夥伴「Alice 推廣」（ALICE）的聯絡 Email 與這位成員相同（依推廣夥伴的聯絡 Email 比對，未驗證）。");
     expect(html).toContain('name="affiliateId" value="affiliate-alice"');
     expect(html).not.toContain('name="affiliateId" value="affiliate-other"');
     // The suggestion is a separate explicit form; the dropdown still defaults to unbound.
@@ -121,8 +133,8 @@ describe("TeamSettingsPage", () => {
       { id: "affiliate-bob", name: "Bob 推廣", code: "BOB", contactEmail: "bob@example.com" },
     ]);
     mocks.teamMembershipFindMany.mockResolvedValue([
-      { id: "membership-elsewhere", affiliateId: "affiliate-alice" },
-      { id: "bob", affiliateId: "affiliate-bob-old" },
+      holderRow("membership-elsewhere", "affiliate-alice"),
+      holderRow("bob", "affiliate-bob-old"),
     ]);
 
     const html = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({}) }));
@@ -130,8 +142,9 @@ describe("TeamSettingsPage", () => {
     expect(html).not.toContain("一鍵綁定");
     expect(html).toContain("目前綁定：");
     expect(html).toContain("Bob 舊碼");
-    expect(html).toContain("已停用");
+    expect(html).toContain("此推廣夥伴已停用，該層上線佣金不會發放。");
     expect(html).toMatch(/<option value="affiliate-alice" disabled="">Alice 推廣（ALICE）・已綁定其他成員<\/option>/);
+    expect(html).not.toContain("已停用成員紀錄上的綁定");
   });
 
   it("asks the owner to choose when several unbound affiliates share the member email", async () => {
@@ -160,5 +173,30 @@ describe("TeamSettingsPage", () => {
     expect(taken).toContain("這位推廣夥伴已綁定其他團隊成員，請先解除原本的綁定。");
     const bound = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({ updated: "affiliate_bound" }) }));
     expect(bound).toContain("推廣夥伴已綁定");
+  });
+
+  it("lists a binding left on an inactive membership record with a release control and blocks rebinding it", async () => {
+    mocks.salesTeamFindMany.mockResolvedValue(teamWith([membership("alice", "alice@example.com")]));
+    mocks.affiliateFindMany.mockResolvedValue([
+      { id: "affiliate-alice", name: "Alice 推廣", code: "ALICE", contactEmail: "alice@example.com" },
+    ]);
+    mocks.teamMembershipFindMany.mockResolvedValue([holderRow("membership-old", "affiliate-alice", "INACTIVE")]);
+
+    const html = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({}) }));
+
+    expect(html).toContain("已停用成員紀錄上的綁定");
+    expect(html).toContain("綁定在已停用的成員紀錄上：name-membership-old・北區夥伴");
+    expect(html).toMatch(/name="membershipId" value="membership-old"\/><input type="hidden" name="affiliateId" value=""\/>/);
+    expect(html).toContain("解除綁定");
+    expect(html).toMatch(/<option value="affiliate-alice" disabled="">Alice 推廣（ALICE）・綁定在已停用的成員紀錄上<\/option>/);
+    // An affiliate held by any record is never offered for one-click binding.
+    expect(html).not.toContain("一鍵綁定");
+  });
+
+  it("explains deactivation and transfer effects on the affiliate binding", async () => {
+    const deactivated = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({ updated: "member_deactivated" }) }));
+    expect(deactivated).toContain("並已一併解除推廣夥伴綁定");
+    const takenInactive = renderToStaticMarkup(await TeamSettingsPage({ searchParams: Promise.resolve({ error: "affiliate_taken_inactive" }) }));
+    expect(takenInactive).toContain("這位推廣夥伴綁定在已停用的成員紀錄上");
   });
 });

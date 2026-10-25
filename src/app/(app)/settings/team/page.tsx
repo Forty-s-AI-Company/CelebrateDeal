@@ -31,6 +31,7 @@ const errorMessages: Record<string, string> = {
   affiliate_invalid: "找不到這個商家的推廣夥伴，請重新整理後再試。",
   affiliate_inactive: "這位推廣夥伴已停用，請先在推廣夥伴頁啟用後再綁定。",
   affiliate_taken: "這位推廣夥伴已綁定其他團隊成員，請先解除原本的綁定。",
+  affiliate_taken_inactive: "這位推廣夥伴綁定在已停用的成員紀錄上，請先在「已停用成員紀錄上的綁定」解除。",
   affiliate_binding_conflict: "推廣夥伴綁定與其他操作衝突，請重新整理後再試。",
 };
 
@@ -38,8 +39,8 @@ const updatedMessages: Record<string, string> = {
   team_created: "團隊已建立，建立者已自動加入。",
   member_added: "團隊成員已加入。",
   relationship_saved: "上下線關係已更新，歷史關係已保留。",
-  member_deactivated: "團隊成員已停用，相關 active 上下線關係已結束。",
-  member_transferred: "團隊成員已轉移，原團隊上下線關係已結束。",
+  member_deactivated: "團隊成員已停用，相關 active 上下線關係已結束，並已一併解除推廣夥伴綁定。",
+  member_transferred: "團隊成員已轉移，原團隊上下線關係已結束，推廣夥伴綁定已隨成員移到新團隊。",
   affiliate_bound: "推廣夥伴已綁定，之後的新訂單會依此計算團隊上線佣金。",
   affiliate_unbound: "已解除推廣夥伴綁定，之後的新訂單不再發放這位成員的團隊上線佣金。",
   affiliate_unchanged: "推廣夥伴綁定沒有變更。",
@@ -89,11 +90,25 @@ export default async function TeamSettingsPage({
     }),
     db.teamMembership.findMany({
       where: { vendorId: auth.vendor.id, affiliateId: { not: null } },
-      select: { id: true, affiliateId: true },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        affiliateId: true,
+        status: true,
+        leftAt: true,
+        team: { select: { name: true } },
+        vendorMember: { select: { user: { select: { name: true, email: true } } } },
+        affiliate: { select: { name: true, code: true } },
+      },
     }),
   ]);
-  const affiliateHolder = new Map<string, string>();
-  for (const bound of boundMemberships) if (bound.affiliateId) affiliateHolder.set(bound.affiliateId, bound.id);
+  const affiliateHolder = new Map<string, { id: string; inactive: boolean }>();
+  for (const bound of boundMemberships) {
+    if (bound.affiliateId) affiliateHolder.set(bound.affiliateId, { id: bound.id, inactive: bound.status !== "ACTIVE" || bound.leftAt !== null });
+  }
+  // A binding left on an inactive record blocks the affiliate, so it is listed
+  // separately with a release control (the action only allows releasing it).
+  const inactiveBindings = boundMemberships.filter((bound) => bound.status !== "ACTIVE" || bound.leftAt !== null);
   const unboundAffiliatesByEmail = new Map<string, AffiliateOption[]>();
   for (const affiliate of affiliates) {
     const email = normalizedEmail(affiliate.contactEmail);
@@ -188,6 +203,9 @@ export default async function TeamSettingsPage({
                                 {boundAffiliate.isActive ? null : <span className="ml-1 text-red-700">已停用</span>}
                               </p>
                             ) : <p className="text-xs text-slate-500">尚未綁定，這位成員擔任上線時不會收到團隊佣金。</p>}
+                            {boundAffiliate && !boundAffiliate.isActive ? (
+                              <p role="note" className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">此推廣夥伴已停用，該層上線佣金不會發放。</p>
+                            ) : null}
                             <form action={setTeamMembershipAffiliateAction} className="flex gap-2">
                               <CsrfField />
                               <input type="hidden" name="membershipId" value={membership.id} />
@@ -196,10 +214,10 @@ export default async function TeamSettingsPage({
                                 {boundAffiliate && !boundAffiliate.isActive ? <option value={boundAffiliate.id}>{boundAffiliate.name}（{boundAffiliate.code}，已停用）</option> : null}
                                 {affiliates.map((affiliate) => {
                                   const holder = affiliateHolder.get(affiliate.id);
-                                  const takenByOther = Boolean(holder && holder !== membership.id);
+                                  const takenByOther = Boolean(holder && holder.id !== membership.id);
                                   return (
                                     <option key={affiliate.id} value={affiliate.id} disabled={takenByOther}>
-                                      {affiliate.name}（{affiliate.code}）{takenByOther ? "・已綁定其他成員" : ""}
+                                      {affiliate.name}（{affiliate.code}）{takenByOther ? (holder!.inactive ? "・綁定在已停用的成員紀錄上" : "・已綁定其他成員") : ""}
                                     </option>
                                   );
                                 })}
@@ -211,11 +229,11 @@ export default async function TeamSettingsPage({
                                 <CsrfField />
                                 <input type="hidden" name="membershipId" value={membership.id} />
                                 <input type="hidden" name="affiliateId" value={emailMatches[0]!.id} />
-                                <span>推廣夥伴「{emailMatches[0]!.name}」（{emailMatches[0]!.code}）的聯絡 Email 與這位成員相同。</span>
+                                <span>推廣夥伴「{emailMatches[0]!.name}」（{emailMatches[0]!.code}）的聯絡 Email 與這位成員相同（依推廣夥伴的聯絡 Email 比對，未驗證）。</span>
                                 <SubmitButton pendingChildren="綁定中…">一鍵綁定</SubmitButton>
                               </form>
                             ) : emailMatches.length > 1 ? (
-                              <p className="rounded-md bg-amber-50 px-2 py-2 text-xs text-amber-800">有 {emailMatches.length} 位未綁定的推廣夥伴使用與這位成員相同的 Email，請從選單確認後再綁定。</p>
+                              <p className="rounded-md bg-amber-50 px-2 py-2 text-xs text-amber-800">有 {emailMatches.length} 位未綁定的推廣夥伴使用與這位成員相同的 Email（依推廣夥伴的聯絡 Email 比對，未驗證），請從選單確認後再綁定。</p>
                             ) : null}
                           </div>
                         </td>
@@ -256,6 +274,30 @@ export default async function TeamSettingsPage({
           </Card>
         ))}
       </div>
+
+      {inactiveBindings.length > 0 ? (
+        <Card className="mt-5">
+          <h2 className="mb-1 text-lg font-semibold text-slate-950">已停用成員紀錄上的綁定</h2>
+          <p className="mb-4 text-sm text-slate-600">這些推廣夥伴綁定在已停用的成員紀錄上，不會發放團隊上線佣金，也無法改綁給其他成員。解除後即可重新綁定。</p>
+          <ul className="grid gap-2">
+            {inactiveBindings.map((bound) => (
+              <li key={bound.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm">
+                <span>
+                  <span className="font-medium text-slate-900">{bound.affiliate?.name}</span>
+                  <span className="ml-1 font-mono text-xs text-slate-600">（{bound.affiliate?.code}）</span>
+                  <span className="ml-2 text-xs text-slate-500">綁定在已停用的成員紀錄上：{bound.vendorMember.user.name || bound.vendorMember.user.email}・{bound.team.name}</span>
+                </span>
+                <form action={setTeamMembershipAffiliateAction}>
+                  <CsrfField />
+                  <input type="hidden" name="membershipId" value={bound.id} />
+                  <input type="hidden" name="affiliateId" value="" />
+                  <DangerButton>解除綁定</DangerButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
     </>
   );
 }
