@@ -134,7 +134,7 @@ describe("scripts/reencrypt-mfa-secrets (PostgreSQL)", () => {
 
 describe("scripts/reencrypt-mfa-secrets target guard", () => {
   const loopback = "postgresql://postgres:postgres@localhost:54329/celebratedeal_test?schema=public";
-  const remote = "postgresql://user:pass@db.example.test:5432/celebratedeal?schema=public";
+  const remote = "postgresql://user:pass@db.example.test:5432/celebratedeal?schema=public"; // secret-scan: allow-test-fixture (reserved .test host, fake credentials)
 
   it("allows a loopback disposable database without flags", () => {
     expect(resolveMfaReencryptTarget({ DATABASE_URL: loopback }, null)).toEqual({ url: loopback, target: "loopback" });
@@ -155,7 +155,7 @@ describe("scripts/reencrypt-mfa-secrets target guard", () => {
     expect(refusal({ DATABASE_URL: remote }, "staging")).toBe("not-staging");
     expect(refusal({ DATABASE_URL: remote }, "production")).toBe("production-not-approved");
     expect(refusal({ DATABASE_URL: remote, MFA_REENCRYPT_PRODUCTION_APPROVAL: "yes" }, "production")).toBe("production-not-approved");
-    expect(refusal({ DATABASE_URL: "postgresql://postgres:postgres@localhost:54329/production?schema=public" }, null)).toBe("remote-without-target");
+    expect(refusal({ DATABASE_URL: "postgresql://postgres:postgres@localhost:54329/production?schema=public" }, null)).toBe("remote-without-target"); // secret-scan: allow-test-fixture (loopback DB intentionally misnamed)
     expect(resolveMfaReencryptTarget({ DATABASE_URL: remote, MFA_REENCRYPT_PRODUCTION_APPROVAL: PRODUCTION_APPROVAL }, "production"))
       .toEqual({ url: remote, target: "production" });
   });
