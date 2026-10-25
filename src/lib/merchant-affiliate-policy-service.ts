@@ -96,7 +96,7 @@ export async function accrueMerchantAffiliatePlan(tx: Prisma.TransactionClient, 
 }) {
   const checkout = await tx.merchantAffiliateCheckoutSnapshot.findUnique({ where: { vendorId_paymentTransactionId: { vendorId: input.vendorId, paymentTransactionId: input.transactionId } }, include: { policy: true, recipients: { orderBy: { level: "asc" } }, calculation: true } });
   if (!checkout) return null; // Explicit legacy flat-rate compatibility path.
-  const payment = await tx.paymentTransaction.findFirst({ where: { vendorId: input.vendorId, id: input.transactionId }, select: { status: true, grossAmountCents: true, netAmountCents: true, currency: true, orderNumber: true } });
+  const payment = await tx.paymentTransaction.findFirst({ where: { vendorId: input.vendorId, id: input.transactionId }, select: { status: true, grossAmountCents: true, netAmountCents: true, currency: true, orderNumber: true, metadata: true } });
   if (!payment || payment.grossAmountCents !== checkout.grossAmountCents || payment.currency !== checkout.currency) throw new MerchantAffiliatePolicyConflict("付款不符合原始佣金快照。");
   if (checkout.calculation) {
     return { calculation: checkout.calculation, commissions: await tx.affiliateCommission.findMany({ where: { vendorId: input.vendorId, merchantCalculationId: checkout.calculation.id }, orderBy: { merchantLevel: "asc" } }) };
@@ -110,14 +110,25 @@ export async function accrueMerchantAffiliatePlan(tx: Prisma.TransactionClient, 
   const changed = await tx.merchantAffiliateSalesCounter.updateMany({ where: { ...key, quantity: counter.quantity }, data: { quantity: BigInt(plan.qualifiedQuantityAfter) } });
   if (changed.count !== 1) throw new MerchantAffiliatePolicyConflict("成交件數已由其他付款變更。");
   const calculation = await tx.merchantAffiliateCalculation.create({ data: { vendorId: input.vendorId, checkoutId: checkout.id, qualifiedQuantityBefore: BigInt(plan.qualifiedQuantityBefore), qualifiedQuantityAfter: BigInt(plan.qualifiedQuantityAfter), plan: plan as Prisma.InputJsonValue } });
+  // The order's referral code is the one the checkout verified against the
+  // signed click and froze on the server-created transaction. Every level of
+  // the same order reports that code; the browser and provider never supply it.
+  const referralCode = frozenCheckoutReferralCode(payment.metadata);
   const commissions = [];
   for (const recipient of plan.recipients) {
     if (!recipient.amountCents) continue; // Zero plans are still immutable and consume quantity exactly once.
-    const saved = await tx.affiliateCommission.create({ data: { vendorId: input.vendorId, affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId, deduplicationKey: buildCommissionDeduplicationKey({ affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId }), orderNumber: payment.orderNumber, monthKey: input.occurredAt.toISOString().slice(0, 7), orderAmountCents: plan.grossAmountCents, commissionBaseAmountCents: plan.grossAmountCents, netReferenceAmountCents: payment.netAmountCents, commissionRateBps: recipient.effectiveRateBps, commissionAmountCents: recipient.amountCents, merchantCheckoutId: checkout.id, merchantCalculationId: calculation.id, merchantRecipientId: recipient.checkoutRecipientId, merchantLevel: recipient.level, status: "pending", attributedAt: input.occurredAt } });
+    const saved = await tx.affiliateCommission.create({ data: { vendorId: input.vendorId, affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId, deduplicationKey: buildCommissionDeduplicationKey({ affiliateId: recipient.affiliateId, sourceType: "webhook", sourceId: input.transactionId }), referralCode, orderNumber: payment.orderNumber, monthKey: input.occurredAt.toISOString().slice(0, 7), orderAmountCents: plan.grossAmountCents, commissionBaseAmountCents: plan.grossAmountCents, netReferenceAmountCents: payment.netAmountCents, commissionRateBps: recipient.effectiveRateBps, commissionAmountCents: recipient.amountCents, merchantCheckoutId: checkout.id, merchantCalculationId: calculation.id, merchantRecipientId: recipient.checkoutRecipientId, merchantLevel: recipient.level, status: "pending", attributedAt: input.occurredAt } });
     await appendCommissionLedgerEntry(tx, { vendorId: input.vendorId, affiliateCommissionId: saved.id, entryType: "accrual", providerName: input.providerName, eventIdentity: `paid:${input.transactionId}`, amountCents: saved.commissionAmountCents, occurredAt: input.occurredAt });
     commissions.push(saved);
   }
   return { calculation, commissions };
+}
+
+function frozenCheckoutReferralCode(metadata: Prisma.JsonValue | null) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = (metadata as Prisma.JsonObject).referralCode;
+  const code = typeof value === "string" ? value.trim() : "";
+  return code && code.length <= 191 ? code : null;
 }
 
 // Prospective fixed-rate checkouts also preserve the verified affiliate identity.
@@ -127,7 +138,9 @@ function fixedRateTerms(rateBps: number) {
 
 /** Resolve a bounded, tenant-qualified chain without compressing missing levels. */
 async function frozenTeamRecipients(tx: Prisma.TransactionClient, input: { vendorId: string; affiliateId: string }, levelLimit: number, now: Date) {
-  const membership = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, affiliateId: input.affiliateId, status: "ACTIVE", vendorMember: { status: "active", user: { status: "active" } } }, select: { id: true, teamId: true } });
+  // The promoter's affiliate was already verified active with its signed click;
+  // member/user availability never cuts the uplines off a sale it may still make.
+  const membership = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, affiliateId: input.affiliateId, status: "ACTIVE", leftAt: null }, select: { id: true, teamId: true } });
   const recipients: Array<{ id: string; affiliateId: string; level: number; teamId: string | null; teamMembershipId: string | null }> = [{ id: randomUUID(), affiliateId: input.affiliateId, level: 0, teamId: membership?.teamId ?? null, teamMembershipId: membership?.id ?? null }];
   const memberships = new Set<string>(membership ? [membership.id] : []), affiliates = new Set([input.affiliateId]);
   let downline = membership?.id;
@@ -135,12 +148,19 @@ async function frozenTeamRecipients(tx: Prisma.TransactionClient, input: { vendo
     const edges = await tx.teamMembershipRelationship.findMany({ where: { teamId: membership!.teamId, downlineMembershipId: downline, effectiveAt: { lte: now }, OR: [{ endedAt: null }, { endedAt: { gt: now } }] }, take: 2, select: { uplineMembershipId: true } });
     if (!edges.length) break;
     if (edges.length !== 1 || memberships.has(edges[0]!.uplineMembershipId)) throw new MerchantAffiliatePolicyConflict("團隊上線關係不一致。");
-    const parent = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, teamId: membership!.teamId, id: edges[0]!.uplineMembershipId, status: "ACTIVE", vendorMember: { status: "active", user: { status: "active" } } }, select: { id: true, affiliateId: true, affiliate: { select: { vendorId: true, isActive: true } } } });
+    // Read the parent without availability filters so an unavailable upline
+    // still links the chain upward. Only a parent outside this tenant/team is
+    // an inconsistency; availability only decides whether this level is paid.
+    const parent = await tx.teamMembership.findFirst({ where: { vendorId: input.vendorId, teamId: membership!.teamId, id: edges[0]!.uplineMembershipId }, select: { id: true, status: true, leftAt: true, affiliateId: true, vendorMember: { select: { status: true, user: { select: { status: true } } } }, affiliate: { select: { vendorId: true, isActive: true } } } });
     if (!parent) throw new MerchantAffiliatePolicyConflict("團隊上線目前無法確認。");
     memberships.add(parent.id); downline = parent.id;
     if (!parent.affiliateId) continue; // Keep this level's position; never compress a missing recipient.
-    if (parent.affiliate?.vendorId !== input.vendorId || !parent.affiliate.isActive || affiliates.has(parent.affiliateId)) throw new MerchantAffiliatePolicyConflict("團隊受益人不一致。");
+    if (parent.affiliate?.vendorId !== input.vendorId || affiliates.has(parent.affiliateId)) throw new MerchantAffiliatePolicyConflict("團隊受益人不一致。");
     affiliates.add(parent.affiliateId);
+    // A deactivated affiliate, membership, member or user leaves this level
+    // vacant (not compressed); the chain still continues to the next upline.
+    const available = parent.affiliate.isActive && parent.status === "ACTIVE" && parent.leftAt === null && parent.vendorMember.status === "active" && parent.vendorMember.user.status === "active";
+    if (!available) continue;
     recipients.push({ id: randomUUID(), affiliateId: parent.affiliateId, level, teamId: membership!.teamId, teamMembershipId: parent.id });
   }
   return recipients;

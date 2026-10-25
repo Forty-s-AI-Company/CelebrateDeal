@@ -19,7 +19,7 @@ vi.mock("@/lib/db", () => ({
   }),
 }));
 vi.mock("@/components/team-live-share-manager", () => ({
-  TeamLiveShareManager: ({ pages }: { pages: Array<{ id: string }> }) => <div data-testid="live-share-manager">Live shares: {pages.map((page) => page.id).join(",")}</div>,
+  TeamLiveShareManager: ({ pages }: { pages: Array<{ id: string; targets: Array<{ membershipId: string }> }> }) => <div data-testid="live-share-manager">Live shares: {pages.map((page) => page.id).join(",")} targets: {pages.flatMap((page) => page.targets.map((target) => target.membershipId)).join(",")}</div>,
 }));
 vi.mock("@/components/ui", () => ({
   ButtonLink: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
@@ -44,7 +44,7 @@ beforeEach(() => {
         teamId: "team-1",
         vendorMemberId: "member-1",
         vendorMember: { user: { name: "Owner", email: "owner@example.com" } },
-        downlineRelationships: [],
+        uplineRelationships: [],
       }],
     },
   }]);
@@ -125,5 +125,24 @@ describe("/partner-pages route", () => {
     expect(mocks.membershipFindMany).not.toHaveBeenCalled();
     expect(mocks.pageFindMany).not.toHaveBeenCalled();
     expect(html).toContain("還沒有夥伴頁");
+  });
+
+  it("offers only the promoter's direct downlines as live share targets", async () => {
+    const user = (name: string) => ({ name, email: `${name}@example.com` });
+    mocks.membershipFindMany.mockResolvedValue([{
+      id: "membership-1",
+      teamId: "team-1",
+      team: {
+        memberships: [
+          { id: "membership-1", teamId: "team-1", vendorMemberId: "member-1", vendorMember: { user: user("owner") }, uplineRelationships: [] },
+          { id: "membership-down", teamId: "team-1", vendorMemberId: "member-2", vendorMember: { user: user("down") }, uplineRelationships: [{ uplineMembershipId: "membership-1" }] },
+          { id: "membership-other", teamId: "team-1", vendorMemberId: "member-3", vendorMember: { user: user("other") }, uplineRelationships: [{ uplineMembershipId: "membership-down" }] },
+        ],
+      },
+    }]);
+
+    const html = renderToStaticMarkup(await PartnerPagesPage());
+
+    expect(html).toContain("targets: membership-down<");
   });
 });
