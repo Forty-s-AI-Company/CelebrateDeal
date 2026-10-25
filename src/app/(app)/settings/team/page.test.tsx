@@ -234,4 +234,39 @@ describe("TeamSettingsPage", () => {
     expect(formFor("membership-b")).toMatch(/<option value="membership-a" selected="">Alice<\/option>/);
     expect(formFor("membership-b")).not.toMatch(/<option value="" selected/);
   });
+
+  it("remounts the upline and affiliate selects when the server-side value changes", async () => {
+    type El = { type?: unknown; key?: string | null; props?: { name?: string; defaultValue?: string; children?: unknown } };
+    const findSelects = (node: unknown, name: string, out: El[] = []): El[] => {
+      if (Array.isArray(node)) { node.forEach((child) => findSelects(child, name, out)); return out; }
+      if (!node || typeof node !== "object") return out;
+      const el = node as El;
+      if (el.type === "select" && el.props?.name === name) out.push(el);
+      findSelects(el.props?.children, name, out);
+      return out;
+    };
+    const render = async (affiliate: unknown, upline: string | null) => {
+      mocks.salesTeamFindMany.mockResolvedValue(teamWith([
+        { ...membership("alice", "alice@example.com", affiliate), uplineRelationships: upline ? [{ uplineMembershipId: upline }] : [] },
+        membership("bob", "bob@example.com"),
+      ]));
+      const tree = await TeamSettingsPage({ searchParams: Promise.resolve({ updated: "affiliate_bound" }) });
+      return {
+        affiliate: findSelects(tree, "affiliateId")[0]!,
+        upline: findSelects(tree, "uplineMembershipId")[0]!,
+      };
+    };
+
+    const before = await render(null, null);
+    const after = await render({ id: "affiliate-alice", name: "Alice 推廣", code: "ALICE", isActive: true }, "bob");
+
+    expect(before.affiliate.key).toBe("alice:");
+    expect(after.affiliate.key).toBe("alice:affiliate-alice");
+    expect(after.affiliate.props?.defaultValue).toBe("affiliate-alice");
+    expect(before.upline.key).toBe("alice:");
+    expect(after.upline.key).toBe("alice:bob");
+    expect(after.upline.props?.defaultValue).toBe("bob");
+    expect(after.affiliate.key).not.toBe(before.affiliate.key);
+    expect(after.upline.key).not.toBe(before.upline.key);
+  });
 });
