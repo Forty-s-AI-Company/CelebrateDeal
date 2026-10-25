@@ -44,10 +44,10 @@ import { ATTRIBUTION_COOKIE, attributionCookieFromRequest, encodeAttributionCook
 const IN_WINDOW = new Date("2026-11-01T00:00:00.000Z");
 // After every hard stop.
 const RETIRED = new Date("2028-01-01T00:00:00.000Z");
-// Around ROTATION_EFFECTIVE_AT (2026-10-25T16:00:00Z).
+// Around ROTATION_EFFECTIVE_AT (2026-10-26T16:00:00Z).
 const PRE_ROTATION = new Date("2026-10-25T12:00:00.000Z");
-const POST_ROTATION = new Date("2026-10-25T17:00:00.000Z");
-const AFTER_DEPLOY = new Date("2026-10-26T00:00:00.000Z");
+const POST_ROTATION = new Date("2026-10-26T17:00:00.000Z");
+const AFTER_DEPLOY = new Date("2026-10-27T00:00:00.000Z");
 
 /** Re-signs a "<signed value>.<mac>" token under another purpose, as the old code did. */
 function resign(token: string, purpose: string) {
@@ -156,8 +156,8 @@ describe("rotation helpers", () => {
     expect(decryptWithRotation(envelope, ticket, IN_WINDOW, (plaintext) => plaintext === "ticket").keyVersion).toBe("legacy");
   });
 
-  it("dates the rotation at 2026-10-26 00:00 Taiwan time", () => {
-    expect(ROTATION_EFFECTIVE_AT.toISOString()).toBe("2026-10-25T16:00:00.000Z");
+  it("dates the rotation at 2026-10-27 00:00 Taiwan time", () => {
+    expect(ROTATION_EFFECTIVE_AT.toISOString()).toBe("2026-10-26T16:00:00.000Z");
     expect(issuedBeforeRotation(ROTATION_EFFECTIVE_AT.getTime() - 1)).toBe(true);
     expect(issuedBeforeRotation(ROTATION_EFFECTIVE_AT.getTime())).toBe(false);
     expect(issuedBeforeRotation(Number.NaN)).toBe(false);
@@ -349,16 +349,16 @@ describe("tier 3: long-lived tokens sign with the new key and still accept the o
       const issuedAt = Math.floor(issued.getTime() / 1_000);
       return encryptSensitiveValue(JSON.stringify({ version: "sp1", vendorId: "vendor-1", customerKeyHash, issuedAt, expiresAt: issuedAt + ttlSeconds }), "student-portal-session-v1");
     };
-    const current = createStudentPortalSessionToken({ vendorId: "vendor-1", customerKeyHash, now: PRE_ROTATION, ttlSeconds: 86_400 });
+    const current = createStudentPortalSessionToken({ vendorId: "vendor-1", customerKeyHash, now: PRE_ROTATION, ttlSeconds: 259_200 });
 
     expect(readStudentPortalSessionToken(current, AFTER_DEPLOY)).toMatchObject({ vendorId: "vendor-1" });
-    expect(readStudentPortalSessionToken(legacyCookie(PRE_ROTATION, 86_400), AFTER_DEPLOY)).toMatchObject({ vendorId: "vendor-1" });
+    expect(readStudentPortalSessionToken(legacyCookie(PRE_ROTATION, 259_200), AFTER_DEPLOY)).toMatchObject({ vendorId: "vendor-1" });
     expect(legacyDerivedKeyUseCount("student-portal-session")).toBe(1);
     // New cookies are not readable under the legacy key.
     expect(() => decryptWithRotation(current, { ...DERIVED_KEY_ROTATIONS.studentPortalSession, current: "student-portal-session-v1" }, RETIRED)).toThrow();
 
     // A legacy-key cookie claiming to be issued after the rotation is refused.
-    expect(readStudentPortalSessionToken(legacyCookie(POST_ROTATION, 86_400), AFTER_DEPLOY)).toBeNull();
+    expect(readStudentPortalSessionToken(legacyCookie(POST_ROTATION, 259_200), AFTER_DEPLOY)).toBeNull();
     expect(legacyDerivedKeyUseCount("student-portal-session")).toBe(1);
     expect(readStudentPortalSessionToken(legacyCookie(RETIRED, 3_600), RETIRED)).toBeNull();
   });

@@ -43,13 +43,15 @@ function legacyUntil(purpose: string, acceptUntilIso: string | null): LegacyDeri
 }
 
 /**
- * When the rotated names took effect (staging deploys right after merge):
- * 2026-10-26 00:00 Taiwan time. A legacy-key token whose payload shows it was
+ * When the rotated names take effect: 2026-10-27 00:00 Taiwan time, leaving a
+ * buffer for merge, CI and the staging re-alias. The staging alias must switch
+ * to this build BEFORE this instant; otherwise move the constant later before
+ * deploying (the old build keeps signing with the old key until the switch). A legacy-key token whose payload shows it was
  * issued after this instant cannot be legitimate (the server no longer signed
  * with the old key), so tier 3 readers refuse it even inside the hard-stop
  * window. Tokens without timestamps rely on the hard stop alone.
  */
-export const ROTATION_EFFECTIVE_AT = new Date("2026-10-25T16:00:00.000Z");
+export const ROTATION_EFFECTIVE_AT = new Date("2026-10-26T16:00:00.000Z");
 
 /** True when a legacy-key payload was issued before the rotation took effect. */
 export function issuedBeforeRotation(issuedAtMs: number) {

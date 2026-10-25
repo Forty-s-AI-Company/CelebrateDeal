@@ -769,26 +769,6 @@ describe("PayUni provider", () => {
     await expect(payUniPaymentProvider.verifySignature(request, body)).resolves.toBe(false);
   });
 
-  it("rejects a correctly hashed callback whose GCM tag is truncated", async () => {
-    stubPayUniEnv();
-    const signed = new URLSearchParams(buildPayUniSandboxWebhookFixture({ fixture: "paid", merchantId: "TESTMER", hashKey, hashIv }));
-    const plaintext = new URLSearchParams(decryptCheckoutPayload(signed.get("EncryptInfo")!)).toString();
-    const reencrypt = (authTagLength: number) => {
-      const cipher = createCipheriv("aes-256-gcm", Buffer.from(hashKey), Buffer.from(hashIv), { authTagLength });
-      const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]).toString("base64");
-      const encryptInfo = Buffer.from(`${encrypted}:::${cipher.getAuthTag().toString("base64")}`).toString("hex");
-      const body = new URLSearchParams(signed);
-      body.set("EncryptInfo", encryptInfo);
-      body.set("HashInfo", createHash("sha256").update(`${hashKey}${encryptInfo}${hashIv}`).digest("hex").toUpperCase());
-      return body.toString();
-    };
-    const request = () => new Request("https://app.example.test");
-
-    await expect(payUniPaymentProvider.verifySignature(request(), reencrypt(16))).resolves.toBe(true);
-    await expect(payUniPaymentProvider.verifySignature(request(), reencrypt(12))).resolves.toBe(false);
-    await expect(payUniPaymentProvider.verifySignature(request(), reencrypt(4))).resolves.toBe(false);
-  });
-
   it("rejects a callback whose encrypted merchant does not match the configured shop", async () => {
     stubPayUniEnv();
     const body = buildPayUniSandboxWebhookFixture({

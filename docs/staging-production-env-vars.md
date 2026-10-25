@@ -180,7 +180,8 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
    | `mfa-recovery-code-authentication` | `mfa-recovery-code-authentication:r2:…` | 4 | 新雜湊 `hmac-sha256-v2`；`v1` 以舊鑰驗證 | 至使用或重產 | 未使用的 v1 歸零後 |
 
    - 雙版本驗證一律先試新鑰，失敗才在停用日之前試舊鑰；舊鑰成功時 log `legacy_derived_key_used`（只含固定標籤 `key` 與本程序累計次數，每個標籤每 10 分鐘最多一筆，不含 token、ID 或金鑰）。
-   - **生效時間 `ROTATION_EFFECTIVE_AT` = 2026-10-26 00:00（台灣時間）**（`src/lib/derived-key-purposes.ts`，staging 在 merge 後立即部署）。生效後伺服器不再用舊鑰簽發，所以舊鑰 token 的內容若顯示它在生效後才簽發，必定是偽造，即使在停用日之前也拒絕；這個檢查只在舊鑰 MAC／解密成功後才讀內容，被拒的不計入 `legacy_derived_key_used`。退訂連結沒有時間戳記，只受停用日限制。若部署晚於生效時間，舊程式在兩者之間簽發的 token 會被當成新簽發而拒絕，效果等同第 2 級（重新登入或重新索取），不會放寬。
+   - **生效時間 `ROTATION_EFFECTIVE_AT` = 2026-10-27 00:00（台灣時間，= 2026-10-26T16:00:00Z）**（`src/lib/derived-key-purposes.ts`；比 merge 晚約一天，留給 merge、CI 與 staging 換 alias）。生效後伺服器不再用舊鑰簽發，所以舊鑰 token 的內容若顯示它在生效後才簽發，必定是偽造，即使在停用日之前也拒絕；這個檢查只在舊鑰 MAC／解密成功後才讀內容，被拒的不計入 `legacy_derived_key_used`。退訂連結沒有時間戳記，只受停用日限制。
+   - **部署檢查清單**：staging alias 必須在**生效時間之前**切到本 build；做不到就先把常數往後調再部署。否則舊 build 在生效時間到 alias 切換之間用舊鑰簽發的 token 會被當成偽造：學員入口 session、報名聊天 session 會被登出（重新登入即可），但**推廣歸因 cookie 會被靜默丟棄，該期間點擊後成交的訂單將失去分潤歸因（佣金影響）**，而且事後無法補回。
    - 學員入口 session、報名聊天 session、歸因 cookie 都在 Server Component 或一般讀取路徑上解析，無法在那裡重簽 cookie（Next.js 只允許在 Server Function／Route Handler 寫 cookie），所以沒有「舊鑰驗證成功即換發」。這三者合法的舊 cookie 本來就會在部署後 30 天內過期；停用日只需晚於「部署日＋30 天」。
    - 自動化優惠券：資料列只存 bearer 的雜湊，已寄出的舊連結在券到期前照常可兌換，輪替無法撤回這些連結。要偽造舊券連結需要舊鑰**和**不公開的 `executionLogId`。若要強制撤回，只能讓舊券失效後重發。
    - 停用日是硬性上限：即使沒人刪常數，過了日期舊鑰也不再被接受。若 staging 部署晚於 2026-11-01，對應的停用日需順延後再部署。
@@ -211,4 +212,5 @@ RUN_DEMO_PAYMENT_WEBHOOK_SMOKE=true SMOKE_VENDOR_SLUG=your-vendor npm run extern
    1. **加密欄位（lazy＋batch）**：讓 envelope 帶 key 版本（例如 `v2.` 表示新用途名稱、`v1.` 表示舊用途），解密依版本選鑰、加密一律用新鑰；寫入路徑自然換新，再為每張表寫一支與本腳本相同模式的批次腳本（cursor 分頁、先解密成功再寫、以舊密文做 CAS、dry run／確認值／資料庫守門、可重跑）。用途字串多半含 vendorId／記錄 ID，新名稱以「新前綴＋原本的 scope」組成即可。
    2. **雜湊索引（雙查詢）**：`customerKeyHash`、`automationCustomerKeyHash`、`recipientHash`、`checkoutIdentityHash`、發票 fingerprint、`line-user-lookup`、學員通知 destination index／rate／delivery key、抽獎碼雜湊。先部署「同時算新舊雜湊、查詢用 `IN (新, 舊)`、寫入只寫新」；再以批次腳本從明文來源（解密 envelope 或原始欄位）重算；確認舊雜湊歸零後移除舊鑰。有 unique 約束的欄位要先查新舊兩種雜湊再插入，避免同一身分在過渡期出現兩列。
    3. **優先順序**：訂單買家個資與身分 fingerprint → LINE 與 tracking 憑證（同時建議到供應商端換發憑證，舊密文即失去價值）→ 其餘 PII。短效資料（`registration-form-retry-v1` 10 分鐘、LINE Login verifier）只要改名即可；`cloudflare-live-stream-key` 以在 Cloudflare 換發 stream key 處理較省事。
-   4. #485 引入、名稱可猜的 `csrf-hmac-v1`、`merchant-registration-invite-v2`、`merchant-invite-email-v1` 已於 2026-10-25 一併改為帶隨機後綴的名稱（見上表）。之後新增任何用途，名稱都要帶隨機後綴，並登記到 `DERIVED_KEY_ROTATIONS`。
+   4. **PayUni EncryptInfo 的 GCM tag 長度（另案，尚未強制）**：其他 AES-GCM 解密已固定 16-byte tag（`sensitive-data.ts`、`mfa.ts`，`bank-account.ts`／`affiliate-tax-identity.ts` 指定 `authTagLength: 16`），但 `src/lib/payment-providers/payuni.ts` 的 `decryptInfo` 維持原樣：repo 內沒有 PayUni 實際 tag 長度的證據，而 callback 的真正完整性檢查是 `HashInfo`（以秘密 hashKey 計算的 SHA-256，常數時間比對）。貿然強制 16 bytes 可能靜默丟掉真實付款通知。步驟：先只記錄觀察到的 tag byte 長度（只記長度）；在 sandbox 跑完 Notify、Return、查詢、退款、綁卡全部路徑並確認一律 16 bytes；之後才強制，`scripts/payuni-sandbox-external-qa.mjs` 一併處理。
+   5. #485 引入、名稱可猜的 `csrf-hmac-v1`、`merchant-registration-invite-v2`、`merchant-invite-email-v1` 已於 2026-10-25 一併改為帶隨機後綴的名稱（見上表）。之後新增任何用途，名稱都要帶隨機後綴，並登記到 `DERIVED_KEY_ROTATIONS`。

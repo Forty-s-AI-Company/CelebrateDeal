@@ -962,10 +962,8 @@ function decryptInfo(value) {
   }
   if (!encrypted || !tag) throw new PayUniQueryFailure("response-envelope");
   try {
-    const tagBytes = Buffer.from(tag, "base64");
-    if (tagBytes.length !== 16) throw new Error("Invalid PayUni response tag.");
-    const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv), { authTagLength: 16 });
-    decipher.setAuthTag(tagBytes);
+    const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
+    decipher.setAuthTag(Buffer.from(tag, "base64"));
     const plaintext = Buffer.concat([
       decipher.update(Buffer.from(encrypted, "base64")),
       decipher.final(),

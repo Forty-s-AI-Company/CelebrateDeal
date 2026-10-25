@@ -382,7 +382,7 @@ describe("smart automation workflow engine", () => {
   });
 
   it.each([
-    ["created after the rotation", new Date("2026-10-26T00:00:00.000Z")],
+    ["created after the rotation", new Date("2026-10-27T00:00:00.000Z")],
   ])("fails explicitly instead of sending a broken link for a legacy-key grant %s", async (_label, createdAt) => {
     const conflict = new Prisma.PrismaClientKnownRequestError("duplicate", {
       code: "P2002",
