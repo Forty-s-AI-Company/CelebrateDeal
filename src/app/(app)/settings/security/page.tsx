@@ -32,6 +32,7 @@ import { StepUpMfaNotice } from "@/components/step-up-mfa-notice";
 import { loadPendingVendorInvitations, PendingVendorInvitations } from "@/components/pending-vendor-invitations";
 import { recentMfaStatus } from "@/lib/recent-mfa";
 import { statusLabel } from "@/lib/status-labels";
+import { vendorMemberRoleLabel } from "@/lib/vendor-roles";
 
 const errorMessages: Record<string, string> = {
   current_password: "目前密碼不正確。",
@@ -303,9 +304,10 @@ export default async function SecuritySettingsPage({
                 <option value="admin">Admin</option>
                 <option value="accountant">Accountant</option>
                 <option value="support">Support</option>
+                <option value="partner">夥伴（只能使用夥伴入口）</option>
               </SelectField>
               <div className="md:col-span-2">
-                <p className="mb-3 text-sm text-blue-800">系統會寄送 72 小時內有效的一次性邀請連結；對方接受前不會建立或變更任何成員資格。</p>
+                <p className="mb-3 text-sm text-blue-800">系統會寄送 72 小時內有效的一次性邀請連結；對方接受前不會建立或變更任何成員資格。「夥伴」只能使用夥伴入口查看你在推廣夥伴頁授權給他的帳本，看不到商家後台。</p>
                 <SubmitButton>寄送邀請</SubmitButton>
               </div>
             </form>
@@ -330,7 +332,7 @@ export default async function SecuritySettingsPage({
                       <p className="font-semibold text-slate-900">{member.user.name}</p>
                       <p className="text-xs text-slate-500">{member.user.email}</p>
                     </td>
-                    <td className="px-4 py-3 capitalize text-slate-600">{member.role}</td>
+                    <td className="px-4 py-3 text-slate-600">{vendorMemberRoleLabel(member.role)}</td>
                     <td className="px-4 py-3">
                       <Badge tone={member.status === "active" ? "green" : "gray"}>{statusLabel("teamMember", member.status)}</Badge>
                     </td>

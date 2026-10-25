@@ -6059,6 +6059,49 @@ describe("login for accounts without an active membership (#462 M1)", () => {
   );
 });
 
+describe("login for a partner-only account", () => {
+  const partnerOnly = {
+    user: { id: "user-p", email: "partner@example.com", platformRole: "none", mfaFactor: null },
+    vendor: null,
+    member: null,
+    isPlatformAdmin: false,
+    partnerPortalOnly: true,
+    partnerVendorId: "vendor-1",
+  };
+
+  function partnerLogin(next?: string) {
+    const formData = loginFormData("partner@example.com", "test-fixture-password");
+    if (next) formData.set("next", next);
+    return formData;
+  }
+
+  it("signs in to the partner portal with a session bound to the partner vendor", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(partnerOnly);
+
+    await expect(loginAction(partnerLogin("/dashboard"))).rejects.toThrow(/^redirect:\/affiliate-portal$/u);
+    expect(mocks.createUserSession).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-p", vendorId: "vendor-1" }));
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "login_success", actorLabel: "partner", actorId: "user-p" }));
+    expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(expect.objectContaining({ action: "login_without_active_vendor" }));
+  });
+
+  it("verifies an enrolled partner's MFA before the portal", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue({ ...partnerOnly, user: { ...partnerOnly.user, mfaFactor: { id: "factor" } } });
+
+    await expect(loginAction(partnerLogin())).rejects.toThrow("redirect:/mfa/verify?next=%2Faffiliate-portal");
+  });
+
+  it("returns a partner with a pending invitation to that invitation only when asked", async () => {
+    mocks.cookies.mockResolvedValue({ delete: vi.fn(), set: vi.fn() });
+    mocks.authenticateUser.mockResolvedValue(partnerOnly);
+    mocks.invitationFindFirst.mockResolvedValue({ id: "invitation-1" });
+
+    await expect(loginAction(partnerLogin("/invitations/accept?token=abc"))).rejects.toThrow("redirect:/invitations/accept?token=abc");
+    await expect(loginAction(partnerLogin("/dashboard"))).rejects.toThrow(/^redirect:\/affiliate-portal$/u);
+  });
+});
+
 describe("MFA verification lock (#462 m3)", () => {
   it("rejects every attempt while the account is locked, without checking the code", async () => {
     mocks.accountLockRemainingSeconds.mockResolvedValueOnce(1800);

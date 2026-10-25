@@ -1,5 +1,6 @@
 import type { EmailBrandSnapshot } from "@/lib/email-delivery-pii";
 import { sanitizeEmailBrandSnapshot } from "@/lib/email-delivery-pii";
+import { vendorMemberRoleLabel } from "@/lib/vendor-roles";
 
 type SendEmailInput = {
   to: string;
@@ -198,12 +199,6 @@ export async function sendMerchantEmailVerificationEmail({
   });
 }
 
-const VENDOR_MEMBER_ROLE_LABELS: Record<string, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  accountant: "Accountant（財務）",
-  support: "Support（客服）",
-};
 
 /** Invitation to join a vendor workspace (F-029). The link is single-use and expires. */
 export async function sendVendorMemberInvitationEmail({
@@ -217,7 +212,7 @@ export async function sendVendorMemberInvitationEmail({
   role: string;
   acceptUrl: string;
 }) {
-  const roleLabel = VENDOR_MEMBER_ROLE_LABELS[role] ?? role;
+  const roleLabel = vendorMemberRoleLabel(role);
   const safeVendor = escapeHtml(vendorName);
   const safeRole = escapeHtml(roleLabel);
   const safeUrl = escapeHtml(acceptUrl);

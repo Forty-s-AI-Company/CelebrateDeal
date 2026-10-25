@@ -15,6 +15,7 @@ import {
   revokeCurrentSession,
   sessionCookieOptions,
 } from "@/lib/auth";
+import { signedInHomePath } from "@/lib/vendor-roles";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getLoginSourceLimit } from "@/lib/auth-rate-limits";
@@ -108,8 +109,10 @@ export async function loginAction(formData: FormData) {
   // #462 M1: an account without an active membership (for example a member
   // who was deactivated and invited again) may sign in only to accept a
   // pending invitation addressed to it; everything else still says no_vendor.
+  // A partner-only account signs in to the partner portal (see loginFacts).
+  const login = loginFacts(auth);
   const invitationLogin = !auth.isPlatformAdmin && !auth.vendor && await hasPendingVendorMemberInvitation(getDb(), auth.user.email);
-  if (!auth.isPlatformAdmin && !auth.vendor && !invitationLogin) {
+  if (!auth.isPlatformAdmin && !auth.vendor && !invitationLogin && !login.partnerLogin) {
     await writeAuditLog({
       actorId: auth.user.id,
       actorLabel: "user_without_vendor",
@@ -123,7 +126,7 @@ export async function loginAction(formData: FormData) {
 
   const { token, expiresAt } = await createUserSession({
     userId: auth.user.id,
-    vendorId: auth.vendor?.id ?? null,
+    vendorId: login.sessionVendorId,
     ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     userAgent: headerStore.get("user-agent"),
   });
@@ -133,20 +136,45 @@ export async function loginAction(formData: FormData) {
   await writeAuditLog({
     vendorId: auth.vendor?.id ?? null,
     actorId: auth.user.id,
-    actorLabel: auth.isPlatformAdmin ? "platform_admin" : auth.member?.role ?? "user",
+    actorLabel: login.actorLabel,
     action: "login_success",
     targetType: "User",
     targetId: auth.user.id,
     after: { email: auth.user.email, platformRole: auth.user.platformRole, vendorId: auth.vendor?.id ?? null },
   });
-  const destination = invitationLogin
-    ? invitationReturnPath(formData.get("next"))
-    : auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
+  const destination = loginDestination(auth, { invitationLogin, partnerLogin: login.partnerLogin }, formData.get("next"));
   // Vendor roles may enroll voluntarily; the platform finance back office
   // sends a platform admin without a factor to setup. An enabled factor
   // protects every new session before authenticated content is available.
   if (auth.user.mfaFactor) redirect(`/mfa/verify?next=${encodeURIComponent(destination)}`);
   redirect(destination);
+}
+
+type AuthenticatedLogin = NonNullable<Awaited<ReturnType<typeof authenticateUser>>>;
+
+/**
+ * A partner-only account never gets a merchant back-office vendor context
+ * (see chooseVendor); it signs in to the partner portal. Its session records
+ * the partner vendor so deactivating that membership revokes the session.
+ */
+function loginFacts(auth: AuthenticatedLogin) {
+  const partnerLogin = !auth.isPlatformAdmin && !auth.vendor && auth.partnerPortalOnly;
+  return {
+    partnerLogin,
+    sessionVendorId: auth.vendor?.id ?? (partnerLogin ? auth.partnerVendorId : null),
+    actorLabel: auth.isPlatformAdmin ? "platform_admin" : auth.member?.role ?? (partnerLogin ? "partner" : "user"),
+  };
+}
+
+/** A pending invitation wins only when asked for, or when the account has no other home. */
+function loginDestination(auth: AuthenticatedLogin, kind: { invitationLogin: boolean; partnerLogin: boolean }, next: FormDataEntryValue | null) {
+  if (kind.invitationLogin && (!kind.partnerLogin || isInvitationReturnPath(next))) return invitationReturnPath(next);
+  return signedInHomePath(auth);
+}
+
+function isInvitationReturnPath(value: FormDataEntryValue | null) {
+  const next = safeInternalPath(typeof value === "string" ? value : "", "");
+  return next === "/invitations/accept" || next.startsWith("/invitations/accept?");
 }
 
 /** Only the invitation acceptance page is a valid post-login return target here. */

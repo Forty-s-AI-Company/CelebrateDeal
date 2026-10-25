@@ -8,6 +8,7 @@ import type { Prisma, User, VendorMember } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { decryptMfaSecret } from "@/lib/mfa";
 import { verifyPasswordAsync } from "@/lib/password";
+import { isVendorBackofficeRole, isVendorPartnerRole, PARTNER_PORTAL_PATH, signedInHomePath } from "@/lib/vendor-roles";
 
 export const AUTH_COOKIE = "celebrate_session";
 export const LEGACY_VENDOR_COOKIE = "celebrate_vendor_id";
@@ -67,12 +68,26 @@ function safeMfaNextPath(value: string, fallback = "/billing/usage") {
   return safeInternalPathOr(value, fallback);
 }
 
+function activeMemberships(user: UserWithMemberships) {
+  return user.memberships.filter((membership) => membership.status === ACTIVE_MEMBER_STATUS);
+}
+
+/**
+ * Only a back-office membership can become the current vendor context. A
+ * partner membership never does, so every guard and route that reads the
+ * session's vendor or member denies partners without its own role check.
+ */
 function chooseVendor(user: UserWithMemberships, sessionVendorId?: string | null) {
-  const activeMemberships = user.memberships.filter((membership) => membership.status === ACTIVE_MEMBER_STATUS);
+  const backoffice = activeMemberships(user).filter((membership) => isVendorBackofficeRole(membership.role));
   const selected = sessionVendorId
-    ? activeMemberships.find((membership) => membership.vendorId === sessionVendorId)
+    ? backoffice.find((membership) => membership.vendorId === sessionVendorId)
     : null;
-  return selected ?? activeMemberships[0] ?? null;
+  return selected ?? backoffice[0] ?? null;
+}
+
+/** No back-office membership, but at least one active partner membership. */
+function isPartnerPortalOnly(user: UserWithMemberships, selected: unknown) {
+  return !selected && !isPlatformAdmin(user) && activeMemberships(user).some((membership) => isVendorPartnerRole(membership.role));
 }
 
 async function createSession({
@@ -224,6 +239,7 @@ export async function getCurrentAuth(options: { allowUnverifiedMfa?: boolean } =
     vendor,
     member: selectedMembership,
     isPlatformAdmin: isPlatformAdmin(session.user),
+    partnerPortalOnly: isPartnerPortalOnly(session.user, selectedMembership),
     isMfaVerified: Boolean(session.mfaVerifiedAt),
   };
 }
@@ -239,7 +255,7 @@ export async function requireAuth(options: { allowUnverifiedMfa?: boolean; nextP
     redirect("/login");
   }
   if (auth.user.mfaFactor && !auth.isMfaVerified && !options.allowUnverifiedMfa) {
-    const fallback = auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
+    const fallback = signedInHomePath(auth);
     const next = safeMfaNextPath(options.nextPath ?? fallback, fallback);
     redirect(`/mfa/verify?next=${encodeURIComponent(next)}`);
   }
@@ -248,8 +264,9 @@ export async function requireAuth(options: { allowUnverifiedMfa?: boolean; nextP
 
 export async function requireVendorContext(nextPath?: string, fallbackPath = "/dashboard") {
   const auth = await requireAuth({ nextPath: nextPath ? safeMfaNextPath(nextPath, fallbackPath) : undefined });
-  if (!auth.vendor) {
-    redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/login?error=no_vendor");
+  // Defense in depth: getCurrentAuth never selects a non-back-office member.
+  if (!auth.vendor || !auth.member || !isVendorBackofficeRole(auth.member.role)) {
+    redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : auth.partnerPortalOnly ? PARTNER_PORTAL_PATH : "/login?error=no_vendor");
   }
 
   return {
@@ -381,6 +398,7 @@ export async function requireVendorOwnerFinance(nextPath = "/billing/plans") {
 export async function requireVendorOwner() {
   const auth = await requireAuth();
 
+  if (auth.partnerPortalOnly) redirect(PARTNER_PORTAL_PATH);
   if (!auth.vendor || !auth.member || auth.member.status !== ACTIVE_MEMBER_STATUS || auth.member.role !== "owner") {
     redirect("/settings/security?error=owner_required");
   }
@@ -420,6 +438,10 @@ export async function authenticateUser(email: string, password: string) {
     vendor: membership?.vendor ?? null,
     member: membership,
     isPlatformAdmin: isPlatformAdmin(user),
+    partnerPortalOnly: isPartnerPortalOnly(user, membership),
+    // Recorded on a partner-only session so deactivating that membership
+    // revokes it like any other member's session.
+    partnerVendorId: membership ? null : activeMemberships(user).find((candidate) => isVendorPartnerRole(candidate.role))?.vendorId ?? null,
   };
 }
 

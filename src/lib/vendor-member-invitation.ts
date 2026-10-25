@@ -11,14 +11,18 @@ import { Prisma, type PrismaClient } from "@prisma/client";
  * the invited address, or create a new account with that address. Platform
  * administrators and suspended accounts are recorded like any other
  * invitation but are never e-mailed and can never accept.
+ *
+ * `partner` is the least-privileged role: it never opens the merchant back
+ * office (see `@/lib/vendor-roles`) and only uses the partner portal, where
+ * access is granted per affiliate through AffiliatePortalAccess.
  */
-export const VENDOR_MEMBER_ROLES = ["owner", "admin", "accountant", "support"] as const;
+export const VENDOR_MEMBER_ROLES = ["owner", "admin", "accountant", "support", "partner"] as const;
 export type VendorMemberRole = (typeof VENDOR_MEMBER_ROLES)[number];
 export const VENDOR_MEMBER_INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-const ROLE_RANK: Record<VendorMemberRole, number> = { owner: 3, admin: 2, accountant: 1, support: 1 };
+const ROLE_RANK: Record<VendorMemberRole, number> = { owner: 3, admin: 2, accountant: 1, support: 1, partner: 0 };
 
 /** Roles an owner may assign directly: strictly fewer privileges than `current`. */
 export function downgradeRolesFor(current: string): VendorMemberRole[] {

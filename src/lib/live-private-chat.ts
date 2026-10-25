@@ -6,6 +6,7 @@ import { decryptPrivateChatBody, encryptPrivateChatBody, normalizePrivateChatBod
 import { normalizeClientIp } from "./request-client-ip";
 import { DERIVED_KEY_ROTATIONS } from "./derived-key-rotation";
 import { deriveSensitiveDataKey } from "./sensitive-data";
+import { isVendorBackofficeRole } from "./vendor-roles";
 
 type Proof = { admissionToken: string | null; chatSessionToken: string | null; ipAddress: string | null; now?: Date };
 type Scope = { vendorId: string; liveId: string; submissionId: string };
@@ -122,7 +123,9 @@ async function instructorScope(tx: Prisma.TransactionClient, input: Instructor, 
     orderBy: { createdAt: "asc" }, select: { id: true, vendorId: true, role: true } });
   // Match auth.chooseVendor for legacy sessions without a selected vendor.
   // Re-read the choice rather than letting the caller choose any membership.
-  const member = memberships.find(candidate => candidate.vendorId === session.vendorId) ?? memberships[0];
+  // Partner memberships never become the vendor context there either.
+  const backoffice = memberships.filter(candidate => isVendorBackofficeRole(candidate.role));
+  const member = backoffice.find(candidate => candidate.vendorId === session.vendorId) ?? backoffice[0];
   if (!member || member.id !== input.memberId || member.vendorId !== input.vendorId || !["owner", "admin"].includes(member.role)) throw new LiveChatError("access_denied");
   const preference = await tx.userOnboardingPreference.findUnique({
     where: { userId_vendorId: { userId: input.userId, vendorId: input.vendorId } },

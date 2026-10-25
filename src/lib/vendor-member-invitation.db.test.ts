@@ -19,13 +19,16 @@ vi.mock("next/navigation", () => ({
   redirect: (url: string): never => {
     throw new Error(`redirect:${url}`);
   },
+  notFound: (): never => {
+    throw new Error("not_found");
+  },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
   after: (callback: () => Promise<void> | void) => { state.deferred.push(callback); },
 }));
-vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(async () => undefined) }));
+vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: vi.fn(async () => undefined), getCsrfToken: vi.fn(async () => "synthetic-csrf"), CSRF_FIELD_NAME: "csrfToken" }));
 vi.mock("@/lib/app-url", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/app-url")>()),
   getCanonicalAppUrl: () => "https://app.example.test",
@@ -45,6 +48,22 @@ import {
   hashVendorMemberInvitationToken,
   revokeVendorMemberInvitation,
 } from "@/lib/vendor-member-invitation";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  getCurrentAuth,
+  requireVendor,
+  requireVendorContext,
+  requireVendorFinance,
+  requireVendorManagerContext,
+  requireVendorOwner,
+  requireVendorSupportContext,
+} from "@/lib/auth";
+import { hasActiveAffiliatePortalAccess, listAffiliatePortalAccess } from "@/lib/affiliate-portal";
+import ProtectedLayout from "@/app/(app)/layout";
+import AffiliatePortalIndex from "@/app/affiliate-portal/page";
+import { GET as dashboardDetails } from "@/app/api/dashboard/details/route";
+import { GET as videoStatus } from "@/app/api/media/videos/status/route";
+import { POST as exportRemuneration } from "@/app/api/affiliates/[affiliateId]/remuneration/[snapshotId]/export/route";
 
 const created = { vendorIds: [] as string[], userIds: [] as string[], emails: [] as string[] };
 
@@ -108,6 +127,8 @@ afterEach(async () => {
   const newUsers = await db.user.findMany({ where: { email: { in: emails } }, select: { id: true } });
   const allUserIds = [...userIds, ...newUsers.map((user) => user.id)];
   await db.auditLog.deleteMany({ where: { OR: [{ vendorId: { in: vendorIds } }, { actorId: { in: allUserIds } }] } });
+  await db.affiliatePortalAccess.deleteMany({ where: { vendorId: { in: vendorIds } } });
+  await db.affiliate.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.vendorMemberInvitation.deleteMany({ where: { vendorId: { in: vendorIds } } });
   await db.userPolicyConsent.deleteMany({ where: { userId: { in: allUserIds } } });
   await db.userSession.deleteMany({ where: { userId: { in: allUserIds } } });
@@ -384,5 +405,185 @@ describe("member invitation acceptance (PostgreSQL)", () => {
     await expect(getDb().vendorMemberInvitation.create({ data: { ...base, email: "Upper@Example.test", role: "admin" } })).rejects.toThrow();
     await expect(getDb().vendorMemberInvitation.create({ data: { ...base, email: "x@example.test", role: "admin", tokenHash: "raw-token" } })).rejects.toThrow();
     await expect(getDb().vendorMemberInvitation.create({ data: { ...base, email: "x@example.test", role: "admin", acceptedAt: new Date(), revokedAt: new Date() } })).rejects.toThrow();
+  });
+});
+
+describe("partner role (PostgreSQL)", () => {
+  async function partnerAccount(label: string) {
+    const password = `synthetic-partner-password-${randomUUID()}`;
+    const user = await getDb().user.create({ data: { name: `Partner ${label}`, email: `partner-${label}-${randomUUID()}@example.test`, passwordHash: hashPassword(password) } });
+    created.userIds.push(user.id);
+    return { user, password };
+  }
+
+  function loginForm(email: string, password: string) {
+    const form = new FormData();
+    form.set("email", email);
+    form.set("password", password);
+    return form;
+  }
+
+  async function grantPortal(vendorId: string, vendorMemberId: string) {
+    const affiliate = await getDb().affiliate.create({ data: { vendorId, name: "Synthetic affiliate", code: `PARTNER-${randomUUID()}` } });
+    await getDb().affiliatePortalAccess.create({ data: { vendorId, affiliateId: affiliate.id, vendorMemberId, active: true, revision: 1 } });
+    return affiliate;
+  }
+
+  async function outcome(run: () => Promise<unknown>) {
+    try {
+      const value = await run();
+      return value instanceof Response ? `status:${value.status}` : "resolved";
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  it("invites, accepts and signs a partner in to the partner portal only", async () => {
+    const { vendor, owner } = await createVendor("partner");
+    const { user, password } = await partnerAccount("invitee");
+
+    // The owner's form accepts the new role and the database CHECK stores it.
+    await signIn(owner.id, vendor.id);
+    // Its own source address keeps the per-IP invitation limit independent of earlier tests.
+    vi.mocked(headers).mockResolvedValueOnce(new Headers({ "user-agent": "synthetic-agent", "x-forwarded-for": "198.51.100.200" }) as Awaited<ReturnType<typeof headers>>);
+    await expect(createVendorMemberAction(inviteForm(user.email, "partner"))).rejects.toThrow("updated=member_invited");
+    for (const work of state.deferred) await work();
+    expect(vi.mocked(sendVendorMemberInvitationEmail).mock.calls[0]![0]).toMatchObject({ to: user.email, role: "partner" });
+    const acceptUrl = new URL(vi.mocked(sendVendorMemberInvitationEmail).mock.calls[0]![0].acceptUrl);
+
+    // Accepting while signed in as the invitee lands on the portal, not the back office.
+    await signIn(user.id, null);
+    const accept = new FormData();
+    accept.set("token", acceptUrl.searchParams.get("token")!);
+    await expect(acceptVendorMemberInvitationAction(accept)).rejects.toThrow("redirect:/affiliate-portal");
+    const partnerMember = await membership(vendor.id, user.id);
+    expect(partnerMember).toMatchObject({ role: "partner", status: "active" });
+
+    // Signing in again: portal destination, and the session records the partner vendor.
+    state.token = "";
+    await expect(loginAction(loginForm(user.email, password))).rejects.toThrow("redirect:/affiliate-portal");
+    const session = await getDb().userSession.findFirstOrThrow({ where: { userId: user.id, revokedAt: null }, orderBy: { createdAt: "desc" } });
+    expect(session.vendorId).toBe(vendor.id);
+    await expect(getCurrentAuth()).resolves.toMatchObject({ vendor: null, member: null, partnerPortalOnly: true });
+
+    // Every merchant guard, the back-office layout and representative routes refuse the partner.
+    const refusals = {
+      requireVendorContext: await outcome(() => requireVendorContext()),
+      requireVendor: await outcome(() => requireVendor()),
+      requireVendorManagerContext: await outcome(() => requireVendorManagerContext()),
+      requireVendorSupportContext: await outcome(() => requireVendorSupportContext()),
+      requireVendorFinance: await outcome(() => requireVendorFinance()),
+      requireVendorOwner: await outcome(() => requireVendorOwner()),
+      layout: await outcome(() => ProtectedLayout({ children: "back office" })),
+      inviteAction: await outcome(() => createVendorMemberAction(inviteForm(`other-${randomUUID()}@example.test`, "admin"))),
+      roleAction: await outcome(() => changeVendorMemberRoleAction((() => { const form = new FormData(); form.set("id", partnerMember!.id); form.set("role", "partner"); return form; })())),
+      dashboardDetailsApi: await outcome(() => dashboardDetails(new Request("https://app.example.test/api/dashboard/details"))),
+      videoStatusApi: await outcome(() => videoStatus(new Request("https://app.example.test/api/media/videos/status?id=video-1", { headers: { origin: "https://app.example.test", "x-celebratedeal-client": "web" } }))),
+      remunerationExportApi: await outcome(() => exportRemuneration(new Request("https://app.example.test/api/affiliates/a/remuneration/s/export", { method: "POST" }), { params: Promise.resolve({ affiliateId: "a", snapshotId: "s" }) })),
+    };
+    expect(refusals).toEqual({
+      requireVendorContext: "redirect:/affiliate-portal",
+      requireVendor: "redirect:/affiliate-portal",
+      requireVendorManagerContext: "redirect:/affiliate-portal",
+      requireVendorSupportContext: "redirect:/affiliate-portal",
+      requireVendorFinance: "redirect:/affiliate-portal",
+      requireVendorOwner: "redirect:/affiliate-portal",
+      layout: "redirect:/affiliate-portal",
+      inviteAction: "redirect:/affiliate-portal",
+      roleAction: "redirect:/affiliate-portal",
+      dashboardDetailsApi: "redirect:/affiliate-portal",
+      videoStatusApi: "status:403",
+      remunerationExportApi: "status:401",
+    });
+    // Nothing was written by the refused actions.
+    expect(await getDb().vendorMemberInvitation.count({ where: { vendorId: vendor.id, acceptedAt: null, revokedAt: null } })).toBe(0);
+    expect(await membership(vendor.id, user.id)).toMatchObject({ role: "partner" });
+
+    // The partner portal itself keeps working with the partner's own grant.
+    const affiliate = await grantPortal(vendor.id, partnerMember!.id);
+    await expect(listAffiliatePortalAccess(getDb(), { userId: user.id })).resolves.toMatchObject({ entries: [{ affiliateId: affiliate.id, vendorSlug: vendor.slug }] });
+    const portal = renderToStaticMarkup(await AffiliatePortalIndex({ searchParams: Promise.resolve({}) }));
+    expect(portal).toContain("夥伴入口");
+    expect(portal).toContain(`/affiliate-portal/${vendor.slug}/${affiliate.id}`);
+    // No way back into a back office the partner does not have; sign-out instead.
+    expect(portal).not.toContain('href="/dashboard"');
+    expect(portal).toContain("登出");
+
+    // Deactivating the partner revokes the partner's session like any member's.
+    await signIn(owner.id, vendor.id);
+    const deactivate = new FormData();
+    deactivate.set("id", partnerMember!.id);
+    deactivate.set("confirmation", user.email);
+    await expect(deactivateVendorMemberAction(deactivate)).rejects.toThrow("updated=member_deactivated");
+    expect(await getDb().userSession.findUniqueOrThrow({ where: { id: session.id } })).toMatchObject({ revokedAt: expect.any(Date) });
+  });
+
+  it("ranks partner below every staff role: downgrades reach it, nothing is raised from it", async () => {
+    const { vendor, owner } = await createVendor("partner-rank");
+    const support = await createUser("support");
+    const supportMember = await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: support.id, role: "support" } });
+    const accountant = await createUser("accountant");
+    const accountantMember = await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: accountant.id, role: "accountant" } });
+    await signIn(owner.id, vendor.id);
+    const roleForm = (id: string, role: string) => { const form = new FormData(); form.set("id", id); form.set("role", role); return form; };
+
+    await expect(changeVendorMemberRoleAction(roleForm(supportMember.id, "partner"))).rejects.toThrow("updated=member_role_downgraded");
+    await expect(changeVendorMemberRoleAction(roleForm(accountantMember.id, "partner"))).rejects.toThrow("updated=member_role_downgraded");
+    expect(await membership(vendor.id, support.id)).toMatchObject({ role: "partner" });
+    expect(await membership(vendor.id, accountant.id)).toMatchObject({ role: "partner" });
+    for (const role of ["support", "accountant", "admin", "owner"]) {
+      await expect(changeVendorMemberRoleAction(roleForm(supportMember.id, role))).rejects.toThrow("error=member_role_upgrade");
+    }
+    expect(await membership(vendor.id, support.id)).toMatchObject({ role: "partner" });
+  });
+
+  it("turns a signed-in support member into a partner only through an accepted invitation", async () => {
+    const { vendor, owner } = await createVendor("partner-accept");
+    const member = await createUser("support-member");
+    await getDb().vendorMember.create({ data: { vendorId: vendor.id, userId: member.id, role: "support" } });
+    const invitation = await createVendorMemberInvitation(getDb(), { vendorId: vendor.id, invitedByUserId: owner.id, email: member.email, name: "Partner", role: "partner" });
+
+    await signIn(member.id, vendor.id);
+    await expect(getCurrentAuth()).resolves.toMatchObject({ member: { role: "support" } });
+    const accept = new FormData();
+    accept.set("token", invitation.token);
+    await expect(acceptVendorMemberInvitationAction(accept)).rejects.toThrow("redirect:/affiliate-portal");
+    expect(await membership(vendor.id, member.id)).toMatchObject({ role: "partner", status: "active" });
+    // The same session immediately loses the back office.
+    await expect(requireVendorSupportContext()).rejects.toThrow("redirect:/affiliate-portal");
+  });
+
+  it("shows the portal link only for a valid grant bound to the current vendor and member", async () => {
+    const a = await createVendor("portal-a");
+    const b = await createVendor("portal-b");
+    const support = await createUser("support-with-grant");
+    const supportA = await getDb().vendorMember.create({ data: { vendorId: a.vendor.id, userId: support.id, role: "support" } });
+    const supportB = await getDb().vendorMember.create({ data: { vendorId: b.vendor.id, userId: support.id, role: "support" } });
+    const ownerA = await getDb().vendorMember.findFirstOrThrow({ where: { vendorId: a.vendor.id, userId: a.owner.id } });
+
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: a.vendor.id, vendorMemberId: supportA.id, userId: support.id })).toBe(false);
+    const affiliate = await grantPortal(a.vendor.id, supportA.id);
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: a.vendor.id, vendorMemberId: supportA.id, userId: support.id })).toBe(true);
+    // Not in the other tenant, not through another member, not for another user.
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: b.vendor.id, vendorMemberId: supportB.id, userId: support.id })).toBe(false);
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: b.vendor.id, vendorMemberId: supportA.id, userId: support.id })).toBe(false);
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: a.vendor.id, vendorMemberId: ownerA.id, userId: a.owner.id })).toBe(false);
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: a.vendor.id, vendorMemberId: supportA.id, userId: a.owner.id })).toBe(false);
+    // Revoked grants, inactive affiliates and inactive members do not count.
+    await getDb().affiliate.update({ where: { id: affiliate.id }, data: { isActive: false } });
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: a.vendor.id, vendorMemberId: supportA.id, userId: support.id })).toBe(false);
+    await getDb().affiliate.update({ where: { id: affiliate.id }, data: { isActive: true } });
+    await getDb().affiliatePortalAccess.update({ where: { vendorId_affiliateId: { vendorId: a.vendor.id, affiliateId: affiliate.id } }, data: { active: false } });
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: a.vendor.id, vendorMemberId: supportA.id, userId: support.id })).toBe(false);
+    await getDb().affiliatePortalAccess.update({ where: { vendorId_affiliateId: { vendorId: a.vendor.id, affiliateId: affiliate.id } }, data: { active: true } });
+    await getDb().vendorMember.update({ where: { id: supportA.id }, data: { status: "inactive" } });
+    expect(await hasActiveAffiliatePortalAccess(getDb(), { vendorId: a.vendor.id, vendorMemberId: supportA.id, userId: support.id })).toBe(false);
+  });
+
+  it("stores partner invitations under the widened CHECK and still rejects unknown roles", async () => {
+    const { vendor } = await createVendor("partner-check");
+    const base = { vendorId: vendor.id, name: "X", expiresAt: new Date(Date.now() + 60_000), email: "x@example.test" };
+    await expect(getDb().vendorMemberInvitation.create({ data: { ...base, role: "partner", tokenHash: "b".repeat(64) } })).resolves.toMatchObject({ role: "partner" });
+    await expect(getDb().vendorMemberInvitation.create({ data: { ...base, role: "viewer", tokenHash: "c".repeat(64) } })).rejects.toThrow();
   });
 });

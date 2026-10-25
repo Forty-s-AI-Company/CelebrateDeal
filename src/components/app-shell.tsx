@@ -13,6 +13,7 @@ import { hasVendorFeature, type GatedFeature } from "@/lib/vendor-feature-toggle
 import { WorkspaceProjectSwitcher, type ProjectSwitcherItem } from "@/components/workspace-project-switcher";
 import { SystemStatusIndicator } from "@/components/system-status-indicator";
 import { OnboardingTaskPanel, type SidebarOnboardingTask } from "@/components/onboarding-task-panel";
+import { isVendorBackofficeRole, isVendorPartnerRole, PARTNER_PORTAL_PATH } from "@/lib/vendor-roles";
 
 const navGroups = [
   {
@@ -99,7 +100,33 @@ const navGroups = [
 
 const accountMenuGroupLabels = new Set(["設定"]);
 
-export function navigationForRole(memberRole: string | null, isPlatformAdmin = false, enabledModules?: readonly GatedFeature[]) {
+/** The portal lives outside the merchant back office and authorizes per grant. */
+const partnerPortalGroup = {
+  label: "夥伴入口",
+  items: [{ href: PARTNER_PORTAL_PATH, label: "夥伴入口", icon: Handshake }],
+};
+
+/**
+ * `hasPartnerPortal` is true only when the current member holds a valid
+ * AffiliatePortalAccess grant in the current vendor (see the protected
+ * layout). A partner sees nothing but the portal; partners never reach the
+ * back office shell in the first place (`requireVendorContext`).
+ */
+export function navigationForRole(
+  memberRole: string | null,
+  isPlatformAdmin = false,
+  enabledModules?: readonly GatedFeature[],
+  { hasPartnerPortal = false }: { hasPartnerPortal?: boolean } = {},
+) {
+  if (isPlatformAdmin) {
+    return backofficeNavigation(memberRole, true, enabledModules);
+  }
+  if (isVendorPartnerRole(memberRole)) return [partnerPortalGroup];
+  const groups = backofficeNavigation(memberRole, false, enabledModules);
+  return hasPartnerPortal && isVendorBackofficeRole(memberRole) ? [...groups, partnerPortalGroup] : groups;
+}
+
+function backofficeNavigation(memberRole: string | null, isPlatformAdmin: boolean, enabledModules?: readonly GatedFeature[]) {
   if (isPlatformAdmin) {
     return navGroups
       .map((group) => ({
@@ -146,6 +173,7 @@ export function AppShell({
   memberRole,
   isPlatformAdmin = false,
   enabledModules,
+  hasPartnerPortal = false,
   planLabel = "Free",
   projects = [],
   selectedProjectId = null,
@@ -159,6 +187,7 @@ export function AppShell({
   memberRole: string | null;
   isPlatformAdmin?: boolean;
   enabledModules?: readonly GatedFeature[];
+  hasPartnerPortal?: boolean;
   planLabel?: string;
   projects?: ProjectSwitcherItem[];
   selectedProjectId?: string | null;
@@ -167,7 +196,7 @@ export function AppShell({
   selectProject?: (projectId: string | null) => Promise<void>;
   persistTaskPanelCollapsed?: (collapsed: boolean) => Promise<void>;
 }) {
-  const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules);
+  const visibleGroups = navigationForRole(memberRole, isPlatformAdmin, enabledModules, { hasPartnerPortal });
   const primaryGroups = visibleGroups.filter((group) => !accountMenuGroupLabels.has(group.label));
   const accountItems = visibleGroups
     .filter((group) => accountMenuGroupLabels.has(group.label))
@@ -178,7 +207,7 @@ export function AppShell({
     { label: "系統設定", hrefs: ["/settings/tracking", "/settings/features", "/settings/line", "/settings/automations", "/settings/team", "/settings/security"] },
     { label: "帳務與方案", hrefs: ["/billing/usage", "/billing/payment-methods", "/billing/plans", "/billing/invoices", "/billing/electronic-invoices", "/billing/settlements", "/billing/payouts", "/affiliates/commissions", "/billing/course-payouts"] },
   ];
-  const homeHref = memberRole === "support" && !isPlatformAdmin ? "/support-cases" : "/dashboard";
+  const homeHref = isPlatformAdmin ? "/dashboard" : memberRole === "support" ? "/support-cases" : isVendorPartnerRole(memberRole) ? PARTNER_PORTAL_PATH : "/dashboard";
   const roleLabel = isPlatformAdmin
     ? "平台管理員"
     : memberRole === "owner"
@@ -189,7 +218,9 @@ export function AppShell({
           ? "財務協作者"
           : memberRole === "support"
             ? "客服協作者"
-            : "工作區成員";
+            : isVendorPartnerRole(memberRole)
+              ? "夥伴"
+              : "工作區成員";
   const vendorInitial = vendorName.trim().charAt(0).toUpperCase() || "C";
 
   return (
@@ -243,7 +274,6 @@ export function AppShell({
         <div className="mt-3 shrink-0 border-t border-slate-200 pt-3">
           <SystemStatusIndicator />
           <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial} planLabel={planLabel}>
-            <Link href="/affiliate-portal" className="flex min-h-11 items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">夥伴入口</Link>
             {accountMenuSections.map((section) => {
               const items = section.hrefs.flatMap((href) => {
                 const item = accountItemByHref.get(href);
