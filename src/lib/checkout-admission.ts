@@ -6,10 +6,12 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { z } from "zod";
+import { DERIVED_KEY_ROTATIONS } from "@/lib/derived-key-rotation";
 import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
 
 const TOKEN_VERSION = "ca1";
-const TOKEN_PURPOSE = "public-checkout-admission";
+// Rotated after #485 (tier 2): 30-minute tokens signed with the old key simply expire.
+const TOKEN_PURPOSE = DERIVED_KEY_ROTATIONS.checkoutAdmission.current;
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{43}$/u;
 const TOKEN_PART = /^[A-Za-z0-9_-]{1,768}$/u;
 const SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;

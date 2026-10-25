@@ -4,6 +4,7 @@ import { LiveChatError, resolveVerifiedPrivateChatViewer } from "./live-chat";
 import { PrivateViewerChatPost, PrivateViewerChatQuery, type PrivateChatMessageDto } from "./live-private-chat-contract";
 import { decryptPrivateChatBody, encryptPrivateChatBody, normalizePrivateChatBody, privateChatMessageId } from "./live-private-chat-storage";
 import { normalizeClientIp } from "./request-client-ip";
+import { DERIVED_KEY_ROTATIONS } from "./derived-key-rotation";
 import { deriveSensitiveDataKey } from "./sensitive-data";
 
 type Proof = { admissionToken: string | null; chatSessionToken: string | null; ipAddress: string | null; now?: Date };
@@ -19,13 +20,15 @@ function dto(row: LivePrivateChatMessage, scope: Scope): PrivateChatMessageDto {
   return { id: row.id, source: row.source as "viewer" | "instructor", body: decryptPrivateChatBody(row.bodyEncrypted, storageScope(row)), createdAt: row.createdAt.toISOString() };
 }
 function signature(payload: string, scope: Scope, kind = "message") {
-  const purpose = `live-private-chat-cursor:${JSON.stringify([kind, scope.vendorId, scope.liveId, scope.submissionId])}`;
+  // Rotated after #485 (tier 2): a cursor only lives for one polling session.
+  const purpose = `${DERIVED_KEY_ROTATIONS.livePrivateChatCursor.current}:${JSON.stringify([kind, scope.vendorId, scope.liveId, scope.submissionId])}`;
   return createHmac("sha256", deriveSensitiveDataKey(purpose)).update(payload).digest("base64url");
 }
 // This identity binding grants no access. Fresh authorization still runs before
 // every comparison, so a cookie change cannot redirect an earlier draft/retry.
 function conversationBinding(scope: Scope, actor?: { memberId: string; sessionId: string }) {
-  return createHmac("sha256", deriveSensitiveDataKey("live-private-chat-conversation-binding:v1"))
+  // Rotated after #485 (tier 2, was "...:v1"): a binding only spans one draft or retry.
+  return createHmac("sha256", deriveSensitiveDataKey(DERIVED_KEY_ROTATIONS.livePrivateChatConversationBinding.current))
     .update(JSON.stringify([scope.vendorId, scope.liveId, scope.submissionId, actor?.memberId ?? null, actor?.sessionId ?? null]))
     .digest("base64url");
 }

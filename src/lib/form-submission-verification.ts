@@ -1,8 +1,9 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { deriveSensitiveDataKey } from "@/lib/sensitive-data";
+import { DERIVED_KEY_ROTATIONS, expiryFitsPreRotationIssue, signWithRotation, verifyWithRotation } from "@/lib/derived-key-rotation";
 
 const TOKEN_VERSION = "fsv1";
-const TOKEN_PURPOSE = "form-submission-email-verification";
+// Rotated after #485 (tier 3): links live 48 hours, so the legacy key still
+// verifies until its hard stop in derived-key-purposes.ts.
+const TOKEN_KEY = DERIVED_KEY_ROTATIONS.formSubmissionEmailVerification;
 const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 const TOKEN_SIGNATURE = /^[A-Za-z0-9_-]{43}$/u;
 export const FORM_SUBMISSION_VERIFICATION_TTL_MS = 48 * 60 * 60 * 1_000;
@@ -20,17 +21,13 @@ function signedValue(submissionId: string, expiresAt: number, version: number) {
   return `${TOKEN_VERSION}.${submissionId}.${expiresAt}.${version}`;
 }
 
-function signature(value: string) {
-  return createHmac("sha256", deriveSensitiveDataKey(TOKEN_PURPOSE)).update(value).digest("base64url");
-}
-
 export function createFormSubmissionVerificationToken(input: {
   submissionId: string;
   expiresAt: Date;
   version: number;
 }) {
   const value = signedValue(input.submissionId, expiresAtSeconds(input.expiresAt), input.version);
-  return `${value}.${signature(value)}`;
+  return `${value}.${signWithRotation(TOKEN_KEY, value)}`;
 }
 
 export function verifyFormSubmissionVerificationToken(token: string, now = new Date()) {
@@ -53,9 +50,9 @@ export function verifyFormSubmissionVerificationToken(token: string, now = new D
   const version = Number(versionRaw);
   if (!Number.isSafeInteger(expiresAtSecondsValue) || !Number.isSafeInteger(version) || version <= 0) return null;
   const value = signedValue(submissionId, expiresAtSecondsValue, version);
-  const expected = Buffer.from(signature(value), "utf8");
-  const supplied = Buffer.from(suppliedSignature, "utf8");
-  if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
+  // A legacy-key link is accepted only if it could have been issued before the rotation.
+  if (!verifyWithRotation(TOKEN_KEY, value, suppliedSignature, now,
+    () => expiryFitsPreRotationIssue(expiresAtSecondsValue * 1_000, FORM_SUBMISSION_VERIFICATION_TTL_MS))) return null;
 
   const expiresAt = new Date(expiresAtSecondsValue * 1_000);
   if (expiresAt <= now) return null;
